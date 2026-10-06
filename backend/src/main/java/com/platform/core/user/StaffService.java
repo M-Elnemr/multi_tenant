@@ -30,9 +30,14 @@ public class StaffService {
     private final RbacService rbac;
     private final ActivationService activation;
     private final AuditService audit;
+    private final com.platform.billing.EntitlementService entitlements;
+    private final org.springframework.jdbc.core.simple.JdbcClient jdbc;
 
     public StaffService(UserRepository users, MembershipRepository memberships, RbacService rbac,
-                        ActivationService activation, AuditService audit) {
+                        ActivationService activation, AuditService audit,
+                        com.platform.billing.EntitlementService entitlements, org.springframework.jdbc.core.simple.JdbcClient jdbc) {
+        this.entitlements = entitlements;
+        this.jdbc = jdbc;
         this.users = users;
         this.memberships = memberships;
         this.rbac = rbac;
@@ -46,6 +51,12 @@ public class StaffService {
         if (!ASSIGNABLE.getOrDefault(t.type(), Set.of()).contains(role))
             throw BusinessException.badRequest("ROLE_NOT_ASSIGNABLE", "This role cannot be assigned here");
         String phone = PhoneNormalizer.normalize(phoneRaw);
+        long staffCount = jdbc.sql("""
+                SELECT count(DISTINCT m.id) FROM core.user_tenant_memberships m
+                JOIN core.membership_roles mr ON mr.membership_id = m.id JOIN core.roles r ON r.id = mr.role_id
+                WHERE m.tenant_id = :t AND m.status = 'ACTIVE' AND r.code NOT IN ('CUSTOMER','PATIENT','GUARDIAN')
+                """).param("t", t.id()).query(Long.class).single();
+        entitlements.requireCapacity(t.id(), "max_staff", staffCount);
         User u = users.findByPhone(phone).orElse(null);
         boolean needsActivation = false;
         if (u == null) {

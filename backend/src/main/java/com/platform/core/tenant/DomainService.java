@@ -26,9 +26,12 @@ public class DomainService {
     private final PlatformProperties props;
     private final DnsVerifier dns;
     private final AuditService audit;
+    private final com.platform.billing.EntitlementService entitlements;
 
     public DomainService(TenantDomainRepository domains, TenantRepository tenants, PlatformProperties props,
-                         DnsVerifier dns, AuditService audit) {
+                         DnsVerifier dns, AuditService audit,
+                         com.platform.billing.EntitlementService entitlements) {
+        this.entitlements = entitlements;
         this.domains = domains;
         this.tenants = tenants;
         this.props = props;
@@ -61,6 +64,7 @@ public class DomainService {
 
     @Transactional
     public TenantDomain addCustomDomain(UUID tenantId, UUID actor, String rawHost) {
+        entitlements.requireFeature(tenantId, "custom_domain");
         String host = normalizeHost(rawHost);
         if (!HOST.matcher(host).matches()) throw BusinessException.badRequest("INVALID_DOMAIN", "Invalid domain name");
         if (host.equals(props.rootDomain()) || host.endsWith("." + props.rootDomain()) || props.isPlatformHost(host)) {

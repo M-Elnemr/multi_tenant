@@ -51,11 +51,14 @@ public class OnboardingService {
     private final TransactionTemplate tx;
     private final List<TenantProvisioner> provisioners;
     private final LoginThrottle throttle;
+    private final org.springframework.context.ApplicationEventPublisher events;
 
     public OnboardingService(TenantRepository tenants, UserRepository users, MembershipRepository memberships,
                              RbacService rbac, DomainService domains, AuditService audit, PasswordEncoder encoder,
                              AuthService auth, PlatformProperties props, JdbcClient jdbc, TransactionTemplate tx,
-                             List<TenantProvisioner> provisioners, LoginThrottle throttle) {
+                             List<TenantProvisioner> provisioners, LoginThrottle throttle,
+                             org.springframework.context.ApplicationEventPublisher events) {
+        this.events = events;
         this.tenants = tenants;
         this.users = users;
         this.memberships = memberships;
@@ -143,6 +146,7 @@ public class OnboardingService {
 
         TenantDomain d = domains.createSubdomain(t.getId(), slug);
 
+        events.publishEvent(new com.platform.core.tenant.TenantCreatedEvent(t.getId(), c.type(), owner.getId()));
         for (TenantProvisioner p : provisioners) {
             if (p.supports() == c.type()) p.provision(t, owner.getId());
         }

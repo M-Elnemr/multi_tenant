@@ -47,7 +47,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(a -> a
                 .requestMatchers("/api/v1/auth/me").authenticated()
                 .requestMatchers("/api/v1/auth/**", "/api/v1/onboarding/**", "/api/v1/tenant/context",
-                        "/api/v1/tenant/public", "/internal/domains/allowed",
+                        "/api/v1/tenant/public", "/internal/domains/allowed", "/api/v1/billing/plans", "/api/v1/billing/webhooks/**",
                         "/actuator/health/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .anyRequest().authenticated())
