@@ -56,8 +56,12 @@ public class BillingService {
                             WHEN f.limit_value IS NULL THEN 'true'::jsonb ELSE to_jsonb(f.limit_value) END), '{}'::jsonb)::text
                         FROM billing.subscription_plan_features f WHERE f.plan_id = p.id) AS features
                 FROM billing.subscription_plans p
-                WHERE p.is_active AND (:type IS NULL OR p.tenant_type = :type) ORDER BY p.tenant_type, p.sort_order
-                """).param("type", tenantType).query().listOfRows();
+                WHERE p.is_active AND (CAST(:type AS varchar) IS NULL OR p.tenant_type = CAST(:type AS varchar)) ORDER BY p.tenant_type, p.sort_order
+                """).param("type", tenantType).query().listOfRows().stream().map(r -> {
+                    var m = com.platform.shared.Rows.camel(r);
+                    m.put("features", com.platform.shared.Rows.json(r.get("features")));
+                    return m;
+                }).toList();
     }
 
     public Map<String, Object> subscription(UUID tenantId) {
@@ -67,12 +71,13 @@ public class BillingService {
                 FROM billing.tenant_subscriptions s JOIN billing.subscription_plans p ON p.id = s.plan_id
                 WHERE s.tenant_id = :t AND s.status IN ('TRIALING','ACTIVE','PAST_DUE','PAUSED')
                 """).param("t", tenantId).query().listOfRows().stream().findFirst()
+                .map(com.platform.shared.Rows::camel)
                 .orElseThrow(() -> new BusinessException(org.springframework.http.HttpStatus.PAYMENT_REQUIRED, "SUBSCRIPTION_REQUIRED", "No active subscription"));
     }
 
     public List<Map<String, Object>> invoices(UUID tenantId) {
         return jdbc.sql("SELECT id, invoice_number, status, currency, total_minor, issued_at, paid_at FROM billing.subscription_invoices WHERE tenant_id = :t ORDER BY issued_at DESC LIMIT 100")
-                .param("t", tenantId).query().listOfRows();
+                .param("t", tenantId).query().listOfRows().stream().map(com.platform.shared.Rows::camel).toList();
     }
 
     /** Creates an OPEN invoice + pending payment for moving to the given plan. Returns checkout details. */
@@ -83,7 +88,7 @@ public class BillingService {
                 .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Plan not found"));
         if (!tenantType.equals(plan.get("tenant_type"))) throw BusinessException.badRequest("PLAN_NOT_FOR_TENANT_TYPE", "This plan is not available for your account type");
         Map<String, Object> current = subscription(tenantId);
-        if (planCode.equals(current.get("plan_code")) && "ACTIVE".equals(current.get("status")))
+        if (planCode.equals(current.get("planCode")) && "ACTIVE".equals(current.get("status")))
             throw BusinessException.badRequest("ALREADY_ON_PLAN", "You are already on this plan");
 
         UUID planId = (UUID) plan.get("id");

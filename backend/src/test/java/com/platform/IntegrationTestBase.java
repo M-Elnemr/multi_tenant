@@ -54,11 +54,18 @@ public abstract class IntegrationTestBase {
     }
 
     protected ResultActions onHost(String host, String token, String method, String path, String body) throws Exception {
+        return onHost(host, token, method, path, body, null);
+    }
+
+    protected ResultActions onHost(String host, String token, String method, String path, String body, String idempotencyKey) throws Exception {
         var b = switch (method) {
             case "POST" -> post(path);
+            case "PATCH" -> org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(path);
+            case "PUT" -> org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(path);
             case "DELETE" -> delete(path);
             default -> get(path);
         };
+        if (idempotencyKey != null) b.header("Idempotency-Key", idempotencyKey);
         b.header("Host", host);
         if (token != null) b.header("Authorization", "Bearer " + token);
         if (body != null) b.contentType(MediaType.APPLICATION_JSON).content(body);

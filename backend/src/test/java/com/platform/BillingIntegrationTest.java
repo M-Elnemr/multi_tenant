@@ -29,9 +29,9 @@ class BillingIntegrationTest extends IntegrationTestBase {
     void newTenantStartsProTrialAndPlansAreListedForItsType() throws Exception {
         Tenant t = onboard("STORE");
         onHost(t.host(), t.access(), "GET", "/api/v1/billing/subscription", null)
-                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("TRIALING")).andExpect(jsonPath("$.plan_code").value("STORE_PRO"));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("TRIALING")).andExpect(jsonPath("$.planCode").value("STORE_PRO"));
         onHost(t.host(), null, "GET", "/api/v1/billing/plans", null)
-                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(2)).andExpect(jsonPath("$[0].tenant_type").value("STORE"));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(2)).andExpect(jsonPath("$[0].tenantType").value("STORE"));
         // custom domains are part of the trial (Pro features)
         onHost(t.host(), t.access(), "POST", "/api/v1/tenant/domains", "{\"host\":\"www.trial-" + uniq() + ".com\"}").andExpect(status().isCreated());
     }
@@ -56,7 +56,7 @@ class BillingIntegrationTest extends IntegrationTestBase {
         }
         assertThat(jdbc.sql("SELECT count(*) FROM billing.webhook_events WHERE event_id = :e").param("e", evt).query(Long.class).single()).isEqualTo(1);
         onHost(t.host(), t.access(), "GET", "/api/v1/billing/subscription", null)
-                .andExpect(jsonPath("$.status").value("ACTIVE")).andExpect(jsonPath("$.plan_code").value("STORE_STARTER"));
+                .andExpect(jsonPath("$.status").value("ACTIVE")).andExpect(jsonPath("$.planCode").value("STORE_STARTER"));
         onHost(t.host(), t.access(), "GET", "/api/v1/billing/invoices", null).andExpect(jsonPath("$[0].status").value("PAID"));
         assertThat(jdbc.sql("SELECT status FROM core.tenants WHERE id = (SELECT tenant_id FROM billing.subscription_invoices WHERE id = :i)")
                 .param("i", UUID.fromString(invoice)).query(String.class).single()).isEqualTo("ACTIVE");

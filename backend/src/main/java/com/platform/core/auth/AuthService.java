@@ -40,10 +40,12 @@ public class AuthService {
     private final LoginThrottle throttle;
     private final JdbcClient jdbc;
     private final String dummyHash;
+    private final List<TenantAutoJoin> autoJoins;
 
     public AuthService(UserRepository users, MembershipRepository memberships, RbacService rbac, PasswordEncoder encoder,
                        JwtService jwt, JwtProperties jwtProps, ActivationService activation, LoginThrottle throttle,
-                       JdbcClient jdbc) {
+                       JdbcClient jdbc, List<TenantAutoJoin> autoJoins) {
+        this.autoJoins = autoJoins;
         this.users = users;
         this.memberships = memberships;
         this.rbac = rbac;
@@ -172,8 +174,16 @@ public class AuthService {
         if (t == null) return;
         boolean member = memberships.findByUserIdAndTenantId(user.getId(), t.id())
                 .filter(m -> m.getStatus() == Membership.Status.ACTIVE).isPresent();
-        if (!member) throw BusinessException.forbidden("NOT_A_MEMBER", "This account has no access here");
+        if (!member) {
+            // Open-registration tenants (stores) let any valid account become a customer on first login.
+            var join = autoJoins.stream().filter(j -> j.supports(t.type())).findFirst();
+            if (join.isEmpty()) throw BusinessException.forbidden("NOT_A_MEMBER", "This account has no access here");
+            join.get().join(user.getId(), t.id());
+        }
     }
+
+    /** Issues tokens for an account that was just created/verified by another flow (e.g. shopper registration). */
+    public TokenResponse issueFor(User user, String ip, String userAgent) { return issueTokens(user, ip, userAgent); }
 
     private TokenResponse issueTokens(User user, String ip, String userAgent) {
         byte[] raw = new byte[32];
