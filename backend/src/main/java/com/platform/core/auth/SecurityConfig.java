@@ -51,6 +51,8 @@ public class SecurityConfig {
                         "/actuator/health/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/shop/profile", "/api/v1/shop/categories", "/api/v1/shop/products", "/api/v1/shop/products/*").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/shop/customers/register", "/api/v1/shop/webhooks/*").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/clinic/public/**").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/clinic/portal/link", "/api/v1/clinic/webhooks/*").permitAll()
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .anyRequest().authenticated())
             .exceptionHandling(e -> e

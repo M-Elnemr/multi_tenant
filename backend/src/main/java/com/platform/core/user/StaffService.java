@@ -31,11 +31,14 @@ public class StaffService {
     private final ActivationService activation;
     private final AuditService audit;
     private final com.platform.billing.EntitlementService entitlements;
+    private final org.springframework.context.ApplicationEventPublisher events;
     private final org.springframework.jdbc.core.simple.JdbcClient jdbc;
 
     public StaffService(UserRepository users, MembershipRepository memberships, RbacService rbac,
                         ActivationService activation, AuditService audit,
-                        com.platform.billing.EntitlementService entitlements, org.springframework.jdbc.core.simple.JdbcClient jdbc) {
+                        com.platform.billing.EntitlementService entitlements, org.springframework.jdbc.core.simple.JdbcClient jdbc,
+                        org.springframework.context.ApplicationEventPublisher events) {
+        this.events = events;
         this.entitlements = entitlements;
         this.jdbc = jdbc;
         this.users = users;
@@ -86,6 +89,7 @@ public class StaffService {
         m.setStatus(Membership.Status.ACTIVE);
         m = memberships.saveAndFlush(m);
         rbac.assignTenantRole(m.getId(), role);
+        events.publishEvent(new StaffInvitedEvent(t.id(), u.getId(), role));
         String pin = needsActivation ? activation.issue(u.getId(), t.id(), actor) : null;
         audit.record(actor, t.id(), "STAFF_INVITED", "user", u.getId(), "{\"role\":\"" + role + "\"}");
         return new Invited(u.getId(), m.getId(), pin, needsActivation);

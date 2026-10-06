@@ -30,8 +30,16 @@ public final class Rows {
         return JsonParserFactory.getJsonParser().parseMap(text.toString());
     }
 
+    /** Parses a JSON array text column (selected with ::text) into a list. */
+    public static List<Object> jsonList(Object text) {
+        if (text == null) return List.of();
+        return JsonParserFactory.getJsonParser().parseList(text.toString());
+    }
+
     private static Object value(Object v) {
         if (v instanceof Timestamp t) return t.toInstant();
+        if (v instanceof java.sql.Time t) return t.toLocalTime().toString();
+        if (v instanceof java.sql.Date d) return d.toLocalDate().toString();
         return v;
     }
 
