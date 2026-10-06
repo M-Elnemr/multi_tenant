@@ -41,8 +41,10 @@ public class ClinicalService {
     private final AuditService audit;
     private final PatientService patients;
     private final ApplicationEventPublisher events;
+    private final com.platform.files.FileService files;
 
-    public ClinicalService(JdbcClient jdbc, AuditService audit, PatientService patients, ApplicationEventPublisher events) {
+    public ClinicalService(JdbcClient jdbc, AuditService audit, PatientService patients, ApplicationEventPublisher events, com.platform.files.FileService files) {
+        this.files = files;
         this.jdbc = jdbc;
         this.audit = audit;
         this.patients = patients;
@@ -247,6 +249,7 @@ public class ClinicalService {
 
     private void addResult(UUID tenantId, UUID by, UUID labOrderId, LabResultReq r, boolean byPatient) {
         if ((r.resultText() == null || r.resultText().isBlank()) && r.fileId() == null) throw BusinessException.badRequest("VALIDATION_ERROR", "Provide result text or a file");
+        if (r.fileId() != null) files.requireReady(tenantId, r.fileId(), Set.of("LAB_RESULT", "MEDICAL_DOCUMENT"), byPatient ? by : null);
         jdbc.sql("INSERT INTO medical.lab_results (tenant_id, lab_order_id, file_id, result_text, result_summary, uploaded_by, uploaded_by_patient, patient_visible) VALUES (:t,:o,:f,:rt,:rs,:u,:bp,:pv)")
                 .param("t", tenantId).param("o", labOrderId).param("f", r.fileId()).param("rt", r.resultText()).param("rs", r.resultSummary()).param("u", by).param("bp", byPatient).param("pv", r.patientVisible()).update();
     }
@@ -287,6 +290,7 @@ public class ClinicalService {
         patients.summary(tenantId, patientId);
         if (r.title() == null || r.title().isBlank() || !Set.of("LAB_RESULT", "SCAN", "RADIOLOGY", "PRESCRIPTION", "REFERRAL", "DISCHARGE_SUMMARY", "OTHER").contains(r.documentType()))
             throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid document");
+        if (r.fileId() != null) files.requireReady(tenantId, r.fileId(), Set.of("MEDICAL_DOCUMENT", "LAB_RESULT", "PRESCRIPTION"), null);
         UUID id = jdbc.sql("INSERT INTO medical.medical_documents (tenant_id, patient_id, file_id, document_type, title, description, source, patient_visible, created_by) VALUES (:t,:p,:f,:ty,:ti,:d,'CLINIC',:v,:u) RETURNING id")
                 .param("t", tenantId).param("p", patientId).param("f", r.fileId()).param("ty", r.documentType()).param("ti", r.title().trim()).param("d", r.description()).param("v", r.patientVisible()).param("u", actor).query(UUID.class).single();
         audit.record(actor, tenantId, "DOCUMENT_ADDED", "patient", patientId, null);

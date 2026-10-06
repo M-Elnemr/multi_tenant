@@ -25,15 +25,17 @@ public class CatalogService {
     public record StockReq(UUID branchId, int quantity) {}
     public record VariantReq(String sku, long priceMinor, Long compareAtPriceMinor, String barcode, Integer weightGrams,
                              Map<String, String> optionValues, List<StockReq> stock) {}
-    public record MediaReq(String url, String altText) {}
+    public record MediaReq(String url, UUID fileId, String altText) {}
     public record ProductReq(String name, String description, String shortDescription, UUID categoryId, String brand,
                              String status, List<OptionReq> options, List<VariantReq> variants, List<MediaReq> media) {}
 
     private final JdbcClient jdbc;
     private final EntitlementService ent;
     private final AuditService audit;
+    private final com.platform.files.FileService files;
 
-    public CatalogService(JdbcClient jdbc, EntitlementService ent, AuditService audit) {
+    public CatalogService(JdbcClient jdbc, EntitlementService ent, AuditService audit, com.platform.files.FileService files) {
+        this.files = files;
         this.jdbc = jdbc;
         this.ent = ent;
         this.audit = audit;
@@ -129,9 +131,16 @@ public class CatalogService {
         }
         if (r.media() != null) {
             int mi = 0;
-            for (MediaReq m : r.media())
-                jdbc.sql("INSERT INTO commerce.product_media (tenant_id, product_id, url, sort_order, alt_text) VALUES (:t, :p, :u, :o, :a)")
-                        .param("t", tenantId).param("p", productId).param("u", m.url()).param("o", mi++).param("a", m.altText()).update();
+            for (MediaReq m : r.media()) {
+                String url = m.url();
+                if (m.fileId() != null) {
+                    files.requireReady(tenantId, m.fileId(), java.util.Set.of("PRODUCT_IMAGE"), null);
+                    url = "/api/v1/files/" + m.fileId() + "/content";
+                }
+                if (url == null) throw BusinessException.badRequest("VALIDATION_ERROR", "Media needs a fileId or url");
+                jdbc.sql("INSERT INTO commerce.product_media (tenant_id, product_id, file_id, url, sort_order, alt_text) VALUES (:t, :p, :f, :u, :o, :a)")
+                        .param("t", tenantId).param("p", productId).param("f", m.fileId()).param("u", url).param("o", mi++).param("a", m.altText()).update();
+            }
         }
         audit.record(actor, tenantId, "PRODUCT_CREATED", "product", productId, null);
         return detail(tenantId, productId, false);
