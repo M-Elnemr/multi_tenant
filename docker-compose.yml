@@ -32,6 +32,12 @@ services:
       PLATFORM_EDGE_HOST: ${PLATFORM_EDGE_HOST:?set PLATFORM_EDGE_HOST in .env}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      PLATFORM_ADMIN_PHONE: ${PLATFORM_ADMIN_PHONE:-}
+      PLATFORM_ADMIN_PASSWORD: ${PLATFORM_ADMIN_PASSWORD:-}
+      BILLING_WEBHOOK_SECRET: ${BILLING_WEBHOOK_SECRET:?set BILLING_WEBHOOK_SECRET in .env}
+      FILES_DIR: /app/uploads
+    volumes:
+      - app_uploads:/app/uploads
     expose:
       - "8080"
     healthcheck:
@@ -41,21 +47,24 @@ services:
       retries: 10
       start_period: 40s
 
-  # web: Next.js app (added with the web skeleton). Caddy routes non-API traffic to web:3000.
-  # web:
-  #   image: ghcr.io/m-elnemr/platform-web:${WEB_IMAGE_TAG:-latest}
-  #   restart: unless-stopped
-  #   depends_on: [backend]
-  #   environment:
-  #     API_BASE_URL: http://backend:8080
-  #     SESSION_SECRET: ${WEB_SESSION_SECRET:?set WEB_SESSION_SECRET in .env}
-  #   expose: ["3000"]
+  web:
+    image: ghcr.io/m-elnemr/platform-web:${WEB_IMAGE_TAG:-latest}
+    build: ./web
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      API_BASE_URL: http://backend:8080
+      SESSION_SECRET: ${WEB_SESSION_SECRET:?set WEB_SESSION_SECRET in .env}
+    expose:
+      - "3000"
 
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
     depends_on:
       - backend
+      - web
     environment:
       ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
     ports:
@@ -67,6 +76,7 @@ services:
       - caddy_config:/config
 
 volumes:
+  app_uploads:
   db_data:
   caddy_data:
   caddy_config:

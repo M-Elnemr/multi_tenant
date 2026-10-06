@@ -95,6 +95,29 @@ public class StaffService {
         return new Invited(u.getId(), m.getId(), pin, needsActivation);
     }
 
+    public java.util.List<java.util.Map<String, Object>> list(UUID tenantId) {
+        return com.platform.shared.Rows.camel(jdbc.sql("""
+                SELECT u.id AS user_id, u.first_name, u.last_name, u.phone, u.email, u.status AS user_status, m.status AS membership_status, m.created_at,
+                       (SELECT string_agg(r.code, ',' ORDER BY r.code) FROM core.membership_roles mr JOIN core.roles r ON r.id = mr.role_id WHERE mr.membership_id = m.id) AS roles
+                FROM core.user_tenant_memberships m JOIN core.users u ON u.id = m.user_id
+                WHERE m.tenant_id = :t AND m.status <> 'REMOVED' AND EXISTS (
+                    SELECT 1 FROM core.membership_roles mr JOIN core.roles r ON r.id = mr.role_id WHERE mr.membership_id = m.id AND r.code NOT IN ('CUSTOMER','PATIENT','GUARDIAN'))
+                ORDER BY m.created_at
+                """).param("t", tenantId).query().listOfRows());
+    }
+
+    /** Removes someone from staff. Owners and yourself cannot be removed here; their other relationships (customer/patient) are untouched. */
+    @Transactional
+    public void remove(UUID actor, UUID userId) {
+        TenantContext.Current t = TenantContext.require();
+        if (actor.equals(userId)) throw BusinessException.badRequest("CANNOT_REMOVE_SELF", "You cannot remove yourself");
+        Membership m = memberships.findByUserIdAndTenantId(userId, t.id()).orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Member not found"));
+        if (rbac.roleCodes(m.getId()).stream().anyMatch(r -> r.endsWith("_OWNER"))) throw BusinessException.forbidden("CANNOT_REMOVE_OWNER", "The owner cannot be removed");
+        jdbc.sql("DELETE FROM core.membership_roles WHERE membership_id = :m AND role_id IN (SELECT id FROM core.roles WHERE code NOT IN ('CUSTOMER','PATIENT','GUARDIAN') AND tenant_id IS NULL)").param("m", m.getId()).update();
+        if (rbac.roleCodes(m.getId()).isEmpty()) { m.setStatus(Membership.Status.REMOVED); memberships.save(m); }
+        audit.record(actor, t.id(), "STAFF_REMOVED", "user", userId, null);
+    }
+
     /** Staff regenerates a PIN for someone who forgot their password. Works for any member of this tenant. */
     @Transactional
     public String reissuePin(UUID actor, UUID userId) {

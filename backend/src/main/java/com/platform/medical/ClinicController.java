@@ -61,6 +61,10 @@ public class ClinicController {
     @PreAuthorize("hasAuthority('appointment.manage') or hasAuthority('settings.manage')")
     public List<Map<String, Object>> doctors() { return settings.doctors(ClinicContext.tenantId()); }
 
+    @GetMapping("/doctors/me")
+    @PreAuthorize("hasAuthority('schedule.manage')")
+    public Map<String, Object> me(Authentication a) { return settings.myDoctor(ClinicContext.tenantId(), user(a)); }
+
     @PatchMapping("/doctors/me")
     @PreAuthorize("hasAuthority('schedule.manage')")
     public Map<String, Object> updateMe(@RequestBody DoctorProfileReq r, Authentication a) { return settings.updateMyDoctorProfile(ClinicContext.tenantId(), user(a), r.fields() == null ? Map.of() : r.fields(), r.specialties()); }

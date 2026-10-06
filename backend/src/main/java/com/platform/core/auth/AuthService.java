@@ -201,12 +201,14 @@ public class AuthService {
 
     private TokenResponse.UserSummary summary(User u) {
         List<String> roles = List.of();
+        java.util.Set<String> perms = new java.util.TreeSet<>(rbac.platformPermissionCodes(u.getId()));
         TenantContext.Current t = TenantContext.get();
         if (t != null) {
-            roles = memberships.findByUserIdAndTenantId(u.getId(), t.id())
-                    .map(m -> rbac.roleCodes(m.getId())).orElse(List.of());
+            var m = memberships.findByUserIdAndTenantId(u.getId(), t.id()).filter(x -> x.getStatus() == Membership.Status.ACTIVE);
+            roles = m.map(x -> rbac.roleCodes(x.getId())).orElse(List.of());
+            m.ifPresent(x -> perms.addAll(rbac.permissionCodes(x.getId())));
         }
-        return new TokenResponse.UserSummary(u.getId(), u.getFirstName(), u.getLastName(), u.getPhone(), u.getEmail(), roles);
+        return new TokenResponse.UserSummary(u.getId(), u.getFirstName(), u.getLastName(), u.getPhone(), u.getEmail(), roles, List.copyOf(perms));
     }
 
     static String sha256(String s) {

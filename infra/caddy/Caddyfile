@@ -17,7 +17,7 @@ https:// {
 	encode zstd gzip
 
 	# API + docs go straight to Spring Boot. /internal/* and /actuator/* are deliberately NOT routed.
-	@api path /api/v1/* /v3/api-docs* /swagger-ui* /swagger-ui.html
+	@api path /api/v1/*
 	handle @api {
 		reverse_proxy backend:8080
 	}

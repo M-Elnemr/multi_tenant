@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-brand: var(--brand);
+  --color-brand-2: var(--brand-2);
+  --font-sans: var(--font-family);
+}
+
+:root {
+  --brand: #0f766e;
+  --brand-2: #f59e0b;
+  --font-family: system-ui, -apple-system, "Segoe UI", Tahoma, "Noto Naskh Arabic", "Noto Sans Arabic", Arial, sans-serif;
+}
+
+html { -webkit-text-size-adjust: 100%; }
+body { background: #f8fafc; color: #0f172a; font-family: var(--font-family); }
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }

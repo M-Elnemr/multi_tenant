@@ -48,7 +48,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(a -> a
                 .requestMatchers("/api/v1/auth/me").authenticated()
                 .requestMatchers("/api/v1/auth/**", "/api/v1/onboarding/**", "/api/v1/tenant/context",
-                        "/api/v1/tenant/public", "/internal/domains/allowed", "/api/v1/billing/plans", "/api/v1/billing/webhooks/**",
+                        "/api/v1/tenant/public", "/api/v1/tenant/resolve", "/internal/domains/allowed", "/api/v1/billing/plans", "/api/v1/billing/webhooks/**",
                         "/actuator/health/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/shop/profile", "/api/v1/shop/categories", "/api/v1/shop/products", "/api/v1/shop/products/*").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/shop/customers/register", "/api/v1/shop/webhooks/*").permitAll()

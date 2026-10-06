@@ -81,6 +81,13 @@ public class ClinicSettingsService {
                 """).param("t", tenantId).query().listOfRows()).stream().peek(m -> m.put("specialties", Rows.jsonList(m.get("specialties")))).toList();
     }
 
+    /** The calling user's own doctor profile, or 403 if they are not a doctor of this clinic. */
+    public Map<String, Object> myDoctor(UUID tenantId, UUID userId) {
+        UUID doctorId = jdbc.sql("SELECT id FROM medical.doctors WHERE tenant_id = :t AND user_id = :u AND is_active").param("t", tenantId).param("u", userId).query(UUID.class).optional()
+                .orElseThrow(() -> BusinessException.forbidden("NOT_A_DOCTOR", "You do not have a doctor profile in this clinic"));
+        return doctors(tenantId).stream().filter(d -> doctorId.equals(d.get("id"))).findFirst().orElseThrow();
+    }
+
     @Transactional
     public Map<String, Object> updateMyDoctorProfile(UUID tenantId, UUID userId, Map<String, Object> f, List<String> specialtyCodes) {
         UUID doctorId = jdbc.sql("SELECT id FROM medical.doctors WHERE tenant_id = :t AND user_id = :u AND is_active").param("t", tenantId).param("u", userId).query(UUID.class).optional()

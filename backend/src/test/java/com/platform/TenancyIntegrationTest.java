@@ -228,4 +228,38 @@ class TenancyIntegrationTest extends IntegrationTestBase {
         mvc.perform(post("/api/v1/onboarding/tenants").header("Host", "platform.test").header("Idempotency-Key", key)
                 .contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isCreated()).andExpect(jsonPath("$.replay").value(true));
     }
+
+    @Test
+    void resolveEndpointTellsTheWebAppWhatIsBehindAHost() throws Exception {
+        Tenant clinic = onboard("CLINIC");
+        onHost(clinic.host(), null, "GET", "/api/v1/tenant/resolve", null).andExpect(status().isOk()).andExpect(jsonPath("$.kind").value("TENANT")).andExpect(jsonPath("$.type").value("CLINIC")).andExpect(jsonPath("$.branding.primary_color").exists());
+        onHost("platform.test", null, "GET", "/api/v1/tenant/resolve", null).andExpect(jsonPath("$.kind").value("PLATFORM"));
+        onHost("nobody-" + uniq() + ".platform.test", null, "GET", "/api/v1/tenant/resolve", null).andExpect(jsonPath("$.kind").value("UNKNOWN"));
+        onHost(clinic.host(), clinic.access(), "GET", "/api/v1/auth/me", null).andExpect(jsonPath("$.permissions", org.hamcrest.Matchers.hasItems("patient.read", "billing.manage"))).andExpect(jsonPath("$.roles[0]").exists());
+    }
+
+    @Test
+    void ownerCanListAndRemoveStaffButNotOwnersOrThemselves() throws Exception {
+        Tenant clinic = onboard("CLINIC");
+        String phone = nextPhone();
+        String inv = onHost(clinic.host(), clinic.access(), "POST", "/api/v1/tenant/members", "{\"firstName\":\"Mai\",\"phone\":\"%s\",\"role\":\"NURSE\"}".formatted(phone)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        String userId = JsonPath.read(inv, "$.userId");
+        onHost(clinic.host(), clinic.access(), "GET", "/api/v1/tenant/members", null).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(2)).andExpect(jsonPath("$[1].roles").value("NURSE"));
+        String ownerId = JsonPath.read(onHost(clinic.host(), clinic.access(), "GET", "/api/v1/auth/me", null).andReturn().getResponse().getContentAsString(), "$.id");
+        onHost(clinic.host(), clinic.access(), "DELETE", "/api/v1/tenant/members/" + ownerId, null).andExpect(status().isBadRequest());
+        onHost(clinic.host(), clinic.access(), "DELETE", "/api/v1/tenant/members/" + userId, null).andExpect(status().isNoContent());
+        onHost(clinic.host(), clinic.access(), "GET", "/api/v1/tenant/members", null).andExpect(jsonPath("$.length()").value(1));
+        // another tenant's owner cannot see or remove them
+        Tenant other = onboard("CLINIC");
+        onHost(other.host(), other.access(), "DELETE", "/api/v1/tenant/members/" + userId, null).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void brandingAcceptsOnlyValidatedTokensAndShowsInTenantContext() throws Exception {
+        Tenant store = onboard("STORE");
+        onHost(store.host(), store.access(), "PATCH", "/api/v1/tenant/branding", "{\"primaryColor\":\"red;background:url(x)\"}").andExpect(status().isBadRequest());
+        onHost(store.host(), store.access(), "PATCH", "/api/v1/tenant/branding", "{\"primaryColor\":\"#112233\",\"secondaryColor\":\"#aabbcc\",\"locale\":\"en\"}").andExpect(status().isOk()).andExpect(jsonPath("$.primaryColor").value("#112233"));
+        onHost(store.host(), null, "GET", "/api/v1/tenant/context", null).andExpect(jsonPath("$.branding.primary_color").value("#112233")).andExpect(jsonPath("$.locale").value("en"));
+        onHost(store.host(), null, "PATCH", "/api/v1/tenant/branding", "{\"primaryColor\":\"#000000\"}").andExpect(status().isUnauthorized());
+    }
 }

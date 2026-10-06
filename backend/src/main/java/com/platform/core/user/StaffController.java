@@ -25,6 +25,13 @@ public class StaffController {
 
     public record InviteRequest(@NotBlank String firstName, String lastName, @NotBlank String phone, String email, @NotBlank String role) {}
 
+    @org.springframework.web.bind.annotation.GetMapping
+    public java.util.List<Map<String, Object>> list() { return staff.list(TenantContext.require().id()); }
+
+    @org.springframework.web.bind.annotation.DeleteMapping("/{userId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void remove(@PathVariable UUID userId, Authentication a) { staff.remove((UUID) a.getPrincipal(), userId); }
+
     /** Creates the member and returns the one-time activation PIN to hand to them (shown only once). */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
