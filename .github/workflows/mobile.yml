@@ -1,0 +1,29 @@
+name: Mobile - analyze and test
+
+on:
+  push:
+    branches: [main]
+    paths: ["mobile/**", ".github/workflows/mobile.yml"]
+  pull_request:
+    paths: ["mobile/**"]
+  workflow_dispatch: {}
+
+jobs:
+  flutter:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        project: [packages/platform_core, apps/customer, apps/provider, apps/patient]
+    defaults:
+      run:
+        working-directory: mobile/${{ matrix.project }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+        if: matrix.project == 'packages/platform_core'

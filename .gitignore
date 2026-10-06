@@ -8,3 +8,7 @@ backend/build/
 !backend/gradle/wrapper/gradle-wrapper.jar
 web/node_modules
 web/.next
+.dart_tool/
+.packages
+build/
+*.iml
