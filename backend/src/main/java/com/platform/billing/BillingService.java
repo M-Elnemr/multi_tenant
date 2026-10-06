@@ -25,9 +25,11 @@ public class BillingService {
     private final List<PaymentProvider> providers;
     private final AuditService audit;
     private final int graceDays;
+    private final org.springframework.context.ApplicationEventPublisher events;
 
     public BillingService(JdbcClient jdbc, PlatformProperties props, List<PaymentProvider> providers, AuditService audit,
-                          @Value("${app.billing.grace-days:7}") int graceDays) {
+                          @Value("${app.billing.grace-days:7}") int graceDays, org.springframework.context.ApplicationEventPublisher events) {
+        this.events = events;
         this.jdbc = jdbc;
         this.props = props;
         this.providers = providers;
@@ -201,6 +203,7 @@ public class BillingService {
             jdbc.sql("UPDATE core.tenants SET status = CASE WHEN (SELECT status FROM billing.tenant_subscriptions WHERE tenant_id = :t ORDER BY updated_at DESC LIMIT 1) = 'CANCELLED' THEN 'CANCELLED' ELSE 'PAST_DUE' END, updated_at = now() WHERE id = :t")
                     .param("t", t).update();
             event(t, "PERIOD_ENDED", null);
+            events.publishEvent(new SubscriptionEvents.StateChanged(t, "PAST_DUE"));
         }
         for (var row : jdbc.sql("SELECT tenant_id FROM billing.tenant_subscriptions WHERE status = 'PAST_DUE' AND current_period_end < now() - make_interval(days => :g)")
                 .param("g", graceDays).query().listOfRows()) {
@@ -208,6 +211,7 @@ public class BillingService {
             jdbc.sql("UPDATE billing.tenant_subscriptions SET status = 'EXPIRED', updated_at = now() WHERE tenant_id = :t AND status = 'PAST_DUE'").param("t", t).update();
             jdbc.sql("UPDATE core.tenants SET status = 'SUSPENDED', updated_at = now() WHERE id = :t").param("t", t).update();
             event(t, "SUSPENDED_FOR_NONPAYMENT", null);
+            events.publishEvent(new SubscriptionEvents.StateChanged(t, "SUSPENDED"));
         }
     }
 

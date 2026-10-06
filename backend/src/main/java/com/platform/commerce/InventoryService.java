@@ -22,8 +22,13 @@ public class InventoryService {
 
     private final JdbcClient jdbc;
     private final AuditService audit;
+    private final org.springframework.context.ApplicationEventPublisher events;
 
-    public InventoryService(JdbcClient jdbc, AuditService audit) {
+    /** Fired once when an order takes a variant's available stock down to its low-stock threshold. */
+    public record LowStock(UUID tenantId, UUID variantId, int available) {}
+
+    public InventoryService(JdbcClient jdbc, AuditService audit, org.springframework.context.ApplicationEventPublisher events) {
+        this.events = events;
         this.jdbc = jdbc;
         this.audit = audit;
     }
@@ -69,7 +74,7 @@ public class InventoryService {
     /** Reserves qty from the branch with the most available stock. Caller must lock variants in a stable order. Returns branch id. */
     UUID reserve(UUID tenantId, UUID variantId, int qty, UUID orderId) {
         var rows = jdbc.sql("""
-                SELECT i.id, i.branch_id, i.quantity_on_hand - i.quantity_reserved AS available
+                SELECT i.id, i.branch_id, i.quantity_on_hand - i.quantity_reserved AS available, i.low_stock_threshold
                 FROM commerce.inventory_items i JOIN commerce.branches b ON b.id = i.branch_id AND b.is_active
                 WHERE i.tenant_id = :t AND i.variant_id = :v
                 ORDER BY available DESC, i.id FOR UPDATE OF i
@@ -80,6 +85,9 @@ public class InventoryService {
                 jdbc.sql("UPDATE commerce.inventory_items SET quantity_reserved = quantity_reserved + :q, updated_at = now() WHERE id = :i")
                         .param("q", qty).param("i", r.get("id")).update();
                 movement(tenantId, branch, variantId, "RESERVATION", -qty, "order", orderId, null, null);
+                int before = ((Number) r.get("available")).intValue();
+                int threshold = ((Number) r.get("low_stock_threshold")).intValue();
+                if (before > threshold && before - qty <= threshold) events.publishEvent(new LowStock(tenantId, variantId, before - qty));
                 return branch;
             }
         }
