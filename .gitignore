@@ -1,0 +1,10 @@
+.env
+.DS_Store
+.idea
+*.iml
+.vscode/
+backend/.gradle
+backend/build/
+!backend/gradle/wrapper/gradle-wrapper.jar
+web/node_modules
+web/.next

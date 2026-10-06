@@ -1,0 +1,31 @@
+# Edge proxy. One config serves the platform site, every tenant subdomain and every verified custom
+# domain. Certificates are issued on demand (Let's Encrypt) the first time a host is requested, but
+# only after the backend confirms the host belongs to a live tenant - so adding a store/clinic or a
+# custom domain needs NO proxy change, reload or manual certificate step.
+{
+	email {$ACME_EMAIL}
+	on_demand_tls {
+		ask http://backend:8080/internal/domains/allowed
+	}
+}
+
+https:// {
+	tls {
+		on_demand
+	}
+
+	encode zstd gzip
+
+	# API + docs go straight to Spring Boot. /internal/* and /actuator/* are deliberately NOT routed.
+	@api path /api/v1/* /v3/api-docs* /swagger-ui* /swagger-ui.html
+	handle @api {
+		reverse_proxy backend:8080
+	}
+
+	# Everything else is the Next.js app (platform site, tenant storefronts/clinics, dashboards).
+	handle {
+		reverse_proxy web:3000
+	}
+}
+
+# Plain HTTP is redirected to HTTPS automatically by Caddy.
