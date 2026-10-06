@@ -40,7 +40,8 @@ public class SecurityConfig {
 
     @Bean
     SecurityFilterChain chain(HttpSecurity http, TenantResolutionFilter tenantFilter, JwtService jwt,
-                              MembershipRepository memberships, RbacService rbac) throws Exception {
+                              MembershipRepository memberships, RbacService rbac,
+                              @Value("${app.ratelimit.enabled:true}") boolean rateLimitEnabled) throws Exception {
         http.csrf(c -> c.disable())
             .cors(Customizer -> {})
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -67,7 +68,13 @@ public class SecurityConfig {
                     res.setContentType("application/problem+json");
                     res.getWriter().write("{\"status\":403,\"code\":\"FORBIDDEN\",\"message\":\"You do not have permission to do this\"}");
                 }))
-            .addFilterBefore(tenantFilter, UsernamePasswordAuthenticationFilter.class)
+            .headers(h -> h
+                .contentSecurityPolicy(c -> c.policyDirectives("default-src 'none'; frame-ancestors 'none'"))
+                .referrerPolicy(r -> r.policy(org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER))
+                .httpStrictTransportSecurity(hs -> hs.includeSubDomains(true).maxAgeInSeconds(31536000))
+                .permissionsPolicyHeader(p -> p.policy("camera=(), microphone=(), geolocation=()")))
+            .addFilterBefore(new RateLimitFilter(jwt, rateLimitEnabled), UsernamePasswordAuthenticationFilter.class)
+            .addFilterAfter(tenantFilter, RateLimitFilter.class)
             .addFilterAfter(new JwtAuthFilter(jwt, memberships, rbac), TenantResolutionFilter.class);
         return http.build();
     }
