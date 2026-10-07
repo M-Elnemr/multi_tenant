@@ -6,6 +6,12 @@
 	on_demand_tls {
 		ask http://backend:8080/internal/domains/allowed
 	}
+	# Who may tell us the real visitor address. Default: nobody (direct visitors). Behind Cloudflare set TRUSTED_PROXIES to its ranges
+	# (see docs/DEPLOY.md) so {client_ip} is the visitor taken from CF-Connecting-IP instead of a Cloudflare edge address.
+	servers {
+		trusted_proxies static {$TRUSTED_PROXIES:private_ranges}
+		client_ip_headers CF-Connecting-IP X-Forwarded-For
+	}
 }
 
 (app) {
@@ -32,6 +38,7 @@
 	@api path /api/v1/*
 	handle @api {
 		reverse_proxy backend:8080 {
+			header_up X-Forwarded-For {client_ip}
 			lb_policy least_conn
 			health_uri /actuator/health
 			health_interval 10s
@@ -40,6 +47,7 @@
 
 	handle {
 		reverse_proxy web:3000 {
+			header_up X-Forwarded-For {client_ip}
 			lb_policy least_conn
 		}
 	}

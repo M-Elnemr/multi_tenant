@@ -130,9 +130,11 @@ services:
       ROOT_DOMAIN: ${PLATFORM_ROOT_DOMAIN:?set PLATFORM_ROOT_DOMAIN in .env}
       CF_API_TOKEN: ${CF_API_TOKEN:?set CF_API_TOKEN in .env (Cloudflare token with Zone:DNS:Edit)}
       S3_PUBLIC_BUCKET: ${S3_PUBLIC_BUCKET:-public-media}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-private_ranges}
+    # Defaults suit a dedicated server. On a server whose ports 80/443 are taken, see docs/DEPLOY.md (EDGE_HTTP_PORT / EDGE_HTTPS_PORT).
     ports:
-      - "80:80"
-      - "443:443"
+      - "${EDGE_HTTP_BIND:-0.0.0.0}:${EDGE_HTTP_PORT:-80}:80"
+      - "${EDGE_HTTPS_BIND:-0.0.0.0}:${EDGE_HTTPS_PORT:-443}:443"
     volumes:
       - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

@@ -1,0 +1,20 @@
+# Optional overlay for a server that already runs other things (own nginx on 80/443, other containers):
+#   docker compose -p multitenant -f docker-compose.yml -f docker-compose.shared-host.yml up -d
+# It only adds memory ceilings and a smaller database profile. Port choices live in .env (EDGE_* variables), see docs/DEPLOY.md.
+# Everything here belongs to the "multitenant" compose project: `docker compose -p multitenant down` removes only this stack.
+services:
+  db:
+    command: ["postgres", "-c", "shared_buffers=256MB", "-c", "effective_cache_size=768MB", "-c", "max_connections=100", "-c", "work_mem=4MB", "-c", "random_page_cost=1.1"]
+    mem_limit: 768m
+  backend:
+    environment:
+      JAVA_TOOL_OPTIONS: ${BACKEND_JAVA_OPTS:--Xmx768m}
+    mem_limit: 1100m
+  web:
+    mem_limit: 384m
+  redis:
+    mem_limit: 160m
+  minio:
+    mem_limit: 384m
+  caddy:
+    mem_limit: 192m
