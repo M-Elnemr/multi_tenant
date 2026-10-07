@@ -150,7 +150,7 @@ class Async<T> extends StatefulWidget {
 class _AsyncState<T> extends State<Async<T>> {
   late Future<T> _f = widget.load();
   Future<void> _reload() async {
-    setState(() => _f = widget.load());
+    setState(() { _f = widget.load(); });
     await _f.catchError((_) => null as T);
   }
 

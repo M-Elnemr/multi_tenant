@@ -143,7 +143,16 @@ class AppointmentsPage extends StatelessWidget {
       builder: (context, d, reload) {
         final items = ((d['appointments'] as Map)['data'] as List).cast<Map<String, dynamic>>();
         final queue = (d['queue'] as List).cast<Map<String, dynamic>>();
-        return RefreshIndicator(
+        return Scaffold(
+          floatingActionButton: FloatingActionButton.extended(
+            icon: const Icon(Icons.add),
+            label: Text(s.ar ? 'حجز موعد' : 'Book'),
+            onPressed: () async {
+              final booked = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => BookScreen(api: api)));
+              if (booked == true) await reload();
+            },
+          ),
+          body: RefreshIndicator(
           onRefresh: reload,
           child: ListView(children: [
             for (final q in queue)
@@ -185,8 +194,138 @@ class AppointmentsPage extends StatelessWidget {
                     : null,
               ),
           ]),
+        ),
         );
       },
+    );
+  }
+}
+
+/// Book with this clinic. Only free slots are listed and the server re-checks on confirm; payment is cash at the clinic.
+class BookScreen extends StatefulWidget {
+  const BookScreen({super.key, required this.api});
+  final ApiClient api;
+  @override
+  State<BookScreen> createState() => _BookScreenState();
+}
+
+class _BookScreenState extends State<BookScreen> {
+  Map<String, dynamic>? profile;
+  String? patientId, serviceId, doctorId, branchId, slot, error;
+  late DateTime day;
+  List<String> slots = [];
+  bool loadingSlots = false, saving = false;
+  final note = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    final n = DateTime.now().add(const Duration(days: 1));
+    day = DateTime(n.year, n.month, n.day);
+    _init();
+  }
+
+  Future<void> _init() async {
+    try {
+      final p = await widget.api.get('clinic/public/profile') as Map<String, dynamic>;
+      final pts = (await widget.api.get('portal/patients') as List).cast<Map<String, dynamic>>();
+      String? first(String k) => (p[k] as List).isEmpty ? null : (p[k] as List).first['id'] as String;
+      if (!mounted) return;
+      setState(() {
+        profile = p;
+        patientId = pts.isEmpty ? null : pts.first['id'] as String;
+        serviceId = first('services');
+        doctorId = first('doctors');
+        branchId = first('branches');
+      });
+      await _loadSlots();
+    } catch (e) {
+      if (mounted) setState(() => error = errorText(e));
+    }
+  }
+
+  Future<void> _loadSlots() async {
+    if (serviceId == null || doctorId == null || branchId == null) return;
+    setState(() { loadingSlots = true; slot = null; });
+    try {
+      final d = '${day.year.toString().padLeft(4, '0')}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+      final r = await widget.api.get('clinic/public/slots', query: {'doctorId': doctorId!, 'branchId': branchId!, 'serviceId': serviceId!, 'date': d}) as List;
+      if (mounted) setState(() { slots = r.cast<String>(); error = null; });
+    } catch (e) {
+      if (mounted) setState(() { slots = []; error = errorText(e); });
+    } finally {
+      if (mounted) setState(() => loadingSlots = false);
+    }
+  }
+
+  Future<void> _book() async {
+    setState(() { saving = true; error = null; });
+    try {
+      await widget.api.post('portal/appointments', {
+        'patientId': patientId, 'doctorId': doctorId, 'branchId': branchId, 'serviceId': serviceId, 'startAt': slot,
+        'paymentMethod': 'CASH_AT_CLINIC', if (note.text.trim().isNotEmpty) 'patientNote': note.text.trim(),
+      });
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (e) {
+      if (mounted) setState(() { error = errorText(e); });
+      await _loadSlots();   // the slot may have just been taken
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  Widget _drop(String label, String? value, List items, String Function(Map<String, dynamic>) text, void Function(String?) onChanged) => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: DropdownButtonFormField<String>(
+          initialValue: value,
+          decoration: InputDecoration(labelText: label),
+          items: [for (final i in items.cast<Map<String, dynamic>>()) DropdownMenuItem(value: i['id'] as String, child: Text(text(i)))],
+          onChanged: onChanged,
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    final p = profile;
+    final title = s.ar ? 'حجز موعد' : 'Book an appointment';
+    if (p == null) return Scaffold(appBar: AppBar(title: Text(title)), body: Center(child: error == null ? const CircularProgressIndicator() : Text(error!)));
+    if (p['bookingEnabled'] == false || p['cashEnabled'] == false) return Scaffold(appBar: AppBar(title: Text(title)), body: Center(child: Text(s.ar ? 'الحجز غير متاح حاليًا' : 'Booking is not available right now')));
+    final days = [for (var i = 0; i < 14; i++) DateTime.now().add(Duration(days: i + 1))];
+    return Scaffold(
+      appBar: AppBar(title: Text(title)),
+      body: ListView(padding: const EdgeInsets.all(16), children: [
+        _drop(s.ar ? 'الخدمة' : 'Service', serviceId, p['services'] as List, (i) => '${i['name']}', (v) { setState(() => serviceId = v); _loadSlots(); }),
+        _drop(s.ar ? 'الطبيب' : 'Doctor', doctorId, p['doctors'] as List, (i) => '${i['displayName']}', (v) { setState(() => doctorId = v); _loadSlots(); }),
+        if ((p['branches'] as List).length > 1) _drop(s.ar ? 'الفرع' : 'Branch', branchId, p['branches'] as List, (i) => '${i['name']}', (v) { setState(() => branchId = v); _loadSlots(); }),
+        SizedBox(
+          height: 56,
+          child: ListView(scrollDirection: Axis.horizontal, children: [
+            for (final d in days)
+              Padding(
+                padding: const EdgeInsetsDirectional.only(end: 8),
+                child: ChoiceChip(
+                  label: Text(DateFormat.MMMEd().format(d)),
+                  selected: d.year == day.year && d.month == day.month && d.day == day.day,
+                  onSelected: (_) { setState(() => day = DateTime(d.year, d.month, d.day)); _loadSlots(); },
+                ),
+              ),
+          ]),
+        ),
+        const SizedBox(height: 8),
+        if (loadingSlots) const Center(child: CircularProgressIndicator())
+        else if (slots.isEmpty) Padding(padding: const EdgeInsets.all(16), child: Center(child: Text(s.ar ? 'لا توجد مواعيد متاحة في هذا اليوم' : 'No free times on this day')))
+        else Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final t in slots) ChoiceChip(label: Text(DateFormat.jm().format(DateTime.parse(t).toLocal())), selected: slot == t, onSelected: (_) => setState(() => slot = t)),
+        ]),
+        const SizedBox(height: 12),
+        TextField(controller: note, decoration: InputDecoration(labelText: s.ar ? 'ملاحظة (اختياري)' : 'Note (optional)')),
+        const SizedBox(height: 8),
+        Text(s.ar ? 'الدفع نقدًا في العيادة' : 'Pay cash at the clinic', style: Theme.of(context).textTheme.bodySmall),
+        if (error != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error))),
+        const SizedBox(height: 12),
+        FilledButton(onPressed: slot == null || patientId == null || saving ? null : _book, child: Text(s.ar ? 'تأكيد الحجز' : 'Confirm booking')),
+      ]),
     );
   }
 }
