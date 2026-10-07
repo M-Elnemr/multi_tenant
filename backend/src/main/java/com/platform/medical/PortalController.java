@@ -20,8 +20,12 @@ public class PortalController {
     private final PatientService patients;
     private final AppointmentService appointments;
     private final ClinicalService clinical;
+    private final PatientExportService exports;
+    private final PrescriptionPdfService pdfs;
 
-    public PortalController(PatientService patients, AppointmentService appointments, ClinicalService clinical) {
+    public PortalController(PatientService patients, AppointmentService appointments, ClinicalService clinical, PatientExportService exports, PrescriptionPdfService pdfs) {
+        this.exports = exports;
+        this.pdfs = pdfs;
         this.patients = patients;
         this.appointments = appointments;
         this.clinical = clinical;
@@ -70,6 +74,22 @@ public class PortalController {
     /** Everything the patient is allowed to see, newest first: visits, shared notes, issued prescriptions, labs, shared documents. */
     @GetMapping("/patients/{patientId}/timeline")
     public Map<String, Object> timeline(@PathVariable UUID patientId, Authentication a) { return clinical.patientTimeline(ClinicContext.tenantId(), user(a), patientId); }
+
+    /** Download my record (what the portal shows me) as a ZIP. */
+    @GetMapping("/patients/{patientId}/export")
+    public org.springframework.http.ResponseEntity<byte[]> export(@PathVariable UUID patientId, Authentication a) {
+        patients.requireAccessible(ClinicContext.tenantId(), user(a), patientId);
+        return ClinicController.attachment(exports.export(ClinicContext.tenantId(), user(a), patientId, true), "application/zip", "my-medical-record.zip");
+    }
+
+    /** Only my own issued prescriptions. */
+    @GetMapping("/prescriptions/{id}/pdf")
+    public org.springframework.http.ResponseEntity<byte[]> prescriptionPdf(@PathVariable UUID id, Authentication a) {
+        UUID t = ClinicContext.tenantId();
+        UUID patient = patients.prescriptionPatient(t, id);
+        patients.requireAccessible(t, user(a), patient);
+        return ClinicController.attachment(pdfs.render(t, id, true), "application/pdf", "prescription.pdf");
+    }
 
     @PostMapping("/lab-orders/{id}/results")
     @ResponseStatus(HttpStatus.CREATED)

@@ -51,6 +51,7 @@ export default function PatientPage({ params }: { params: Promise<{ id: string }
           {can("patient.update") && d.phone && <Button variant="secondary" loading={reissue.loading} onClick={() => reissue.run()}>{t("patients.newPin")}</Button>}
           {can("appointment.manage") && <Button variant="secondary" loading={walkIn.loading} onClick={() => walkIn.run()}>{t("queue.walkIn")}</Button>}
           {can("patient.update") && d.hasPortal && <Button variant="secondary" onClick={() => { setPwDone(false); setNewPw(""); setPwOpen(true); }}>{t("patients.setPassword")}</Button>}
+          {can("patient.export") && clinical && <a className="inline-flex h-10 items-center rounded-lg border px-3 text-sm hover:bg-slate-50" href={`/api/bff/clinic/patients/${id}/export`}>{t("record.exportStaff")}</a>}
           {can("medical_note.create") && <Button loading={start.loading} onClick={() => start.run()}>{t("appt.startVisit")}</Button>}
         </>}
       />

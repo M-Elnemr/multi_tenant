@@ -49,10 +49,10 @@ export default function Record() {
       {tl.loading && !tl.data ? <Loading /> : tl.data && (
         <div className="space-y-6">
           <section>
-            <h2 className="mb-2 font-medium">{t("portal.prescriptions")}</h2>
+            <h2 className="mb-2 flex items-center justify-between font-medium">{t("portal.prescriptions")}{pid && <a className="text-sm font-normal text-brand-700 underline" href={`/api/bff/portal/patients/${pid}/export`}>{t("record.export")}</a>}</h2>
             {tl.data.prescriptions.length === 0 ? <Empty>{t("portal.none")}</Empty> : tl.data.prescriptions.map((p) => (
               <Card key={p.id} className="mb-3">
-                <p className="text-sm text-slate-500">{dateTime(p.issuedAt, locale, timezone)} · {p.doctorName}</p>
+                <p className="flex items-center justify-between text-sm text-slate-500"><span>{dateTime(p.issuedAt, locale, timezone)} · {p.doctorName}</span><a className="text-brand-700 underline" href={`/api/bff/portal/prescriptions/${p.id}/pdf`}>{t("rx.pdf")}</a></p>
                 <ul className="mt-2 space-y-1 text-sm">{p.items.map((i, k) => <li key={k}><b>{i.medicationName}</b> {i.strength} {i.dosage} {i.frequency} {i.duration && `· ${i.duration}`}{i.instructions && <span className="text-slate-500"> — {i.instructions}</span>}</li>)}</ul>
               </Card>
             ))}

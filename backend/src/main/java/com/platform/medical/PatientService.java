@@ -324,6 +324,12 @@ public class PatientService {
         if (!accessibleIds(tenantId, userId).contains(patientId)) throw BusinessException.notFound("RESOURCE_NOT_FOUND", "Patient not found");
     }
 
+    /** Owner patient of a prescription of this clinic, or 404 (so ids of other clinics' prescriptions reveal nothing). */
+    public UUID prescriptionPatient(UUID tenantId, UUID prescriptionId) {
+        return jdbc.sql("SELECT patient_id FROM medical.prescriptions WHERE id = :i AND tenant_id = :t").param("i", prescriptionId).param("t", tenantId).query(UUID.class).optional()
+                .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Prescription not found"));
+    }
+
     public List<Map<String, Object>> portalPatients(UUID tenantId, UUID userId) {
         return accessibleIds(tenantId, userId).stream().map(id -> summary(tenantId, id)).toList();
     }

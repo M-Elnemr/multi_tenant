@@ -298,4 +298,39 @@ class MedicalIntegrationTest extends IntegrationTestBase {
         jdbc.sql("UPDATE medical.appointments SET start_at = now() + interval '30 minutes', end_at = now() + interval '60 minutes' WHERE id = :i").param("i", UUID.fromString(read(near, "$.id"))).update();
         onHost(c.host(), mother[2], "POST", "/api/v1/portal/appointments/" + read(near, "$.id") + "/cancel", "{}").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CANCELLATION_WINDOW_PASSED"));
     }
+
+    @Test
+    void prescriptionPdfAndRecordExportRespectStatusOwnershipAndTenant() throws Exception {
+        Clinic c = clinic();
+        String[] p = patientWithPortal(c, "كريم");
+        LocalDate d = workday(3);
+        String slot = slots(c, d, false).get(0);
+        String appt = read(body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/appointments",
+                "{\"patientId\":\"%s\",\"doctorId\":\"%s\",\"branchId\":\"%s\",\"serviceId\":\"%s\",\"startAt\":\"%s\"}".formatted(p[0], c.doctorId(), c.branchId(), c.serviceId(), slot)).andExpect(status().isCreated())), "$.id");
+        onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/appointments/" + appt + "/check-in", "{}");
+        String enc = read(body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/encounters", "{\"patientId\":\"%s\",\"appointmentId\":\"%s\"}".formatted(p[0], appt)).andExpect(status().isCreated())), "$.id");
+        String draft = read(body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/encounters/" + enc + "/prescriptions", "{\"items\":[{\"medicationName\":\"باراسيتامول Paracetamol\",\"dosage\":\"500mg\",\"frequency\":\"كل 8 ساعات\"}],\"issue\":false}").andExpect(status().isCreated())), "$.id");
+        String issued = read(body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/encounters/" + enc + "/prescriptions", "{\"items\":[{\"medicationName\":\"باراسيتامول Paracetamol\",\"dosage\":\"500mg\",\"frequency\":\"كل 8 ساعات\"}],\"issue\":true}").andExpect(status().isCreated())), "$.id");
+
+        byte[] pdf = onHost(c.host(), c.owner(), "GET", "/api/v1/clinic/prescriptions/" + issued + "/pdf", null).andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
+        assertThat(new String(pdf, 0, 5, java.nio.charset.StandardCharsets.ISO_8859_1)).isEqualTo("%PDF-");
+        java.nio.file.Files.write(java.nio.file.Path.of(System.getProperty("java.io.tmpdir"), "rx-sample.pdf"), pdf);
+
+        // patient: own issued only, never a draft
+        onHost(c.host(), p[2], "GET", "/api/v1/portal/prescriptions/" + issued + "/pdf", null).andExpect(status().isOk());
+        onHost(c.host(), p[2], "GET", "/api/v1/portal/prescriptions/" + draft + "/pdf", null).andExpect(status().isNotFound());
+        // another clinic cannot see it by id
+        Clinic other = clinic();
+        onHost(other.host(), other.owner(), "GET", "/api/v1/clinic/prescriptions/" + issued + "/pdf", null).andExpect(status().isNotFound());
+
+        // export
+        byte[] zip = onHost(c.host(), p[2], "GET", "/api/v1/portal/patients/" + p[0] + "/export", null).andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
+        java.util.List<String> names = new java.util.ArrayList<>();
+        try (var in = new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(zip))) {
+            for (var e = in.getNextEntry(); e != null; e = in.getNextEntry()) names.add(e.getName());
+        }
+        assertThat(names).contains("record.json").anyMatch(n -> n.startsWith("prescriptions/") && n.endsWith(".pdf")).hasSize(2);   // draft excluded
+        assertThat(jdbc.sql("SELECT count(*) FROM audit.audit_logs WHERE action = 'PATIENT_EXPORTED' AND tenant_id = (SELECT id FROM core.tenants WHERE slug = :t)").param("t", c.t().slug()).query(Long.class).single()).isEqualTo(1);
+        onHost(c.host(), c.owner(), "GET", "/api/v1/clinic/patients/" + p[0] + "/export", null).andExpect(status().isOk());
+    }
 }

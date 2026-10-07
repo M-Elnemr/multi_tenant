@@ -149,7 +149,8 @@ function ConsultationForm({ id, e, reload }: { id: string; e: Encounter; reload:
                   <div key={p.id} className="rounded-lg border p-3 text-sm">
                     <div className="mb-1 flex items-center justify-between">
                       <StatusBadge status={p.status} />
-                      <div className="flex gap-1">
+                      <div className="flex items-center gap-1">
+                        <a className="px-2 text-brand-700 underline" href={`/api/bff/clinic/prescriptions/${p.id}/pdf`}>{t("rx.pdf")}</a>
                         {p.status === "DRAFT" && <Button size="sm" onClick={() => issue.run(p.id)}>{t("consult.issue")}</Button>}
                         {p.status !== "CANCELLED" && can("prescription.delete") && <Button size="sm" variant="ghost" onClick={() => cancelRx.run(p.id)}>{t("orders.cancel")}</Button>}
                       </div>

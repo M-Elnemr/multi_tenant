@@ -200,6 +200,19 @@ public class FileService {
         }
     }
 
+    public record Raw(String filename, byte[] data) {}
+
+    /** For record exports: the caller has already decided this file may be included; only tenant + READY are checked here. Empty if the object is gone. */
+    public java.util.Optional<Raw> readForExport(UUID tenantId, UUID fileId) {
+        var f = jdbc.sql("SELECT object_key, original_filename, bucket, status FROM core.files WHERE id = :i AND tenant_id = :t").param("i", fileId).param("t", tenantId).query().listOfRows().stream().findFirst();
+        if (f.isEmpty() || !"READY".equals(f.get().get("status"))) return java.util.Optional.empty();
+        try {
+            return java.util.Optional.of(new Raw((String) f.get().get("original_filename"), storage.get(Bucket.valueOf((String) f.get().get("bucket")), (String) f.get().get("object_key"))));
+        } catch (IOException e) {
+            return java.util.Optional.empty();
+        }
+    }
+
     /** Deletes a file and frees its quota. Refused while anything still points at it (product image, logo, lab result, document). */
     @Transactional
     public void delete(UUID tenantId, UUID userId, Set<String> authorities, UUID fileId) {

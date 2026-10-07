@@ -19,8 +19,13 @@ public class ClinicController {
     private final AppointmentService appointments;
     private final ClinicalService clinical;
     private final SlotService slots;
+    private final PatientExportService exports;
+    private final PrescriptionPdfService pdfs;
 
-    public ClinicController(ClinicSettingsService settings, PatientService patients, AppointmentService appointments, ClinicalService clinical, SlotService slots) {
+    public ClinicController(ClinicSettingsService settings, PatientService patients, AppointmentService appointments, ClinicalService clinical, SlotService slots,
+                            PatientExportService exports, PrescriptionPdfService pdfs) {
+        this.exports = exports;
+        this.pdfs = pdfs;
         this.settings = settings;
         this.patients = patients;
         this.appointments = appointments;
@@ -152,6 +157,26 @@ public class ClinicController {
     @GetMapping("/patients/{id}/timeline")
     @PreAuthorize("hasAuthority('patient.read') and (hasAuthority('medical_note.create') or hasAuthority('lab_order.create') or hasAuthority('prescription.create'))")
     public Map<String, Object> timeline(@PathVariable UUID id, Authentication a) { return clinical.staffTimeline(ClinicContext.tenantId(), user(a), id); }
+
+    /** Full chart as a ZIP (record JSON, prescription PDFs, uploaded files). Audited and rate limited. */
+    @GetMapping("/patients/{id}/export")
+    @PreAuthorize("hasAuthority('patient.export')")
+    public org.springframework.http.ResponseEntity<byte[]> export(@PathVariable UUID id, Authentication a) {
+        byte[] zip = exports.export(ClinicContext.tenantId(), user(a), id, false);
+        return attachment(zip, "application/zip", "patient-record.zip");
+    }
+
+    @GetMapping("/prescriptions/{id}/pdf")
+    @PreAuthorize("hasAuthority('prescription.create') or (hasAuthority('patient.read') and hasAuthority('medical_note.create'))")
+    public org.springframework.http.ResponseEntity<byte[]> prescriptionPdf(@PathVariable UUID id, Authentication a) {
+        return attachment(pdfs.render(ClinicContext.tenantId(), id, false), "application/pdf", "prescription.pdf");
+    }
+
+    static org.springframework.http.ResponseEntity<byte[]> attachment(byte[] data, String type, String filename) {
+        return org.springframework.http.ResponseEntity.ok().contentType(org.springframework.http.MediaType.parseMediaType(type))
+                .header("Content-Disposition", "attachment; filename=\"" + filename + "\"").header("X-Content-Type-Options", "nosniff")
+                .cacheControl(org.springframework.http.CacheControl.noStore().cachePrivate()).body(data);
+    }
 
     @PostMapping("/patients/{id}/documents")
     @PreAuthorize("hasAuthority('patient.update')")

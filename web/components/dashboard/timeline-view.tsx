@@ -41,7 +41,7 @@ export function TimelineView({ tl }: { tl: StaffTimeline }) {
         <h3 className="mb-2 font-medium">{t("portal.prescriptions")}</h3>
         {tl.prescriptions.length === 0 ? <Empty>{t("portal.none")}</Empty> : tl.prescriptions.map((p) => (
           <Card key={p.id} className="mb-3 text-sm">
-            <p className="mb-1 flex items-center gap-2"><StatusBadge status={p.status} /><span className="text-slate-500">{dt(p.issuedAt)} · {p.doctorName}</span></p>
+            <p className="mb-1 flex items-center gap-2"><StatusBadge status={p.status} /><span className="text-slate-500">{dt(p.issuedAt)} · {p.doctorName}</span><a className="ms-auto text-brand-700 underline" href={`/api/bff/clinic/prescriptions/${p.id}/pdf`}>{t("rx.pdf")}</a></p>
             <ul>{p.items.map((i, k) => <li key={k}><b>{i.medicationName}</b> {i.strength} {i.dosage} {i.frequency} {i.duration}</li>)}</ul>
           </Card>
         ))}
