@@ -41,8 +41,8 @@ cd mobile/packages/platform_core && flutter test; cd ../../apps/customer && flut
 ```
 
 ## Deploy (one VPS)
-1. DNS: `A <root>`, `A *.<root>` and `A edge.<root>` -> the server.
-2. `cp .env.example .env` and fill it in (never commit it). `docker compose up -d`.
+1. DNS (Cloudflare): `A <root>`, `A *.<root>` and `A edge.<root>` -> the server; create an API token (Zone:DNS:Edit) for `CF_API_TOKEN`.
+2. `cp .env.example .env` and fill it in (never commit it). `docker compose up -d` (Postgres, Redis, MinIO + bucket setup, backend, web, Caddy with a wildcard certificate). Scripts: `infra/scripts/backup.sh`, `restore-test.sh`.
 3. Caddy issues certificates on demand, only for hosts the backend confirms (`/internal/domains/allowed`): new tenants and verified custom domains need no proxy change.
 4. First platform owner: set `PLATFORM_ADMIN_PHONE` / `PLATFORM_ADMIN_PASSWORD` once.
 Backups: daily `pg_dump` + the `app_uploads` volume, off-site and encrypted; test restores monthly (spec 65).
@@ -51,6 +51,9 @@ Backups: daily `pg_dump` + the `app_uploads` volume, off-site and encrypted; tes
 Tenant comes only from the Host header, never from client input. Every query is tenant-scoped and tested for cross-tenant access. Permission-based RBAC.
 Medical files are private; patients see only data marked shared; every patient-record access is audited. Money in integer minor units.
 Webhooks are signature-verified and idempotent. Rate limits, security headers, Argon2id, rotating refresh tokens.
+
+## Scale
+Built and measured for 1000 stores/clinics on one database: see `docs/SCALE.md` (numbers, sizing, how to reproduce).
 
 ## Not included yet / known limits
 See `docs/LIMITS.md`.

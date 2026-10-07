@@ -1,32 +1,25 @@
 package com.platform.core.auth;
 
 import com.platform.shared.BusinessException;
+import com.platform.shared.RateLimitStore;
 import java.time.Duration;
-import java.time.Instant;
-import java.util.ArrayDeque;
-import java.util.Deque;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
-/** Sliding-window brute-force guard (spec 44). In-memory for one VPS; swap for Redis when scaling out. */
+/** Brute-force guard (spec 44), backed by the shared rate-limit store so it holds across backend instances. */
 @Component
 public class LoginThrottle {
-    private final Map<String, Deque<Instant>> hits = new ConcurrentHashMap<>();
+    private final RateLimitStore store;
+
+    public LoginThrottle(RateLimitStore store) { this.store = store; }
 
     public void check(String key, int max, Duration window) {
-        Instant now = Instant.now();
-        Deque<Instant> q = hits.computeIfAbsent(key, k -> new ArrayDeque<>());
-        synchronized (q) {
-            while (!q.isEmpty() && q.peekFirst().isBefore(now.minus(window))) q.pollFirst();
-            if (q.size() >= max) throw new BusinessException(HttpStatus.TOO_MANY_REQUESTS, "TOO_MANY_ATTEMPTS", "Too many attempts, try again later");
-            q.addLast(now);
-        }
+        if (!store.tryAcquire("throttle:" + key, max, window))
+            throw new BusinessException(HttpStatus.TOO_MANY_REQUESTS, "TOO_MANY_ATTEMPTS", "Too many attempts, try again later");
     }
 
-    public void reset(String key) { hits.remove(key); }
+    public void reset(String key) { store.reset("throttle:" + key); }
 
     /** Test hook. */
-    public void clearAll() { hits.clear(); }
+    public void clearAll() { store.clearAll(); }
 }

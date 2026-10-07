@@ -1,7 +1,7 @@
 package com.platform.core.auth;
 
 import com.platform.shared.ClientInfo;
-import com.platform.shared.RateLimiter;
+import com.platform.shared.RateLimitStore;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -14,11 +14,12 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class RateLimitFilter extends OncePerRequestFilter {
     private static final Duration MINUTE = Duration.ofMinutes(1);
 
-    private final RateLimiter limiter = new RateLimiter();
+    private final RateLimitStore limiter;
     private final JwtService jwt;
     private final boolean enabled;
 
-    public RateLimitFilter(JwtService jwt, boolean enabled) {
+    public RateLimitFilter(JwtService jwt, RateLimitStore limiter, boolean enabled) {
+        this.limiter = limiter;
         this.jwt = jwt;
         this.enabled = enabled;
     }

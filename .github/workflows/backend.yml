@@ -42,11 +42,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install an S3-compatible test server (moto) for the storage tests
+      - name: Install test servers (S3-compatible moto, fakeredis) for the storage and Redis tests
         run: |
           python -m venv /tmp/moto
-          /tmp/moto/bin/pip install -q "moto[server]"
+          /tmp/moto/bin/pip install -q "moto[server]" fakeredis
           echo "MOTO_SERVER_BIN=/tmp/moto/bin/moto_server" >> "$GITHUB_ENV"
+          echo "REDIS_SERVER_PYTHON=/tmp/moto/bin/python" >> "$GITHUB_ENV"
       - name: Run tests
         working-directory: backend
         run: ./gradlew test --no-daemon

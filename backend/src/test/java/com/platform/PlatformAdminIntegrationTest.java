@@ -6,7 +6,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
-import com.platform.shared.RateLimiter;
+import com.platform.shared.InMemoryRateLimitStore;
 import java.time.Duration;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -60,7 +60,7 @@ class PlatformAdminIntegrationTest extends IntegrationTestBase {
 
     @Test
     void rateLimiterAllowsUpToTheLimitThenBlocksPerKey() {
-        RateLimiter l = new RateLimiter();
+        com.platform.shared.RateLimitStore l = new InMemoryRateLimitStore();
         for (int i = 0; i < 3; i++) assertThat(l.tryAcquire("a", 3, Duration.ofMinutes(1))).isTrue();
         assertThat(l.tryAcquire("a", 3, Duration.ofMinutes(1))).isFalse();
         assertThat(l.tryAcquire("b", 3, Duration.ofMinutes(1))).isTrue();   // other keys unaffected

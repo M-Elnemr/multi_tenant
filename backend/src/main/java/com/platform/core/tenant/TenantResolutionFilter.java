@@ -17,13 +17,11 @@ import org.springframework.web.filter.OncePerRequestFilter;
  */
 @Component
 public class TenantResolutionFilter extends OncePerRequestFilter {
-    private final TenantDomainRepository domains;
-    private final TenantRepository tenants;
+    private final TenantDirectory directory;
     private final PlatformProperties props;
 
-    public TenantResolutionFilter(TenantDomainRepository domains, TenantRepository tenants, PlatformProperties props) {
-        this.domains = domains;
-        this.tenants = tenants;
+    public TenantResolutionFilter(TenantDirectory directory, PlatformProperties props) {
+        this.directory = directory;
         this.props = props;
     }
 
@@ -33,9 +31,7 @@ public class TenantResolutionFilter extends OncePerRequestFilter {
         try {
             String host = requestHost(req);
             if (host != null && !props.isPlatformHost(host)) {
-                domains.findByHost(host).filter(TenantDomain::isVerified).flatMap(d -> tenants.findById(d.getTenantId()))
-                        .ifPresent(t -> TenantContext.set(new TenantContext.Current(
-                                t.getId(), t.getSlug(), t.getTenantType().name(), t.getStatus().name(), host)));
+                directory.resolve(host).ifPresent(TenantContext::set);
                 TenantContext.Current c = TenantContext.get();
                 if (c != null && "SUSPENDED".equals(c.status()) && !"GET".equals(req.getMethod())) {
                     res.setStatus(403);

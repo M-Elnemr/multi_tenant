@@ -27,11 +27,13 @@ public class DomainService {
     private final DnsVerifier dns;
     private final AuditService audit;
     private final com.platform.billing.EntitlementService entitlements;
+    private final TenantDirectory directory;
 
     public DomainService(TenantDomainRepository domains, TenantRepository tenants, PlatformProperties props,
                          DnsVerifier dns, AuditService audit,
-                         com.platform.billing.EntitlementService entitlements) {
+                         com.platform.billing.EntitlementService entitlements, TenantDirectory directory) {
         this.entitlements = entitlements;
+        this.directory = directory;
         this.domains = domains;
         this.tenants = tenants;
         this.props = props;
@@ -78,6 +80,7 @@ public class DomainService {
         d.setVerificationToken(HexFormat.of().formatHex(randomBytes(20)));
         d.setSslStatus("PENDING");
         d = domains.save(d);
+        directory.invalidateAll();
         audit.record(actor, tenantId, "DOMAIN_ADDED", "tenant_domain", d.getId(), "{\"host\":\"" + host + "\"}");
         return d;
     }
@@ -107,6 +110,7 @@ public class DomainService {
             d.setVerifiedAt(Instant.now());
             d.setSslStatus("ISSUING"); // Caddy on-demand TLS issues the cert on first request
             domains.save(d);
+            directory.invalidateAll();
             audit.record(null, d.getTenantId(), "DOMAIN_VERIFIED", "tenant_domain", d.getId(), "{\"host\":\"" + d.getHost() + "\"}");
         }
     }
@@ -123,6 +127,7 @@ public class DomainService {
             }
         }
         target.setPrimary(true);
+        directory.invalidateAll();
         return domains.save(target);
     }
 
@@ -133,6 +138,7 @@ public class DomainService {
         if (d.isPrimary()) throw BusinessException.badRequest("DOMAIN_IS_PRIMARY", "Make another domain primary first");
         if (d.getKind() == TenantDomain.Kind.SUBDOMAIN) throw BusinessException.badRequest("DOMAIN_REQUIRED", "The platform subdomain cannot be removed");
         domains.delete(d);
+        directory.invalidateAll();
         audit.record(actor, tenantId, "DOMAIN_REMOVED", "tenant_domain", d.getId(), "{\"host\":\"" + d.getHost() + "\"}");
     }
 

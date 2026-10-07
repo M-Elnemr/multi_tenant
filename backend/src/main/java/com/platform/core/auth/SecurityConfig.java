@@ -41,7 +41,8 @@ public class SecurityConfig {
     @Bean
     SecurityFilterChain chain(HttpSecurity http, TenantResolutionFilter tenantFilter, JwtService jwt,
                               MembershipRepository memberships, RbacService rbac,
-                              @Value("${app.ratelimit.enabled:true}") boolean rateLimitEnabled) throws Exception {
+                              @Value("${app.ratelimit.enabled:true}") boolean rateLimitEnabled,
+                              com.platform.shared.RateLimitStore rateLimitStore) throws Exception {
         http.csrf(c -> c.disable())
             .cors(Customizer -> {})
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -49,7 +50,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/auth/me").authenticated()
                 .requestMatchers("/api/v1/auth/**", "/api/v1/onboarding/**", "/api/v1/tenant/context",
                         "/api/v1/tenant/public", "/api/v1/tenant/resolve", "/internal/domains/allowed", "/api/v1/billing/plans", "/api/v1/billing/webhooks/**",
-                        "/actuator/health/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        "/actuator/health/**", "/actuator/prometheus", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/shop/profile", "/api/v1/shop/categories", "/api/v1/shop/products", "/api/v1/shop/products/*").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/shop/customers/register", "/api/v1/shop/webhooks/*").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/clinic/public/**", "/api/v1/files/*/content").permitAll()
@@ -73,9 +74,10 @@ public class SecurityConfig {
                 .referrerPolicy(r -> r.policy(org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER))
                 .httpStrictTransportSecurity(hs -> hs.includeSubDomains(true).maxAgeInSeconds(31536000))
                 .permissionsPolicyHeader(p -> p.policy("camera=(), microphone=(), geolocation=()")))
-            .addFilterBefore(new RateLimitFilter(jwt, rateLimitEnabled), UsernamePasswordAuthenticationFilter.class)
+            .addFilterBefore(new RateLimitFilter(jwt, rateLimitStore, rateLimitEnabled), UsernamePasswordAuthenticationFilter.class)
             .addFilterAfter(tenantFilter, RateLimitFilter.class)
-            .addFilterAfter(new JwtAuthFilter(jwt, memberships, rbac), TenantResolutionFilter.class);
+            .addFilterAfter(new JwtAuthFilter(jwt, memberships, rbac), TenantResolutionFilter.class)
+            .addFilterAfter(new RequestContextFilter(), JwtAuthFilter.class);
         return http.build();
     }
 

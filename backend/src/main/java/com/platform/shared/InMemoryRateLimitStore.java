@@ -2,14 +2,17 @@ package com.platform.shared;
 
 import java.time.Duration;
 import java.util.concurrent.ConcurrentHashMap;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Component;
 
-/** Fixed-window request counter per key (spec 44). In-memory for a single node; the same interface can sit on Redis later. */
-public class RateLimiter {
+@Component
+@ConditionalOnProperty(name = "app.redis.enabled", havingValue = "false", matchIfMissing = true)
+public class InMemoryRateLimitStore implements RateLimitStore {
     private record Window(long start, int count) {}
 
     private final ConcurrentHashMap<String, Window> windows = new ConcurrentHashMap<>();
 
-    /** True if the call is allowed. */
+    @Override
     public boolean tryAcquire(String key, int max, Duration window) {
         long now = System.currentTimeMillis();
         long len = window.toMillis();
@@ -22,4 +25,10 @@ public class RateLimiter {
         });
         return ok[0];
     }
+
+    @Override
+    public void reset(String key) { windows.remove(key); }
+
+    @Override
+    public void clearAll() { windows.clear(); }
 }

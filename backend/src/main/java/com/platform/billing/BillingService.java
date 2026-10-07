@@ -26,10 +26,12 @@ public class BillingService {
     private final AuditService audit;
     private final int graceDays;
     private final org.springframework.context.ApplicationEventPublisher events;
+    private final com.platform.core.tenant.TenantDirectory directory;
 
     public BillingService(JdbcClient jdbc, PlatformProperties props, List<PaymentProvider> providers, AuditService audit,
-                          @Value("${app.billing.grace-days:7}") int graceDays, org.springframework.context.ApplicationEventPublisher events) {
+                          @Value("${app.billing.grace-days:7}") int graceDays, org.springframework.context.ApplicationEventPublisher events, com.platform.core.tenant.TenantDirectory directory) {
         this.events = events;
+        this.directory = directory;
         this.jdbc = jdbc;
         this.props = props;
         this.providers = providers;
@@ -184,6 +186,7 @@ public class BillingService {
                 """).param("p", inv.get("target_plan_id")).param("t", tenantId).update();
         jdbc.sql("UPDATE core.tenants SET status = 'ACTIVE', updated_at = now() WHERE id = :t AND status IN ('TRIAL','PAST_DUE','SUSPENDED')")
                 .param("t", tenantId).update();
+        directory.invalidateAll();
         event(tenantId, "PAYMENT_APPLIED", "{\"invoiceId\":\"" + invoiceId + "\"}");
     }
 
@@ -202,6 +205,7 @@ public class BillingService {
                     """).param("t", t).update();
             jdbc.sql("UPDATE core.tenants SET status = CASE WHEN (SELECT status FROM billing.tenant_subscriptions WHERE tenant_id = :t ORDER BY updated_at DESC LIMIT 1) = 'CANCELLED' THEN 'CANCELLED' ELSE 'PAST_DUE' END, updated_at = now() WHERE id = :t")
                     .param("t", t).update();
+            tenantStateChanged();
             event(t, "PERIOD_ENDED", null);
             events.publishEvent(new SubscriptionEvents.StateChanged(t, "PAST_DUE"));
         }
@@ -210,10 +214,13 @@ public class BillingService {
             UUID t = (UUID) row.get("tenant_id");
             jdbc.sql("UPDATE billing.tenant_subscriptions SET status = 'EXPIRED', updated_at = now() WHERE tenant_id = :t AND status = 'PAST_DUE'").param("t", t).update();
             jdbc.sql("UPDATE core.tenants SET status = 'SUSPENDED', updated_at = now() WHERE id = :t").param("t", t).update();
+            tenantStateChanged();
             event(t, "SUSPENDED_FOR_NONPAYMENT", null);
             events.publishEvent(new SubscriptionEvents.StateChanged(t, "SUSPENDED"));
         }
     }
+
+    private void tenantStateChanged() { directory.invalidateAll(); }
 
     private void event(UUID tenantId, String type, String details) {
         jdbc.sql("INSERT INTO billing.subscription_events (tenant_id, event_type, details) VALUES (:t, :e, CAST(:d AS jsonb))")

@@ -19,8 +19,10 @@ import org.springframework.transaction.annotation.Transactional;
 public class PlatformAdminService {
     private final JdbcClient jdbc;
     private final AuditService audit;
+    private final com.platform.core.tenant.TenantDirectory directory;
 
-    public PlatformAdminService(JdbcClient jdbc, AuditService audit) {
+    public PlatformAdminService(JdbcClient jdbc, AuditService audit, com.platform.core.tenant.TenantDirectory directory) {
+        this.directory = directory;
         this.jdbc = jdbc;
         this.audit = audit;
     }
@@ -73,6 +75,7 @@ public class PlatformAdminService {
     public Map<String, Object> setStatus(UUID actor, UUID id, String status, String reason) {
         if (!java.util.Set.of("ACTIVE", "SUSPENDED", "ARCHIVED").contains(status)) throw BusinessException.badRequest("VALIDATION_ERROR", "Status must be ACTIVE, SUSPENDED or ARCHIVED");
         if (jdbc.sql("UPDATE core.tenants SET status = :s, updated_at = now() WHERE id = :i").param("s", status).param("i", id).update() == 0) throw BusinessException.notFound("TENANT_NOT_FOUND", "Tenant not found");
+        directory.invalidateAll();
         audit.record(actor, id, "TENANT_STATUS_CHANGED", "tenant", id, "{\"status\":\"" + status + "\",\"reason\":" + jsonString(reason) + "}");
         return tenant(id);
     }

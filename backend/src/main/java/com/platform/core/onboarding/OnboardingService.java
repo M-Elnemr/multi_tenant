@@ -51,14 +51,16 @@ public class OnboardingService {
     private final TransactionTemplate tx;
     private final List<TenantProvisioner> provisioners;
     private final LoginThrottle throttle;
+    private final com.platform.core.tenant.TenantDirectory directory;
     private final org.springframework.context.ApplicationEventPublisher events;
 
     public OnboardingService(TenantRepository tenants, UserRepository users, MembershipRepository memberships,
                              RbacService rbac, DomainService domains, AuditService audit, PasswordEncoder encoder,
                              AuthService auth, PlatformProperties props, JdbcClient jdbc, TransactionTemplate tx,
                              List<TenantProvisioner> provisioners, LoginThrottle throttle,
-                             org.springframework.context.ApplicationEventPublisher events) {
+                             org.springframework.context.ApplicationEventPublisher events, com.platform.core.tenant.TenantDirectory directory) {
         this.events = events;
+        this.directory = directory;
         this.tenants = tenants;
         this.users = users;
         this.memberships = memberships;
@@ -95,6 +97,7 @@ public class OnboardingService {
         String email = c.email() == null || c.email().isBlank() ? null : c.email().trim().toLowerCase();
         try {
             Result r = tx.execute(status -> create(c, slug, phone, email, idempotencyKey));
+            directory.invalidateAll();   // the new host must resolve immediately, not after a cached "unknown" expires
             TokenResponse tokens = null;
             // Sign the owner in on the new tenant's own host context is the client's job; return platform-level tokens.
             tokens = auth.login(phone, c.password(), ip, userAgent);

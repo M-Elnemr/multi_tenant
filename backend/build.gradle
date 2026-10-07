@@ -56,4 +56,7 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+	// heavy 1000-tenant volume test only runs on request:  ./gradlew test -Pscale=true --tests '*ScaleVolumeTest'
+	systemProperty 'scale', findProperty('scale') ?: 'false'
+	testLogging { showStandardStreams = findProperty('scale') == 'true' }
 }
