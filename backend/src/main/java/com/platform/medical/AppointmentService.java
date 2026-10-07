@@ -138,10 +138,66 @@ public class AppointmentService {
             queue = jdbc.sql("SELECT coalesce(max(queue_number), 0) + 1 FROM medical.appointments WHERE tenant_id = :t AND doctor_id = :d AND start_at::date = (SELECT start_at::date FROM medical.appointments WHERE id = :i)")
                     .param("t", tenantId).param("d", a.get("doctor_id")).param("i", id).query(Integer.class).single();
         }
+        if ("CHECKED_IN".equals(to)) jdbc.sql("UPDATE medical.appointments SET checked_in_at = now() WHERE id = :i").param("i", id).update();
         jdbc.sql("UPDATE medical.appointments SET status = :s, cancel_reason = coalesce(:r, cancel_reason), queue_number = coalesce(:q, queue_number), hold_expires_at = NULL, updated_at = now() WHERE id = :i")
                 .param("s", to).param("r", "CANCELLED".equals(to) || "REJECTED".equals(to) ? reason : null).param("q", queue).param("i", id).update();
         audit.record(actor, tenantId, "APPOINTMENT_" + to, "appointment", id, null);
         events.publishEvent(new MedicalEvents.AppointmentChanged(tenantId, id, (UUID) a.get("patient_id"), to));
+    }
+
+    /** Calls the next waiting patient: they are notified (generic text) and the screen shows them as called. */
+    @Transactional
+    public Map<String, Object> call(UUID tenantId, UUID actor, UUID id) {
+        var a = lock(tenantId, id);
+        if (!"CHECKED_IN".equals(a.get("status"))) throw new BusinessException(HttpStatus.CONFLICT, "INVALID_STATUS_TRANSITION", "Only a waiting patient can be called");
+        jdbc.sql("UPDATE medical.appointments SET called_at = now(), updated_at = now() WHERE id = :i").param("i", id).update();
+        audit.record(actor, tenantId, "APPOINTMENT_CALLED", "appointment", id, null);
+        events.publishEvent(new MedicalEvents.AppointmentChanged(tenantId, id, (UUID) a.get("patient_id"), "CALLED"));
+        return get(tenantId, id);
+    }
+
+    /** Walk-in: books the first free slot from now (staff rules) and checks the patient in so they join the queue right away. */
+    @Transactional
+    public Map<String, Object> walkIn(UUID tenantId, UUID actor, UUID patientId, UUID doctorId, UUID branchId, UUID serviceId) {
+        ZoneId tz = slots.zone(tenantId);
+        var today = slots.slots(tenantId, doctorId, branchId, serviceId, java.time.LocalDate.now(tz), false);
+        if (today.isEmpty()) throw BusinessException.conflict("NO_SLOT_TODAY", "No free time left today for this doctor");
+        Map<String, Object> booked = book(tenantId, actor, null, new BookReq(patientId, doctorId, branchId, serviceId, today.get(0), "CASH_AT_CLINIC", null, "RECEPTION"));
+        return transition(tenantId, actor, (UUID) booked.get("id"), "CHECKED_IN", null);
+    }
+
+    /** Today's queue for a doctor (or all doctors): who is being seen, and who waits in order. */
+    public Map<String, Object> queue(UUID tenantId, UUID doctorId) {
+        String tz = jdbc.sql("SELECT timezone FROM core.tenants WHERE id = :t").param("t", tenantId).query(String.class).single();
+        var rows = jdbc.sql("""
+                SELECT a.id, a.status, a.queue_number, a.checked_in_at, a.called_at, a.start_at, a.doctor_id, d.display_name AS doctor_name, s.name AS service_name,
+                       p.id AS patient_id, p.first_name || ' ' || p.last_name AS patient_name, p.patient_code,
+                       greatest(0, extract(epoch FROM (now() - a.checked_in_at)) / 60)::int AS waited_minutes
+                FROM medical.appointments a JOIN medical.patients p ON p.id = a.patient_id JOIN medical.doctors d ON d.id = a.doctor_id JOIN medical.appointment_services s ON s.id = a.service_id
+                WHERE a.tenant_id = :t AND a.status IN ('CHECKED_IN','IN_PROGRESS') AND (a.start_at AT TIME ZONE :tz)::date = (now() AT TIME ZONE :tz)::date
+                  AND (CAST(:d AS uuid) IS NULL OR a.doctor_id = CAST(:d AS uuid))
+                ORDER BY a.queue_number NULLS LAST, a.checked_in_at
+                """).param("t", tenantId).param("tz", tz).param("d", doctorId).query().listOfRows();
+        var all = Rows.camel(rows);
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("inProgress", all.stream().filter(x -> "IN_PROGRESS".equals(x.get("status"))).toList());
+        out.put("waiting", all.stream().filter(x -> "CHECKED_IN".equals(x.get("status"))).toList());
+        return out;
+    }
+
+    /** The patient's own place in line. Reveals only counts, never who the other patients are. */
+    public List<Map<String, Object>> myQueue(UUID tenantId, UUID userId) {
+        String tz = jdbc.sql("SELECT timezone FROM core.tenants WHERE id = :t").param("t", tenantId).query(String.class).single();
+        List<UUID> mine = patients.accessibleIds(tenantId, userId);
+        if (mine.isEmpty()) return List.of();
+        return Rows.camel(jdbc.sql("""
+                SELECT a.id AS appointment_id, a.queue_number, a.called_at IS NOT NULL AS called, d.display_name AS doctor_name, s.name AS service_name,
+                  (SELECT count(*) FROM medical.appointments b WHERE b.tenant_id = a.tenant_id AND b.doctor_id = a.doctor_id AND b.status = 'CHECKED_IN'
+                     AND (b.start_at AT TIME ZONE :tz)::date = (a.start_at AT TIME ZONE :tz)::date AND b.queue_number < a.queue_number) AS ahead_of_you,
+                  EXISTS (SELECT 1 FROM medical.appointments c WHERE c.tenant_id = a.tenant_id AND c.doctor_id = a.doctor_id AND c.status = 'IN_PROGRESS') AS doctor_busy
+                FROM medical.appointments a JOIN medical.doctors d ON d.id = a.doctor_id JOIN medical.appointment_services s ON s.id = a.service_id
+                WHERE a.tenant_id = :t AND a.patient_id IN (:ids) AND a.status = 'CHECKED_IN' AND (a.start_at AT TIME ZONE :tz)::date = (now() AT TIME ZONE :tz)::date
+                """).param("t", tenantId).param("tz", tz).param("ids", mine).query().listOfRows());
     }
 
     /** A patient (or their guardian) cancels their own appointment, within the clinic's cancellation window. */

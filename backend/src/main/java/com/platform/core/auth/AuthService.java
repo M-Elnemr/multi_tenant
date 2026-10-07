@@ -156,6 +156,20 @@ public class AuthService {
                 .param("h", sha256(refreshToken)).update();
     }
 
+    /** The user changes their own password. Every other session is revoked and fresh tokens are returned for this device. */
+    @Transactional(noRollbackFor = BusinessException.class)
+    public TokenResponse changePassword(UUID userId, String current, String newPassword, String ip, String userAgent) {
+        throttle.check("chgpw|" + userId, 5, Duration.ofMinutes(10));
+        validatePassword(newPassword);
+        User user = users.findById(userId).orElseThrow(() -> BusinessException.unauthorized("UNAUTHENTICATED", "Unknown user"));
+        if (user.getPasswordHash() == null || !encoder.matches(current == null ? "" : current, user.getPasswordHash()))
+            throw BusinessException.unauthorized("INVALID_CREDENTIALS", "Current password is wrong");
+        user.setPasswordHash(encoder.encode(newPassword));
+        users.save(user);
+        jdbc.sql("UPDATE core.user_sessions SET revoked_at = now() WHERE user_id = :u AND revoked_at IS NULL").param("u", userId).update();
+        return issueTokens(user, ip, userAgent);
+    }
+
     public TokenResponse.UserSummary me(UUID userId) {
         User u = users.findById(userId).orElseThrow(() -> BusinessException.unauthorized("UNAUTHENTICATED", "Unknown user"));
         return summary(u);

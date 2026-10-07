@@ -78,7 +78,11 @@ public class NotificationListeners {
     public void onAppointment(MedicalEvents.AppointmentChanged e) {
         safely("AppointmentChanged", () -> {
             boolean ar = ar(e.tenantId());
-            if (Set_NEEDS_STAFF.contains(e.status())) {
+            if ("CALLED".equals(e.status())) {
+                for (UUID u : patientUsers(e.tenantId(), e.patientId()))
+                    notifications.notify(u, e.tenantId(), "APPOINTMENT_CALLED", ar ? "حان دورك" : "It's your turn",
+                            ar ? "الطبيب جاهز لاستقبالك الآن." : "The doctor is ready to see you now.", json("appointmentId", e.appointmentId()), false);
+            } else if (Set_NEEDS_STAFF.contains(e.status())) {
                 for (UUID staff : staffWith(e.tenantId(), "appointment.manage"))
                     notifications.notify(staff, e.tenantId(), "BOOKING_REQUEST", ar ? "طلب حجز جديد" : "New booking request", ar ? "لديك طلب حجز جديد" : "You have a new booking request", json("appointmentId", e.appointmentId()), false);
             } else if (Set_PATIENT_VISIBLE.contains(e.status())) {
@@ -94,9 +98,11 @@ public class NotificationListeners {
     public void onPatientUpdate(MedicalEvents.PatientUpdate e) {
         safely("PatientUpdate", () -> {
             boolean ar = ar(e.tenantId());
+            boolean added = "CLINIC_ADDED".equals(e.kind());
             for (UUID u : patientUsers(e.tenantId(), e.patientId()))
-                notifications.notify(u, e.tenantId(), e.kind(), ar ? "تحديث جديد" : "New update",
-                        ar ? "لديك تحديث جديد في بوابة المريض." : "You have a new update in your patient portal.", null, true);
+                notifications.notify(u, e.tenantId(), e.kind(), added ? (ar ? "تمت إضافتك إلى عيادة" : "A clinic added you") : (ar ? "تحديث جديد" : "New update"),
+                        added ? (ar ? "أضافتك عيادة إلى قائمة مرضاها. افتح التطبيق لرؤيتها." : "A clinic added you to its patients. Open the app to see it.")
+                              : (ar ? "لديك تحديث جديد في بوابة المريض." : "You have a new update in your patient portal."), null, true);
         });
     }
 

@@ -35,6 +35,8 @@ public class ClinicController {
     public record StatusReq(String reason) {}
     public record UpdateNoteReq(String content, Boolean patientVisible) {}
     public record ReviewReq(boolean shareWithPatient) {}
+    public record SetPasswordReq(String password) {}
+    public record WalkInReq(UUID patientId, UUID doctorId, UUID branchId, UUID serviceId) {}
 
     private static UUID user(Authentication a) { return (UUID) a.getPrincipal(); }
 
@@ -140,6 +142,13 @@ public class ClinicController {
     @PreAuthorize("hasAuthority('patient.update')")
     public Map<String, Object> pin(@PathVariable UUID id, Authentication a) { return patients.reissuePin(ClinicContext.tenantId(), user(a), id); }
 
+    @PostMapping("/patients/{id}/set-password")
+    @PreAuthorize("hasAuthority('patient.update')")
+    public Map<String, Object> setPassword(@PathVariable UUID id, @RequestBody SetPasswordReq r, Authentication a) {
+        patients.setPassword(ClinicContext.tenantId(), user(a), id, r.password());
+        return Map.of("ok", true);
+    }
+
     @GetMapping("/patients/{id}/timeline")
     @PreAuthorize("hasAuthority('patient.read') and (hasAuthority('medical_note.create') or hasAuthority('lab_order.create') or hasAuthority('prescription.create'))")
     public Map<String, Object> timeline(@PathVariable UUID id, Authentication a) { return clinical.staffTimeline(ClinicContext.tenantId(), user(a), id); }
@@ -170,6 +179,15 @@ public class ClinicController {
     @ResponseStatus(HttpStatus.CREATED)
     public Map<String, Object> book(@RequestBody AppointmentService.BookReq r, Authentication a) { return appointments.book(ClinicContext.tenantId(), user(a), null, r); }
 
+    @GetMapping("/queue")
+    @PreAuthorize("hasAuthority('appointment.manage')")
+    public Map<String, Object> queue(@RequestParam(required = false) UUID doctorId) { return appointments.queue(ClinicContext.tenantId(), doctorId); }
+
+    @PostMapping("/appointments/walk-in")
+    @PreAuthorize("hasAuthority('appointment.manage')")
+    @ResponseStatus(HttpStatus.CREATED)
+    public Map<String, Object> walkIn(@RequestBody WalkInReq r, Authentication a) { return appointments.walkIn(ClinicContext.tenantId(), user(a), r.patientId(), r.doctorId(), r.branchId(), r.serviceId()); }
+
     @PostMapping("/appointments/{id}/{action}")
     @PreAuthorize("hasAuthority('appointment.manage')")
     public Map<String, Object> action(@PathVariable UUID id, @PathVariable String action, @RequestBody(required = false) StatusReq r, Authentication a) {
@@ -183,6 +201,7 @@ public class ClinicController {
             case "start" -> appointments.transition(t, user(a), id, "IN_PROGRESS", reason);
             case "complete" -> appointments.transition(t, user(a), id, "COMPLETED", reason);
             case "no-show" -> appointments.transition(t, user(a), id, "NO_SHOW", reason);
+            case "call" -> appointments.call(t, user(a), id);
             case "mark-paid" -> appointments.markPaid(t, user(a), id);
             default -> throw com.platform.shared.BusinessException.notFound("RESOURCE_NOT_FOUND", "Unknown action");
         };

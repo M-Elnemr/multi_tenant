@@ -148,7 +148,7 @@ class MedicalIntegrationTest extends IntegrationTestBase {
         String phone = nextPhone();
         onHost(store.host(), null, "POST", "/api/v1/shop/customers/register", "{\"firstName\":\"Heba\",\"phone\":\"%s\",\"password\":\"hebaPass123\"}".formatted(phone)).andExpect(status().isCreated());
 
-        String res = body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"Heba\",\"phone\":\"%s\"}".formatted(phone)).andExpect(status().isCreated()).andExpect(jsonPath("$.portalAccess").value("LINK_PIN")));
+        String res = body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"Heba\",\"phone\":\"%s\",\"claimWithCode\":true}".formatted(phone)).andExpect(status().isCreated()).andExpect(jsonPath("$.portalAccess").value("LINK_PIN")));
         String code = read(res, "$.patientCode");
         String pin = read(res, "$.linkPin");
         // the account is not a member of the clinic yet, so it cannot just log in and see the record

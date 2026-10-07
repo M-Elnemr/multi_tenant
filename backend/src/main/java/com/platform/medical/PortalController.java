@@ -35,6 +35,15 @@ public class PortalController {
     @GetMapping("/patients")
     public List<Map<String, Object>> myPatients(Authentication a) { return patients.portalPatients(ClinicContext.tenantId(), user(a)); }
 
+    @GetMapping("/queue")
+    public List<Map<String, Object>> queue(Authentication a) { return appointments.myQueue(ClinicContext.tenantId(), user(a)); }
+
+    @PostMapping("/leave")
+    public Map<String, Object> leave(Authentication a) {
+        patients.leave(ClinicContext.tenantId(), user(a));
+        return Map.of("ok", true);
+    }
+
     @GetMapping("/appointments")
     public Map<String, Object> myAppointments(@RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize, Authentication a) {
         UUID t = ClinicContext.tenantId();

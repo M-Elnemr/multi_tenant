@@ -24,6 +24,7 @@ public class AuthController {
     public record LoginRequest(@NotBlank String identifier, @NotBlank String password) {}
     public record ActivateRequest(@NotBlank String identifier, @NotBlank String pin, @NotBlank String newPassword) {}
     public record RefreshRequest(@NotBlank String refreshToken) {}
+    public record ChangePasswordRequest(@NotBlank String currentPassword, @NotBlank String newPassword) {}
 
     @PostMapping("/check-identifier")
     public Map<String, Object> checkIdentifier(@Valid @RequestBody IdentifierRequest r, HttpServletRequest req) {
@@ -55,6 +56,11 @@ public class AuthController {
     public Map<String, Object> logout(@RequestBody RefreshRequest r) {
         auth.logout(r.refreshToken());
         return Map.of("ok", true);
+    }
+
+    @PostMapping("/change-password")
+    public TokenResponse changePassword(@Valid @RequestBody ChangePasswordRequest r, Authentication a, HttpServletRequest req) {
+        return auth.changePassword((UUID) a.getPrincipal(), r.currentPassword(), r.newPassword(), ClientInfo.ip(req), req.getHeader("User-Agent"));
     }
 
     @GetMapping("/me")

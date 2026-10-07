@@ -21,6 +21,7 @@ import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -42,7 +43,7 @@ public class PatientService {
     private static final int MAX_LINK_ATTEMPTS = 5;
 
     public record PatientReq(String firstName, String lastName, String phone, String email, LocalDate dateOfBirth, String sex, String addressText,
-                             String bloodType, String notesInternal, UUID guardianPatientId, String relationship) {}
+                             String bloodType, String notesInternal, UUID guardianPatientId, String relationship, String initialPassword, Boolean claimWithCode) {}
 
     private final JdbcClient jdbc;
     private final UserRepository users;
@@ -53,9 +54,12 @@ public class PatientService {
     private final AuthService auth;
     private final LoginThrottle throttle;
     private final AuditService audit;
+    private final org.springframework.context.ApplicationEventPublisher events;
 
     public PatientService(JdbcClient jdbc, UserRepository users, MembershipRepository memberships, RbacService rbac, ActivationService activation,
-                          PasswordEncoder encoder, AuthService auth, LoginThrottle throttle, AuditService audit) {
+                          PasswordEncoder encoder, AuthService auth, LoginThrottle throttle, AuditService audit,
+                          org.springframework.context.ApplicationEventPublisher events) {
+        this.events = events;
         this.jdbc = jdbc;
         this.users = users;
         this.memberships = memberships;
@@ -81,9 +85,11 @@ public class PatientService {
         }
 
         UUID userId = null;
+        UUID relinkPatientId = null;
         String activationPin = null;
         String linkPin = null;
         String portal = "NONE";
+        boolean claimOnly = Boolean.TRUE.equals(r.claimWithCode());
         if (phone != null && guardianUser == null) {
             User existing = users.findByPhone(phone).orElse(null);
             if (existing == null) {
@@ -92,16 +98,47 @@ public class PatientService {
                 u.setEmail(email != null && users.findByEmailIgnoreCase(email).isEmpty() ? email : null);
                 u.setFirstName(r.firstName());
                 u.setLastName(r.lastName() == null ? "" : r.lastName());
-                u.setStatus(User.Status.INVITED);
+                if (r.initialPassword() != null && !r.initialPassword().isBlank()) {
+                    // The clinic chooses the first password; the patient can change it any time (POST /auth/change-password).
+                    auth.validatePassword(r.initialPassword());
+                    u.setPasswordHash(encoder.encode(r.initialPassword()));
+                    u.setStatus(User.Status.ACTIVE);
+                    portal = "PASSWORD_SET";
+                } else {
+                    u.setStatus(User.Status.INVITED);
+                }
                 u = users.saveAndFlush(u);
                 userId = u.getId();
                 joinAsPatient(userId, tenantId);
-                activationPin = activation.issue(userId, tenantId, actor);
-                portal = "ACTIVATION_PIN";
-            } else {
-                linkPin = randomPin();   // someone already owns this phone: they must claim the record themselves
+                if (u.getStatus() == User.Status.INVITED) {
+                    activationPin = activation.issue(userId, tenantId, actor);
+                    portal = "ACTIVATION_PIN";
+                }
+            } else if (claimOnly) {
+                linkPin = randomPin();   // the person must prove ownership (password + this code) to claim the record
                 portal = "LINK_PIN";
+            } else {
+                // The person already has an account (created at another clinic): attach it to THIS clinic. This clinic gets its own,
+                // empty record; nothing from other clinics is reachable, and the person can leave the clinic from their app.
+                if (r.initialPassword() != null && !r.initialPassword().isBlank())
+                    throw BusinessException.badRequest("ACCOUNT_EXISTS", "This phone already has an account; its owner keeps their own password");
+                Long linked = jdbc.sql("SELECT count(*) FROM medical.patients WHERE tenant_id = :t AND user_id = :u").param("t", tenantId).param("u", existing.getId()).query(Long.class).single();
+                if (linked > 0) throw BusinessException.conflict("ALREADY_PATIENT", "This person is already a patient of this clinic");
+                userId = existing.getId();
+                relinkPatientId = jdbc.sql("SELECT id FROM medical.patients WHERE tenant_id = :t AND phone = :p AND user_id IS NULL ORDER BY created_at LIMIT 1")
+                        .param("t", tenantId).param("p", phone).query(UUID.class).optional().orElse(null);
+                joinAsPatient(userId, tenantId);
+                portal = "ASSIGNED";
             }
+        }
+        if (relinkPatientId != null) {
+            // This clinic already holds an unlinked file for the same phone (e.g. the patient left earlier): reconnect it instead of duplicating.
+            jdbc.sql("UPDATE medical.patients SET user_id = :u, updated_at = now() WHERE id = :p AND tenant_id = :t").param("u", userId).param("p", relinkPatientId).param("t", tenantId).update();
+            audit.record(actor, tenantId, "ACCESS_GRANTED", "patient", relinkPatientId, "{\"mode\":\"relink\"}");
+            events.publishEvent(new MedicalEvents.PatientUpdate(tenantId, relinkPatientId, "CLINIC_ADDED"));
+            Map<String, Object> out = new LinkedHashMap<>(summary(tenantId, relinkPatientId));
+            out.put("portalAccess", portal);
+            return out;
         }
 
         UUID id = null;
@@ -131,6 +168,7 @@ public class PatientService {
         out.put("portalAccess", portal);
         if (activationPin != null) out.put("activationPin", activationPin);
         if (linkPin != null) out.put("linkPin", linkPin);
+        if ("ASSIGNED".equals(portal)) events.publishEvent(new MedicalEvents.PatientUpdate(tenantId, id, "CLINIC_ADDED"));
         return out;
     }
 
@@ -188,6 +226,9 @@ public class PatientService {
             m.setUserId(userId);
             m.setTenantId(tenantId);
             m = memberships.saveAndFlush(m);
+        } else if (m.getStatus() == Membership.Status.REMOVED) {
+            m.setStatus(Membership.Status.ACTIVE);   // the person left earlier and the clinic is adding them again
+            m = memberships.saveAndFlush(m);
         } else if (m.getStatus() != Membership.Status.ACTIVE) {
             throw BusinessException.forbidden("NOT_A_MEMBER", "This account has no access here");
         }
@@ -231,6 +272,42 @@ public class PatientService {
                 .param("em", r.email()).param("ad", r.addressText()).param("bt", r.bloodType()).param("ni", r.notesInternal()).param("p", id).param("t", tenantId).update();
         audit.record(actor, tenantId, "PATIENT_UPDATED", "patient", id, null);
         return summary(tenantId, id);
+    }
+
+    /**
+     * The clinic sets a patient's password (e.g. at the front desk). Only allowed while the account belongs to this clinic alone and has no
+     * staff role here; accounts shared with other clinics keep their owner's password. All sessions are revoked.
+     */
+    @Transactional
+    public void setPassword(UUID tenantId, UUID actor, UUID patientId, String newPassword) {
+        auth.validatePassword(newPassword);
+        UUID userId = jdbc.sql("SELECT user_id FROM medical.patients WHERE id = :p AND tenant_id = :t").param("p", patientId).param("t", tenantId).query(UUID.class).optional()
+                .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Patient not found"));
+        if (userId == null) throw BusinessException.badRequest("PHONE_REQUIRED", "This patient has no portal account yet");
+        boolean shared = memberships.findByUserId(userId).stream().anyMatch(x -> !x.getTenantId().equals(tenantId) && x.getStatus() == Membership.Status.ACTIVE);
+        Membership m = memberships.findByUserIdAndTenantId(userId, tenantId).orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Patient not found"));
+        boolean staff = rbac.roleCodes(m.getId()).stream().anyMatch(rc -> !Set.of("PATIENT", "GUARDIAN", "CUSTOMER").contains(rc));
+        if (shared || staff) throw BusinessException.forbidden("PASSWORD_SET_NOT_ALLOWED", "This account is shared with other clinics; the patient must reset it themselves");
+        User u = users.findById(userId).orElseThrow();
+        u.setPasswordHash(encoder.encode(newPassword));
+        u.setStatus(User.Status.ACTIVE);
+        users.save(u);
+        jdbc.sql("UPDATE core.user_sessions SET revoked_at = now() WHERE user_id = :u AND revoked_at IS NULL").param("u", userId).update();
+        audit.record(actor, tenantId, "PATIENT_PASSWORD_SET", "patient", patientId, null);
+    }
+
+    /** A patient leaves a clinic: they lose access to its portal; the clinic keeps its medical record (it must be retained). */
+    @Transactional
+    public void leave(UUID tenantId, UUID userId) {
+        Membership m = memberships.findByUserIdAndTenantId(userId, tenantId).orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Not found"));
+        if (rbac.roleCodes(m.getId()).stream().anyMatch(rc -> !Set.of("PATIENT", "GUARDIAN").contains(rc)))
+            throw BusinessException.badRequest("CANNOT_LEAVE", "Staff accounts cannot leave this way");
+        jdbc.sql("UPDATE medical.patients SET user_id = NULL, updated_at = now() WHERE tenant_id = :t AND user_id = :u").param("t", tenantId).param("u", userId).update();
+        jdbc.sql("DELETE FROM medical.patient_guardians WHERE tenant_id = :t AND guardian_user_id = :u").param("t", tenantId).param("u", userId).update();
+        jdbc.sql("DELETE FROM core.membership_roles WHERE membership_id = :m").param("m", m.getId()).update();
+        m.setStatus(Membership.Status.REMOVED);
+        memberships.save(m);
+        audit.record(userId, tenantId, "ACCESS_REVOKED", "user", userId, "{\"by\":\"patient\"}");
     }
 
     // ---- portal access control -------------------------------------------------------------------------------------------
