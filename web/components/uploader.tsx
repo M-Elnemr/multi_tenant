@@ -23,7 +23,7 @@ export function ImageUploader({ category, onUploaded, label }: { category: "PROD
   const [error, setError] = useState<unknown>(null);
   return (
     <div>
-      <input ref={ref} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={async (e) => {
+      <input ref={ref} type="file" accept="image/png,image/jpeg" className="hidden" onChange={async (e) => {
         const f = e.target.files?.[0];
         if (!f) return;
         setBusy(true); setError(null);

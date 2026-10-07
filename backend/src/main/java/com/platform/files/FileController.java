@@ -38,18 +38,35 @@ public class FileController {
         return files.upload(TenantContext.require().id(), id, exp, sig, contentType, data);
     }
 
-    /** Public files are served to anyone on the tenant's host; private ones only to authorized callers (404 otherwise). */
+    /**
+     * Public images: redirect (when an edge proxy serves the bucket) or stream with immutable caching; ?variant=thumb|medium|original.
+     * Private files: authorized callers only (404 otherwise), never cacheable.
+     */
     @GetMapping("/{id}/content")
-    public ResponseEntity<byte[]> download(@PathVariable UUID id, Authentication a) {
+    public ResponseEntity<byte[]> download(@PathVariable UUID id, @RequestParam(required = false) String variant, @RequestHeader(value = HttpHeaders.IF_NONE_MATCH, required = false) String ifNoneMatch, Authentication a) {
+        if (variant != null && !java.util.Set.of("thumb", "medium", "original").contains(variant)) variant = null;
         UUID user = a == null || !(a.getPrincipal() instanceof UUID u) ? null : u;
         Set<String> authorities = a == null ? Set.of() : a.getAuthorities().stream().map(GrantedAuthority::getAuthority).collect(Collectors.toSet());
-        FileService.Download d = files.download(TenantContext.require().id(), id, user, authorities);
-        return ResponseEntity.ok()
+        FileService.Download d = files.download(TenantContext.require().id(), id, variant, user, authorities);
+        if (d.redirectPath() != null)
+            return ResponseEntity.status(302).header(HttpHeaders.LOCATION, d.redirectPath()).cacheControl(CacheControl.maxAge(java.time.Duration.ofHours(1)).cachePublic()).build();
+        if (d.isPublic() && d.etag().equals(ifNoneMatch)) return ResponseEntity.status(304).eTag(d.etag()).build();
+        var res = ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(d.contentType()))
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline().filename(d.filename()).build().toString())
-                .header("X-Content-Type-Options", "nosniff")
-                .cacheControl(d.isPublic() ? CacheControl.maxAge(java.time.Duration.ofHours(1)).cachePublic() : CacheControl.noStore().cachePrivate())
-                .body(d.data());
+                .header("X-Content-Type-Options", "nosniff");
+        if (d.isPublic()) res.eTag(d.etag()).cacheControl(CacheControl.maxAge(java.time.Duration.ofDays(365)).cachePublic().immutable());
+        else res.cacheControl(CacheControl.noStore().cachePrivate());
+        return res.body(d.data());
     }
 
+    @DeleteMapping("/{id}")
+    @org.springframework.web.bind.annotation.ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable UUID id, Authentication a) {
+        Set<String> authorities = a.getAuthorities().stream().map(GrantedAuthority::getAuthority).collect(Collectors.toSet());
+        files.delete(TenantContext.require().id(), (UUID) a.getPrincipal(), authorities, id);
+    }
+
+    @GetMapping("/usage")
+    public Map<String, Object> usage() { return files.usage(TenantContext.require().id()); }
 }

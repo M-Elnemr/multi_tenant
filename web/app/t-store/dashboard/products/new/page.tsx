@@ -58,7 +58,7 @@ export default function NewProduct() {
             <div className="flex flex-wrap items-center gap-3">
               {images.map((id) => (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img key={id} src={`/api/bff/files/${id}/content`} alt="" className="h-16 w-16 rounded-lg object-cover" />
+                <img key={id} src={`/api/bff/files/${id}/content?variant=thumb`} alt="" className="h-16 w-16 rounded-lg object-cover" />
               ))}
               <ImageUploader category="PRODUCT_IMAGE" onUploaded={(id) => setImages((x) => [...x, id])} />
             </div>

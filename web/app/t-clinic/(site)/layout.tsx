@@ -14,7 +14,7 @@ export default async function ClinicSiteLayout({ children }: { children: React.R
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
           <Link href="/" className="flex items-center gap-2 text-lg font-bold text-brand">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            {logo && <img src={`/api/bff/files/${logo}/content`} alt="" className="h-8 w-8 rounded object-cover" />}
+            {logo && <img src={`/api/bff/files/${logo}/content?variant=thumb`} alt="" className="h-8 w-8 rounded object-cover" />}
             {info.kind === "TENANT" ? info.name : ""}
           </Link>
           <nav className="flex items-center gap-2 text-sm">

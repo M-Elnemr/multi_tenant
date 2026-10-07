@@ -29,7 +29,7 @@ export default function BrandingCard() {
       <div className="flex items-center gap-3">
         {f.logoFileId && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={`/api/bff/files/${f.logoFileId}/content`} alt="" className="h-12 w-12 rounded object-cover" />
+          <img src={`/api/bff/files/${f.logoFileId}/content?variant=thumb`} alt="" className="h-12 w-12 rounded object-cover" />
         )}
         <ImageUploader category="LOGO" label={t("settings.logo")} onUploaded={(id) => setF({ ...f, logoFileId: id })} />
       </div>

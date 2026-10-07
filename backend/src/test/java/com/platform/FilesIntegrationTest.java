@@ -16,8 +16,14 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.ResultActions;
 
 class FilesIntegrationTest extends IntegrationTestBase {
-    static final byte[] PNG = bytes(new byte[] {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}, 64);
+    @org.springframework.beans.factory.annotation.Autowired org.springframework.context.ApplicationContext ctx;
+
+    static final byte[] PNG = realPng();
     static final byte[] PDF = bytes("%PDF-1.4\n".getBytes(StandardCharsets.US_ASCII), 64);
+
+    static byte[] realPng() {
+        try { return ImageProcessorTest.png(600, 400, false); } catch (Exception e) { throw new IllegalStateException(e); }
+    }
 
     static byte[] bytes(byte[] head, int total) {
         byte[] b = Arrays.copyOf(head, total);
@@ -55,11 +61,20 @@ class FilesIntegrationTest extends IntegrationTestBase {
         putFile(store, url, "application/pdf", PNG).andExpect(status().isBadRequest());
         putFile(store, url.replaceAll("sig=.*", "sig=deadbeef"), "image/png", PNG).andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("UPLOAD_EXPIRED"));
         putFile(store, url, "image/png", PNG).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("READY"));
+        onHost(store.host(), store.access(), "GET", "/api/v1/files/usage", null).andExpect(jsonPath("$.usedBytes").isNumber()).andExpect(jsonPath("$.limitBytes").value(10240L * 1024 * 1024));
         putFile(store, url, "image/png", PNG).andExpect(status().isConflict());   // single use
 
         // product images are public: anyone on the store host can load them, with safe headers
-        getFile(store.host(), null, id).andExpect(status().isOk()).andExpect(header().string("Content-Type", "image/png")).andExpect(header().string("X-Content-Type-Options", "nosniff"));
-        assertThat(getFile(store.host(), null, id).andReturn().getResponse().getContentAsByteArray()).isEqualTo(PNG);
+        getFile(store.host(), null, id).andExpect(status().isOk()).andExpect(header().string("Content-Type", "image/jpeg")).andExpect(header().string("X-Content-Type-Options", "nosniff"));
+        // pictures are re-encoded (EXIF stripped, bounded size), so the served bytes are a valid PNG of the same picture, not the raw upload
+        var served = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(getFile(store.host(), null, id).andReturn().getResponse().getContentAsByteArray()));
+        assertThat(served.getWidth()).isEqualTo(600);   // opaque PNGs are stored as JPEG (smaller); transparent ones stay PNG
+        var thumb = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(mvc.perform(get("/api/v1/files/" + id + "/content?variant=thumb").header("Host", store.host())).andReturn().getResponse().getContentAsByteArray()));
+        assertThat(thumb.getWidth()).isEqualTo(320);
+        String etag = getFile(store.host(), null, id).andReturn().getResponse().getHeader("ETag");
+        assertThat(etag).isNotNull();
+        mvc.perform(get("/api/v1/files/" + id + "/content").header("Host", store.host()).header("If-None-Match", etag)).andExpect(status().isNotModified());
+        getFile(store.host(), null, id).andExpect(header().string("Cache-Control", org.hamcrest.Matchers.containsString("immutable")));
 
         // attach to a product
         String product = onHost(store.host(), store.access(), "POST", "/api/v1/store/products",
@@ -77,6 +92,7 @@ class FilesIntegrationTest extends IntegrationTestBase {
         presign(store, store.access(), "x.exe", "application/x-msdownload", 100, "PRODUCT_IMAGE", null, 400);
         presign(store, store.access(), "big.png", "image/png", 6L * 1024 * 1024, "PRODUCT_IMAGE", null, 400);
         presign(store, store.access(), "doc.pdf", "application/pdf", 100, "PRODUCT_IMAGE", null, 400);
+        presign(store, store.access(), "p.webp", "image/webp", 100, "PRODUCT_IMAGE", null, 400);   // only formats we can fully re-encode
         presign(store, null, "a.png", "image/png", 100, "PRODUCT_IMAGE", null, 401);
     }
 
@@ -121,5 +137,33 @@ class FilesIntegrationTest extends IntegrationTestBase {
         Tenant other = onboard("CLINIC");
         getFile(other.host(), other.access(), fileId).andExpect(status().isNotFound());
         assertThat(List.of(fileId)).isNotEmpty();
+    }
+
+    @Test
+    void filesAreDeletableOnlyWhenUnusedAndQuotaIsEnforcedAndFreed() throws Exception {
+        Tenant store = onboard("STORE");
+        String res = presign(store, store.access(), "a.png", "image/png", PNG.length, "PRODUCT_IMAGE", null, 200);
+        String id = JsonPath.read(res, "$.fileId");
+        putFile(store, JsonPath.read(res, "$.uploadUrl"), "image/png", PNG).andExpect(status().isOk());
+        long used = ((Number) JsonPath.read(onHost(store.host(), store.access(), "GET", "/api/v1/files/usage", null).andReturn().getResponse().getContentAsString(), "$.usedBytes")).longValue();
+        assertThat(used).isGreaterThan(0);
+
+        // in use -> refused; free -> deleted, quota released, content gone
+        onHost(store.host(), store.access(), "POST", "/api/v1/store/products", "{\"name\":\"Cup %s\",\"variants\":[{\"sku\":\"C-%s\",\"priceMinor\":1,\"optionValues\":{}}],\"media\":[{\"fileId\":\"%s\"}]}".formatted(uniq(), uniq(), id)).andExpect(status().isCreated());
+        onHost(store.host(), store.access(), "DELETE", "/api/v1/files/" + id, null).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("FILE_IN_USE"));
+        String res2 = presign(store, store.access(), "b.png", "image/png", PNG.length, "PRODUCT_IMAGE", null, 200);
+        String id2 = JsonPath.read(res2, "$.fileId");
+        putFile(store, JsonPath.read(res2, "$.uploadUrl"), "image/png", PNG).andExpect(status().isOk());
+        Tenant other = onboard("STORE");
+        onHost(other.host(), other.access(), "DELETE", "/api/v1/files/" + id2, null).andExpect(status().isNotFound());   // another tenant cannot delete it
+        onHost(store.host(), store.access(), "DELETE", "/api/v1/files/" + id2, null).andExpect(status().isNoContent());
+        getFile(store.host(), null, id2).andExpect(status().isNotFound());
+        long after = ((Number) JsonPath.read(onHost(store.host(), store.access(), "GET", "/api/v1/files/usage", null).andReturn().getResponse().getContentAsString(), "$.usedBytes")).longValue();
+        assertThat(after).isEqualTo(used);
+
+        // plan quota: when the allowance is used up, new uploads are refused with a stable code
+        org.springframework.jdbc.core.simple.JdbcClient jdbc = ctx.getBean(org.springframework.jdbc.core.simple.JdbcClient.class);
+        jdbc.sql("UPDATE billing.usage_counters SET value = :v WHERE metric = 'storage_bytes' AND tenant_id = (SELECT id FROM core.tenants WHERE slug = :s)").param("v", 10240L * 1024 * 1024 - 10).param("s", store.slug()).update();
+        presign(store, store.access(), "c.png", "image/png", PNG.length, "PRODUCT_IMAGE", null, 403);
     }
 }

@@ -28,7 +28,7 @@ function LabUpload({ labId, onDone }: { labId: string; onDone: () => void }) {
     <div className="mt-3 space-y-2 rounded-lg bg-slate-50 p-3">
       <p className="text-xs font-medium">{t("portal.uploadResult")}</p>
       <Textarea rows={2} value={text} onChange={(e) => setText(e.target.value)} placeholder={t("portal.resultText")} />
-      <input ref={ref} type="file" accept="application/pdf,image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void pick.run(f); }} />
+      <input ref={ref} type="file" accept="application/pdf,image/png,image/jpeg" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void pick.run(f); }} />
       <div className="flex flex-wrap items-center gap-2"><Button type="button" size="sm" variant="secondary" loading={pick.loading} onClick={() => ref.current?.click()}>📎 {fileId ? t("portal.fileAttached") : t("portal.attachFile")}</Button><Button size="sm" loading={send.loading} disabled={!text && !fileId} onClick={() => send.run()}>{t("portal.send")}</Button></div>
       <ErrorText error={send.error ?? pick.error} />
     </div>

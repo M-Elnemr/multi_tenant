@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { api } from "@/lib/client";
 import { addToCart } from "@/lib/cart";
 import { money } from "@/lib/format";
+import { mediaUrl } from "@/lib/media";
 import { useAction, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Alert, Button, ErrorText } from "@/components/ui";
@@ -13,11 +14,10 @@ export type ProductDetail = {
   id: string; name: string; slug: string; description: string; shortDescription?: string; brand?: string; currency: string; hasVariants: boolean;
   options: { name: string; values: string[] }[];
   variants: { id: string; sku: string; priceMinor: number; compareAtPriceMinor?: number; comboKey: string; available: number }[];
-  media: { url: string; altText?: string }[];
+  media: { url: string; altText?: string; mediaBase?: string | null; mediaExt?: string | null }[];
   reviews: { average: number; count: number; reviews: { rating: number; reviewText?: string; firstName: string }[] };
 };
 
-const img = (u: string) => (u.startsWith("/api/v1/") ? u.replace("/api/v1/", "/api/bff/") : u);
 
 export function ProductBuy({ product }: { product: ProductDetail }) {
   const { t, locale } = useI18n();
@@ -39,7 +39,7 @@ export function ProductBuy({ product }: { product: ProductDetail }) {
 
   const add = () => {
     if (!variant) return;
-    addToCart({ variantId: variant.id, productId: product.id, slug: product.slug, name: product.name, variantLabel: product.options.map((o) => choice[o.name]).join(" / "), unitPriceMinor: variant.priceMinor, quantity: qty, imageUrl: product.media[0]?.url ? img(product.media[0].url) : null });
+    addToCart({ variantId: variant.id, productId: product.id, slug: product.slug, name: product.name, variantLabel: product.options.map((o) => choice[o.name]).join(" / "), unitPriceMinor: variant.priceMinor, quantity: qty, imageUrl: mediaUrl(product.media[0], "thumb") });
     setAdded(true);
     setTimeout(() => setAdded(false), 2500);
   };
@@ -50,13 +50,13 @@ export function ProductBuy({ product }: { product: ProductDetail }) {
         <div className="aspect-square overflow-hidden rounded-2xl bg-slate-100">
           {product.media[photo] ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={img(product.media[photo].url)} alt={product.media[photo].altText ?? product.name} className="h-full w-full object-cover" />
+            <img src={mediaUrl(product.media[photo], "medium") ?? ""} alt={product.media[photo].altText ?? product.name} className="h-full w-full object-cover" />
           ) : <div className="flex h-full items-center justify-center text-6xl text-slate-300">🛍️</div>}
         </div>
         {product.media.length > 1 && (
           <div className="mt-3 flex gap-2">{product.media.map((m, i) => (
             // eslint-disable-next-line @next/next/no-img-element
-            <button key={i} onClick={() => setPhoto(i)} className={`h-16 w-16 overflow-hidden rounded-lg border-2 ${i === photo ? "border-brand" : "border-transparent"}`}><img src={img(m.url)} alt="" className="h-full w-full object-cover" /></button>
+            <button key={i} onClick={() => setPhoto(i)} className={`h-16 w-16 overflow-hidden rounded-lg border-2 ${i === photo ? "border-brand" : "border-transparent"}`}><img src={mediaUrl(m, "thumb") ?? ""} alt="" className="h-full w-full object-cover" /></button>
           ))}</div>
         )}
       </div>

@@ -24,6 +24,12 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'org.springframework.boot:spring-boot-starter-mail'
+	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+	implementation 'com.github.ben-manes.caffeine:caffeine'
+	implementation 'io.micrometer:micrometer-registry-prometheus'
+	implementation platform('software.amazon.awssdk:bom:2.29.52')
+	implementation 'software.amazon.awssdk:s3'
+	implementation 'com.drewnoakes:metadata-extractor:2.19.0'
 	implementation 'org.springframework.boot:spring-boot-flyway'
 	implementation 'org.flywaydb:flyway-core'
 	implementation 'org.flywaydb:flyway-database-postgresql'

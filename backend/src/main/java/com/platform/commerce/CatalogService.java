@@ -138,8 +138,9 @@ public class CatalogService {
                     url = "/api/v1/files/" + m.fileId() + "/content";
                 }
                 if (url == null) throw BusinessException.badRequest("VALIDATION_ERROR", "Media needs a fileId or url");
-                jdbc.sql("INSERT INTO commerce.product_media (tenant_id, product_id, file_id, url, sort_order, alt_text) VALUES (:t, :p, :f, :u, :o, :a)")
-                        .param("t", tenantId).param("p", productId).param("f", m.fileId()).param("u", url).param("o", mi++).param("a", m.altText()).update();
+                var loc = m.fileId() == null ? java.util.Map.<String, String>of() : files.publicLocation(tenantId, m.fileId());
+                jdbc.sql("INSERT INTO commerce.product_media (tenant_id, product_id, file_id, url, sort_order, alt_text, media_base, media_ext) VALUES (:t, :p, :f, :u, :o, :a, :mb, :me)")
+                        .param("t", tenantId).param("p", productId).param("f", m.fileId()).param("u", url).param("o", mi++).param("a", m.altText()).param("mb", loc.get("base")).param("me", loc.get("ext")).update();
             }
         }
         audit.record(actor, tenantId, "PRODUCT_CREATED", "product", productId, null);
@@ -252,6 +253,8 @@ public class CatalogService {
                 SELECT p.id, p.name, p.slug, p.short_description, p.brand, p.currency, p.category_id,
                   (SELECT min(v.price_minor) FROM commerce.product_variants v WHERE v.product_id = p.id AND v.status = 'ACTIVE') AS min_price_minor,
                   (SELECT m.url FROM commerce.product_media m WHERE m.product_id = p.id ORDER BY m.sort_order LIMIT 1) AS image_url,
+                  (SELECT m.media_base FROM commerce.product_media m WHERE m.product_id = p.id ORDER BY m.sort_order LIMIT 1) AS image_media_base,
+                  (SELECT m.media_ext FROM commerce.product_media m WHERE m.product_id = p.id ORDER BY m.sort_order LIMIT 1) AS image_media_ext,
                   EXISTS (SELECT 1 FROM commerce.product_variants v JOIN commerce.inventory_items i ON i.variant_id = v.id
                           JOIN commerce.branches b ON b.id = i.branch_id AND b.is_active
                           WHERE v.product_id = p.id AND v.status = 'ACTIVE' AND i.quantity_on_hand - i.quantity_reserved > 0) AS in_stock
@@ -303,7 +306,7 @@ public class CatalogService {
                      JOIN commerce.branches b ON b.id = i.branch_id AND b.is_active WHERE i.variant_id = v.id) AS available
                 FROM commerce.product_variants v WHERE v.product_id = :p AND v.tenant_id = :t AND (NOT :po OR v.status = 'ACTIVE') ORDER BY v.created_at
                 """).param("p", id).param("t", tenantId).param("po", publicOnly).query().listOfRows()));
-        out.put("media", Rows.camel(jdbc.sql("SELECT id, url, alt_text, sort_order FROM commerce.product_media WHERE product_id = :p ORDER BY sort_order")
+        out.put("media", Rows.camel(jdbc.sql("SELECT id, url, alt_text, sort_order, media_base, media_ext FROM commerce.product_media WHERE product_id = :p ORDER BY sort_order")
                 .param("p", id).query().listOfRows()));
         return out;
     }

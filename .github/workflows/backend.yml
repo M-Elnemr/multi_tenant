@@ -39,6 +39,14 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: gradle/actions/setup-gradle@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install an S3-compatible test server (moto) for the storage tests
+        run: |
+          python -m venv /tmp/moto
+          /tmp/moto/bin/pip install -q "moto[server]"
+          echo "MOTO_SERVER_BIN=/tmp/moto/bin/moto_server" >> "$GITHUB_ENV"
       - name: Run tests
         working-directory: backend
         run: ./gradlew test --no-daemon

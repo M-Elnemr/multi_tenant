@@ -55,8 +55,9 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
   const type = upstream.headers.get("content-type") ?? "";
   if (!type.includes("json")) {
     // files and other binary responses pass through untouched (including their cache/privacy headers)
-    const out = new NextResponse(upstream.status === 204 ? null : await upstream.arrayBuffer(), { status: upstream.status });
-    for (const h of ["content-type", "content-disposition", "cache-control", "x-content-type-options"]) {
+    const noBody = upstream.status === 204 || upstream.status === 304 || (upstream.status >= 300 && upstream.status < 400);
+    const out = new NextResponse(noBody ? null : await upstream.arrayBuffer(), { status: upstream.status });
+    for (const h of ["content-type", "content-disposition", "cache-control", "x-content-type-options", "etag", "location"]) {
       const v = upstream.headers.get(h);
       if (v) out.headers.set(h, v);
     }
