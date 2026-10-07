@@ -87,7 +87,6 @@ public class DevSeed implements ApplicationRunner {
                 List.of(variant("TEE-S", 19900, "S", branch, 25), variant("TEE-M", 19900, "M", branch, 40), variant("TEE-L", 19900, "L", branch, 15)), List.of()));
         catalog.createProduct(tenantId, owner, new CatalogService.ProductReq("Canvas Backpack", "Everyday backpack", null, catId, "Demo", "ACTIVE", List.of(),
                 List.of(new CatalogService.VariantReq("BAG-1", 54900, 64900L, null, null, Map.of(), List.of(new CatalogService.StockReq(branch, 12)))), List.of()));
-        storeSettings.setPaymentMethod(tenantId, owner, "CARD", true);
         storeSettings.createCoupon(tenantId, owner, new StoreSettingsService.CouponReq("WELCOME10", "PERCENT", 10, 0L, null, null, null, 1));
     }
 

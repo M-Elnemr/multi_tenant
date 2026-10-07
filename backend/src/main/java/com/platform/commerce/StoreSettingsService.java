@@ -21,8 +21,10 @@ public class StoreSettingsService {
     private final JdbcClient jdbc;
     private final EntitlementService ent;
     private final AuditService audit;
+    private final com.platform.shared.PaymentPolicy policy;
 
-    public StoreSettingsService(JdbcClient jdbc, EntitlementService ent, AuditService audit) {
+    public StoreSettingsService(JdbcClient jdbc, EntitlementService ent, AuditService audit, com.platform.shared.PaymentPolicy policy) {
+        this.policy = policy;
         this.jdbc = jdbc;
         this.ent = ent;
         this.audit = audit;
@@ -75,12 +77,13 @@ public class StoreSettingsService {
     // ---- payment methods & shipping --------------------------------------------------------------------------
 
     public List<Map<String, Object>> paymentMethods(UUID tenantId) {
-        return Rows.camel(jdbc.sql("SELECT method, enabled FROM commerce.payment_method_settings WHERE tenant_id = :t ORDER BY method").param("t", tenantId).query().listOfRows());
+        return Rows.camel(jdbc.sql("SELECT method, enabled FROM commerce.payment_method_settings WHERE tenant_id = :t AND (:card OR method <> 'CARD') ORDER BY method")
+                .param("t", tenantId).param("card", policy.cardEnabled()).query().listOfRows());
     }
 
     @Transactional
     public List<Map<String, Object>> setPaymentMethod(UUID tenantId, UUID actor, String method, boolean enabled) {
-        if (!Set.of("CARD", "CASH_ON_DELIVERY").contains(method)) throw BusinessException.badRequest("VALIDATION_ERROR", "Unsupported payment method");
+        if (!Set.of("CARD", "CASH_ON_DELIVERY").contains(method) || ("CARD".equals(method) && enabled && !policy.cardEnabled())) throw BusinessException.badRequest("PAYMENT_METHOD_DISABLED", "Online card payment is not available yet");
         jdbc.sql("INSERT INTO commerce.payment_method_settings (tenant_id, method, enabled) VALUES (:t, :m, :e) ON CONFLICT (tenant_id, method) DO UPDATE SET enabled = :e")
                 .param("t", tenantId).param("m", method).param("e", enabled).update();
         audit.record(actor, tenantId, "SETTINGS_CHANGED", "payment_method", null, "{\"method\":\"" + method + "\",\"enabled\":" + enabled + "}");

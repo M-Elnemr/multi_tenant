@@ -38,6 +38,13 @@ public class ReportService {
         jdbc.sql("SELECT status, count(*) AS c FROM commerce.orders WHERE tenant_id = :t GROUP BY status ORDER BY status").param("t", tenantId).query().listOfRows()
                 .forEach(r -> byStatus.put((String) r.get("status"), r.get("c")));
         out.put("ordersByStatus", byStatus);
+        // Cash still to collect: COD orders that are on their way but not yet delivered (delivery marks them paid).
+        var cash = jdbc.sql("SELECT count(*) AS c, coalesce(sum(total_minor), 0) AS t FROM commerce.orders WHERE tenant_id = :t AND payment_method = 'CASH_ON_DELIVERY' AND payment_status = 'UNPAID' AND status IN ('CONFIRMED','PROCESSING','PACKED','OUT_FOR_DELIVERY')")
+                .param("t", tenantId).query().singleRow();
+        out.put("cashToCollectCount", cash.get("c"));
+        out.put("cashToCollectMinor", cash.get("t"));
+        out.put("cashCollectedTodayMinor", jdbc.sql("SELECT coalesce(sum(amount_minor), 0) FROM commerce.order_payments WHERE tenant_id = :t AND kind = 'PAYMENT' AND status = 'SUCCEEDED' AND method = 'CASH_ON_DELIVERY' AND (paid_at AT TIME ZONE :tz)::date = (now() AT TIME ZONE :tz)::date")
+                .param("t", tenantId).param("tz", tz).query(Long.class).single());
         out.put("lowStockCount", jdbc.sql("SELECT count(*) FROM commerce.inventory_items WHERE tenant_id = :t AND quantity_on_hand - quantity_reserved <= low_stock_threshold").param("t", tenantId).query(Long.class).single());
         if (ent.hasFeature(tenantId, "advanced_reports")) {
             out.put("topProducts", Rows.camel(jdbc.sql("""

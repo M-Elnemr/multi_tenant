@@ -366,6 +366,10 @@ public class ClinicalService {
                        coalesce(sum(price_minor) FILTER (WHERE payment_status = 'PAID'), 0) AS revenue FROM medical.appointments
                 WHERE tenant_id = :t AND date_trunc('month', start_at AT TIME ZONE :tz) = date_trunc('month', now() AT TIME ZONE :tz)
                 """).param("t", tenantId).param("tz", tz).query().singleRow();
+        var unpaid = jdbc.sql("SELECT count(*) AS c, coalesce(sum(price_minor), 0) AS t FROM medical.appointments WHERE tenant_id = :t AND payment_status = 'UNPAID' AND coalesce(price_minor, 0) > 0 AND status IN ('CHECKED_IN','IN_PROGRESS','COMPLETED')")
+                .param("t", tenantId).query().singleRow();
+        out.put("unpaidVisitsCount", unpaid.get("c"));
+        out.put("unpaidVisitsMinor", unpaid.get("t"));
         out.put("noShowsThisMonth", month.get("no_shows"));
         out.put("completedThisMonth", month.get("completed"));
         out.put("cancelledThisMonth", month.get("cancelled"));

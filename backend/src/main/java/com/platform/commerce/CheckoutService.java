@@ -40,9 +40,11 @@ public class CheckoutService {
     private final List<PaymentProvider> providers;
     private final StoreCustomerService customers;
     private final ApplicationEventPublisher events;
+    private final com.platform.shared.PaymentPolicy policy;
 
     public CheckoutService(JdbcClient jdbc, InventoryService inventory, EntitlementService ent, List<PaymentProvider> providers,
-                           StoreCustomerService customers, ApplicationEventPublisher events) {
+                           StoreCustomerService customers, ApplicationEventPublisher events, com.platform.shared.PaymentPolicy policy) {
+        this.policy = policy;
         this.jdbc = jdbc;
         this.inventory = inventory;
         this.ent = ent;
@@ -141,7 +143,7 @@ public class CheckoutService {
             wanted.merge(i.variantId(), i.quantity(), Integer::sum);
         }
         if (lock) {
-            if (!Set.of("CARD", "CASH_ON_DELIVERY").contains(r.paymentMethod())) throw BusinessException.badRequest("PAYMENT_METHOD_DISABLED", "Unsupported payment method");
+            if (!Set.of("CARD", "CASH_ON_DELIVERY").contains(r.paymentMethod()) || ("CARD".equals(r.paymentMethod()) && !policy.cardEnabled())) throw BusinessException.badRequest("PAYMENT_METHOD_DISABLED", "Unsupported payment method");
             boolean enabled = jdbc.sql("SELECT enabled FROM commerce.payment_method_settings WHERE tenant_id = :t AND method = :m").param("t", tenantId).param("m", r.paymentMethod())
                     .query(Boolean.class).optional().orElse(false);
             if (!enabled) throw BusinessException.badRequest("PAYMENT_METHOD_DISABLED", "This payment method is not available at this store");

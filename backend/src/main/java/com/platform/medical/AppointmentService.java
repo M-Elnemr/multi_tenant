@@ -43,8 +43,10 @@ public class AppointmentService {
     private final List<PaymentProvider> providers;
     private final AuditService audit;
     private final ApplicationEventPublisher events;
+    private final com.platform.shared.PaymentPolicy policy;
 
-    public AppointmentService(JdbcClient jdbc, SlotService slots, PatientService patients, EntitlementService ent, List<PaymentProvider> providers, AuditService audit, ApplicationEventPublisher events) {
+    public AppointmentService(JdbcClient jdbc, SlotService slots, PatientService patients, EntitlementService ent, List<PaymentProvider> providers, AuditService audit, ApplicationEventPublisher events, com.platform.shared.PaymentPolicy policy) {
+        this.policy = policy;
         this.jdbc = jdbc;
         this.slots = slots;
         this.patients = patients;
@@ -68,7 +70,7 @@ public class AppointmentService {
             throw BusinessException.forbidden("NOT_ACCEPTING_NEW_PATIENTS", "This clinic is not accepting new patients online");
 
         String method = r.paymentMethod() == null ? "CASH_AT_CLINIC" : r.paymentMethod();
-        if (!Set.of("CARD", "CASH_AT_CLINIC").contains(method)) throw BusinessException.badRequest("PAYMENT_METHOD_DISABLED", "Unsupported payment method");
+        if (!Set.of("CARD", "CASH_AT_CLINIC").contains(method) || ("CARD".equals(method) && !policy.cardEnabled())) throw BusinessException.badRequest("PAYMENT_METHOD_DISABLED", "Unsupported payment method");
         if (byPatient && ("CARD".equals(method) ? !(Boolean) profile.get("card_enabled") : !(Boolean) profile.get("cash_enabled")))
             throw BusinessException.badRequest("PAYMENT_METHOD_DISABLED", "This payment method is not available at this clinic");
 

@@ -681,6 +681,9 @@ const en: Record<string, string> = {
   "error.ALREADY_PATIENT": "This person is already a patient of this clinic.",
   "error.NO_SLOT_TODAY": "No free time left today for this doctor.",
   "error.CANNOT_LEAVE": "Staff accounts cannot leave this way.",
+  "dash.cashToCollect": "Cash to collect",
+  "dash.cashToday": "Cash collected today",
+  "clinic.unpaid": "Unpaid visits",
 };
 
 const ar: Record<string, string> = {
@@ -1348,6 +1351,9 @@ const ar: Record<string, string> = {
   "error.ALREADY_PATIENT": "هذا الشخص مريض بالفعل في هذه العيادة.",
   "error.NO_SLOT_TODAY": "لا يوجد وقت فارغ اليوم لهذا الطبيب.",
   "error.CANNOT_LEAVE": "حسابات الفريق لا تغادر بهذه الطريقة.",
+  "dash.cashToCollect": "نقدية للتحصيل",
+  "dash.cashToday": "نقدية محصّلة اليوم",
+  "clinic.unpaid": "كشوفات غير مدفوعة",
 };
 
 export const dictionaries: Record<Locale, Record<string, string>> = { en, ar };

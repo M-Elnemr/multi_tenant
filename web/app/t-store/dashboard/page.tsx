@@ -6,7 +6,7 @@ import { useI18n } from "@/components/i18n-provider";
 import { Card, ErrorText, Loading, PageHeader, StatusBadge, Table, Td } from "@/components/ui";
 import { dateTime, money } from "@/lib/format";
 
-type Summary = { ordersToday: number; salesTodayMinor: number; ordersThisMonth: number; salesThisMonthMinor: number; averageOrderValueMinor: number; lowStockCount: number; ordersByStatus: Record<string, number>; topProducts?: { name: string; units: number; revenueMinor: number }[] };
+type Summary = { ordersToday: number; salesTodayMinor: number; ordersThisMonth: number; salesThisMonthMinor: number; averageOrderValueMinor: number; lowStockCount: number; cashToCollectMinor: number; cashToCollectCount: number; cashCollectedTodayMinor: number; ordersByStatus: Record<string, number>; topProducts?: { name: string; units: number; revenueMinor: number }[] };
 type Order = { id: string; orderNumber: string; status: string; totalMinor: number; currency: string; customerNameSnapshot: string; createdAt: string };
 
 export default function StoreOverview() {
@@ -22,7 +22,7 @@ export default function StoreOverview() {
       <ErrorText error={summary.error} />
       {s && (
         <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {[[t("dash.salesToday"), money(s.salesTodayMinor, currency, locale)], [t("dash.ordersToday"), s.ordersToday], [t("dash.salesMonth"), money(s.salesThisMonthMinor, currency, locale)], [t("dash.aov"), money(s.averageOrderValueMinor, currency, locale)]].map(([l, v]) => (
+          {[[t("dash.salesToday"), money(s.salesTodayMinor, currency, locale)], [t("dash.ordersToday"), s.ordersToday], [t("dash.salesMonth"), money(s.salesThisMonthMinor, currency, locale)], [t("dash.aov"), money(s.averageOrderValueMinor, currency, locale)], [t("dash.cashToCollect"), `${money(s.cashToCollectMinor, currency, locale)} (${s.cashToCollectCount})`], [t("dash.cashToday"), money(s.cashCollectedTodayMinor, currency, locale)]].map(([l, v]) => (
             <Card key={String(l)}><p className="text-sm text-slate-500">{l}</p><p className="mt-1 text-xl font-semibold">{v}</p></Card>
           ))}
         </div>

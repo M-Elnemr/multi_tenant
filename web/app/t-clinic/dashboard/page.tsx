@@ -8,7 +8,7 @@ import { money, timeOnly } from "@/lib/format";
 
 type Dash = {
   today: { id: string; startAt: string; status: string; queueNumber?: number; patientName: string; patientCode: string; doctorName: string; serviceName: string }[];
-  pendingRequests: number; checkedIn: number; pendingLabReviews: number; noShowsThisMonth: number; completedThisMonth: number; revenueThisMonthMinor: number; newPatientsThisMonth: number;
+  pendingRequests: number; checkedIn: number; pendingLabReviews: number; noShowsThisMonth: number; completedThisMonth: number; revenueThisMonthMinor: number; newPatientsThisMonth: number; unpaidVisitsCount: number; unpaidVisitsMinor: number;
 };
 
 export default function ClinicOverview() {
@@ -16,7 +16,7 @@ export default function ClinicOverview() {
   const { data, loading, error } = useApi<Dash>("clinic/dashboard");
   if (loading && !data) return <Loading />;
   if (!data) return <ErrorText error={error} />;
-  const stats = [[t("clinic.today"), data.today.length], [t("clinic.pending"), data.pendingRequests], [t("clinic.waiting"), data.checkedIn], [t("clinic.labReviews"), data.pendingLabReviews], [t("clinic.revenueMonth"), money(data.revenueThisMonthMinor, currency, locale)], [t("clinic.noShows"), data.noShowsThisMonth], [t("clinic.completed"), data.completedThisMonth], [t("clinic.newPatients"), data.newPatientsThisMonth]];
+  const stats = [[t("clinic.today"), data.today.length], [t("clinic.pending"), data.pendingRequests], [t("clinic.waiting"), data.checkedIn], [t("clinic.labReviews"), data.pendingLabReviews], [t("clinic.revenueMonth"), money(data.revenueThisMonthMinor, currency, locale)], [t("clinic.noShows"), data.noShowsThisMonth], [t("clinic.completed"), data.completedThisMonth], [t("clinic.newPatients"), data.newPatientsThisMonth], [t("clinic.unpaid"), `${money(data.unpaidVisitsMinor, currency, locale)} (${data.unpaidVisitsCount})`]];
   return (
     <>
       <PageHeader title={t("nav.overview")} />

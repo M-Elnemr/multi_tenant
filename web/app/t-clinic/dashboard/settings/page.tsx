@@ -10,7 +10,7 @@ import { Alert, Button, Card, ErrorText, Field, Input, PageHeader, Textarea } fr
 
 type Profile = {
   clinicName: string; about?: string; phone?: string; email?: string; addressText?: string; bookingEnabled: boolean; takeNewPatients: boolean; requiresConfirmation: boolean;
-  minimumBookingNoticeMinutes: number; maximumDaysAhead: number; cancellationWindowHours: number; cardEnabled: boolean; cashEnabled: boolean;
+  minimumBookingNoticeMinutes: number; maximumDaysAhead: number; cancellationWindowHours: number; cardEnabled: boolean; cashEnabled: boolean; cardAvailable: boolean;
 };
 type Doctor = { id: string; displayName: string; bio?: string; defaultAppointmentFeeMinor?: number; specialties: { code: string; nameEn: string; nameAr: string }[] };
 type Specialty = { code: string; nameAr: string; nameEn: string };
@@ -65,7 +65,7 @@ export default function ClinicSettings() {
             </div>
             <Field label={t("settings.about")}><Textarea value={p.about ?? ""} onChange={(e) => setP({ ...p, about: e.target.value })} /></Field>
             <h3 className="pt-2 text-sm font-medium">{t("clinicSettings.booking")}</h3>
-            <div className="grid gap-3 sm:grid-cols-2">{toggle("bookingEnabled")}{toggle("takeNewPatients")}{toggle("requiresConfirmation")}{toggle("cashEnabled")}{toggle("cardEnabled")}</div>
+            <div className="grid gap-3 sm:grid-cols-2">{toggle("bookingEnabled")}{toggle("takeNewPatients")}{toggle("requiresConfirmation")}{toggle("cashEnabled")}{p.cardAvailable && toggle("cardEnabled")}</div>
             <div className="grid gap-3 sm:grid-cols-3">{num("minimumBookingNoticeMinutes")}{num("maximumDaysAhead")}{num("cancellationWindowHours")}</div>
             <ErrorText error={save.error} />
             {saved && <Alert tone="green">{t("common.saved")}</Alert>}

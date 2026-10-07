@@ -21,16 +21,21 @@ public class ClinicSettingsService {
     private final JdbcClient jdbc;
     private final EntitlementService ent;
     private final AuditService audit;
+    private final com.platform.shared.PaymentPolicy policy;
 
-    public ClinicSettingsService(JdbcClient jdbc, EntitlementService ent, AuditService audit) {
+    public ClinicSettingsService(JdbcClient jdbc, EntitlementService ent, AuditService audit, com.platform.shared.PaymentPolicy policy) {
+        this.policy = policy;
         this.jdbc = jdbc;
         this.ent = ent;
         this.audit = audit;
     }
 
     public Map<String, Object> profile(UUID tenantId) {
-        return Rows.camel(jdbc.sql("SELECT clinic_name, about, phone, email, address_text, booking_enabled, take_new_patients, requires_confirmation, minimum_booking_notice_minutes, maximum_days_ahead, cancellation_window_hours, card_enabled, cash_enabled FROM medical.clinic_profiles WHERE tenant_id = :t")
+        Map<String, Object> m = Rows.camel(jdbc.sql("SELECT clinic_name, about, phone, email, address_text, booking_enabled, take_new_patients, requires_confirmation, minimum_booking_notice_minutes, maximum_days_ahead, cancellation_window_hours, card_enabled, cash_enabled FROM medical.clinic_profiles WHERE tenant_id = :t")
                 .param("t", tenantId).query().singleRow());
+        m.put("cardAvailable", policy.cardEnabled());
+        m.put("cardEnabled", policy.cardEnabled() && Boolean.TRUE.equals(m.get("cardEnabled")));   // never advertised while the platform has card payments off
+        return m;
     }
 
     @Transactional
