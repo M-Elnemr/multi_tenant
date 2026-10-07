@@ -15,6 +15,11 @@ Spec: `SaaS_MultiTenant_Ecommerce_Medical_Master_Spec.md`.
 The site is live immediately at `https://<slug>.<root-domain>` with defaults already in place (store: main branch, shipping, payment; clinic: doctor profile,
 services, weekly schedule). Own domain: Dashboard -> Domains -> add -> create the two DNS records shown -> auto-verified, certificate issued automatically.
 
+## Clinic features worth knowing
+- **Waiting room**: reception checks a patient in, they get a queue number; the doctor's *Waiting room* screen shows who is being seen and who is next, with Call / Start visit / No-show (refreshes by itself). The patient sees their own place in the portal and app and is told when called.
+- **One patient, many doctors**: a person has one login. Each clinic keeps its own separate record. A doctor adds an existing person by phone and the person simply sees that clinic in their app next to the others; they can leave a clinic at any time (the clinic keeps its record).
+- **Passwords**: at registration the clinic can set the patient's first password (or give a one-time code). Either way the patient can change it from My account.
+
 ## No SMS / OTP anywhere
 Login is phone (or email) + password. A new doctor, staff member or patient gets a **one-time code** from the business and uses it once to choose their own password.
 A patient whose phone already has an account elsewhere claims their record with their password + the clinic's code. The patient code alone never logs anyone in.

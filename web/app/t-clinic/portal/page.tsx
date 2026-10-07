@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/client";
 import { Page, useAction, useApi } from "@/components/hooks";
@@ -9,12 +9,15 @@ import { Alert, Button, Empty, ErrorText, Loading, PageHeader, StatusBadge } fro
 import { dateTime } from "@/lib/format";
 import Link from "next/link";
 
+type Place = { appointmentId: string; queueNumber: number; called: boolean; doctorName: string; serviceName: string; aheadOfYou: number; doctorBusy: boolean };
 type Appt = { id: string; startAt: string; status: string; doctorName: string; serviceName: string; branchName: string; paymentStatus: string; paymentMethod: string; priceMinor?: number; patientName?: string };
 
 function Inner() {
   const { t, locale, timezone } = useI18n();
   const booked = useSearchParams().get("booked");
   const { data, loading, error, reload } = useApi<Page<Appt>>("portal/appointments?pageSize=50");
+  const place = useApi<Place[]>("portal/queue");
+  useEffect(() => { const h = setInterval(() => { void place.reload(); }, 10_000); return () => clearInterval(h); }, [place.reload]); // eslint-disable-line react-hooks/exhaustive-deps
   const cancel = useAction(async (id: string) => { await api(`portal/appointments/${id}/cancel`, { body: {} }); await reload(); });
   const [now] = useState(() => Date.now());
   const upcoming = data?.data.filter((a) => new Date(a.startAt).getTime() >= now - 3600_000 && !["CANCELLED", "REJECTED", "COMPLETED", "NO_SHOW"].includes(a.status)) ?? [];
@@ -32,6 +35,17 @@ function Inner() {
   return (
     <>
       <PageHeader title={t("portal.appointments")} />
+      {place.data?.map((p) => (
+        <div key={p.appointmentId} className={`mb-4 rounded-2xl border-2 p-5 text-center ${p.called ? "border-emerald-500 bg-emerald-50" : "border-brand/40 bg-white"}`}>
+          <p className="text-sm text-slate-500">{p.doctorName} · {p.serviceName}</p>
+          {p.called ? <p className="mt-1 text-2xl font-bold text-emerald-700">{t("queue.yourTurn")}</p> : (
+            <>
+              <p className="mt-1 text-4xl font-bold">#{p.queueNumber}</p>
+              <p className="mt-1 text-slate-600">{p.aheadOfYou === 0 ? t("queue.youAreNext") : t("queue.aheadOfYou", { n: p.aheadOfYou })}</p>
+            </>
+          )}
+        </div>
+      ))}
       {booked && <div className="mb-4"><Alert tone="green">{t("portal.booked")}</Alert></div>}
       <ErrorText error={error ?? cancel.error} />
       {loading && !data ? <Loading /> : (

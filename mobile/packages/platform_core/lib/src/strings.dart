@@ -33,6 +33,18 @@ class S {
   String get address1 => ar ? 'العنوان' : 'Address';
   String get city => ar ? 'المدينة' : 'City';
   String get total => ar ? 'الإجمالي' : 'Total';
+  String get myClinics => ar ? 'عياداتي' : 'My clinics';
+  String get queueTurn => ar ? 'حان دورك' : "It's your turn";
+  String get queueNext => ar ? 'أنت التالي' : 'You are next';
+  String queueAhead(int n) => ar ? 'قبلك $n مريض' : '$n patient(s) before you';
+  String get account => ar ? 'حسابي' : 'My account';
+  String get currentPassword => ar ? 'كلمة المرور الحالية' : 'Current password';
+  String get changePassword => ar ? 'تغيير كلمة المرور' : 'Change password';
+  String get passwordChanged => ar ? 'تم تغيير كلمة المرور' : 'Password changed';
+  String get leaveClinic => ar ? 'مغادرة هذه العيادة' : 'Leave this clinic';
+  String get waitingRoom => ar ? 'قاعة الانتظار' : 'Waiting room';
+  String get call => ar ? 'نداء' : 'Call';
+  String get startVisit => ar ? 'بدء الكشف' : 'Start visit';
   String get orderPlaced => ar ? 'تم استلام طلبك' : 'Order received';
 
   /// Integer minor units -> localized currency text (19999 EGP -> 199.99).

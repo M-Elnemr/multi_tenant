@@ -67,6 +67,12 @@ class AuthRepository {
 
   Future<Map<String, dynamic>> me() async => await api.get('auth/me') as Map<String, dynamic>;
 
+  /// Changes the password; the server revokes other sessions and returns fresh tokens for this device.
+  Future<void> changePassword(String current, String next) async {
+    final r = await api.post('auth/change-password', {'currentPassword': current, 'newPassword': next}) as Map<String, dynamic>;
+    await api.session.save(r);
+  }
+
   Future<void> logout() async {
     final token = await api.session._s.read(key: api.session._r);
     if (token != null) {

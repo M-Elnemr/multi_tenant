@@ -25,6 +25,7 @@ export function LoginForm({ defaultIdentifier = "" }: { defaultIdentifier?: stri
     let target = "/";
     if (me.permissions.some((p) => p.startsWith("platform."))) target = "/admin";
     else if (me.roles.includes("PATIENT")) target = "/portal";
+    else if (me.roles.length === 0) target = "/portal";   // platform host: show every place this person belongs to
     else if (me.roles.some((r) => r !== "CUSTOMER")) target = "/dashboard";
     router.replace(next && next.startsWith("/") && !next.startsWith("//") ? next : target);
     router.refresh();

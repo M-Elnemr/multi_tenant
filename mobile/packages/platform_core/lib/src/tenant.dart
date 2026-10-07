@@ -1,6 +1,12 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
+/// scheme + host for a tenant host returned by the API (https unless built with --dart-define=INSECURE_HTTP=true for local dev).
+String baseForHost(String host, {bool insecure = const bool.fromEnvironment('INSECURE_HTTP')}) => '${insecure ? 'http' : 'https'}://$host';
+
+/// Base URL of the platform site itself (sign-in that spans every clinic): --dart-define=ROOT_DOMAIN=platform.com
+String platformBase({String rootDomain = const String.fromEnvironment('ROOT_DOMAIN', defaultValue: 'platform.localtest.me')}) => baseForHost(rootDomain);
+
 /// Resolved identity of a store/clinic address.
 class TenantInfo {
   TenantInfo({required this.baseUrl, required this.host, required this.name, required this.type, required this.currency, required this.locale, required this.primaryColor});

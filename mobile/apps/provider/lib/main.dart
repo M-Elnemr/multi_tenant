@@ -132,9 +132,12 @@ class ClinicDashboard extends StatelessWidget {
     final s = S.of(context);
     if (!perms.contains('appointment.manage')) return Center(child: Text(s.empty));
     return Async<Map<String, dynamic>>(
-      load: () async => await api.get('clinic/dashboard') as Map<String, dynamic>,
+      load: () async => {...(await api.get('clinic/dashboard') as Map<String, dynamic>), 'queue': await api.get('clinic/queue')},
       builder: (context, d, reload) {
         final today = (d['today'] as List).cast<Map<String, dynamic>>();
+        final queue = d['queue'] as Map<String, dynamic>;
+        final waiting = (queue['waiting'] as List).cast<Map<String, dynamic>>();
+        final inProgress = (queue['inProgress'] as List).cast<Map<String, dynamic>>();
         return RefreshIndicator(
           onRefresh: reload,
           child: ListView(padding: const EdgeInsets.all(16), children: [
@@ -143,6 +146,23 @@ class ClinicDashboard extends StatelessWidget {
               _Stat(s.ar ? 'بانتظار الموافقة' : 'Awaiting approval', '${d['pendingRequests']}'),
               _Stat(s.ar ? 'في الانتظار' : 'Waiting', '${d['checkedIn']}'),
             ]),
+            const SizedBox(height: 16),
+            const SizedBox(height: 8),
+            Text(s.waitingRoom, style: Theme.of(context).textTheme.titleMedium),
+            for (final e in inProgress) Card(color: Colors.blue.shade50, child: ListTile(leading: const Icon(Icons.medical_services_outlined), title: Text('${e['patientName']}'), subtitle: Text('#${e['queueNumber']} · ${e['serviceName']}'))),
+            for (var i = 0; i < waiting.length; i++)
+              Card(
+                child: ListTile(
+                  leading: CircleAvatar(child: Text('${waiting[i]['queueNumber']}')),
+                  title: Text('${waiting[i]['patientName']}'),
+                  subtitle: Text('${waiting[i]['serviceName']} · ${waiting[i]['waitedMinutes']} min'),
+                  trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                    TextButton(onPressed: () => _act(context, waiting[i]['id'] as String, 'call', reload), child: Text(s.call)),
+                    if (perms.contains('medical_note.create')) TextButton(onPressed: () => _act(context, waiting[i]['id'] as String, 'start', reload), child: Text(s.startVisit)),
+                  ]),
+                ),
+              ),
+            if (waiting.isEmpty && inProgress.isEmpty) Padding(padding: const EdgeInsets.all(16), child: Center(child: Text(s.empty))),
             const SizedBox(height: 16),
             Text(s.appointments, style: Theme.of(context).textTheme.titleMedium),
             for (final a in today)

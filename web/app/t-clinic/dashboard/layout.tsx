@@ -3,6 +3,7 @@ import { DashboardShell, type NavItem } from "@/components/dashboard/shell";
 const NAV: NavItem[] = [
   { href: "/dashboard", label: "nav.overview", perm: "appointment.manage", icon: "📊" },
   { href: "/dashboard/appointments", label: "nav.appointments", perm: "appointment.manage", icon: "📅" },
+  { href: "/dashboard/queue", label: "nav.queue", perm: "appointment.manage", icon: "🧍" },
   { href: "/dashboard/patients", label: "nav.patients", perm: "patient.read", icon: "🧑‍⚕️" },
   { href: "/dashboard/schedule", label: "nav.schedule", perm: "schedule.manage", icon: "🕒" },
   { href: "/dashboard/services", label: "nav.services", perm: ["schedule.manage", "appointment.manage"], icon: "💊" },

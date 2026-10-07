@@ -1,0 +1,31 @@
+"use client";
+
+import { useState } from "react";
+import { api } from "@/lib/client";
+import { useAction } from "./hooks";
+import { useT } from "./i18n-provider";
+import { Alert, Button, Card, ErrorText, Field, Input } from "./ui";
+
+/** The account owner changes their own password (a business that set the first one never needs to know the new one). */
+export function ChangePasswordCard() {
+  const t = useT();
+  const [cur, setCur] = useState("");
+  const [next, setNext] = useState("");
+  const [done, setDone] = useState(false);
+  const change = useAction(async () => {
+    await api("auth/change-password", { body: { currentPassword: cur, newPassword: next } });
+    setCur(""); setNext(""); setDone(true);
+  });
+  return (
+    <Card className="space-y-3">
+      <h2 className="font-medium">{t("account.changePassword")}</h2>
+      <form onSubmit={(e) => { e.preventDefault(); setDone(false); void change.run(); }} className="space-y-3">
+        <Field label={t("account.currentPassword")}><Input type="password" value={cur} onChange={(e) => setCur(e.target.value)} autoComplete="current-password" required /></Field>
+        <Field label={t("login.newPassword")} hint={t("login.passwordRule")}><Input type="password" value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" minLength={8} required /></Field>
+        <ErrorText error={change.error} />
+        {done && <Alert tone="green">{t("account.passwordChanged")}</Alert>}
+        <Button type="submit" loading={change.loading}>{t("common.save")}</Button>
+      </form>
+    </Card>
+  );
+}

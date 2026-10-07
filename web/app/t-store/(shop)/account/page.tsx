@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api } from "@/lib/client";
 import { useAction, useApi, useMe } from "@/components/hooks";
 import { useT } from "@/components/i18n-provider";
+import { ChangePasswordCard } from "@/components/change-password";
 import { LogoutButton } from "@/components/logout-button";
 import { Button, Card, Empty, ErrorText, Field, Input, Loading, PageHeader } from "@/components/ui";
 import Link from "next/link";
@@ -27,6 +28,7 @@ export default function Account() {
   return (
     <>
       <PageHeader title={t("account.title")} subtitle={me ? `${me.firstName} ${me.lastName} · ${me.phone ?? ""}` : ""} actions={<><Link href="/orders" className="rounded-lg border bg-white px-3 py-2 text-sm">{t("orders.mine")}</Link><LogoutButton /></>} />
+      <div className="mb-6"><ChangePasswordCard /></div>
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
           <h2 className="mb-3 font-medium">{t("account.addresses")}</h2>

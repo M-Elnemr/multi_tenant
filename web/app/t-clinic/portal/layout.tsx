@@ -14,6 +14,7 @@ export default async function PortalLayout({ children }: { children: React.React
           <Link href="/" className="font-bold text-brand">{info.kind === "TENANT" ? info.name : ""}</Link>
           <nav className="flex items-center gap-1 text-sm">
             <Link href="/portal" className="rounded-lg px-3 py-1.5 hover:bg-slate-100">{t("portal.appointments")}</Link>
+            <Link href="/portal/account" className="rounded-lg px-3 py-1.5 hover:bg-slate-100">{t("account.title")}</Link>
             <Link href="/portal/record" className="rounded-lg px-3 py-1.5 hover:bg-slate-100">{t("portal.record")}</Link>
             <Link href="/book" className="rounded-lg bg-brand px-3 py-1.5 text-white">{t("clinic.book")}</Link>
             <LogoutButton />
