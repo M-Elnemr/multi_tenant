@@ -8,7 +8,7 @@ hosts=("$@")
 if [ ${#hosts[@]} -eq 0 ]; then
   mapfile -t hosts < <(docker exec multitenant-db-1 psql -U "${DB_USERNAME:-platform}" -d "${DB_NAME:-platform}" -tAc "select host from core.tenant_domains where host like '%.$root' order by host")
 fi
-current=$(certbot certificates --cert-name "$root" 2>/dev/null | sed -n 's/^ *Domains: //p')
+current=$(openssl x509 -in "/etc/letsencrypt/live/$root/cert.pem" -noout -ext subjectAltName 2>/dev/null | tr -d ' ' | tr ',' '\n' | sed -n 's/^\(DNS:\)\?DNS://p;s/^DNS://p' | sort -u | tr '\n' ' ')
 args=(-d "$root"); for d in $current; do args+=(-d "$d"); done
 new=0; for h in "${hosts[@]}"; do case " $current " in *" $h "*) ;; *) args+=(-d "$h"); new=1;; esac; done
 [ "$new" = 1 ] || { echo "nothing to add (certificate already covers: $current)"; exit 0; }
