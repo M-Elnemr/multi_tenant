@@ -36,6 +36,13 @@ export default function QueuePage() {
     const enc = await api<{ id: string }>("clinic/encounters", { body: { patientId: e.patientId, appointmentId: e.id } });
     router.push(`/dashboard/encounters/${enc.id}`);
   });
+  // The secretary only moves the patient into the room; the doctor opens the exam from "Current exam".
+  const [confirm, setConfirm] = useState<Entry | null>(null);
+  const sendIn = useAction(async (e: Entry) => { await api(`clinic/appointments/${e.id}/start`, { body: {} }); setConfirm(null); await reload(); });
+  const trySendIn = (e: Entry) => {
+    const busy = queue.data?.inProgress.find((x) => x.doctorId === e.doctorId);
+    if (busy && confirm?.id !== e.id) setConfirm(e); else void sendIn.run(e);
+  };
   const openVisit = useAction(async (e: Entry) => {
     const enc = await api<{ id: string }>("clinic/encounters", { body: { patientId: e.patientId, appointmentId: e.id } });
     router.push(`/dashboard/encounters/${enc.id}`);
@@ -53,7 +60,13 @@ export default function QueuePage() {
         subtitle={t("queue.hint")}
         actions={(doctors.data?.length ?? 0) > 1 ? <Select value={doctorId} onChange={(e) => setDoctorId(e.target.value)}><option value="">{t("appt.allDoctors")}</option>{doctors.data?.map((d) => <option key={d.id} value={d.id}>{d.displayName}</option>)}</Select> : undefined}
       />
-      <ErrorText error={queue.error ?? act.error ?? startVisit.error ?? openVisit.error} />
+      <ErrorText error={queue.error ?? act.error ?? startVisit.error ?? openVisit.error ?? sendIn.error} />
+      {confirm && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm">
+          <p>{t("queue.sendInConfirm", { name: queue.data?.inProgress.find((x) => x.doctorId === confirm.doctorId)?.patientName ?? "", next: confirm.patientName })}</p>
+          <div className="flex gap-2"><Button size="sm" loading={sendIn.loading} onClick={() => sendIn.run(confirm)}>{t("queue.sendInYes")}</Button><Button size="sm" variant="ghost" onClick={() => setConfirm(null)}>{t("common.cancel")}</Button></div>
+        </div>
+      )}
 
       <div className="mb-6 grid gap-4 lg:grid-cols-2">
         <Card className="border-2 border-brand/40">
@@ -79,6 +92,7 @@ export default function QueuePage() {
               <div className="flex flex-col gap-2">
                 <Button onClick={() => act.run(next.id, "call")} loading={act.loading} variant={next.calledAt ? "secondary" : "primary"}>{next.calledAt ? t("queue.callAgain") : t("queue.call")}</Button>
                 {clinical && <Button variant="secondary" onClick={() => startVisit.run(next)} loading={startVisit.loading}>{t("appt.startVisit")}</Button>}
+                {!clinical && can("appointment.manage") && <Button variant="secondary" onClick={() => trySendIn(next)} loading={sendIn.loading}>{t("queue.sendIn")}</Button>}
               </div>
             </div>
           ) : <p className="text-slate-400">{t("queue.empty")}</p>}
@@ -101,6 +115,7 @@ export default function QueuePage() {
                 <Badge tone={(e.waitedMinutes ?? 0) > 30 ? "red" : (e.waitedMinutes ?? 0) > 15 ? "amber" : "slate"}>{t("queue.waited", { n: e.waitedMinutes ?? 0 })}</Badge>
                 {e.calledAt && <Badge tone="blue">{t("queue.called")}</Badge>}
                 {i > 0 && <Button size="sm" variant="ghost" onClick={() => act.run(e.id, "call")}>{t("queue.call")}</Button>}
+                {i > 0 && !clinical && can("appointment.manage") && <Button size="sm" variant="secondary" onClick={() => trySendIn(e)}>{t("queue.sendIn")}</Button>}
                 <Button size="sm" variant="ghost" onClick={() => act.run(e.id, "no-show")}>{t("appt.noShow")}</Button>
               </div>
             </li>

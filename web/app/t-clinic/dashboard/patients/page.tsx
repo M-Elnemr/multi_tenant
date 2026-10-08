@@ -1,12 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { api } from "@/lib/client";
 import { PhoneInput } from "@/components/inputs";
 import { Page, useAction, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Button, ErrorText, Field, Input, Loading, Modal, PageHeader, Pager, SecretBox, Select, Table, Td } from "@/components/ui";
-import { PatientQuickView } from "@/components/dashboard/patient-quick-view";
+import { WhatsAppButton } from "@/components/whatsapp-button";
 import { usePatientPortal } from "@/components/portal-flag";
 import { ageText } from "@/lib/format";
 
@@ -21,7 +22,7 @@ export default function Patients() {
   const { data, loading, error, reload } = useApi<Page<P>>(`clinic/patients?page=${page}&q=${encodeURIComponent(q)}`);
   const [open, setOpen] = useState(false);
   const portal = usePatientPortal();
-  const [view, setView] = useState<string | null>(null);
+  const clinic = useApi<{ clinicName?: string }>("clinic/public/profile");
   const blank = { firstName: "", phone: "", ageYears: "", ageMonths: "0", sex: "" };
   const [f, setF] = useState(blank);
   const [mode, setMode] = useState<"code" | "password">("code");
@@ -50,7 +51,7 @@ export default function Patients() {
       {loading && !data ? <Loading /> : (
         <>
           <Table head={[t("clinic.patient"), t("patients.code"), t("patients.mobile"), t("patients.age"), ...(portal ? [t("patients.portal")] : [])]}>
-            {data?.data.map((p) => <tr key={p.id} className="cursor-pointer hover:bg-slate-50" onClick={() => setView(p.id)}><Td><button type="button" className="font-medium text-brand" onClick={() => setView(p.id)}>{p.firstName} {p.lastName}</button></Td><Td className="font-mono text-xs">{p.patientCode}</Td><Td><span dir="ltr">{p.phone}</span></Td><Td>{ageText(p.ageYears, p.ageMonths, locale)}</Td>{portal && <Td>{p.hasPortal ? "✓" : "—"}</Td>}</tr>)}
+            {data?.data.map((p) => <tr key={p.id} className="hover:bg-slate-50"><Td><Link href={`/dashboard/patients/${p.id}`} className="font-medium text-brand">{p.firstName} {p.lastName}</Link></Td><Td className="font-mono text-xs">{p.patientCode}</Td><Td><span className="inline-flex items-center gap-2"><span dir="ltr">{p.phone}</span><WhatsAppButton phone={p.phone} message={t("pq.waHello", { name: p.firstName, clinic: clinic.data?.clinicName ?? "" })} size={28} /></span></Td><Td>{ageText(p.ageYears, p.ageMonths, locale)}</Td>{portal && <Td>{p.hasPortal ? "✓" : "—"}</Td>}</tr>)}
           </Table>
           <Pager meta={data?.meta} onPage={setPage} />
         </>
@@ -78,7 +79,6 @@ export default function Patients() {
           <Button type="submit" loading={create.loading} className="w-full">{t("common.save")}</Button>
         </form>
       </Modal>
-      <PatientQuickView id={view} onClose={() => setView(null)} />
     </>
   );
 }
