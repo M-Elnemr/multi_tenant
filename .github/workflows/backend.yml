@@ -51,6 +51,22 @@ jobs:
       - name: Run tests
         working-directory: backend
         run: ./gradlew test --no-daemon
+      # Failing tests become annotations on the run (readable through the API without admin rights), so a red build says WHICH test and why.
+      - name: Report failing tests as annotations
+        if: failure()
+        working-directory: backend
+        run: |
+          python3 - <<'PY'
+          import glob, html, re
+          n = 0
+          for f in glob.glob('build/test-results/test/*.xml'):
+              s = open(f, encoding='utf-8').read()
+              for m in re.finditer(r'<testcase name="([^"]+)" classname="([^"]+)"[^>]*>\s*<failure message="([^"]{0,700})', s):
+                  msg = html.unescape(m.group(3)).replace('\n', ' ').replace('\r', ' ')[:600]
+                  print('::error title=TEST FAILED %s.%s::%s' % (m.group(2).split('.')[-1], m.group(1), msg))
+                  n += 1
+          print('%d failing tests' % n)
+          PY
 
   build-push:
     needs: test
