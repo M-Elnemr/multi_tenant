@@ -29,6 +29,7 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
   const [key] = useState(newKey);
   const [done, setDone] = useState<{ host: string; tenantId: string } | null>(null);
   const [opening, setOpening] = useState(false);
+  const [ready, setReady] = useState(false);
 
   // Debounced live availability check; state is only written after the response arrives.
   useEffect(() => {
@@ -42,6 +43,24 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
     return () => clearTimeout(h);
   }, [slug]);
   const avail: "idle" | "checking" | "ok" | "taken" | "invalid" = slug.length < 3 ? "idle" : check.slug === slug ? check.state : "checking";
+
+  // A brand-new address may need up to a minute before its secure certificate exists. Wait for it here, so the button never lands on a browser warning.
+  const doneHost = done?.host;
+  useEffect(() => {
+    if (!doneHost) return;
+    let stop = false;
+    const probe = async () => {
+      try {
+        const port = window.location.port ? `:${window.location.port}` : "";
+        await fetch(`${window.location.protocol}//${doneHost}${port}/api/v1/tenant/resolve`, { mode: "no-cors", cache: "no-store" });
+        if (!stop) setReady(true);
+      } catch {
+        if (!stop) setTimeout(() => void probe(), 3000);
+      }
+    };
+    void probe();
+    return () => { stop = true; };
+  }, [doneHost]);
 
   const siteUrl = (host: string) => {
     const port = window.location.port ? `:${window.location.port}` : "";
@@ -76,8 +95,8 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
         <p className="mt-2 text-slate-600">{t("register.liveBody")}</p>
         <p className="my-4 rounded-lg bg-white p-3 font-mono text-sm" dir="ltr">{done.host}</p>
         <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
-          <button type="button" onClick={() => void openDashboard()} disabled={opening} className="rounded-lg bg-brand px-5 py-3 text-sm font-medium text-white disabled:opacity-60">{opening ? t("myplaces.opening") : t("register.openDashboard")}</button>
-          <a href={base} className="rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-medium">{t("register.viewSite")}</a>
+          <button type="button" onClick={() => void openDashboard()} disabled={opening || !ready} className="rounded-lg bg-brand px-5 py-3 text-sm font-medium text-white disabled:opacity-60">{opening ? t("myplaces.opening") : !ready ? t("register.preparing") : t("register.openDashboard")}</button>
+          {ready ? <a href={base} className="rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-medium">{t("register.viewSite")}</a> : <span className="rounded-lg border border-slate-200 bg-slate-50 px-5 py-3 text-sm text-slate-400">{t("register.viewSite")}</span>}
         </div>
         <p className="mt-6 text-sm text-slate-500">{t("register.domainTip")}</p>
       </div>
