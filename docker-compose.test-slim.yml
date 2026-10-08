@@ -28,7 +28,7 @@ services:
 
   web:
     environment:
-      SESSION_SECURE: "false"
+      SESSION_SECURE: ${TEST_SESSION_SECURE:-false}
       NODE_OPTIONS: --max-old-space-size=150
     mem_limit: 220m
     oom_score_adj: 900

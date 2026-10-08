@@ -43,6 +43,12 @@ On the server:
 
 Check the other project before and after: its site answers, `docker ps` shows its containers with the same uptime, `free -h`, `dmesg | grep -i oom`. Stop everything with `./infra/scripts/test-slim-down.sh` (add `--volumes` to delete the test data too).
 
+### HTTPS for the personal test (same nginx + certbot pattern as the other project)
+Phones often refuse or rewrite plain HTTP, so put TLS in front with the server's existing nginx. It uses its own name so the other project's certificate and config are untouched:
+1. Root domain `mt.216-158-233-36.sslip.io` (stores are `<slug>.mt.216-158-233-36.sslip.io`). In `.env`: `PLATFORM_ROOT_DOMAIN`/`PLATFORM_EDGE_HOST` = that name, `TEST_SESSION_SECURE=true`, `TEST_EDGE_BIND=127.0.0.1` (the plain-HTTP edge is then reachable only from nginx).
+2. `./infra/scripts/test-https-setup.sh mt.216-158-233-36.sslip.io` (as root): backs nginx up, adds two files in `/etc/nginx/conf.d`, issues the certificate, reloads, and removes its own files if anything fails.
+3. Each new store/clinic needs its name in the certificate (no wildcard without DNS control): `./infra/scripts/test-https-add-hosts.sh mt.216-158-233-36.sslip.io` adds every host found in the database. `sslip.io` is not on the public suffix list, so Let's Encrypt's weekly limit is shared with all its users; if issuance is refused, wait or move to a real domain (layout A/B).
+
 ## Storage image
 MinIO's project no longer publishes images. Set `MINIO_IMAGE`/`MC_IMAGE` to an image you build or trust, or point the `S3_*` variables at any S3-compatible service and remove the `minio`/`minio-init` services.
 
