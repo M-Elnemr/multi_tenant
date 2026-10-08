@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.ResultActions;
 
+/** Queue, walk-in, current exam (secretary sends in, doctor opens once) and patient edit rules. */
 class QueueAndAccessIntegrationTest extends IntegrationTestBase {
     @Autowired JdbcClient jdbc;
 
