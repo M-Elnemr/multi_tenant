@@ -98,7 +98,7 @@ public class DevSeed implements ApplicationRunner {
         var r = onboarding.onboard(new OnboardingService.Command(TenantType.CLINIC, "Demo Clinic", "demo-clinic", "Ahmed", "Hassan", "01000000002", null, PASSWORD, "en", java.util.List.of("general_practice"), null), null, "127.0.0.1", "seed");
         UUID tenantId = r.tenant().getId();
         UUID doctorUser = users.findByPhone("+201000000002").orElseThrow().getId();
-        var created = patients.create(tenantId, doctorUser, new PatientService.PatientReq("Sara", "Demo", "01000000003", null, null, "F", null, null, null, null, null, null, null));
+        var created = patients.create(tenantId, doctorUser, new PatientService.PatientReq("Sara", "Demo", "01000000003", null, null, "F", null, null, null, null, null, null, null, 30, 6));
         log.info("Demo patient {} portal activation PIN: {} (phone 01000000003)", created.get("patientCode"), created.get("activationPin"));
     }
 }

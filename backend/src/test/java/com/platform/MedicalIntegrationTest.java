@@ -88,8 +88,8 @@ class MedicalIntegrationTest extends IntegrationTestBase {
     @Test
     void doubleBookingIsImpossibleEvenUnderRace() throws Exception {
         Clinic c = clinic();
-        String p1 = read(body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"A\"}").andExpect(status().isCreated())), "$.id");
-        String p2 = read(body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"B\"}").andExpect(status().isCreated())), "$.id");
+        String p1 = read(body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"A\",\"phone\":\"" + nextPhone() + "\"}").andExpect(status().isCreated())), "$.id");
+        String p2 = read(body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"B\",\"phone\":\"" + nextPhone() + "\"}").andExpect(status().isCreated())), "$.id");
         LocalDate d = workday(3);
         String slot = slots(c, d, false).get(2);
         ExecutorService pool = Executors.newFixedThreadPool(2);
@@ -231,7 +231,7 @@ class MedicalIntegrationTest extends IntegrationTestBase {
     void clinicsAreIsolatedFromEachOther() throws Exception {
         Clinic a = clinic();
         Clinic b = clinic();
-        String pa = read(body(onHost(a.host(), a.owner(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"Only-in-A\"}").andExpect(status().isCreated())), "$.id");
+        String pa = read(body(onHost(a.host(), a.owner(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"Only-in-A\",\"phone\":\"" + nextPhone() + "\"}").andExpect(status().isCreated())), "$.id");
         String slot = slots(a, workday(3), false).get(0);
         String appt = read(body(onHost(a.host(), a.owner(), "POST", "/api/v1/clinic/appointments", "{\"patientId\":\"%s\",\"doctorId\":\"%s\",\"branchId\":\"%s\",\"serviceId\":\"%s\",\"startAt\":\"%s\"}".formatted(pa, a.doctorId(), a.branchId(), a.serviceId(), slot))), "$.id");
         String enc = read(body(onHost(a.host(), a.owner(), "POST", "/api/v1/clinic/encounters", "{\"patientId\":\"%s\"}".formatted(pa)).andExpect(status().isCreated())), "$.id");
@@ -287,7 +287,7 @@ class MedicalIntegrationTest extends IntegrationTestBase {
         Clinic c = clinic();
         String[] mother = patientWithPortal(c, "Mona");
         // child record registered under the mother's account
-        String child = read(body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"Ziad\",\"guardianPatientId\":\"%s\",\"relationship\":\"MOTHER\"}".formatted(mother[0])).andExpect(status().isCreated()).andExpect(jsonPath("$.portalAccess").value("GUARDIAN"))), "$.id");
+        String child = read(body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"Ziad\",\"phone\":\"%s\",\"guardianPatientId\":\"%s\",\"relationship\":\"MOTHER\"}".formatted(nextPhone(), mother[0])).andExpect(status().isCreated()).andExpect(jsonPath("$.portalAccess").value("GUARDIAN"))), "$.id");
         onHost(c.host(), mother[2], "GET", "/api/v1/portal/patients", null).andExpect(jsonPath("$.length()").value(2));
         LocalDate d = workday(3);
         String slot = slots(c, d, true).get(0);

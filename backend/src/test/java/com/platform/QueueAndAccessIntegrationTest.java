@@ -183,17 +183,22 @@ class QueueAndAccessIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void walkInJoinsTheQueueImmediately() throws Exception {
+    void walkInJoinsTheQueueWheneverThePatientIsAtTheDesk() throws Exception {
         Clinic c = clinic();
-        String[] p = patientWithPassword(c, "Walkin", nextPhone(), "WalkPass1234");
-        // the seeded schedule is Sun-Thu 10:00-16:00 Cairo time; outside those hours there is honestly no slot today
-        var r = onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/appointments/walk-in", "{\"patientId\":\"%s\",\"doctorId\":\"%s\",\"branchId\":\"%s\",\"serviceId\":\"%s\"}".formatted(p[0], c.doctorId(), c.branchId(), c.serviceId()));
-        int code = r.andReturn().getResponse().getStatus();
-        if (code == 201) {
-            r.andExpect(jsonPath("$.status").value("CHECKED_IN")).andExpect(jsonPath("$.queueNumber").value(1));
-        } else {
-            r.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("NO_SLOT_TODAY"));
-        }
+        String[] a = patientWithPassword(c, "Walkin", nextPhone(), "WalkPass1234");
+        String[] b = patientWithPassword(c, "Second", nextPhone(), "WalkPass1234");
+        String walk = "{\"patientId\":\"%s\",\"doctorId\":\"" + c.doctorId() + "\",\"branchId\":\"" + c.branchId() + "\",\"serviceId\":\"" + c.serviceId() + "\"}";
+        // works at any hour and on any day (including the weekend or after clinic hours): the schedule does not decide for someone already there
+        onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/appointments/walk-in", walk.formatted(a[0])).andExpect(status().isCreated()).andExpect(jsonPath("$.status").value("CHECKED_IN")).andExpect(jsonPath("$.queueNumber").value(1));
+        // a second walk-in right after gets the next number and a start that does not overlap the first
+        onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/appointments/walk-in", walk.formatted(b[0])).andExpect(status().isCreated()).andExpect(jsonPath("$.queueNumber").value(2));
+        assertThat(jdbc.sql("""
+                SELECT count(*) FROM medical.appointments x JOIN medical.appointments y ON x.doctor_id = y.doctor_id AND x.id < y.id
+                WHERE x.doctor_id = :d AND x.status = 'CHECKED_IN' AND y.status = 'CHECKED_IN' AND tstzrange(x.start_at, x.end_at, '[)') && tstzrange(y.start_at, y.end_at, '[)')
+                """).param("d", UUID.fromString(c.doctorId())).query(Long.class).single()).isZero();
+        onHost(c.host(), c.owner(), "GET", "/api/v1/clinic/queue", null).andExpect(jsonPath("$.waiting.length()").value(2));
+        // the same patient twice is still just a second visit entry, never an error about "no free time"
+        onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/appointments/walk-in", walk.formatted(a[0])).andExpect(status().isCreated());
     }
 
     @Test

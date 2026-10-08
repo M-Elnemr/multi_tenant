@@ -18,6 +18,7 @@ import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,7 +44,8 @@ public class PatientService {
     private static final int MAX_LINK_ATTEMPTS = 5;
 
     public record PatientReq(String firstName, String lastName, String phone, String email, LocalDate dateOfBirth, String sex, String addressText,
-                             String bloodType, String notesInternal, UUID guardianPatientId, String relationship, String initialPassword, Boolean claimWithCode) {}
+                             String bloodType, String notesInternal, UUID guardianPatientId, String relationship, String initialPassword, Boolean claimWithCode,
+                             Integer ageYears, Integer ageMonths) {}
 
     private final JdbcClient jdbc;
     private final UserRepository users;
@@ -55,11 +57,13 @@ public class PatientService {
     private final LoginThrottle throttle;
     private final AuditService audit;
     private final org.springframework.context.ApplicationEventPublisher events;
+    private final com.platform.shared.PatientPortalPolicy portalPolicy;
 
     public PatientService(JdbcClient jdbc, UserRepository users, MembershipRepository memberships, RbacService rbac, ActivationService activation,
                           PasswordEncoder encoder, AuthService auth, LoginThrottle throttle, AuditService audit,
-                          org.springframework.context.ApplicationEventPublisher events) {
+                          org.springframework.context.ApplicationEventPublisher events, com.platform.shared.PatientPortalPolicy portalPolicy) {
         this.events = events;
+        this.portalPolicy = portalPolicy;
         this.jdbc = jdbc;
         this.users = users;
         this.memberships = memberships;
@@ -74,11 +78,14 @@ public class PatientService {
     @Transactional
     public Map<String, Object> create(UUID tenantId, UUID actor, PatientReq r) {
         if (r.firstName() == null || r.firstName().isBlank()) throw BusinessException.badRequest("VALIDATION_ERROR", "First name is required");
-        String phone = r.phone() == null || r.phone().isBlank() ? null : PhoneNormalizer.normalize(r.phone());
-        String email = com.platform.shared.PhoneNormalizer.cleanEmail(r.email());
+        if (r.phone() == null || r.phone().isBlank()) throw BusinessException.badRequest("VALIDATION_ERROR", "Mobile number is required");
+        String phone = PhoneNormalizer.normalize(r.phone());
+        String email = null;   // patients are reached by mobile; no email is kept
+        boolean portalOn = portalPolicy.enabled();
+        LocalDate[] dob = resolveDob(tenantId, r);
 
         UUID guardianUser = null;
-        if (r.guardianPatientId() != null) {
+        if (portalOn && r.guardianPatientId() != null) {
             guardianUser = jdbc.sql("SELECT user_id FROM medical.patients WHERE id = :p AND tenant_id = :t").param("p", r.guardianPatientId()).param("t", tenantId).query(UUID.class).optional()
                     .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Guardian patient not found"));
             if (guardianUser == null) throw BusinessException.badRequest("GUARDIAN_NOT_LINKED", "The guardian has no portal account yet");
@@ -89,8 +96,8 @@ public class PatientService {
         String activationPin = null;
         String linkPin = null;
         String portal = "NONE";
-        boolean claimOnly = Boolean.TRUE.equals(r.claimWithCode());
-        if (phone != null && guardianUser == null) {
+        boolean claimOnly = portalOn && Boolean.TRUE.equals(r.claimWithCode());
+        if (portalOn && phone != null && guardianUser == null) {
             User existing = users.findByPhone(phone).orElse(null);
             if (existing == null) {
                 User u = new User();
@@ -145,11 +152,11 @@ public class PatientService {
         for (int i = 0; i < 5 && id == null; i++) {
             try {
                 id = jdbc.sql("""
-                        INSERT INTO medical.patients (tenant_id, user_id, patient_code, first_name, last_name, date_of_birth, sex, phone, email, address_text, blood_type, notes_internal,
+                        INSERT INTO medical.patients (tenant_id, user_id, patient_code, first_name, last_name, date_of_birth, dob_estimated, sex, phone, email, address_text, blood_type, notes_internal,
                             link_pin_hash, link_pin_expires_at, created_by)
-                        VALUES (:t, :u, :c, :fn, :ln, :dob, :sex, :ph, :em, :ad, :bt, :ni, :lh, :le, :cb) RETURNING id
+                        VALUES (:t, :u, :c, :fn, :ln, :dob, :est, :sex, :ph, :em, :ad, :bt, :ni, :lh, :le, :cb) RETURNING id
                         """).param("t", tenantId).param("u", userId).param("c", newCode()).param("fn", r.firstName().trim()).param("ln", r.lastName() == null ? "" : r.lastName().trim())
-                        .param("dob", r.dateOfBirth() == null ? null : java.sql.Date.valueOf(r.dateOfBirth())).param("sex", r.sex()).param("ph", phone).param("em", email)
+                        .param("dob", dob[0] == null ? null : java.sql.Date.valueOf(dob[0])).param("est", dob[1] != null).param("sex", r.sex()).param("ph", phone).param("em", email)
                         .param("ad", r.addressText()).param("bt", r.bloodType()).param("ni", r.notesInternal())
                         .param("lh", linkPin == null ? null : encoder.encode(linkPin)).param("le", linkPin == null ? null : java.sql.Timestamp.from(Instant.now().plus(Duration.ofDays(7))))
                         .param("cb", actor).query(UUID.class).single();
@@ -245,12 +252,42 @@ public class PatientService {
         long total = jdbc.sql("SELECT count(*) FROM medical.patients WHERE " + where).param("t", tenantId).param("like", like).param("code", code).param("ph", phone == null ? "" : "%" + phone.replaceFirst("^0", "") + "%").query(Long.class).single();
         var rows = jdbc.sql("SELECT id, patient_code, first_name, last_name, date_of_birth, sex, phone, (user_id IS NOT NULL) AS has_portal, created_at FROM medical.patients WHERE " + where + " ORDER BY first_name, last_name LIMIT :lim OFFSET :off")
                 .param("t", tenantId).param("like", like).param("code", code).param("ph", phone == null ? "" : "%" + phone.replaceFirst("^0", "") + "%").param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows();
-        return page.wrap(Rows.camel(rows), total);
+        ZoneId tz = zone(tenantId);
+        return page.wrap(Rows.camel(rows).stream().map(m -> withAge(m, tz)).toList(), total);
     }
 
     Map<String, Object> summary(UUID tenantId, UUID id) {
-        return Rows.camel(jdbc.sql("SELECT id, patient_code, first_name, last_name, date_of_birth, sex, phone, email, address_text, blood_type, (user_id IS NOT NULL) AS has_portal, status, created_at FROM medical.patients WHERE id = :p AND tenant_id = :t")
-                .param("p", id).param("t", tenantId).query().listOfRows().stream().findFirst().orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Patient not found")));
+        return withAge(Rows.camel(jdbc.sql("SELECT id, patient_code, first_name, last_name, date_of_birth, dob_estimated, sex, phone, address_text, blood_type, (user_id IS NOT NULL) AS has_portal, status, created_at FROM medical.patients WHERE id = :p AND tenant_id = :t")
+                .param("p", id).param("t", tenantId).query().listOfRows().stream().findFirst().orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Patient not found"))), zone(tenantId));
+    }
+
+    private ZoneId zone(UUID tenantId) {
+        return ZoneId.of(jdbc.sql("SELECT timezone FROM core.tenants WHERE id = :t").param("t", tenantId).query(String.class).optional().orElse("Africa/Cairo"));
+    }
+
+    /** Adds ageYears/ageMonths (from the stored birth date, estimated or not) so the UI never has to show a date of birth. */
+    private static Map<String, Object> withAge(Map<String, Object> m, ZoneId tz) {
+        Map<String, Object> out = new LinkedHashMap<>(m);
+        Object d = m.get("dateOfBirth");
+        LocalDate dob = d instanceof LocalDate ld ? ld : d instanceof java.sql.Date sd ? sd.toLocalDate() : d instanceof String str && !str.isBlank() ? LocalDate.parse(str) : null;
+        if (dob != null && !dob.isAfter(LocalDate.now(tz))) {
+            java.time.Period p = java.time.Period.between(dob, LocalDate.now(tz));
+            out.put("ageYears", p.getYears());
+            out.put("ageMonths", p.getMonths());
+        }
+        return out;
+    }
+
+    /** {date of birth, estimateMarker}: an exact date wins; otherwise age in years (0-130) + months (0-11) becomes an estimated date. {null,null} when neither was given. */
+    private LocalDate[] resolveDob(UUID tenantId, PatientReq r) {
+        if (r.ageYears() != null || r.ageMonths() != null) {
+            int y = r.ageYears() == null ? 0 : r.ageYears();
+            int mo = r.ageMonths() == null ? 0 : r.ageMonths();
+            if (y < 0 || y > 130 || mo < 0 || mo > 11) throw BusinessException.badRequest("VALIDATION_ERROR", "Age: years 0-130 and months 0-11");
+            LocalDate est = LocalDate.now(zone(tenantId)).minusYears(y).minusMonths(mo);
+            return new LocalDate[] {est, est};
+        }
+        return new LocalDate[] {r.dateOfBirth(), null};
     }
 
     /** Demographic record for staff (clinical data lives in the timeline, behind clinical permissions). Every read of a patient record is audited (spec 19). */
@@ -264,12 +301,15 @@ public class PatientService {
     @Transactional
     public Map<String, Object> update(UUID tenantId, UUID actor, UUID id, PatientReq r) {
         summary(tenantId, id);
+        LocalDate[] dob = resolveDob(tenantId, r);
+        String phone = r.phone() == null || r.phone().isBlank() ? null : PhoneNormalizer.normalize(r.phone());
         jdbc.sql("""
-                UPDATE medical.patients SET first_name = coalesce(:fn, first_name), last_name = coalesce(:ln, last_name), date_of_birth = coalesce(:dob, date_of_birth), sex = coalesce(:sex, sex),
-                  email = coalesce(:em, email), address_text = coalesce(:ad, address_text), blood_type = coalesce(:bt, blood_type), notes_internal = coalesce(:ni, notes_internal), updated_at = now()
+                UPDATE medical.patients SET first_name = coalesce(:fn, first_name), last_name = coalesce(:ln, last_name), date_of_birth = coalesce(:dob, date_of_birth),
+                  dob_estimated = CASE WHEN CAST(:dob AS date) IS NULL THEN dob_estimated ELSE :est END, sex = coalesce(:sex, sex), phone = coalesce(:ph, phone),
+                  address_text = coalesce(:ad, address_text), blood_type = coalesce(:bt, blood_type), notes_internal = coalesce(:ni, notes_internal), updated_at = now()
                 WHERE id = :p AND tenant_id = :t
-                """).param("fn", r.firstName()).param("ln", r.lastName()).param("dob", r.dateOfBirth() == null ? null : java.sql.Date.valueOf(r.dateOfBirth())).param("sex", r.sex())
-                .param("em", r.email()).param("ad", r.addressText()).param("bt", r.bloodType()).param("ni", r.notesInternal()).param("p", id).param("t", tenantId).update();
+                """).param("fn", r.firstName()).param("ln", r.lastName()).param("dob", dob[0] == null ? null : java.sql.Date.valueOf(dob[0])).param("est", dob[1] != null).param("sex", r.sex())
+                .param("ph", phone).param("ad", r.addressText()).param("bt", r.bloodType()).param("ni", r.notesInternal()).param("p", id).param("t", tenantId).update();
         audit.record(actor, tenantId, "PATIENT_UPDATED", "patient", id, null);
         return summary(tenantId, id);
     }

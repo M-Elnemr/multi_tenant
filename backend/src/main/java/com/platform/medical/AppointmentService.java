@@ -59,6 +59,11 @@ public class AppointmentService {
     /** byUser = the logged-in patient/guardian (applies booking rules); null = staff booking on behalf of the patient. */
     @Transactional
     public Map<String, Object> book(UUID tenantId, UUID actor, UUID byPatientUser, BookReq r) {
+        return doBook(tenantId, actor, byPatientUser, r, true);
+    }
+
+    /** enforceSlot=false is for walk-ins only: the patient is already at the door, so the doctor's schedule does not decide. Overlap with another live appointment is still impossible (DB constraint). */
+    private Map<String, Object> doBook(UUID tenantId, UUID actor, UUID byPatientUser, BookReq r, boolean enforceSlot) {
         boolean byPatient = byPatientUser != null;
         var profile = jdbc.sql("SELECT booking_enabled, take_new_patients, requires_confirmation, card_enabled, cash_enabled FROM medical.clinic_profiles WHERE tenant_id = :t").param("t", tenantId).query().singleRow();
         if (byPatient && !(Boolean) profile.get("booking_enabled")) throw BusinessException.forbidden("BOOKING_DISABLED", "Online booking is not available");
@@ -79,7 +84,7 @@ public class AppointmentService {
 
         ZoneId tz = slots.zone(tenantId);
         LocalDate date = r.startAt().atZone(tz).toLocalDate();
-        if (!slots.slots(tenantId, r.doctorId(), r.branchId(), r.serviceId(), date, byPatient).contains(r.startAt()))
+        if (enforceSlot && !slots.slots(tenantId, r.doctorId(), r.branchId(), r.serviceId(), date, byPatient).contains(r.startAt()))
             throw BusinessException.conflict("APPOINTMENT_SLOT_UNAVAILABLE", "This time is not available");
 
         var svc = jdbc.sql("SELECT duration_minutes, price_minor, currency FROM medical.appointment_services WHERE id = :s AND tenant_id = :t").param("s", r.serviceId()).param("t", tenantId).query().singleRow();
@@ -161,10 +166,20 @@ public class AppointmentService {
     /** Walk-in: books the first free slot from now (staff rules) and checks the patient in so they join the queue right away. */
     @Transactional
     public Map<String, Object> walkIn(UUID tenantId, UUID actor, UUID patientId, UUID doctorId, UUID branchId, UUID serviceId) {
-        ZoneId tz = slots.zone(tenantId);
-        var today = slots.slots(tenantId, doctorId, branchId, serviceId, java.time.LocalDate.now(tz), false);
-        if (today.isEmpty()) throw BusinessException.conflict("NO_SLOT_TODAY", "No free time left today for this doctor");
-        Map<String, Object> booked = book(tenantId, actor, null, new BookReq(patientId, doctorId, branchId, serviceId, today.get(0), "CASH_AT_CLINIC", null, "RECEPTION"));
+        // The doctor's schedule is irrelevant for someone standing at the desk (day off, after hours, empty day): start now, or right after whatever is in progress.
+        long minutes = jdbc.sql("SELECT duration_minutes FROM medical.appointment_services WHERE id = :s AND tenant_id = :t").param("s", serviceId).param("t", tenantId).query(Long.class).optional()
+                .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Service not found"));
+        Instant start = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MINUTES);
+        for (int hop = 0; hop < 50; hop++) {
+            java.sql.Timestamp busyUntil = jdbc.sql("""
+                    SELECT max(end_at) FROM medical.appointments
+                    WHERE tenant_id = :t AND doctor_id = :d AND status IN ('REQUESTED','PENDING_CONFIRMATION','CONFIRMED','CHECKED_IN','IN_PROGRESS')
+                      AND tstzrange(start_at, end_at, '[)') && tstzrange(:s, :e, '[)')
+                    """).param("t", tenantId).param("d", doctorId).param("s", java.sql.Timestamp.from(start)).param("e", java.sql.Timestamp.from(start.plus(Duration.ofMinutes(minutes)))).query(java.sql.Timestamp.class).optional().orElse(null);
+            if (busyUntil == null) break;
+            start = busyUntil.toInstant();
+        }
+        Map<String, Object> booked = doBook(tenantId, actor, null, new BookReq(patientId, doctorId, branchId, serviceId, start, "CASH_AT_CLINIC", null, "RECEPTION"), false);
         return transition(tenantId, actor, (UUID) booked.get("id"), "CHECKED_IN", null);
     }
 

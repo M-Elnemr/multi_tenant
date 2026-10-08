@@ -20,10 +20,12 @@ public class ClinicController {
     private final ClinicalService clinical;
     private final SlotService slots;
     private final PatientExportService exports;
+    private final com.platform.shared.PatientPortalPolicy portalPolicy;
     private final PrescriptionPdfService pdfs;
 
     public ClinicController(ClinicSettingsService settings, PatientService patients, AppointmentService appointments, ClinicalService clinical, SlotService slots,
-                            PatientExportService exports, PrescriptionPdfService pdfs) {
+                            PatientExportService exports, PrescriptionPdfService pdfs, com.platform.shared.PatientPortalPolicy portalPolicy) {
+        this.portalPolicy = portalPolicy;
         this.exports = exports;
         this.pdfs = pdfs;
         this.settings = settings;
@@ -145,11 +147,12 @@ public class ClinicController {
 
     @PostMapping("/patients/{id}/access-pin")
     @PreAuthorize("hasAuthority('patient.update')")
-    public Map<String, Object> pin(@PathVariable UUID id, Authentication a) { return patients.reissuePin(ClinicContext.tenantId(), user(a), id); }
+    public Map<String, Object> pin(@PathVariable UUID id, Authentication a) { portalPolicy.requireEnabled(); return patients.reissuePin(ClinicContext.tenantId(), user(a), id); }
 
     @PostMapping("/patients/{id}/set-password")
     @PreAuthorize("hasAuthority('patient.update')")
     public Map<String, Object> setPassword(@PathVariable UUID id, @RequestBody SetPasswordReq r, Authentication a) {
+        portalPolicy.requireEnabled();
         patients.setPassword(ClinicContext.tenantId(), user(a), id, r.password());
         return Map.of("ok", true);
     }
