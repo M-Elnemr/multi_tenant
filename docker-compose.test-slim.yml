@@ -1,0 +1,62 @@
+# Personal test on a small shared server (about 1 GB of spare RAM). Plain HTTP, local-disk images, no Redis/MinIO/Caddy-with-TLS.
+#   docker compose -p multitenant -f docker-compose.yml -f docker-compose.test-slim.yml up -d
+# Every container gets a high oom_score_adj: if the machine runs out of memory the kernel stops THESE first, never the other projects.
+# Not for customers or real patient data. Production layouts: docs/DEPLOY.md.
+services:
+  db:
+    command: ["postgres", "-c", "shared_buffers=96MB", "-c", "effective_cache_size=256MB", "-c", "max_connections=40", "-c", "work_mem=2MB", "-c", "maintenance_work_mem=32MB", "-c", "random_page_cost=1.1"]
+    mem_limit: 256m
+    oom_score_adj: 900
+    cpus: 0.3
+
+  backend:
+    depends_on: !override
+      db:
+        condition: service_healthy
+    environment:
+      STORAGE_TYPE: local
+      APP_FILES_DIR: /app/uploads
+      REDIS_ENABLED: "false"
+      DB_POOL_SIZE: "6"
+      DB_POOL_MIN_IDLE: "1"
+      JAVA_TOOL_OPTIONS: ${BACKEND_JAVA_OPTS:--Xmx320m -Xss512k -XX:+UseSerialGC -XX:MaxMetaspaceSize=160m}
+    volumes:
+      - uploads:/app/uploads
+    mem_limit: 560m
+    oom_score_adj: 900
+    cpus: 0.5
+
+  web:
+    environment:
+      SESSION_SECURE: "false"
+      NODE_OPTIONS: --max-old-space-size=150
+    mem_limit: 220m
+    oom_score_adj: 900
+    cpus: 0.3
+
+  edge:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - backend
+      - web
+    volumes:
+      - ./infra/caddy/Caddyfile.test:/etc/caddy/Caddyfile:ro
+    ports:
+      - "${TEST_EDGE_BIND:-0.0.0.0}:${TEST_EDGE_PORT:-8081}:80"
+    mem_limit: 48m
+    oom_score_adj: 900
+    cpus: 0.1
+
+  # Not started in this profile (docker compose only starts services whose profiles are active).
+  redis:
+    profiles: ["full"]
+  minio:
+    profiles: ["full"]
+  minio-init:
+    profiles: ["full"]
+  caddy:
+    profiles: ["full"]
+
+volumes:
+  uploads:

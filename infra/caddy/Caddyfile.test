@@ -1,0 +1,25 @@
+# Tiny edge for a personal test on a small shared server: plain HTTP, no certificates, no Redis/MinIO.
+# Not for customers. Real deployments use infra/caddy/Caddyfile (wildcard TLS).
+{
+	auto_https off
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+:80 {
+	encode zstd gzip
+
+	@api path /api/v1/*
+	handle @api {
+		reverse_proxy backend:8080 {
+			header_up X-Forwarded-For {client_ip}
+		}
+	}
+
+	handle {
+		reverse_proxy web:3000 {
+			header_up X-Forwarded-For {client_ip}
+		}
+	}
+}

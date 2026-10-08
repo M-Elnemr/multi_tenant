@@ -27,7 +27,8 @@ function baseOptions(password: string): SessionOptions {
     cookieOptions: {
       httpOnly: true,
       sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+      // Cookies are HTTPS-only in production. SESSION_SECURE=false exists solely for a plain-HTTP personal test (docs/DEPLOY.md).
+      secure: process.env.NODE_ENV === "production" && process.env.SESSION_SECURE !== "false",
       path: "/",
       maxAge: 60 * 60 * 24 * 30,
     },

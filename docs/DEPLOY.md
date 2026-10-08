@@ -28,6 +28,21 @@ Constraints you accept: the platform is reachable through **Cloudflare only** (o
 
 Rollback: `docker compose -p multitenant down` (add `-v` only if you also want the data gone).
 
+## C. Personal test on a small shared server (what is used on 216.158.233.36)
+For trying the platform yourself on a server that has about 1 GB of spare RAM and runs other projects. **Not for customers or real patient data**: plain HTTP, images on local disk, no Redis, no MinIO, small limits. Upgrade path: layout A or B above (new domain on Cloudflare, more RAM).
+
+What it does: a separate compose project `multitenant`, containers capped in memory/CPU with a high `oom_score_adj` (if the server runs out of memory the kernel stops these first, never the other projects), and one tiny edge container on port **8081**. The other project's nginx, containers and ports are not touched.
+
+On the server:
+1. `git clone https://github.com/M-Elnemr/multi_tenant /opt/multitenant && cd /opt/multitenant`
+2. Images: CI pushes `ghcr.io/m-elnemr/multi_tenant-backend|web`. Either make both packages public (GitHub > your profile > Packages > package > Settings > Change visibility) or `docker login ghcr.io` with a token that has `read:packages`. (Do not build on the server: the Gradle build needs more RAM than is spare.)
+3. `./infra/scripts/test-slim-init.sh 216-158-233-36.sslip.io` creates `.env` with random secrets (shows the platform-owner login once).
+4. `./infra/scripts/test-slim-up.sh` refuses to start without ~700 MB free RAM / 4 GB disk, starts the stack, waits for health and smoke-tests it.
+5. Open `http://216-158-233-36.sslip.io:8081`. `sslip.io` resolves any `name.216-158-233-36.sslip.io` to the server, so a shop called `shop1` is `http://shop1.216-158-233-36.sslip.io:8081` (the app shows addresses without `:8081`; add it by hand).
+6. Optional: to drop the `:8081`, add one extra nginx server block for `*.216-158-233-36.sslip.io` that proxies to `127.0.0.1:8081` (`nginx -t` first; rollback = delete the file and reload). It only matches those names; existing sites are unaffected.
+
+Check the other project before and after: its site answers, `docker ps` shows its containers with the same uptime, `free -h`, `dmesg | grep -i oom`. Stop everything with `./infra/scripts/test-slim-down.sh` (add `--volumes` to delete the test data too).
+
 ## Storage image
 MinIO's project no longer publishes images. Set `MINIO_IMAGE`/`MC_IMAGE` to an image you build or trust, or point the `S3_*` variables at any S3-compatible service and remove the `minio`/`minio-init` services.
 
