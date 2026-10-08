@@ -142,8 +142,12 @@ public class AppointmentService {
         UUID id = (UUID) a.get("id");
         Integer queue = null;
         if ("CHECKED_IN".equals(to)) {
-            queue = jdbc.sql("SELECT coalesce(max(queue_number), 0) + 1 FROM medical.appointments WHERE tenant_id = :t AND doctor_id = :d AND start_at::date = (SELECT start_at::date FROM medical.appointments WHERE id = :i)")
-                    .param("t", tenantId).param("d", a.get("doctor_id")).param("i", id).query(Integer.class).single();
+            // Numbers run per doctor per ARRIVAL day in the clinic's own timezone (never the database server's, and not the appointment's start time,
+            // which a walk-in pushed behind a busy doctor can move past midnight).
+            queue = jdbc.sql("""
+                    SELECT coalesce(max(queue_number), 0) + 1 FROM medical.appointments
+                    WHERE tenant_id = :t AND doctor_id = :d AND checked_in_at IS NOT NULL AND (checked_in_at AT TIME ZONE :tz)::date = (now() AT TIME ZONE :tz)::date
+                    """).param("t", tenantId).param("d", a.get("doctor_id")).param("tz", slots.zone(tenantId).getId()).query(Integer.class).single();
         }
         if ("CHECKED_IN".equals(to)) jdbc.sql("UPDATE medical.appointments SET checked_in_at = now() WHERE id = :i").param("i", id).update();
         jdbc.sql("UPDATE medical.appointments SET status = :s, cancel_reason = coalesce(:r, cancel_reason), queue_number = coalesce(:q, queue_number), hold_expires_at = NULL, updated_at = now() WHERE id = :i")
@@ -191,7 +195,7 @@ public class AppointmentService {
                        p.id AS patient_id, trim(p.first_name || ' ' || p.last_name) AS patient_name, p.patient_code, p.phone AS patient_phone, p.date_of_birth AS patient_dob,
                        greatest(0, extract(epoch FROM (now() - a.checked_in_at)) / 60)::int AS waited_minutes
                 FROM medical.appointments a JOIN medical.patients p ON p.id = a.patient_id JOIN medical.doctors d ON d.id = a.doctor_id JOIN medical.appointment_services s ON s.id = a.service_id
-                WHERE a.tenant_id = :t AND a.status IN ('CHECKED_IN','IN_PROGRESS') AND (a.start_at AT TIME ZONE :tz)::date = (now() AT TIME ZONE :tz)::date
+                WHERE a.tenant_id = :t AND a.status IN ('CHECKED_IN','IN_PROGRESS') AND (a.checked_in_at AT TIME ZONE :tz)::date = (now() AT TIME ZONE :tz)::date
                   AND (CAST(:d AS uuid) IS NULL OR a.doctor_id = CAST(:d AS uuid))
                 ORDER BY a.queue_number NULLS LAST, a.checked_in_at
                 """).param("t", tenantId).param("tz", tz).param("d", doctorId).query().listOfRows();
@@ -220,10 +224,10 @@ public class AppointmentService {
         return Rows.camel(jdbc.sql("""
                 SELECT a.id AS appointment_id, a.queue_number, a.called_at IS NOT NULL AS called, d.display_name AS doctor_name, s.name AS service_name,
                   (SELECT count(*) FROM medical.appointments b WHERE b.tenant_id = a.tenant_id AND b.doctor_id = a.doctor_id AND b.status = 'CHECKED_IN'
-                     AND (b.start_at AT TIME ZONE :tz)::date = (a.start_at AT TIME ZONE :tz)::date AND b.queue_number < a.queue_number) AS ahead_of_you,
+                     AND (b.checked_in_at AT TIME ZONE :tz)::date = (a.checked_in_at AT TIME ZONE :tz)::date AND b.queue_number < a.queue_number) AS ahead_of_you,
                   EXISTS (SELECT 1 FROM medical.appointments c WHERE c.tenant_id = a.tenant_id AND c.doctor_id = a.doctor_id AND c.status = 'IN_PROGRESS') AS doctor_busy
                 FROM medical.appointments a JOIN medical.doctors d ON d.id = a.doctor_id JOIN medical.appointment_services s ON s.id = a.service_id
-                WHERE a.tenant_id = :t AND a.patient_id IN (:ids) AND a.status = 'CHECKED_IN' AND (a.start_at AT TIME ZONE :tz)::date = (now() AT TIME ZONE :tz)::date
+                WHERE a.tenant_id = :t AND a.patient_id IN (:ids) AND a.status = 'CHECKED_IN' AND (a.checked_in_at AT TIME ZONE :tz)::date = (now() AT TIME ZONE :tz)::date
                 """).param("t", tenantId).param("tz", tz).param("ids", mine).query().listOfRows());
     }
 

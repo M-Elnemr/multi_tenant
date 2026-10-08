@@ -265,4 +265,17 @@ class QueueAndAccessIntegrationTest extends IntegrationTestBase {
         onHost(other.host(), other.owner(), "PATCH", "/api/v1/clinic/patients/" + p[0], "{\"firstName\":\"Hacked\"}").andExpect(status().isNotFound());
         assertThat(jdbc.sql("SELECT count(*) FROM audit.audit_logs WHERE action = 'PATIENT_UPDATED' AND entity_id = :p").param("p", UUID.fromString(p[0])).query(Long.class).single()).isGreaterThanOrEqualTo(1);
     }
+
+    @Test
+    void queueNumbersFollowTheArrivalDayNotTheAppointmentStartDate() throws Exception {
+        // A walk-in pushed behind a busy doctor can start after midnight; the patient still arrived today, so numbering and the waiting room must not split at midnight.
+        Clinic c = clinic();
+        String[] a = patientWithPassword(c, "Late", nextPhone(), "WalkPass1234");
+        String[] b = patientWithPassword(c, "Later", nextPhone(), "WalkPass1234");
+        String walk = "{\"patientId\":\"%s\",\"doctorId\":\"" + c.doctorId() + "\",\"branchId\":\"" + c.branchId() + "\",\"serviceId\":\"" + c.serviceId() + "\"}";
+        String first = JsonPath.read(body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/appointments/walk-in", walk.formatted(a[0])).andExpect(status().isCreated()).andExpect(jsonPath("$.queueNumber").value(1))), "$.id");
+        jdbc.sql("UPDATE medical.appointments SET start_at = start_at + interval '1 day', end_at = end_at + interval '1 day' WHERE id = :i").param("i", UUID.fromString(first)).update();
+        onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/appointments/walk-in", walk.formatted(b[0])).andExpect(status().isCreated()).andExpect(jsonPath("$.queueNumber").value(2));
+        onHost(c.host(), c.owner(), "GET", "/api/v1/clinic/queue", null).andExpect(jsonPath("$.waiting.length()").value(2));
+    }
 }
