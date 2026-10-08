@@ -21,7 +21,7 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
   const [manualSlug, setManualSlug] = useState<string | null>(null);
   const slug = manualSlug ?? slugify(name);
   const [check, setCheck] = useState<{ slug: string; state: "ok" | "taken" | "invalid" }>({ slug: "", state: "ok" });
-  const [owner, setOwner] = useState({ firstName: "", lastName: "", phone: "", email: "", password: "" });
+  const [owner, setOwner] = useState({ name: "", phone: "", email: "", password: "" });
   const [cats, setCats] = useState<string[]>([]);
   const [otherCat, setOtherCat] = useState("");
   const catOptions = useApi<CategoryOption[]>(type ? `onboarding/categories?type=${type}` : null);
@@ -48,7 +48,7 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
 
   const create = useAction(async () => {
     const r = await api<{ host: string }>("onboarding/tenants", {
-      body: { type, name: name.trim(), slug, ownerFirstName: owner.firstName.trim(), ownerLastName: owner.lastName.trim(), phone: owner.phone.trim(), email: owner.email.trim() || undefined, password: owner.password, categories: cats, otherCategory: cats.includes("other") ? otherCat.trim() : undefined },
+      body: { type, name: name.trim(), slug, ownerFirstName: owner.name.trim(), phone: owner.phone.trim(), email: owner.email.trim() || undefined, password: owner.password, categories: cats, otherCategory: cats.includes("other") ? otherCat.trim() : undefined },
       idempotencyKey: key,
     });
     await api("auth/logout", { body: {} }).catch(() => undefined); // the new site has its own login
@@ -88,7 +88,7 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
     );
   }
 
-  const valid = name.trim().length >= 2 && avail === "ok" && owner.firstName.trim() && owner.phone.trim() && owner.password.length >= 8 && categoriesValid(cats, otherCat);
+  const valid = name.trim().length >= 2 && avail === "ok" && owner.name.trim() && owner.phone.trim() && owner.password.length >= 8 && categoriesValid(cats, otherCat);
   return (
     <div className="mx-auto max-w-xl px-4 py-12">
       <button onClick={() => { setType(null); setCats([]); setOtherCat(""); }} className="mb-4 text-sm text-slate-500 underline">{t("common.back")}</button>
@@ -112,10 +112,7 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
           {catOptions.data ? <CategoryPicker key={type} options={catOptions.data} value={cats} onChange={setCats} other={otherCat} onOther={setOtherCat} /> : <p className="text-sm text-slate-500">{t("register.checking")}</p>}
         </Field>
         <hr className="border-slate-100" />
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label={t("register.firstName")}><Input value={owner.firstName} onChange={(e) => setOwner({ ...owner, firstName: e.target.value })} required autoComplete="given-name" /></Field>
-          <Field label={t("register.lastName")}><Input value={owner.lastName} onChange={(e) => setOwner({ ...owner, lastName: e.target.value })} autoComplete="family-name" /></Field>
-        </div>
+        <Field label={t("register.ownerName")}><Input value={owner.name} onChange={(e) => setOwner({ ...owner, name: e.target.value })} required maxLength={100} autoComplete="name" /></Field>
         <Field label={t("register.phone")} hint={t("register.phoneHint")}><Input value={owner.phone} onChange={(e) => setOwner({ ...owner, phone: e.target.value })} required inputMode="tel" dir="ltr" autoComplete="tel" /></Field>
         <Field label={t("register.email")} hint={t("register.emailHint")}><Input type="email" value={owner.email} onChange={(e) => setOwner({ ...owner, email: e.target.value })} dir="ltr" autoComplete="email" /></Field>
         <Field label={t("login.password")} hint={t("login.passwordRule")}><Input type="password" value={owner.password} onChange={(e) => setOwner({ ...owner, password: e.target.value })} required minLength={8} autoComplete="new-password" /></Field>
