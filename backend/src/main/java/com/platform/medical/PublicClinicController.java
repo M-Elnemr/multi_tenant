@@ -54,6 +54,12 @@ public class PublicClinicController {
         return slots.slots(ClinicContext.tenantId(), doctorId, branchId, serviceId, date, true);
     }
 
+    /** Which weekdays the doctor works (ISO, 1 = Monday ... 7 = Sunday); the booking page greys out the other days. */
+    @GetMapping("/public/working-days")
+    public Map<String, Object> workingDays(@RequestParam UUID doctorId, @RequestParam UUID branchId) {
+        return Map.of("weekdays", slots.workingWeekdays(ClinicContext.tenantId(), doctorId, branchId));
+    }
+
     /** An existing account claims its patient record with password + the PIN the clinic gave it. */
     @PostMapping("/portal/link")
     public TokenResponse link(@Valid @RequestBody LinkRequest r, HttpServletRequest req) {

@@ -29,6 +29,15 @@ public class SlotService {
     }
 
     /** enforceRules=true applies minimum notice / maximum days ahead (patient bookings); staff may book closer in. */
+    /** ISO weekdays (1 = Monday ... 7 = Sunday) on which this doctor has active working hours at this branch, so a booking page can grey out days off. */
+    public List<Integer> workingWeekdays(UUID tenantId, UUID doctorId, UUID branchId) {
+        return jdbc.sql("""
+                SELECT DISTINCT weekday FROM medical.doctor_schedules
+                WHERE tenant_id = :t AND doctor_id = :d AND branch_id = :b AND is_active
+                  AND (effective_to IS NULL OR effective_to >= current_date) ORDER BY weekday
+                """).param("t", tenantId).param("d", doctorId).param("b", branchId).query(Integer.class).list();
+    }
+
     public List<Instant> slots(UUID tenantId, UUID doctorId, UUID branchId, UUID serviceId, LocalDate date, boolean enforceRules) {
         int duration = jdbc.sql("SELECT duration_minutes FROM medical.appointment_services WHERE id = :s AND tenant_id = :t AND is_active").param("s", serviceId).param("t", tenantId).query(Integer.class).optional()
                 .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Service not found"));

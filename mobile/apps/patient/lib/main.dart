@@ -214,7 +214,8 @@ class _BookScreenState extends State<BookScreen> {
   String? patientId, serviceId, doctorId, branchId, slot, error;
   late DateTime day;
   List<String> slots = [];
-  bool loadingSlots = false, saving = false;
+  List<int> weekdays = const [];   // ISO weekdays the doctor works (1 = Mon ... 7 = Sun); empty until loaded
+  bool loadingSlots = false, saving = false, loadedDays = false;
   final note = TextEditingController();
 
   @override
@@ -244,8 +245,29 @@ class _BookScreenState extends State<BookScreen> {
     }
   }
 
+  bool _works(DateTime d) => !loadedDays || weekdays.contains(d.weekday);
+
+  Future<void> _loadDays() async {
+    if (doctorId == null || branchId == null) return;
+    try {
+      final r = await widget.api.get('clinic/public/working-days', query: {'doctorId': doctorId!, 'branchId': branchId!}) as Map<String, dynamic>;
+      weekdays = (r['weekdays'] as List).cast<num>().map((e) => e.toInt()).toList();
+      loadedDays = true;
+      if (!_works(day)) {
+        for (var i = 1; i <= 14; i++) {
+          final d = DateTime.now().add(Duration(days: i));
+          if (_works(d)) { day = DateTime(d.year, d.month, d.day); break; }
+        }
+      }
+    } catch (_) {
+      loadedDays = false;   // fall back to showing every day; the server still returns no slots on days off
+    }
+  }
+
   Future<void> _loadSlots() async {
     if (serviceId == null || doctorId == null || branchId == null) return;
+    await _loadDays();
+    if (!mounted) return;
     setState(() { loadingSlots = true; slot = null; });
     try {
       final d = '${day.year.toString().padLeft(4, '0')}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
@@ -307,14 +329,14 @@ class _BookScreenState extends State<BookScreen> {
                 child: ChoiceChip(
                   label: Text(DateFormat.MMMEd().format(d)),
                   selected: d.year == day.year && d.month == day.month && d.day == day.day,
-                  onSelected: (_) { setState(() => day = DateTime(d.year, d.month, d.day)); _loadSlots(); },
+                  onSelected: _works(d) ? (_) { setState(() => day = DateTime(d.year, d.month, d.day)); _loadSlots(); } : null,
                 ),
               ),
           ]),
         ),
         const SizedBox(height: 8),
         if (loadingSlots) const Center(child: CircularProgressIndicator())
-        else if (slots.isEmpty) Padding(padding: const EdgeInsets.all(16), child: Center(child: Text(s.ar ? 'لا توجد مواعيد متاحة في هذا اليوم' : 'No free times on this day')))
+        else if (slots.isEmpty) Padding(padding: const EdgeInsets.all(16), child: Center(child: Text(loadedDays && weekdays.isEmpty ? (s.ar ? 'لم يحدد الطبيب مواعيد عمله بعد' : 'This doctor has not set working hours yet') : (s.ar ? 'لا توجد مواعيد متاحة في هذا اليوم' : 'No free times left on this day'))))
         else Wrap(spacing: 8, runSpacing: 8, children: [
           for (final t in slots) ChoiceChip(label: Text(DateFormat.jm().format(DateTime.parse(t).toLocal())), selected: slot == t, onSelected: (_) => setState(() => slot = t)),
         ]),

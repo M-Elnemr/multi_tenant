@@ -30,7 +30,7 @@ export default function Book() {
   // Choices default to the first option and only store what the visitor actively changed.
   const [pick, setPick] = useState({ serviceId: "", doctorId: "", branchId: "", patientId: "", payment: "" });
   const [startMs] = useState(() => Date.now());
-  const [date, setDate] = useState(() => dayKey(new Date(startMs + 86400000), timezone));
+  const [picked, setPicked] = useState<string | null>(null);
   const [slotChoice, setSlotChoice] = useState<{ key: string; value: string }>({ key: "", value: "" });
   const [note, setNote] = useState("");
 
@@ -41,6 +41,11 @@ export default function Book() {
   const payment = pick.payment || (p?.cashEnabled === false ? "CARD" : "CASH_AT_CLINIC");
 
   const days = Array.from({ length: 14 }, (_, i) => dayKey(new Date(startMs + i * 86400000), timezone));
+  // Days the doctor does not work (for example the weekend) are dimmed and cannot be picked; the page opens on the first working day after today.
+  const workdays = useApi<{ weekdays: number[] }>(doctorId && branchId ? `clinic/public/working-days?doctorId=${doctorId}&branchId=${branchId}` : null);
+  const works = (d: string) => { const n = new Date(d + "T12:00:00Z").getUTCDay(); return !workdays.data || workdays.data.weekdays.includes(n === 0 ? 7 : n); };
+  const noHours = !!workdays.data && workdays.data.weekdays.length === 0;
+  const date = picked && works(picked) ? picked : (days.slice(1).find(works) ?? days[1]);
   const slotsKey = `${serviceId}|${doctorId}|${branchId}|${date}`;
   const slots = useApi<string[]>(serviceId && doctorId && branchId ? `clinic/public/slots?doctorId=${doctorId}&branchId=${branchId}&serviceId=${serviceId}&date=${date}` : null);
   const slot = slotChoice.key === slotsKey ? slotChoice.value : "";
@@ -74,14 +79,14 @@ export default function Book() {
           <div>
             <p className="mb-2 text-sm font-medium">{t("book.day")}</p>
             <div className="flex gap-2 overflow-x-auto pb-1">{days.map((d) => (
-              <button key={d} onClick={() => setDate(d)} className={`shrink-0 rounded-lg border px-3 py-2 text-sm ${d === date ? "border-brand bg-brand text-white" : "bg-white hover:border-brand"}`}>
+              <button key={d} onClick={() => setPicked(d)} disabled={!works(d)} title={works(d) ? undefined : t("book.dayOff")} className={`shrink-0 rounded-lg border px-3 py-2 text-sm ${d === date ? "border-brand bg-brand text-white" : works(d) ? "bg-white hover:border-brand" : "cursor-not-allowed bg-slate-50 text-slate-300 line-through"}`}>
                 {new Intl.DateTimeFormat(locale === "ar" ? "ar-EG" : "en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(d + "T12:00:00Z"))}
               </button>
             ))}</div>
           </div>
           <div>
             <p className="mb-2 text-sm font-medium">{t("book.time")}</p>
-            {slots.loading ? <Loading /> : (slots.data?.length ?? 0) === 0 ? <p className="rounded-lg bg-slate-50 p-4 text-sm text-slate-500">{t("book.noSlots")}</p> : (
+            {slots.loading ? <Loading /> : (slots.data?.length ?? 0) === 0 ? <p className="rounded-lg bg-slate-50 p-4 text-sm text-slate-500">{noHours ? t("book.noWorkingDays") : t("book.noSlots")}</p> : (
               <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">{slots.data?.map((s) => <button key={s} onClick={() => setSlotChoice({ key: slotsKey, value: s })} className={`rounded-lg border px-2 py-2 text-sm ${slot === s ? "border-brand bg-brand text-white" : "bg-white hover:border-brand"}`}>{timeOnly(s, locale, timezone)}</button>)}</div>
             )}
           </div>

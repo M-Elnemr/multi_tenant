@@ -195,4 +195,19 @@ class QueueAndAccessIntegrationTest extends IntegrationTestBase {
             r.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("NO_SLOT_TODAY"));
         }
     }
+
+    @Test
+    void bookingPageKnowsWhichWeekdaysTheDoctorWorks() throws Exception {
+        Clinic c = clinic();
+        // default hours: Sunday-Thursday (ISO 7,1,2,3,4); Friday and Saturday are days off
+        String res = body(onHost(c.host(), null, "GET", "/api/v1/clinic/public/working-days?doctorId=" + c.doctorId() + "&branchId=" + c.branchId(), null).andExpect(status().isOk()));
+        assertThat(JsonPath.<List<Integer>>read(res, "$.weekdays")).containsExactly(1, 2, 3, 4, 7);
+        LocalDate friday = LocalDate.now(ZoneId.of("Africa/Cairo")).plusDays(3);
+        while (friday.getDayOfWeek().getValue() != 5) friday = friday.plusDays(1);
+        String slots = body(onHost(c.host(), null, "GET", "/api/v1/clinic/public/slots?doctorId=" + c.doctorId() + "&branchId=" + c.branchId() + "&serviceId=" + c.serviceId() + "&date=" + friday, null).andExpect(status().isOk()));
+        assertThat(JsonPath.<List<Object>>read(slots, "$")).isEmpty();
+        // another clinic's doctor id reveals nothing
+        Clinic other = clinic();
+        assertThat(JsonPath.<List<Integer>>read(body(onHost(other.host(), null, "GET", "/api/v1/clinic/public/working-days?doctorId=" + c.doctorId() + "&branchId=" + other.branchId(), null)), "$.weekdays")).isEmpty();
+    }
 }
