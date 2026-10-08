@@ -27,6 +27,20 @@ export function dayKey(d: Date, timeZone = "Africa/Cairo"): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 }
 
+/** "2 years 6 months" / "2 سنة و 6 شهور" from the age the server computes. Plain digits on purpose (same as phone numbers). */
+export function ageText(years: number | null | undefined, months: number | null | undefined, locale: Locale): string {
+  if (years === null || years === undefined) return "-";
+  const m = months ?? 0;
+  if (locale === "ar") {
+    const y = years > 0 ? `${years} ${years === 1 ? "سنة" : years === 2 ? "سنتان" : years <= 10 ? "سنوات" : "سنة"}` : "";
+    const mo = m > 0 ? `${m} ${m === 1 ? "شهر" : m === 2 ? "شهران" : "شهور"}` : "";
+    return y && mo ? `${y} و ${mo}` : y || mo || "0";
+  }
+  const y = years > 0 ? `${years} ${years === 1 ? "year" : "years"}` : "";
+  const mo = m > 0 ? `${m} ${m === 1 ? "month" : "months"}` : "";
+  return y && mo ? `${y} ${mo}` : y || mo || "0";
+}
+
 export function toMinor(input: string): number {
   const n = Number(input.replace(",", "."));
   return Number.isFinite(n) ? Math.round(n * 100) : 0;

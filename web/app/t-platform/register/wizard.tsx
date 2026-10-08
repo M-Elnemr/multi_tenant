@@ -27,7 +27,8 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
   const [otherCat, setOtherCat] = useState("");
   const catOptions = useApi<CategoryOption[]>(type ? `onboarding/categories?type=${type}` : null);
   const [key] = useState(newKey);
-  const [done, setDone] = useState<{ host: string } | null>(null);
+  const [done, setDone] = useState<{ host: string; tenantId: string } | null>(null);
+  const [opening, setOpening] = useState(false);
 
   // Debounced live availability check; state is only written after the response arrives.
   useEffect(() => {
@@ -48,13 +49,23 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
   };
 
   const create = useAction(async () => {
-    const r = await api<{ host: string }>("onboarding/tenants", {
+    const r = await api<{ host: string; tenant: { id: string } }>("onboarding/tenants", {
       body: { type, name: name.trim(), slug, ownerFirstName: owner.name.trim(), phone: owner.phone.trim(), email: owner.email.trim() || undefined, password: owner.password, categories: cats, otherCategory: cats.includes("other") ? otherCat.trim() : undefined },
       idempotencyKey: key,
     });
-    await api("auth/logout", { body: {} }).catch(() => undefined); // the new site has its own login
-    setDone({ host: r.host });
+    setDone({ host: r.host, tenantId: r.tenant.id });   // the session stays: "open dashboard" signs in on the new site without asking again
   });
+
+  const openDashboard = async () => {
+    if (!done) return;
+    setOpening(true);
+    try {
+      const r = await api<{ ticket: string }>("auth/handoff", { body: { tenantId: done.tenantId } });
+      window.location.assign(`${siteUrl(done.host)}/api/sso?ticket=${encodeURIComponent(r.ticket)}&next=${encodeURIComponent("/dashboard")}`);
+    } catch {
+      window.location.assign(`${siteUrl(done.host)}/login?phone=${encodeURIComponent(owner.phone)}`);   // fall back to the normal login
+    }
+  };
 
   if (done) {
     const base = siteUrl(done.host);
@@ -65,7 +76,7 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
         <p className="mt-2 text-slate-600">{t("register.liveBody")}</p>
         <p className="my-4 rounded-lg bg-white p-3 font-mono text-sm" dir="ltr">{done.host}</p>
         <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
-          <a href={`${base}/login?phone=${encodeURIComponent(owner.phone)}`} className="rounded-lg bg-brand px-5 py-3 text-sm font-medium text-white">{t("register.openDashboard")}</a>
+          <button type="button" onClick={() => void openDashboard()} disabled={opening} className="rounded-lg bg-brand px-5 py-3 text-sm font-medium text-white disabled:opacity-60">{opening ? t("myplaces.opening") : t("register.openDashboard")}</button>
           <a href={base} className="rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-medium">{t("register.viewSite")}</a>
         </div>
         <p className="mt-6 text-sm text-slate-500">{t("register.domainTip")}</p>

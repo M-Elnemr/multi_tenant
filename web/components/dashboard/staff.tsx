@@ -56,7 +56,7 @@ export default function StaffPage() {
       )}
       <Modal open={open} onClose={() => setOpen(false)} title={t("staff.add")}>
         <form onSubmit={(e) => { e.preventDefault(); void invite.run(); }} className="space-y-3">
-          <Field label={t("register.ownerName")}><Input value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} required maxLength={100} /></Field>
+          <Field label={t("form.name")}><Input value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} required maxLength={100} /></Field>
           <Field label={t("register.phone")}><PhoneInput value={form.phone} onValue={(phone) => setForm({ ...form, phone })} required /></Field>
           <Field label={t("staff.role")}><Select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>{roles.map((r) => <option key={r} value={r}>{t(`role.${r}`)}</option>)}</Select></Field>
           <ErrorText error={invite.error} />

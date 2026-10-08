@@ -22,7 +22,7 @@ export default function ShopRegister() {
     <div className="mx-auto max-w-md">
       <h1 className="mb-6 text-2xl font-semibold">{t("login.createAccount")}</h1>
       <form onSubmit={(e) => { e.preventDefault(); void reg.run(); }} className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6">
-        <Field label={t("register.ownerName")}><Input value={f.firstName} onChange={(e) => setF({ ...f, firstName: e.target.value })} required maxLength={100} autoComplete="name" /></Field>
+        <Field label={t("form.name")}><Input value={f.firstName} onChange={(e) => setF({ ...f, firstName: e.target.value })} required maxLength={100} autoComplete="name" /></Field>
         <Field label={t("register.phone")}><PhoneInput value={f.phone} onValue={(phone) => setF({ ...f, phone })} required /></Field>
         <Field label={t("register.email")}><EmailInput value={f.email} onValue={(email) => setF({ ...f, email })} /></Field>
         <Field label={t("login.password")} hint={t("login.passwordRule")}><Input type="password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} minLength={8} required /></Field>

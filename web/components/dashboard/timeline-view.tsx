@@ -2,6 +2,7 @@
 
 import { useI18n } from "../i18n-provider";
 import { Card, Empty, StatusBadge } from "../ui";
+import { PrintRxButton, RxPhoto } from "../print-rx";
 import { dateTime } from "@/lib/format";
 
 export type StaffTimeline = {
@@ -13,7 +14,7 @@ export type StaffTimeline = {
     conditions?: { name: string; status: string }[];
     notes: { id: string; noteType: string; content: string; isPatientVisible?: boolean; createdAt: string }[];
   }[];
-  prescriptions: { id: string; status: string; issuedAt?: string; doctorName: string; items: { medicationName: string; strength?: string; dosage?: string; frequency?: string; duration?: string }[] }[];
+  prescriptions: { id: string; status: string; imageFileId?: string | null; issuedAt?: string; doctorName: string; items: { medicationName: string; strength?: string; dosage?: string; frequency?: string; duration?: string }[] }[];
   labOrders: { id: string; testName: string; status: string; priority: string; orderedAt: string; results: { id: string; resultText?: string; fileId?: string; uploadedByPatient: boolean }[] }[];
   documents: { id: string; title: string; documentType: string; fileId?: string; patientVisible?: boolean }[];
 };
@@ -41,8 +42,9 @@ export function TimelineView({ tl }: { tl: StaffTimeline }) {
         <h3 className="mb-2 font-medium">{t("portal.prescriptions")}</h3>
         {tl.prescriptions.length === 0 ? <Empty>{t("portal.none")}</Empty> : tl.prescriptions.map((p) => (
           <Card key={p.id} className="mb-3 text-sm">
-            <p className="mb-1 flex items-center gap-2"><StatusBadge status={p.status} /><span className="text-slate-500">{dt(p.issuedAt)} · {p.doctorName}</span><a className="ms-auto text-brand-700 underline" href={`/api/bff/clinic/prescriptions/${p.id}/pdf`}>{t("rx.pdf")}</a></p>
+            <p className="mb-1 flex items-center gap-2"><StatusBadge status={p.status} /><span className="text-slate-500">{dt(p.issuedAt)} · {p.doctorName}</span><a className="ms-auto text-brand-700 underline" href={`/api/bff/clinic/prescriptions/${p.id}/pdf`}>{t("rx.pdf")}</a>{p.status !== "DRAFT" && <PrintRxButton prescriptionId={p.id} />}</p>
             <ul>{p.items.map((i, k) => <li key={k}><b>{i.medicationName}</b> {i.strength} {i.dosage} {i.frequency} {i.duration}</li>)}</ul>
+            {p.imageFileId && <RxPhoto fileId={p.imageFileId} />}
           </Card>
         ))}
       </section>

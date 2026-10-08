@@ -43,6 +43,8 @@ public class PublicClinicController {
         UUID t = ClinicContext.tenantId();
         Map<String, Object> p = new java.util.LinkedHashMap<>(settings.profile(t));
         // the public site never needs internal booking-policy numbers beyond what visitors act on
+        // Online booking needs a patient account; while patient accounts are off the public site offers no booking
+        p.put("bookingEnabled", Boolean.TRUE.equals(p.get("bookingEnabled")) && Boolean.TRUE.equals(p.get("patientPortalEnabled")));
         p.put("doctors", settings.doctors(t));
         p.put("services", settings.services(t, true));
         p.put("branches", settings.branches(t, true));

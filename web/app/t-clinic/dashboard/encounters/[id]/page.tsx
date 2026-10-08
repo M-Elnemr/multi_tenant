@@ -1,17 +1,19 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/client";
 import { TimelineView, type StaffTimeline } from "@/components/dashboard/timeline-view";
+import { PrintRxButton, RxPhoto } from "@/components/print-rx";
+import { uploadFile } from "@/components/uploader";
 import { useAction, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Alert, Badge, Button, Card, ErrorText, Field, Input, Loading, PageHeader, Select, StatusBadge, Textarea } from "@/components/ui";
-import { dateTime } from "@/lib/format";
+import { ageText, dateTime } from "@/lib/format";
 
 type Encounter = {
   id: string; patientId: string; appointmentId?: string; visitAt: string; chiefComplaint?: string; clinicalSummary?: string; followUpDate?: string;
   vitals: unknown[]; notes: { id: string; content: string; noteType: string; isPatientVisible: boolean }[]; conditions: { id: string; name: string }[];
-  prescriptions: { id: string; status: string; items: { medicationName: string; dosage?: string; frequency?: string }[] }[];
+  prescriptions: { id: string; status: string; imageFileId?: string | null; items: { medicationName: string; dosage?: string; frequency?: string }[] }[];
   labOrders: { id: string; testName: string; status: string; priority: string }[];
 };
 type Item = { medicationName: string; strength: string; dosage: string; frequency: string; duration: string; instructions: string };
@@ -36,7 +38,7 @@ function ConsultationForm({ id, e, reload }: { id: string; e: Encounter; reload:
   const { t, locale, timezone } = useI18n();
   const { can } = useMe();
   const patientId = e.patientId;
-  const patient = useApi<{ firstName: string; lastName: string; patientCode: string; dateOfBirth?: string; sex?: string }>(patientId ? `clinic/patients/${patientId}` : null);
+  const patient = useApi<{ firstName: string; lastName: string; patientCode: string; ageYears?: number; ageMonths?: number; sex?: string }>(patientId ? `clinic/patients/${patientId}` : null);
   const history = useApi<StaffTimeline>(patientId ? `clinic/patients/${patientId}/timeline` : null);
   const [tab, setTab] = useState<"visit" | "history">("visit");
 
@@ -52,7 +54,6 @@ function ConsultationForm({ id, e, reload }: { id: string; e: Encounter; reload:
   const [items, setItems] = useState<Item[]>([{ ...EMPTY_ITEM }]);
   const [lab, setLab] = useState({ testName: "", priority: "ROUTINE" });
   const [recovered, setRecovered] = useState(Boolean(draft && (draft.summary || draft.complaint || draft.note)));
-  const [nowMs] = useState(() => Date.now());
 
   useEffect(() => {
     try { localStorage.setItem(draftKey, JSON.stringify({ summary, complaint, note })); } catch { /* storage unavailable */ }
@@ -73,9 +74,14 @@ function ConsultationForm({ id, e, reload }: { id: string; e: Encounter; reload:
   });
   const addCondition = useAction(async () => { await api(`clinic/encounters/${id}/conditions`, { body: { name: condition } }); setCondition(""); await refresh(); });
   const addNote = useAction(async () => { await api(`clinic/encounters/${id}/notes`, { body: { content: note, patientVisible: shared } }); setNote(""); setShared(false); await refresh(); });
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState<unknown>(null);
+  const photoInput = useRef<HTMLInputElement>(null);
   const prescribe = useAction(async (issue: boolean) => {
-    await api(`clinic/encounters/${id}/prescriptions`, { body: { items: items.filter((i) => i.medicationName.trim()), issue } });
+    await api(`clinic/encounters/${id}/prescriptions`, { body: { items: items.filter((i) => i.medicationName.trim()), imageFileId: photo ?? undefined, issue } });
     setItems([{ ...EMPTY_ITEM }]);
+    setPhoto(null);
     await refresh();
   });
   const issue = useAction(async (pid: string) => { await api(`clinic/prescriptions/${pid}/issue`, { body: {} }); await refresh(); });
@@ -87,7 +93,7 @@ function ConsultationForm({ id, e, reload }: { id: string; e: Encounter; reload:
     await refresh();
   });
 
-  const age = patient.data?.dateOfBirth ? Math.floor((nowMs - new Date(patient.data.dateOfBirth).getTime()) / 31557600000) : null;
+  const age = patient.data?.ageYears !== undefined ? ageText(patient.data.ageYears, patient.data.ageMonths, locale) : null;
   const err = saveVisit.error ?? saveVitals.error ?? addCondition.error ?? addNote.error ?? prescribe.error ?? issue.error ?? cancelRx.error ?? orderLab.error ?? complete.error;
   const setItem = (i: number, patch: Partial<Item>) => setItems(items.map((y, k) => (k === i ? { ...y, ...patch } : y)));
 
@@ -95,7 +101,7 @@ function ConsultationForm({ id, e, reload }: { id: string; e: Encounter; reload:
     <>
       <PageHeader
         title={patient.data ? `${patient.data.firstName} ${patient.data.lastName}` : "…"}
-        subtitle={`${patient.data?.patientCode ?? ""}${age !== null ? ` · ${age} ${t("consult.years")}` : ""} · ${dateTime(e.visitAt, locale, timezone)}`}
+        subtitle={`${patient.data?.patientCode ?? ""}${age !== null ? ` · ${age}` : ""} · ${dateTime(e.visitAt, locale, timezone)}`}
         actions={<>
           <Button variant="secondary" loading={saveVisit.loading} onClick={() => saveVisit.run()}>{t("consult.saveDraft")}</Button>
           {e.appointmentId && <Button loading={complete.loading} onClick={() => complete.run()}>{t("consult.complete")}</Button>}
@@ -151,11 +157,13 @@ function ConsultationForm({ id, e, reload }: { id: string; e: Encounter; reload:
                       <StatusBadge status={p.status} />
                       <div className="flex items-center gap-1">
                         <a className="px-2 text-brand-700 underline" href={`/api/bff/clinic/prescriptions/${p.id}/pdf`}>{t("rx.pdf")}</a>
+                        <PrintRxButton prescriptionId={p.id} />
                         {p.status === "DRAFT" && <Button size="sm" onClick={() => issue.run(p.id)}>{t("consult.issue")}</Button>}
                         {p.status !== "CANCELLED" && can("prescription.delete") && <Button size="sm" variant="ghost" onClick={() => cancelRx.run(p.id)}>{t("orders.cancel")}</Button>}
                       </div>
                     </div>
                     <ul>{p.items.map((i, k) => <li key={k}><b>{i.medicationName}</b> {i.dosage} {i.frequency}</li>)}</ul>
+                    {p.imageFileId && <RxPhoto fileId={p.imageFileId} />}
                   </div>
                 ))}
                 {items.map((it, i) => (
@@ -167,10 +175,25 @@ function ConsultationForm({ id, e, reload }: { id: string; e: Encounter; reload:
                     <Input placeholder={t("consult.duration")} value={it.duration} onChange={(x) => setItem(i, { duration: x.target.value })} />
                   </div>
                 ))}
+                <div className="space-y-2 rounded-lg border border-dashed p-3">
+                  <input ref={photoInput} type="file" accept="image/png,image/jpeg" capture="environment" className="hidden" onChange={async (x) => {
+                    const file = x.target.files?.[0];
+                    if (!file) return;
+                    setPhotoBusy(true); setPhotoError(null);
+                    try { setPhoto(await uploadFile(file, "PRESCRIPTION")); } catch (err) { setPhotoError(err); } finally { setPhotoBusy(false); if (photoInput.current) photoInput.current.value = ""; }
+                  }} />
+                  <p className="text-xs text-slate-500">{t("rx.photoHint")}</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button type="button" size="sm" variant="secondary" disabled={photoBusy} onClick={() => photoInput.current?.click()}>📷 {photoBusy ? t("rx.uploading") : photo ? t("rx.photo") + " ✓" : t("rx.addPhoto")}</Button>
+                    {photo && <Button type="button" size="sm" variant="ghost" onClick={() => setPhoto(null)}>{t("rx.removePhoto")}</Button>}
+                  </div>
+                  {photo && <RxPhoto fileId={photo} />}
+                  <ErrorText error={photoError} />
+                </div>
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" variant="secondary" onClick={() => setItems([...items, { ...EMPTY_ITEM }])}>{t("consult.addItem")}</Button>
-                  <Button size="sm" variant="secondary" loading={prescribe.loading} disabled={!items.some((i) => i.medicationName.trim())} onClick={() => prescribe.run(false)}>{t("consult.saveDraft")}</Button>
-                  <Button size="sm" loading={prescribe.loading} disabled={!items.some((i) => i.medicationName.trim())} onClick={() => prescribe.run(true)}>{t("consult.issuePrescription")}</Button>
+                  <Button size="sm" variant="secondary" loading={prescribe.loading} disabled={!(photo || items.some((i) => i.medicationName.trim()))} onClick={() => prescribe.run(false)}>{t("consult.saveDraft")}</Button>
+                  <Button size="sm" loading={prescribe.loading} disabled={!(photo || items.some((i) => i.medicationName.trim()))} onClick={() => prescribe.run(true)}>{t("consult.issuePrescription")}</Button>
                 </div>
               </Card>
             )}

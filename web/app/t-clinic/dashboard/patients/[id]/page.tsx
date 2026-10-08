@@ -7,15 +7,17 @@ import { TimelineView, type StaffTimeline } from "@/components/dashboard/timelin
 import { useAction, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Alert, Button, Card, ErrorText, Field, Input, Loading, Modal, PageHeader, SecretBox } from "@/components/ui";
-import { dateOnly } from "@/lib/format";
+import { usePatientPortal } from "@/components/portal-flag";
+import { ageText } from "@/lib/format";
 
-type Patient = { id: string; patientCode: string; firstName: string; lastName: string; phone?: string; dateOfBirth?: string; sex?: string; hasPortal: boolean; notesInternal?: string };
+type Patient = { id: string; patientCode: string; firstName: string; lastName: string; phone?: string; ageYears?: number; ageMonths?: number; sex?: string; hasPortal: boolean; notesInternal?: string };
 
 export default function PatientPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { t, locale } = useI18n();
   const router = useRouter();
   const { can } = useMe();
+  const portal = usePatientPortal();
   const clinical = can("medical_note.create") || can("prescription.create") || can("lab_order.create");
   const p = useApi<Patient>(`clinic/patients/${id}`);
   const tl = useApi<StaffTimeline>(clinical ? `clinic/patients/${id}/timeline` : null);
@@ -46,18 +48,18 @@ export default function PatientPage({ params }: { params: Promise<{ id: string }
     <>
       <PageHeader
         title={`${d.firstName} ${d.lastName}`}
-        subtitle={`${d.patientCode} · ${d.sex ?? ""} · ${dateOnly(d.dateOfBirth, locale)} · ${d.phone ?? ""}`}
+        subtitle={`${d.patientCode} · ${d.sex === "F" ? t("patients.female") : d.sex === "M" ? t("patients.male") : ""} · ${ageText(d.ageYears, d.ageMonths, locale)} · ${d.phone ?? ""}`}
         actions={<>
-          {can("patient.update") && d.phone && <Button variant="secondary" loading={reissue.loading} onClick={() => reissue.run()}>{t("patients.newPin")}</Button>}
+          {portal && can("patient.update") && d.phone && <Button variant="secondary" loading={reissue.loading} onClick={() => reissue.run()}>{t("patients.newPin")}</Button>}
           {can("appointment.manage") && <Button variant="secondary" loading={walkIn.loading} onClick={() => walkIn.run()}>{t("queue.walkIn")}</Button>}
-          {can("patient.update") && d.hasPortal && <Button variant="secondary" onClick={() => { setPwDone(false); setNewPw(""); setPwOpen(true); }}>{t("patients.setPassword")}</Button>}
+          {portal && can("patient.update") && d.hasPortal && <Button variant="secondary" onClick={() => { setPwDone(false); setNewPw(""); setPwOpen(true); }}>{t("patients.setPassword")}</Button>}
           {can("patient.export") && clinical && <a className="inline-flex h-10 items-center rounded-lg border px-3 text-sm hover:bg-slate-50" href={`/api/bff/clinic/patients/${id}/export`}>{t("record.exportStaff")}</a>}
           {can("medical_note.create") && <Button loading={start.loading} onClick={() => start.run()}>{t("appt.startVisit")}</Button>}
         </>}
       />
       <ErrorText error={reissue.error ?? start.error ?? walkIn.error ?? tl.error} />
       {pin && <div className="mb-4"><SecretBox label={pin.label} value={pin.value} /></div>}
-      {!d.hasPortal && <div className="mb-4"><Alert tone="blue">{t("patients.noPortal")}</Alert></div>}
+      {portal && !d.hasPortal && <div className="mb-4"><Alert tone="blue">{t("patients.noPortal")}</Alert></div>}
       {d.notesInternal && <Card className="mb-4 text-sm"><p className="mb-1 text-xs font-medium text-slate-500">{t("consult.internal")}</p>{d.notesInternal}</Card>}
       {!clinical ? <Alert tone="blue">{t("patients.noClinicalAccess")}</Alert> : tl.loading && !tl.data ? <Loading /> : tl.data && <TimelineView tl={tl.data} />}
       <Modal open={pwOpen} onClose={() => setPwOpen(false)} title={t("patients.setPassword")}>

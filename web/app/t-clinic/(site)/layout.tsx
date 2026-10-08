@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { ClinicAccountLink } from "@/components/clinic-bits";
-import { currentHost } from "@/lib/backend";
+import { backendJson, currentHost } from "@/lib/backend";
 import { getT } from "@/lib/i18n-server";
 import { resolveHost } from "@/lib/tenant";
 
 export default async function ClinicSiteLayout({ children }: { children: React.ReactNode }) {
   const { t, locale } = await getT();
   const info = await resolveHost(await currentHost());
+  // Patient accounts are off for now: no online booking and no patient login on the public site (staff still sign in).
+  const portal = await backendJson<{ patientPortalEnabled?: boolean }>("/clinic/public/profile").then((p) => p.patientPortalEnabled === true).catch(() => false);
   const logo = info.kind === "TENANT" && (info.branding as { logo_file_id?: string }).logo_file_id;
   return (
     <div className="flex min-h-screen flex-col">
@@ -18,8 +20,8 @@ export default async function ClinicSiteLayout({ children }: { children: React.R
             {info.kind === "TENANT" ? info.name : ""}
           </Link>
           <nav className="flex items-center gap-2 text-sm">
-            <Link href="/book" className="rounded-lg bg-brand px-3 py-1.5 font-medium text-white">{t("clinic.book")}</Link>
-            <ClinicAccountLink />
+            {portal && <Link href="/book" className="rounded-lg bg-brand px-3 py-1.5 font-medium text-white">{t("clinic.book")}</Link>}
+            <ClinicAccountLink portal={portal} />
             <a href={`/api/lang?l=${locale === "ar" ? "en" : "ar"}`} className="px-1 text-slate-500">{locale === "ar" ? "EN" : "عربي"}</a>
           </nav>
         </div>

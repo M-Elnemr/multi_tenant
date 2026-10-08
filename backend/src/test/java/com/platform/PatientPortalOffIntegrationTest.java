@@ -24,7 +24,7 @@ class PatientPortalOffIntegrationTest extends IntegrationTestBase {
         Tenant c = onboard("CLINIC");
         String h = c.host();
         onHost(h, c.access(), "GET", "/api/v1/clinic/profile", null).andExpect(jsonPath("$.patientPortalEnabled").value(false));
-        onHost(h, null, "GET", "/api/v1/clinic/public/profile", null).andExpect(jsonPath("$.patientPortalEnabled").value(false));
+        onHost(h, null, "GET", "/api/v1/clinic/public/profile", null).andExpect(jsonPath("$.patientPortalEnabled").value(false)).andExpect(jsonPath("$.bookingEnabled").value(false));
 
         // mobile is required
         onHost(h, c.access(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"NoPhone\",\"ageYears\":5}").andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
