@@ -84,11 +84,11 @@ public class PortalController {
 
     /** Only my own issued prescriptions. */
     @GetMapping("/prescriptions/{id}/pdf")
-    public org.springframework.http.ResponseEntity<byte[]> prescriptionPdf(@PathVariable UUID id, Authentication a) {
+    public org.springframework.http.ResponseEntity<byte[]> prescriptionPdf(@PathVariable UUID id, @RequestParam(defaultValue = "false") boolean inline, Authentication a) {
         UUID t = ClinicContext.tenantId();
         UUID patient = patients.prescriptionPatient(t, id);
         patients.requireAccessible(t, user(a), patient);
-        return ClinicController.attachment(pdfs.render(t, id, true), "application/pdf", "prescription.pdf");
+        return ClinicController.attachment(pdfs.render(t, id, true), "application/pdf", "prescription.pdf", inline);
     }
 
     @PostMapping("/lab-orders/{id}/results")

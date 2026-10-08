@@ -12,3 +12,6 @@ CREATE INDEX idx_sso_tickets_expiry ON core.sso_tickets (expires_at);
 
 -- Patients are entered by age (years + months); the stored date of birth is then an estimate.
 ALTER TABLE medical.patients ADD COLUMN dob_estimated BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- A prescription can be a photo/scan of the doctor's own paper prescription instead of (or next to) typed items.
+ALTER TABLE medical.prescriptions ADD COLUMN image_file_id UUID;

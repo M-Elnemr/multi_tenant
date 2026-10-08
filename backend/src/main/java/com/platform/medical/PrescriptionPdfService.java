@@ -58,9 +58,11 @@ public class PrescriptionPdfService {
     private final BaseFont arabic;
     private final BaseFont latin;
     private final BaseFont latinBold;
+    private final com.platform.files.FileService files;
 
-    public PrescriptionPdfService(JdbcClient jdbc) throws Exception {
+    public PrescriptionPdfService(JdbcClient jdbc, com.platform.files.FileService files) throws Exception {
         this.jdbc = jdbc;
+        this.files = files;
         byte[] ttf;
         try (InputStream in = getClass().getResourceAsStream("/fonts/NotoNaskhArabic.ttf")) {
             ttf = in.readAllBytes();
@@ -80,7 +82,7 @@ public class PrescriptionPdfService {
     /** patientView=true only ever renders ISSUED prescriptions. */
     public byte[] render(UUID tenantId, UUID prescriptionId, boolean patientView) {
         var p = jdbc.sql("""
-                SELECT rx.id, rx.status, rx.issued_at, rx.created_at, rx.notes, d.display_name AS doctor_name, d.id AS doctor_id,
+                SELECT rx.id, rx.status, rx.issued_at, rx.created_at, rx.notes, rx.image_file_id, d.display_name AS doctor_name, d.id AS doctor_id,
                        pt.first_name || ' ' || pt.last_name AS patient_name, pt.patient_code, pt.date_of_birth,
                        cp.clinic_name, cp.phone AS clinic_phone, cp.address_text AS clinic_address, t.default_locale, t.timezone
                 FROM medical.prescriptions rx JOIN medical.doctors d ON d.id = rx.prescribed_by JOIN medical.patients pt ON pt.id = rx.patient_id
@@ -158,6 +160,7 @@ public class PrescriptionPdfService {
             metaRow(meta, dir, LABELS.get("specialty")[li], specialties, LABELS.get("age")[li], ageText);
             doc.add(meta);
 
+            if (!items.isEmpty()) {
             PdfPTable t = new PdfPTable(7);
             t.setWidthPercentage(100);
             t.setRunDirection(dir);
@@ -183,6 +186,18 @@ public class PrescriptionPdfService {
                 t.addCell(cell(str(it.get("instructions")), dir, 9, false));
             }
             doc.add(t);
+            }
+            if (p.get("image_file_id") != null) {
+                // the doctor's own paper prescription (photo/scan), scaled to fit the page
+                var raw = files.readForExport(tenantId, (UUID) p.get("image_file_id"));
+                if (raw.isPresent()) {
+                    com.lowagie.text.Image img = com.lowagie.text.Image.getInstance(raw.get().data());
+                    img.scaleToFit(doc.getPageSize().getWidth() - doc.leftMargin() - doc.rightMargin(), 560);
+                    img.setAlignment(Element.ALIGN_CENTER);
+                    img.setSpacingBefore(14);
+                    doc.add(img);
+                }
+            }
             if (p.get("notes") != null && !String.valueOf(p.get("notes")).isBlank()) {
                 Paragraph nl = new Paragraph(text(LABELS.get("notes")[li], 11, true));
                 nl.setSpacingBefore(16);

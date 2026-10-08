@@ -29,6 +29,7 @@ public class RetentionJob {
         total += purge("core.idempotency_keys", "created_at", "created_at < now() - interval '7 days'");
         total += purge("billing.webhook_events", "created_at", "created_at < now() - interval '90 days'");
         total += purge("core.user_sessions", "created_at", "(revoked_at IS NOT NULL OR expires_at < now()) AND created_at < now() - interval '30 days'");
+        total += purge("core.sso_tickets", "created_at", "created_at < now() - interval '1 day'");
         total += purge("core.activation_pins", "created_at", "(used_at IS NOT NULL OR expires_at < now()) AND created_at < now() - interval '30 days'");
         if (total > 0) log.info("Retention removed {} old rows", total);
     }

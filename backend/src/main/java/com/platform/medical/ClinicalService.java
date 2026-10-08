@@ -32,7 +32,7 @@ public class ClinicalService {
     public record ConditionReq(String name, String codeSystem, String code, String status, LocalDate onsetDate, String notes) {}
     public record NoteReq(String noteType, String content, boolean patientVisible) {}
     public record ItemReq(String medicationName, String genericName, String strength, String dosage, String route, String frequency, String duration, String quantity, String instructions) {}
-    public record PrescriptionReq(List<ItemReq> items, String notes, boolean issue) {}
+    public record PrescriptionReq(List<ItemReq> items, String notes, boolean issue, UUID imageFileId) {}
     public record LabOrderReq(String testName, String instructions, String priority, LocalDate dueDate) {}
     public record LabResultReq(String resultText, String resultSummary, UUID fileId, boolean patientVisible) {}
     public record DocumentReq(String documentType, String title, String description, UUID fileId, boolean patientVisible) {}
@@ -158,12 +158,19 @@ public class ClinicalService {
     public Map<String, Object> createPrescription(UUID tenantId, UUID actor, UUID encounterId, PrescriptionReq r) {
         UUID doctor = doctorId(tenantId, actor);
         var e = requireEncounter(tenantId, encounterId);
-        if (r.items() == null || r.items().isEmpty()) throw BusinessException.badRequest("VALIDATION_ERROR", "A prescription needs at least one item");
-        UUID id = jdbc.sql("INSERT INTO medical.prescriptions (tenant_id, patient_id, encounter_id, prescribed_by, status, issued_at, notes) VALUES (:t, :p, :e, :d, :s, :i, :n) RETURNING id")
+        boolean typed = r.items() != null && !r.items().isEmpty();
+        if (!typed && r.imageFileId() == null) throw BusinessException.badRequest("VALIDATION_ERROR", "A prescription needs at least one item or a photo of the prescription");
+        if (r.imageFileId() != null) {
+            // the photo/scan of the paper prescription: an uploaded, finished, private PRESCRIPTION file of this clinic, and a picture (not a PDF), so it can be printed and shown
+            files.requireReady(tenantId, r.imageFileId(), Set.of("PRESCRIPTION"), null);
+            String ct = jdbc.sql("SELECT content_type FROM core.files WHERE id = :i AND tenant_id = :t").param("i", r.imageFileId()).param("t", tenantId).query(String.class).single();
+            if (ct == null || !Set.of("image/jpeg", "image/png").contains(ct.toLowerCase())) throw BusinessException.badRequest("FILE_NOT_ALLOWED", "The prescription photo must be a JPEG or PNG picture");
+        }
+        UUID id = jdbc.sql("INSERT INTO medical.prescriptions (tenant_id, patient_id, encounter_id, prescribed_by, status, issued_at, notes, image_file_id) VALUES (:t, :p, :e, :d, :s, :i, :n, :img) RETURNING id")
                 .param("t", tenantId).param("p", e.get("patient_id")).param("e", encounterId).param("d", doctor).param("s", r.issue() ? "ISSUED" : "DRAFT")
-                .param("i", r.issue() ? java.sql.Timestamp.from(Instant.now()) : null).param("n", r.notes()).query(UUID.class).single();
+                .param("i", r.issue() ? java.sql.Timestamp.from(Instant.now()) : null).param("n", r.notes()).param("img", r.imageFileId()).query(UUID.class).single();
         int i = 0;
-        for (ItemReq it : r.items()) {
+        for (ItemReq it : typed ? r.items() : List.<ItemReq>of()) {
             if (it.medicationName() == null || it.medicationName().isBlank()) throw BusinessException.badRequest("VALIDATION_ERROR", "Medication name is required");
             jdbc.sql("INSERT INTO medical.prescription_items (prescription_id, medication_name, generic_name, strength, dosage, route, frequency, duration, quantity, instructions, sort_order) VALUES (:p,:m,:g,:s,:d,:r,:f,:du,:q,:in,:o)")
                     .param("p", id).param("m", it.medicationName().trim()).param("g", it.genericName()).param("s", it.strength()).param("d", it.dosage()).param("r", it.route())
@@ -199,7 +206,7 @@ public class ClinicalService {
     }
 
     private List<Map<String, Object>> prescriptions(UUID tenantId, String cond, Object arg, boolean patientView) {
-        var rows = jdbc.sql("SELECT p.id, p.encounter_id, p.status, p.issued_at, p.notes, d.display_name AS doctor_name, p.created_at FROM medical.prescriptions p JOIN medical.doctors d ON d.id = p.prescribed_by WHERE p.tenant_id = :t AND " + cond
+        var rows = jdbc.sql("SELECT p.id, p.encounter_id, p.status, p.issued_at, p.notes, p.image_file_id, d.display_name AS doctor_name, p.created_at FROM medical.prescriptions p JOIN medical.doctors d ON d.id = p.prescribed_by WHERE p.tenant_id = :t AND " + cond
                 + (patientView ? " AND p.status = 'ISSUED'" : "") + " ORDER BY coalesce(p.issued_at, p.created_at) DESC").param("t", tenantId).param("x", arg).query().listOfRows();
         List<Map<String, Object>> out = new ArrayList<>();
         for (var r : rows) {

@@ -17,14 +17,17 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/auth")
 public class AuthController {
     private final AuthService auth;
+    private final SsoService sso;
 
-    public AuthController(AuthService auth) { this.auth = auth; }
+    public AuthController(AuthService auth, SsoService sso) { this.auth = auth; this.sso = sso; }
 
     public record IdentifierRequest(@NotBlank String identifier) {}
     public record LoginRequest(@NotBlank String identifier, @NotBlank String password) {}
     public record ActivateRequest(@NotBlank String identifier, @NotBlank String pin, @NotBlank String newPassword) {}
     public record RefreshRequest(@NotBlank String refreshToken) {}
     public record ChangePasswordRequest(@NotBlank String currentPassword, @NotBlank String newPassword) {}
+    public record HandoffRequest(@jakarta.validation.constraints.NotNull UUID tenantId) {}
+    public record RedeemRequest(@NotBlank String ticket) {}
 
     @PostMapping("/check-identifier")
     public Map<String, Object> checkIdentifier(@Valid @RequestBody IdentifierRequest r, HttpServletRequest req) {
@@ -61,6 +64,19 @@ public class AuthController {
     @PostMapping("/change-password")
     public TokenResponse changePassword(@Valid @RequestBody ChangePasswordRequest r, Authentication a, HttpServletRequest req) {
         return auth.changePassword((UUID) a.getPrincipal(), r.currentPassword(), r.newPassword(), ClientInfo.ip(req), req.getHeader("User-Agent"));
+    }
+
+    /** Platform host: ask for a one-time ticket to open one of your places without signing in again. */
+    @PostMapping("/handoff")
+    public Map<String, Object> handoff(@Valid @RequestBody HandoffRequest r, Authentication a) {
+        if (a == null || !(a.getPrincipal() instanceof UUID userId)) throw com.platform.shared.BusinessException.unauthorized("UNAUTHORIZED", "Sign in first");
+        return Map.of("ticket", sso.createTicket(userId, r.tenantId()));
+    }
+
+    /** Tenant host: exchange the ticket for a session on this host. Works once, for 60 seconds, only for this host's tenant. */
+    @PostMapping("/handoff/redeem")
+    public TokenResponse redeem(@Valid @RequestBody RedeemRequest r, HttpServletRequest req) {
+        return sso.redeem(r.ticket(), com.platform.shared.TenantContext.require().id(), ClientInfo.ip(req), req.getHeader("User-Agent"));
     }
 
     @GetMapping("/me")

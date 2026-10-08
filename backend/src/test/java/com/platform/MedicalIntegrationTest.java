@@ -333,4 +333,60 @@ class MedicalIntegrationTest extends IntegrationTestBase {
         assertThat(jdbc.sql("SELECT count(*) FROM audit.audit_logs WHERE action = 'PATIENT_EXPORTED' AND tenant_id = (SELECT id FROM core.tenants WHERE slug = :t)").param("t", c.t().slug()).query(Long.class).single()).isEqualTo(1);
         onHost(c.host(), c.owner(), "GET", "/api/v1/clinic/patients/" + p[0] + "/export", null).andExpect(status().isOk());
     }
+
+    byte[] png() throws Exception {
+        var img = new java.awt.image.BufferedImage(400, 520, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        var g = img.createGraphics();
+        g.setColor(java.awt.Color.WHITE); g.fillRect(0, 0, 400, 520); g.setColor(java.awt.Color.BLUE); g.drawString("Rx handwritten", 40, 60); g.dispose();
+        var bos = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(img, "png", bos);
+        return bos.toByteArray();
+    }
+
+    String uploadRx(String host, String token, String contentType, String category, byte[] data) throws Exception {
+        String pre = read(body(onHost(host, token, "POST", "/api/v1/files/presign", "{\"filename\":\"rx\",\"contentType\":\"%s\",\"size\":%d,\"category\":\"%s\"}".formatted(contentType, data.length, category)).andExpect(status().isOk())), "$.uploadUrl");
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(pre).header("Host", host).contentType(contentType).content(data)).andExpect(status().isOk());
+        return pre.split("/files/")[1].split("/")[0];
+    }
+
+    @Test
+    void prescriptionCanBeAPhotoOfThePaperAndPrintsAsPdf() throws Exception {
+        Clinic c = clinic();
+        String[] p = patientWithPortal(c, "Photo");
+        LocalDate d = workday(3);
+        String slot = slots(c, d, false).get(0);
+        String appt = read(body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/appointments",
+                "{\"patientId\":\"%s\",\"doctorId\":\"%s\",\"branchId\":\"%s\",\"serviceId\":\"%s\",\"startAt\":\"%s\"}".formatted(p[0], c.doctorId(), c.branchId(), c.serviceId(), slot)).andExpect(status().isCreated())), "$.id");
+        onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/appointments/" + appt + "/check-in", "{}");
+        String enc = read(body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/encounters", "{\"patientId\":\"%s\",\"appointmentId\":\"%s\"}".formatted(p[0], appt)).andExpect(status().isCreated())), "$.id");
+        String path = "/api/v1/clinic/encounters/" + enc + "/prescriptions";
+
+        // nothing at all is still refused; a photo alone is enough
+        onHost(c.host(), c.owner(), "POST", path, "{\"issue\":true}").andExpect(status().isBadRequest());
+        String typedOnly = read(body(onHost(c.host(), c.owner(), "POST", path, "{\"items\":[{\"medicationName\":\"Paracetamol\"}],\"issue\":true}").andExpect(status().isCreated())), "$.id");
+        String file = uploadRx(c.host(), c.owner(), "image/png", "PRESCRIPTION", png());
+        String res = body(onHost(c.host(), c.owner(), "POST", path, "{\"imageFileId\":\"%s\",\"issue\":true}".formatted(file)).andExpect(status().isCreated()).andExpect(jsonPath("$.imageFileId").value(file)));
+        String rx = read(res, "$.id");
+
+        // the private photo is readable by clinical staff through the file endpoint, never publicly
+        onHost(c.host(), c.owner(), "GET", "/api/v1/files/" + file + "/content", null).andExpect(status().isOk());
+        onHost(c.host(), null, "GET", "/api/v1/files/" + file + "/content", null).andExpect(status().isNotFound());
+
+        // the PDF carries the picture (bigger than a typed-only one) and can be shown inline for printing
+        byte[] withImg = onHost(c.host(), c.owner(), "GET", "/api/v1/clinic/prescriptions/" + rx + "/pdf?inline=true", null).andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Content-Disposition", org.hamcrest.Matchers.startsWith("inline"))).andReturn().getResponse().getContentAsByteArray();
+        byte[] typedPdf = onHost(c.host(), c.owner(), "GET", "/api/v1/clinic/prescriptions/" + typedOnly + "/pdf", null).andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Content-Disposition", org.hamcrest.Matchers.startsWith("attachment"))).andReturn().getResponse().getContentAsByteArray();
+        assertThat(new String(withImg, 0, 5, java.nio.charset.StandardCharsets.ISO_8859_1)).isEqualTo("%PDF-");
+        assertThat(withImg.length).isGreaterThan(typedPdf.length);
+
+        // wrong kinds of files are refused: a PDF, a lab result, another clinic's file
+        String pdfFile = uploadRx(c.host(), c.owner(), "application/pdf", "PRESCRIPTION", "%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF".getBytes());
+        onHost(c.host(), c.owner(), "POST", path, "{\"imageFileId\":\"%s\",\"issue\":true}".formatted(pdfFile)).andExpect(status().isBadRequest());
+        String lab = uploadRx(c.host(), c.owner(), "image/png", "LAB_RESULT", png());
+        onHost(c.host(), c.owner(), "POST", path, "{\"imageFileId\":\"%s\",\"issue\":true}".formatted(lab)).andExpect(status().isBadRequest());
+        Clinic other = clinic();
+        String foreign = uploadRx(other.host(), other.owner(), "image/png", "PRESCRIPTION", png());
+        onHost(c.host(), c.owner(), "POST", path, "{\"imageFileId\":\"%s\",\"issue\":true}".formatted(foreign)).andExpect(status().isBadRequest());
+    }
 }

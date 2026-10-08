@@ -171,13 +171,16 @@ public class ClinicController {
 
     @GetMapping("/prescriptions/{id}/pdf")
     @PreAuthorize("hasAuthority('prescription.create') or (hasAuthority('patient.read') and hasAuthority('medical_note.create'))")
-    public org.springframework.http.ResponseEntity<byte[]> prescriptionPdf(@PathVariable UUID id, Authentication a) {
-        return attachment(pdfs.render(ClinicContext.tenantId(), id, false), "application/pdf", "prescription.pdf");
+    public org.springframework.http.ResponseEntity<byte[]> prescriptionPdf(@PathVariable UUID id, @RequestParam(defaultValue = "false") boolean inline, Authentication a) {
+        return attachment(pdfs.render(ClinicContext.tenantId(), id, false), "application/pdf", "prescription.pdf", inline);
     }
 
-    static org.springframework.http.ResponseEntity<byte[]> attachment(byte[] data, String type, String filename) {
+    static org.springframework.http.ResponseEntity<byte[]> attachment(byte[] data, String type, String filename) { return attachment(data, type, filename, false); }
+
+    /** inline = shown in the browser (used to print straight from the page); otherwise downloaded. */
+    static org.springframework.http.ResponseEntity<byte[]> attachment(byte[] data, String type, String filename, boolean inline) {
         return org.springframework.http.ResponseEntity.ok().contentType(org.springframework.http.MediaType.parseMediaType(type))
-                .header("Content-Disposition", "attachment; filename=\"" + filename + "\"").header("X-Content-Type-Options", "nosniff")
+                .header("Content-Disposition", (inline ? "inline" : "attachment") + "; filename=\"" + filename + "\"").header("X-Content-Type-Options", "nosniff")
                 .cacheControl(org.springframework.http.CacheControl.noStore().cachePrivate()).body(data);
     }
 

@@ -71,6 +71,7 @@ public class PatientExportService {
             Set<UUID> fileIds = new HashSet<>();
             for (Map<String, Object> lab : (List<Map<String, Object>>) record.get("labOrders"))
                 for (Map<String, Object> r : (List<Map<String, Object>>) lab.get("results")) if (r.get("fileId") != null) fileIds.add((UUID) r.get("fileId"));
+            for (Map<String, Object> rx : (List<Map<String, Object>>) record.get("prescriptions")) if (rx.get("imageFileId") != null && !"DRAFT".equals(rx.get("status"))) fileIds.add((UUID) rx.get("imageFileId"));
             for (Map<String, Object> d : (List<Map<String, Object>>) record.get("documents")) if (d.get("fileId") != null) fileIds.add((UUID) d.get("fileId"));
             int n = 1;
             for (UUID fid : fileIds) {
