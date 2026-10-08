@@ -157,7 +157,23 @@ public class StoreAdminController {
 
     @PatchMapping("/profile")
     @PreAuthorize("hasAuthority('settings.manage')")
-    public Map<String, Object> updateProfile(@RequestBody Map<String, String> r, Authentication a) { return settings.updateProfile(StoreContext.tenantId(), user(a), r); }
+    public Map<String, Object> updateProfile(@RequestBody Map<String, Object> r, Authentication a) {
+        // The profile read includes read-only extras (categories list); only plain text fields are editable here (categories have their own endpoint).
+        Map<String, String> text = new java.util.HashMap<>();
+        r.forEach((k, v) -> { if (v instanceof String sv) text.put(k, sv); });
+        return settings.updateProfile(StoreContext.tenantId(), user(a), text);
+    }
+
+    public record CategoriesRequest(List<String> categories, String otherCategory) {}
+
+    /** The category list shops pick from (same one offered at sign-up). */
+    @GetMapping("/business-categories")
+    @PreAuthorize("hasAuthority('settings.manage')")
+    public List<Map<String, Object>> categoryList() { return settings.categories(); }
+
+    @PutMapping("/profile/categories")
+    @PreAuthorize("hasAuthority('settings.manage')")
+    public Map<String, Object> updateCategories(@RequestBody CategoriesRequest r, Authentication a) { return settings.updateCategories(StoreContext.tenantId(), user(a), r.categories(), r.otherCategory()); }
 
     @GetMapping("/branches")
     @PreAuthorize("hasAuthority('branch.manage') or hasAuthority('inventory.adjust')")

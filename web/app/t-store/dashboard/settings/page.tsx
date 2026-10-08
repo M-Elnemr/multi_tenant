@@ -4,11 +4,12 @@ import { useState } from "react";
 import { api } from "@/lib/client";
 import { toMinor, money } from "@/lib/format";
 import BrandingCard from "@/components/dashboard/branding";
+import { CategoryPicker, categoriesValid, type CategoryOption } from "@/components/category-picker";
 import { useAction, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Alert, Button, Card, ErrorText, Field, Input, PageHeader, Select, Table, Td, Textarea } from "@/components/ui";
 
-type Profile = { storeName: string; shortDescription?: string; about?: string; supportPhone?: string; supportEmail?: string; addressText?: string; shippingPolicy?: string; returnPolicy?: string };
+type Profile = { categories?: { code: string }[]; otherCategory?: string | null; storeName: string; shortDescription?: string; about?: string; supportPhone?: string; supportEmail?: string; addressText?: string; shippingPolicy?: string; returnPolicy?: string };
 type Pm = { method: string; enabled: boolean };
 type Ship = { id: string; type: string; name: string; feeMinor: number; freeAboveMinor?: number; isActive: boolean };
 type Branch = { id: string; name: string; code: string; city?: string; isActive: boolean };
@@ -23,7 +24,16 @@ export default function StoreSettings() {
   const [edited, setP] = useState<Profile | null>(null);
   const p = edited ?? profile.data;
   const [saved, setSaved] = useState(false);
-  const saveProfile = useAction(async () => { await api("store/profile", { method: "PATCH", body: p }); setSaved(true); });
+  const saveProfile = useAction(async () => { await api("store/profile", { method: "PATCH", body: { ...p, categories: undefined, otherCategory: undefined } }); setSaved(true); });
+  const catList = useApi<CategoryOption[]>(can("settings.manage") ? "store/business-categories" : null);
+  const [editedCats, setCats] = useState<{ codes: string[]; other: string } | null>(null);
+  const cats = editedCats ?? (profile.data ? { codes: (profile.data.categories ?? []).map((c) => c.code), other: profile.data.otherCategory ?? "" } : null);
+  const saveCats = useAction(async () => {
+    if (!cats) return;
+    await api("store/profile/categories", { method: "PUT", body: { categories: cats.codes, otherCategory: cats.codes.includes("other") ? cats.other.trim() : undefined } });
+    setSaved(true);
+    await profile.reload();
+  });
   const setMethod = useAction(async (method: string, enabled: boolean) => { await api("store/payment-methods", { method: "PUT", body: { method, enabled } }); await methods.reload(); });
   const [s, setS] = useState({ type: "FIXED", name: "", fee: "", freeAbove: "" });
   const addShip = useAction(async () => { await api("store/shipping-methods", { body: { type: s.type, name: s.name, feeMinor: toMinor(s.fee || "0"), freeAboveMinor: s.type === "FREE_ABOVE" ? toMinor(s.freeAbove) : undefined } }); setS({ type: "FIXED", name: "", fee: "", freeAbove: "" }); await ships.reload(); });
@@ -49,6 +59,14 @@ export default function StoreSettings() {
             <Field label={t("settings.returnPolicy")}><Textarea value={p.returnPolicy ?? ""} onChange={(e) => setP({ ...p, returnPolicy: e.target.value })} /></Field>
             <ErrorText error={saveProfile.error} />{saved && <Alert tone="green">{t("common.saved")}</Alert>}
             <Button loading={saveProfile.loading} onClick={() => { setSaved(false); void saveProfile.run(); }}>{t("common.save")}</Button>
+          </Card>
+        )}
+        {cats && catList.data && (
+          <Card className="space-y-3">
+            <h2 className="font-medium">{t("storeSettings.categories")}</h2>
+            <CategoryPicker options={catList.data} value={cats.codes} onChange={(codes) => setCats({ ...cats, codes })} other={cats.other} onOther={(other) => setCats({ ...cats, other })} />
+            <ErrorText error={saveCats.error} />{saved && <Alert tone="green">{t("common.saved")}</Alert>}
+            <Button loading={saveCats.loading} disabled={!categoriesValid(cats.codes, cats.other)} onClick={() => { setSaved(false); void saveCats.run(); }}>{t("common.save")}</Button>
           </Card>
         )}
         {can("settings.manage") && <BrandingCard />}

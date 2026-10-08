@@ -33,8 +33,38 @@ public class StoreSettingsService {
     // ---- profile ------------------------------------------------------------------------------------------
 
     public Map<String, Object> profile(UUID tenantId) {
-        return Rows.camel(jdbc.sql("SELECT store_name, short_description, about, support_phone, support_email, address_text, shipping_policy, return_policy, privacy_policy, terms_text FROM commerce.store_profiles WHERE tenant_id = :t")
-                .param("t", tenantId).query().singleRow());
+        Map<String, Object> p = new java.util.LinkedHashMap<>(Rows.camel(jdbc.sql("SELECT store_name, short_description, about, support_phone, support_email, address_text, shipping_policy, return_policy, privacy_policy, terms_text, other_category FROM commerce.store_profiles WHERE tenant_id = :t")
+                .param("t", tenantId).query().singleRow()));
+        p.put("categories", Rows.camel(jdbc.sql("SELECT c.code, c.name_ar, c.name_en FROM commerce.store_category_links l JOIN commerce.store_categories c ON c.id = l.category_id WHERE l.tenant_id = :t ORDER BY c.sort_order").param("t", tenantId).query().listOfRows()));
+        return p;
+    }
+
+    public List<Map<String, Object>> categories() { return listCategories(jdbc); }
+
+    /** Most common first, then A-Z; "other" is last. */
+    static List<Map<String, Object>> listCategories(JdbcClient jdbc) {
+        return Rows.camel(jdbc.sql("SELECT code, name_ar, name_en, popular FROM commerce.store_categories WHERE is_active ORDER BY sort_order, name_en").query().listOfRows());
+    }
+
+    /** Replaces the shop's categories. "other" requires the typed name, kept only while "other" is chosen. */
+    static void setCategories(JdbcClient jdbc, UUID tenantId, List<String> codes, String other) {
+        jdbc.sql("DELETE FROM commerce.store_category_links WHERE tenant_id = :t").param("t", tenantId).update();
+        for (String code : codes) {
+            int n = jdbc.sql("INSERT INTO commerce.store_category_links (tenant_id, category_id) SELECT :t, id FROM commerce.store_categories WHERE code = :c AND is_active").param("t", tenantId).param("c", code).update();
+            if (n == 0) throw BusinessException.badRequest("UNKNOWN_CATEGORY", "Unknown category " + code);
+        }
+        boolean hasOther = codes.contains("other");
+        if (hasOther && (other == null || other.trim().length() < 2)) throw BusinessException.badRequest("OTHER_CATEGORY_REQUIRED", "Please type the name for \"Other\"");
+        jdbc.sql("UPDATE commerce.store_profiles SET other_category = :o, updated_at = now() WHERE tenant_id = :t").param("o", hasOther ? other.trim() : null).param("t", tenantId).update();
+    }
+
+    @Transactional
+    public Map<String, Object> updateCategories(UUID tenantId, UUID actor, List<String> codes, String other) {
+        if (codes == null || codes.isEmpty()) throw BusinessException.badRequest("CATEGORY_REQUIRED", "Choose at least one category");
+        if (codes.size() > 5) throw BusinessException.badRequest("TOO_MANY_CATEGORIES", "Choose up to 5");
+        setCategories(jdbc, tenantId, codes.stream().map(String::trim).map(String::toLowerCase).distinct().toList(), other);
+        audit.record(actor, tenantId, "SETTINGS_CHANGED", "store_profile", null, null);
+        return profile(tenantId);
     }
 
     @Transactional

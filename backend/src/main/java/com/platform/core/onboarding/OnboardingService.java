@@ -22,6 +22,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -34,7 +35,12 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 public class OnboardingService {
     public record Command(TenantType type, String name, String slug, String ownerFirstName, String ownerLastName,
-                          String phone, String email, String password, String locale) {}
+                          String phone, String email, String password, String locale,
+                          List<String> categories, String otherCategory) {}
+
+    public List<Map<String, Object>> categories(TenantType type) {
+        return provisioners.stream().filter(p -> p.supports() == type).findFirst().map(TenantProvisioner::categories).orElse(List.of());
+    }
 
     public record Result(Tenant tenant, TenantDomain domain, TokenResponse tokens, boolean replay) {}
 
@@ -151,7 +157,7 @@ public class OnboardingService {
 
         events.publishEvent(new com.platform.core.tenant.TenantCreatedEvent(t.getId(), c.type(), owner.getId()));
         for (TenantProvisioner p : provisioners) {
-            if (p.supports() == c.type()) p.provision(t, owner.getId());
+            if (p.supports() == c.type()) p.provision(t, owner.getId(), new ProvisionOptions(c.categories(), c.otherCategory()));
         }
 
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {

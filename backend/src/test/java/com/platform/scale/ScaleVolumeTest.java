@@ -211,7 +211,7 @@ class ScaleVolumeTest extends IntegrationTestBase {
     Tenant onboardNamed(String type, String slug) throws Exception {
         String phone = nextPhone();
         String res = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/v1/onboarding/tenants").header("Host", "platform.test")
-                .contentType("application/json").content("{\"type\":\"%s\",\"name\":\"%s\",\"slug\":\"%s\",\"ownerFirstName\":\"Owner\",\"phone\":\"%s\",\"password\":\"s3cretPass!\"}".formatted(type, slug, slug, phone)))
+                .contentType("application/json").content("{\"type\":\"%s\",\"name\":\"%s\",\"slug\":\"%s\",\"ownerFirstName\":\"Owner\",\"phone\":\"%s\",\"password\":\"s3cretPass!\",\"categories\":[\"%s\"]}".formatted(type, slug, slug, phone, "STORE".equals(type) ? "toys" : "general_practice")))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         return new Tenant(slug, JsonPath.read(res, "$.host"), phone, JsonPath.read(res, "$.tokens.accessToken"), JsonPath.read(res, "$.tokens.refreshToken"));
     }

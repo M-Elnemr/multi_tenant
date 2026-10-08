@@ -88,7 +88,7 @@ class TenancyIntegrationTest extends IntegrationTestBase {
         mvc.perform(get("/api/v1/onboarding/slug-available").param("slug", "free" + uniq()).header("Host", "platform.test"))
                 .andExpect(jsonPath("$.available").value(true));
         String dup = """
-                {"type":"STORE","name":"X","slug":"%s","ownerFirstName":"O","phone":"+201099999991","password":"s3cretPass!"}
+                {"type":"STORE","name":"X","slug":"%s","ownerFirstName":"O","phone":"+201099999991","password":"s3cretPass!","categories":["toys"]}
                 """.formatted(a.slug());
         mvc.perform(post("/api/v1/onboarding/tenants").header("Host", "platform.test").contentType(MediaType.APPLICATION_JSON).content(dup))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SLUG_TAKEN"));
@@ -220,7 +220,7 @@ class TenancyIntegrationTest extends IntegrationTestBase {
     void onboardingIsIdempotentWithKey() throws Exception {
         String slug = "idem" + uniq();
         String body = """
-                {"type":"STORE","name":"Idem","slug":"%s","ownerFirstName":"O","phone":"%s","password":"s3cretPass!"}
+                {"type":"STORE","name":"Idem","slug":"%s","ownerFirstName":"O","phone":"%s","password":"s3cretPass!","categories":["toys"]}
                 """.formatted(slug, nextPhone());
         String key = UUID.randomUUID().toString();
         mvc.perform(post("/api/v1/onboarding/tenants").header("Host", "platform.test").header("Idempotency-Key", key)

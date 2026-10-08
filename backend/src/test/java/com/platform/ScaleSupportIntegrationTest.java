@@ -27,7 +27,7 @@ class ScaleSupportIntegrationTest extends IntegrationTestBase {
         onHost(host, null, "GET", "/api/v1/tenant/context", null).andExpect(status().isNotFound());   // cached as unknown
         String phone = nextPhone();
         mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/v1/onboarding/tenants").header("Host", "platform.test")
-                .contentType("application/json").content("{\"type\":\"STORE\",\"name\":\"Late\",\"slug\":\"%s\",\"ownerFirstName\":\"L\",\"phone\":\"%s\",\"password\":\"s3cretPass!\"}".formatted(slug, phone))).andExpect(status().isCreated());
+                .contentType("application/json").content("{\"type\":\"STORE\",\"name\":\"Late\",\"slug\":\"%s\",\"ownerFirstName\":\"L\",\"phone\":\"%s\",\"password\":\"s3cretPass!\",\"categories\":[\"toys\"]}".formatted(slug, phone))).andExpect(status().isCreated());
         onHost(host, null, "GET", "/api/v1/tenant/context", null).andExpect(status().isOk()).andExpect(jsonPath("$.slug").value(slug));   // not stuck on the cached 404
     }
 

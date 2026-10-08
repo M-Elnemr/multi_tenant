@@ -91,7 +91,11 @@ public class PrescriptionPdfService {
         String status = (String) p.get("status");
         if (patientView && !"ISSUED".equals(status)) throw BusinessException.notFound("RESOURCE_NOT_FOUND", "Prescription not found");
         var items = jdbc.sql("SELECT medication_name, strength, dosage, frequency, duration, instructions FROM medical.prescription_items WHERE prescription_id = :p ORDER BY sort_order").param("p", prescriptionId).query().listOfRows();
-        String specialties = String.join(", ", jdbc.sql("SELECT s.name_en || ' / ' || s.name_ar FROM medical.doctor_specialties ds JOIN medical.specialties s ON s.id = ds.specialty_id WHERE ds.doctor_id = :d").param("d", p.get("doctor_id")).query(String.class).list());
+        String specialties = String.join(", ", jdbc.sql("""
+                SELECT CASE WHEN s.code = 'other' THEN coalesce(d.other_specialty, s.name_en) ELSE s.name_en || ' / ' || s.name_ar END
+                FROM medical.doctor_specialties ds JOIN medical.specialties s ON s.id = ds.specialty_id JOIN medical.doctors d ON d.id = ds.doctor_id
+                WHERE ds.doctor_id = :d ORDER BY s.sort_order
+                """).param("d", p.get("doctor_id")).query(String.class).list());
 
         boolean rtl = String.valueOf(p.get("default_locale")).startsWith("ar");
         int li = rtl ? 0 : 1;

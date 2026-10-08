@@ -2,6 +2,8 @@ package com.platform.core.onboarding;
 
 import com.platform.core.tenant.Tenant;
 import com.platform.core.tenant.TenantType;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -13,4 +15,14 @@ public interface TenantProvisioner {
     TenantType supports();
 
     void provision(Tenant tenant, UUID ownerUserId);
+
+    /** Provisioners that use the owner's category choice override this; the default ignores it. */
+    default void provision(Tenant tenant, UUID ownerUserId, ProvisionOptions options) {
+        provision(tenant, ownerUserId);
+    }
+
+    /** The list offered at sign-up (code, nameAr, nameEn, popular), most common first, "other" last. Empty if this type has none. */
+    default List<Map<String, Object>> categories() {
+        return List.of();
+    }
 }

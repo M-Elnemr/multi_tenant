@@ -36,12 +36,20 @@ public class OnboardingController {
             @NotBlank String phone,
             String email,
             @NotBlank String password,
-            String locale) {}
+            String locale,
+            java.util.List<String> categories,
+            @Size(max = 100) String otherCategory) {}
 
     /** Live slug check for the signup wizard. */
     @GetMapping("/slug-available")
     public Map<String, Object> slugAvailable(@RequestParam String slug) {
         return Map.of("slug", slug.trim().toLowerCase(), "available", service.slugAvailable(slug));
+    }
+
+    /** Specialties for clinics / categories for shops, for the signup form. Public. */
+    @GetMapping("/categories")
+    public java.util.List<Map<String, Object>> categories(@RequestParam TenantType type) {
+        return service.categories(type);
     }
 
     @PostMapping("/tenants")
@@ -50,7 +58,7 @@ public class OnboardingController {
                                       @RequestHeader(value = "Idempotency-Key", required = false) String key,
                                       HttpServletRequest req) {
         var res = service.onboard(new OnboardingService.Command(r.type(), r.name(), r.slug(), r.ownerFirstName(),
-                r.ownerLastName(), r.phone(), r.email(), r.password(), r.locale()), key, ClientInfo.ip(req), req.getHeader("User-Agent"));
+                r.ownerLastName(), r.phone(), r.email(), r.password(), r.locale(), r.categories(), r.otherCategory()), key, ClientInfo.ip(req), req.getHeader("User-Agent"));
         Map<String, Object> tenant = new LinkedHashMap<>();
         tenant.put("id", res.tenant().getId());
         tenant.put("slug", res.tenant().getSlug());

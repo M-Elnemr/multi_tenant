@@ -4,6 +4,9 @@ import com.platform.core.onboarding.TenantProvisioner;
 import com.platform.core.tenant.Tenant;
 import com.platform.core.tenant.TenantType;
 import com.platform.core.user.StaffInvitedEvent;
+import com.platform.core.onboarding.ProvisionOptions;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.context.event.EventListener;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -20,12 +23,28 @@ public class ClinicProvisioner implements TenantProvisioner {
 
     @Override
     public void provision(Tenant t, UUID ownerUserId) {
+        doProvision(t, ownerUserId, null);
+    }
+
+    @Override
+    public List<Map<String, Object>> categories() {
+        return ClinicSettingsService.listSpecialties(jdbc);
+    }
+
+    /** Sign-up needs the doctor's specialty (or "other" with a typed name); it is stored on the owner's doctor profile. */
+    @Override
+    public void provision(Tenant t, UUID ownerUserId, ProvisionOptions options) {
+        doProvision(t, ownerUserId, options.validated("your specialty"));
+    }
+
+    private void doProvision(Tenant t, UUID ownerUserId, ProvisionOptions o) {
         jdbc.sql("INSERT INTO medical.clinic_profiles (tenant_id, clinic_name) VALUES (:t, :n)").param("t", t.getId()).param("n", t.getName()).update();
         UUID branch = jdbc.sql("INSERT INTO medical.clinic_branches (tenant_id, name, code) VALUES (:t, 'Main', 'MAIN') RETURNING id").param("t", t.getId()).query(UUID.class).single();
         jdbc.sql("""
                 INSERT INTO medical.appointment_services (tenant_id, name, duration_minutes) VALUES (:t, 'Consultation', 30), (:t, 'Follow-up', 15)
                 """).param("t", t.getId()).update();
         UUID doctor = createDoctor(t.getId(), ownerUserId);
+        if (o != null) ClinicSettingsService.setSpecialties(jdbc, doctor, o.categories(), o.otherCategory());
         // Sunday-Thursday 10:00-16:00 (ISO weekdays 7,1,2,3,4); the doctor edits this in the dashboard.
         for (int weekday : new int[] {7, 1, 2, 3, 4})
             jdbc.sql("INSERT INTO medical.doctor_schedules (tenant_id, doctor_id, branch_id, weekday, start_local_time, end_local_time, slot_duration_minutes) VALUES (:t, :d, :b, :w, '10:00', '16:00', 30)")

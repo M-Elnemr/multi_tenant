@@ -80,7 +80,7 @@ public class ClinicSettingsService {
 
     public List<Map<String, Object>> doctors(UUID tenantId) {
         return Rows.camel(jdbc.sql("""
-                SELECT d.id, d.display_name, d.bio, d.gender, d.consultation_duration_minutes, d.default_appointment_fee_minor, d.currency, d.verification_status,
+                SELECT d.id, d.display_name, d.bio, d.gender, d.consultation_duration_minutes, d.default_appointment_fee_minor, d.currency, d.verification_status, d.other_specialty,
                   coalesce((SELECT json_agg(json_build_object('code', s.code, 'nameAr', s.name_ar, 'nameEn', s.name_en))::text FROM medical.doctor_specialties ds JOIN medical.specialties s ON s.id = ds.specialty_id WHERE ds.doctor_id = d.id), '[]') AS specialties
                 FROM medical.doctors d WHERE d.tenant_id = :t AND d.is_active ORDER BY d.created_at
                 """).param("t", tenantId).query().listOfRows()).stream().peek(m -> m.put("specialties", Rows.jsonList(m.get("specialties")))).toList();
@@ -104,18 +104,32 @@ public class ClinicSettingsService {
                 """).param("dn", str(f, "displayName")).param("bio", str(f, "bio")).param("g", str(f, "gender")).param("ln", str(f, "licenseNumber"))
                 .param("cd", num(f, "consultationDurationMinutes")).param("fee", num(f, "defaultAppointmentFeeMinor")).param("d", doctorId).update();
         if (specialtyCodes != null) {
-            jdbc.sql("DELETE FROM medical.doctor_specialties WHERE doctor_id = :d").param("d", doctorId).update();
-            for (String code : specialtyCodes) {
-                int n = jdbc.sql("INSERT INTO medical.doctor_specialties (doctor_id, specialty_id) SELECT :d, id FROM medical.specialties WHERE code = :c AND is_active").param("d", doctorId).param("c", code).update();
-                if (n == 0) throw BusinessException.badRequest("UNKNOWN_SPECIALTY", "Unknown specialty " + code);
-            }
+            if (specialtyCodes.size() > 5) throw BusinessException.badRequest("TOO_MANY_CATEGORIES", "Choose up to 5");
+            setSpecialties(jdbc, doctorId, specialtyCodes, str(f, "otherSpecialty"));
         }
         audit.record(userId, tenantId, "SETTINGS_CHANGED", "doctor", doctorId, null);
         return doctors(tenantId).stream().filter(d -> doctorId.equals(d.get("id"))).findFirst().orElseThrow();
     }
 
     public List<Map<String, Object>> specialties() {
-        return Rows.camel(jdbc.sql("SELECT code, name_ar, name_en FROM medical.specialties WHERE is_active ORDER BY name_en").query().listOfRows());
+        return listSpecialties(jdbc);
+    }
+
+    /** Most common first, then A-Z; "other" is last. */
+    static List<Map<String, Object>> listSpecialties(JdbcClient jdbc) {
+        return Rows.camel(jdbc.sql("SELECT code, name_ar, name_en, popular FROM medical.specialties WHERE is_active ORDER BY sort_order, name_en").query().listOfRows());
+    }
+
+    /** Replaces a doctor's specialties. "other" requires the typed name, which is kept only while "other" is chosen. */
+    static void setSpecialties(JdbcClient jdbc, UUID doctorId, List<String> codes, String other) {
+        jdbc.sql("DELETE FROM medical.doctor_specialties WHERE doctor_id = :d").param("d", doctorId).update();
+        for (String code : codes) {
+            int n = jdbc.sql("INSERT INTO medical.doctor_specialties (doctor_id, specialty_id) SELECT :d, id FROM medical.specialties WHERE code = :c AND is_active").param("d", doctorId).param("c", code).update();
+            if (n == 0) throw BusinessException.badRequest("UNKNOWN_SPECIALTY", "Unknown specialty " + code);
+        }
+        boolean hasOther = codes.contains("other");
+        if (hasOther && (other == null || other.trim().length() < 2)) throw BusinessException.badRequest("OTHER_CATEGORY_REQUIRED", "Please type the name for \"Other\"");
+        jdbc.sql("UPDATE medical.doctors SET other_specialty = :o WHERE id = :d").param("o", hasOther ? other.trim() : null).param("d", doctorId).update();
     }
 
     // ---- services ----------------------------------------------------------------------------------------

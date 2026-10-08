@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { api, newKey } from "@/lib/client";
-import { useAction } from "@/components/hooks";
+import { useAction, useApi } from "@/components/hooks";
+import { CategoryPicker, categoriesValid, type CategoryOption } from "@/components/category-picker";
 import { useT } from "@/components/i18n-provider";
 import { Alert, Button, ErrorText, Field, Input } from "@/components/ui";
 
@@ -21,6 +22,9 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
   const slug = manualSlug ?? slugify(name);
   const [check, setCheck] = useState<{ slug: string; state: "ok" | "taken" | "invalid" }>({ slug: "", state: "ok" });
   const [owner, setOwner] = useState({ firstName: "", lastName: "", phone: "", email: "", password: "" });
+  const [cats, setCats] = useState<string[]>([]);
+  const [otherCat, setOtherCat] = useState("");
+  const catOptions = useApi<CategoryOption[]>(type ? `onboarding/categories?type=${type}` : null);
   const [key] = useState(newKey);
   const [done, setDone] = useState<{ host: string } | null>(null);
 
@@ -44,7 +48,7 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
 
   const create = useAction(async () => {
     const r = await api<{ host: string }>("onboarding/tenants", {
-      body: { type, name: name.trim(), slug, ownerFirstName: owner.firstName.trim(), ownerLastName: owner.lastName.trim(), phone: owner.phone.trim(), email: owner.email.trim() || undefined, password: owner.password },
+      body: { type, name: name.trim(), slug, ownerFirstName: owner.firstName.trim(), ownerLastName: owner.lastName.trim(), phone: owner.phone.trim(), email: owner.email.trim() || undefined, password: owner.password, categories: cats, otherCategory: cats.includes("other") ? otherCat.trim() : undefined },
       idempotencyKey: key,
     });
     await api("auth/logout", { body: {} }).catch(() => undefined); // the new site has its own login
@@ -84,10 +88,10 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
     );
   }
 
-  const valid = name.trim().length >= 2 && avail === "ok" && owner.firstName.trim() && owner.phone.trim() && owner.password.length >= 8;
+  const valid = name.trim().length >= 2 && avail === "ok" && owner.firstName.trim() && owner.phone.trim() && owner.password.length >= 8 && categoriesValid(cats, otherCat);
   return (
     <div className="mx-auto max-w-xl px-4 py-12">
-      <button onClick={() => setType(null)} className="mb-4 text-sm text-slate-500 underline">{t("common.back")}</button>
+      <button onClick={() => { setType(null); setCats([]); setOtherCat(""); }} className="mb-4 text-sm text-slate-500 underline">{t("common.back")}</button>
       <h1 className="mb-1 text-2xl font-semibold">{type === "STORE" ? t("register.storeTitle") : t("register.clinicTitle")}</h1>
       <p className="mb-6 text-sm text-slate-500">{t("register.freeTrial")}</p>
       <form onSubmit={(e) => { e.preventDefault(); if (valid) void create.run(); }} className="space-y-5 rounded-2xl border border-slate-200 bg-white p-6">
@@ -103,6 +107,9 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
           {avail === "ok" && <p className="mt-1 text-xs text-emerald-600">✓ {t("register.available")}</p>}
           {avail === "taken" && <p className="mt-1 text-xs text-red-600">{t("register.taken")}</p>}
           {avail === "invalid" && <p className="mt-1 text-xs text-red-600">{t("register.invalidSlug")}</p>}
+        </Field>
+        <Field label={type === "STORE" ? t("register.category") : t("register.specialty")} hint={type === "STORE" ? t("register.categoryHint") : t("register.specialtyHint")}>
+          {catOptions.data ? <CategoryPicker key={type} options={catOptions.data} value={cats} onChange={setCats} other={otherCat} onOther={setOtherCat} /> : <p className="text-sm text-slate-500">{t("register.checking")}</p>}
         </Field>
         <hr className="border-slate-100" />
         <div className="grid gap-4 sm:grid-cols-2">

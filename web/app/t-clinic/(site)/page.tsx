@@ -6,7 +6,7 @@ import { getT } from "@/lib/i18n-server";
 
 type PublicProfile = {
   clinicName: string; about?: string; phone?: string; email?: string; addressText?: string; bookingEnabled: boolean;
-  doctors: { id: string; displayName: string; bio?: string; consultationDurationMinutes: number; specialties: { code: string; nameAr: string; nameEn: string }[] }[];
+  doctors: { id: string; displayName: string; bio?: string; consultationDurationMinutes: number; otherSpecialty?: string | null; specialties: { code: string; nameAr: string; nameEn: string }[] }[];
   services: { id: string; name: string; description?: string; durationMinutes: number; priceMinor?: number; currency: string }[];
   branches: { id: string; name: string; addressLine1?: string; city?: string; phone?: string }[];
 };
@@ -36,7 +36,7 @@ export default async function ClinicHome() {
           {p.doctors.map((d) => (
             <div key={d.id} className="rounded-xl border bg-white p-5">
               <p className="text-lg font-semibold">{d.displayName}</p>
-              <p className="text-sm text-brand">{d.specialties.map((s) => (locale === "ar" ? s.nameAr : s.nameEn)).join(" · ")}</p>
+              <p className="text-sm text-brand">{d.specialties.map((s) => (s.code === "other" && d.otherSpecialty ? d.otherSpecialty : locale === "ar" ? s.nameAr : s.nameEn)).join(" · ")}</p>
               {d.bio && <p className="mt-2 text-sm text-slate-600">{d.bio}</p>}
             </div>
           ))}

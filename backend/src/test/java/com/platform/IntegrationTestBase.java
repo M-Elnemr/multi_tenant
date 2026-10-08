@@ -42,8 +42,8 @@ public abstract class IntegrationTestBase {
         String slug = (type.equals("STORE") ? "shop" : "clinic") + uniq();
         String phone = nextPhone();
         String body = """
-                {"type":"%s","name":"Test %s","slug":"%s","ownerFirstName":"Owner","phone":"%s","password":"s3cretPass!"}
-                """.formatted(type, slug, slug, phone);
+                {"type":"%s","name":"Test %s","slug":"%s","ownerFirstName":"Owner","phone":"%s","password":"s3cretPass!","categories":["%s"]}
+                """.formatted(type, slug, slug, phone, type.equals("STORE") ? "fashion_men" : "general_practice");
         String res = mvc.perform(post("/api/v1/onboarding/tenants").header("Host", "platform.test")
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isCreated())

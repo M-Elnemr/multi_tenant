@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api } from "@/lib/client";
 import { toMinor, fromMinor } from "@/lib/format";
 import BrandingCard from "@/components/dashboard/branding";
+import { CategoryPicker, categoriesValid } from "@/components/category-picker";
 import { useAction, useApi, useMe } from "@/components/hooks";
 import { useT } from "@/components/i18n-provider";
 import { Alert, Button, Card, ErrorText, Field, Input, PageHeader, Textarea } from "@/components/ui";
@@ -12,8 +13,8 @@ type Profile = {
   clinicName: string; about?: string; phone?: string; email?: string; addressText?: string; bookingEnabled: boolean; takeNewPatients: boolean; requiresConfirmation: boolean;
   minimumBookingNoticeMinutes: number; maximumDaysAhead: number; cancellationWindowHours: number; cardEnabled: boolean; cashEnabled: boolean; cardAvailable: boolean;
 };
-type Doctor = { id: string; displayName: string; bio?: string; defaultAppointmentFeeMinor?: number; specialties: { code: string; nameEn: string; nameAr: string }[] };
-type Specialty = { code: string; nameAr: string; nameEn: string };
+type Doctor = { id: string; displayName: string; bio?: string; otherSpecialty?: string | null; defaultAppointmentFeeMinor?: number; specialties: { code: string; nameEn: string; nameAr: string }[] };
+type Specialty = { code: string; nameAr: string; nameEn: string; popular?: boolean };
 type Branch = { id: string; name: string; code: string; city?: string };
 
 export default function ClinicSettings() {
@@ -30,12 +31,12 @@ export default function ClinicSettings() {
 
   // my doctor profile (only for users that have one)
   const mine = mineApi.data;
-  type DoctorForm = { displayName: string; bio: string; fee: string; codes: string[] };
+  type DoctorForm = { displayName: string; bio: string; fee: string; codes: string[]; other: string };
   const [editedDp, setDp] = useState<DoctorForm | null>(null);
-  const dp: DoctorForm | null = editedDp ?? (mine ? { displayName: mine.displayName, bio: mine.bio ?? "", fee: fromMinor(mine.defaultAppointmentFeeMinor), codes: mine.specialties.map((s) => s.code) } : null);
+  const dp: DoctorForm | null = editedDp ?? (mine ? { displayName: mine.displayName, bio: mine.bio ?? "", fee: fromMinor(mine.defaultAppointmentFeeMinor), codes: mine.specialties.map((s) => s.code), other: mine.otherSpecialty ?? "" } : null);
   const saveDoctor = useAction(async () => {
     if (!dp) return;
-    await api("clinic/doctors/me", { method: "PATCH", body: { fields: { displayName: dp.displayName, bio: dp.bio, defaultAppointmentFeeMinor: dp.fee ? toMinor(dp.fee) : undefined }, specialties: dp.codes } });
+    await api("clinic/doctors/me", { method: "PATCH", body: { fields: { displayName: dp.displayName, bio: dp.bio, defaultAppointmentFeeMinor: dp.fee ? toMinor(dp.fee) : undefined, otherSpecialty: dp.codes.includes("other") ? dp.other.trim() : undefined }, specialties: dp.codes } });
     setSaved(true);
     await mineApi.reload();
   });
@@ -80,13 +81,10 @@ export default function ClinicSettings() {
             <Field label={t("clinicSettings.fee")} hint={t("services.priceHint")}><Input value={dp.fee} onChange={(e) => setDp({ ...dp, fee: e.target.value })} inputMode="decimal" dir="ltr" className="max-w-40" /></Field>
             <div>
               <p className="mb-2 text-sm font-medium">{t("clinicSettings.specialties")}</p>
-              <div className="flex flex-wrap gap-2">{specialties.data?.map((s) => {
-                const on = dp.codes.includes(s.code);
-                return <button type="button" key={s.code} onClick={() => setDp({ ...dp, codes: on ? dp.codes.filter((c) => c !== s.code) : [...dp.codes, s.code] })} className={`rounded-full border px-3 py-1 text-sm ${on ? "border-brand bg-brand text-white" : "bg-white hover:border-brand"}`}>{s.nameEn} · {s.nameAr}</button>;
-              })}</div>
+              {specialties.data && <CategoryPicker options={specialties.data} value={dp.codes} onChange={(codes) => setDp({ ...dp, codes })} other={dp.other} onOther={(other) => setDp({ ...dp, other })} />}
             </div>
             <ErrorText error={saveDoctor.error} />
-            <Button loading={saveDoctor.loading} onClick={() => { setSaved(false); void saveDoctor.run(); }}>{t("common.save")}</Button>
+            <Button loading={saveDoctor.loading} disabled={!categoriesValid(dp.codes, dp.other)} onClick={() => { setSaved(false); void saveDoctor.run(); }}>{t("common.save")}</Button>
           </Card>
         )}
         {can("settings.manage") && <BrandingCard />}
