@@ -187,15 +187,25 @@ public class AppointmentService {
     public Map<String, Object> queue(UUID tenantId, UUID doctorId) {
         String tz = jdbc.sql("SELECT timezone FROM core.tenants WHERE id = :t").param("t", tenantId).query(String.class).single();
         var rows = jdbc.sql("""
-                SELECT a.id, a.status, a.queue_number, a.checked_in_at, a.called_at, a.start_at, a.doctor_id, d.display_name AS doctor_name, s.name AS service_name,
-                       p.id AS patient_id, p.first_name || ' ' || p.last_name AS patient_name, p.patient_code,
+                SELECT a.id, a.status, a.queue_number, a.checked_in_at, a.called_at, a.start_at, a.updated_at AS status_changed_at, a.doctor_id, d.display_name AS doctor_name, s.name AS service_name,
+                       p.id AS patient_id, trim(p.first_name || ' ' || p.last_name) AS patient_name, p.patient_code, p.phone AS patient_phone, p.date_of_birth AS patient_dob,
                        greatest(0, extract(epoch FROM (now() - a.checked_in_at)) / 60)::int AS waited_minutes
                 FROM medical.appointments a JOIN medical.patients p ON p.id = a.patient_id JOIN medical.doctors d ON d.id = a.doctor_id JOIN medical.appointment_services s ON s.id = a.service_id
                 WHERE a.tenant_id = :t AND a.status IN ('CHECKED_IN','IN_PROGRESS') AND (a.start_at AT TIME ZONE :tz)::date = (now() AT TIME ZONE :tz)::date
                   AND (CAST(:d AS uuid) IS NULL OR a.doctor_id = CAST(:d AS uuid))
                 ORDER BY a.queue_number NULLS LAST, a.checked_in_at
                 """).param("t", tenantId).param("tz", tz).param("d", doctorId).query().listOfRows();
-        var all = Rows.camel(rows);
+        ZoneId zone = ZoneId.of(tz);
+        var all = Rows.camel(rows).stream().map(m -> {
+            Map<String, Object> x = new java.util.LinkedHashMap<>(m);
+            Object dob = x.remove("patientDob");
+            if (dob instanceof String str && !str.isBlank()) {
+                java.time.Period age = java.time.Period.between(java.time.LocalDate.parse(str), java.time.LocalDate.now(zone));
+                x.put("patientAgeYears", age.getYears());
+                x.put("patientAgeMonths", age.getMonths());
+            }
+            return x;
+        }).toList();
         Map<String, Object> out = new java.util.LinkedHashMap<>();
         out.put("inProgress", all.stream().filter(x -> "IN_PROGRESS".equals(x.get("status"))).toList());
         out.put("waiting", all.stream().filter(x -> "CHECKED_IN".equals(x.get("status"))).toList());

@@ -70,6 +70,10 @@ public class ClinicalService {
             if (!Set.of("CONFIRMED", "CHECKED_IN", "IN_PROGRESS").contains((String) a.get("status")))
                 throw BusinessException.conflict("INVALID_STATUS_TRANSITION", "The appointment is not ready for a visit");
             branch = (UUID) a.get("branch_id");
+            // Opening the same patient's exam again (secretary sent them in, doctor clicks, page reloaded...) must continue the same exam, never start a second one.
+            UUID existing = jdbc.sql("SELECT id FROM medical.encounters WHERE tenant_id = :t AND appointment_id = :a AND doctor_id = :d ORDER BY created_at LIMIT 1")
+                    .param("t", tenantId).param("a", r.appointmentId()).param("d", doctor).query(UUID.class).optional().orElse(null);
+            if (existing != null) return encounter(tenantId, actor, existing);
         }
         UUID id = jdbc.sql("INSERT INTO medical.encounters (tenant_id, patient_id, doctor_id, appointment_id, branch_id, chief_complaint) VALUES (:t, :p, :d, :a, :b, :c) RETURNING id")
                 .param("t", tenantId).param("p", r.patientId()).param("d", doctor).param("a", r.appointmentId()).param("b", branch).param("c", r.chiefComplaint()).query(UUID.class).single();

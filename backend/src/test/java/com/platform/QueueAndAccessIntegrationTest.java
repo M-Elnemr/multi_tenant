@@ -153,8 +153,8 @@ class QueueAndAccessIntegrationTest extends IntegrationTestBase {
         onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/appointments/" + a2 + "/check-in", "{}").andExpect(jsonPath("$.queueNumber").value(1));
         onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/appointments/" + a1 + "/check-in", "{}").andExpect(jsonPath("$.queueNumber").value(2));
         onHost(c.host(), c.owner(), "GET", "/api/v1/clinic/queue", null).andExpect(jsonPath("$.waiting.length()").value(2))
-                .andExpect(jsonPath("$.waiting[0].patientName").value("Second "))   // first_name || ' ' || last_name
-                .andExpect(jsonPath("$.waiting[1].patientName").value("First "))
+                .andExpect(jsonPath("$.waiting[0].patientName").value("Second"))   // first and last name joined and trimmed
+                .andExpect(jsonPath("$.waiting[1].patientName").value("First"))
                 .andExpect(jsonPath("$.waiting[0].queueNumber").value(1));
 
         // each patient sees only their own place: counts, never names
@@ -214,5 +214,54 @@ class QueueAndAccessIntegrationTest extends IntegrationTestBase {
         // another clinic's doctor id reveals nothing
         Clinic other = clinic();
         assertThat(JsonPath.<List<Integer>>read(body(onHost(other.host(), null, "GET", "/api/v1/clinic/public/working-days?doctorId=" + c.doctorId() + "&branchId=" + other.branchId(), null)), "$.weekdays")).isEmpty();
+    }
+
+    @Test
+    void secretarySendsInAndDoctorOpensTheCurrentExamOnce() throws Exception {
+        Clinic c = clinic();
+        String rPhone = nextPhone();
+        String inv = body(onHost(c.host(), c.owner(), "POST", "/api/v1/tenant/members", "{\"firstName\":\"Rana\",\"phone\":\"%s\",\"role\":\"RECEPTIONIST\"}".formatted(rPhone)).andExpect(status().isCreated()));
+        String sec = JsonPath.read(body(onHost(c.host(), null, "POST", "/api/v1/auth/activate", "{\"identifier\":\"%s\",\"pin\":\"%s\",\"newPassword\":\"ReceptionPass1\"}".formatted(rPhone, JsonPath.<String>read(inv, "$.activationPin"))).andExpect(status().isOk())), "$.accessToken");
+        String[] p = patientWithPassword(c, "Current", nextPhone(), "WalkPass1234");
+        String walk = "{\"patientId\":\"%s\",\"doctorId\":\"" + c.doctorId() + "\",\"branchId\":\"" + c.branchId() + "\",\"serviceId\":\"" + c.serviceId() + "\"}";
+
+        // the secretary registers the arrival, then sends the patient in; she cannot open the clinical exam herself
+        String appt = JsonPath.read(body(onHost(c.host(), sec, "POST", "/api/v1/clinic/appointments/walk-in", walk.formatted(p[0])).andExpect(status().isCreated())), "$.id");
+        onHost(c.host(), sec, "POST", "/api/v1/clinic/appointments/" + appt + "/start", "{}").andExpect(status().isOk()).andExpect(jsonPath("$.status").value("IN_PROGRESS"));
+        onHost(c.host(), sec, "POST", "/api/v1/clinic/encounters", "{\"patientId\":\"%s\",\"appointmentId\":\"%s\"}".formatted(p[0], appt)).andExpect(status().isForbidden());
+
+        // the doctor's current-exam screen reads the queue: the patient is in the room with age and mobile
+        String q = body(onHost(c.host(), c.owner(), "GET", "/api/v1/clinic/queue?doctorId=" + c.doctorId(), null).andExpect(status().isOk()));
+        assertThat(JsonPath.<String>read(q, "$.inProgress[0].patientName")).contains("Current");
+        assertThat(JsonPath.<String>read(q, "$.inProgress[0].patientPhone")).startsWith("+20");
+        assertThat(JsonPath.<String>read(q, "$.inProgress[0].id")).isEqualTo(appt);
+
+        // the doctor opens the exam; opening it again (second click, reload, second tab) continues the SAME exam
+        String body = "{\"patientId\":\"%s\",\"appointmentId\":\"%s\"}".formatted(p[0], appt);
+        String e1 = JsonPath.read(body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/encounters", body).andExpect(status().isCreated())), "$.id");
+        String e2 = JsonPath.read(body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/encounters", body).andExpect(status().isCreated())), "$.id");
+        assertThat(e2).isEqualTo(e1);
+        assertThat(jdbc.sql("SELECT count(*) FROM medical.encounters WHERE appointment_id = :a").param("a", UUID.fromString(appt)).query(Long.class).single()).isEqualTo(1);
+    }
+
+    @Test
+    void staffCanEditPatientDetailsButNotBlankTheNameOrCrossClinics() throws Exception {
+        Clinic c = clinic();
+        String[] p = patientWithPassword(c, "Editme", nextPhone(), "WalkPass1234");
+        String res = body(onHost(c.host(), c.owner(), "PATCH", "/api/v1/clinic/patients/" + p[0],
+                "{\"firstName\":\"Renamed Patient\",\"lastName\":\"\",\"phone\":\"٠١٠٥٥٥٠٠٠٠٩\",\"ageYears\":7,\"ageMonths\":3,\"sex\":\"M\",\"addressText\":\"12 Nile St\",\"bloodType\":\"O+\",\"notesInternal\":\"allergic to penicillin\"}").andExpect(status().isOk()));
+        assertThat(JsonPath.<String>read(res, "$.firstName")).isEqualTo("Renamed Patient");
+        assertThat(JsonPath.<String>read(res, "$.lastName")).isEmpty();
+        assertThat(JsonPath.<Integer>read(res, "$.ageYears")).isEqualTo(7);
+        assertThat(JsonPath.<Integer>read(res, "$.ageMonths")).isEqualTo(3);
+        assertThat(JsonPath.<String>read(res, "$.addressText")).isEqualTo("12 Nile St");
+        assertThat(JsonPath.<String>read(res, "$.bloodType")).isEqualTo("O+");
+        assertThat(JsonPath.<String>read(res, "$.phone")).isEqualTo("+201055500009");
+        assertThat(body(onHost(c.host(), c.owner(), "GET", "/api/v1/clinic/patients/" + p[0], null))).contains("allergic to penicillin");
+        // a blank name is refused, an unknown / foreign id is a 404, and the change is audited
+        onHost(c.host(), c.owner(), "PATCH", "/api/v1/clinic/patients/" + p[0], "{\"firstName\":\"  \"}").andExpect(status().isBadRequest());
+        Clinic other = clinic();
+        onHost(other.host(), other.owner(), "PATCH", "/api/v1/clinic/patients/" + p[0], "{\"firstName\":\"Hacked\"}").andExpect(status().isNotFound());
+        assertThat(jdbc.sql("SELECT count(*) FROM audit.audit_logs WHERE action = 'PATIENT_UPDATED' AND entity_id = :p").param("p", UUID.fromString(p[0])).query(Long.class).single()).isGreaterThanOrEqualTo(1);
     }
 }

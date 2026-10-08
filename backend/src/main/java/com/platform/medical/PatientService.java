@@ -301,6 +301,7 @@ public class PatientService {
     @Transactional
     public Map<String, Object> update(UUID tenantId, UUID actor, UUID id, PatientReq r) {
         summary(tenantId, id);
+        if (r.firstName() != null && r.firstName().isBlank()) throw BusinessException.badRequest("VALIDATION_ERROR", "Name is required");
         LocalDate[] dob = resolveDob(tenantId, r);
         String phone = r.phone() == null || r.phone().isBlank() ? null : PhoneNormalizer.normalize(r.phone());
         jdbc.sql("""
