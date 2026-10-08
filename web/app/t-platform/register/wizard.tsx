@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, newKey } from "@/lib/client";
+import { PhoneInput, EmailInput } from "@/components/inputs";
 import { useAction, useApi } from "@/components/hooks";
 import { CategoryPicker, categoriesValid, type CategoryOption } from "@/components/category-picker";
 import { useT } from "@/components/i18n-provider";
@@ -113,8 +114,8 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
         </Field>
         <hr className="border-slate-100" />
         <Field label={t("register.ownerName")}><Input value={owner.name} onChange={(e) => setOwner({ ...owner, name: e.target.value })} required maxLength={100} autoComplete="name" /></Field>
-        <Field label={t("register.phone")} hint={t("register.phoneHint")}><Input value={owner.phone} onChange={(e) => setOwner({ ...owner, phone: e.target.value })} required inputMode="tel" dir="ltr" autoComplete="tel" /></Field>
-        <Field label={t("register.email")} hint={t("register.emailHint")}><Input type="email" value={owner.email} onChange={(e) => setOwner({ ...owner, email: e.target.value })} dir="ltr" autoComplete="email" /></Field>
+        <Field label={t("register.phone")} hint={t("register.phoneHint")}><PhoneInput value={owner.phone} onValue={(phone) => setOwner({ ...owner, phone })} required /></Field>
+        <Field label={t("register.email")} hint={t("register.emailHint")}><EmailInput value={owner.email} onValue={(email) => setOwner({ ...owner, email })} /></Field>
         <Field label={t("login.password")} hint={t("login.passwordRule")}><Input type="password" value={owner.password} onChange={(e) => setOwner({ ...owner, password: e.target.value })} required minLength={8} autoComplete="new-password" /></Field>
         <ErrorText error={create.error} />
         {avail === "taken" && <Alert tone="amber">{t("register.taken")}</Alert>}

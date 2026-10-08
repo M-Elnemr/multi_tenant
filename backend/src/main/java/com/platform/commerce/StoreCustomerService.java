@@ -34,7 +34,7 @@ public class StoreCustomerService {
         String phone = PhoneNormalizer.normalize(phoneRaw);
         if (users.findByPhone(phone).isPresent())
             throw BusinessException.conflict("ACCOUNT_EXISTS", "This phone number already has an account - log in with its password");
-        String mail = email == null || email.isBlank() ? null : email.trim().toLowerCase();
+        String mail = com.platform.shared.PhoneNormalizer.cleanEmail(email);
         if (mail != null && users.findByEmailIgnoreCase(mail).isPresent())
             throw BusinessException.conflict("ACCOUNT_EXISTS", "This email already has an account - log in with its password");
         User u = new User();

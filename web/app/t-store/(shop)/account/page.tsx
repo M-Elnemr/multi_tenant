@@ -8,6 +8,7 @@ import { ChangePasswordCard } from "@/components/change-password";
 import { LogoutButton } from "@/components/logout-button";
 import { Button, Card, Empty, ErrorText, Field, Input, Loading, PageHeader } from "@/components/ui";
 import Link from "next/link";
+import { PhoneInput } from "@/components/inputs";
 
 type Addr = { id: string; title?: string; recipientName: string; phone: string; addressLine1: string; city: string; isDefaultShipping: boolean };
 type Wish = { id: string; name: string; slug: string };
@@ -37,7 +38,7 @@ export default function Account() {
           <form onSubmit={(e) => { e.preventDefault(); void add.run(); }} className="space-y-3 border-t pt-4">
             <div className="grid grid-cols-2 gap-3">
               <Field label={t("checkout.recipient")}><Input value={f.recipientName} onChange={(e) => setF({ ...f, recipientName: e.target.value })} required /></Field>
-              <Field label={t("register.phone")}><Input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} dir="ltr" required /></Field>
+              <Field label={t("register.phone")}><PhoneInput value={f.phone} onValue={(phone) => setF({ ...f, phone })} required /></Field>
             </div>
             <Field label={t("checkout.address")}><Input value={f.addressLine1} onChange={(e) => setF({ ...f, addressLine1: e.target.value })} required /></Field>
             <Field label={t("checkout.city")}><Input value={f.city} onChange={(e) => setF({ ...f, city: e.target.value })} required /></Field>

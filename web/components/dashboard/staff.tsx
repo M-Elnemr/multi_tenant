@@ -5,6 +5,7 @@ import { api } from "@/lib/client";
 import { useAction, useApi } from "../hooks";
 import { useI18n } from "../i18n-provider";
 import { Button, Card, ErrorText, Field, Input, Loading, Modal, PageHeader, SecretBox, Select, StatusBadge, Table, Td } from "../ui";
+import { PhoneInput } from "@/components/inputs";
 
 type Member = { userId: string; firstName: string; lastName: string; phone: string; roles: string; userStatus: string };
 
@@ -55,11 +56,8 @@ export default function StaffPage() {
       )}
       <Modal open={open} onClose={() => setOpen(false)} title={t("staff.add")}>
         <form onSubmit={(e) => { e.preventDefault(); void invite.run(); }} className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <Field label={t("register.firstName")}><Input value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} required /></Field>
-            <Field label={t("register.lastName")}><Input value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} /></Field>
-          </div>
-          <Field label={t("register.phone")}><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} dir="ltr" inputMode="tel" required /></Field>
+          <Field label={t("register.ownerName")}><Input value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} required maxLength={100} /></Field>
+          <Field label={t("register.phone")}><PhoneInput value={form.phone} onValue={(phone) => setForm({ ...form, phone })} required /></Field>
           <Field label={t("staff.role")}><Select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>{roles.map((r) => <option key={r} value={r}>{t(`role.${r}`)}</option>)}</Select></Field>
           <ErrorText error={invite.error} />
           <Button type="submit" loading={invite.loading} className="w-full">{t("staff.create")}</Button>

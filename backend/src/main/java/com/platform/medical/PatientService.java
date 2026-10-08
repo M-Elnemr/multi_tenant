@@ -75,7 +75,7 @@ public class PatientService {
     public Map<String, Object> create(UUID tenantId, UUID actor, PatientReq r) {
         if (r.firstName() == null || r.firstName().isBlank()) throw BusinessException.badRequest("VALIDATION_ERROR", "First name is required");
         String phone = r.phone() == null || r.phone().isBlank() ? null : PhoneNormalizer.normalize(r.phone());
-        String email = r.email() == null || r.email().isBlank() ? null : r.email().trim().toLowerCase();
+        String email = com.platform.shared.PhoneNormalizer.cleanEmail(r.email());
 
         UUID guardianUser = null;
         if (r.guardianPatientId() != null) {

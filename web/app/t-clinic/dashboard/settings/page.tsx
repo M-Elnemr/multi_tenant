@@ -8,6 +8,7 @@ import { CategoryPicker, categoriesValid } from "@/components/category-picker";
 import { useAction, useApi, useMe } from "@/components/hooks";
 import { useT } from "@/components/i18n-provider";
 import { Alert, Button, Card, ErrorText, Field, Input, PageHeader, Textarea } from "@/components/ui";
+import { PhoneInput, EmailInput } from "@/components/inputs";
 
 type Profile = {
   clinicName: string; about?: string; phone?: string; email?: string; addressText?: string; bookingEnabled: boolean; takeNewPatients: boolean; requiresConfirmation: boolean;
@@ -60,8 +61,8 @@ export default function ClinicSettings() {
             <h2 className="font-medium">{t("clinicSettings.profile")}</h2>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label={t("register.clinicName")}><Input value={p.clinicName} onChange={(e) => setP({ ...p, clinicName: e.target.value })} /></Field>
-              <Field label={t("register.phone")}><Input value={p.phone ?? ""} onChange={(e) => setP({ ...p, phone: e.target.value })} dir="ltr" /></Field>
-              <Field label={t("register.email")}><Input value={p.email ?? ""} onChange={(e) => setP({ ...p, email: e.target.value })} dir="ltr" /></Field>
+              <Field label={t("register.phone")}><PhoneInput value={p.phone ?? ""} onValue={(v) => setP({ ...p, phone: v })} /></Field>
+              <Field label={t("register.email")}><EmailInput value={p.email ?? ""} onValue={(v) => setP({ ...p, email: v })} /></Field>
               <Field label={t("checkout.address")}><Input value={p.addressText ?? ""} onChange={(e) => setP({ ...p, addressText: e.target.value })} /></Field>
             </div>
             <Field label={t("settings.about")}><Textarea value={p.about ?? ""} onChange={(e) => setP({ ...p, about: e.target.value })} /></Field>

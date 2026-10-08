@@ -98,4 +98,20 @@ class CategoryRegistrationIntegrationTest extends IntegrationTestBase {
         String shop = text(onHost(host, null, "GET", "/api/v1/shop/profile", null).andExpect(status().isOk()));
         assertThat((List<String>) JsonPath.read(shop, "$.profile.categories[*].code")).containsExactly("perfumes");
     }
+
+    @Test
+    void phoneAcceptsArabicDigitsAndEmailMustBeEnglish() throws Exception {
+        // a number typed with Arabic-Indic digits is stored as the same English-digit number and can log in either way
+        String arabicPhone = "٠١٠٥٥٥" + String.valueOf(10000 + (System.nanoTime() % 80000));
+        String latin = arabicPhone.chars().map(c -> c >= 0x660 && c <= 0x669 ? '0' + (c - 0x660) : c).collect(StringBuilder::new, StringBuilder::appendCodePoint, StringBuilder::append).toString();
+        String slug = "clinic" + uniq();
+        String body = "{\"type\":\"CLINIC\",\"name\":\"Digits\",\"slug\":\"%s\",\"ownerFirstName\":\"Owner\",\"phone\":\"%s\",\"password\":\"s3cretPass!\",\"categories\":[\"general_practice\"]}".formatted(slug, arabicPhone);
+        mvc.perform(post("/api/v1/onboarding/tenants").header("Host", "platform.test").contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isCreated());
+        mvc.perform(post("/api/v1/auth/check-identifier").header("Host", "platform.test").contentType(MediaType.APPLICATION_JSON).content("{\"identifier\":\"%s\"}".formatted(latin))).andExpect(jsonPath("$.next").value("ENTER_PASSWORD"));
+
+        // Arabic letters (or any non-English characters) in an email are refused; a normal one is stored lower-case
+        register("STORE", ",\"categories\":[\"toys\"],\"email\":\"محمد@example.com\"").andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_EMAIL"));
+        register("STORE", ",\"categories\":[\"toys\"],\"email\":\"not-an-email\"").andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_EMAIL"));
+        register("STORE", ",\"categories\":[\"toys\"],\"email\":\"  Shop.Owner" + uniq() + "@Example.COM \"").andExpect(status().isCreated());
+    }
 }

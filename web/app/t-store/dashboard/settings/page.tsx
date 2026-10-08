@@ -8,6 +8,7 @@ import { CategoryPicker, categoriesValid, type CategoryOption } from "@/componen
 import { useAction, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Alert, Button, Card, ErrorText, Field, Input, PageHeader, Select, Table, Td, Textarea } from "@/components/ui";
+import { PhoneInput, EmailInput } from "@/components/inputs";
 
 type Profile = { categories?: { code: string }[]; otherCategory?: string | null; storeName: string; shortDescription?: string; about?: string; supportPhone?: string; supportEmail?: string; addressText?: string; shippingPolicy?: string; returnPolicy?: string };
 type Pm = { method: string; enabled: boolean };
@@ -51,8 +52,8 @@ export default function StoreSettings() {
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label={t("register.storeName")}><Input value={p.storeName} onChange={(e) => setP({ ...p, storeName: e.target.value })} /></Field>
               <Field label={t("settings.shortDesc")}><Input value={p.shortDescription ?? ""} onChange={(e) => setP({ ...p, shortDescription: e.target.value })} /></Field>
-              <Field label={t("register.phone")}><Input value={p.supportPhone ?? ""} onChange={(e) => setP({ ...p, supportPhone: e.target.value })} dir="ltr" /></Field>
-              <Field label={t("register.email")}><Input value={p.supportEmail ?? ""} onChange={(e) => setP({ ...p, supportEmail: e.target.value })} dir="ltr" /></Field>
+              <Field label={t("register.phone")}><PhoneInput value={p.supportPhone ?? ""} onValue={(v) => setP({ ...p, supportPhone: v })} /></Field>
+              <Field label={t("register.email")}><EmailInput value={p.supportEmail ?? ""} onValue={(v) => setP({ ...p, supportEmail: v })} /></Field>
             </div>
             <Field label={t("settings.about")}><Textarea value={p.about ?? ""} onChange={(e) => setP({ ...p, about: e.target.value })} /></Field>
             <Field label={t("settings.shippingPolicy")}><Textarea value={p.shippingPolicy ?? ""} onChange={(e) => setP({ ...p, shippingPolicy: e.target.value })} /></Field>

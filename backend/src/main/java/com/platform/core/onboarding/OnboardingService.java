@@ -100,7 +100,7 @@ public class OnboardingService {
         }
         auth.validatePassword(c.password());
         String phone = PhoneNormalizer.normalize(c.phone());
-        String email = c.email() == null || c.email().isBlank() ? null : c.email().trim().toLowerCase();
+        String email = com.platform.shared.PhoneNormalizer.cleanEmail(c.email());
         try {
             Result r = tx.execute(status -> create(c, slug, phone, email, idempotencyKey));
             directory.invalidateAll();   // the new host must resolve immediately, not after a cached "unknown" expires

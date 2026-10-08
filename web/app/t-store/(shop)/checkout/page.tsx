@@ -9,6 +9,7 @@ import { money } from "@/lib/format";
 import { useAction, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Alert, Button, Card, Empty, ErrorText, Field, Input, Loading, PageHeader, Select } from "@/components/ui";
+import { PhoneInput } from "@/components/inputs";
 
 type Profile = { paymentMethods: { method: string }[]; shippingMethods: { id: string; type: string; name: string; feeMinor: number; freeAboveMinor?: number }[] };
 type Quote = { subtotalMinor: number; discountMinor: number; shippingMinor: number; totalMinor: number; currency: string };
@@ -79,7 +80,7 @@ export default function Checkout() {
             {needsAddress && (
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label={t("checkout.recipient")}><Input value={addr.recipientName} onChange={(e) => setAddr({ ...addr, recipientName: e.target.value })} required /></Field>
-                <Field label={t("register.phone")}><Input value={addr.phone} onChange={(e) => setAddr({ ...addr, phone: e.target.value })} dir="ltr" required /></Field>
+                <Field label={t("register.phone")}><PhoneInput value={addr.phone} onValue={(phone) => setAddr({ ...addr, phone })} required /></Field>
                 <div className="sm:col-span-2"><Field label={t("checkout.address")}><Input value={addr.addressLine1} onChange={(e) => setAddr({ ...addr, addressLine1: e.target.value })} required /></Field></div>
                 <Field label={t("checkout.city")}><Input value={addr.city} onChange={(e) => setAddr({ ...addr, city: e.target.value })} required /></Field>
                 <Field label={t("checkout.district")}><Input value={addr.district} onChange={(e) => setAddr({ ...addr, district: e.target.value })} /></Field>

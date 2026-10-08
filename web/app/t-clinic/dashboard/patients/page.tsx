@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { api } from "@/lib/client";
+import { PhoneInput } from "@/components/inputs";
 import { Page, useAction, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Button, ErrorText, Field, Input, Loading, Modal, PageHeader, Pager, SecretBox, Select, Table, Td } from "@/components/ui";
@@ -52,8 +53,8 @@ export default function Patients() {
       )}
       <Modal open={open} onClose={() => setOpen(false)} title={t("patients.add")}>
         <form onSubmit={(e) => { e.preventDefault(); void create.run(); }} className="space-y-3">
-          <div className="grid grid-cols-2 gap-3"><Field label={t("register.firstName")}><Input value={f.firstName} onChange={(e) => setF({ ...f, firstName: e.target.value })} required /></Field><Field label={t("register.lastName")}><Input value={f.lastName} onChange={(e) => setF({ ...f, lastName: e.target.value })} /></Field></div>
-          <Field label={t("register.phone")} hint={t("patients.phoneHint")}><Input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} dir="ltr" inputMode="tel" /></Field>
+          <Field label={t("register.ownerName")}><Input value={f.firstName} onChange={(e) => setF({ ...f, firstName: e.target.value })} required maxLength={100} /></Field>
+          <Field label={t("register.phone")} hint={t("patients.phoneHint")}><PhoneInput value={f.phone} onValue={(phone) => setF({ ...f, phone })} /></Field>
           <div className="grid grid-cols-2 gap-3"><Field label={t("patients.dob")}><Input type="date" value={f.dateOfBirth} onChange={(e) => setF({ ...f, dateOfBirth: e.target.value })} dir="ltr" /></Field><Field label={t("patients.sex")}><Select value={f.sex} onChange={(e) => setF({ ...f, sex: e.target.value })}><option value="">-</option><option value="F">{t("patients.female")}</option><option value="M">{t("patients.male")}</option></Select></Field></div>
           {f.phone && (
             <div className="space-y-2 rounded-lg border p-3 text-sm">

@@ -6,6 +6,7 @@ import { api } from "@/lib/client";
 import { useAction } from "./hooks";
 import { useT } from "./i18n-provider";
 import { Button, ErrorText, Field, Input } from "./ui";
+import { IdentifierInput } from "@/components/inputs";
 
 type Me = { roles: string[]; permissions: string[] };
 type Step = "identify" | "password" | "activate" | "reset";
@@ -56,7 +57,7 @@ export function LoginForm({ defaultIdentifier = "" }: { defaultIdentifier?: stri
   return (
     <form onSubmit={submit} className="space-y-4">
       <Field label={t("login.identifier")} hint={t("login.identifierHint")}>
-        <Input value={identifier} onChange={(e) => setIdentifier(e.target.value)} autoComplete="username" inputMode="text" dir="ltr" required disabled={step !== "identify"} autoFocus />
+        <IdentifierInput value={identifier} onValue={setIdentifier} required disabled={step !== "identify"} autoFocus />
       </Field>
 
       {step === "activate" && <p className="rounded-lg bg-sky-50 p-3 text-sm text-sky-900">{t("login.firstTime")}</p>}

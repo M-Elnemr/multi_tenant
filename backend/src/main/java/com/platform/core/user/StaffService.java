@@ -65,7 +65,7 @@ public class StaffService {
         if (u == null) {
             u = new User();
             u.setPhone(phone);
-            u.setEmail(email == null || email.isBlank() ? null : email.trim().toLowerCase());
+            u.setEmail(com.platform.shared.PhoneNormalizer.cleanEmail(email));
             u.setFirstName(firstName);
             u.setLastName(lastName == null ? "" : lastName);
             u.setStatus(User.Status.INVITED);
