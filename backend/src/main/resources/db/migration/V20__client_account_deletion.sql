@@ -4,3 +4,4 @@ ALTER TABLE commerce.client_accounts ADD CONSTRAINT client_accounts_status_check
 ALTER TABLE commerce.client_accounts ADD COLUMN deleted_at TIMESTAMPTZ;
 -- (the stub keeps the same id, so orders and reviews that point at it stay valid)
 
+
