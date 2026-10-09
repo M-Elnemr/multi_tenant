@@ -68,19 +68,20 @@ class PatientAccountsIntegrationTest extends IntegrationTestBase {
         onHost(h, second.token(), "GET", "/api/v1/portal/queue", null).andExpect(jsonPath("$[0].aheadOfYou").value(1)).andExpect(jsonPath("$[0].called").value(false));
         assertThat(body(onHost(h, second.token(), "GET", "/api/v1/portal/queue", null))).doesNotContain("First");
 
+        String tokSecond = "fcm-second-" + uniq(), tokFirst = "fcm-first-" + uniq();
         // the second patient's phone registers for push; calling them queues a push for that phone only
-        onHost(h, second.token(), "POST", "/api/v1/portal/devices", "{\"token\":\"fcm-token-second\",\"platform\":\"android\"}").andExpect(status().isOk());
-        onHost(h, first.token(), "POST", "/api/v1/portal/devices", "{\"token\":\"fcm-token-first\"}").andExpect(status().isOk());
+        onHost(h, second.token(), "POST", "/api/v1/portal/devices", "{\"token\":\"%s\",\"platform\":\"android\"}".formatted(tokSecond)).andExpect(status().isOk());
+        onHost(h, first.token(), "POST", "/api/v1/portal/devices", "{\"token\":\"%s\"}".formatted(tokFirst)).andExpect(status().isOk());
         onHost(h, c.access(), "POST", "/api/v1/clinic/appointments/" + a2 + "/call", "{}").andExpect(status().isOk());
         List<String> pushed = jdbc.sql("SELECT to_address FROM notifications.outbox WHERE channel = 'PUSH' AND tenant_id = (SELECT id FROM core.tenants WHERE slug = :s)").param("s", c.slug()).query(String.class).list();
-        assertThat(pushed).containsExactly("fcm-token-second");
+        assertThat(pushed).containsExactly(tokSecond);
         // without Firebase configured the sender only logs, and the message is marked sent
         notifications.dispatchOutbox();
-        assertThat(jdbc.sql("SELECT status FROM notifications.outbox WHERE channel = 'PUSH' AND to_address = 'fcm-token-second'").query(String.class).single()).isEqualTo("SENT");
+        assertThat(jdbc.sql("SELECT status FROM notifications.outbox WHERE channel = 'PUSH' AND to_address = :t").param("t", tokSecond).query(String.class).single()).isEqualTo("SENT");
         onHost(h, second.token(), "GET", "/api/v1/portal/queue", null).andExpect(jsonPath("$[0].called").value(true));
         // unregistering removes the device
-        onHost(h, second.token(), "DELETE", "/api/v1/portal/devices", "{\"token\":\"fcm-token-second\"}").andExpect(status().isOk());
-        assertThat(jdbc.sql("SELECT count(*) FROM notifications.device_tokens WHERE token = 'fcm-token-second'").query(Long.class).single()).isZero();
+        onHost(h, second.token(), "DELETE", "/api/v1/portal/devices", "{\"token\":\"%s\"}".formatted(tokSecond)).andExpect(status().isOk());
+        assertThat(jdbc.sql("SELECT count(*) FROM notifications.device_tokens WHERE token = :t").param("t", tokSecond).query(Long.class).single()).isZero();
         assertThat(a1).isNotEqualTo(a2);
     }
 
