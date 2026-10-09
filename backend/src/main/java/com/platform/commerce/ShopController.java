@@ -51,10 +51,13 @@ public class ShopController {
 
     // ---- public ----------------------------------------------------------------------------------------------
 
+    @GetMapping("/branches")
+    public List<Map<String, Object>> branches() { return settings.branches(StoreContext.tenantId(), true); }
+
     @GetMapping("/profile")
     public Map<String, Object> profile() {
         UUID t = StoreContext.tenantId();
-        return Map.of("profile", settings.profile(t), "paymentMethods", settings.paymentMethods(t).stream().filter(m -> Boolean.TRUE.equals(m.get("enabled"))).toList(),
+        return Map.of("profile", settings.publicProfile(t), "paymentMethods", settings.paymentMethods(t).stream().filter(m -> Boolean.TRUE.equals(m.get("enabled"))).toList(),
                 "shippingMethods", settings.shippingMethods(t, true));
     }
 

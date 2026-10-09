@@ -33,8 +33,13 @@ public class StoreSettingsService {
     // ---- profile ------------------------------------------------------------------------------------------
 
     public Map<String, Object> profile(UUID tenantId) {
-        Map<String, Object> p = new java.util.LinkedHashMap<>(Rows.camel(jdbc.sql("SELECT store_name, short_description, about, support_phone, support_email, address_text, shipping_policy, return_policy, privacy_policy, terms_text, other_category FROM commerce.store_profiles WHERE tenant_id = :t")
+        Map<String, Object> p = new java.util.LinkedHashMap<>(Rows.camel(jdbc.sql("SELECT store_name, short_description, about, support_phone, support_email, address_text, shipping_policy, return_policy, privacy_policy, terms_text, other_category, "
+                + "whatsapp, extra_phones::text AS extra_phones, facebook_url, instagram_url, tiktok_url, website_url, maps_url, working_hours::text AS working_hours, "
+                + "is_open, closed_message, min_order_minor, tax_id, vat_included, vat_percent, cover_file_id, announcement, return_window_days "
+                + "FROM commerce.store_profiles WHERE tenant_id = :t")
                 .param("t", tenantId).query().singleRow()));
+        p.put("extraPhones", Rows.jsonList(p.get("extraPhones")));
+        p.put("workingHours", Rows.json(p.get("workingHours")));
         p.put("categories", Rows.camel(jdbc.sql("SELECT c.code, c.name_ar, c.name_en FROM commerce.store_category_links l JOIN commerce.store_categories c ON c.id = l.category_id WHERE l.tenant_id = :t ORDER BY c.sort_order").param("t", tenantId).query().listOfRows()));
         return p;
     }
@@ -67,41 +72,131 @@ public class StoreSettingsService {
         return profile(tenantId);
     }
 
+    private static final Map<String, String> PROFILE_TEXT = Map.ofEntries(
+            Map.entry("storeName", "store_name"), Map.entry("shortDescription", "short_description"), Map.entry("about", "about"),
+            Map.entry("supportPhone", "support_phone"), Map.entry("supportEmail", "support_email"), Map.entry("addressText", "address_text"),
+            Map.entry("shippingPolicy", "shipping_policy"), Map.entry("returnPolicy", "return_policy"), Map.entry("privacyPolicy", "privacy_policy"),
+            Map.entry("termsText", "terms_text"), Map.entry("whatsapp", "whatsapp"), Map.entry("facebookUrl", "facebook_url"),
+            Map.entry("instagramUrl", "instagram_url"), Map.entry("tiktokUrl", "tiktok_url"), Map.entry("websiteUrl", "website_url"),
+            Map.entry("mapsUrl", "maps_url"), Map.entry("closedMessage", "closed_message"), Map.entry("taxId", "tax_id"), Map.entry("announcement", "announcement"));
+    private static final Map<String, String> PROFILE_BOOL = Map.of("isOpen", "is_open", "vatIncluded", "vat_included");
+    private static final Map<String, String> PROFILE_NUM = Map.of("minOrderMinor", "min_order_minor", "vatPercent", "vat_percent", "returnWindowDays", "return_window_days");
+
+    /** Edits only the fields that are present in the request (whitelisted columns; values are always bound, never concatenated). */
     @Transactional
-    public Map<String, Object> updateProfile(UUID tenantId, UUID actor, Map<String, String> f) {
-        jdbc.sql("""
-                UPDATE commerce.store_profiles SET store_name = coalesce(:storeName, store_name), short_description = coalesce(:shortDescription, short_description),
-                  about = coalesce(:about, about), support_phone = coalesce(:supportPhone, support_phone), support_email = coalesce(:supportEmail, support_email),
-                  address_text = coalesce(:addressText, address_text), shipping_policy = coalesce(:shippingPolicy, shipping_policy),
-                  return_policy = coalesce(:returnPolicy, return_policy), privacy_policy = coalesce(:privacyPolicy, privacy_policy),
-                  terms_text = coalesce(:termsText, terms_text), updated_at = now() WHERE tenant_id = :t
-                """).param("t", tenantId).param("storeName", f.get("storeName")).param("shortDescription", f.get("shortDescription")).param("about", f.get("about"))
-                .param("supportPhone", f.get("supportPhone")).param("supportEmail", f.get("supportEmail")).param("addressText", f.get("addressText"))
-                .param("shippingPolicy", f.get("shippingPolicy")).param("returnPolicy", f.get("returnPolicy")).param("privacyPolicy", f.get("privacyPolicy"))
-                .param("termsText", f.get("termsText")).update();
+    public Map<String, Object> updateProfile(UUID tenantId, UUID actor, Map<String, Object> f) {
+        StringBuilder set = new StringBuilder();
+        var q = new java.util.LinkedHashMap<String, Object>();
+        for (var e : PROFILE_TEXT.entrySet()) {
+            if (!(f.get(e.getKey()) instanceof String v)) continue;
+            String val = v.trim();
+            if (e.getKey().equals("storeName") && val.isEmpty()) throw BusinessException.badRequest("VALIDATION_ERROR", "Store name is required");
+            if (val.length() > 5000 || (e.getKey().endsWith("Url") && !val.isEmpty() && !val.matches("(?i)^https?://\\S+$"))) throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid " + e.getKey());
+            set.append(e.getValue()).append(" = :").append(e.getKey()).append(", ");
+            q.put(e.getKey(), val);
+        }
+        for (var e : PROFILE_BOOL.entrySet()) if (f.get(e.getKey()) instanceof Boolean v) { set.append(e.getValue()).append(" = :").append(e.getKey()).append(", "); q.put(e.getKey(), v); }
+        for (var e : PROFILE_NUM.entrySet()) if (f.get(e.getKey()) instanceof Number v) {
+            if (v.doubleValue() < 0 || v.doubleValue() > 1_000_000_000) throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid " + e.getKey());
+            set.append(e.getValue()).append(" = :").append(e.getKey()).append(", ");
+            q.put(e.getKey(), e.getKey().equals("vatPercent") ? (Object) java.math.BigDecimal.valueOf(v.doubleValue()) : (Object) v.longValue());
+        }
+        var json = new com.fasterxml.jackson.databind.ObjectMapper();
+        try {
+            if (f.get("extraPhones") instanceof List<?> l) {
+                List<String> phones = l.stream().map(String::valueOf).map(String::trim).filter(x -> !x.isEmpty()).limit(5).toList();
+                set.append("extra_phones = CAST(:extraPhones AS jsonb), "); q.put("extraPhones", json.writeValueAsString(phones));
+            }
+            if (f.get("workingHours") instanceof Map<?, ?> m) {
+                String wh = json.writeValueAsString(m);
+                if (wh.length() > 2000) throw BusinessException.badRequest("VALIDATION_ERROR", "Working hours too long");
+                set.append("working_hours = CAST(:workingHours AS jsonb), "); q.put("workingHours", wh);
+            }
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid value"); }
+        if (f.containsKey("coverFileId")) {
+            Object c = f.get("coverFileId");
+            set.append("cover_file_id = :coverFileId, "); q.put("coverFileId", c == null || String.valueOf(c).isBlank() ? null : UUID.fromString(String.valueOf(c)));
+        }
+        if (!q.isEmpty()) {
+            var st = jdbc.sql("UPDATE commerce.store_profiles SET " + set + "updated_at = now() WHERE tenant_id = :t").param("t", tenantId);
+            for (var e : q.entrySet()) st = st.param(e.getKey(), e.getValue());
+            st.update();
+        }
         audit.record(actor, tenantId, "SETTINGS_CHANGED", "store_profile", null, null);
         return profile(tenantId);
     }
 
-    // ---- branches -----------------------------------------------------------------------------------------
-
-    public List<Map<String, Object>> branches(UUID tenantId) {
-        return Rows.camel(jdbc.sql("SELECT id, name, code, phone, address_line1, address_line2, city, state, country, district, is_active FROM commerce.branches WHERE tenant_id = :t ORDER BY created_at")
-                .param("t", tenantId).query().listOfRows());
+    /** What the storefront needs to look like the shop itself: identity, contact, hours, look & feel (public, no internal fields). */
+    public Map<String, Object> publicProfile(UUID tenantId) {
+        Map<String, Object> p = new java.util.LinkedHashMap<>(profile(tenantId));
+        p.remove("taxId"); p.remove("otherCategory");
+        var b = jdbc.sql("SELECT logo_file_id, primary_color, secondary_color FROM core.branding WHERE tenant_id = :t").param("t", tenantId).query().listOfRows().stream().findFirst();
+        p.put("branding", b.isPresent() ? Rows.camel(b.get()) : Map.of());
+        return p;
     }
 
+    // ---- branches -----------------------------------------------------------------------------------------
+
+    private static final String BRANCH_COLS = "id, name, code, phone, whatsapp, address_line1, address_line2, city, state, country, district, governorate_code, area, landmark, "
+            + "working_hours::text AS working_hours, maps_url, latitude, longitude, is_pickup, sort_order, is_active";
+
+    public List<Map<String, Object>> branches(UUID tenantId) { return branches(tenantId, false); }
+
+    public List<Map<String, Object>> branches(UUID tenantId, boolean onlyActive) {
+        return Rows.camel(jdbc.sql("SELECT " + BRANCH_COLS + " FROM commerce.branches WHERE tenant_id = :t AND (NOT :a OR is_active) ORDER BY sort_order, created_at")
+                .param("t", tenantId).param("a", onlyActive).query().listOfRows()).stream().map(m -> { m.put("workingHours", Rows.json(m.remove("workingHours"))); return m; }).toList();
+    }
+
+    private static final Map<String, String> BRANCH_TEXT = Map.ofEntries(
+            Map.entry("name", "name"), Map.entry("phone", "phone"), Map.entry("whatsapp", "whatsapp"), Map.entry("address", "address_line1"), Map.entry("addressLine2", "address_line2"),
+            Map.entry("city", "city"), Map.entry("district", "district"), Map.entry("governorateCode", "governorate_code"), Map.entry("area", "area"),
+            Map.entry("landmark", "landmark"), Map.entry("mapsUrl", "maps_url"));
+
     @Transactional
-    public Map<String, Object> createBranch(UUID tenantId, UUID actor, String name, String code, String phone, String address, String city) {
-        if (name == null || name.isBlank() || code == null || code.isBlank()) throw BusinessException.badRequest("VALIDATION_ERROR", "Name and code are required");
+    public Map<String, Object> createBranch(UUID tenantId, UUID actor, Map<String, Object> f) {
+        String name = f.get("name") instanceof String s ? s.trim() : "", code = f.get("code") instanceof String s ? s.trim() : "";
+        if (name.isEmpty() || code.isEmpty()) throw BusinessException.badRequest("VALIDATION_ERROR", "Name and code are required");
         ent.requireCapacity(tenantId, "max_branches", jdbc.sql("SELECT count(*) FROM commerce.branches WHERE tenant_id = :t AND is_active").param("t", tenantId).query(Long.class).single());
         try {
-            UUID id = jdbc.sql("INSERT INTO commerce.branches (tenant_id, name, code, phone, address_line1, city) VALUES (:t, :n, :c, :p, coalesce(:a,''), coalesce(:ci,'')) RETURNING id")
-                    .param("t", tenantId).param("n", name.trim()).param("c", code.trim().toUpperCase()).param("p", phone).param("a", address).param("ci", city).query(UUID.class).single();
+            UUID id = jdbc.sql("INSERT INTO commerce.branches (tenant_id, name, code) VALUES (:t, :n, :c) RETURNING id").param("t", tenantId).param("n", name).param("c", code.toUpperCase()).query(UUID.class).single();
+            applyBranch(tenantId, id, f);
             audit.record(actor, tenantId, "BRANCH_CREATED", "branch", id, null);
             return branches(tenantId).stream().filter(b -> id.equals(b.get("id"))).findFirst().orElseThrow();
         } catch (DuplicateKeyException e) {
             throw BusinessException.conflict("BRANCH_CODE_TAKEN", "Branch code already exists");
         }
+    }
+
+    @Transactional
+    public Map<String, Object> updateBranch(UUID tenantId, UUID actor, UUID id, Map<String, Object> f) {
+        if (jdbc.sql("SELECT count(*) FROM commerce.branches WHERE id = :i AND tenant_id = :t").param("i", id).param("t", tenantId).query(Long.class).single() == 0) throw BusinessException.notFound("RESOURCE_NOT_FOUND", "Not found");
+        applyBranch(tenantId, id, f);
+        audit.record(actor, tenantId, "BRANCH_UPDATED", "branch", id, null);
+        return branches(tenantId).stream().filter(b -> id.equals(b.get("id"))).findFirst().orElseThrow();
+    }
+
+    private void applyBranch(UUID tenantId, UUID id, Map<String, Object> f) {
+        StringBuilder set = new StringBuilder();
+        var q = new java.util.LinkedHashMap<String, Object>();
+        for (var e : BRANCH_TEXT.entrySet()) if (f.get(e.getKey()) instanceof String v) {
+            String val = v.trim();
+            if (e.getKey().equals("name") && val.isEmpty()) continue;
+            if (val.length() > 500) throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid " + e.getKey());
+            set.append(e.getValue()).append(" = :").append(e.getKey()).append(", "); q.put(e.getKey(), val);
+        }
+        if (f.get("isPickup") instanceof Boolean b) { set.append("is_pickup = :isPickup, "); q.put("isPickup", b); }
+        if (f.get("isActive") instanceof Boolean b) { set.append("is_active = :isActive, "); q.put("isActive", b); }
+        if (f.get("sortOrder") instanceof Number n) { set.append("sort_order = :sortOrder, "); q.put("sortOrder", n.intValue()); }
+        if (f.get("latitude") instanceof Number n) { set.append("latitude = :latitude, "); q.put("latitude", java.math.BigDecimal.valueOf(n.doubleValue())); }
+        if (f.get("longitude") instanceof Number n) { set.append("longitude = :longitude, "); q.put("longitude", java.math.BigDecimal.valueOf(n.doubleValue())); }
+        if (f.get("workingHours") instanceof Map<?, ?> m) {
+            try { set.append("working_hours = CAST(:workingHours AS jsonb), "); q.put("workingHours", new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(m)); }
+            catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid working hours"); }
+        }
+        if (q.isEmpty()) return;
+        var st = jdbc.sql("UPDATE commerce.branches SET " + set + "updated_at = now() WHERE id = :i AND tenant_id = :t").param("i", id).param("t", tenantId);
+        for (var e : q.entrySet()) st = st.param(e.getKey(), e.getValue());
+        st.update();
     }
 
     // ---- payment methods & shipping --------------------------------------------------------------------------
@@ -142,6 +237,27 @@ public class StoreSettingsService {
             throw BusinessException.notFound("RESOURCE_NOT_FOUND", "Not found");
     }
 
+    @Transactional
+    public Map<String, Object> updateShipping(UUID tenantId, UUID actor, UUID id, String name, Long feeMinor, Long freeAboveMinor) {
+        if (feeMinor != null && feeMinor < 0) throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid fee");
+        if (jdbc.sql("UPDATE commerce.shipping_methods SET name = coalesce(:n, name), fee_minor = CASE WHEN type = 'PICKUP' THEN 0 ELSE coalesce(:f, fee_minor) END, free_above_minor = coalesce(:fa, free_above_minor) WHERE id = :i AND tenant_id = :t")
+                .param("n", name == null || name.isBlank() ? null : name.trim()).param("f", feeMinor).param("fa", freeAboveMinor).param("i", id).param("t", tenantId).update() == 0)
+            throw BusinessException.notFound("RESOURCE_NOT_FOUND", "Not found");
+        audit.record(actor, tenantId, "SETTINGS_CHANGED", "shipping_method", id, null);
+        return shippingMethods(tenantId, false).stream().filter(s -> id.equals(s.get("id"))).findFirst().orElseThrow();
+    }
+
+    /** Orders keep their own snapshot, so an unused method can be removed; one that orders reference is only switched off. */
+    @Transactional
+    public Map<String, Object> deleteShipping(UUID tenantId, UUID actor, UUID id) {
+        boolean used = jdbc.sql("SELECT count(*) FROM commerce.orders WHERE shipping_method_id = :i").param("i", id).query(Long.class).single() > 0;
+        int n = used ? jdbc.sql("UPDATE commerce.shipping_methods SET is_active = FALSE WHERE id = :i AND tenant_id = :t").param("i", id).param("t", tenantId).update()
+                : jdbc.sql("DELETE FROM commerce.shipping_methods WHERE id = :i AND tenant_id = :t").param("i", id).param("t", tenantId).update();
+        if (n == 0) throw BusinessException.notFound("RESOURCE_NOT_FOUND", "Not found");
+        audit.record(actor, tenantId, "SETTINGS_CHANGED", "shipping_method", id, null);
+        return Map.of("ok", true, "deleted", !used);
+    }
+
     // ---- coupons --------------------------------------------------------------------------------------------------
 
     public record CouponReq(String code, String discountType, long value, Long minOrderMinor, Instant startsAt, Instant endsAt, Integer maxRedemptions, Integer perCustomerLimit) {}
@@ -163,6 +279,23 @@ public class StoreSettingsService {
         } catch (DuplicateKeyException e) {
             throw BusinessException.conflict("COUPON_CODE_TAKEN", "Coupon code already exists");
         }
+    }
+
+    @Transactional
+    public Map<String, Object> setCouponActive(UUID tenantId, UUID actor, UUID id, boolean active) {
+        if (jdbc.sql("UPDATE commerce.coupons SET is_active = :a WHERE id = :i AND tenant_id = :t").param("a", active).param("i", id).param("t", tenantId).update() == 0) throw BusinessException.notFound("RESOURCE_NOT_FOUND", "Not found");
+        audit.record(actor, tenantId, "COUPON_UPDATED", "coupon", id, null);
+        return coupons(tenantId).stream().filter(c -> id.equals(c.get("id"))).findFirst().orElseThrow();
+    }
+
+    @Transactional
+    public Map<String, Object> deleteCoupon(UUID tenantId, UUID actor, UUID id) {
+        boolean used = jdbc.sql("SELECT count(*) FROM commerce.coupon_redemptions WHERE coupon_id = :i").param("i", id).query(Long.class).single() > 0;
+        int n = used ? jdbc.sql("UPDATE commerce.coupons SET is_active = FALSE WHERE id = :i AND tenant_id = :t").param("i", id).param("t", tenantId).update()
+                : jdbc.sql("DELETE FROM commerce.coupons WHERE id = :i AND tenant_id = :t").param("i", id).param("t", tenantId).update();
+        if (n == 0) throw BusinessException.notFound("RESOURCE_NOT_FOUND", "Not found");
+        audit.record(actor, tenantId, "COUPON_UPDATED", "coupon", id, null);
+        return Map.of("ok", true, "deleted", !used);
     }
 
     public List<Map<String, Object>> coupons(UUID tenantId) {

@@ -164,9 +164,7 @@ public class StoreAdminController {
     @PreAuthorize("hasAuthority('settings.manage')")
     public Map<String, Object> updateProfile(@RequestBody Map<String, Object> r, Authentication a) {
         // The profile read includes read-only extras (categories list); only plain text fields are editable here (categories have their own endpoint).
-        Map<String, String> text = new java.util.HashMap<>();
-        r.forEach((k, v) -> { if (v instanceof String sv) text.put(k, sv); });
-        return settings.updateProfile(StoreContext.tenantId(), user(a), text);
+        return settings.updateProfile(StoreContext.tenantId(), user(a), r);
     }
 
     public record CategoriesRequest(List<String> categories, String otherCategory) {}
@@ -187,9 +185,11 @@ public class StoreAdminController {
     @PostMapping("/branches")
     @PreAuthorize("hasAuthority('branch.manage')")
     @ResponseStatus(HttpStatus.CREATED)
-    public Map<String, Object> createBranch(@RequestBody BranchRequest r, Authentication a) {
-        return settings.createBranch(StoreContext.tenantId(), user(a), r.name(), r.code(), r.phone(), r.address(), r.city());
-    }
+    public Map<String, Object> createBranch(@RequestBody Map<String, Object> r, Authentication a) { return settings.createBranch(StoreContext.tenantId(), user(a), r); }
+
+    @PatchMapping("/branches/{id}")
+    @PreAuthorize("hasAuthority('branch.manage')")
+    public Map<String, Object> updateBranch(@PathVariable UUID id, @RequestBody Map<String, Object> r, Authentication a) { return settings.updateBranch(StoreContext.tenantId(), user(a), id, r); }
 
     @GetMapping("/payment-methods")
     @PreAuthorize("hasAuthority('shipping.manage')")
@@ -218,6 +218,24 @@ public class StoreAdminController {
         settings.setShippingActive(StoreContext.tenantId(), id, r.active());
         return Map.of("ok", true);
     }
+
+    public record ShippingPatch(String name, Long feeMinor, Long freeAboveMinor) {}
+
+    @PatchMapping("/shipping-methods/{id}")
+    @PreAuthorize("hasAuthority('shipping.manage')")
+    public Map<String, Object> updateShipping(@PathVariable UUID id, @RequestBody ShippingPatch r, Authentication a) { return settings.updateShipping(StoreContext.tenantId(), user(a), id, r.name(), r.feeMinor(), r.freeAboveMinor()); }
+
+    @DeleteMapping("/shipping-methods/{id}")
+    @PreAuthorize("hasAuthority('shipping.manage')")
+    public Map<String, Object> deleteShipping(@PathVariable UUID id, Authentication a) { return settings.deleteShipping(StoreContext.tenantId(), user(a), id); }
+
+    @PutMapping("/coupons/{id}/active")
+    @PreAuthorize("hasAuthority('coupon.manage')")
+    public Map<String, Object> couponActive(@PathVariable UUID id, @RequestBody ActiveRequest r, Authentication a) { return settings.setCouponActive(StoreContext.tenantId(), user(a), id, r.active()); }
+
+    @DeleteMapping("/coupons/{id}")
+    @PreAuthorize("hasAuthority('coupon.manage')")
+    public Map<String, Object> deleteCoupon(@PathVariable UUID id, Authentication a) { return settings.deleteCoupon(StoreContext.tenantId(), user(a), id); }
 
     @GetMapping("/coupons")
     @PreAuthorize("hasAuthority('coupon.manage')")
