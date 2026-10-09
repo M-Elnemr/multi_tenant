@@ -46,3 +46,4 @@ export default async function DeleteAccount() {
     </div>
   );
 }
+// Public page required by Google Play (account deletion URL).
