@@ -15,6 +15,13 @@ Spec: `SaaS_MultiTenant_Ecommerce_Medical_Master_Spec.md`.
 The site is live immediately at `https://<slug>.<root-domain>` with defaults already in place (store: main branch, shipping, payment; clinic: doctor profile,
 services, weekly schedule). Own domain: Dashboard -> Domains -> add -> create the two DNS records shown -> auto-verified, certificate issued automatically.
 
+## Store features worth knowing
+- **Its own look**: each shop shows its own logo, colour, cover/banners and contact details, so customers see the shop and not the platform. Header with live search and a category menu, mobile bottom bar, WhatsApp button, branches page, policy pages.
+- **Catalogue**: a category tree (sub-categories, pictures, reorder), Arabic-aware search (ignores diacritics and letter variants), filters (price, brand, stock, offers, rating), sorting, badges, specs, size guide, related products, CSV import/export.
+- **Egypt checkout**: cash on delivery, delivery price and time by governorate zone, area/landmark/second phone, minimum order, optional COD fee, vacation mode.
+- **COD control**: new orders wait for a confirmation call (WhatsApp templates included), phone history (delivered/returned/cancelled) with blocking, tracking number and link, guest order tracking by number + phone, return requests within the shop's return window.
+- **Paperwork and growth**: printable invoice (tax id, VAT line) and shipping label, sales charts and governorate report, per-shop sitemap/robots, Meta/TikTok/Google tags, banners.
+
 ## Clinic features worth knowing
 - **Waiting room**: reception checks a patient in, they get a queue number; the doctor's *Waiting room* screen shows who is being seen and who is next, with Call / Start visit / No-show (refreshes by itself). The patient sees their own place in the portal and app and is told when called.
 - **One patient, many doctors**: a person has one login. Each clinic keeps its own separate record. A doctor adds an existing person by phone and the person simply sees that clinic in their app next to the others; they can leave a clinic at any time (the clinic keeps its record).
