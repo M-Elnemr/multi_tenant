@@ -22,14 +22,18 @@ export async function generateMetadata(): Promise<Metadata> {
   const name = info.kind === "TENANT" ? info.name : "Elmanassa | المنصة";
   const logo = info.kind === "TENANT" ? (info.branding as { logo_file_id?: string }).logo_file_id : undefined;
   // A tenant with its own logo uses it as the tab icon; everything else shows the Elmanassa icon (app/icon.png).
-  const icons = logo ? { icon: `/api/bff/files/${logo}/content?variant=thumb` } : undefined;
+  // Icons are set here (not as app/icon files) so a shop never shows the Elmanassa icon: its logo, or a monogram of its name.
+  const icons = info.kind === "TENANT"
+    ? { icon: logo ? `/api/bff/files/${logo}/content?variant=thumb` : "/api/monogram", apple: logo ? `/api/bff/files/${logo}/content?variant=medium` : "/api/monogram" }
+    : { icon: [{ url: "/favicon.ico", sizes: "48x48" }, { url: "/brand/icon-512.png", sizes: "512x512", type: "image/png" }], apple: "/brand/apple-icon.png" };
   return {
     metadataBase,
     title: { default: name, template: `%s | ${name}` },
     description: info.kind === "TENANT" ? name : "Online stores and clinic websites in minutes · متاجر ومواقع عيادات في دقائق",
     manifest: "/manifest.webmanifest",
-    ...(icons ? { icons } : {}),
-    openGraph: { title: name, siteName: name, images: logo ? undefined : [{ url: "/brand/og.png", width: 1200, height: 630 }] },
+    icons,
+    // a shop shares its own logo; only the platform site uses the Elmanassa share image
+    openGraph: { title: name, siteName: name, images: info.kind === "TENANT" ? (logo ? [{ url: `/api/bff/files/${logo}/content?variant=medium` }] : undefined) : [{ url: "/brand/og.png", width: 1200, height: 630 }] },
   };
 }
 
