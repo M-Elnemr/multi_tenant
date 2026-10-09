@@ -44,6 +44,15 @@ class StoreCatalogIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void arabicNamesProduceReadableSlugs() throws Exception {
+        Tenant t = onboard("STORE");
+        String res = ok(onHost(t.host(), t.access(), "POST", "/api/v1/store/categories", "{\"name\":\"أطفال\"}").andExpect(status().isCreated()));
+        assertThat((String) JsonPath.read(res, "$.slug")).isEqualTo("أطفال");
+        String res2 = ok(onHost(t.host(), t.access(), "POST", "/api/v1/store/categories", "{\"name\":\"مَلابِس إكسسوارات\"}").andExpect(status().isCreated()));
+        assertThat((String) JsonPath.read(res2, "$.slug")).isEqualTo("ملابس-إكسسوارات");
+    }
+
+    @Test
     void categoryCannotMoveUnderItselfOrBeDeletedWhileInUse() throws Exception {
         Tenant t = onboard("STORE");
         String a = category(t, "A", null), b = category(t, "B", a);

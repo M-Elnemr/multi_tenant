@@ -404,7 +404,8 @@ public class CatalogService {
     }
 
     static String slugify(String s) {
-        String n = Normalizer.normalize(s.trim().toLowerCase(Locale.ROOT), Normalizer.Form.NFKD).replaceAll("[^\\p{L}\\p{N}]+", "-").replaceAll("^-+|-+$", "");
+        // NFKC keeps Arabic letters such as أ whole (NFKD would split off the hamza mark and the slug would break into "ا-طفال"); diacritics and tatweel are dropped.
+        String n = Normalizer.normalize(s.trim().toLowerCase(Locale.ROOT), Normalizer.Form.NFKC).replaceAll("[\\u064B-\\u065F\\u0670\\u0640]", "").replaceAll("[^\\p{L}\\p{N}]+", "-").replaceAll("^-+|-+$", "");
         return n.isEmpty() ? "item" : (n.length() > 80 ? n.substring(0, 80) : n);
     }
 

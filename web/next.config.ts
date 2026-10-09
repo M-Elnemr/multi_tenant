@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
+  allowedDevOrigins: ["*.platform.localtest.me", "platform.localtest.me"],   // local development on <shop>.platform.localtest.me only
   async headers() {
     return [
       {
