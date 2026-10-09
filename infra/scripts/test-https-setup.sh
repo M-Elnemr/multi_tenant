@@ -8,8 +8,10 @@ set -euo pipefail
 root=${1:?usage: test-https-setup.sh <root-domain>}
 EDGE=${TEST_EDGE_PORT:-8081}
 [ "$(id -u)" = 0 ] || { echo "run as root"; exit 1; }
-HTTP=/etc/nginx/conf.d/multitenant-test-http.conf
-HTTPS=/etc/nginx/conf.d/multitenant-test-https.conf
+# one pair of files per root domain, so several domains can live side by side (the first root used the legacy names multitenant-test-*.conf)
+slug_root=${root//./-}
+HTTP=/etc/nginx/conf.d/multitenant-$slug_root-http.conf
+HTTPS=/etc/nginx/conf.d/multitenant-$slug_root-https.conf
 WEBROOT=/var/www/certbot
 backup=/root/nginx-backup-$(date +%Y%m%d-%H%M%S).tgz
 tar czf "$backup" /etc/nginx && echo "nginx backed up to $backup"
@@ -30,7 +32,7 @@ server {
 CONF
 nginx -t && nginx -s reload
 
-certbot certonly --webroot -w "$WEBROOT" --cert-name "$root" -d "$root" --non-interactive --agree-tos
+certbot certonly --webroot -w "$WEBROOT" --cert-name "$root" -d "$root" ${WWW:+-d "www.$root"} --non-interactive --agree-tos
 
 cat > "$HTTPS" <<CONF
 # Personal test (multi_tenant): TLS for $root and its stores/clinics, proxied to the test edge. One certificate (SANs added by test-https-add-hosts.sh).
