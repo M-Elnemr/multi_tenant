@@ -9,6 +9,7 @@ import { uploadFile } from "@/components/uploader";
 import { useAction, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Alert, Badge, Button, Card, ErrorText, Field, Input, Loading, PageHeader, Select, StatusBadge, Textarea } from "@/components/ui";
+import { VisitTypeBadge } from "@/components/visit-type";
 import { ageText, dateTime } from "@/lib/format";
 
 type Encounter = {
@@ -107,6 +108,7 @@ function ConsultationForm({ id, e, reload }: { id: string; e: Encounter; reload:
       <PageHeader
         title={patient.data ? `${patient.data.firstName} ${patient.data.lastName}` : "…"}
         subtitle={`${patient.data?.patientCode ?? ""}${age !== null ? ` · ${age}` : ""} · ${dateTime(e.visitAt, locale, timezone)}`}
+        badge={<VisitTypeBadge type={history.data?.visits.find((v) => v.id === e.id)?.visitType} />}
         actions={<>
           <Button variant="secondary" loading={saveVisit.loading} onClick={() => saveVisit.run()}>{t("consult.saveDraft")}</Button>
           {e.appointmentId && <Button loading={complete.loading} onClick={() => complete.run()}>{t("consult.complete")}</Button>}

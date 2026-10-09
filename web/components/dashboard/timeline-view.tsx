@@ -3,13 +3,14 @@
 import { useI18n } from "../i18n-provider";
 import { Card, Empty, StatusBadge } from "../ui";
 import { PrintRxButton, RxPhoto } from "../print-rx";
+import { VisitTypeBadge } from "../visit-type";
 import { dateTime } from "@/lib/format";
 
 export type StaffTimeline = {
   patient: { id: string; patientCode: string; firstName: string; lastName: string; dateOfBirth?: string; sex?: string; phone?: string; bloodType?: string };
-  appointments: { id: string; startAt: string; status: string; doctorName: string; serviceName: string }[];
+  appointments: { id: string; startAt: string; status: string; doctorName: string; serviceName: string; visitType?: string | null }[];
   visits: {
-    id: string; visitAt: string; doctorName: string; chiefComplaint?: string; clinicalSummary?: string; followUpDate?: string;
+    id: string; visitAt: string; doctorName: string; visitType?: string | null; chiefComplaint?: string; clinicalSummary?: string; followUpDate?: string;
     vitals?: { temperatureC?: number; heartRateBpm?: number; systolicBp?: number; diastolicBp?: number; weightKg?: number; oxygenSaturation?: number }[];
     conditions?: { name: string; status: string }[];
     notes: { id: string; noteType: string; content: string; isPatientVisible?: boolean; createdAt: string }[];
@@ -29,7 +30,7 @@ export function TimelineView({ tl }: { tl: StaffTimeline }) {
         <h3 className="mb-2 font-medium">{t("portal.visits")}</h3>
         {tl.visits.length === 0 ? <Empty>{t("portal.none")}</Empty> : tl.visits.map((v) => (
           <Card key={v.id} className="mb-3 space-y-2 text-sm">
-            <p className="font-medium">{dt(v.visitAt)} · {v.doctorName}</p>
+            <p className="flex flex-wrap items-center gap-2 font-medium">{dt(v.visitAt)} · {v.doctorName} <VisitTypeBadge type={v.visitType} /></p>
             {v.chiefComplaint && <p><span className="text-slate-500">{t("consult.complaint")}:</span> {v.chiefComplaint}</p>}
             {v.vitals && v.vitals.length > 0 && <p className="text-slate-600">{v.vitals.map((x) => [x.temperatureC && `${x.temperatureC}°C`, x.heartRateBpm && `${x.heartRateBpm} bpm`, x.systolicBp && `${x.systolicBp}/${x.diastolicBp}`, x.weightKg && `${x.weightKg} kg`, x.oxygenSaturation && `SpO₂ ${x.oxygenSaturation}%`].filter(Boolean).join(" · ")).join(" | ")}</p>}
             {v.conditions && v.conditions.length > 0 && <p><span className="text-slate-500">{t("consult.conditions")}:</span> {v.conditions.map((c) => c.name).join(", ")}</p>}

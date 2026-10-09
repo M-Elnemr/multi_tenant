@@ -138,16 +138,17 @@ public class ClinicSettingsService {
     // ---- services ----------------------------------------------------------------------------------------
 
     public List<Map<String, Object>> services(UUID tenantId, boolean onlyActive) {
-        return Rows.camel(jdbc.sql("SELECT id, name, description, duration_minutes, price_minor, currency, is_active FROM medical.appointment_services WHERE tenant_id = :t AND (NOT :a OR is_active) ORDER BY name")
+        return Rows.camel(jdbc.sql("SELECT id, name, description, duration_minutes, price_minor, currency, is_active, visit_type FROM medical.appointment_services WHERE tenant_id = :t AND (NOT :a OR is_active) ORDER BY name")
                 .param("t", tenantId).param("a", onlyActive).query().listOfRows());
     }
 
     @Transactional
-    public Map<String, Object> createService(UUID tenantId, UUID actor, String name, String description, int durationMinutes, Long priceMinor) {
+    public Map<String, Object> createService(UUID tenantId, UUID actor, String name, String description, int durationMinutes, Long priceMinor, String visitType) {
+        if (visitType != null && !visitType.isBlank() && !java.util.Set.of("CONSULTATION", "FOLLOW_UP").contains(visitType)) throw BusinessException.badRequest("VISIT_TYPE_INVALID", "Unknown visit type");
         if (name == null || name.isBlank() || durationMinutes < 5 || durationMinutes > 480 || (priceMinor != null && priceMinor < 0))
             throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid service");
-        UUID id = jdbc.sql("INSERT INTO medical.appointment_services (tenant_id, name, description, duration_minutes, price_minor) VALUES (:t, :n, :d, :m, :p) RETURNING id")
-                .param("t", tenantId).param("n", name.trim()).param("d", description).param("m", durationMinutes).param("p", priceMinor).query(UUID.class).single();
+        UUID id = jdbc.sql("INSERT INTO medical.appointment_services (tenant_id, name, description, duration_minutes, price_minor, visit_type) VALUES (:t, :n, :d, :m, :p, :v) RETURNING id")
+                .param("t", tenantId).param("n", name.trim()).param("d", description).param("m", durationMinutes).param("p", priceMinor).param("v", visitType == null || visitType.isBlank() ? null : visitType).query(UUID.class).single();
         audit.record(actor, tenantId, "SETTINGS_CHANGED", "appointment_service", id, null);
         return services(tenantId, false).stream().filter(s -> id.equals(s.get("id"))).findFirst().orElseThrow();
     }

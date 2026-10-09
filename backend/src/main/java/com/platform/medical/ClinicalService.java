@@ -331,11 +331,11 @@ public class ClinicalService {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("patient", patients.summary(tenantId, patientId));
         out.put("appointments", Rows.camel(jdbc.sql("""
-                SELECT a.id, a.start_at, a.end_at, a.status, d.display_name AS doctor_name, s.name AS service_name, b.name AS branch_name FROM medical.appointments a
+                SELECT a.id, a.start_at, a.end_at, a.status, a.visit_type, d.display_name AS doctor_name, s.name AS service_name, b.name AS branch_name FROM medical.appointments a
                 JOIN medical.doctors d ON d.id = a.doctor_id JOIN medical.appointment_services s ON s.id = a.service_id JOIN medical.clinic_branches b ON b.id = a.branch_id
                 WHERE a.tenant_id = :t AND a.patient_id = :p ORDER BY a.start_at DESC LIMIT 200
                 """).param("t", tenantId).param("p", patientId).query().listOfRows()));
-        var encounters = jdbc.sql("SELECT e.id, e.visit_at, e.chief_complaint, e.clinical_summary, e.follow_up_date, d.display_name AS doctor_name FROM medical.encounters e JOIN medical.doctors d ON d.id = e.doctor_id WHERE e.tenant_id = :t AND e.patient_id = :p ORDER BY e.visit_at DESC LIMIT 200")
+        var encounters = jdbc.sql("SELECT e.id, e.visit_at, e.chief_complaint, e.clinical_summary, e.follow_up_date, d.display_name AS doctor_name, ap.visit_type FROM medical.encounters e JOIN medical.doctors d ON d.id = e.doctor_id LEFT JOIN medical.appointments ap ON ap.id = e.appointment_id WHERE e.tenant_id = :t AND e.patient_id = :p ORDER BY e.visit_at DESC LIMIT 200")
                 .param("t", tenantId).param("p", patientId).query().listOfRows();
         List<Map<String, Object>> visits = new ArrayList<>();
         for (var e : encounters) {

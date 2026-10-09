@@ -100,12 +100,12 @@ export function ErrorText({ error }: { error: unknown }) {
   return <Alert>{msg}{e.fields && <ul className="mt-1 list-disc ps-5">{Object.entries(e.fields).map(([k, v]) => <li key={k}>{k}: {v}</li>)}</ul>}</Alert>;
 }
 
-export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {
+export function PageHeader({ title, subtitle, actions, badge }: { title: string; subtitle?: string; actions?: ReactNode; badge?: ReactNode }) {
   return (
     <div className="mb-6 flex animate-fade-up flex-wrap items-start justify-between gap-3">
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-ink sm:text-3xl">{title}</h1>
-        {subtitle && <p className="mt-1.5 text-sm text-slate-500">{subtitle}</p>}
+        {subtitle && <p className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-slate-500">{subtitle}{badge}</p>}
       </div>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
     </div>

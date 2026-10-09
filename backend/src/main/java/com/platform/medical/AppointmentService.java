@@ -34,7 +34,9 @@ public class AppointmentService {
             "CHECKED_IN", Set.of("IN_PROGRESS", "NO_SHOW"),
             "IN_PROGRESS", Set.of("COMPLETED"));
 
-    public record BookReq(UUID patientId, UUID doctorId, UUID branchId, UUID serviceId, Instant startAt, String paymentMethod, String patientNote, String source) {}
+    public record BookReq(UUID patientId, UUID doctorId, UUID branchId, UUID serviceId, Instant startAt, String paymentMethod, String patientNote, String source, String visitType) {
+        public BookReq(UUID patientId, UUID doctorId, UUID branchId, UUID serviceId, Instant startAt, String paymentMethod, String patientNote, String source) { this(patientId, doctorId, branchId, serviceId, startAt, paymentMethod, patientNote, source, null); }
+    }
 
     private final JdbcClient jdbc;
     private final SlotService slots;
@@ -87,7 +89,8 @@ public class AppointmentService {
         if (enforceSlot && !slots.slots(tenantId, r.doctorId(), r.branchId(), r.serviceId(), date, byPatient).contains(r.startAt()))
             throw BusinessException.conflict("APPOINTMENT_SLOT_UNAVAILABLE", "This time is not available");
 
-        var svc = jdbc.sql("SELECT duration_minutes, price_minor, currency FROM medical.appointment_services WHERE id = :s AND tenant_id = :t").param("s", r.serviceId()).param("t", tenantId).query().singleRow();
+        var svc = jdbc.sql("SELECT duration_minutes, price_minor, currency, visit_type FROM medical.appointment_services WHERE id = :s AND tenant_id = :t").param("s", r.serviceId()).param("t", tenantId).query().singleRow();
+        String visitType = validVisitType(r.visitType() != null ? r.visitType() : (String) svc.get("visit_type"));
         Long price = svc.get("price_minor") == null ? null : Long.valueOf(((Number) svc.get("price_minor")).longValue());
         if (price == null) price = jdbc.sql("SELECT default_appointment_fee_minor FROM medical.doctors WHERE id = :d").param("d", r.doctorId()).query(Long.class).optional().orElse(null);
         boolean card = "CARD".equals(method);
@@ -100,12 +103,12 @@ public class AppointmentService {
         try {
             jdbc.sql("""
                     INSERT INTO medical.appointments (id, tenant_id, patient_id, doctor_id, branch_id, service_id, start_at, end_at, status, booking_source, payment_method, payment_required,
-                        payment_status, price_minor, currency, patient_note, hold_expires_at, created_by)
-                    VALUES (:id, :t, :p, :d, :b, :s, :st, :en, :status, :src, :pm, :pr, :ps, :price, :cur, :note, :hold, :cb)
+                        payment_status, price_minor, currency, patient_note, hold_expires_at, created_by, visit_type)
+                    VALUES (:id, :t, :p, :d, :b, :s, :st, :en, :status, :src, :pm, :pr, :ps, :price, :cur, :note, :hold, :cb, :vt)
                     """).param("id", id).param("t", tenantId).param("p", r.patientId()).param("d", r.doctorId()).param("b", r.branchId()).param("s", r.serviceId())
                     .param("st", java.sql.Timestamp.from(r.startAt())).param("en", java.sql.Timestamp.from(end)).param("status", status).param("src", source).param("pm", method)
                     .param("pr", card).param("ps", card ? "PENDING" : "UNPAID").param("price", price).param("cur", svc.get("currency")).param("note", r.patientNote())
-                    .param("hold", card ? java.sql.Timestamp.from(Instant.now().plus(Duration.ofMinutes(15))) : null).param("cb", actor).update();
+                    .param("hold", card ? java.sql.Timestamp.from(Instant.now().plus(Duration.ofMinutes(15))) : null).param("cb", actor).param("vt", visitType).update();
         } catch (DataIntegrityViolationException e) {
             throw BusinessException.conflict("APPOINTMENT_SLOT_UNAVAILABLE", "This time was just taken");   // exclusion constraint won the race
         }
@@ -169,9 +172,14 @@ public class AppointmentService {
 
     /** Walk-in: books the first free slot from now (staff rules) and checks the patient in so they join the queue right away. */
     @Transactional
-    public Map<String, Object> walkIn(UUID tenantId, UUID actor, UUID patientId, UUID doctorId, UUID branchId, UUID serviceId) {
+    public Map<String, Object> walkIn(UUID tenantId, UUID actor, UUID patientId, UUID doctorId, UUID branchId, UUID serviceId, String visitType) {
+        String vt = validVisitType(visitType);
+        // The visit type picks the matching service (so duration and price follow); a clinic with no typed service falls back to its first active one.
+        if (serviceId == null) serviceId = jdbc.sql("SELECT id FROM medical.appointment_services WHERE tenant_id = :t AND is_active ORDER BY (visit_type IS NOT DISTINCT FROM :v) DESC, name LIMIT 1").param("t", tenantId).param("v", vt).query(UUID.class).optional()
+                .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Service not found"));
+        final UUID svcId = serviceId;
         // The doctor's schedule is irrelevant for someone standing at the desk (day off, after hours, empty day): start now, or right after whatever is in progress.
-        long minutes = jdbc.sql("SELECT duration_minutes FROM medical.appointment_services WHERE id = :s AND tenant_id = :t").param("s", serviceId).param("t", tenantId).query(Long.class).optional()
+        long minutes = jdbc.sql("SELECT duration_minutes FROM medical.appointment_services WHERE id = :s AND tenant_id = :t").param("s", svcId).param("t", tenantId).query(Long.class).optional()
                 .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Service not found"));
         Instant start = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MINUTES);
         for (int hop = 0; hop < 50; hop++) {
@@ -183,15 +191,31 @@ public class AppointmentService {
             if (busyUntil == null) break;
             start = busyUntil.toInstant();
         }
-        Map<String, Object> booked = doBook(tenantId, actor, null, new BookReq(patientId, doctorId, branchId, serviceId, start, "CASH_AT_CLINIC", null, "RECEPTION"), false);
+        Map<String, Object> booked = doBook(tenantId, actor, null, new BookReq(patientId, doctorId, branchId, svcId, start, "CASH_AT_CLINIC", null, "RECEPTION", vt), false);
         return transition(tenantId, actor, (UUID) booked.get("id"), "CHECKED_IN", null);
+    }
+
+    static String validVisitType(String v) {
+        if (v == null || v.isBlank()) return "CONSULTATION";
+        if (!Set.of("CONSULTATION", "FOLLOW_UP").contains(v)) throw BusinessException.badRequest("VISIT_TYPE_INVALID", "Unknown visit type");
+        return v;
+    }
+
+    /** The doctor or secretary corrects whether this visit is a consultation or a follow-up (also after the visit, so the history is right). */
+    @Transactional
+    public Map<String, Object> setVisitType(UUID tenantId, UUID actor, UUID id, String visitType) {
+        String vt = validVisitType(visitType);
+        if (jdbc.sql("UPDATE medical.appointments SET visit_type = :v WHERE id = :i AND tenant_id = :t").param("v", vt).param("i", id).param("t", tenantId).update() == 0)
+            throw BusinessException.notFound("RESOURCE_NOT_FOUND", "Appointment not found");
+        audit.record(actor, tenantId, "APPOINTMENT_VISIT_TYPE_CHANGED", "appointment", id, "{\"visitType\":\"" + vt + "\"}");
+        return get(tenantId, id);
     }
 
     /** Today's queue for a doctor (or all doctors): who is being seen, and who waits in order. */
     public Map<String, Object> queue(UUID tenantId, UUID doctorId) {
         String tz = jdbc.sql("SELECT timezone FROM core.tenants WHERE id = :t").param("t", tenantId).query(String.class).single();
         var rows = jdbc.sql("""
-                SELECT a.id, a.status, a.queue_number, a.checked_in_at, a.called_at, a.start_at, a.updated_at AS status_changed_at, greatest(0, extract(epoch FROM (now() - a.updated_at)) / 60)::int AS status_minutes, a.doctor_id, d.display_name AS doctor_name, s.name AS service_name,
+                SELECT a.id, a.status, a.queue_number, a.checked_in_at, a.called_at, a.start_at, a.updated_at AS status_changed_at, greatest(0, extract(epoch FROM (now() - a.updated_at)) / 60)::int AS status_minutes, a.doctor_id, d.display_name AS doctor_name, s.name AS service_name, a.visit_type,
                        p.id AS patient_id, trim(p.first_name || ' ' || p.last_name) AS patient_name, p.patient_code, p.phone AS patient_phone, p.date_of_birth AS patient_dob,
                        greatest(0, extract(epoch FROM (now() - a.checked_in_at)) / 60)::int AS waited_minutes
                 FROM medical.appointments a JOIN medical.patients p ON p.id = a.patient_id JOIN medical.doctors d ON d.id = a.doctor_id JOIN medical.appointment_services s ON s.id = a.service_id
@@ -286,7 +310,7 @@ public class AppointmentService {
     private static final String SELECT = """
             SELECT a.id, a.patient_id, p.first_name || ' ' || p.last_name AS patient_name, p.patient_code, a.doctor_id, d.display_name AS doctor_name, a.branch_id, b.name AS branch_name,
                    a.service_id, s.name AS service_name, a.start_at, a.end_at, a.status, a.booking_source, a.payment_method, a.payment_status, a.price_minor, a.currency,
-                   a.patient_note, a.queue_number, a.created_at
+                   a.patient_note, a.queue_number, a.created_at, a.visit_type
             FROM medical.appointments a JOIN medical.patients p ON p.id = a.patient_id JOIN medical.doctors d ON d.id = a.doctor_id
             JOIN medical.clinic_branches b ON b.id = a.branch_id JOIN medical.appointment_services s ON s.id = a.service_id
             """;

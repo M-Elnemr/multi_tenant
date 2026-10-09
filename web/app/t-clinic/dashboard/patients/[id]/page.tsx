@@ -11,6 +11,7 @@ import { PhoneInput } from "@/components/inputs";
 import { WhatsAppButton } from "@/components/whatsapp-button";
 import { usePatientPortal } from "@/components/portal-flag";
 import { ageText } from "@/lib/format";
+import { VisitTypePicker, type VisitType } from "@/components/visit-type";
 
 type Patient = { id: string; patientCode: string; firstName: string; lastName: string; phone?: string; ageYears?: number; ageMonths?: number; sex?: string; hasPortal: boolean; notesInternal?: string; addressText?: string; bloodType?: string };
 const BLOOD = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
@@ -41,11 +42,18 @@ export default function PatientPage({ params }: { params: Promise<{ id: string }
   const [newPw, setNewPw] = useState("");
   const [pwDone, setPwDone] = useState(false);
   const setPassword = useAction(async () => { await api(`clinic/patients/${id}/set-password`, { body: { password: newPw } }); setPwDone(true); });
-  const doctors = useApi<{ id: string }[]>(can("appointment.manage") ? "clinic/doctors" : null);
+  const doctors = useApi<{ id: string; displayName: string }[]>(can("appointment.manage") ? "clinic/doctors" : null);
   const branches = useApi<{ id: string }[]>(can("appointment.manage") ? "clinic/branches" : null);
-  const services = useApi<{ id: string; isActive?: boolean }[]>(can("appointment.manage") ? "clinic/services" : null);
+  const [queueOpen, setQueueOpen] = useState(false);
+  const [visitType, setVisitType] = useState<VisitType>("CONSULTATION");
+  const [queueDoctor, setQueueDoctor] = useState("");
+  // Suggest "follow-up" when the last visit was within two weeks; the person at the desk can always change it.
+  const lastVisit = tl.data?.visits[0]?.visitAt;
+  const [now] = useState(() => Date.now());
+  const suggestFollowUp = !!lastVisit && now - new Date(lastVisit).getTime() < 14 * 86_400_000;
   const walkIn = useAction(async () => {
-    await api("clinic/appointments/walk-in", { body: { patientId: id, doctorId: doctors.data?.[0]?.id, branchId: branches.data?.[0]?.id, serviceId: services.data?.find((x) => x.isActive !== false)?.id } });
+    await api("clinic/appointments/walk-in", { body: { patientId: id, doctorId: queueDoctor || doctors.data?.[0]?.id, branchId: branches.data?.[0]?.id, visitType } });
+    setQueueOpen(false);
     router.push("/dashboard/queue");
   });
   const start = useAction(async () => {
@@ -64,13 +72,23 @@ export default function PatientPage({ params }: { params: Promise<{ id: string }
           <WhatsAppButton phone={d.phone} message={t("pq.waHello", { name: d.firstName, clinic: clinic.data?.clinicName ?? "" })} size={40} />
           {can("patient.update") && <Button variant="secondary" onClick={() => { setForm({ name: `${d.firstName} ${d.lastName}`.trim(), phone: d.phone ?? "", ageYears: d.ageYears === undefined ? "" : String(d.ageYears), ageMonths: String(d.ageMonths ?? 0), sex: d.sex ?? "", addressText: d.addressText ?? "", bloodType: d.bloodType ?? "", notes: d.notesInternal ?? "" }); setEditOpen(true); }}>{t("patients.edit")}</Button>}
           {portal && can("patient.update") && d.phone && <Button variant="secondary" loading={reissue.loading} onClick={() => reissue.run()}>{t("patients.newPin")}</Button>}
-          {can("appointment.manage") && <Button variant="secondary" loading={walkIn.loading} onClick={() => walkIn.run()}>{t("queue.walkIn")}</Button>}
+          {can("appointment.manage") && <Button variant="secondary" onClick={() => { setVisitType(suggestFollowUp ? "FOLLOW_UP" : "CONSULTATION"); setQueueOpen(true); }}>{t("queue.walkIn")}</Button>}
           {portal && can("patient.update") && d.hasPortal && <Button variant="secondary" onClick={() => { setPwDone(false); setNewPw(""); setPwOpen(true); }}>{t("patients.setPassword")}</Button>}
           {can("patient.export") && clinical && <a className="inline-flex h-10 items-center rounded-lg border px-3 text-sm hover:bg-slate-50" href={`/api/bff/clinic/patients/${id}/export`}>{t("record.exportStaff")}</a>}
           {can("medical_note.create") && <Button loading={start.loading} onClick={() => start.run()}>{t("appt.startVisit")}</Button>}
         </>}
       />
-      <ErrorText error={reissue.error ?? start.error ?? walkIn.error ?? tl.error} />
+      <Modal open={queueOpen} onClose={() => setQueueOpen(false)} title={t("queue.addTitle")}>
+        <div className="space-y-4">
+          <p className="font-semibold">{p.data ? `${p.data.firstName} ${p.data.lastName}` : ""}</p>
+          <VisitTypePicker value={visitType} onChange={setVisitType} />
+          {suggestFollowUp && visitType === "FOLLOW_UP" && <p className="text-xs text-slate-500">{t("visit.suggested")}</p>}
+          {(doctors.data?.length ?? 0) > 1 && <Field label={t("book.doctor")}><Select value={queueDoctor || doctors.data?.[0]?.id} onChange={(e) => setQueueDoctor(e.target.value)}>{doctors.data?.map((x) => <option key={x.id} value={x.id}>{x.displayName}</option>)}</Select></Field>}
+          <ErrorText error={walkIn.error} />
+          <Button className="w-full" loading={walkIn.loading} onClick={() => walkIn.run()}>{t("queue.add")}</Button>
+        </div>
+      </Modal>
+      <ErrorText error={reissue.error ?? start.error ?? tl.error} />
       {pin && <div className="mb-4"><SecretBox label={pin.label} value={pin.value} /></div>}
       {portal && !d.hasPortal && <div className="mb-4"><Alert tone="blue">{t("patients.noPortal")}</Alert></div>}
       <Card className="mb-4">

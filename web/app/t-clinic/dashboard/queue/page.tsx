@@ -7,10 +7,11 @@ import { useAction, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Badge, Button, Card, Empty, ErrorText, Loading, PageHeader, Select } from "@/components/ui";
 import { timeOnly } from "@/lib/format";
+import { VisitTypeBadge, VisitTypeEditable } from "@/components/visit-type";
 
 type Entry = {
   id: string; status: string; queueNumber?: number; calledAt?: string; startAt: string; waitedMinutes?: number;
-  doctorId: string; doctorName: string; serviceName: string; patientId: string; patientName: string; patientCode: string;
+  doctorId: string; doctorName: string; serviceName: string; visitType?: string; patientId: string; patientName: string; patientCode: string;
 };
 type Queue = { inProgress: Entry[]; waiting: Entry[] };
 type Doctor = { id: string; displayName: string };
@@ -74,7 +75,7 @@ export default function QueuePage() {
           {q?.inProgress.length ? q.inProgress.map((e) => (
             <div key={e.id} className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-2xl font-bold">{e.patientName}</p>
+                <p className="flex flex-wrap items-center gap-2 text-2xl font-bold">{e.patientName} <VisitTypeEditable appointmentId={e.id} type={e.visitType} onChanged={queue.reload} /></p>
                 <p className="text-sm text-slate-500">#{e.queueNumber} · {e.serviceName} · {e.doctorName}</p>
               </div>
               {clinical && <Button onClick={() => openVisit.run(e)} loading={openVisit.loading}>{t("queue.openVisit")}</Button>}
@@ -107,7 +108,7 @@ export default function QueuePage() {
               <div className="flex items-center gap-4">
                 <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-lg font-bold text-white">{e.queueNumber}</span>
                 <div>
-                  <p className="font-medium">{e.patientName} <span className="font-mono text-xs text-slate-500">{e.patientCode}</span></p>
+                  <p className="flex flex-wrap items-center gap-2 font-medium">{e.patientName} <span className="font-mono text-xs text-slate-500">{e.patientCode}</span> <VisitTypeEditable appointmentId={e.id} type={e.visitType} onChanged={queue.reload} /></p>
                   <p className="text-slate-500">{e.serviceName} · {e.doctorName} · {t("queue.booked", { time: timeOnly(e.startAt, locale, timezone) })}</p>
                 </div>
               </div>

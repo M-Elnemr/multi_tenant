@@ -41,7 +41,7 @@ public class ClinicProvisioner implements TenantProvisioner {
         jdbc.sql("INSERT INTO medical.clinic_profiles (tenant_id, clinic_name) VALUES (:t, :n)").param("t", t.getId()).param("n", t.getName()).update();
         UUID branch = jdbc.sql("INSERT INTO medical.clinic_branches (tenant_id, name, code) VALUES (:t, 'Main', 'MAIN') RETURNING id").param("t", t.getId()).query(UUID.class).single();
         jdbc.sql("""
-                INSERT INTO medical.appointment_services (tenant_id, name, duration_minutes) VALUES (:t, 'Consultation', 30), (:t, 'Follow-up', 15)
+                INSERT INTO medical.appointment_services (tenant_id, name, duration_minutes, visit_type) VALUES (:t, 'Consultation', 30, 'CONSULTATION'), (:t, 'Follow-up', 15, 'FOLLOW_UP')
                 """).param("t", t.getId()).update();
         UUID doctor = createDoctor(t.getId(), ownerUserId);
         if (o != null) ClinicSettingsService.setSpecialties(jdbc, doctor, o.categories(), o.otherCategory());

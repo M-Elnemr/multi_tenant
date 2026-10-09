@@ -11,7 +11,7 @@ import { useRef } from "react";
 
 type PatientRef = { id: string; firstName: string; lastName: string; patientCode: string };
 type Timeline = {
-  visits: { id: string; visitAt: string; doctorName: string; notes: { id: string; noteType: string; content: string; createdAt: string }[] }[];
+  visits: { id: string; visitAt: string; doctorName: string; visitType?: string | null; notes: { id: string; noteType: string; content: string; createdAt: string }[] }[];
   prescriptions: { id: string; issuedAt: string; doctorName: string; notes?: string; items: { medicationName: string; strength?: string; dosage?: string; frequency?: string; duration?: string; instructions?: string }[] }[];
   labOrders: { id: string; testName: string; instructions?: string; status: string; orderedAt: string; results: { id: string; resultText?: string; resultSummary?: string; fileId?: string; uploadedAt: string }[] }[];
   documents: { id: string; title: string; documentType: string; fileId?: string; createdAt: string }[];
@@ -71,7 +71,7 @@ export default function Record() {
           <section>
             <h2 className="mb-2 font-medium">{t("portal.visits")}</h2>
             {tl.data.visits.length === 0 ? <Empty>{t("portal.none")}</Empty> : tl.data.visits.map((v) => (
-              <Card key={v.id} className="mb-3 text-sm"><p className="font-medium">{dateTime(v.visitAt, locale, timezone)} · {v.doctorName}</p>{v.notes.map((n) => <p key={n.id} className="mt-2 rounded-lg bg-slate-50 p-2">{n.content}</p>)}</Card>
+              <Card key={v.id} className="mb-3 text-sm"><p className="font-medium">{dateTime(v.visitAt, locale, timezone)} · {v.doctorName}{v.visitType && ` · ${t(v.visitType === "FOLLOW_UP" ? "visit.followUp" : "visit.consultation")}`}</p>{v.notes.map((n) => <p key={n.id} className="mt-2 rounded-lg bg-slate-50 p-2">{n.content}</p>)}</Card>
             ))}
           </section>
           {tl.data.documents.length > 0 && (

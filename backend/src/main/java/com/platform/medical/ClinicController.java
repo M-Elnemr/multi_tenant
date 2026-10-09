@@ -37,13 +37,14 @@ public class ClinicController {
 
     public record BranchReq(String name, String code, String address, String city, String phone) {}
     public record DoctorProfileReq(Map<String, Object> fields, List<String> specialties) {}
-    public record ServiceReq(String name, String description, int durationMinutes, Long priceMinor) {}
+    public record ServiceReq(String name, String description, int durationMinutes, Long priceMinor, String visitType) {}
     public record ActiveReq(boolean active) {}
     public record StatusReq(String reason) {}
     public record UpdateNoteReq(String content, Boolean patientVisible) {}
     public record ReviewReq(boolean shareWithPatient) {}
     public record SetPasswordReq(String password) {}
-    public record WalkInReq(UUID patientId, UUID doctorId, UUID branchId, UUID serviceId) {}
+    public record WalkInReq(UUID patientId, UUID doctorId, UUID branchId, UUID serviceId, String visitType) {}
+    public record VisitTypeReq(String visitType) {}
 
     private static UUID user(Authentication a) { return (UUID) a.getPrincipal(); }
 
@@ -89,7 +90,7 @@ public class ClinicController {
     @PostMapping("/services")
     @PreAuthorize("hasAuthority('schedule.manage')")
     @ResponseStatus(HttpStatus.CREATED)
-    public Map<String, Object> createService(@RequestBody ServiceReq r, Authentication a) { return settings.createService(ClinicContext.tenantId(), user(a), r.name(), r.description(), r.durationMinutes(), r.priceMinor()); }
+    public Map<String, Object> createService(@RequestBody ServiceReq r, Authentication a) { return settings.createService(ClinicContext.tenantId(), user(a), r.name(), r.description(), r.durationMinutes(), r.priceMinor(), r.visitType()); }
 
     @PutMapping("/services/{id}/active")
     @PreAuthorize("hasAuthority('schedule.manage')")
@@ -217,7 +218,11 @@ public class ClinicController {
     @PostMapping("/appointments/walk-in")
     @PreAuthorize("hasAuthority('appointment.manage')")
     @ResponseStatus(HttpStatus.CREATED)
-    public Map<String, Object> walkIn(@RequestBody WalkInReq r, Authentication a) { return appointments.walkIn(ClinicContext.tenantId(), user(a), r.patientId(), r.doctorId(), r.branchId(), r.serviceId()); }
+    public Map<String, Object> walkIn(@RequestBody WalkInReq r, Authentication a) { return appointments.walkIn(ClinicContext.tenantId(), user(a), r.patientId(), r.doctorId(), r.branchId(), r.serviceId(), r.visitType()); }
+
+    @PatchMapping("/appointments/{id}/visit-type")
+    @PreAuthorize("hasAuthority('appointment.manage') or hasAuthority('medical_note.create')")
+    public Map<String, Object> setVisitType(@PathVariable UUID id, @RequestBody VisitTypeReq r, Authentication a) { return appointments.setVisitType(ClinicContext.tenantId(), user(a), id, r.visitType()); }
 
     @PostMapping("/appointments/{id}/{action}")
     @PreAuthorize("hasAuthority('appointment.manage')")

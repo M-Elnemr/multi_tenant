@@ -278,4 +278,33 @@ class QueueAndAccessIntegrationTest extends IntegrationTestBase {
         onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/appointments/walk-in", walk.formatted(b[0])).andExpect(status().isCreated()).andExpect(jsonPath("$.queueNumber").value(2));
         onHost(c.host(), c.owner(), "GET", "/api/v1/clinic/queue", null).andExpect(jsonPath("$.waiting.length()").value(2));
     }
+
+    @Test
+    void visitTypeIsChosenAtTheQueueShownInTheQueueAndInTheHistory() throws Exception {
+        Clinic c = clinic();
+        String[] a = patientWithPassword(c, "Typed", nextPhone(), "WalkPass1234");
+        String base = "{\"patientId\":\"%s\",\"doctorId\":\"" + c.doctorId() + "\",\"branchId\":\"" + c.branchId() + "\"%s}";
+        // follow-up picks the follow-up service (15 minutes) without any serviceId
+        String fu = body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/appointments/walk-in", base.formatted(a[0], ",\"visitType\":\"FOLLOW_UP\"")).andExpect(status().isCreated()).andExpect(jsonPath("$.visitType").value("FOLLOW_UP")).andExpect(jsonPath("$.serviceName").value("Follow-up")));
+        // no type = consultation; an unknown type is rejected
+        onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/appointments/walk-in", base.formatted(a[0], "")).andExpect(status().isCreated()).andExpect(jsonPath("$.visitType").value("CONSULTATION")).andExpect(jsonPath("$.serviceName").value("Consultation"));
+        onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/appointments/walk-in", base.formatted(a[0], ",\"visitType\":\"NOPE\"")).andExpect(status().isBadRequest());
+        // the queue rows carry the type
+        String q = body(onHost(c.host(), c.owner(), "GET", "/api/v1/clinic/queue", null));
+        assertThat(JsonPath.<List<String>>read(q, "$.waiting[*].visitType")).containsExactlyInAnyOrder("FOLLOW_UP", "CONSULTATION");
+        // the doctor corrects it, audited
+        String id = JsonPath.read(fu, "$.id");
+        onHost(c.host(), c.owner(), "PATCH", "/api/v1/clinic/appointments/" + id + "/visit-type", "{\"visitType\":\"CONSULTATION\"}").andExpect(jsonPath("$.visitType").value("CONSULTATION"));
+        assertThat(jdbc.sql("SELECT count(*) FROM audit.audit_logs WHERE action = 'APPOINTMENT_VISIT_TYPE_CHANGED' AND entity_id = :i").param("i", UUID.fromString(id)).query(Long.class).single()).isEqualTo(1);
+        onHost(c.host(), c.owner(), "PATCH", "/api/v1/clinic/appointments/" + id + "/visit-type", "{\"visitType\":\"X\"}").andExpect(status().isBadRequest());
+        // another clinic cannot touch it
+        Clinic other = clinic();
+        onHost(other.host(), other.owner(), "PATCH", "/api/v1/clinic/appointments/" + id + "/visit-type", "{\"visitType\":\"FOLLOW_UP\"}").andExpect(status().isNotFound());
+        // history: the appointment line and the visit (encounter) show the type
+        onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/appointments/" + id + "/start", "{}").andExpect(status().isOk());
+        onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/encounters", "{\"patientId\":\"%s\",\"appointmentId\":\"%s\"}".formatted(a[0], id)).andExpect(status().isCreated());
+        String tl = body(onHost(c.host(), c.owner(), "GET", "/api/v1/clinic/patients/" + a[0] + "/timeline", null));
+        assertThat(JsonPath.<List<String>>read(tl, "$.appointments[*].visitType")).contains("CONSULTATION");
+        assertThat(JsonPath.<String>read(tl, "$.visits[0].visitType")).isEqualTo("CONSULTATION");
+    }
 }

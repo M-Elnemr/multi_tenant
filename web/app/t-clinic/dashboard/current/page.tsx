@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { VisitTypeBadge, VisitTypeEditable } from "@/components/visit-type";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/client";
@@ -12,7 +13,7 @@ import { ageText } from "@/lib/format";
 
 type Entry = {
   id: string; status: string; queueNumber?: number; calledAt?: string; waitedMinutes?: number; statusMinutes?: number;
-  doctorId: string; doctorName: string; serviceName: string;
+  doctorId: string; doctorName: string; serviceName: string; visitType?: string;
   patientId: string; patientName: string; patientCode: string; patientPhone?: string; patientAgeYears?: number; patientAgeMonths?: number;
 };
 type Queue = { inProgress: Entry[]; waiting: Entry[] };
@@ -59,6 +60,7 @@ export default function CurrentExam() {
                 <div className="flex gap-2"><dt className="text-slate-500">{t("patients.age")}:</dt><dd className="font-medium">{ageText(current.patientAgeYears, current.patientAgeMonths, locale)}</dd></div>
                 <div className="flex items-center gap-2"><dt className="text-slate-500">{t("patients.mobile")}:</dt><dd className="font-medium" dir="ltr">{current.patientPhone ?? "-"}</dd><WhatsAppButton phone={current.patientPhone} size={26} /></div>
                 <div className="flex gap-2"><dt className="text-slate-500">{t("book.service")}:</dt><dd className="font-medium">{current.serviceName}</dd></div>
+                <div className="flex items-center gap-2"><dt className="text-slate-500">{t("visit.pick")}:</dt><dd><VisitTypeEditable appointmentId={current.id} type={current.visitType} onChanged={queue.reload} /></dd></div>
               </dl>
               <div className="mt-3"><Badge tone="blue">{t("current.since", { n: current.statusMinutes ?? 0 })}</Badge></div>
             </div>
@@ -91,7 +93,7 @@ export default function CurrentExam() {
         {next ? (
           <Card className="flex items-center justify-between gap-3 bg-brand/5">
             <div>
-              <p className="text-lg font-semibold">{next.patientName}</p>
+              <p className="flex items-center gap-2 text-lg font-semibold">{next.patientName} <VisitTypeBadge type={next.visitType} /></p>
               <p className="text-sm text-slate-500">#{next.queueNumber} · {t("queue.waited", { n: next.waitedMinutes ?? 0 })}</p>
             </div>
             {can("appointment.manage") && <Button variant={next.calledAt ? "secondary" : "primary"} onClick={() => call.run(next)} loading={call.loading}>{next.calledAt ? t("queue.callAgain") : t("queue.call")}</Button>}
