@@ -24,7 +24,9 @@ function Section({ title, eyebrow, href, more, children }: { title: string; eyeb
 }
 
 function Grid({ items, locale, labels }: { items: ShopProduct[]; locale: "ar" | "en"; labels: React.ComponentProps<typeof ShopProductCard>["labels"] }) {
-  return <div className="stagger grid grid-cols-2 gap-3 sm:gap-5 md:grid-cols-3 lg:grid-cols-4">{items.slice(0, 8).map((p, i) => <div key={p.id} style={{ "--i": i } as React.CSSProperties}><ShopProductCard p={p} locale={locale} labels={labels} /></div>)}</div>;
+  // show complete rows only (4 across on desktop, 2 on phones) so a lone product never sits by itself on the last row
+  const shown = items.length >= 4 ? items.slice(0, Math.min(items.length, 8) - (Math.min(items.length, 8) % 4)) : items;
+  return <div className="stagger grid grid-cols-2 gap-3 sm:gap-5 md:grid-cols-3 lg:grid-cols-4">{shown.map((p, i) => <div key={p.id} style={{ "--i": i } as React.CSSProperties}><ShopProductCard p={p} locale={locale} labels={labels} /></div>)}</div>;
 }
 
 export default async function StoreHome() {
