@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.*;
 public class ShopController {
     private final CatalogService catalog;
     private final StoreSearchService search;
+    private final StoreFulfillmentService fulfilment;
     private final StoreSettingsService settings;
     private final com.platform.core.auth.LoginThrottle throttle;
     private final CheckoutService checkout;
@@ -33,10 +34,11 @@ public class ShopController {
     private final List<PaymentProvider> providers;
     private final WebhookEventStore webhooks;
 
-    public ShopController(CatalogService catalog, StoreSearchService search, StoreSettingsService settings, com.platform.core.auth.LoginThrottle throttle, CheckoutService checkout,
+    public ShopController(CatalogService catalog, StoreSearchService search, StoreFulfillmentService fulfilment, StoreSettingsService settings, com.platform.core.auth.LoginThrottle throttle, CheckoutService checkout,
                           OrderService orders, ShopperService shopper, List<PaymentProvider> providers, WebhookEventStore webhooks) {
         this.catalog = catalog;
         this.search = search;
+        this.fulfilment = fulfilment;
         this.settings = settings;
         this.throttle = throttle;
         this.checkout = checkout;
@@ -53,6 +55,22 @@ public class ShopController {
 
     // ---- public ----------------------------------------------------------------------------------------------
 
+    public record TrackRequest(String orderNumber, String phone) {}
+    public record ReturnRequestBody(String orderNumber, String phone, String reason, String details) {}
+
+    /** Order status for anyone who has the order number and the phone it was placed with (guests have no account). */
+    @PostMapping("/track")
+    public Map<String, Object> track(@RequestBody TrackRequest r, jakarta.servlet.http.HttpServletRequest req) {
+        throttle.check("track|" + com.platform.shared.ClientInfo.ip(req), 30, java.time.Duration.ofMinutes(10));
+        return fulfilment.track(StoreContext.tenantId(), r.orderNumber(), r.phone());
+    }
+
+    @PostMapping("/track/return")
+    public Map<String, Object> requestReturn(@RequestBody ReturnRequestBody r, jakarta.servlet.http.HttpServletRequest req) {
+        throttle.check("track|" + com.platform.shared.ClientInfo.ip(req), 30, java.time.Duration.ofMinutes(10));
+        return fulfilment.requestReturn(StoreContext.tenantId(), r.orderNumber(), r.phone(), r.reason(), r.details());
+    }
+
     @GetMapping("/branches")
     public List<Map<String, Object>> branches() { return settings.branches(StoreContext.tenantId(), true); }
 
@@ -60,7 +78,7 @@ public class ShopController {
     public Map<String, Object> profile() {
         UUID t = StoreContext.tenantId();
         return Map.of("profile", settings.publicProfile(t), "paymentMethods", settings.paymentMethods(t).stream().filter(m -> Boolean.TRUE.equals(m.get("enabled"))).toList(),
-                "shippingMethods", settings.shippingMethods(t, true));
+                "shippingMethods", settings.shippingMethods(t, true), "shippingZones", fulfilment.zones(t, true));
     }
 
     @GetMapping("/categories")

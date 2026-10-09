@@ -16,10 +16,12 @@ public class StoreAdminController {
     private final CatalogService catalog;
     private final InventoryService inventory;
     private final OrderService orders;
+    private final StoreFulfillmentService fulfilment;
     private final StoreSettingsService settings;
     private final ReportService reports;
 
-    public StoreAdminController(CatalogService catalog, InventoryService inventory, OrderService orders, StoreSettingsService settings, ReportService reports) {
+    public StoreAdminController(CatalogService catalog, InventoryService inventory, OrderService orders, StoreSettingsService settings, ReportService reports, StoreFulfillmentService fulfilment) {
+        this.fulfilment = fulfilment;
         this.catalog = catalog;
         this.inventory = inventory;
         this.orders = orders;
@@ -126,9 +128,63 @@ public class StoreAdminController {
 
     @GetMapping("/orders")
     @PreAuthorize("hasAuthority('order.read')")
-    public Map<String, Object> orders(@RequestParam(required = false) String status, @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize) {
-        return orders.list(StoreContext.tenantId(), Page.of(page, pageSize), status, null);
+    public Map<String, Object> orders(@RequestParam(required = false) String status, @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize,
+                                      @RequestParam(required = false) Boolean unconfirmed, @RequestParam(required = false) String governorate, @RequestParam(required = false) String q) {
+        return orders.list(StoreContext.tenantId(), Page.of(page, pageSize), status, null, unconfirmed, governorate, q);
     }
+
+    /** Counter for the dashboard badge: new orders nobody has called yet. */
+    @GetMapping("/orders/summary")
+    @PreAuthorize("hasAuthority('order.read')")
+    public Map<String, Object> ordersSummary() { return Map.of("unconfirmed", orders.unconfirmedCount(StoreContext.tenantId())); }
+
+    @PostMapping("/orders/{id}/confirm")
+    @PreAuthorize("hasAuthority('order.update_status')")
+    public Map<String, Object> confirm(@PathVariable UUID id, Authentication a) { return fulfilment.confirm(StoreContext.tenantId(), user(a), id); }
+
+    public record TrackingRequest(String courierName, String trackingNumber, String trackingUrl) {}
+
+    @PatchMapping("/orders/{id}/tracking")
+    @PreAuthorize("hasAuthority('order.update_status')")
+    public Map<String, Object> tracking(@PathVariable UUID id, @RequestBody TrackingRequest r, Authentication a) { return fulfilment.setTracking(StoreContext.tenantId(), user(a), id, r.courierName(), r.trackingNumber(), r.trackingUrl()); }
+
+    @GetMapping("/returns")
+    @PreAuthorize("hasAuthority('order.read')")
+    public Map<String, Object> returns(@RequestParam(required = false) String status, @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize) {
+        return fulfilment.returns(StoreContext.tenantId(), Page.of(page, pageSize), status);
+    }
+
+    public record ReturnDecision(String status, String note) {}
+
+    @PostMapping("/returns/{id}/decision")
+    @PreAuthorize("hasAuthority('order.update_status')")
+    public Map<String, Object> decideReturn(@PathVariable UUID id, @RequestBody ReturnDecision r, Authentication a) { return fulfilment.decideReturn(StoreContext.tenantId(), user(a), id, r.status(), r.note()); }
+
+    public record BlockRequest(String phone, boolean blocked, String note) {}
+
+    @GetMapping("/phone-flags")
+    @PreAuthorize("hasAuthority('customer.read')")
+    public List<Map<String, Object>> phoneFlags() { return fulfilment.flaggedPhones(StoreContext.tenantId()); }
+
+    @PostMapping("/phone-flags")
+    @PreAuthorize("hasAuthority('order.update_status')")
+    public Map<String, Object> blockPhone(@RequestBody BlockRequest r, Authentication a) { return fulfilment.blockPhone(StoreContext.tenantId(), user(a), r.phone(), r.blocked(), r.note()); }
+
+    @GetMapping("/shipping-zones")
+    @PreAuthorize("hasAuthority('shipping.manage')")
+    public List<Map<String, Object>> zones() { return fulfilment.zones(StoreContext.tenantId(), false); }
+
+    @PostMapping("/shipping-zones")
+    @PreAuthorize("hasAuthority('shipping.manage')")
+    public List<Map<String, Object>> addZone(@RequestBody Map<String, Object> r, Authentication a) { return fulfilment.saveZone(StoreContext.tenantId(), user(a), null, r); }
+
+    @PatchMapping("/shipping-zones/{id}")
+    @PreAuthorize("hasAuthority('shipping.manage')")
+    public List<Map<String, Object>> editZone(@PathVariable UUID id, @RequestBody Map<String, Object> r, Authentication a) { return fulfilment.saveZone(StoreContext.tenantId(), user(a), id, r); }
+
+    @DeleteMapping("/shipping-zones/{id}")
+    @PreAuthorize("hasAuthority('shipping.manage')")
+    public List<Map<String, Object>> deleteZone(@PathVariable UUID id, Authentication a) { return fulfilment.deleteZone(StoreContext.tenantId(), user(a), id); }
 
     @GetMapping("/orders/{id}")
     @PreAuthorize("hasAuthority('order.read')")

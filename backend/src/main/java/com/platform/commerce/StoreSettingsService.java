@@ -256,11 +256,11 @@ public class StoreSettingsService {
 
     @Transactional
     public Map<String, Object> createShipping(UUID tenantId, UUID actor, String type, String name, long feeMinor, Long freeAboveMinor) {
-        if (!Set.of("PICKUP", "FIXED", "FREE_ABOVE").contains(type) || name == null || name.isBlank() || feeMinor < 0)
+        if (!Set.of("PICKUP", "FIXED", "FREE_ABOVE", "ZONES").contains(type) || name == null || name.isBlank() || feeMinor < 0)
             throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid shipping method");
         if ("FREE_ABOVE".equals(type) && freeAboveMinor == null) throw BusinessException.badRequest("VALIDATION_ERROR", "freeAboveMinor is required");
         UUID id = jdbc.sql("INSERT INTO commerce.shipping_methods (tenant_id, type, name, fee_minor, free_above_minor) VALUES (:t, :ty, :n, :f, :fa) RETURNING id")
-                .param("t", tenantId).param("ty", type).param("n", name.trim()).param("f", "PICKUP".equals(type) ? 0 : feeMinor).param("fa", freeAboveMinor).query(UUID.class).single();
+                .param("t", tenantId).param("ty", type).param("n", name.trim()).param("f", "PICKUP".equals(type) || "ZONES".equals(type) ? 0 : feeMinor).param("fa", freeAboveMinor).query(UUID.class).single();
         audit.record(actor, tenantId, "SETTINGS_CHANGED", "shipping_method", id, null);
         return shippingMethods(tenantId, false).stream().filter(s -> id.equals(s.get("id"))).findFirst().orElseThrow();
     }

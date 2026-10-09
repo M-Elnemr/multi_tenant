@@ -30,8 +30,10 @@ public class OrderService {
     private final InventoryService inventory;
     private final AuditService audit;
     private final ApplicationEventPublisher events;
+    private final PhoneFlags phoneFlags;
 
-    public OrderService(JdbcClient jdbc, InventoryService inventory, AuditService audit, ApplicationEventPublisher events) {
+    public OrderService(JdbcClient jdbc, InventoryService inventory, AuditService audit, ApplicationEventPublisher events, PhoneFlags phoneFlags) {
+        this.phoneFlags = phoneFlags;
         this.jdbc = jdbc;
         this.inventory = inventory;
         this.audit = audit;
@@ -80,6 +82,14 @@ public class OrderService {
                     else inventory.restock(tenantId, (UUID) it.get("branch_id"), (UUID) it.get("variant_id"), ((Number) it.get("quantity")).intValue(), orderId);
                 }
             }
+            default -> { }
+        }
+        String phone = (String) o.get("customer_phone_snapshot");
+        switch (newStatus) {
+            case "SHIPPED" -> jdbc.sql("UPDATE commerce.orders SET shipped_at = coalesce(shipped_at, now()), confirmed_at = coalesce(confirmed_at, now()) WHERE id = :o").param("o", orderId).update();
+            case "ARRIVED" -> { jdbc.sql("UPDATE commerce.orders SET delivered_at = now() WHERE id = :o").param("o", orderId).update(); phoneFlags.bump(tenantId, phone, "delivered_count"); }
+            case "RETURNED" -> phoneFlags.bump(tenantId, phone, "returned_count");
+            case "CANCELLED" -> phoneFlags.bump(tenantId, phone, "cancelled_count");
             default -> { }
         }
         jdbc.sql("UPDATE commerce.orders SET status = :s, fulfillment_status = :f, reservation_expires_at = NULL, updated_at = now() WHERE id = :o")
@@ -155,21 +165,33 @@ public class OrderService {
 
     // ---- reads -------------------------------------------------------------------------------------------
 
-    public Map<String, Object> list(UUID tenantId, Page page, String status, UUID userId) {
-        long total = jdbc.sql("SELECT count(*) FROM commerce.orders WHERE tenant_id = :t AND (CAST(:s AS varchar) IS NULL OR status = CAST(:s AS varchar)) AND (CAST(:u AS uuid) IS NULL OR user_id = CAST(:u AS uuid))")
-                .param("t", tenantId).param("s", status).param("u", userId).query(Long.class).single();
-        var rows = jdbc.sql("""
-                SELECT id, order_number, status, payment_status, fulfillment_status, payment_method, currency, total_minor, customer_name_snapshot, created_at
-                FROM commerce.orders WHERE tenant_id = :t AND (CAST(:s AS varchar) IS NULL OR status = CAST(:s AS varchar)) AND (CAST(:u AS uuid) IS NULL OR user_id = CAST(:u AS uuid))
-                ORDER BY created_at DESC LIMIT :lim OFFSET :off
-                """).param("t", tenantId).param("s", status).param("u", userId).param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows();
+    public Map<String, Object> list(UUID tenantId, Page page, String status, UUID userId) { return list(tenantId, page, status, userId, null, null, null); }
+
+    /** unconfirmed=true: new COD orders nobody has called yet. q matches order number, name or phone. */
+    public Map<String, Object> list(UUID tenantId, Page page, String status, UUID userId, Boolean unconfirmed, String governorate, String q) {
+        String like = q == null || q.isBlank() ? null : "%" + q.trim() + "%";
+        String where = "tenant_id = :t AND (CAST(:s AS varchar) IS NULL OR status = CAST(:s AS varchar)) AND (CAST(:u AS uuid) IS NULL OR user_id = CAST(:u AS uuid))"
+                + " AND (NOT :unc OR (status = 'REQUESTED' AND confirmed_at IS NULL)) AND (CAST(:g AS varchar) IS NULL OR governorate_code = CAST(:g AS varchar))"
+                + " AND (CAST(:q AS varchar) IS NULL OR order_number ILIKE CAST(:q AS varchar) OR customer_name_snapshot ILIKE CAST(:q AS varchar) OR customer_phone_snapshot LIKE CAST(:q AS varchar))";
+        boolean unc = Boolean.TRUE.equals(unconfirmed);
+        String g = governorate == null || governorate.isBlank() ? null : governorate.toUpperCase();
+        long total = jdbc.sql("SELECT count(*) FROM commerce.orders WHERE " + where).param("t", tenantId).param("s", status).param("u", userId).param("unc", unc).param("g", g).param("q", like).query(Long.class).single();
+        var rows = jdbc.sql("SELECT id, order_number, status, payment_status, fulfillment_status, payment_method, currency, total_minor, customer_name_snapshot, customer_phone_snapshot, governorate_code, "
+                        + "confirmed_at, courier_name, tracking_number, created_at FROM commerce.orders WHERE " + where + " ORDER BY created_at DESC LIMIT :lim OFFSET :off")
+                .param("t", tenantId).param("s", status).param("u", userId).param("unc", unc).param("g", g).param("q", like).param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows();
         return page.wrap(Rows.camel(rows), total);
+    }
+
+    /** Orders waiting for the owner to call the customer. */
+    public long unconfirmedCount(UUID tenantId) {
+        return jdbc.sql("SELECT count(*) FROM commerce.orders WHERE tenant_id = :t AND status = 'REQUESTED' AND confirmed_at IS NULL").param("t", tenantId).query(Long.class).single();
     }
 
     public Map<String, Object> get(UUID tenantId, UUID orderId) {
         var o = jdbc.sql("""
                 SELECT id, order_number, status, payment_status, fulfillment_status, payment_method, coupon_code, currency, subtotal_minor, discount_minor,
-                       shipping_minor, tax_minor, total_minor, customer_name_snapshot, customer_phone_snapshot, shipping_address_snapshot::text AS shipping_address,
+                       shipping_minor, tax_minor, cod_fee_minor, total_minor, customer_name_snapshot, customer_phone_snapshot, shipping_address_snapshot::text AS shipping_address,
+                       governorate_code, area, landmark, phone2, eta_min_days, eta_max_days, confirmed_at, courier_name, tracking_number, tracking_url, shipped_at, delivered_at,
                        notes, created_at, updated_at, user_id
                 FROM commerce.orders WHERE id = :o AND tenant_id = :t
                 """).param("o", orderId).param("t", tenantId).query().listOfRows().stream().findFirst()
@@ -179,6 +201,7 @@ public class OrderService {
         out.put("items", Rows.camel(jdbc.sql("SELECT product_id, variant_id, sku_snapshot, product_name_snapshot, variant_name_snapshot, unit_price_minor, quantity, discount_minor, line_total_minor FROM commerce.order_items WHERE order_id = :o ORDER BY created_at, id")
                 .param("o", orderId).query().listOfRows()));
         out.put("history", Rows.camel(jdbc.sql("SELECT from_status, new_status, reason, created_at FROM commerce.order_status_history WHERE order_id = :o ORDER BY created_at, id").param("o", orderId).query().listOfRows()));
+        out.put("customerHistory", phoneFlags.stats(tenantId, (String) o.get("customer_phone_snapshot")));
         out.put("payments", Rows.camel(jdbc.sql("SELECT id, kind, method, provider, amount_minor, status, paid_at, original_payment_id FROM commerce.order_payments WHERE order_id = :o ORDER BY created_at").param("o", orderId).query().listOfRows()));
         return out;
     }
@@ -188,6 +211,7 @@ public class OrderService {
         Map<String, Object> o = get(tenantId, orderId);
         if (userId == null || !userId.equals(o.get("userId"))) throw BusinessException.notFound("RESOURCE_NOT_FOUND", "Order not found");
         o.remove("userId");
+        o.remove("customerHistory");   // the shop's private view of a phone number
         return o;
     }
 
