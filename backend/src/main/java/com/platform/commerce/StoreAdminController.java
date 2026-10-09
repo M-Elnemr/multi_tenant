@@ -141,9 +141,14 @@ public class StoreAdminController {
 
     @GetMapping("/customers")
     @PreAuthorize("hasAuthority('customer.read')")
-    public Map<String, Object> customers(@RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize) {
-        return settings.customers(StoreContext.tenantId(), Page.of(page, pageSize));
+    public Map<String, Object> customers(@RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize, @RequestParam(required = false) String q) {
+        return settings.customers(StoreContext.tenantId(), Page.of(page, pageSize), q);
     }
+
+    /** A client's orders. Read-only: there is deliberately no way for a store to create or edit clients. */
+    @GetMapping("/customers/{id}/orders")
+    @PreAuthorize("hasAuthority('customer.read')")
+    public java.util.List<Map<String, Object>> customerOrders(@PathVariable UUID id) { return settings.customerOrders(StoreContext.tenantId(), id); }
 
     @GetMapping("/reports/summary")
     @PreAuthorize("hasAuthority('report.read')")

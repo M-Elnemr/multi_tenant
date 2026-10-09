@@ -101,16 +101,11 @@ class FilesIntegrationTest extends IntegrationTestBase {
         Tenant clinic = onboard("CLINIC");
         presign(clinic, clinic.access(), "scan.pdf", "application/pdf", 100, "LAB_RESULT", "PUBLIC", 400);   // medical can never be public
 
-        // patient account via the clinic flow
-        String phone = nextPhone();
-        String reg = onHost(clinic.host(), clinic.access(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"Nour\",\"phone\":\"%s\"}".formatted(phone)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
-        String patientId = JsonPath.read(reg, "$.id");
-        String patientToken = JsonPath.read(onHost(clinic.host(), null, "POST", "/api/v1/auth/activate", "{\"identifier\":\"%s\",\"pin\":\"%s\",\"newPassword\":\"PatientPass1\"}".formatted(phone, JsonPath.read(reg, "$.activationPin").toString()))
-                .andReturn().getResponse().getContentAsString(), "$.accessToken");
-        String otherPhone = nextPhone();
-        String reg2 = onHost(clinic.host(), clinic.access(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"Other\",\"phone\":\"%s\"}".formatted(otherPhone)).andReturn().getResponse().getContentAsString();
-        String otherToken = JsonPath.read(onHost(clinic.host(), null, "POST", "/api/v1/auth/activate", "{\"identifier\":\"%s\",\"pin\":\"%s\",\"newPassword\":\"PatientPass1\"}".formatted(otherPhone, JsonPath.read(reg2, "$.activationPin").toString()))
-                .andReturn().getResponse().getContentAsString(), "$.accessToken");
+        // patient accounts via the clinic flow
+        PatientLogin nour = patientAt(clinic, "Nour");
+        String patientId = nour.patientId();
+        String patientToken = nour.token();
+        String otherToken = patientAt(clinic, "Other").token();
 
         // visit + lab order, then the patient uploads a result PDF
         String enc = JsonPath.read(onHost(clinic.host(), clinic.access(), "POST", "/api/v1/clinic/encounters", "{\"patientId\":\"%s\"}".formatted(patientId)).andReturn().getResponse().getContentAsString(), "$.id");

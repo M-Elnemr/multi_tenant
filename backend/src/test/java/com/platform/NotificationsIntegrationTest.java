@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
+@org.springframework.test.context.TestPropertySource(properties = "app.booking.enabled=true")
 class NotificationsIntegrationTest extends IntegrationTestBase {
     @Autowired JdbcClient jdbc;
     @Autowired NotificationService notifications;
@@ -35,13 +36,11 @@ class NotificationsIntegrationTest extends IntegrationTestBase {
         String branch = JsonPath.read(body(onHost(h, store.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
         String variant = JsonPath.read(body(onHost(h, store.access(), "POST", "/api/v1/store/products",
                 "{\"name\":\"Lamp %s\",\"variants\":[{\"sku\":\"L-%s\",\"priceMinor\":5000,\"optionValues\":{},\"stock\":[{\"branchId\":\"%s\",\"quantity\":5}]}]}".formatted(uniq(), uniq(), branch)).andExpect(status().isCreated())), "$.variants[0].id");
-        String email = "shopper" + uniq() + "@example.com";
-        String shopper = JsonPath.read(body(onHost(h, null, "POST", "/api/v1/shop/customers/register",
-                "{\"firstName\":\"Salma\",\"phone\":\"%s\",\"email\":\"%s\",\"password\":\"shopperPass1\"}".formatted(nextPhone(), email)).andExpect(status().isCreated())), "$.accessToken");
+        String shopper = googleClient(h);
         String ship = JsonPath.<List<String>>read(body(onHost(h, null, "GET", "/api/v1/shop/profile", null)), "$.shippingMethods[?(@.type=='PICKUP')].id").get(0);
 
         String order = body(onHost(h, shopper, "POST", "/api/v1/shop/checkout",
-                "{\"items\":[{\"variantId\":\"%s\",\"quantity\":3}],\"shippingMethodId\":\"%s\",\"paymentMethod\":\"CASH_ON_DELIVERY\"}".formatted(variant, ship)).andExpect(status().isCreated()));
+                "{\"items\":[{\"variantId\":\"%s\",\"quantity\":3}],\"shippingMethodId\":\"%s\",\"paymentMethod\":\"CASH_ON_DELIVERY\",\"address\":{\"recipientName\":\"Salma\",\"phone\":\"01022223333\"}}".formatted(variant, ship)).andExpect(status().isCreated()));
         String orderId = JsonPath.read(order, "$.orderId");
 
         assertThat(types(h, shopper)).contains("ORDER_CREATED");
@@ -49,13 +48,8 @@ class NotificationsIntegrationTest extends IntegrationTestBase {
         // the shopper does not receive the merchant's alerts, and vice versa
         assertThat(types(h, shopper)).doesNotContain("NEW_ORDER", "LOW_STOCK");
 
-        onHost(h, store.access(), "POST", "/api/v1/store/orders/" + orderId + "/status", "{\"status\":\"PROCESSING\"}").andExpect(status().isOk());
+        onHost(h, store.access(), "POST", "/api/v1/store/orders/" + orderId + "/status", "{\"status\":\"PREPARING\"}").andExpect(status().isOk());
         assertThat(types(h, shopper)).contains("ORDER_STATUS");
-
-        // e-mail goes through the outbox and is sent by the background job
-        assertThat(jdbc.sql("SELECT count(*) FROM notifications.outbox WHERE to_address = :e AND status = 'PENDING'").param("e", email).query(Long.class).single()).isGreaterThanOrEqualTo(2);
-        notifications.dispatchOutbox();
-        assertThat(jdbc.sql("SELECT count(*) FROM notifications.outbox WHERE to_address = :e AND status = 'SENT'").param("e", email).query(Long.class).single()).isGreaterThanOrEqualTo(2);
 
         // inbox: unread count, mark read, isolation
         long unread = ((Number) JsonPath.read(body(onHost(h, shopper, "GET", "/api/v1/notifications/unread-count", null)), "$.count")).longValue();
@@ -76,10 +70,9 @@ class NotificationsIntegrationTest extends IntegrationTestBase {
         String branch = JsonPath.read(body(onHost(h, clinic.access(), "GET", "/api/v1/clinic/branches", null)), "$[0].id");
         String service = JsonPath.<List<String>>read(body(onHost(h, clinic.access(), "GET", "/api/v1/clinic/services", null)), "$[?(@.name=='Consultation')].id").get(0);
 
-        String phone = nextPhone();
-        String reg = body(onHost(h, clinic.access(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"Laila\",\"phone\":\"%s\",\"email\":\"laila%s@example.com\"}".formatted(phone, uniq())).andExpect(status().isCreated()));
-        String patientId = JsonPath.read(reg, "$.id");
-        String patient = JsonPath.read(body(onHost(h, null, "POST", "/api/v1/auth/activate", "{\"identifier\":\"%s\",\"pin\":\"%s\",\"newPassword\":\"PatientPass1\"}".formatted(phone, JsonPath.read(reg, "$.activationPin").toString()))), "$.accessToken");
+        PatientLogin pl = patientAt(clinic, "Laila");
+        String patientId = pl.patientId();
+        String patient = pl.token();
 
         LocalDate d = LocalDate.now(ZoneId.of("Africa/Cairo")).plusDays(3);
         while (d.getDayOfWeek().getValue() == 5 || d.getDayOfWeek().getValue() == 6) d = d.plusDays(1);

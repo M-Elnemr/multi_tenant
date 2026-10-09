@@ -12,7 +12,7 @@ import org.springframework.stereotype.Service;
 /** Tenant-scoped dashboard numbers. Day/month boundaries use the tenant's own timezone. */
 @Service
 public class ReportService {
-    private static final String COUNTED = "o.status NOT IN ('PENDING','CANCELLED','RETURN_REQUESTED','RETURNED','REFUNDED')";
+    private static final String COUNTED = "o.status NOT IN ('PENDING','CANCELLED','RETURNED','REFUNDED')";
 
     private final JdbcClient jdbc;
     private final EntitlementService ent;
@@ -39,7 +39,7 @@ public class ReportService {
                 .forEach(r -> byStatus.put((String) r.get("status"), r.get("c")));
         out.put("ordersByStatus", byStatus);
         // Cash still to collect: COD orders that are on their way but not yet delivered (delivery marks them paid).
-        var cash = jdbc.sql("SELECT count(*) AS c, coalesce(sum(total_minor), 0) AS t FROM commerce.orders WHERE tenant_id = :t AND payment_method = 'CASH_ON_DELIVERY' AND payment_status = 'UNPAID' AND status IN ('CONFIRMED','PROCESSING','PACKED','OUT_FOR_DELIVERY')")
+        var cash = jdbc.sql("SELECT count(*) AS c, coalesce(sum(total_minor), 0) AS t FROM commerce.orders WHERE tenant_id = :t AND payment_method = 'CASH_ON_DELIVERY' AND payment_status = 'UNPAID' AND status IN ('REQUESTED','PREPARING','SHIPPED')")
                 .param("t", tenantId).query().singleRow();
         out.put("cashToCollectCount", cash.get("c"));
         out.put("cashToCollectMinor", cash.get("t"));

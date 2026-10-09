@@ -72,4 +72,31 @@ public abstract class IntegrationTestBase {
         return mvc.perform(b);
     }
 
+
+    /** A shop client signs in with Google on a store's host (the test fake accepts "test|sub|email|name"). Returns the access token. */
+    protected String googleClient(String storeHost) throws Exception { return googleClient(storeHost, "g" + uniq(), "Mona Client"); }
+
+    protected String googleClient(String storeHost, String sub, String name) throws Exception {
+        String res = mvc.perform(post("/api/v1/auth/client/google").header("Host", storeHost).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"credential\":\"test|%s|%s@example.com|%s\"}".formatted(sub, sub, name)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        return JsonPath.read(res, "$.accessToken");
+    }
+
+    public record PatientLogin(String patientId, String code, String token, String phone) {}
+
+    /** The clinic registers a patient with a temporary password; the patient signs in and chooses their own password. */
+    protected PatientLogin patientAt(Tenant clinic, String firstName) throws Exception { return patientAt(clinic, firstName, nextPhone()); }
+
+    protected PatientLogin patientAt(Tenant clinic, String firstName, String phone) throws Exception {
+        String res = onHost(clinic.host(), clinic.access(), "POST", "/api/v1/clinic/patients",
+                "{\"firstName\":\"%s\",\"phone\":\"%s\",\"initialPassword\":\"TempPass123\"}".formatted(firstName, phone)).andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        String login = onHost(clinic.host(), null, "POST", "/api/v1/auth/login", "{\"identifier\":\"%s\",\"password\":\"TempPass123\"}".formatted(phone)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.user.mustChangePassword").value(true)).andReturn().getResponse().getContentAsString();
+        String temp = JsonPath.read(login, "$.accessToken");
+        String changed = onHost(clinic.host(), temp, "POST", "/api/v1/auth/change-password", "{\"currentPassword\":\"TempPass123\",\"newPassword\":\"PatientPass1\"}").andExpect(status().isOk())
+                .andExpect(jsonPath("$.user.mustChangePassword").value(false)).andReturn().getResponse().getContentAsString();
+        return new PatientLogin(JsonPath.read(res, "$.id"), JsonPath.read(res, "$.patientCode"), JsonPath.read(changed, "$.accessToken"), phone);
+    }
 }

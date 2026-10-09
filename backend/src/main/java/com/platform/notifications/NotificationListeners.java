@@ -43,10 +43,11 @@ public class NotificationListeners {
     public void onOrderCreated(OrderEvents.OrderCreated e) {
         safely("OrderCreated", () -> {
             boolean ar = ar(e.tenantId());
-            notifications.notify(e.userId(), e.tenantId(), "ORDER_CREATED", ar ? "تم استلام طلبك" : "Order received",
-                    ar ? "استلمنا طلبك رقم " + e.orderNumber() : "We received your order " + e.orderNumber(), json("orderId", e.orderId()), true);
+            if (e.userId() != null)   // guests have no account to notify
+                notifications.notify(e.userId(), e.tenantId(), "ORDER_CREATED", ar ? "تم استلام طلبك" : "Order received",
+                        ar ? "استلمنا طلبك رقم " + e.orderNumber() : "We received your order " + e.orderNumber(), json("orderId", e.orderId()), true);
             for (UUID staff : staffWith(e.tenantId(), "order.update_status"))
-                notifications.notify(staff, e.tenantId(), "NEW_ORDER", ar ? "طلب جديد" : "New order", (ar ? "طلب جديد رقم " : "New order ") + e.orderNumber(), json("orderId", e.orderId()), false);
+                notifications.notify(staff, e.tenantId(), "NEW_ORDER", ar ? "طلب جديد" : "New order", (ar ? "طلب جديد رقم " : "New order ") + e.orderNumber(), json("orderId", e.orderId()), true);
         });
     }
 
@@ -57,8 +58,20 @@ public class NotificationListeners {
         safely("OrderStatusChanged", () -> {
             boolean ar = ar(e.tenantId());
             notifications.notify(e.userId(), e.tenantId(), "ORDER_STATUS", ar ? "تحديث على طلبك" : "Order update",
-                    (ar ? "حالة الطلب " : "Order ") + e.orderNumber() + ": " + e.newStatus(), json("orderId", e.orderId()), true);
+                    (ar ? "حالة الطلب " : "Order ") + e.orderNumber() + ": " + statusLabel(e.newStatus(), ar), json("orderId", e.orderId()), true);
         });
+    }
+
+    private static String statusLabel(String s, boolean ar) {
+        return switch (s) {
+            case "REQUESTED" -> ar ? "تم الطلب" : "Requested";
+            case "PREPARING" -> ar ? "جاري التجهيز للشحن" : "Preparing to ship";
+            case "SHIPPED" -> ar ? "تم الشحن" : "Shipped";
+            case "ARRIVED" -> ar ? "وصل" : "Arrived";
+            case "RETURNED" -> ar ? "مرتجع" : "Returned";
+            case "CANCELLED" -> ar ? "ملغي" : "Cancelled";
+            default -> s;
+        };
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
@@ -79,9 +92,12 @@ public class NotificationListeners {
         safely("AppointmentChanged", () -> {
             boolean ar = ar(e.tenantId());
             if ("CALLED".equals(e.status())) {
-                for (UUID u : patientUsers(e.tenantId(), e.patientId()))
-                    notifications.notify(u, e.tenantId(), "APPOINTMENT_CALLED", ar ? "حان دورك" : "It's your turn",
-                            ar ? "الطبيب جاهز لاستقبالك الآن." : "The doctor is ready to see you now.", json("appointmentId", e.appointmentId()), false);
+                for (UUID u : patientUsers(e.tenantId(), e.patientId())) {
+                    String title = ar ? "حان دورك" : "It's your turn";
+                    String body = ar ? "الطبيب جاهز لاستقبالك الآن." : "The doctor is ready to see you now.";
+                    notifications.notify(u, e.tenantId(), "APPOINTMENT_CALLED", title, body, json("appointmentId", e.appointmentId()), false);
+                    notifications.push(u, e.tenantId(), title, body);   // reaches the patient's phone through Firebase when it is set up
+                }
             } else if (Set_NEEDS_STAFF.contains(e.status())) {
                 for (UUID staff : staffWith(e.tenantId(), "appointment.manage"))
                     notifications.notify(staff, e.tenantId(), "BOOKING_REQUEST", ar ? "طلب حجز جديد" : "New booking request", ar ? "لديك طلب حجز جديد" : "You have a new booking request", json("appointmentId", e.appointmentId()), false);

@@ -48,7 +48,7 @@ public class ShopperService {
         if (rating < 1 || rating > 5) throw BusinessException.badRequest("VALIDATION_ERROR", "Rating must be 1-5");
         boolean bought = jdbc.sql("""
                 SELECT count(*) FROM commerce.order_items i JOIN commerce.orders o ON o.id = i.order_id
-                WHERE o.tenant_id = :t AND o.user_id = :u AND i.product_id = :p AND o.status = 'DELIVERED'
+                WHERE o.tenant_id = :t AND o.user_id = :u AND i.product_id = :p AND o.status = 'ARRIVED'
                 """).param("t", tenantId).param("u", userId).param("p", productId).query(Long.class).single() > 0;
         if (!bought) throw BusinessException.forbidden("REVIEW_NOT_ALLOWED", "Only customers who received this product can review it");
         UUID customerId = customers.ensureCustomer(tenantId, userId);
@@ -60,9 +60,21 @@ public class ShopperService {
         }
     }
 
+    public Map<String, Object> profile(UUID clientId) {
+        return Rows.camel(jdbc.sql("SELECT id, name, phone, email FROM commerce.client_accounts WHERE id = :u").param("u", clientId).query().listOfRows().stream().findFirst()
+                .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Account not found")));
+    }
+
+    @Transactional
+    public Map<String, Object> updateProfile(UUID clientId, String name, String phone) {
+        String p = phone == null || phone.isBlank() ? null : com.platform.shared.PhoneNormalizer.normalize(phone);
+        jdbc.sql("UPDATE commerce.client_accounts SET name = coalesce(nullif(btrim(:n), ''), name), phone = coalesce(:p, phone) WHERE id = :u").param("n", name).param("p", p).param("u", clientId).update();
+        return profile(clientId);
+    }
+
     public Map<String, Object> publicReviews(UUID tenantId, UUID productId) {
         var list = Rows.camel(jdbc.sql("""
-                SELECT r.rating, r.review_text, r.created_at, u.first_name FROM commerce.reviews r JOIN commerce.customers c ON c.id = r.customer_id JOIN core.users u ON u.id = c.user_id
+                SELECT r.rating, r.review_text, r.created_at, split_part(c.name, ' ', 1) AS first_name FROM commerce.reviews r JOIN commerce.customers c ON c.id = r.customer_id
                 WHERE r.tenant_id = :t AND r.product_id = :p AND r.status = 'APPROVED' ORDER BY r.created_at DESC LIMIT 50
                 """).param("t", tenantId).param("p", productId).query().listOfRows());
         var agg = jdbc.sql("SELECT coalesce(round(avg(rating)::numeric, 2), 0) AS avg, count(*) AS cnt FROM commerce.reviews WHERE tenant_id = :t AND product_id = :p AND status = 'APPROVED'")

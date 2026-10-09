@@ -21,6 +21,14 @@ public class MeController {
     /** Every store/clinic this person belongs to, so one app login can show several doctors with separate data. */
     @GetMapping("/tenants")
     public List<Map<String, Object>> tenants(Authentication a) {
+        // a patient account lists the clinics that registered it (each clinic keeps its own record of them)
+        var clinics = Rows.camel(jdbc.sql("""
+                SELECT t.id, t.slug, t.name, t.tenant_type AS type, t.status, t.default_locale AS locale,
+                       (SELECT d.host FROM core.tenant_domains d WHERE d.tenant_id = t.id AND d.is_primary AND d.is_verified) AS host, 'PATIENT' AS roles
+                FROM medical.patients p JOIN core.tenants t ON t.id = p.tenant_id
+                WHERE p.user_id = :u AND p.status = 'ACTIVE' AND t.status NOT IN ('ARCHIVED','CANCELLED') ORDER BY p.created_at
+                """).param("u", (UUID) a.getPrincipal()).query().listOfRows());
+        if (!clinics.isEmpty()) return clinics;
         return Rows.camel(jdbc.sql("""
                 SELECT t.id, t.slug, t.name, t.tenant_type AS type, t.status, t.default_locale AS locale,
                        (SELECT d.host FROM core.tenant_domains d WHERE d.tenant_id = t.id AND d.is_primary AND d.is_verified) AS host,

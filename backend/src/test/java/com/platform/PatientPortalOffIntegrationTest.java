@@ -57,8 +57,6 @@ class PatientPortalOffIntegrationTest extends IntegrationTestBase {
 
         // the same mobile can be a patient of another clinic; patient-account endpoints do not exist while off
         onHost(h, c.access(), "POST", "/api/v1/clinic/patients/" + id + "/set-password", "{\"password\":\"Another12345\"}").andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("PORTAL_DISABLED"));
-        onHost(h, c.access(), "POST", "/api/v1/clinic/patients/" + id + "/access-pin", "{}").andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("PORTAL_DISABLED"));
         onHost(h, c.access(), "GET", "/api/v1/portal/patients", null).andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("PORTAL_DISABLED"));
-        onHost(h, null, "POST", "/api/v1/clinic/portal/link", "{\"identifier\":\"x\",\"password\":\"y\",\"patientCode\":\"z\",\"pin\":\"1\"}").andExpect(status().isNotFound());
     }
 }

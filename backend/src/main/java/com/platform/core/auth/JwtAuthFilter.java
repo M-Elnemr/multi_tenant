@@ -28,8 +28,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     private final JwtService jwt;
     private final MembershipRepository memberships;
     private final RbacService rbac;
+    private final AccountAuthService accounts;
 
-    public JwtAuthFilter(JwtService jwt, MembershipRepository memberships, RbacService rbac) {
+    public JwtAuthFilter(JwtService jwt, MembershipRepository memberships, RbacService rbac, AccountAuthService accounts) {
+        this.accounts = accounts;
         this.jwt = jwt;
         this.memberships = memberships;
         this.rbac = rbac;
@@ -40,13 +42,22 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         String h = req.getHeader("Authorization");
         if (h != null && h.startsWith("Bearer ")) {
-            jwt.parse(h.substring(7)).ifPresent(userId -> authenticate(userId));
+            jwt.parseSubject(h.substring(7)).ifPresent(this::authenticate);
         }
         chain.doFilter(req, res);
     }
 
-    private void authenticate(UUID userId) {
+    private void authenticate(JwtService.Subject subject) {
+        UUID userId = subject.id();
         Set<GrantedAuthority> auths = new HashSet<>();
+        if (!"STAFF".equals(subject.type())) {
+            // Patients and shop clients live in their own tables and only ever act on the right kind of place:
+            // a patient on a clinic they belong to, a client on a store - never the other way round.
+            TenantContext.Current t = TenantContext.get();
+            if (t != null && accounts.hasAccess(subject, t)) auths.add(new SimpleGrantedAuthority("PATIENT".equals(subject.type()) ? "ROLE_PATIENT" : "ROLE_CUSTOMER"));
+            SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(userId, null, List.copyOf(auths)));
+            return;
+        }
         for (String p : rbac.platformPermissionCodes(userId)) auths.add(new SimpleGrantedAuthority(p));
         TenantContext.Current t = TenantContext.get();
         if (t != null) {

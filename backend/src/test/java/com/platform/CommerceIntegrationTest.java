@@ -44,11 +44,7 @@ class CommerceIntegrationTest extends IntegrationTestBase {
         return new Shop(t, branch, read(res, "$.id"), read(res, "$.slug"), read(res, "$.variants[0].id"), read(res, "$.variants[1].id"));
     }
 
-    String customerToken(Shop s) throws Exception {
-        String res = ok(onHost(s.tenant().host(), null, "POST", "/api/v1/shop/customers/register",
-                "{\"firstName\":\"Mona\",\"phone\":\"%s\",\"password\":\"shopperPass1\"}".formatted(nextPhone())).andExpect(status().isCreated()));
-        return read(res, "$.accessToken");
-    }
+    String customerToken(Shop s) throws Exception { return googleClient(s.tenant().host()); }
 
     String shippingId(Shop s, String type) throws Exception {
         String res = ok(onHost(s.tenant().host(), null, "GET", "/api/v1/shop/profile", null));
@@ -81,7 +77,7 @@ class CommerceIntegrationTest extends IntegrationTestBase {
 
         // Client cannot dictate the total: the server prices from the database
         String order = ok(onHost(h, cust, "POST", "/api/v1/shop/checkout", checkoutBody(s, s.variantS(), 2, "CASH_ON_DELIVERY", ""))
-                .andExpect(status().isCreated()).andExpect(jsonPath("$.status").value("CONFIRMED")).andExpect(jsonPath("$.totalMinor").value(25000)));
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.status").value("REQUESTED")).andExpect(jsonPath("$.totalMinor").value(25000)));
         String orderId = read(order, "$.orderId");
         assertThat(read(order, "$.orderNumber")).startsWith("ST-");
         assertThat(available(s, s.variantS())).isEqualTo(3);   // reserved 2
@@ -92,12 +88,12 @@ class CommerceIntegrationTest extends IntegrationTestBase {
         onHost(h, s.tenant().access(), "GET", "/api/v1/store/orders/" + orderId, null)
                 .andExpect(jsonPath("$.items[0].unitPriceMinor").value(10000)).andExpect(jsonPath("$.totalMinor").value(25000));
 
-        for (String next : List.of("PROCESSING", "PACKED", "OUT_FOR_DELIVERY", "DELIVERED"))
+        for (String next : List.of("PREPARING", "SHIPPED", "ARRIVED"))
             onHost(h, s.tenant().access(), "POST", "/api/v1/store/orders/" + orderId + "/status", "{\"status\":\"" + next + "\"}").andExpect(status().isOk()).andExpect(jsonPath("$.status").value(next));
         assertThat(onHand(s.variantS())).isEqualTo(3);        // sold: on-hand reduced, reservation consumed
         assertThat(available(s, s.variantS())).isEqualTo(3);
-        onHost(h, s.tenant().access(), "GET", "/api/v1/store/orders/" + orderId, null).andExpect(jsonPath("$.paymentStatus").value("PAID")).andExpect(jsonPath("$.history.length()").value(5));
-        onHost(h, s.tenant().access(), "POST", "/api/v1/store/orders/" + orderId + "/status", "{\"status\":\"PROCESSING\"}")
+        onHost(h, s.tenant().access(), "GET", "/api/v1/store/orders/" + orderId, null).andExpect(jsonPath("$.paymentStatus").value("PAID")).andExpect(jsonPath("$.history.length()").value(4));
+        onHost(h, s.tenant().access(), "POST", "/api/v1/store/orders/" + orderId + "/status", "{\"status\":\"PREPARING\"}")
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("INVALID_STATUS_TRANSITION"));
         onHost(h, s.tenant().access(), "GET", "/api/v1/store/reports/summary", null).andExpect(status().isOk()).andExpect(jsonPath("$.ordersThisMonth").value(1)).andExpect(jsonPath("$.topProducts[0].units").value(2));
     }
@@ -125,7 +121,7 @@ class CommerceIntegrationTest extends IntegrationTestBase {
         for (String expected : new String[] {"PROCESSED", "DUPLICATE"})
             mvc.perform(post("/api/v1/shop/webhooks/mock").header("Host", h).header("X-Signature", provider.sign(good)).contentType(MediaType.APPLICATION_JSON).content(good))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.result").value(expected));
-        onHost(h, s.tenant().access(), "GET", "/api/v1/store/orders/" + orderId, null).andExpect(jsonPath("$.status").value("CONFIRMED")).andExpect(jsonPath("$.paymentStatus").value("PAID"));
+        onHost(h, s.tenant().access(), "GET", "/api/v1/store/orders/" + orderId, null).andExpect(jsonPath("$.status").value("REQUESTED")).andExpect(jsonPath("$.paymentStatus").value("PAID"));
 
         // refunds: linked to the payment, cannot exceed what was paid
         onHost(h, s.tenant().access(), "POST", "/api/v1/store/orders/" + orderId + "/refund", "{\"amountMinor\":99999}").andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("REFUND_EXCEEDS_PAID"));
@@ -186,7 +182,7 @@ class CommerceIntegrationTest extends IntegrationTestBase {
                 "{\"branchId\":\"%s\",\"variantId\":\"%s\",\"delta\":100}".formatted(b.branchId(), a.variantS())).andExpect(status().isNotFound());
         // A's token carries no authority on B's host; shopper token of A cannot order from B
         onHost(b.tenant().host(), a.tenant().access(), "GET", "/api/v1/store/orders", null).andExpect(status().isForbidden());
-        onHost(b.tenant().host(), custA, "POST", "/api/v1/shop/checkout", checkoutBody(b, b.variantS(), 1, "CASH_ON_DELIVERY", "")).andExpect(status().isForbidden());
+        onHost(b.tenant().host(), custA, "GET", "/api/v1/shop/orders", null).andExpect(status().isOk()).andExpect(jsonPath("$.meta.total").value(0));   // A's order is not visible in B
         // B's public catalog never shows A's product
         onHost(b.tenant().host(), null, "GET", "/api/v1/shop/products/" + a.slug(), null).andExpect(status().isNotFound());
         // cross-tenant variant in a cart
@@ -222,17 +218,69 @@ class CommerceIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void sameAccountWorksAcrossStoresButNotOnClinics() throws Exception {
+    void clientsAndPatientsAreSeparateWorlds() throws Exception {
         Shop a = shop(1, 1);
         Shop b = shop(1, 1);
-        String phone = nextPhone();
-        onHost(a.tenant().host(), null, "POST", "/api/v1/shop/customers/register", "{\"firstName\":\"Yara\",\"phone\":\"%s\",\"password\":\"sharedPass1\"}".formatted(phone)).andExpect(status().isCreated());
-        onHost(a.tenant().host(), null, "POST", "/api/v1/shop/customers/register", "{\"firstName\":\"Yara\",\"phone\":\"%s\",\"password\":\"sharedPass1\"}".formatted(phone)).andExpect(status().isConflict());
-        // one identity, first login on another store joins it as a customer there
-        onHost(b.tenant().host(), null, "POST", "/api/v1/auth/login", "{\"identifier\":\"%s\",\"password\":\"sharedPass1\"}".formatted(phone)).andExpect(status().isOk()).andExpect(jsonPath("$.user.roles[0]").value("CUSTOMER"));
         Tenant clinic = onboard("CLINIC");
-        onHost(clinic.host(), null, "POST", "/api/v1/auth/login", "{\"identifier\":\"%s\",\"password\":\"sharedPass1\"}".formatted(phone)).andExpect(status().isForbidden());
-        // a clinic host has no storefront
+        // a Google client works on any store, but is nobody on a clinic
+        String client = googleClient(a.tenant().host(), "same-person", "Yara");
+        String sameClient = googleClient(b.tenant().host(), "same-person", "Yara");
+        onHost(b.tenant().host(), sameClient, "GET", "/api/v1/shop/orders", null).andExpect(status().isOk());
+        onHost(clinic.host(), client, "GET", "/api/v1/portal/queue", null).andExpect(status().isForbidden());
+        onHost(clinic.host(), client, "GET", "/api/v1/clinic/patients", null).andExpect(status().isForbidden());
+        // Google sign-in does not exist on a clinic host
+        mvc.perform(post("/api/v1/auth/client/google").header("Host", clinic.host()).contentType(MediaType.APPLICATION_JSON).content("{\"credential\":\"test|x|x@example.com|X\"}")).andExpect(status().isNotFound());
+        // a bad Google credential is rejected
+        mvc.perform(post("/api/v1/auth/client/google").header("Host", a.tenant().host()).contentType(MediaType.APPLICATION_JSON).content("{\"credential\":\"not-a-google-token-at-all\"}")).andExpect(status().isUnauthorized());
+        // a patient works only on the clinic that registered them, never on a store
+        PatientLogin patient = patientAt(clinic, "Hala");
+        onHost(clinic.host(), patient.token(), "GET", "/api/v1/portal/queue", null).andExpect(status().isOk());
+        onHost(a.tenant().host(), patient.token(), "GET", "/api/v1/shop/orders", null).andExpect(status().isForbidden());
+        Tenant otherClinic = onboard("CLINIC");
+        onHost(otherClinic.host(), patient.token(), "GET", "/api/v1/portal/queue", null).andExpect(status().isForbidden());
+        // there is no phone+password registration for shoppers any more, and a patient's password does not open a store
+        onHost(a.tenant().host(), null, "POST", "/api/v1/shop/customers/register", "{}").andExpect(status().is4xxClientError());
+        onHost(a.tenant().host(), null, "POST", "/api/v1/auth/login", "{\"identifier\":\"%s\",\"password\":\"PatientPass1\"}".formatted(patient.phone())).andExpect(status().isUnauthorized());
+        // a store owner is not a member of a clinic
+        onHost(clinic.host(), null, "POST", "/api/v1/auth/login", "{\"identifier\":\"%s\",\"password\":\"s3cretPass!\"}".formatted(a.tenant().phone())).andExpect(status().isForbidden());
         onHost(clinic.host(), null, "GET", "/api/v1/shop/products", null).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void guestsCanOrderWithoutAnAccountAndTheShopSeesThemAsReadOnlyClients() throws Exception {
+        Shop s = shop(5, 5);
+        String h = s.tenant().host();
+        // no token at all: price a cart, then order with name + mobile + address, cash on delivery
+        onHost(h, null, "POST", "/api/v1/shop/cart/quote", checkoutBody(s, s.variantS(), 2, "CASH_ON_DELIVERY", "")).andExpect(status().isOk()).andExpect(jsonPath("$.totalMinor").value(25000));
+        String order = ok(onHost(h, null, "POST", "/api/v1/shop/checkout", checkoutBody(s, s.variantS(), 2, "CASH_ON_DELIVERY", "")).andExpect(status().isCreated()).andExpect(jsonPath("$.status").value("REQUESTED")));
+        String orderId = read(order, "$.orderId");
+        // contact details are mandatory, card stays off even if asked for
+        onHost(h, null, "POST", "/api/v1/shop/checkout", "{\"items\":[{\"variantId\":\"%s\",\"quantity\":1}],\"shippingMethodId\":\"%s\",\"paymentMethod\":\"CASH_ON_DELIVERY\"}".formatted(s.variantS(), shippingId(s, "FIXED")))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("CONTACT_REQUIRED"));
+        onHost(h, null, "POST", "/api/v1/shop/checkout", checkoutBody(s, s.variantS(), 1, "CARD", "")).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("PAYMENT_METHOD_DISABLED"));
+        // a guest cannot read orders
+        onHost(h, null, "GET", "/api/v1/shop/orders", null).andExpect(status().isUnauthorized());
+        // the shop sees the order and the client, and walks it through the statuses
+        onHost(h, s.tenant().access(), "GET", "/api/v1/store/orders?status=REQUESTED", null).andExpect(status().isOk()).andExpect(jsonPath("$.meta.total").value(1));
+        String clients = ok(onHost(h, s.tenant().access(), "GET", "/api/v1/store/customers", null).andExpect(status().isOk()).andExpect(jsonPath("$.meta.total").value(1))
+                .andExpect(jsonPath("$.data[0].name").value("Mona")).andExpect(jsonPath("$.data[0].hasAccount").value(false)).andExpect(jsonPath("$.data[0].ordersCount").value(1)));
+        String clientId = read(clients, "$.data[0].id");
+        onHost(h, s.tenant().access(), "GET", "/api/v1/store/customers/" + clientId + "/orders", null).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1));
+        // the shop can read clients but never create or change them
+        onHost(h, s.tenant().access(), "POST", "/api/v1/store/customers", "{\"name\":\"Fake\",\"phone\":\"01000000000\"}").andExpect(status().is4xxClientError());
+        onHost(h, s.tenant().access(), "PATCH", "/api/v1/store/customers/" + clientId, "{\"name\":\"Changed\"}").andExpect(status().is4xxClientError());
+        onHost(h, s.tenant().access(), "POST", "/api/v1/store/orders/" + orderId + "/status", "{\"status\":\"SHIPPED\"}").andExpect(status().isConflict());   // cannot skip preparing
+        for (String next : List.of("PREPARING", "SHIPPED", "RETURNED"))
+            onHost(h, s.tenant().access(), "POST", "/api/v1/store/orders/" + orderId + "/status", "{\"status\":\"" + next + "\"}").andExpect(status().isOk()).andExpect(jsonPath("$.status").value(next));
+        assertThat(available(s, s.variantS())).isEqualTo(5);   // returned before arriving: the reserved stock is released, nothing is double counted
+        assertThat(onHand(s.variantS())).isEqualTo(5);
+        // the shop owner got the in-app notification for the new order
+        assertThat(jdbc.sql("SELECT count(*) FROM notifications.notifications WHERE notification_type = 'NEW_ORDER' AND tenant_id = (SELECT id FROM core.tenants WHERE slug = :s)").param("s", s.tenant().slug()).query(Long.class).single()).isEqualTo(1);
+
+        // the same phone ordering later while signed in with Google becomes the same client (now with an account)
+        String google = googleClient(h, "mona-google", "Mona G");
+        onHost(h, google, "POST", "/api/v1/shop/checkout", checkoutBody(s, s.variantM(), 1, "CASH_ON_DELIVERY", "")).andExpect(status().isCreated());
+        onHost(h, s.tenant().access(), "GET", "/api/v1/store/customers", null).andExpect(jsonPath("$.meta.total").value(1)).andExpect(jsonPath("$.data[0].hasAccount").value(true)).andExpect(jsonPath("$.data[0].ordersCount").value(2));
+        onHost(h, google, "GET", "/api/v1/shop/orders", null).andExpect(jsonPath("$.meta.total").value(1));
     }
 }

@@ -40,12 +40,12 @@ public class AuthService {
     private final LoginThrottle throttle;
     private final JdbcClient jdbc;
     private final String dummyHash;
-    private final List<TenantAutoJoin> autoJoins;
+    private final AccountAuthService accounts;
 
     public AuthService(UserRepository users, MembershipRepository memberships, RbacService rbac, PasswordEncoder encoder,
                        JwtService jwt, JwtProperties jwtProps, ActivationService activation, LoginThrottle throttle,
-                       JdbcClient jdbc, List<TenantAutoJoin> autoJoins) {
-        this.autoJoins = autoJoins;
+                       JdbcClient jdbc, AccountAuthService accounts) {
+        this.accounts = accounts;
         this.users = users;
         this.memberships = memberships;
         this.rbac = rbac;
@@ -86,14 +86,28 @@ public class AuthService {
         Optional<User> found = findByIdentifier(identifier);
         String hash = found.map(User::getPasswordHash).orElse(null);
         boolean ok = encoder.matches(password == null ? "" : password, hash != null ? hash : dummyHash) && hash != null;
-        if (!ok || found.isEmpty()) throw BusinessException.unauthorized("INVALID_CREDENTIALS", "Invalid phone/email or password");
-        User user = found.get();
-        if (user.getStatus() != User.Status.ACTIVE) throw BusinessException.forbidden("ACCOUNT_DISABLED", "Account is not active");
-        requireTenantAccess(user);
-        throttle.reset(key);
-        user.setLastLoginAt(Instant.now());
-        users.save(user);
-        return issueTokens(user, ip, userAgent);
+        BusinessException staffProblem = null;
+        if (ok && found.isPresent()) {
+            User user = found.get();
+            if (user.getStatus() != User.Status.ACTIVE) throw BusinessException.forbidden("ACCOUNT_DISABLED", "Account is not active");
+            try {
+                requireTenantAccess(user);
+                throttle.reset(key);
+                user.setLastLoginAt(Instant.now());
+                users.save(user);
+                return issueTokens(user, ip, userAgent);
+            } catch (BusinessException e) {
+                staffProblem = e;   // a staff account that is not a member here may still be a patient of this clinic (see below)
+            }
+        }
+        // On a clinic's own host a patient signs in with the phone + password the clinic gave them (patients are not staff accounts).
+        Optional<TokenResponse> patient = accounts.patientLogin(identifier, password, TenantContext.get(), ip, userAgent);
+        if (patient.isPresent()) {
+            throttle.reset(key);
+            return patient.get();
+        }
+        if (staffProblem != null) throw staffProblem;
+        throw BusinessException.unauthorized("INVALID_CREDENTIALS", "Invalid phone/email or password");
     }
 
     @Transactional(noRollbackFor = BusinessException.class)
@@ -131,7 +145,7 @@ public class AuthService {
     @Transactional(noRollbackFor = BusinessException.class)
     public TokenResponse refresh(String refreshToken, String ip, String userAgent) {
         if (refreshToken == null || refreshToken.isBlank()) throw BusinessException.unauthorized("INVALID_REFRESH_TOKEN", "Invalid refresh token");
-        var row = jdbc.sql("SELECT id, user_id, expires_at, revoked_at FROM core.user_sessions WHERE refresh_token_hash = :h FOR UPDATE")
+        var row = jdbc.sql("SELECT id, user_id, principal_type, expires_at, revoked_at FROM core.user_sessions WHERE refresh_token_hash = :h FOR UPDATE")
                 .param("h", sha256(refreshToken)).query().listOfRows().stream().findFirst()
                 .orElseThrow(() -> BusinessException.unauthorized("INVALID_REFRESH_TOKEN", "Invalid refresh token"));
         UUID userId = (UUID) row.get("user_id");
@@ -143,6 +157,11 @@ public class AuthService {
         }
         if (((java.sql.Timestamp) row.get("expires_at")).toInstant().isBefore(Instant.now()))
             throw BusinessException.unauthorized("INVALID_REFRESH_TOKEN", "Invalid refresh token");
+        String type = (String) row.get("principal_type");
+        if (!"STAFF".equals(type)) {
+            jdbc.sql("UPDATE core.user_sessions SET revoked_at = now() WHERE id = :id").param("id", sessionId).update();
+            return accounts.reissue(type, userId, ip, userAgent);
+        }
         User user = users.findById(userId).filter(u -> u.getStatus() == User.Status.ACTIVE)
                 .orElseThrow(() -> BusinessException.unauthorized("INVALID_REFRESH_TOKEN", "Invalid refresh token"));
         jdbc.sql("UPDATE core.user_sessions SET revoked_at = now() WHERE id = :id").param("id", sessionId).update();
@@ -159,6 +178,7 @@ public class AuthService {
     /** The user changes their own password. Every other session is revoked and fresh tokens are returned for this device. */
     @Transactional(noRollbackFor = BusinessException.class)
     public TokenResponse changePassword(UUID userId, String current, String newPassword, String ip, String userAgent) {
+        if (accounts.isPatient(userId)) return accounts.changePatientPassword(userId, current, newPassword, ip, userAgent);
         throttle.check("chgpw|" + userId, 5, Duration.ofMinutes(10));
         validatePassword(newPassword);
         User user = users.findById(userId).orElseThrow(() -> BusinessException.unauthorized("UNAUTHENTICATED", "Unknown user"));
@@ -171,8 +191,9 @@ public class AuthService {
     }
 
     public TokenResponse.UserSummary me(UUID userId) {
-        User u = users.findById(userId).orElseThrow(() -> BusinessException.unauthorized("UNAUTHENTICATED", "Unknown user"));
-        return summary(u);
+        var staff = users.findById(userId);
+        if (staff.isEmpty()) return accounts.me(userId).orElseThrow(() -> BusinessException.unauthorized("UNAUTHENTICATED", "Unknown user"));
+        return summary(staff.get());
     }
 
     public void validatePassword(String p) {
@@ -188,12 +209,7 @@ public class AuthService {
         if (t == null) return;
         boolean member = memberships.findByUserIdAndTenantId(user.getId(), t.id())
                 .filter(m -> m.getStatus() == Membership.Status.ACTIVE).isPresent();
-        if (!member) {
-            // Open-registration tenants (stores) let any valid account become a customer on first login.
-            var join = autoJoins.stream().filter(j -> j.supports(t.type())).findFirst();
-            if (join.isEmpty()) throw BusinessException.forbidden("NOT_A_MEMBER", "This account has no access here");
-            join.get().join(user.getId(), t.id());
-        }
+        if (!member) throw BusinessException.forbidden("NOT_A_MEMBER", "This account has no access here");
     }
 
     /** Issues tokens for an account that was just created/verified by another flow (e.g. shopper registration). */

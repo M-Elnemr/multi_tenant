@@ -18,8 +18,9 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
     private final AuthService auth;
     private final SsoService sso;
+    private final AccountAuthService accounts;
 
-    public AuthController(AuthService auth, SsoService sso) { this.auth = auth; this.sso = sso; }
+    public AuthController(AuthService auth, SsoService sso, AccountAuthService accounts) { this.auth = auth; this.sso = sso; this.accounts = accounts; }
 
     public record IdentifierRequest(@NotBlank String identifier) {}
     public record LoginRequest(@NotBlank String identifier, @NotBlank String password) {}
@@ -28,6 +29,7 @@ public class AuthController {
     public record ChangePasswordRequest(@NotBlank String currentPassword, @NotBlank String newPassword) {}
     public record HandoffRequest(@jakarta.validation.constraints.NotNull UUID tenantId) {}
     public record RedeemRequest(@NotBlank String ticket) {}
+    public record GoogleRequest(@NotBlank String credential) {}
 
     @PostMapping("/check-identifier")
     public Map<String, Object> checkIdentifier(@Valid @RequestBody IdentifierRequest r, HttpServletRequest req) {
@@ -77,6 +79,19 @@ public class AuthController {
     @PostMapping("/handoff/redeem")
     public TokenResponse redeem(@Valid @RequestBody RedeemRequest r, HttpServletRequest req) {
         return sso.redeem(r.ticket(), com.platform.shared.TenantContext.require().id(), ClientInfo.ip(req), req.getHeader("User-Agent"));
+    }
+
+    /** Shop clients: sign in (or sign up) with Google on a store's host. */
+    @PostMapping("/client/google")
+    public TokenResponse clientGoogle(@Valid @RequestBody GoogleRequest r, HttpServletRequest req) {
+        return accounts.clientGoogle(r.credential(), com.platform.shared.TenantContext.get(), ClientInfo.ip(req), req.getHeader("User-Agent"));
+    }
+
+    /** Public: lets the storefront know whether to show the Google button (the client id is public by design). */
+    @GetMapping("/client/config")
+    public Map<String, Object> clientConfig() {
+        String id = accounts.googleClientId();
+        return id == null ? Map.of("googleEnabled", false) : Map.of("googleEnabled", true, "googleClientId", id);
     }
 
     @GetMapping("/me")

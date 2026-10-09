@@ -2,12 +2,7 @@ package com.platform.medical;
 
 import com.platform.billing.PaymentProvider;
 import com.platform.billing.WebhookEventStore;
-import com.platform.core.auth.TokenResponse;
 import com.platform.shared.BusinessException;
-import com.platform.shared.ClientInfo;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -26,8 +21,10 @@ public class PublicClinicController {
     private final AppointmentService appointments;
     private final List<PaymentProvider> providers;
     private final WebhookEventStore webhooks;
+    private final com.platform.shared.PatientPortalPolicy policy;
 
-    public PublicClinicController(ClinicSettingsService settings, SlotService slots, PatientService patients, AppointmentService appointments, List<PaymentProvider> providers, WebhookEventStore webhooks) {
+    public PublicClinicController(ClinicSettingsService settings, SlotService slots, PatientService patients, AppointmentService appointments, List<PaymentProvider> providers, WebhookEventStore webhooks, com.platform.shared.PatientPortalPolicy policy) {
+        this.policy = policy;
         this.settings = settings;
         this.slots = slots;
         this.patients = patients;
@@ -36,15 +33,14 @@ public class PublicClinicController {
         this.webhooks = webhooks;
     }
 
-    public record LinkRequest(@NotBlank String identifier, @NotBlank String password, @NotBlank String patientCode, @NotBlank String pin) {}
-
     @GetMapping("/public/profile")
     public Map<String, Object> profile() {
         UUID t = ClinicContext.tenantId();
         Map<String, Object> p = new java.util.LinkedHashMap<>(settings.profile(t));
         // the public site never needs internal booking-policy numbers beyond what visitors act on
-        // Online booking needs a patient account; while patient accounts are off the public site offers no booking
-        p.put("bookingEnabled", Boolean.TRUE.equals(p.get("bookingEnabled")) && Boolean.TRUE.equals(p.get("patientPortalEnabled")));
+        // Online booking is switched off for now (see PatientPortalPolicy)
+        p.put("bookingEnabled", Boolean.TRUE.equals(p.get("bookingEnabled")) && policy.bookingEnabled());
+        p.put("queueCount", appointments.queueCount(t));
         p.put("doctors", settings.doctors(t));
         p.put("services", settings.services(t, true));
         p.put("branches", settings.branches(t, true));
@@ -60,12 +56,6 @@ public class PublicClinicController {
     @GetMapping("/public/working-days")
     public Map<String, Object> workingDays(@RequestParam UUID doctorId, @RequestParam UUID branchId) {
         return Map.of("weekdays", slots.workingWeekdays(ClinicContext.tenantId(), doctorId, branchId));
-    }
-
-    /** An existing account claims its patient record with password + the PIN the clinic gave it. */
-    @PostMapping("/portal/link")
-    public TokenResponse link(@Valid @RequestBody LinkRequest r, HttpServletRequest req) {
-        return patients.link(ClinicContext.openTenantId(), r.identifier(), r.password(), r.patientCode(), r.pin(), ClientInfo.ip(req), req.getHeader("User-Agent"));
     }
 
     @PostMapping("/webhooks/{provider}")

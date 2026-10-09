@@ -72,13 +72,23 @@ class QueueAndAccessIntegrationTest extends IntegrationTestBase {
         onHost(a.host(), null, "POST", "/api/v1/auth/login", "{\"identifier\":\"%s\",\"password\":\"ClinicSet123\"}".formatted(phone)).andExpect(status().isUnauthorized());
         login(a.host(), phone, "MyOwnPass456");
 
-        // the clinic may reset it only while the account belongs to this clinic alone
-        onHost(a.host(), a.owner(), "POST", "/api/v1/clinic/patients/" + p[0] + "/set-password", "{\"password\":\"FrontDesk789\"}").andExpect(status().isOk());
-        login(a.host(), phone, "FrontDesk789");
-        Clinic b = clinic();
-        onHost(b.host(), b.owner(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"Hana\",\"phone\":\"%s\"}".formatted(phone)).andExpect(status().isCreated());
+        // the patient chose their own password, so the clinic can no longer replace it
         onHost(a.host(), a.owner(), "POST", "/api/v1/clinic/patients/" + p[0] + "/set-password", "{\"password\":\"Hijack12345\"}").andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("PASSWORD_SET_NOT_ALLOWED"));
-        login(a.host(), phone, "FrontDesk789");   // unchanged
+        // another clinic adding the same mobile never changes the owner's password
+        Clinic b = clinic();
+        onHost(b.host(), b.owner(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"Hana\",\"phone\":\"%s\",\"initialPassword\":\"Overwrite123\"}".formatted(phone)).andExpect(status().isCreated());
+        login(a.host(), phone, "MyOwnPass456");   // unchanged
+        onHost(a.host(), null, "POST", "/api/v1/auth/login", "{\"identifier\":\"%s\",\"password\":\"Overwrite123\"}".formatted(phone)).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void clinicCanReissueTheTemporaryPasswordUntilThePatientChoosesTheirOwn() throws Exception {
+        Clinic a = clinic();
+        String phone = nextPhone();
+        String[] p = patientWithPassword(a, "Rana", phone, "ClinicSet123");
+        onHost(a.host(), a.owner(), "POST", "/api/v1/clinic/patients/" + p[0] + "/set-password", "{\"password\":\"FrontDesk789\"}").andExpect(status().isOk());
+        onHost(a.host(), null, "POST", "/api/v1/auth/login", "{\"identifier\":\"%s\",\"password\":\"ClinicSet123\"}".formatted(phone)).andExpect(status().isUnauthorized());
+        login(a.host(), phone, "FrontDesk789");
     }
 
     @Test
@@ -101,7 +111,6 @@ class QueueAndAccessIntegrationTest extends IntegrationTestBase {
         assertThat(res).doesNotContain("activationPin").doesNotContain("linkPin");
         assertThat(pb).isNotEqualTo(pa[0]);
         onHost(b.host(), b.owner(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"Mariam\",\"phone\":\"%s\"}".formatted(phone)).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ALREADY_PATIENT"));
-        onHost(b.host(), b.owner(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"M\",\"phone\":\"%s\",\"initialPassword\":\"Overwrite123\"}".formatted(phone)).andExpect(status().isBadRequest());
 
         // one login, two doctors
         String token = login(a.host(), phone, "SharedPass123");

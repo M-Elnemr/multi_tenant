@@ -33,7 +33,7 @@ public class ClinicalService {
     public record NoteReq(String noteType, String content, boolean patientVisible) {}
     public record ItemReq(String medicationName, String genericName, String strength, String dosage, String route, String frequency, String duration, String quantity, String instructions) {}
     public record PrescriptionReq(List<ItemReq> items, String notes, boolean issue, UUID imageFileId) {}
-    public record LabOrderReq(String testName, String instructions, String priority, LocalDate dueDate) {}
+    public record LabOrderReq(String testName, String instructions, String priority, LocalDate dueDate, String kind) {}
     public record LabResultReq(String resultText, String resultSummary, UUID fileId, boolean patientVisible) {}
     public record DocumentReq(String documentType, String title, String description, UUID fileId, boolean patientVisible) {}
 
@@ -229,9 +229,10 @@ public class ClinicalService {
         var e = requireEncounter(tenantId, encounterId);
         if (r.testName() == null || r.testName().isBlank()) throw BusinessException.badRequest("VALIDATION_ERROR", "Test name is required");
         if (r.priority() != null && !Set.of("ROUTINE", "URGENT").contains(r.priority())) throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid priority");
-        UUID id = jdbc.sql("INSERT INTO medical.lab_orders (tenant_id, patient_id, encounter_id, ordered_by, test_name, instructions, priority, due_date) VALUES (:t,:p,:e,:d,:n,:i,coalesce(:pr,'ROUTINE'),:du) RETURNING id")
+        if (r.kind() != null && !Set.of("LAB", "RADIOLOGY").contains(r.kind())) throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid test kind");
+        UUID id = jdbc.sql("INSERT INTO medical.lab_orders (tenant_id, patient_id, encounter_id, ordered_by, test_name, instructions, priority, due_date, kind) VALUES (:t,:p,:e,:d,:n,:i,coalesce(:pr,'ROUTINE'),:du,coalesce(:k,'LAB')) RETURNING id")
                 .param("t", tenantId).param("p", e.get("patient_id")).param("e", encounterId).param("d", doctor).param("n", r.testName().trim()).param("i", r.instructions())
-                .param("pr", r.priority()).param("du", r.dueDate() == null ? null : java.sql.Date.valueOf(r.dueDate())).query(UUID.class).single();
+                .param("pr", r.priority()).param("du", r.dueDate() == null ? null : java.sql.Date.valueOf(r.dueDate())).param("k", r.kind()).query(UUID.class).single();
         audit.record(actor, tenantId, "LAB_ORDER_CREATED", "lab_order", id, null);
         return labOrders(tenantId, "o.id = :x", id, false).get(0);
     }
@@ -265,6 +266,18 @@ public class ClinicalService {
                 .param("t", tenantId).param("o", labOrderId).param("f", r.fileId()).param("rt", r.resultText()).param("rs", r.resultSummary()).param("u", by).param("bp", byPatient).param("pv", r.patientVisible()).update();
     }
 
+    /** The patient says the test is done (Requested -> Done). The doctor sees it, and the patient can still attach the result afterwards. */
+    @Transactional
+    public Map<String, Object> markLabDoneByPatient(UUID tenantId, UUID userId, UUID labOrderId) {
+        var o = lockLab(tenantId, labOrderId);
+        patients.requireAccessible(tenantId, userId, (UUID) o.get("patient_id"));
+        if (!Set.of("ORDERED", "PATIENT_UPLOADED").contains((String) o.get("status")))
+            throw BusinessException.conflict("INVALID_STATUS_TRANSITION", "This request cannot be marked as done");
+        jdbc.sql("UPDATE medical.lab_orders SET status = 'DONE', done_at = now(), updated_at = now() WHERE id = :i").param("i", labOrderId).update();
+        audit.record(userId, tenantId, "LAB_MARKED_DONE", "lab_order", labOrderId, "{\"by\":\"patient\"}");
+        return labOrders(tenantId, "o.id = :x", labOrderId, true).get(0);
+    }
+
     @Transactional
     public Map<String, Object> reviewLab(UUID tenantId, UUID actor, UUID labOrderId, boolean shareWithPatient) {
         lockLab(tenantId, labOrderId);
@@ -282,7 +295,7 @@ public class ClinicalService {
     }
 
     private List<Map<String, Object>> labOrders(UUID tenantId, String cond, Object arg, boolean patientView) {
-        var rows = jdbc.sql("SELECT o.id, o.encounter_id, o.patient_id, o.test_name, o.instructions, o.priority, o.status, o.ordered_at, o.due_date, o.reviewed_at FROM medical.lab_orders o WHERE o.tenant_id = :t AND " + cond
+        var rows = jdbc.sql("SELECT o.id, o.encounter_id, o.patient_id, o.test_name, o.kind, o.instructions, o.priority, o.status, o.ordered_at, o.due_date, o.done_at, o.reviewed_at FROM medical.lab_orders o WHERE o.tenant_id = :t AND " + cond
                 + (patientView ? " AND o.status <> 'CANCELLED'" : "") + " ORDER BY o.ordered_at DESC").param("t", tenantId).param("x", arg).query().listOfRows();
         List<Map<String, Object>> out = new ArrayList<>();
         for (var r : rows) {
@@ -371,7 +384,7 @@ public class ClinicalService {
                 """).param("t", tenantId).param("tz", tz).query().listOfRows()));
         out.put("pendingRequests", jdbc.sql("SELECT count(*) FROM medical.appointments WHERE tenant_id = :t AND status = 'PENDING_CONFIRMATION'").param("t", tenantId).query(Long.class).single());
         out.put("checkedIn", jdbc.sql("SELECT count(*) FROM medical.appointments WHERE tenant_id = :t AND status = 'CHECKED_IN'").param("t", tenantId).query(Long.class).single());
-        out.put("pendingLabReviews", jdbc.sql("SELECT count(*) FROM medical.lab_orders WHERE tenant_id = :t AND status IN ('PATIENT_UPLOADED','UNDER_REVIEW')").param("t", tenantId).query(Long.class).single());
+        out.put("pendingLabReviews", jdbc.sql("SELECT count(*) FROM medical.lab_orders WHERE tenant_id = :t AND status IN ('DONE','PATIENT_UPLOADED','UNDER_REVIEW')").param("t", tenantId).query(Long.class).single());
         var month = jdbc.sql("""
                 SELECT count(*) FILTER (WHERE status = 'NO_SHOW') AS no_shows, count(*) FILTER (WHERE status = 'COMPLETED') AS completed, count(*) FILTER (WHERE status = 'CANCELLED') AS cancelled,
                        coalesce(sum(price_minor) FILTER (WHERE payment_status = 'PAID'), 0) AS revenue FROM medical.appointments

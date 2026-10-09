@@ -65,7 +65,13 @@ public class CheckoutService {
             Map<String, Object> prior = existingByKey(tenantId, key);
             if (prior != null) return prior;
         }
-        Quote q = quote(tenantId, userId, r, true);
+        if (r.paymentMethod() == null || r.paymentMethod().isBlank()) r = new CheckoutReq(r.items(), r.shippingMethodId(), r.address(), "CASH_ON_DELIVERY", r.couponCode(), r.notes());
+        // userId is the signed-in client, or null for a guest. Either way we need who is buying and how to reach them.
+        if (r.address() == null || blank(r.address().recipientName()) || blank(r.address().phone()))
+            throw BusinessException.badRequest("CONTACT_REQUIRED", "Your name and mobile number are required");
+        String phoneNorm = com.platform.shared.PhoneNormalizer.normalize(r.address().phone());
+        UUID customerId = customers.ensureCustomer(tenantId, userId, new StoreCustomerService.Contact(r.address().recipientName(), phoneNorm, null, addressJson(r.address())));
+        Quote q = quote(tenantId, customerId, r, true);
         UUID orderId = UUID.randomUUID();
 
         // Reserve stock. Variants are processed in id order so concurrent checkouts lock rows in the same order.
@@ -75,10 +81,8 @@ public class CheckoutService {
 
         boolean card = "CARD".equals(r.paymentMethod());
         String number = nextOrderNumber(tenantId);
-        UUID customerId = customers.ensureCustomer(tenantId, userId);
-        var user = jdbc.sql("SELECT first_name, last_name, phone FROM core.users WHERE id = :u").param("u", userId).query().singleRow();
-        String name = r.address() != null && r.address().recipientName() != null ? r.address().recipientName() : (user.get("first_name") + " " + user.get("last_name")).trim();
-        String phone = r.address() != null && r.address().phone() != null ? r.address().phone() : String.valueOf(user.get("phone"));
+        String name = r.address().recipientName().trim();
+        String phone = phoneNorm;
 
         jdbc.sql("""
                 INSERT INTO commerce.orders (id, tenant_id, order_number, customer_id, user_id, status, payment_status, payment_method, shipping_method_id, coupon_code,
@@ -86,7 +90,7 @@ public class CheckoutService {
                     shipping_address_snapshot, notes, idempotency_key, reservation_expires_at)
                 VALUES (:id, :t, :n, :c, :u, :st, 'UNPAID', :pm, :sm, :cc, :cur, :sub, :disc, :ship, :total, :cn, :cp, CAST(:addr AS jsonb), :notes, :key, :exp)
                 """).param("id", orderId).param("t", tenantId).param("n", number).param("c", customerId).param("u", userId)
-                .param("st", card ? "PENDING" : "CONFIRMED").param("pm", r.paymentMethod()).param("sm", r.shippingMethodId()).param("cc", q.couponCode())
+                .param("st", card ? "PENDING" : "REQUESTED").param("pm", r.paymentMethod()).param("sm", r.shippingMethodId()).param("cc", q.couponCode())
                 .param("cur", q.currency()).param("sub", q.subtotal()).param("disc", q.discount()).param("ship", q.shipping()).param("total", q.total())
                 .param("cn", name).param("cp", phone).param("addr", addressJson(r.address())).param("notes", r.notes())
                 .param("key", key == null || key.isBlank() ? null : key)
@@ -104,10 +108,10 @@ public class CheckoutService {
         if (q.couponId() != null) {
             jdbc.sql("UPDATE commerce.coupons SET redemptions = redemptions + 1 WHERE id = :c").param("c", q.couponId()).update();
             jdbc.sql("INSERT INTO commerce.coupon_redemptions (tenant_id, coupon_id, user_id, order_id) VALUES (:t, :c, :u, :o)")
-                    .param("t", tenantId).param("c", q.couponId()).param("u", userId).param("o", orderId).update();
+                    .param("t", tenantId).param("c", q.couponId()).param("u", customerId).param("o", orderId).update();
         }
         jdbc.sql("INSERT INTO commerce.order_status_history (order_id, tenant_id, from_status, new_status, changed_by, reason) VALUES (:o, :t, NULL, :s, :u, 'Order placed')")
-                .param("o", orderId).param("t", tenantId).param("s", card ? "PENDING" : "CONFIRMED").param("u", userId).update();
+                .param("o", orderId).param("t", tenantId).param("s", card ? "PENDING" : "REQUESTED").param("u", userId).update();
 
         String checkoutUrl = null;
         String paymentKey = "order-" + orderId;
@@ -123,7 +127,7 @@ public class CheckoutService {
         }
         ent.increment(tenantId, "orders_monthly", currentMonth(), 1);
         events.publishEvent(new OrderEvents.OrderCreated(tenantId, orderId, userId, number));
-        return summary(Map.of("id", orderId, "order_number", number, "status", card ? "PENDING" : "CONFIRMED", "payment_status", "UNPAID",
+        return summary(Map.of("id", orderId, "order_number", number, "status", card ? "PENDING" : "REQUESTED", "payment_status", "UNPAID",
                 "total_minor", q.total(), "currency", q.currency()), checkoutUrl, false);
     }
 
@@ -134,7 +138,7 @@ public class CheckoutService {
     record Quote(List<QuoteLine> lines, String currency, long subtotal, long discount, long shipping, long total, UUID couponId, String couponCode) {}
 
     /** Computes the full price breakdown. With lock=true it also takes the coupon row lock and enforces usage limits. */
-    Quote quote(UUID tenantId, UUID userId, CheckoutReq r, boolean lock) {
+    Quote quote(UUID tenantId, UUID customerId, CheckoutReq r, boolean lock) {
         if (r.items() == null || r.items().isEmpty()) throw BusinessException.badRequest("CART_EMPTY", "Cart is empty");
         if (r.items().size() > 50) throw BusinessException.badRequest("CART_TOO_LARGE", "Too many items");
         TreeMap<UUID, Integer> wanted = new TreeMap<>();
@@ -200,8 +204,8 @@ public class CheckoutService {
                     && (c.get("ends_at") == null || ((java.sql.Timestamp) c.get("ends_at")).toInstant().isAfter(now))
                     && subtotal >= ((Number) c.get("min_order_minor")).longValue()
                     && (c.get("max_redemptions") == null || ((Number) c.get("redemptions")).intValue() < ((Number) c.get("max_redemptions")).intValue());
-            if (ok && c.get("per_customer_limit") != null) {
-                long used = jdbc.sql("SELECT count(*) FROM commerce.coupon_redemptions WHERE coupon_id = :c AND user_id = :u").param("c", c.get("id")).param("u", userId).query(Long.class).single();
+            if (ok && c.get("per_customer_limit") != null && customerId != null) {
+                long used = jdbc.sql("SELECT count(*) FROM commerce.coupon_redemptions WHERE coupon_id = :c AND user_id = :u").param("c", c.get("id")).param("u", customerId).query(Long.class).single();
                 ok = used < ((Number) c.get("per_customer_limit")).longValue();
             }
             if (!ok) throw BusinessException.badRequest("COUPON_INVALID", "This coupon cannot be used for this order");

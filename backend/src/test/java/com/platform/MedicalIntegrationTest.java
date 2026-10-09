@@ -23,6 +23,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.ResultActions;
 
+@org.springframework.test.context.TestPropertySource(properties = "app.booking.enabled=true")
 class MedicalIntegrationTest extends IntegrationTestBase {
     @Autowired JdbcClient jdbc;
     @Autowired MockPaymentProvider provider;
@@ -56,13 +57,13 @@ class MedicalIntegrationTest extends IntegrationTestBase {
         return JsonPath.read(body(onHost(c.host(), publicEndpoint ? null : c.owner(), "GET", url, null).andExpect(status().isOk())), "$");
     }
 
-    /** Registers a patient (new phone) and activates the portal account. Returns {patientId, code, token, phone}. */
+    /** The clinic registers a patient with a temporary password; the patient signs in and picks their own. Returns {patientId, code, token, phone}. */
     String[] patientWithPortal(Clinic c, String first) throws Exception {
         String phone = nextPhone();
-        String res = body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"%s\",\"lastName\":\"Test\",\"phone\":\"%s\"}".formatted(first, phone))
-                .andExpect(status().isCreated()).andExpect(jsonPath("$.portalAccess").value("ACTIVATION_PIN")).andExpect(jsonPath("$.patientCode").value(org.hamcrest.Matchers.matchesPattern("PAT-[A-Z0-9]{4}-[A-Z0-9]{4}"))));
-        String token = read(body(onHost(c.host(), null, "POST", "/api/v1/auth/activate",
-                "{\"identifier\":\"%s\",\"pin\":\"%s\",\"newPassword\":\"PatientPass1\"}".formatted(phone, read(res, "$.activationPin"))).andExpect(status().isOk()).andExpect(jsonPath("$.user.roles[0]").value("PATIENT"))), "$.accessToken");
+        String res = body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"%s\",\"lastName\":\"Test\",\"phone\":\"%s\",\"initialPassword\":\"TempPass123\"}".formatted(first, phone))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.portalAccess").value("PASSWORD_SET")).andExpect(jsonPath("$.patientCode").value(org.hamcrest.Matchers.matchesPattern("PAT-[A-Z0-9]{4}-[A-Z0-9]{4}"))));
+        String temp = read(body(onHost(c.host(), null, "POST", "/api/v1/auth/login", "{\"identifier\":\"%s\",\"password\":\"TempPass123\"}".formatted(phone)).andExpect(status().isOk()).andExpect(jsonPath("$.user.roles[0]").value("PATIENT"))), "$.accessToken");
+        String token = read(body(onHost(c.host(), temp, "POST", "/api/v1/auth/change-password", "{\"currentPassword\":\"TempPass123\",\"newPassword\":\"PatientPass1\"}").andExpect(status().isOk())), "$.accessToken");
         return new String[] {read(res, "$.id"), read(res, "$.patientCode"), token, phone};
     }
 
@@ -88,8 +89,8 @@ class MedicalIntegrationTest extends IntegrationTestBase {
     @Test
     void doubleBookingIsImpossibleEvenUnderRace() throws Exception {
         Clinic c = clinic();
-        String p1 = read(body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"A\",\"phone\":\"" + nextPhone() + "\"}").andExpect(status().isCreated())), "$.id");
-        String p2 = read(body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"B\",\"phone\":\"" + nextPhone() + "\"}").andExpect(status().isCreated())), "$.id");
+        String p1 = read(body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"A\",\"initialPassword\":\"TempPass123\",\"phone\":\"" + nextPhone() + "\"}").andExpect(status().isCreated())), "$.id");
+        String p2 = read(body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"B\",\"initialPassword\":\"TempPass123\",\"phone\":\"" + nextPhone() + "\"}").andExpect(status().isCreated())), "$.id");
         LocalDate d = workday(3);
         String slot = slots(c, d, false).get(2);
         ExecutorService pool = Executors.newFixedThreadPool(2);
@@ -139,31 +140,6 @@ class MedicalIntegrationTest extends IntegrationTestBase {
         // too-short notice is rejected for patients
         List<String> soon = slots(c, LocalDate.now(ZoneId.of("Africa/Cairo")), true);
         assertThat(soon.size()).isLessThanOrEqualTo(12);
-    }
-
-    @Test
-    void existingAccountMustProveOwnershipToClaimARecord() throws Exception {
-        Clinic c = clinic();
-        Tenant store = onboard("STORE");
-        String phone = nextPhone();
-        onHost(store.host(), null, "POST", "/api/v1/shop/customers/register", "{\"firstName\":\"Heba\",\"phone\":\"%s\",\"password\":\"hebaPass123\"}".formatted(phone)).andExpect(status().isCreated());
-
-        String res = body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"Heba\",\"phone\":\"%s\",\"claimWithCode\":true}".formatted(phone)).andExpect(status().isCreated()).andExpect(jsonPath("$.portalAccess").value("LINK_PIN")));
-        String code = read(res, "$.patientCode");
-        String pin = read(res, "$.linkPin");
-        // the account is not a member of the clinic yet, so it cannot just log in and see the record
-        onHost(c.host(), null, "POST", "/api/v1/auth/login", "{\"identifier\":\"%s\",\"password\":\"hebaPass123\"}".formatted(phone)).andExpect(status().isForbidden());
-        String link = "{\"identifier\":\"%s\",\"password\":\"%s\",\"patientCode\":\"%s\",\"pin\":\"%s\"}";
-        onHost(c.host(), null, "POST", "/api/v1/clinic/portal/link", link.formatted(phone, "wrongpass", code, pin)).andExpect(status().isUnauthorized());
-        onHost(c.host(), null, "POST", "/api/v1/clinic/portal/link", link.formatted(phone, "hebaPass123", code, "00000000")).andExpect(status().isBadRequest());
-        // somebody else's account cannot claim it even with the right PIN
-        String other = nextPhone();
-        onHost(store.host(), null, "POST", "/api/v1/shop/customers/register", "{\"firstName\":\"Eve\",\"phone\":\"%s\",\"password\":\"evePass1234\"}".formatted(other)).andExpect(status().isCreated());
-        onHost(c.host(), null, "POST", "/api/v1/clinic/portal/link", link.formatted(other, "evePass1234", code, pin)).andExpect(status().isBadRequest());
-        String token = read(body(onHost(c.host(), null, "POST", "/api/v1/clinic/portal/link", link.formatted(phone, "hebaPass123", code, pin)).andExpect(status().isOk()).andExpect(jsonPath("$.user.roles[0]").value("PATIENT"))), "$.accessToken");
-        onHost(c.host(), token, "GET", "/api/v1/portal/patients", null).andExpect(jsonPath("$[0].patientCode").value(code));
-        // single use
-        onHost(c.host(), null, "POST", "/api/v1/clinic/portal/link", link.formatted(phone, "hebaPass123", code, pin)).andExpect(status().isBadRequest());
     }
 
     @Test
@@ -231,7 +207,7 @@ class MedicalIntegrationTest extends IntegrationTestBase {
     void clinicsAreIsolatedFromEachOther() throws Exception {
         Clinic a = clinic();
         Clinic b = clinic();
-        String pa = read(body(onHost(a.host(), a.owner(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"Only-in-A\",\"phone\":\"" + nextPhone() + "\"}").andExpect(status().isCreated())), "$.id");
+        String pa = read(body(onHost(a.host(), a.owner(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"Only-in-A\",\"initialPassword\":\"TempPass123\",\"phone\":\"" + nextPhone() + "\"}").andExpect(status().isCreated())), "$.id");
         String slot = slots(a, workday(3), false).get(0);
         String appt = read(body(onHost(a.host(), a.owner(), "POST", "/api/v1/clinic/appointments", "{\"patientId\":\"%s\",\"doctorId\":\"%s\",\"branchId\":\"%s\",\"serviceId\":\"%s\",\"startAt\":\"%s\"}".formatted(pa, a.doctorId(), a.branchId(), a.serviceId(), slot))), "$.id");
         String enc = read(body(onHost(a.host(), a.owner(), "POST", "/api/v1/clinic/encounters", "{\"patientId\":\"%s\"}".formatted(pa)).andExpect(status().isCreated())), "$.id");

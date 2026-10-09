@@ -17,14 +17,13 @@ import org.springframework.transaction.annotation.Transactional;
 /** Order lifecycle: validated transitions (spec 54), stock side effects, history, refunds. */
 @Service
 public class OrderService {
+    /** REQUESTED -> PREPARING -> SHIPPED -> ARRIVED, with CANCELLED and RETURNED as the other ends. (PENDING is only an unpaid card order, which is switched off.) */
     static final Map<String, Set<String>> TRANSITIONS = Map.of(
-            "PENDING", Set.of("CONFIRMED", "CANCELLED"),
-            "CONFIRMED", Set.of("PROCESSING", "CANCELLED"),
-            "PROCESSING", Set.of("PACKED", "CANCELLED"),
-            "PACKED", Set.of("OUT_FOR_DELIVERY", "CANCELLED"),
-            "OUT_FOR_DELIVERY", Set.of("DELIVERED"),
-            "DELIVERED", Set.of("RETURN_REQUESTED"),
-            "RETURN_REQUESTED", Set.of("RETURNED", "DELIVERED"),
+            "PENDING", Set.of("REQUESTED", "CANCELLED"),
+            "REQUESTED", Set.of("PREPARING", "CANCELLED"),
+            "PREPARING", Set.of("SHIPPED", "CANCELLED"),
+            "SHIPPED", Set.of("ARRIVED", "RETURNED"),
+            "ARRIVED", Set.of("RETURNED"),
             "RETURNED", Set.of("REFUNDED"));
 
     private final JdbcClient jdbc;
@@ -45,7 +44,7 @@ public class OrderService {
         var o = lock(tenantId, orderId);
         if (customerUserId != null) {
             if (!customerUserId.equals(o.get("user_id"))) throw BusinessException.notFound("RESOURCE_NOT_FOUND", "Order not found");
-            if (!Set.of("PENDING", "CONFIRMED").contains((String) o.get("status")) || !"CANCELLED".equals(newStatus))
+            if (!Set.of("PENDING", "REQUESTED").contains((String) o.get("status")) || !"CANCELLED".equals(newStatus))
                 throw new BusinessException(org.springframework.http.HttpStatus.CONFLICT, "INVALID_STATUS_TRANSITION", "This order can no longer be cancelled by the customer");
         }
         if ("REFUNDED".equals(newStatus)) throw BusinessException.badRequest("INVALID_STATUS_TRANSITION", "Use the refund endpoint");
@@ -67,8 +66,7 @@ public class OrderService {
                 for (var it : items) inventory.release(tenantId, (UUID) it.get("branch_id"), (UUID) it.get("variant_id"), ((Number) it.get("quantity")).intValue(), orderId);
                 jdbc.sql("UPDATE commerce.order_payments SET status = 'FAILED', updated_at = now() WHERE order_id = :o AND kind = 'PAYMENT' AND status = 'PENDING'").param("o", orderId).update();
             }
-            case "DELIVERED" -> {
-                if ("RETURN_REQUESTED".equals(from)) break;   // return rejected: goods stay sold
+            case "ARRIVED" -> {
                 for (var it : items) inventory.sell(tenantId, (UUID) it.get("branch_id"), (UUID) it.get("variant_id"), ((Number) it.get("quantity")).intValue(), orderId);
                 if ("CASH_ON_DELIVERY".equals(o.get("payment_method"))) {
                     jdbc.sql("UPDATE commerce.order_payments SET status = 'SUCCEEDED', paid_at = now(), updated_at = now() WHERE order_id = :o AND kind = 'PAYMENT'").param("o", orderId).update();
@@ -76,7 +74,11 @@ public class OrderService {
                 }
             }
             case "RETURNED" -> {
-                for (var it : items) inventory.restock(tenantId, (UUID) it.get("branch_id"), (UUID) it.get("variant_id"), ((Number) it.get("quantity")).intValue(), orderId);
+                // from SHIPPED the goods were never counted as sold (that happens on arrival), so the reservation is simply released
+                for (var it : items) {
+                    if ("SHIPPED".equals(from)) inventory.release(tenantId, (UUID) it.get("branch_id"), (UUID) it.get("variant_id"), ((Number) it.get("quantity")).intValue(), orderId);
+                    else inventory.restock(tenantId, (UUID) it.get("branch_id"), (UUID) it.get("variant_id"), ((Number) it.get("quantity")).intValue(), orderId);
+                }
             }
             default -> { }
         }
@@ -89,9 +91,9 @@ public class OrderService {
 
     private static String fulfillment(String status, String current) {
         return switch (status) {
-            case "PROCESSING", "PACKED" -> "PROCESSING";
-            case "OUT_FOR_DELIVERY" -> "SHIPPED";
-            case "DELIVERED" -> "FULFILLED";
+            case "PREPARING" -> "PROCESSING";
+            case "SHIPPED" -> "SHIPPED";
+            case "ARRIVED" -> "FULFILLED";
             default -> current;
         };
     }
@@ -110,7 +112,7 @@ public class OrderService {
         jdbc.sql("UPDATE commerce.order_payments SET status = 'SUCCEEDED', paid_at = now(), provider_payment_id = coalesce(:p, provider_payment_id), updated_at = now() WHERE order_id = :o AND kind = 'PAYMENT'")
                 .param("p", providerPaymentId).param("o", orderId).update();
         jdbc.sql("UPDATE commerce.orders SET payment_status = 'PAID', updated_at = now() WHERE id = :o").param("o", orderId).update();
-        if ("PENDING".equals(o.get("status"))) apply(tenantId, o, "CONFIRMED", null, "Card payment received");
+        if ("PENDING".equals(o.get("status"))) apply(tenantId, o, "REQUESTED", null, "Card payment received");
         else audit.record(null, tenantId, "PAYMENT_AFTER_CLOSE", "order", orderId, "{\"status\":\"" + o.get("status") + "\"}");
         return true;
     }
@@ -184,7 +186,7 @@ public class OrderService {
     /** A shopper can only ever load their own order. */
     public Map<String, Object> getForCustomer(UUID tenantId, UUID userId, UUID orderId) {
         Map<String, Object> o = get(tenantId, orderId);
-        if (!userId.equals(o.get("userId"))) throw BusinessException.notFound("RESOURCE_NOT_FOUND", "Order not found");
+        if (userId == null || !userId.equals(o.get("userId"))) throw BusinessException.notFound("RESOURCE_NOT_FOUND", "Order not found");
         o.remove("userId");
         return o;
     }

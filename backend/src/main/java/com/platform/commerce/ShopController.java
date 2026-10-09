@@ -25,18 +25,18 @@ import org.springframework.web.bind.annotation.*;
 public class ShopController {
     private final CatalogService catalog;
     private final StoreSettingsService settings;
-    private final StoreCustomerService customers;
+    private final com.platform.core.auth.LoginThrottle throttle;
     private final CheckoutService checkout;
     private final OrderService orders;
     private final ShopperService shopper;
     private final List<PaymentProvider> providers;
     private final WebhookEventStore webhooks;
 
-    public ShopController(CatalogService catalog, StoreSettingsService settings, StoreCustomerService customers, CheckoutService checkout,
+    public ShopController(CatalogService catalog, StoreSettingsService settings, com.platform.core.auth.LoginThrottle throttle, CheckoutService checkout,
                           OrderService orders, ShopperService shopper, List<PaymentProvider> providers, WebhookEventStore webhooks) {
         this.catalog = catalog;
         this.settings = settings;
-        this.customers = customers;
+        this.throttle = throttle;
         this.checkout = checkout;
         this.orders = orders;
         this.shopper = shopper;
@@ -44,7 +44,7 @@ public class ShopController {
         this.webhooks = webhooks;
     }
 
-    public record RegisterRequest(@NotBlank String firstName, String lastName, @NotBlank String phone, String email, @NotBlank String password) {}
+    public record ProfileRequest(String name, String phone) {}
     public record ReviewRequest(int rating, String text) {}
     public record CancelRequest(String reason) {}
     public record AddressRequest(String title, boolean makeDefault, CheckoutService.AddressReq address) {}
@@ -75,27 +75,27 @@ public class ShopController {
         return p;
     }
 
-    @PostMapping("/customers/register")
-    @ResponseStatus(HttpStatus.CREATED)
-    public TokenResponse register(@Valid @RequestBody RegisterRequest r, HttpServletRequest req) {
-        return customers.register(StoreContext.openTenantId(), r.firstName(), r.lastName(), r.phone(), r.email(), r.password(), ClientInfo.ip(req), req.getHeader("User-Agent"));
-    }
-
     // ---- shopper ----------------------------------------------------------------------------------------------
 
+    /** The signed-in client's id, or null for a guest (guests browse, price a cart and order without an account). */
+    private static UUID clientOrNull(Authentication a) {
+        boolean client = a != null && a.getPrincipal() instanceof UUID && a.getAuthorities().stream().anyMatch(x -> "ROLE_CUSTOMER".equals(x.getAuthority()));
+        return client ? (UUID) a.getPrincipal() : null;
+    }
+
     @PostMapping("/cart/quote")
-    @PreAuthorize("hasRole('CUSTOMER')")
-    public Map<String, Object> quote(@RequestBody CheckoutService.CheckoutReq r, Authentication a) {
-        return checkout.quoteView(StoreContext.tenantId(), (UUID) a.getPrincipal(), r);
+    public Map<String, Object> quote(@RequestBody CheckoutService.CheckoutReq r) {
+        return checkout.quoteView(StoreContext.tenantId(), null, r);
     }
 
     @PostMapping("/checkout")
-    @PreAuthorize("hasRole('CUSTOMER')")
     @ResponseStatus(HttpStatus.CREATED)
-    public Map<String, Object> checkout(@RequestBody CheckoutService.CheckoutReq r, @RequestHeader(value = "Idempotency-Key", required = false) String key, Authentication a) {
+    public Map<String, Object> checkout(@RequestBody CheckoutService.CheckoutReq r, @RequestHeader(value = "Idempotency-Key", required = false) String key, Authentication a, HttpServletRequest req) {
         UUID t = StoreContext.openTenantId();
+        UUID client = clientOrNull(a);
+        if (client == null) throttle.check("guestorder|" + ClientInfo.ip(req), 20, java.time.Duration.ofMinutes(10));
         try {
-            return checkout.placeOrder(t, (UUID) a.getPrincipal(), r, key);
+            return checkout.placeOrder(t, client, r, key);
         } catch (DataIntegrityViolationException e) {
             // Two identical requests raced on the same Idempotency-Key: the loser returns the winner's order.
             Map<String, Object> prior = key == null ? null : checkout.existingByKey(t, key);
@@ -149,6 +149,15 @@ public class ShopController {
         shopper.review(StoreContext.tenantId(), (UUID) a.getPrincipal(), productId, r.rating(), r.text());
         return Map.of("status", "PENDING");
     }
+
+    @GetMapping("/me")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public Map<String, Object> me(Authentication a) { return shopper.profile((UUID) a.getPrincipal()); }
+
+    /** The client keeps their own name and mobile on their account so the next order is pre-filled. */
+    @PutMapping("/me")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public Map<String, Object> updateMe(@RequestBody ProfileRequest r, Authentication a) { return shopper.updateProfile((UUID) a.getPrincipal(), r.name(), r.phone()); }
 
     @GetMapping("/addresses")
     @PreAuthorize("hasRole('CUSTOMER')")

@@ -39,6 +39,29 @@ public class NotificationService {
         }
     }
 
+    /** Phone push: one outbox row per registered device of this person (sent by PushChannel, with retry). */
+    @Transactional
+    public void push(UUID principalId, UUID tenantId, String title, String body) {
+        jdbc.sql("""
+                INSERT INTO notifications.outbox (user_id, tenant_id, channel, to_address, subject, body)
+                SELECT :u, :t, 'PUSH', token, :s, :b FROM notifications.device_tokens WHERE principal_id = :u
+                """).param("u", principalId).param("t", tenantId).param("s", title).param("b", body).update();
+    }
+
+    @Transactional
+    public void registerDevice(UUID principalId, String token, String platform) {
+        if (token == null || token.isBlank() || token.length() > 512) throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid device token");
+        jdbc.sql("""
+                INSERT INTO notifications.device_tokens (principal_id, token, platform) VALUES (:u, :t, :p)
+                ON CONFLICT (token) DO UPDATE SET principal_id = :u, platform = :p, last_seen_at = now()
+                """).param("u", principalId).param("t", token).param("p", platform == null || platform.isBlank() ? "ANDROID" : platform.toUpperCase()).update();
+    }
+
+    @Transactional
+    public void unregisterDevice(UUID principalId, String token) {
+        jdbc.sql("DELETE FROM notifications.device_tokens WHERE token = :t AND principal_id = :u").param("t", token).param("u", principalId).update();
+    }
+
     /** Background sender with retry; a failing provider only delays messages, never the business action that caused them. */
     @Scheduled(fixedDelayString = "PT30S", initialDelayString = "PT20S")
     public void dispatchOutbox() {

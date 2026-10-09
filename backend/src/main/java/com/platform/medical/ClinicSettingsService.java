@@ -83,7 +83,7 @@ public class ClinicSettingsService {
 
     public List<Map<String, Object>> doctors(UUID tenantId) {
         return Rows.camel(jdbc.sql("""
-                SELECT d.id, d.display_name, d.bio, d.gender, d.consultation_duration_minutes, d.default_appointment_fee_minor, d.currency, d.verification_status, d.other_specialty,
+                SELECT d.id, d.display_name, d.bio, d.gender, d.public_phone, d.consultation_duration_minutes, d.default_appointment_fee_minor, d.currency, d.verification_status, d.other_specialty,
                   coalesce((SELECT json_agg(json_build_object('code', s.code, 'nameAr', s.name_ar, 'nameEn', s.name_en))::text FROM medical.doctor_specialties ds JOIN medical.specialties s ON s.id = ds.specialty_id WHERE ds.doctor_id = d.id), '[]') AS specialties
                 FROM medical.doctors d WHERE d.tenant_id = :t AND d.is_active ORDER BY d.created_at
                 """).param("t", tenantId).query().listOfRows()).stream().peek(m -> m.put("specialties", Rows.jsonList(m.get("specialties")))).toList();
@@ -102,9 +102,9 @@ public class ClinicSettingsService {
                 .orElseThrow(() -> BusinessException.forbidden("NOT_A_DOCTOR", "You do not have a doctor profile in this clinic"));
         jdbc.sql("""
                 UPDATE medical.doctors SET display_name = coalesce(:dn, display_name), bio = coalesce(:bio, bio), gender = coalesce(:g, gender),
-                  license_number = coalesce(:ln, license_number), consultation_duration_minutes = coalesce(:cd, consultation_duration_minutes),
+                  license_number = coalesce(:ln, license_number), public_phone = coalesce(:pp, public_phone), consultation_duration_minutes = coalesce(:cd, consultation_duration_minutes),
                   default_appointment_fee_minor = coalesce(:fee, default_appointment_fee_minor), updated_at = now() WHERE id = :d
-                """).param("dn", str(f, "displayName")).param("bio", str(f, "bio")).param("g", str(f, "gender")).param("ln", str(f, "licenseNumber"))
+                """).param("dn", str(f, "displayName")).param("bio", str(f, "bio")).param("g", str(f, "gender")).param("ln", str(f, "licenseNumber")).param("pp", str(f, "publicPhone"))
                 .param("cd", num(f, "consultationDurationMinutes")).param("fee", num(f, "defaultAppointmentFeeMinor")).param("d", doctorId).update();
         if (specialtyCodes != null) {
             if (specialtyCodes.size() > 5) throw BusinessException.badRequest("TOO_MANY_CATEGORIES", "Choose up to 5");

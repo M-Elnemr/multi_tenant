@@ -240,6 +240,13 @@ public class AppointmentService {
         return out;
     }
 
+    /** How many people are waiting in line today (a number only; the public clinic page shows it). */
+    public long queueCount(UUID tenantId) {
+        String tz = jdbc.sql("SELECT timezone FROM core.tenants WHERE id = :t").param("t", tenantId).query(String.class).single();
+        return jdbc.sql("SELECT count(*) FROM medical.appointments WHERE tenant_id = :t AND status = 'CHECKED_IN' AND (checked_in_at AT TIME ZONE :tz)::date = (now() AT TIME ZONE :tz)::date")
+                .param("t", tenantId).param("tz", tz).query(Long.class).single();
+    }
+
     /** The patient's own place in line. Reveals only counts, never who the other patients are. */
     public List<Map<String, Object>> myQueue(UUID tenantId, UUID userId) {
         String tz = jdbc.sql("SELECT timezone FROM core.tenants WHERE id = :t").param("t", tenantId).query(String.class).single();

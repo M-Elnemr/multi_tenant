@@ -22,8 +22,13 @@ public class PortalController {
     private final ClinicalService clinical;
     private final PatientExportService exports;
     private final PrescriptionPdfService pdfs;
+    private final com.platform.notifications.NotificationService notifications;
+    private final com.platform.shared.PatientPortalPolicy policy;
 
-    public PortalController(PatientService patients, AppointmentService appointments, ClinicalService clinical, PatientExportService exports, PrescriptionPdfService pdfs) {
+    public PortalController(PatientService patients, AppointmentService appointments, ClinicalService clinical, PatientExportService exports, PrescriptionPdfService pdfs,
+                            com.platform.notifications.NotificationService notifications, com.platform.shared.PatientPortalPolicy policy) {
+        this.notifications = notifications;
+        this.policy = policy;
         this.exports = exports;
         this.pdfs = pdfs;
         this.patients = patients;
@@ -33,6 +38,7 @@ public class PortalController {
 
     public record BookReq(UUID patientId, UUID doctorId, UUID branchId, UUID serviceId, java.time.Instant startAt, String paymentMethod, String patientNote) {}
     public record CancelReq(String reason) {}
+    public record DeviceReq(String token, String platform) {}
 
     private static UUID user(Authentication a) { return (UUID) a.getPrincipal(); }
 
@@ -41,6 +47,19 @@ public class PortalController {
 
     @GetMapping("/queue")
     public List<Map<String, Object>> queue(Authentication a) { return appointments.myQueue(ClinicContext.tenantId(), user(a)); }
+
+    /** The patient's phone registers its Firebase token so the clinic's "your turn" call reaches it. */
+    @PostMapping("/devices")
+    public Map<String, Object> registerDevice(@RequestBody DeviceReq r, Authentication a) {
+        notifications.registerDevice(user(a), r.token(), r.platform());
+        return Map.of("ok", true);
+    }
+
+    @DeleteMapping("/devices")
+    public Map<String, Object> unregisterDevice(@RequestBody DeviceReq r, Authentication a) {
+        notifications.unregisterDevice(user(a), r.token());
+        return Map.of("ok", true);
+    }
 
     @PostMapping("/leave")
     public Map<String, Object> leave(Authentication a) {
@@ -57,6 +76,7 @@ public class PortalController {
     @PostMapping("/appointments")
     @ResponseStatus(HttpStatus.CREATED)
     public Map<String, Object> book(@RequestBody BookReq r, Authentication a) {
+        policy.requireBooking();
         Map<String, Object> out = appointments.book(ClinicContext.openTenantId(), user(a), user(a),
                 new AppointmentService.BookReq(r.patientId(), r.doctorId(), r.branchId(), r.serviceId(), r.startAt(), r.paymentMethod(), r.patientNote(), "PATIENT_WEB"));
         out.remove("internalNote");
@@ -90,6 +110,9 @@ public class PortalController {
         patients.requireAccessible(t, user(a), patient);
         return ClinicController.attachment(pdfs.render(t, id, true), "application/pdf", "prescription.pdf", inline);
     }
+
+    @PostMapping("/lab-orders/{id}/done")
+    public Map<String, Object> labDone(@PathVariable UUID id, Authentication a) { return clinical.markLabDoneByPatient(ClinicContext.tenantId(), user(a), id); }
 
     @PostMapping("/lab-orders/{id}/results")
     @ResponseStatus(HttpStatus.CREATED)

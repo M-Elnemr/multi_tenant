@@ -33,6 +33,10 @@ public class GlobalExceptionHandler {
     ResponseEntity<Map<String, Object>> other(Exception e) throws Exception {
         // Let Spring Security's filter chain turn these into 401/403 (anonymous -> entry point, authenticated -> denied handler).
         if (e instanceof AccessDeniedException || e instanceof AuthenticationException) throw e;
+        if (e instanceof org.springframework.web.ErrorResponse er && er.getStatusCode().is4xxClientError()) {   // 404 unknown path, 405 wrong method, 415 ...
+            HttpStatus st = HttpStatus.valueOf(er.getStatusCode().value());
+            return body(st, "HTTP_" + st.value(), st.getReasonPhrase(), null);
+        }
         log.error("Unhandled error", e);
         return body(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Unexpected error", null);
     }

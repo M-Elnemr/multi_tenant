@@ -189,14 +189,25 @@ public class StoreSettingsService {
         audit.record(actor, tenantId, "REVIEW_MODERATED", "review", id, "{\"status\":\"" + status + "\"}");
     }
 
-    public Map<String, Object> customers(UUID tenantId, Page page) {
-        long total = jdbc.sql("SELECT count(*) FROM commerce.customers WHERE tenant_id = :t").param("t", tenantId).query(Long.class).single();
+    /** The store's clients (guests and signed-in Google clients), read-only: a store cannot create or edit them. */
+    public Map<String, Object> customers(UUID tenantId, Page page, String q) {
+        String like = q == null || q.isBlank() ? null : "%" + q.trim() + "%";
+        String where = "c.tenant_id = :t AND (CAST(:q AS varchar) IS NULL OR c.name ILIKE CAST(:q AS varchar) OR c.phone LIKE CAST(:q AS varchar) OR c.customer_number ILIKE CAST(:q AS varchar))";
+        long total = jdbc.sql("SELECT count(*) FROM commerce.customers c WHERE " + where).param("t", tenantId).param("q", like).query(Long.class).single();
         var rows = jdbc.sql("""
-                SELECT c.id, c.customer_number, u.first_name, u.last_name, u.phone, c.created_at,
-                  (SELECT count(*) FROM commerce.orders o WHERE o.tenant_id = c.tenant_id AND o.user_id = c.user_id) AS orders_count,
-                  (SELECT coalesce(sum(o.total_minor),0) FROM commerce.orders o WHERE o.tenant_id = c.tenant_id AND o.user_id = c.user_id AND o.payment_status = 'PAID') AS total_spent_minor
-                FROM commerce.customers c JOIN core.users u ON u.id = c.user_id WHERE c.tenant_id = :t ORDER BY c.created_at DESC LIMIT :lim OFFSET :off
-                """).param("t", tenantId).param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows();
-        return page.wrap(Rows.camel(rows), total);
+                SELECT c.id, c.customer_number, c.name, c.phone, c.email, c.address_json::text AS address, (c.user_id IS NOT NULL) AS has_account, c.created_at,
+                  (SELECT count(*) FROM commerce.orders o WHERE o.customer_id = c.id) AS orders_count,
+                  (SELECT coalesce(sum(o.total_minor),0) FROM commerce.orders o WHERE o.customer_id = c.id AND o.status NOT IN ('CANCELLED','RETURNED','REFUNDED')) AS total_spent_minor,
+                  (SELECT max(o.created_at) FROM commerce.orders o WHERE o.customer_id = c.id) AS last_order_at
+                FROM commerce.customers c WHERE\s""" + where + """
+                 ORDER BY c.created_at DESC LIMIT :lim OFFSET :off
+                """).param("t", tenantId).param("q", like).param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows();
+        var data = Rows.camel(rows).stream().map(m -> { m.put("address", Rows.json(m.get("address"))); return m; }).toList();
+        return page.wrap(data, total);
+    }
+
+    public java.util.List<Map<String, Object>> customerOrders(UUID tenantId, UUID customerId) {
+        return Rows.camel(jdbc.sql("SELECT id, order_number, status, payment_status, total_minor, currency, created_at FROM commerce.orders WHERE tenant_id = :t AND customer_id = :c ORDER BY created_at DESC LIMIT 50")
+                .param("t", tenantId).param("c", customerId).query().listOfRows());
     }
 }

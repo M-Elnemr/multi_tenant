@@ -146,10 +146,6 @@ public class ClinicController {
     @PreAuthorize("hasAuthority('patient.update')")
     public Map<String, Object> updatePatient(@PathVariable UUID id, @RequestBody PatientService.PatientReq r, Authentication a) { return patients.update(ClinicContext.tenantId(), user(a), id, r); }
 
-    @PostMapping("/patients/{id}/access-pin")
-    @PreAuthorize("hasAuthority('patient.update')")
-    public Map<String, Object> pin(@PathVariable UUID id, Authentication a) { portalPolicy.requireEnabled(); return patients.reissuePin(ClinicContext.tenantId(), user(a), id); }
-
     @PostMapping("/patients/{id}/set-password")
     @PreAuthorize("hasAuthority('patient.update')")
     public Map<String, Object> setPassword(@PathVariable UUID id, @RequestBody SetPasswordReq r, Authentication a) {
