@@ -20,6 +20,7 @@ ap.add_argument("--phone", required=True)
 ap.add_argument("--password", default=os.environ.get("DEMO_PASSWORD"))
 ap.add_argument("--connect", help="send requests to this URL (e.g. http://localhost:8080) but with the shop's Host header; for local dry runs")
 ap.add_argument("--stage", choices=["onboard", "seed", "all"], default="all")
+ap.add_argument("--sku-prefix", default="DEMO", help="prefix of the sample SKUs (archived products keep their SKUs, so a re-run needs a new prefix)")
 ap.add_argument("--parts", default="profile,branches,products,delivery", help="which parts of the seed to run (comma list): profile, branches, products, delivery")
 a = ap.parse_args()
 if not a.password:
@@ -127,7 +128,7 @@ def seed():
                 combos = [{**c, o["name"]: v} for c in combos for v in o["values"]]
             body = {"name": n, "brand": brand, "taxonomySlug": slug, "audience": aud or None, "description": f"{n} بجودة عالية وخامات مريحة.\nمناسب للاستخدام اليومي، متوفر بأكثر من خيار.", "shortDescription": "جودة ممتازة وسعر مناسب",
                     "options": options,
-                    "variants": [{"sku": f"DEMO{i:02d}-{j}", "priceMinor": price, "compareAtPriceMinor": cmp_, "optionValues": cv, "stock": [{"branchId": branch, "quantity": stock}]} for j, cv in enumerate(combos)],
+                    "variants": [{"sku": f"{a.sku_prefix}{i:02d}-{j}", "priceMinor": price, "compareAtPriceMinor": cmp_, "optionValues": cv, "stock": [{"branchId": branch, "quantity": stock}]} for j, cv in enumerate(combos)],
                     "media": [{"fileId": f, "altText": n}]}
             pid = api("POST", "/store/products", body)["id"]
             api("PATCH", f"/store/products/{pid}/extras", {"badge": badge, "isFeatured": feat, "tags": ["ديمو", brand], "specs": [{"k": "الخامة", "v": "قطن ١٠٠٪"}, {"k": "بلد الصنع", "v": "مصر"}], "sizeGuide": "S: 36-38 · M: 40-42 · L: 44-46" if any(o["name"] == "المقاس" and o.get("sizeScale") in (None, "APPAREL") for o in options) else ""})
