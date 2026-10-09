@@ -17,7 +17,7 @@ export function ProductCsv({ onImported }: { onImported: () => void }) {
     const res = await fetch("/api/bff/store/products/export.csv", { credentials: "same-origin" });
     if (!res.ok) throw new Error("export");
     const url = URL.createObjectURL(await res.blob());
-    const a = document.createElement("a"); a.href = url; a.download = "products.csv"; a.click();
+    const a = document.createElement("a"); a.href = url; a.download = "elmanassa-products.csv"; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 10_000);
   });
   const imp = useAction(async (f: File) => { setResult(await api<Result>("store/products/import", { body: { csv: await f.text() } })); onImported(); });
