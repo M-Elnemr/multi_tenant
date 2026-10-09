@@ -80,12 +80,10 @@ public class DevSeed implements ApplicationRunner {
         UUID tenantId = r.tenant().getId();
         UUID owner = users.findByPhone("+201000000001").orElseThrow().getId();
         UUID branch = jdbc.sql("SELECT id FROM commerce.branches WHERE tenant_id = :t LIMIT 1").param("t", tenantId).query(UUID.class).single();
-        Map<String, Object> cat = catalog.createCategory(tenantId, "Clothing", null, "Everyday wear", 1);
-        UUID catId = (UUID) cat.get("id");
-        catalog.createProduct(tenantId, owner, new CatalogService.ProductReq("Cotton T-Shirt", "Soft 100% cotton tee", "Soft cotton tee", catId, "Demo", "ACTIVE",
+        catalog.createProduct(tenantId, owner, new CatalogService.ProductReq("Cotton T-Shirt", "Soft 100% cotton tee", "Soft cotton tee", null, "shirts-tops", "Demo", "MEN", "NEW", "ACTIVE",
                 List.of(new CatalogService.OptionReq("Size", List.of("S", "M", "L"))),
                 List.of(variant("TEE-S", 19900, "S", branch, 25), variant("TEE-M", 19900, "M", branch, 40), variant("TEE-L", 19900, "L", branch, 15)), List.of()));
-        catalog.createProduct(tenantId, owner, new CatalogService.ProductReq("Canvas Backpack", "Everyday backpack", null, catId, "Demo", "ACTIVE", List.of(),
+        catalog.createProduct(tenantId, owner, new CatalogService.ProductReq("Canvas Backpack", "Everyday backpack", null, null, "backpacks", "Demo", "ALL", "NEW", "ACTIVE", List.of(),
                 List.of(new CatalogService.VariantReq("BAG-1", 54900, 64900L, null, null, Map.of(), List.of(new CatalogService.StockReq(branch, 12)))), List.of()));
         storeSettings.createCoupon(tenantId, owner, new StoreSettingsService.CouponReq("WELCOME10", "PERCENT", 10, 0L, null, null, null, 1));
     }

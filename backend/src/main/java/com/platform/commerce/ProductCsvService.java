@@ -14,19 +14,19 @@ import org.springframework.stereotype.Service;
 /** Spreadsheet import/export for products: one row per product (single variant). Categories are written as "Men > Shirts" and created when missing. */
 @Service
 public class ProductCsvService {
-    static final List<String> HEADER = List.of("name", "brand", "category", "sku", "price", "compare_at_price", "stock", "description", "status");
+    static final List<String> HEADER = List.of("name", "brand", "category", "audience", "condition", "sku", "price", "compare_at_price", "stock", "description", "status");
     private static final int MAX_ROWS = 500;
 
     private final JdbcClient jdbc;
     private final CatalogService catalog;
+    private final TaxonomyService taxonomy;
 
-    public ProductCsvService(JdbcClient jdbc, CatalogService catalog) { this.jdbc = jdbc; this.catalog = catalog; }
+    public ProductCsvService(JdbcClient jdbc, CatalogService catalog, TaxonomyService taxonomy) { this.jdbc = jdbc; this.catalog = catalog; this.taxonomy = taxonomy; }
 
     public String export(UUID tenantId) {
         var rows = jdbc.sql("""
-                SELECT p.name, p.brand, p.status, p.description,
-                  (SELECT string_agg(c.name, ' > ') FROM (WITH RECURSIVE up AS (SELECT id, parent_id, name, 0 AS d FROM commerce.categories WHERE id = p.category_id
-                      UNION ALL SELECT c2.id, c2.parent_id, c2.name, up.d + 1 FROM commerce.categories c2 JOIN up ON c2.id = up.parent_id) SELECT name FROM up ORDER BY d DESC) c) AS category,
+                SELECT p.name, p.brand, p.status, p.description, p.audience, p.item_condition,
+                  (SELECT string_agg(a.name_ar, ' > ' ORDER BY a.level) FROM commerce.taxonomy t JOIN commerce.taxonomy a ON t.path LIKE a.path || '%' WHERE t.id = p.taxonomy_id) AS category,
                   v.sku, v.price_minor, v.compare_at_price_minor,
                   (SELECT coalesce(sum(i.quantity_on_hand), 0) FROM commerce.inventory_items i WHERE i.variant_id = v.id) AS stock
                 FROM commerce.products p JOIN commerce.product_variants v ON v.product_id = p.id AND v.status = 'ACTIVE'
@@ -34,7 +34,8 @@ public class ProductCsvService {
                 """).param("t", tenantId).query().listOfRows();
         StringBuilder sb = new StringBuilder("﻿").append(String.join(",", HEADER)).append("\r\n");   // BOM so Excel opens Arabic text correctly
         for (var r : rows) {
-            sb.append(cell(r.get("name"))).append(',').append(cell(r.get("brand"))).append(',').append(cell(r.get("category"))).append(',').append(cell(r.get("sku"))).append(',')
+            sb.append(cell(r.get("name"))).append(',').append(cell(r.get("brand"))).append(',').append(cell(r.get("category"))).append(',').append(cell(r.get("audience"))).append(',')
+              .append(cell(r.get("item_condition"))).append(',').append(cell(r.get("sku"))).append(',')
               .append(money(r.get("price_minor"))).append(',').append(money(r.get("compare_at_price_minor"))).append(',').append(r.get("stock")).append(',')
               .append(cell(r.get("description"))).append(',').append(cell(r.get("status"))).append("\r\n");
         }
@@ -52,7 +53,6 @@ public class ProductCsvService {
         if (!head.contains("name") || !head.contains("price")) throw BusinessException.badRequest("VALIDATION_ERROR", "The file needs at least the columns: name, price");
         UUID branch = branchId != null ? branchId : jdbc.sql("SELECT id FROM commerce.branches WHERE tenant_id = :t AND is_active ORDER BY created_at LIMIT 1").param("t", tenantId).query(UUID.class).optional()
                 .orElseThrow(() -> BusinessException.badRequest("NO_BRANCH", "Add a branch first"));
-        Map<String, UUID> catCache = new HashMap<>();
         int created = 0;
         List<RowError> errors = new ArrayList<>();
         for (int i = 1; i < table.size(); i++) {
@@ -68,8 +68,9 @@ public class ProductCsvService {
                 int stock = m.get("stock") == null || m.get("stock").isEmpty() ? 0 : Integer.parseInt(m.get("stock").replaceAll("[^0-9-]", ""));
                 String sku = m.getOrDefault("sku", "").isEmpty() ? "IMP-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase() : m.get("sku");
                 String status = "DRAFT".equalsIgnoreCase(m.get("status")) ? "DRAFT" : "ACTIVE";
-                UUID categoryId = categoryPath(tenantId, m.getOrDefault("category", ""), catCache);
-                catalog.createProduct(tenantId, actor, new CatalogService.ProductReq(name, m.getOrDefault("description", ""), null, categoryId, m.getOrDefault("brand", "").isEmpty() ? null : m.get("brand"), status, List.of(),
+                Integer categoryId = resolveCategory(m.getOrDefault("category", ""));
+                catalog.createProduct(tenantId, actor, new CatalogService.ProductReq(name, m.getOrDefault("description", ""), null, categoryId, null, m.getOrDefault("brand", "").isEmpty() ? null : m.get("brand"),
+                        audienceOf(m.get("audience")), conditionOf(m.get("condition")), status, List.of(),
                         List.of(new CatalogService.VariantReq(sku, price, compare, null, null, Map.of(), stock > 0 ? List.of(new CatalogService.StockReq(branch, stock)) : List.of())), List.of()));
                 created++;
             } catch (BusinessException e) {
@@ -81,24 +82,45 @@ public class ProductCsvService {
         return Map.of("created", created, "errors", Rows.camel(errors.stream().map(e -> Map.<String, Object>of("row", e.row(), "message", e.message())).toList()));
     }
 
-    private UUID categoryPath(UUID tenantId, String path, Map<String, UUID> cache) {
-        if (path == null || path.isBlank()) return null;
-        UUID parent = null;
-        StringBuilder key = new StringBuilder();
-        for (String part : path.split(">")) {
-            String name = part.trim();
-            if (name.isEmpty()) continue;
-            key.append('>').append(name.toLowerCase(Locale.ROOT));
-            UUID id = cache.get(key.toString());
-            if (id == null) {
-                id = jdbc.sql("SELECT id FROM commerce.categories WHERE tenant_id = :t AND lower(name) = lower(:n) AND parent_id IS NOT DISTINCT FROM CAST(:p AS uuid) LIMIT 1")
-                        .param("t", tenantId).param("n", name).param("p", parent).query(UUID.class).optional().orElse(null);
-                if (id == null) id = (UUID) catalog.createCategory(tenantId, name, parent, null, 0).get("id");
-                cache.put(key.toString(), id);
-            }
-            parent = id;
+    /** A category text must name one of the standard categories ("فساتين", "Dresses", or a path like "أزياء وملابس > ملابس > فساتين"). Never creates anything. */
+    private Integer resolveCategory(String text) {
+        String t = text == null ? "" : text.trim();
+        if (t.isEmpty()) throw new IllegalArgumentException("Missing category: choose one of the standard categories");
+        String last = t.contains(">") ? t.substring(t.lastIndexOf('>') + 1).trim() : t;
+        String nl = StoreSearchService.norm(last);
+        var hits = taxonomy.search(last, "ar", 15).stream().filter(x -> StoreSearchService.norm((String) x.get("nameAr")).equals(nl) || ((String) x.get("nameEn")).equalsIgnoreCase(last) || last.equalsIgnoreCase((String) x.get("slug"))).toList();
+        if (hits.size() > 1 && t.contains(">")) {
+            String full = StoreSearchService.norm(t.replace(">", " › ").replaceAll("\\s+", " "));
+            var narrowed = hits.stream().filter(x -> StoreSearchService.norm((String) x.get("breadcrumb")).replaceAll("\\s+", " ").endsWith(full)).toList();
+            if (narrowed.size() == 1) hits = narrowed;
         }
-        return parent;
+        if (hits.size() == 1) return (Integer) hits.get(0).get("id");
+        var near = taxonomy.search(last, "ar", 3);
+        String hint = near.isEmpty() ? "" : " Did you mean: " + String.join(" | ", near.stream().map(x -> (String) x.get("breadcrumb")).toList());
+        throw new IllegalArgumentException((hits.isEmpty() ? "Unknown category \"" : "Ambiguous category \"") + t + "\"." + hint);
+    }
+
+    private static String audienceOf(String v) {
+        if (v == null || v.isBlank()) return "";
+        return switch (StoreSearchService.norm(v)) {
+            case "men", "man", "رجالي", "رجال" -> "MEN";
+            case "women", "woman", "نسائي", "حريمي", "نساء" -> "WOMEN";
+            case "boys", "boy", "اولاد", "ولادي" -> "BOYS";
+            case "girls", "girl", "بنات", "بناتي" -> "GIRLS";
+            case "baby", "رضع", "اطفال رضع" -> "BABY";
+            case "all", "unisex", "للجميع", "عام" -> "ALL";
+            default -> throw new IllegalArgumentException("Unknown audience \"" + v + "\": use men, women, boys, girls, baby or all");
+        };
+    }
+
+    private static String conditionOf(String v) {
+        if (v == null || v.isBlank()) return "NEW";
+        return switch (StoreSearchService.norm(v)) {
+            case "new", "جديد" -> "NEW";
+            case "used", "مستعمل" -> "USED";
+            case "refurbished", "مجدد" -> "REFURBISHED";
+            default -> throw new IllegalArgumentException("Unknown condition \"" + v + "\": use new, used or refurbished");
+        };
     }
 
     static long toMinor(String s) {

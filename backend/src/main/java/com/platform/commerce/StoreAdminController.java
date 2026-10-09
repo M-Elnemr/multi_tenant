@@ -18,10 +18,12 @@ public class StoreAdminController {
     private final OrderService orders;
     private final StoreFulfillmentService fulfilment;
     private final ProductCsvService csv;
+    private final TaxonomyService taxonomy;
     private final StoreSettingsService settings;
     private final ReportService reports;
 
-    public StoreAdminController(CatalogService catalog, InventoryService inventory, OrderService orders, StoreSettingsService settings, ReportService reports, StoreFulfillmentService fulfilment, ProductCsvService csv) {
+    public StoreAdminController(CatalogService catalog, InventoryService inventory, OrderService orders, StoreSettingsService settings, ReportService reports, StoreFulfillmentService fulfilment, ProductCsvService csv, TaxonomyService taxonomy) {
+        this.taxonomy = taxonomy;
         this.fulfilment = fulfilment;
         this.csv = csv;
         this.catalog = catalog;
@@ -31,8 +33,7 @@ public class StoreAdminController {
         this.reports = reports;
     }
 
-    public record CategoryRequest(String name, UUID parentId, String description, Integer sortOrder, Boolean active, Boolean moveToParent, UUID imageFileId) {}
-    public record ProductPatch(String name, String description, String shortDescription, String brand, UUID categoryId, String status) {}
+    public record ProductPatch(String name, String description, String shortDescription, String brand, Integer taxonomyId, String audience, String condition, String status) {}
     public record VariantPatch(Long priceMinor, Long compareAtPriceMinor, String status) {}
     public record AdjustRequest(UUID branchId, UUID variantId, int delta, String type, String reason) {}
     public record StatusRequest(String status, String reason) {}
@@ -47,30 +48,33 @@ public class StoreAdminController {
 
     // ---- catalog -------------------------------------------------------------------------------------------
 
-    @GetMapping("/categories")
-    @PreAuthorize("hasAuthority('category.manage') or hasAuthority('product.update')")
-    public List<Map<String, Object>> categories() { return catalog.categories(StoreContext.tenantId(), false); }
+    // ---- standard categories (shops pick from the platform list; they cannot create or edit categories) ----
 
-    @PostMapping("/categories")
-    @PreAuthorize("hasAuthority('category.manage')")
-    @ResponseStatus(HttpStatus.CREATED)
-    public Map<String, Object> createCategory(@RequestBody CategoryRequest r) {
-        return catalog.createCategory(StoreContext.tenantId(), r.name(), r.parentId(), r.description(), r.sortOrder() == null ? 0 : r.sortOrder());
-    }
+    @GetMapping("/taxonomy/children")
+    @PreAuthorize("hasAuthority('product.create') or hasAuthority('product.update')")
+    public List<Map<String, Object>> taxonomyChildren(@RequestParam(required = false) Integer parent, @RequestParam(required = false) String lang) { return taxonomy.children(parent, lang); }
 
-    @PatchMapping("/categories/{id}")
-    @PreAuthorize("hasAuthority('category.manage')")
-    public Map<String, Object> updateCategory(@PathVariable UUID id, @RequestBody CategoryRequest r) {
-        catalog.updateCategory(StoreContext.tenantId(), id, r.name(), r.description(), r.active(), r.sortOrder(), r.parentId(), Boolean.TRUE.equals(r.moveToParent()), r.imageFileId());
-        return Map.of("ok", true);
-    }
+    @GetMapping("/taxonomy/search")
+    @PreAuthorize("hasAuthority('product.create') or hasAuthority('product.update')")
+    public List<Map<String, Object>> taxonomySearch(@RequestParam String q, @RequestParam(required = false) String lang) { return taxonomy.search(q, lang, 15); }
 
-    @DeleteMapping("/categories/{id}")
-    @PreAuthorize("hasAuthority('category.manage')")
-    public Map<String, Object> deleteCategory(@PathVariable UUID id) {
-        catalog.deleteCategory(StoreContext.tenantId(), id);
-        return Map.of("ok", true);
-    }
+    @GetMapping("/taxonomy/suggested")
+    @PreAuthorize("hasAuthority('product.create') or hasAuthority('product.update')")
+    public List<Map<String, Object>> taxonomySuggested(@RequestParam(required = false) String lang) { return taxonomy.suggested(StoreContext.tenantId(), lang); }
+
+    @GetMapping("/taxonomy/attributes")
+    @PreAuthorize("hasAuthority('product.create') or hasAuthority('product.update')")
+    public Map<String, Object> taxonomyAttributes(@RequestParam(required = false) String lang) { return taxonomy.attributes(lang); }
+
+    public record CategoryRequestBody(String name, Integer parentId, String note) {}
+
+    @PostMapping("/taxonomy/requests")
+    @PreAuthorize("hasAuthority('product.create') or hasAuthority('product.update')")
+    public Map<String, Object> taxonomyRequest(@RequestBody CategoryRequestBody r) { return taxonomy.request(StoreContext.tenantId(), r.name(), r.parentId(), r.note()); }
+
+    @GetMapping("/taxonomy/requests")
+    @PreAuthorize("hasAuthority('product.create') or hasAuthority('product.update')")
+    public List<Map<String, Object>> taxonomyMyRequests() { return taxonomy.myRequests(StoreContext.tenantId()); }
 
     public record MediaOrder(List<UUID> ids) {}
 
@@ -123,7 +127,7 @@ public class StoreAdminController {
     @PatchMapping("/products/{id}")
     @PreAuthorize("hasAuthority('product.update')")
     public Map<String, Object> updateProduct(@PathVariable UUID id, @RequestBody ProductPatch r, Authentication a) {
-        return catalog.updateProduct(StoreContext.tenantId(), user(a), id, r.name(), r.description(), r.shortDescription(), r.brand(), r.categoryId(), r.status());
+        return catalog.updateProduct(StoreContext.tenantId(), user(a), id, r.name(), r.description(), r.shortDescription(), r.brand(), r.taxonomyId(), r.audience(), r.condition(), r.status());
     }
 
     @PatchMapping("/variants/{id}")

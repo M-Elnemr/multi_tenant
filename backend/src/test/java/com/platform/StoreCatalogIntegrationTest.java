@@ -12,54 +12,43 @@ import org.junit.jupiter.api.Test;
 class StoreCatalogIntegrationTest extends IntegrationTestBase {
     String ok(org.springframework.test.web.servlet.ResultActions r) throws Exception { return r.andReturn().getResponse().getContentAsString(); }
 
-    String category(Tenant t, String name, String parentId) throws Exception {
-        String body = parentId == null ? "{\"name\":\"%s\"}".formatted(name) : "{\"name\":\"%s\",\"parentId\":\"%s\"}".formatted(name, parentId);
-        return JsonPath.read(ok(onHost(t.host(), t.access(), "POST", "/api/v1/store/categories", body).andExpect(status().isCreated())), "$.id");
-    }
-
-    String product(Tenant t, String branch, String name, String brand, String categoryId, long price, Long compareAt, int stock) throws Exception {
+    /** A product filed under a standard category (slug; default "shirts-tops"). */
+    String product(Tenant t, String branch, String name, String brand, String slug, long price, Long compareAt, int stock) throws Exception {
         String body = """
-                {"name":"%s","brand":"%s","categoryId":%s,"variants":[{"sku":"S-%s","priceMinor":%d,"compareAtPriceMinor":%s,"stock":[{"branchId":"%s","quantity":%d}]}]}
-                """.formatted(name, brand, categoryId == null ? "null" : "\"" + categoryId + "\"", uniq(), price, compareAt == null ? "null" : compareAt, branch, stock);
+                {"name":"%s","brand":"%s","taxonomySlug":"%s","audience":"ALL","variants":[{"sku":"S-%s","priceMinor":%d,"compareAtPriceMinor":%s,"stock":[{"branchId":"%s","quantity":%d}]}]}
+                """.formatted(name, brand, slug == null ? "shirts-tops" : slug, uniq(), price, compareAt == null ? "null" : compareAt, branch, stock);
         return JsonPath.read(ok(onHost(t.host(), t.access(), "POST", "/api/v1/store/products", body).andExpect(status().isCreated())), "$.id");
     }
 
     String branch(Tenant t) throws Exception { return JsonPath.read(ok(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id"); }
 
     @Test
-    void parentCategoryIncludesSubcategoriesAndCountsRollUp() throws Exception {
+    void standardCategoriesRollUpAndFilterBySubtree() throws Exception {
         Tenant t = onboard("STORE");
         String br = branch(t);
-        String fashion = category(t, "Fashion", null), men = category(t, "Men", fashion), shirts = category(t, "Shirts", men), toys = category(t, "Toys", null);
-        product(t, br, "Blue Shirt", "Acme", shirts, 25000, null, 5);
-        product(t, br, "Robot", "Fun", toys, 9000, null, 5);
+        product(t, br, "Blue Dress", "Acme", "dresses", 25000, null, 5);
+        product(t, br, "Robot", "Fun", "educational-toys", 9000, null, 5);
 
         String all = ok(onHost(t.host(), null, "GET", "/api/v1/shop/products?category=fashion", null).andExpect(status().isOk()).andExpect(jsonPath("$.meta.total").value(1)));
-        assertThat((String) JsonPath.read(all, "$.data[0].name")).isEqualTo("Blue Shirt");
+        assertThat((String) JsonPath.read(all, "$.data[0].name")).isEqualTo("Blue Dress");
         onHost(t.host(), null, "GET", "/api/v1/shop/products?category=toys", null).andExpect(jsonPath("$.meta.total").value(1));
+        onHost(t.host(), null, "GET", "/api/v1/shop/products?category=football", null).andExpect(jsonPath("$.meta.total").value(0));
 
+        // only categories that lead to products are offered, with counts that include everything below them
         String cats = ok(onHost(t.host(), null, "GET", "/api/v1/shop/categories", null));
         assertThat(JsonPath.<List<Integer>>read(cats, "$[?(@.slug=='fashion')].productCount").get(0)).isEqualTo(1);
-        assertThat(JsonPath.<List<Integer>>read(cats, "$[?(@.slug=='shirts')].productCount").get(0)).isEqualTo(1);
+        assertThat(JsonPath.<List<Integer>>read(cats, "$[?(@.slug=='fashion-clothing')].productCount").get(0)).isEqualTo(1);
+        assertThat(JsonPath.<List<Integer>>read(cats, "$[?(@.slug=='dresses')].productCount").get(0)).isEqualTo(1);
+        assertThat(JsonPath.<List<Object>>read(cats, "$[?(@.slug=='football')]")).isEmpty();
+        assertThat(JsonPath.<List<String>>read(ok(onHost(t.host(), null, "GET", "/api/v1/shop/categories?lang=en", null)), "$[?(@.slug=='dresses')].name").get(0)).isEqualTo("Dresses");
+        assertThat(JsonPath.<List<String>>read(cats, "$[?(@.slug=='dresses')].name").get(0)).isEqualTo("فساتين");
     }
 
     @Test
-    void arabicNamesProduceReadableSlugs() throws Exception {
+    void shopsCannotCreateOrChangeCategories() throws Exception {
         Tenant t = onboard("STORE");
-        String res = ok(onHost(t.host(), t.access(), "POST", "/api/v1/store/categories", "{\"name\":\"أطفال\"}").andExpect(status().isCreated()));
-        assertThat((String) JsonPath.read(res, "$.slug")).isEqualTo("أطفال");
-        String res2 = ok(onHost(t.host(), t.access(), "POST", "/api/v1/store/categories", "{\"name\":\"مَلابِس إكسسوارات\"}").andExpect(status().isCreated()));
-        assertThat((String) JsonPath.read(res2, "$.slug")).isEqualTo("ملابس-إكسسوارات");
-    }
-
-    @Test
-    void categoryCannotMoveUnderItselfOrBeDeletedWhileInUse() throws Exception {
-        Tenant t = onboard("STORE");
-        String a = category(t, "A", null), b = category(t, "B", a);
-        onHost(t.host(), t.access(), "PATCH", "/api/v1/store/categories/" + a, "{\"parentId\":\"%s\",\"moveToParent\":true}".formatted(b)).andExpect(status().isBadRequest());
-        onHost(t.host(), t.access(), "DELETE", "/api/v1/store/categories/" + a, null).andExpect(status().isConflict());
-        onHost(t.host(), t.access(), "PATCH", "/api/v1/store/categories/" + b, "{\"moveToParent\":true}").andExpect(status().isOk());   // B becomes top level
-        onHost(t.host(), t.access(), "DELETE", "/api/v1/store/categories/" + b, null).andExpect(status().isOk());
+        onHost(t.host(), t.access(), "POST", "/api/v1/store/categories", "{\"name\":\"قمصان\"}").andExpect(status().is4xxClientError());
+        onHost(t.host(), t.access(), "DELETE", "/api/v1/store/categories/" + java.util.UUID.randomUUID(), null).andExpect(status().is4xxClientError());
     }
 
     @Test
@@ -125,7 +114,7 @@ class StoreCatalogIntegrationTest extends IntegrationTestBase {
     void productExtrasAndRelatedProducts() throws Exception {
         Tenant t = onboard("STORE");
         String br = branch(t);
-        String cat = category(t, "Shoes", null);
+        String cat = "casual-shoes";
         String p1 = product(t, br, "Runner One", "Acme", cat, 30000, null, 5);
         product(t, br, "Runner Two", "Acme", cat, 32000, null, 5);
         String slug = JsonPath.read(ok(onHost(t.host(), t.access(), "GET", "/api/v1/store/products/" + p1, null)), "$.slug");
@@ -139,20 +128,23 @@ class StoreCatalogIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void csvImportCreatesProductsAndCategoriesAndExportRoundTrips() throws Exception {
+    void csvImportUsesStandardCategoriesAndExportRoundTrips() throws Exception {
         Tenant t = onboard("STORE");
-        String csv = "name,brand,category,sku,price,compare_at_price,stock,description,status\r\n"
-                + "قميص قطن,نور,رجالي > قمصان,SH-1,450.50,600,7,\"وصف, بفاصلة\",ACTIVE\r\n"
-                + "حقيبة,نون,إكسسوارات,,900,,3,,ACTIVE\r\n"
-                + "بدون سعر,,,,,,,,\r\n";
+        String csv = "name,brand,category,audience,condition,sku,price,compare_at_price,stock,description,status\r\n"
+                + "قميص قطن,نور,أزياء وملابس > ملابس > قمصان وتيشيرتات,رجالي,جديد,SH-1,450.50,600,7,\"وصف, بفاصلة\",ACTIVE\r\n"
+                + "حقيبة,نون,حقائب يد,نسائي,,,900,,3,,ACTIVE\r\n"
+                + "بدون سعر,,,,,,,,,,\r\n"
+                + "قميص غلط,نور,قمسان,رجالي,,SH-2,100,,1,,ACTIVE\r\n";   // a misspelt category is refused, with a hint, never created
         String body = com.fasterxml.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(java.util.Map.of("csv", csv));
-        String res = ok(onHost(t.host(), t.access(), "POST", "/api/v1/store/products/import", body).andExpect(status().isOk()).andExpect(jsonPath("$.created").value(2)).andExpect(jsonPath("$.errors.length()").value(1)));
+        String res = ok(onHost(t.host(), t.access(), "POST", "/api/v1/store/products/import", body).andExpect(status().isOk()).andExpect(jsonPath("$.created").value(2)).andExpect(jsonPath("$.errors.length()").value(2)));
         assertThat((Integer) JsonPath.read(res, "$.errors[0].row")).isEqualTo(4);
-        onHost(t.host(), null, "GET", "/api/v1/shop/products?category=رجالي", null).andExpect(jsonPath("$.meta.total").value(1));          // the product sits under the new category tree
+        assertThat((String) JsonPath.read(res, "$.errors[1].message")).contains("قمسان");
+        onHost(t.host(), null, "GET", "/api/v1/shop/products?category=fashion", null).andExpect(jsonPath("$.meta.total").value(2));
         onHost(t.host(), null, "GET", "/api/v1/shop/products?q=قميص", null).andExpect(jsonPath("$.data[0].minPriceMinor").value(45050)).andExpect(jsonPath("$.data[0].compareAtMinor").value(60000));
+        onHost(t.host(), null, "GET", "/api/v1/shop/products?audience=WOMEN", null).andExpect(jsonPath("$.meta.total").value(1));
         // the web proxy always asks for JSON; the CSV must still be served
         String out = ok(mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/v1/store/products/export.csv").header("Host", t.host()).header("Authorization", "Bearer " + t.access()).header("Accept", "application/json")).andExpect(status().isOk()));
-        assertThat(out).contains("رجالي > قمصان").contains("450.50").contains("\"وصف, بفاصلة\"");
+        assertThat(out).contains("أزياء وملابس > ملابس > قمصان وتيشيرتات").contains("450.50").contains("\"وصف, بفاصلة\"");
     }
 
     @Test

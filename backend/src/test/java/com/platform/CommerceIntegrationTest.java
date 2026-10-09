@@ -35,7 +35,7 @@ class CommerceIntegrationTest extends IntegrationTestBase {
         Tenant t = onboard("STORE");
         String branch = read(ok(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null).andExpect(status().isOk())), "$[0].id");
         String body = """
-                {"name":"T-Shirt %5$s","description":"Cotton","options":[{"name":"Size","values":["S","M"]}],
+                {"taxonomySlug":"shirts-tops","audience":"MEN","name":"T-Shirt %5$s","description":"Cotton","options":[{"name":"Size","values":["S","M"]}],
                  "variants":[
                   {"sku":"TS-S-%1$s","priceMinor":10000,"optionValues":{"Size":"S"},"stock":[{"branchId":"%2$s","quantity":%3$d}]},
                   {"sku":"TS-M-%1$s","priceMinor":10000,"optionValues":{"Size":"M"},"stock":[{"branchId":"%2$s","quantity":%4$d}]}]}
@@ -207,12 +207,12 @@ class CommerceIntegrationTest extends IntegrationTestBase {
         onHost(h, cust, "POST", "/api/v1/shop/checkout", body).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("COUPON_INVALID"));
 
         String dupCombo = """
-                {"name":"Cap","options":[{"name":"Color","values":["Red","Blue"]}],"variants":[
+                {"taxonomySlug":"hats-caps","audience":"ALL","name":"Cap","options":[{"name":"Color","values":["Red","Blue"]}],"variants":[
                  {"sku":"CAP-1-%1$s","priceMinor":100,"optionValues":{"Color":"Red"}},{"sku":"CAP-2-%1$s","priceMinor":100,"optionValues":{"Color":"Red"}}]}
                 """.formatted(uniq());
         onHost(h, s.tenant().access(), "POST", "/api/v1/store/products", dupCombo).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("DUPLICATE_VARIANT"));
         String dupSku = """
-                {"name":"Cap2","variants":[{"sku":"%s","priceMinor":100,"optionValues":{}}]}
+                {"taxonomySlug":"hats-caps","audience":"ALL","name":"Cap2","variants":[{"sku":"%s","priceMinor":100,"optionValues":{}}]}
                 """.formatted(jdbc.sql("SELECT sku FROM commerce.product_variants WHERE id = :v").param("v", UUID.fromString(s.variantS())).query(String.class).single());
         onHost(h, s.tenant().access(), "POST", "/api/v1/store/products", dupSku).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SKU_TAKEN"));
     }

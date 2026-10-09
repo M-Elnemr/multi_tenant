@@ -1,0 +1,282 @@
+# Elmanassa standard product categories. One line per category:  [indent 2 spaces per level]slug | عربي | English | flags
+# flags (comma separated, inherited by sub-categories): a = "For" (men/women/kids) filter applies, s:SCALE = size scales offered (APPAREL, KIDS, SHOE, BED), icon:<emoji> = root icon, hidden = not offered to shops
+# Edit this file, then run: python3 infra/scripts/gen-taxonomy-sql.py  (it prints the SQL; new categories need a NEW migration, never edit an applied one)
+
+fashion | أزياء وملابس | Fashion | icon:👗
+  fashion-clothing | ملابس | Clothing | a,s:APPAREL+KIDS
+    shirts-tops | قمصان وتيشيرتات | Shirts & T-shirts
+    pants-jeans | بناطيل وجينز | Pants & Jeans
+    dresses | فساتين | Dresses
+    skirts | جيبات | Skirts
+    abayas-modest | عبايات وملابس محتشمة | Abayas & Modest Wear
+    suits-blazers | بدل وجاكيتات رسمية | Suits & Blazers
+    jackets-coats | جاكيتات ومعاطف | Jackets & Coats
+    knitwear-hoodies | كنزات وهوديز | Knitwear & Hoodies
+    activewear | ملابس رياضية | Activewear
+    sleepwear | ملابس نوم ومنزلية | Sleepwear & Loungewear
+    underwear-socks | ملابس داخلية وجوارب | Underwear & Socks
+    lingerie | لانجري | Lingerie
+    swimwear | ملابس سباحة | Swimwear
+    traditional-wear | جلابيب وملابس تقليدية | Galabeyas & Traditional Wear
+    bridal-evening | ملابس زفاف وسهرة | Bridal & Evening Wear
+    uniforms-workwear | يونيفورم وملابس عمل | Uniforms & Workwear
+    outfit-sets | أطقم ملابس | Outfit Sets
+    baby-clothing | ملابس رضع | Baby Clothing
+    maternity-wear | ملابس حوامل | Maternity Wear
+  fashion-shoes | أحذية | Shoes | a,s:SHOE
+    casual-shoes | أحذية كاجوال | Casual Shoes
+    sport-shoes | أحذية رياضية | Sport Shoes
+    formal-shoes | أحذية رسمية | Formal Shoes
+    sandals-slippers | صنادل وشباشب | Sandals & Slippers
+    boots | بوت | Boots
+    heels-flats | كعب وبالرينا | Heels & Flats
+  fashion-bags | شنط وحقائب | Bags | a
+    handbags | حقائب يد | Handbags
+    backpacks | حقائب ظهر | Backpacks
+    travel-bags | حقائب سفر | Travel Bags
+    wallets | محافظ وحافظات | Wallets & Card Holders
+  fashion-accessories | إكسسوارات | Accessories | a
+    belts | أحزمة | Belts
+    scarves-hijabs | أوشحة وطرح | Scarves & Hijabs
+    hats-caps | قبعات وكابات | Hats & Caps
+    eyewear | نظارات | Sunglasses & Eyewear
+    ties-cufflinks | ربطات عنق وأزرار | Ties & Cufflinks
+    gloves | قفازات | Gloves
+    hair-accessories | إكسسوارات شعر | Hair Accessories
+  fashion-watches | ساعات | Watches | a
+  fashion-jewelry | مجوهرات | Jewelry | a
+    gold-jewelry | مجوهرات ذهب | Gold Jewelry
+    silver-jewelry | مجوهرات فضة | Silver Jewelry
+    costume-jewelry | إكسسوارات وبيجو | Fashion Jewelry
+    bridal-jewelry | مجوهرات العروس | Bridal Jewelry
+  fashion-fabrics | أقمشة وخياطة | Fabrics & Sewing
+    fabrics | أقمشة | Fabrics
+    sewing-supplies | مستلزمات خياطة وخيوط | Sewing Supplies
+
+mobiles | موبايلات وإكسسوارات | Mobiles & Accessories | icon:📱
+  phones | موبايلات | Mobile Phones
+  tablets | تابلت | Tablets
+  phone-cases | كفرات وحمايات | Cases & Covers
+  screen-protectors | واقي شاشة | Screen Protectors
+  chargers-cables | شواحن وكابلات | Chargers & Cables
+  phone-earphones | سماعات أذن وبلوتوث | Earphones & Bluetooth
+  power-banks | باور بانك | Power Banks
+  smart-watches | ساعات ذكية وأساور | Smart Watches & Bands
+  phone-holders | حاملات وستاندات | Holders & Stands
+
+electronics | إلكترونيات وكمبيوتر | Electronics & Computers | icon:💻
+  laptops | لاب توب | Laptops
+  desktops | كمبيوتر مكتبي | Desktop Computers
+  monitors | شاشات كمبيوتر | Monitors
+  printers-scanners | طابعات وسكانر | Printers & Scanners
+  computer-accessories | ملحقات كمبيوتر | Computer Accessories
+  networking | شبكات وراوترات | Networking
+  storage-memory | تخزين وكروت ذاكرة | Storage & Memory
+  pc-components | مكونات كمبيوتر | PC Components
+  tvs | تلفزيونات | TVs
+  speakers-audio | سماعات وصوتيات | Speakers & Audio
+  headphones | سماعات رأس | Headphones
+  cameras | كاميرات تصوير | Cameras
+  surveillance | كاميرات مراقبة | Surveillance Cameras
+  gaming-consoles | أجهزة ألعاب | Gaming Consoles
+  video-games | ألعاب فيديو | Video Games
+  gaming-accessories | ملحقات ألعاب | Gaming Accessories
+  ups-power | يو بي إس وطاقة | UPS & Power
+  laptop-bags | حقائب لاب توب | Laptop Bags
+
+appliances | أجهزة منزلية | Home Appliances | icon:🔌
+  refrigerators | ثلاجات وفريزرات | Refrigerators & Freezers
+  washers | غسالات | Washing Machines
+  cookers-ovens | بوتاجازات وأفران | Cookers & Ovens
+  air-conditioners | تكييفات | Air Conditioners
+  water-heaters | سخانات | Water Heaters
+  dishwashers | غسالات أطباق | Dishwashers
+  blenders-mixers | خلاطات وعجانات | Blenders & Mixers
+  air-fryers | مقلاة هوائية وقلايات | Air Fryers & Fryers
+  microwaves | ميكروويف | Microwaves
+  coffee-machines | ماكينات قهوة وشاي | Coffee & Tea Machines
+  food-processors | محضرات طعام | Food Processors
+  kettles-toasters | غلايات وتوستر | Kettles & Toasters
+  vacuum-cleaners | مكانس كهربائية | Vacuum Cleaners
+  irons | مكاوي وبخار | Irons & Steamers
+  fans-heaters | مراوح ودفايات | Fans & Heaters
+  water-dispensers | مبردات وفلاتر مياه | Water Dispensers & Filters
+  sewing-machines | ماكينات خياطة | Sewing Machines
+
+home-kitchen | المنزل والمطبخ | Home & Kitchen | icon:🍳
+  cookware | أواني طهي | Cookware
+  tableware | أدوات مائدة وتقديم | Tableware & Serving
+  kitchen-tools | أدوات مطبخ وسكاكين | Kitchen Tools & Knives
+  food-storage | حافظات وتخزين طعام | Food Storage
+  bedding | مفروشات ومفارش | Bedding | s:BED
+  pillows-quilts | مخدات ولحف | Pillows & Quilts
+  towels-bath | مناشف وحمام | Towels & Bath
+  carpets-rugs | سجاد وموكيت | Carpets & Rugs
+  curtains | ستائر | Curtains
+  home-decor | ديكور وإكسسوارات | Home Decor
+  wall-art-mirrors | لوحات ومرايا | Wall Art & Mirrors
+  home-lighting | إضاءة وثريات | Lighting & Chandeliers
+  cleaning-supplies | أدوات ومنظفات تنظيف | Cleaning Supplies
+  laundry-organizing | تنظيم وغسيل | Laundry & Organizing
+
+furniture | أثاث | Furniture | icon:🛋️
+  bedroom-furniture | غرف نوم | Bedroom Furniture
+  living-furniture | صالونات وأنتريهات | Living Room Furniture
+  dining-furniture | سفرة وطاولات | Dining Furniture
+  kitchen-furniture | مطابخ ووحدات | Kitchen Cabinets
+  office-furniture | مكاتب وكراسي | Office Furniture
+  kids-furniture | أثاث أطفال | Kids Furniture
+  outdoor-furniture | أثاث خارجي وحدائق | Outdoor Furniture
+  storage-furniture | خزائن ووحدات تخزين | Storage & Wardrobes
+  mattresses | مراتب | Mattresses | s:BED
+
+tools-building | أدوات وبناء | Tools & Building | icon:🔧
+  hand-tools | عدد يدوية | Hand Tools
+  power-tools | أدوات كهربائية | Power Tools
+  plumbing | سباكة وصحي | Plumbing
+  electrical-supplies | كهرباء وأسلاك | Electrical Supplies
+  light-bulbs | لمبات وإنارة | Bulbs & Lighting
+  paints | دهانات ومستلزماتها | Paints
+  building-materials | مواد بناء وسيراميك | Building Materials & Tiles
+  locks-security | أقفال وأمان | Locks & Security
+  safety-gear | معدات سلامة | Safety Gear
+  fasteners-hardware | مسامير وإكسسوارات حدادة | Fasteners & Hardware
+
+grocery | سوبر ماركت | Grocery | icon:🛒
+  fruits-vegetables | خضروات وفاكهة | Fruits & Vegetables
+  meat-poultry-fish | لحوم ودواجن وأسماك | Meat, Poultry & Fish
+  dairy-eggs | ألبان وبيض | Dairy & Eggs
+  bakery-bread | مخبوزات وعيش | Bakery & Bread
+  dry-goods | مواد غذائية جافة | Dry Goods (Rice, Pasta, Sugar, Flour)
+  oils-ghee | زيوت وسمن | Oils & Ghee
+  canned-food | معلبات ومخللات | Canned Food & Pickles
+  beverages | مشروبات | Beverages
+  coffee-tea | قهوة وشاي | Coffee & Tea
+  nuts-dried-fruits | مكسرات وفواكه مجففة | Nuts & Dried Fruits
+  spices-herbs | توابل وعطارة | Spices & Herbs
+  snacks-chocolate | سناكس وشيكولاتة | Snacks & Chocolate
+  frozen-food | مجمدات | Frozen Food
+  healthy-organic | أغذية صحية وعضوية | Healthy & Organic Food
+  honey-jams | عسل ومربى | Honey & Jams
+
+ready-food | أكل جاهز وحلويات | Ready Food & Sweets | icon:🍰
+  meals | وجبات جاهزة | Ready Meals
+  sweets-desserts | حلويات شرقية وغربية | Sweets & Desserts
+  cakes | تورتات وكيك | Cakes
+  savory-pastries | معجنات ومخبوزات | Savory Pastries
+  catering-trays | صواني وبوفيهات | Catering Trays
+  fresh-juices | عصائر ومشروبات طازجة | Fresh Juices & Drinks
+
+beauty | جمال وعناية | Beauty & Care | icon:💄
+  makeup | مكياج | Makeup
+  skincare | عناية بالبشرة | Skincare
+  haircare | عناية بالشعر | Hair Care
+  perfumes | عطور | Perfumes
+  body-care | عناية بالجسم والاستحمام | Body & Bath
+  mens-grooming | عناية بالرجل | Men's Grooming
+  nails | أظافر | Nails
+  salon-tools | أدوات وأجهزة صالون | Salon Tools & Equipment
+  hair-styling-tools | مجففات ومكواة شعر | Hair Dryers & Stylers
+  beauty-tools | أدوات تجميل وفرش | Beauty Tools & Brushes
+  natural-oils-henna | زيوت طبيعية وحناء | Natural Oils & Henna
+
+health | صحة | Health | icon:💊
+  vitamins-supplements | مكملات وفيتامينات | Vitamins & Supplements
+  medical-supplies | مستلزمات طبية | Medical Supplies
+  medical-devices | أجهزة قياس وطبية | Medical Devices
+  first-aid | إسعافات أولية | First Aid
+  orthopedic | مستلزمات تقويم وعلاج طبيعي | Orthopedic & Physio
+  optics | نظارات طبية وعدسات | Prescription Glasses & Lenses
+  dental-care | عناية بالفم والأسنان | Oral & Dental Care
+  hygiene | صحة ونظافة شخصية | Hygiene & Sanitizing
+  herbal-remedies | أعشاب ومنتجات طبيعية | Herbal & Natural Remedies
+
+baby | أم وطفل | Mother & Baby | icon:👶
+  diapers-wipes | حفاضات ومناديل | Diapers & Wipes
+  baby-feeding | رضاعة وتغذية | Feeding
+  strollers-carseats | عربات ومقاعد سيارة | Strollers & Car Seats
+  baby-bath-care | حمام وعناية | Bath & Care
+  baby-toys-gear | ألعاب وأنشطة رضع | Baby Toys & Activity
+  baby-nursery | سراير وتجهيزات غرفة الطفل | Cribs & Nursery
+  maternity-care | مستلزمات الأم والحمل | Maternity Care
+  baby-food | أغذية أطفال | Baby Food
+  baby-safety | أمان الطفل | Baby Safety
+
+toys | ألعاب | Toys & Games | icon:🧸
+  educational-toys | ألعاب تعليمية | Educational Toys
+  dolls-plush | دمى وعرائس وبلوش | Dolls & Plush
+  rc-vehicles | سيارات وطائرات تحكم | RC Vehicles
+  building-blocks | مكعبات وبناء | Building Blocks
+  outdoor-toys | ألعاب خارجية وحمامات | Outdoor Toys
+  board-games-puzzles | ألعاب لوحية وبازل | Board Games & Puzzles
+  action-figures | شخصيات وأكشن | Action Figures
+  kids-arts-crafts | أشغال وتلوين للأطفال | Kids Arts & Crafts
+
+sports | رياضة وخارج المنزل | Sports & Outdoors | icon:⚽ | a
+  gym-fitness | جيم ولياقة | Gym & Fitness
+  football | كرة قدم | Football
+  team-sports | كرة سلة وطائرة وتنس | Basketball, Volleyball & Tennis
+  cycling | دراجات هوائية | Bicycles
+  camping-hiking | تخييم ورحلات | Camping & Hiking
+  swimming-water | سباحة ورياضات مائية | Swimming & Water Sports
+  martial-arts | رياضات قتالية | Martial Arts
+  fishing | صيد | Fishing
+  scooters-skates | سكوتر وتزلج | Scooters & Skates
+
+automotive | سيارات ودراجات | Automotive | icon:🚗
+  car-parts | قطع غيار سيارات | Car Parts
+  car-accessories | إكسسوارات سيارات | Car Accessories
+  tires-batteries | إطارات وبطاريات | Tires & Batteries
+  oils-fluids | زيوت وسوائل | Oils & Fluids
+  car-care | عناية بالسيارة | Car Care
+  car-electronics | إلكترونيات سيارات | Car Electronics
+  motorcycles | دراجات نارية وقطع غيارها | Motorcycles & Parts
+
+books-office | كتب وقرطاسية ومكتب | Books, Stationery & Office | icon:📚
+  books | كتب | Books
+  stationery | قرطاسية وأدوات كتابة | Stationery & Writing
+  school-supplies | مستلزمات مدرسية وشنط مدرسية | School Supplies & School Bags
+  office-supplies | مستلزمات مكتبية | Office Supplies
+  art-supplies | أدوات فنية ورسم | Art Supplies
+  printing-custom | طباعة وهدايا مخصصة | Printing & Custom Products
+
+gifts | هدايا ومناسبات | Gifts & Occasions | icon:🎁
+  gift-items | هدايا وتحف | Gift Items
+  flowers-bouquets | ورد وبوكيهات | Flowers & Bouquets
+  gift-wrapping | تغليف وكروت | Gift Wrapping & Cards
+  wedding-supplies | مستلزمات زفاف وخطوبة | Wedding & Engagement Supplies
+  party-decor | مستلزمات حفلات وبالونات | Party Supplies & Balloons
+  personalized-gifts | هدايا مخصصة | Personalized Gifts
+
+pets-garden | حيوانات أليفة وحدائق | Pets & Garden | icon:🌿
+  pet-food | طعام حيوانات أليفة | Pet Food
+  pet-supplies | مستلزمات حيوانات | Pet Supplies
+  fish-aquarium | أحواض وأسماك زينة | Aquariums & Fish
+  plants-flowers | نباتات وزهور | Plants & Flowers
+  gardening | أدوات وأسمدة زراعة | Gardening Tools & Fertilizers
+  farm-supplies | مستلزمات مزارع وعلف | Farm Supplies & Feed
+
+handmade | يدوي وتراث | Handmade & Heritage | icon:🏺
+  handmade-crafts | منتجات يدوية | Handmade Crafts
+  oriental-decor | ديكور شرقي وأرابيسك | Oriental Decor & Arabesque
+  pottery-ceramics | خزف وفخار | Pottery & Ceramics
+  khayamiya | خيامية ومنسوجات | Khayamiya & Textiles
+  leather-crafts | منتجات جلدية يدوية | Handmade Leather
+  wood-crafts | أشغال خشب | Woodwork
+  musical-instruments | آلات موسيقية | Musical Instruments
+
+islamic | إسلاميات | Islamic Items | icon:🕌 | a
+  prayer-rugs | سجاد صلاة | Prayer Rugs
+  quran-books | مصاحف وكتب دينية | Qurans & Religious Books
+  prayer-beads | مسابح | Prayer Beads
+  oud-bakhoor | عود وبخور | Oud & Bakhoor
+  ramadan-decor | زينة رمضان وفوانيس | Ramadan Decor & Lanterns
+  prayer-clothes | ملابس الصلاة | Prayer Clothes
+
+business | مستلزمات تجارية وجملة | Business & Wholesale | icon:📦
+  wholesale | بيع بالجملة | Wholesale
+  restaurant-supplies | مستلزمات مطاعم وكافيهات | Restaurant & Cafe Supplies
+  packaging-supplies | مواد تغليف وتعبئة | Packaging Supplies
+  industrial-equipment | معدات ومستلزمات صناعية | Industrial Equipment
+
+other | أخرى | Other | icon:❓,hidden

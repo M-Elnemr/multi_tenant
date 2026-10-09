@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.*;
 public class ShopController {
     private final CatalogService catalog;
     private final StoreSearchService search;
+    private final TaxonomyService taxonomy;
     private final StoreFulfillmentService fulfilment;
     private final StoreSettingsService settings;
     private final com.platform.core.auth.LoginThrottle throttle;
@@ -34,10 +35,11 @@ public class ShopController {
     private final List<PaymentProvider> providers;
     private final WebhookEventStore webhooks;
 
-    public ShopController(CatalogService catalog, StoreSearchService search, StoreFulfillmentService fulfilment, StoreSettingsService settings, com.platform.core.auth.LoginThrottle throttle, CheckoutService checkout,
+    public ShopController(CatalogService catalog, StoreSearchService search, TaxonomyService taxonomy, StoreFulfillmentService fulfilment, StoreSettingsService settings, com.platform.core.auth.LoginThrottle throttle, CheckoutService checkout,
                           OrderService orders, ShopperService shopper, List<PaymentProvider> providers, WebhookEventStore webhooks) {
         this.catalog = catalog;
         this.search = search;
+        this.taxonomy = taxonomy;
         this.fulfilment = fulfilment;
         this.settings = settings;
         this.throttle = throttle;
@@ -82,14 +84,16 @@ public class ShopController {
     }
 
     @GetMapping("/categories")
-    public List<Map<String, Object>> categories() { return catalog.categories(StoreContext.tenantId(), true); }
+    public List<Map<String, Object>> categories(@RequestParam(required = false) String lang) { return taxonomy.publicTree(StoreContext.tenantId(), lang); }
 
     @GetMapping("/products")
     public Map<String, Object> products(@RequestParam(required = false) String q, @RequestParam(required = false) String category,
                                         @RequestParam(required = false) Long minPrice, @RequestParam(required = false) Long maxPrice, @RequestParam(required = false) String brand,
                                         @RequestParam(required = false) Boolean inStock, @RequestParam(required = false) Boolean onSale, @RequestParam(required = false) Integer minRating,
-                                        @RequestParam(required = false) String sort, @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize) {
-        return search.list(StoreContext.tenantId(), Page.of(page, pageSize), new StoreSearchService.Filter(q, category, minPrice, maxPrice, brand, inStock, onSale, minRating, sort));
+                                        @RequestParam(required = false) String sort, @RequestParam(required = false) String audience, @RequestParam(required = false) String color,
+                                        @RequestParam(required = false) String size, @RequestParam(required = false) String condition,
+                                        @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize) {
+        return search.list(StoreContext.tenantId(), Page.of(page, pageSize), new StoreSearchService.Filter(q, category, minPrice, maxPrice, brand, inStock, onSale, minRating, sort, audience, color, size, condition));
     }
 
     @GetMapping("/products/facets")

@@ -103,7 +103,7 @@ class S3StorageIntegrationTest extends IntegrationTestBase {
 
         // a product records the direct public location so catalog pages link the image without an app round trip
         String product = onHost(store.host(), store.access(), "POST", "/api/v1/store/products",
-                "{\"name\":\"Lamp %s\",\"variants\":[{\"sku\":\"L-%s\",\"priceMinor\":1,\"optionValues\":{}}],\"media\":[{\"fileId\":\"%s\"}]}".formatted(uniq(), uniq(), id)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+                "{\"taxonomySlug\":\"home-lighting\",\"name\":\"Lamp %s\",\"variants\":[{\"sku\":\"L-%s\",\"priceMinor\":1,\"optionValues\":{}}],\"media\":[{\"fileId\":\"%s\"}]}".formatted(uniq(), uniq(), id)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         assertThat((String) JsonPath.read(product, "$.media[0].mediaBase")).startsWith("/media/" + prefix);
         assertThat((String) JsonPath.read(product, "$.media[0].mediaExt")).isEqualTo("jpg");
 

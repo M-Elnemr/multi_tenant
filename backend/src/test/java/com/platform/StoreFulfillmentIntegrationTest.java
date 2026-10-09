@@ -17,7 +17,7 @@ class StoreFulfillmentIntegrationTest extends IntegrationTestBase {
         Tenant t = onboard("STORE");
         String branch = JsonPath.read(ok(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
         String body = """
-                {"name":"Tee %s","variants":[{"sku":"T-%s","priceMinor":20000,"stock":[{"branchId":"%s","quantity":20}]}]}
+                {"taxonomySlug":"shirts-tops","audience":"ALL","name":"Tee %s","variants":[{"sku":"T-%s","priceMinor":20000,"stock":[{"branchId":"%s","quantity":20}]}]}
                 """.formatted(uniq(), uniq(), branch);
         String variant = JsonPath.read(ok(onHost(t.host(), t.access(), "POST", "/api/v1/store/products", body).andExpect(status().isCreated())), "$.variants[0].id");
         String method = JsonPath.read(ok(onHost(t.host(), t.access(), "POST", "/api/v1/store/shipping-methods", "{\"type\":\"ZONES\",\"name\":\"Delivery\",\"feeMinor\":0}").andExpect(status().isCreated())), "$.id");

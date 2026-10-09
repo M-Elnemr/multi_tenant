@@ -28,7 +28,7 @@ class CashOnlyIntegrationTest extends IntegrationTestBase {
 
         String branch = JsonPath.read(body(onHost(h, store.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
         String variant = JsonPath.read(body(onHost(h, store.access(), "POST", "/api/v1/store/products",
-                "{\"name\":\"Mug %s\",\"variants\":[{\"sku\":\"M-%s\",\"priceMinor\":10000,\"optionValues\":{},\"stock\":[{\"branchId\":\"%s\",\"quantity\":9}]}]}".formatted(uniq(), uniq(), branch)).andExpect(status().isCreated())), "$.variants[0].id");
+                "{\"taxonomySlug\":\"cookware\",\"name\":\"Mug %s\",\"variants\":[{\"sku\":\"M-%s\",\"priceMinor\":10000,\"optionValues\":{},\"stock\":[{\"branchId\":\"%s\",\"quantity\":9}]}]}".formatted(uniq(), uniq(), branch)).andExpect(status().isCreated())), "$.variants[0].id");
         String cust = googleClient(h);
         String ship = JsonPath.<List<String>>read(body(onHost(h, null, "GET", "/api/v1/shop/profile", null)), "$.shippingMethods[?(@.type=='PICKUP')].id").get(0);
         String order = "{\"items\":[{\"variantId\":\"%s\",\"quantity\":2}],\"shippingMethodId\":\"%s\",\"paymentMethod\":\"%s\",\"address\":{\"recipientName\":\"Nada\",\"phone\":\"01011112222\"}}";

@@ -1,0 +1,59 @@
+# Which standard categories suit each shop type (commerce.store_categories.code). Used to suggest categories to a shop owner and checked by a test so every shop type has a home.
+fashion_women: fashion-clothing, fashion-shoes, fashion-bags, fashion-accessories
+fashion_men: fashion-clothing, fashion-shoes, fashion-bags, fashion-accessories
+fashion_kids: fashion-clothing, fashion-shoes, toys
+shoes_bags: fashion-shoes, fashion-bags
+mobiles: mobiles
+electronics: electronics, appliances, mobiles
+supermarket: grocery
+cosmetics: beauty
+home_decor: home-kitchen, furniture
+food: ready-food
+sweets_bakery: ready-food, grocery
+gifts: gifts
+accessories_jewelry: fashion-accessories, fashion-jewelry
+gold_silver: fashion-jewelry
+watches_eyewear: fashion-watches, fashion-accessories, health
+computers: electronics
+gaming: electronics
+fruits_vegetables: grocery
+meat_poultry_fish: grocery
+dairy_eggs: grocery
+coffee_tea_nuts: grocery
+beverages: grocery
+healthy_organic: grocery, health
+supplements: health
+medical_supplies: health
+perfumes: beauty
+salon_supplies: beauty
+kitchenware: home-kitchen, appliances
+tools_hardware: tools-building
+building_materials: tools-building
+lighting_electrical: tools-building, home-kitchen
+car_parts: automotive
+tires_oils: automotive
+car_accessories: automotive
+motorcycles_bikes: automotive, sports
+toys: toys
+baby_care: baby, fashion-clothing
+books_stationery: books-office
+school_supplies: books-office
+party_supplies: gifts
+sports_gym: sports
+camping_outdoor: sports
+pets: pets-garden
+plants_garden: pets-garden
+farm_supplies: pets-garden
+handmade: handmade
+art_crafts: books-office, handmade
+music_instruments: handmade
+photography: electronics
+printing_custom: books-office, gifts
+islamic_items: islamic
+fabrics_sewing: fashion-fabrics
+uniforms_workwear: fashion-clothing, business
+lingerie_sleepwear: fashion-clothing
+modest_fashion: fashion-clothing
+bridal: fashion-clothing, gifts
+used_second_hand: fashion-clothing, electronics, furniture, mobiles
+wholesale: business

@@ -78,7 +78,7 @@ class FilesIntegrationTest extends IntegrationTestBase {
 
         // attach to a product
         String product = onHost(store.host(), store.access(), "POST", "/api/v1/store/products",
-                "{\"name\":\"Tee %s\",\"variants\":[{\"sku\":\"T-%s\",\"priceMinor\":100,\"optionValues\":{}}],\"media\":[{\"fileId\":\"%s\",\"altText\":\"front\"}]}".formatted(uniq(), uniq(), id))
+                "{\"taxonomySlug\":\"shirts-tops\",\"audience\":\"ALL\",\"name\":\"Tee %s\",\"variants\":[{\"sku\":\"T-%s\",\"priceMinor\":100,\"optionValues\":{}}],\"media\":[{\"fileId\":\"%s\",\"altText\":\"front\"}]}".formatted(uniq(), uniq(), id))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.media[0].url").value("/api/v1/files/" + id + "/content")).andReturn().getResponse().getContentAsString();
         assertThat(product).contains(id);
 
@@ -86,7 +86,7 @@ class FilesIntegrationTest extends IntegrationTestBase {
         Tenant other = onboard("STORE");
         getFile(other.host(), null, id).andExpect(status().isNotFound());
         onHost(other.host(), other.access(), "POST", "/api/v1/store/products",
-                "{\"name\":\"Steal %s\",\"variants\":[{\"sku\":\"S-%s\",\"priceMinor\":1,\"optionValues\":{}}],\"media\":[{\"fileId\":\"%s\"}]}".formatted(uniq(), uniq(), id)).andExpect(status().isBadRequest());
+                "{\"taxonomySlug\":\"cookware\",\"name\":\"Steal %s\",\"variants\":[{\"sku\":\"S-%s\",\"priceMinor\":1,\"optionValues\":{}}],\"media\":[{\"fileId\":\"%s\"}]}".formatted(uniq(), uniq(), id)).andExpect(status().isBadRequest());
 
         // policy checks at presign time
         presign(store, store.access(), "x.exe", "application/x-msdownload", 100, "PRODUCT_IMAGE", null, 400);
@@ -144,7 +144,7 @@ class FilesIntegrationTest extends IntegrationTestBase {
         assertThat(used).isGreaterThan(0);
 
         // in use -> refused; free -> deleted, quota released, content gone
-        onHost(store.host(), store.access(), "POST", "/api/v1/store/products", "{\"name\":\"Cup %s\",\"variants\":[{\"sku\":\"C-%s\",\"priceMinor\":1,\"optionValues\":{}}],\"media\":[{\"fileId\":\"%s\"}]}".formatted(uniq(), uniq(), id)).andExpect(status().isCreated());
+        onHost(store.host(), store.access(), "POST", "/api/v1/store/products", "{\"taxonomySlug\":\"cookware\",\"name\":\"Cup %s\",\"variants\":[{\"sku\":\"C-%s\",\"priceMinor\":1,\"optionValues\":{}}],\"media\":[{\"fileId\":\"%s\"}]}".formatted(uniq(), uniq(), id)).andExpect(status().isCreated());
         onHost(store.host(), store.access(), "DELETE", "/api/v1/files/" + id, null).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("FILE_IN_USE"));
         String res2 = presign(store, store.access(), "b.png", "image/png", PNG.length, "PRODUCT_IMAGE", null, 200);
         String id2 = JsonPath.read(res2, "$.fileId");

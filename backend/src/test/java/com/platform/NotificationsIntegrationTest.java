@@ -35,7 +35,7 @@ class NotificationsIntegrationTest extends IntegrationTestBase {
         String h = store.host();
         String branch = JsonPath.read(body(onHost(h, store.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
         String variant = JsonPath.read(body(onHost(h, store.access(), "POST", "/api/v1/store/products",
-                "{\"name\":\"Lamp %s\",\"variants\":[{\"sku\":\"L-%s\",\"priceMinor\":5000,\"optionValues\":{},\"stock\":[{\"branchId\":\"%s\",\"quantity\":5}]}]}".formatted(uniq(), uniq(), branch)).andExpect(status().isCreated())), "$.variants[0].id");
+                "{\"taxonomySlug\":\"home-lighting\",\"name\":\"Lamp %s\",\"variants\":[{\"sku\":\"L-%s\",\"priceMinor\":5000,\"optionValues\":{},\"stock\":[{\"branchId\":\"%s\",\"quantity\":5}]}]}".formatted(uniq(), uniq(), branch)).andExpect(status().isCreated())), "$.variants[0].id");
         String shopper = googleClient(h);
         String ship = JsonPath.<List<String>>read(body(onHost(h, null, "GET", "/api/v1/shop/profile", null)), "$.shippingMethods[?(@.type=='PICKUP')].id").get(0);
 

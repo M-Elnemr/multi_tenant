@@ -13,7 +13,12 @@ import org.springframework.stereotype.Service;
 /** Storefront product search: Arabic-aware text match, category subtree, price/brand/stock/sale/rating filters, sorting and facets. */
 @Service
 public class StoreSearchService {
-    public record Filter(String q, String category, Long minPrice, Long maxPrice, String brands, Boolean inStock, Boolean onSale, Integer minRating, String sort) {}
+    public record Filter(String q, String category, Long minPrice, Long maxPrice, String brands, Boolean inStock, Boolean onSale, Integer minRating, String sort,
+                         String audience, String colors, String sizes, String conditions) {
+        public Filter(String q, String category, Long minPrice, Long maxPrice, String brands, Boolean inStock, Boolean onSale, Integer minRating, String sort) {
+            this(q, category, minPrice, maxPrice, brands, inStock, onSale, minRating, sort, null, null, null, null);
+        }
+    }
 
     private final JdbcClient jdbc;
 
@@ -27,11 +32,10 @@ public class StoreSearchService {
     }
 
     private static final String CTE = """
-            WITH RECURSIVE cat AS (
-              SELECT id FROM commerce.categories WHERE tenant_id = :t AND slug = CAST(:c AS varchar) AND is_active
-              UNION ALL SELECT ch.id FROM commerce.categories ch JOIN cat ON ch.parent_id = cat.id WHERE ch.is_active
+            WITH cat AS (
+              SELECT x.id FROM commerce.taxonomy x WHERE x.is_active AND x.path LIKE (SELECT path FROM commerce.taxonomy WHERE slug = CAST(:c AS varchar) AND is_active) || '%'
             ), base AS (
-              SELECT p.id, p.name, p.slug, p.short_description, p.brand, p.currency, p.category_id, p.badge, p.is_featured, p.sold_count, p.created_at, p.sort_order,
+              SELECT p.id, p.name, p.slug, p.short_description, p.brand, p.currency, p.taxonomy_id, p.audience, p.item_condition, p.badge, p.is_featured, p.sold_count, p.created_at, p.sort_order,
                 (SELECT min(v.price_minor) FROM commerce.product_variants v WHERE v.product_id = p.id AND v.status = 'ACTIVE') AS min_price_minor,
                 (SELECT max(v.compare_at_price_minor) FROM commerce.product_variants v WHERE v.product_id = p.id AND v.status = 'ACTIVE' AND v.compare_at_price_minor > v.price_minor) AS compare_at_minor,
                 (SELECT max((v.compare_at_price_minor - v.price_minor) * 100 / v.compare_at_price_minor) FROM commerce.product_variants v
@@ -46,7 +50,7 @@ public class StoreSearchService {
                         WHERE v.product_id = p.id AND v.status = 'ACTIVE' AND i.quantity_on_hand - i.quantity_reserved > 0) AS in_stock
               FROM commerce.products p
               WHERE p.tenant_id = :t AND p.status = 'ACTIVE'
-                AND (CAST(:c AS varchar) IS NULL OR p.category_id IN (SELECT id FROM cat))
+                AND (CAST(:c AS varchar) IS NULL OR p.taxonomy_id IN (SELECT id FROM cat))
                 AND (CAST(:q1 AS varchar) IS NULL OR p.search_text ILIKE '%' || CAST(:q1 AS varchar) || '%')
                 AND (CAST(:q2 AS varchar) IS NULL OR p.search_text ILIKE '%' || CAST(:q2 AS varchar) || '%')
                 AND (CAST(:q3 AS varchar) IS NULL OR p.search_text ILIKE '%' || CAST(:q3 AS varchar) || '%')
@@ -75,12 +79,22 @@ public class StoreSearchService {
             AND (CAST(:brands AS varchar) IS NULL OR lower(brand) = ANY(string_to_array(lower(CAST(:brands AS varchar)), ',')))
             AND (NOT :instock OR in_stock) AND (NOT :onsale OR discount_pct IS NOT NULL)
             AND (CAST(:minr AS int) IS NULL OR coalesce(rating, 0) >= CAST(:minr AS int))
+            AND (CAST(:aud AS varchar) IS NULL OR audience = 'ALL' OR audience = ANY(string_to_array(CAST(:aud AS varchar), ',')))
+            AND (CAST(:cond AS varchar) IS NULL OR item_condition = ANY(string_to_array(CAST(:cond AS varchar), ',')))
+            AND (CAST(:colors AS varchar) IS NULL OR EXISTS (SELECT 1 FROM commerce.product_options o JOIN commerce.product_option_values v ON v.option_id = o.id
+                   WHERE o.product_id = base.id AND o.attribute_code = 'COLOR' AND v.value_code = ANY(string_to_array(CAST(:colors AS varchar), ','))))
+            AND (CAST(:sizes AS varchar) IS NULL OR EXISTS (SELECT 1 FROM commerce.product_options o JOIN commerce.product_option_values v ON v.option_id = o.id
+                   WHERE o.product_id = base.id AND o.attribute_code = 'SIZE' AND v.value_code = ANY(string_to_array(CAST(:sizes AS varchar), ','))))
             """;
 
     private JdbcClient.StatementSpec bindFilters(JdbcClient.StatementSpec st, Filter f) {
         return st.param("minp", f.minPrice()).param("maxp", f.maxPrice()).param("brands", f.brands() == null || f.brands().isBlank() ? null : f.brands())
-                .param("instock", Boolean.TRUE.equals(f.inStock())).param("onsale", Boolean.TRUE.equals(f.onSale())).param("minr", f.minRating());
+                .param("instock", Boolean.TRUE.equals(f.inStock())).param("onsale", Boolean.TRUE.equals(f.onSale())).param("minr", f.minRating())
+                .param("aud", csv(f.audience())).param("cond", csv(f.conditions())).param("colors", csv(f.colors())).param("sizes", csv(f.sizes()));
     }
+
+    /** Comma list from the URL, upper/lower-cased as needed by the caller; blank means "no filter". */
+    private static String csv(String v) { return v == null || v.isBlank() ? null : v.trim(); }
 
     public Map<String, Object> list(UUID tenantId, Page page, Filter f) {
         String order = SORTS.getOrDefault(f.sort() == null ? "newest" : f.sort(), SORTS.get("newest"));
@@ -97,6 +111,23 @@ public class StoreSearchService {
         var range = bindFilters(bind(jdbc.sql(CTE + "SELECT min(min_price_minor) AS lo, max(min_price_minor) AS hi, count(*) AS n FROM base WHERE " + FILTER_WHERE), tenantId, base), base).query().singleRow();
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("brands", brands);
+        // standard filters: counts within the current search/category, so only options that lead to products are offered
+        out.put("audiences", Rows.camel(bind(jdbc.sql(CTE + "SELECT audience, count(*) AS n FROM base WHERE audience <> '' GROUP BY audience ORDER BY n DESC"), tenantId, base).query().listOfRows()));
+        out.put("colors", Rows.camel(bind(jdbc.sql(CTE + """
+                SELECT a.code, a.name_ar, a.name_en, a.hex, count(DISTINCT b.id) AS n FROM base b
+                JOIN commerce.product_options o ON o.product_id = b.id AND o.attribute_code = 'COLOR'
+                JOIN commerce.product_option_values v ON v.option_id = o.id AND v.value_code <> ''
+                JOIN commerce.attribute_values a ON a.attr = 'COLOR' AND a.scale = '' AND a.code = v.value_code
+                GROUP BY a.code, a.name_ar, a.name_en, a.hex, a.sort_order ORDER BY a.sort_order
+                """), tenantId, base).query().listOfRows()));
+        out.put("sizes", Rows.camel(bind(jdbc.sql(CTE + """
+                SELECT a.scale, a.code, a.name_ar, a.name_en, count(DISTINCT b.id) AS n FROM base b
+                JOIN commerce.product_options o ON o.product_id = b.id AND o.attribute_code = 'SIZE'
+                JOIN commerce.product_option_values v ON v.option_id = o.id AND v.value_code <> ''
+                JOIN commerce.attribute_values a ON a.attr = 'SIZE' AND a.scale = o.size_scale AND a.code = v.value_code
+                GROUP BY a.scale, a.code, a.name_ar, a.name_en, a.sort_order ORDER BY a.scale, a.sort_order
+                """), tenantId, base).query().listOfRows()));
+        out.put("conditions", Rows.camel(bind(jdbc.sql(CTE + "SELECT item_condition AS condition, count(*) AS n FROM base GROUP BY item_condition ORDER BY n DESC"), tenantId, base).query().listOfRows()));
         out.put("priceMinMinor", range.get("lo"));
         out.put("priceMaxMinor", range.get("hi"));
         out.put("total", range.get("n"));
@@ -108,8 +139,12 @@ public class StoreSearchService {
         Filter f = new Filter(q, null, null, null, null, null, null, null, "popular");
         if (norm(q).length() < 2) return Map.of("products", List.of(), "categories", List.of());
         var products = Rows.camel(bindFilters(bind(jdbc.sql(CTE + "SELECT id, name, slug, min_price_minor, currency, image_url, image_media_base, image_media_ext FROM base WHERE " + FILTER_WHERE + " ORDER BY sold_count DESC, created_at DESC LIMIT 6"), tenantId, f), f).query().listOfRows());
-        var cats = Rows.camel(jdbc.sql("SELECT name, slug FROM commerce.categories WHERE tenant_id = :t AND is_active AND commerce.norm_ar(name) ILIKE '%' || :q || '%' ORDER BY name LIMIT 4")
-                .param("t", tenantId).param("q", norm(q)).query().listOfRows());
+        var cats = Rows.camel(jdbc.sql("""
+                SELECT t.name_ar AS name, t.name_en, t.slug FROM commerce.taxonomy t
+                WHERE t.is_active AND t.search_text ILIKE '%' || :q || '%'
+                  AND EXISTS (SELECT 1 FROM commerce.products p JOIN commerce.taxonomy c ON c.id = p.taxonomy_id WHERE p.tenant_id = :t AND p.status = 'ACTIVE' AND c.path LIKE t.path || '%')
+                ORDER BY t.level DESC, t.sort_order LIMIT 4
+                """).param("t", tenantId).param("q", norm(q)).query().listOfRows());
         return Map.of("products", products, "categories", cats);
     }
 
