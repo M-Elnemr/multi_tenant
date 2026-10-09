@@ -154,4 +154,24 @@ class StoreCatalogIntegrationTest extends IntegrationTestBase {
         String out = ok(mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/v1/store/products/export.csv").header("Host", t.host()).header("Authorization", "Bearer " + t.access()).header("Accept", "application/json")).andExpect(status().isOk()));
         assertThat(out).contains("رجالي > قمصان").contains("450.50").contains("\"وصف, بفاصلة\"");
     }
+
+    @Test
+    void productPicturesCanBeAddedReorderedAndRemoved() throws Exception {
+        Tenant t = onboard("STORE");
+        String pid = product(t, branch(t), "Lamp", "Acme", null, 10000, null, 3);
+        byte[] png = java.util.Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==");
+        String[] files = new String[2];
+        for (int i = 0; i < 2; i++) {
+            String p = ok(onHost(t.host(), t.access(), "POST", "/api/v1/files/presign", "{\"filename\":\"a.png\",\"contentType\":\"image/png\",\"size\":" + png.length + ",\"category\":\"PRODUCT_IMAGE\"}").andExpect(status().isOk()));
+            files[i] = JsonPath.read(p, "$.fileId");
+            String up = JsonPath.read(p, "$.uploadUrl");
+            mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(up).header("Host", t.host()).contentType("image/png").content(png)).andExpect(status().is2xxSuccessful());
+        }
+        onHost(t.host(), t.access(), "POST", "/api/v1/store/products/" + pid + "/media", "{\"fileId\":\"" + files[0] + "\",\"altText\":\"one\"}").andExpect(status().isOk()).andExpect(jsonPath("$.media.length()").value(1));
+        String two = ok(onHost(t.host(), t.access(), "POST", "/api/v1/store/products/" + pid + "/media", "{\"fileId\":\"" + files[1] + "\"}").andExpect(jsonPath("$.media.length()").value(2)));
+        String first = JsonPath.read(two, "$.media[0].id"), second = JsonPath.read(two, "$.media[1].id");
+        onHost(t.host(), t.access(), "PUT", "/api/v1/store/products/" + pid + "/media/order", "{\"ids\":[\"" + second + "\"]}").andExpect(jsonPath("$.media[0].id").value(second)).andExpect(jsonPath("$.media[1].id").value(first));
+        onHost(t.host(), t.access(), "DELETE", "/api/v1/store/products/" + pid + "/media/" + second, null).andExpect(jsonPath("$.media.length()").value(1));
+        onHost(t.host(), null, "GET", "/api/v1/shop/products?pageSize=5", null).andExpect(jsonPath("$.data[0].imageUrl").isNotEmpty());
+    }
 }

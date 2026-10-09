@@ -8,12 +8,13 @@ import { useT } from "@/components/i18n-provider";
 import { Button, Card, ErrorText, Field, Input, Loading, PageHeader, Select, StatusBadge, Textarea } from "@/components/ui";
 import { useRouter } from "next/navigation";
 import { ProductExtras, type Extras } from "@/components/dashboard/product-extras";
+import { ProductImages, type ProductMedia } from "@/components/dashboard/product-images";
 import { buildTree, type ShopCategory } from "@/components/shop/types";
 
 type Detail = {
   id: string; name: string; description: string; brand?: string; status: string; categoryId?: string | null; badge?: string; tags?: string[]; specs?: { k: string; v: string }[]; sizeGuide?: string; isFeatured?: boolean;
   variants: { id: string; sku: string; priceMinor: number; comboKey: string; status: string; available: number }[];
-  media: { id: string; url: string }[];
+  media: ProductMedia[];
 };
 
 type Flat = { id: string; name: string; depth: number };
@@ -61,6 +62,7 @@ export default function EditProduct({ params }: { params: Promise<{ id: string }
           ))}</tbody></table>
           <p className="mt-2 text-xs text-slate-500">{t("products.stockHint")}</p>
         </Card>
+        <ProductImages id={id} media={data.media} onChanged={reload} />
         <ProductExtras key={data.id + (data.badge ?? "")} id={id} initial={data as Extras} onSaved={reload} />
         <ErrorText error={save.error ?? archive.error} />
         <div className="flex gap-3"><Button type="submit" loading={save.loading}>{t("common.save")}</Button>{can("product.delete") && <Button type="button" variant="danger" loading={archive.loading} onClick={() => archive.run()}>{t("products.archive")}</Button>}</div>

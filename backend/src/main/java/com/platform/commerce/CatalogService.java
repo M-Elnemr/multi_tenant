@@ -194,19 +194,53 @@ public class CatalogService {
         }
         if (r.media() != null) {
             int mi = 0;
-            for (MediaReq m : r.media()) {
-                String url = m.url();
-                if (m.fileId() != null) {
-                    files.requireReady(tenantId, m.fileId(), java.util.Set.of("PRODUCT_IMAGE"), null);
-                    url = "/api/v1/files/" + m.fileId() + "/content";
-                }
-                if (url == null) throw BusinessException.badRequest("VALIDATION_ERROR", "Media needs a fileId or url");
-                var loc = m.fileId() == null ? java.util.Map.<String, String>of() : files.publicLocation(tenantId, m.fileId());
-                jdbc.sql("INSERT INTO commerce.product_media (tenant_id, product_id, file_id, url, sort_order, alt_text, media_base, media_ext) VALUES (:t, :p, :f, :u, :o, :a, :mb, :me)")
-                        .param("t", tenantId).param("p", productId).param("f", m.fileId()).param("u", url).param("o", mi++).param("a", m.altText()).param("mb", loc.get("base")).param("me", loc.get("ext")).update();
-            }
+            for (MediaReq m : r.media()) insertMedia(tenantId, productId, m, mi++);
         }
         audit.record(actor, tenantId, "PRODUCT_CREATED", "product", productId, null);
+        return detail(tenantId, productId, false);
+    }
+
+    private void insertMedia(UUID tenantId, UUID productId, MediaReq m, int order) {
+        String url = m.url();
+        if (m.fileId() != null) {
+            files.requireReady(tenantId, m.fileId(), java.util.Set.of("PRODUCT_IMAGE"), null);
+            url = "/api/v1/files/" + m.fileId() + "/content";
+        }
+        if (url == null) throw BusinessException.badRequest("VALIDATION_ERROR", "Media needs a fileId or url");
+        var loc = m.fileId() == null ? java.util.Map.<String, String>of() : files.publicLocation(tenantId, m.fileId());
+        jdbc.sql("INSERT INTO commerce.product_media (tenant_id, product_id, file_id, url, sort_order, alt_text, media_base, media_ext) VALUES (:t, :p, :f, :u, :o, :a, :mb, :me)")
+                .param("t", tenantId).param("p", productId).param("f", m.fileId()).param("u", url).param("o", order).param("a", m.altText()).param("mb", loc.get("base")).param("me", loc.get("ext")).update();
+    }
+
+    /** Pictures can be added, removed and re-ordered after a product exists (the first one is the main picture). */
+    @Transactional
+    public Map<String, Object> addMedia(UUID tenantId, UUID actor, UUID productId, MediaReq m) {
+        requireOwned("commerce.products", productId, tenantId);
+        if (jdbc.sql("SELECT count(*) FROM commerce.product_media WHERE product_id = :p").param("p", productId).query(Long.class).single() >= 10)
+            throw BusinessException.badRequest("TOO_MANY_IMAGES", "Up to 10 pictures per product");
+        int next = jdbc.sql("SELECT coalesce(max(sort_order), -1) + 1 FROM commerce.product_media WHERE product_id = :p").param("p", productId).query(Integer.class).single();
+        insertMedia(tenantId, productId, m, next);
+        audit.record(actor, tenantId, "PRODUCT_UPDATED", "product", productId, null);
+        return detail(tenantId, productId, false);
+    }
+
+    @Transactional
+    public Map<String, Object> removeMedia(UUID tenantId, UUID actor, UUID productId, UUID mediaId) {
+        requireOwned("commerce.products", productId, tenantId);
+        jdbc.sql("DELETE FROM commerce.product_media WHERE id = :m AND product_id = :p AND tenant_id = :t").param("m", mediaId).param("p", productId).param("t", tenantId).update();
+        audit.record(actor, tenantId, "PRODUCT_UPDATED", "product", productId, null);
+        return detail(tenantId, productId, false);
+    }
+
+    /** `ids` lists the picture ids in the wanted order; any not listed keep their place after the listed ones. */
+    @Transactional
+    public Map<String, Object> reorderMedia(UUID tenantId, UUID actor, UUID productId, List<UUID> ids) {
+        requireOwned("commerce.products", productId, tenantId);
+        int i = 0;
+        for (UUID id : ids) jdbc.sql("UPDATE commerce.product_media SET sort_order = :o WHERE id = :m AND product_id = :p AND tenant_id = :t").param("o", i++).param("m", id).param("p", productId).param("t", tenantId).update();
+        jdbc.sql("UPDATE commerce.product_media SET sort_order = sort_order + :o WHERE product_id = :p AND tenant_id = :t AND NOT (id = ANY(string_to_array(:ids, ',')::uuid[]))")
+                .param("o", ids.size()).param("p", productId).param("t", tenantId).param("ids", String.join(",", ids.stream().map(UUID::toString).toList())).update();
+        audit.record(actor, tenantId, "PRODUCT_UPDATED", "product", productId, null);
         return detail(tenantId, productId, false);
     }
 

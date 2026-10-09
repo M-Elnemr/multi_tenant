@@ -1101,6 +1101,10 @@ const en: Record<string, string> = {
   "csv.row": "Row {n}",
   "error.TOO_MANY_ROWS": "Up to 500 products per file.",
   "error.NO_BRANCH": "Add a branch first.",
+  "images.title": "Pictures",
+  "images.main": "Main",
+  "images.add": "Add picture",
+  "error.TOO_MANY_IMAGES": "Up to 10 pictures per product.",
 };
 
 const ar: Record<string, string> = {
@@ -2188,6 +2192,10 @@ const ar: Record<string, string> = {
   "csv.row": "الصف {n}",
   "error.TOO_MANY_ROWS": "حتى 500 منتج في الملف الواحد.",
   "error.NO_BRANCH": "أضف فرعًا أولًا.",
+  "images.title": "الصور",
+  "images.main": "الرئيسية",
+  "images.add": "إضافة صورة",
+  "error.TOO_MANY_IMAGES": "حتى 10 صور لكل منتج.",
 };
 
 export const dictionaries: Record<Locale, Record<string, string>> = { en, ar };

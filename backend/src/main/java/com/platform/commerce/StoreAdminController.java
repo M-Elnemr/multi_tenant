@@ -72,6 +72,20 @@ public class StoreAdminController {
         return Map.of("ok", true);
     }
 
+    public record MediaOrder(List<UUID> ids) {}
+
+    @PostMapping("/products/{id}/media")
+    @PreAuthorize("hasAuthority('product.update')")
+    public Map<String, Object> addMedia(@PathVariable UUID id, @RequestBody CatalogService.MediaReq r, Authentication a) { return catalog.addMedia(StoreContext.tenantId(), user(a), id, r); }
+
+    @DeleteMapping("/products/{id}/media/{mediaId}")
+    @PreAuthorize("hasAuthority('product.update')")
+    public Map<String, Object> removeMedia(@PathVariable UUID id, @PathVariable UUID mediaId, Authentication a) { return catalog.removeMedia(StoreContext.tenantId(), user(a), id, mediaId); }
+
+    @PutMapping("/products/{id}/media/order")
+    @PreAuthorize("hasAuthority('product.update')")
+    public Map<String, Object> reorderMedia(@PathVariable UUID id, @RequestBody MediaOrder r, Authentication a) { return catalog.reorderMedia(StoreContext.tenantId(), user(a), id, r.ids()); }
+
     @PatchMapping("/products/{id}/extras")
     @PreAuthorize("hasAuthority('product.update')")
     public Map<String, Object> productExtras(@PathVariable UUID id, @RequestBody Map<String, Object> r, Authentication a) { return catalog.updateExtras(StoreContext.tenantId(), user(a), id, r); }
