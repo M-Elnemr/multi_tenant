@@ -3,7 +3,8 @@
 export type Locale = "ar" | "en";
 
 const en: Record<string, string> = {
-  "brand.name": "Platform",
+  "brand.name": "Elmanassa",
+  "brand.powered": "Powered by",
   "unknown.title": "This address is not active",
   "unknown.body": "We could not find a store or clinic at this address. Check the link or contact the owner.",
 
@@ -32,6 +33,7 @@ const en: Record<string, string> = {
   "common.hide": "Hide",
   "common.show": "Show",
   "common.home": "Home",
+  "common.more": "More",
   "common.next": "Next",
   "common.prev": "Previous",
   "common.notFound": "We couldn't find that page.",
@@ -754,6 +756,7 @@ const en: Record<string, string> = {
 
 const ar: Record<string, string> = {
   "brand.name": "المنصة",
+  "brand.powered": "بدعم من",
   "unknown.title": "هذا العنوان غير مفعّل",
   "unknown.body": "لم نجد متجرًا أو عيادة على هذا العنوان. تحقق من الرابط أو تواصل مع صاحب النشاط.",
 
@@ -781,6 +784,7 @@ const ar: Record<string, string> = {
   "common.hide": "إخفاء",
   "common.show": "إظهار",
   "common.home": "الرئيسية",
+  "common.more": "المزيد",
   "common.next": "التالي",
   "common.prev": "السابق",
   "common.notFound": "لم نعثر على هذه الصفحة.",

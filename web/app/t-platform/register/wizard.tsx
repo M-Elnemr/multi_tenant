@@ -7,6 +7,8 @@ import { useAction, useApi } from "@/components/hooks";
 import { CategoryPicker, categoriesValid, type CategoryOption } from "@/components/category-picker";
 import { useT } from "@/components/i18n-provider";
 import { Alert, Button, ErrorText, Field, Input } from "@/components/ui";
+import { Icon } from "@/components/icons";
+import { LogoMark } from "@/components/brand";
 
 type Type = "STORE" | "CLINIC";
 
@@ -89,13 +91,13 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
   if (done) {
     const base = siteUrl(done.host);
     return (
-      <div className="mx-auto max-w-lg px-4 py-14 text-center">
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-2xl text-emerald-700">✓</div>
-        <h1 className="text-2xl font-semibold">{t("register.liveTitle")}</h1>
+      <div className="mx-auto max-w-lg animate-fade-up px-4 py-14 text-center">
+        <div className="mx-auto mb-4 flex h-16 w-16 animate-pop items-center justify-center rounded-full bg-emerald-100 text-emerald-700 ring-8 ring-emerald-50"><Icon name="check" className="h-8 w-8" /></div>
+        <h1 className="text-2xl font-bold">{t("register.liveTitle")}</h1>
         <p className="mt-2 text-slate-600">{t("register.liveBody")}</p>
-        <p className="my-4 rounded-lg bg-white p-3 font-mono text-sm" dir="ltr">{done.host}</p>
+        <p className="my-4 rounded-xl border border-slate-200 bg-white p-3 font-mono text-sm shadow-soft" dir="ltr">{done.host}</p>
         <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
-          <button type="button" onClick={() => void openDashboard()} disabled={opening || !ready} className="rounded-lg bg-brand px-5 py-3 text-sm font-medium text-white disabled:opacity-60">{opening ? t("myplaces.opening") : !ready ? t("register.preparing") : t("register.openDashboard")}</button>
+          <button type="button" onClick={() => void openDashboard()} disabled={opening || !ready} className="rounded-xl bg-brand-gradient px-5 py-3 text-sm font-semibold text-white shadow-brand transition active:scale-[.97] disabled:opacity-60">{opening ? t("myplaces.opening") : !ready ? t("register.preparing") : t("register.openDashboard")}</button>
           {ready ? <a href={base} className="rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-medium">{t("register.viewSite")}</a> : <span className="rounded-lg border border-slate-200 bg-slate-50 px-5 py-3 text-sm text-slate-400">{t("register.viewSite")}</span>}
         </div>
         <p className="mt-6 text-sm text-slate-500">{t("register.domainTip")}</p>
@@ -106,11 +108,13 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
   if (!type) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-14">
-        <h1 className="mb-6 text-center text-2xl font-semibold">{t("register.chooseType")}</h1>
-        <div className="grid gap-4 sm:grid-cols-2">
-          {([["STORE", "type.store", "register.storeDesc"], ["CLINIC", "type.clinic", "register.clinicDesc"]] as const).map(([v, title, desc]) => (
-            <button key={v} onClick={() => setType(v)} className="rounded-2xl border-2 border-slate-200 bg-white p-6 text-start transition hover:border-brand">
-              <p className="text-lg font-semibold">{t(title)}</p>
+        <LogoMark className="mx-auto mb-4 h-16 w-16 animate-float" />
+        <h1 className="mb-8 animate-fade-up text-center text-2xl font-bold sm:text-3xl">{t("register.chooseType")}</h1>
+        <div className="stagger grid gap-4 sm:grid-cols-2">
+          {([["STORE", "type.store", "register.storeDesc", "bag"], ["CLINIC", "type.clinic", "register.clinicDesc", "stethoscope"]] as const).map(([v, title, desc, icon], i) => (
+            <button key={v} style={{ "--i": i } as React.CSSProperties} onClick={() => setType(v)} className="hover-lift group rounded-3xl border-2 border-slate-200 bg-white p-6 text-start hover:border-brand">
+              <span className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-soft text-brand transition group-hover:bg-brand-gradient group-hover:text-white"><Icon name={icon} className="h-7 w-7" /></span>
+              <p className="text-lg font-bold">{t(title)}</p>
               <p className="mt-1 text-sm text-slate-500">{t(desc)}</p>
             </button>
           ))}
@@ -121,11 +125,11 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
 
   const valid = name.trim().length >= 2 && avail === "ok" && owner.name.trim() && owner.phone.trim() && owner.password.length >= 8 && categoriesValid(cats, otherCat);
   return (
-    <div className="mx-auto max-w-xl px-4 py-12">
-      <button onClick={() => { setType(null); setCats([]); setOtherCat(""); }} className="mb-4 text-sm text-slate-500 underline">{t("common.back")}</button>
-      <h1 className="mb-1 text-2xl font-semibold">{type === "STORE" ? t("register.storeTitle") : t("register.clinicTitle")}</h1>
+    <div className="mx-auto max-w-xl animate-fade-up px-4 py-12">
+      <button onClick={() => { setType(null); setCats([]); setOtherCat(""); }} className="mb-4 inline-flex items-center gap-1 text-sm text-slate-500 transition hover:text-brand"><Icon name="arrow" className="h-4 w-4 rotate-180 rtl:rotate-0" />{t("common.back")}</button>
+      <h1 className="mb-1 text-2xl font-bold">{type === "STORE" ? t("register.storeTitle") : t("register.clinicTitle")}</h1>
       <p className="mb-6 text-sm text-slate-500">{t("register.freeTrial")}</p>
-      <form onSubmit={(e) => { e.preventDefault(); if (valid) void create.run(); }} className="space-y-5 rounded-2xl border border-slate-200 bg-white p-6">
+      <form onSubmit={(e) => { e.preventDefault(); if (valid) void create.run(); }} className="space-y-5 rounded-3xl border border-slate-200/80 bg-white p-6 shadow-lift sm:p-8">
         <Field label={type === "STORE" ? t("register.storeName") : t("register.clinicName")}>
           <Input value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} />
         </Field>

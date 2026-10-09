@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/client";
 import { useT } from "./i18n-provider";
+import { Icon } from "./icons";
 import { Button } from "./ui";
 
 export function LogoutButton({ className }: { className?: string }) {
@@ -14,7 +15,7 @@ export function LogoutButton({ className }: { className?: string }) {
       router.replace("/");
       router.refresh();
     }}>
-      {t("nav.logout")}
+      <Icon name="logout" className="h-4 w-4 flip-rtl" />{t("nav.logout")}
     </Button>
   );
 }
