@@ -5,6 +5,7 @@ import { Page, useApi } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Badge, Card, ErrorText, Input, Loading, Modal, PageHeader, Pager, StatusBadge, Table, Td } from "@/components/ui";
 import { Icon } from "@/components/icons";
+import { FlaggedPhones } from "@/components/dashboard/flagged-phones";
 import { WhatsAppButton } from "@/components/whatsapp-button";
 import { dateOnly, dateTime, money } from "@/lib/format";
 
@@ -29,6 +30,7 @@ export default function Customers() {
   return (
     <>
       <PageHeader title={t("nav.customers")} subtitle={t("customers.readOnly")} />
+      <FlaggedPhones />
       <div className="mb-4 max-w-md"><Input placeholder={t("customers.search")} value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} /></div>
       <ErrorText error={error} />
       {loading && !data ? <Loading /> : (

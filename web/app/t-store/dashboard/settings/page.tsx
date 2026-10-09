@@ -4,6 +4,8 @@ import { useState } from "react";
 import { api } from "@/lib/client";
 import { toMinor, money } from "@/lib/format";
 import BrandingCard from "@/components/dashboard/branding";
+import { ZonesCard } from "@/components/dashboard/zones";
+import { BannersCard } from "@/components/dashboard/banners";
 import { BranchesCard, ContactCard, SetupChecklist, type StoreProfile } from "@/components/dashboard/store-identity";
 import { CategoryPicker, categoriesValid, type CategoryOption } from "@/components/category-picker";
 import { useAction, useApi, useMe } from "@/components/hooks";
@@ -99,6 +101,8 @@ export default function StoreSettings() {
             <ErrorText error={addShip.error ?? toggleShip.error} />
           </Card></section>
         )}
+        {can("settings.manage") && <BannersCard />}
+        {can("shipping.manage") && <ZonesCard />}
         {can("branch.manage") && <section id="branches"><BranchesCard /></section>}
       </div>
     </>

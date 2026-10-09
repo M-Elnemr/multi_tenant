@@ -57,9 +57,9 @@ export function DashboardShell({ nav, children }: { nav: NavItem[]; children: Re
   const quick = allowed.slice(0, 4);
 
   return (
-    <div className="min-h-screen lg:flex">
+    <div className="min-h-screen lg:flex print:block">
       {/* mobile top bar */}
-      <header className="glass sticky top-0 z-30 flex items-center justify-between border-b border-slate-200/70 px-3 py-2.5 lg:hidden">
+      <header className="glass sticky top-0 z-30 print:hidden flex items-center justify-between border-b border-slate-200/70 px-3 py-2.5 lg:hidden">
         <button onClick={() => setOpen(true)} aria-label="Menu" className="rounded-xl p-2 text-slate-700 transition hover:bg-brand-soft active:scale-95"><Icon name="menu" className="h-6 w-6" /></button>
         <span className="flex min-w-0 items-center gap-2 font-bold"><LogoMark className="h-7 w-7" /><span className="truncate text-gradient">{current ? t(current.label) : siteName}</span></span>
         {bell("")}
@@ -68,7 +68,7 @@ export function DashboardShell({ nav, children }: { nav: NavItem[]; children: Re
       {/* backdrop (phones) */}
       <div onClick={() => setOpen(false)} className={`fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm transition-opacity duration-300 lg:hidden ${open ? "opacity-100" : "pointer-events-none opacity-0"}`} aria-hidden />
 
-      <aside className={`fixed inset-y-0 start-0 z-50 flex w-72 flex-col border-e border-slate-200/70 bg-white/95 p-4 shadow-2xl backdrop-blur transition-transform duration-300 ease-out lg:sticky lg:top-0 lg:z-20 lg:h-screen lg:w-64 lg:shrink-0 lg:translate-x-0! lg:shadow-none ${open ? "translate-x-0" : "ltr:-translate-x-full rtl:translate-x-full"}`}>
+      <aside className={`print:hidden fixed inset-y-0 start-0 z-50 flex w-72 flex-col border-e border-slate-200/70 bg-white/95 p-4 shadow-2xl backdrop-blur transition-transform duration-300 ease-out lg:sticky lg:top-0 lg:z-20 lg:h-screen lg:w-64 lg:shrink-0 lg:translate-x-0! lg:shadow-none ${open ? "translate-x-0" : "ltr:-translate-x-full rtl:translate-x-full"}`}>
         <div className="mb-5 flex items-center justify-between gap-2">
           <Link href="/" className="flex min-w-0 items-center gap-2.5">
             <LogoMark className="h-10 w-10" />
@@ -96,10 +96,10 @@ export function DashboardShell({ nav, children }: { nav: NavItem[]; children: Re
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1 p-4 pb-24 sm:p-6 lg:p-8 lg:pb-8"><div key={path} className="animate-fade-up">{children}</div></main>
+      <main className="min-w-0 flex-1 p-4 pb-24 sm:p-6 lg:p-8 lg:pb-8 print:p-0"><div key={path} className="animate-fade-up">{children}</div></main>
 
       {/* phone quick bar */}
-      <nav className="glass fixed inset-x-0 bottom-0 z-30 flex justify-around border-t border-slate-200/70 px-1 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-1.5 lg:hidden">
+      <nav className="glass print:hidden fixed inset-x-0 bottom-0 z-30 flex justify-around border-t border-slate-200/70 px-1 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-1.5 lg:hidden">
         {quick.map((n) => (
           <Link key={n.href} href={n.href} className={`flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-xl py-1 text-[11px] font-medium transition active:scale-95 ${isActive(n) ? "text-brand" : "text-slate-500"}`}>
             <span className={`rounded-full px-4 py-1 transition-colors ${isActive(n) ? "bg-brand-soft-2" : ""}`}><NavIcon icon={n.icon} className="h-5 w-5" /></span>

@@ -19,6 +19,14 @@ function combos(options: { name: string; values: string[] }[]): Record<string, s
 }
 
 /** Create a product with options (size, colour...). The matrix of variants is generated for you: just fill in SKU, price and stock. */
+import { buildTree, type ShopCategory } from "@/components/shop/types";
+
+/** Categories in tree order with their depth, so the picker shows the hierarchy. */
+function treeOptions(flat: { id: string; name: string; parentId?: string | null }[]) {
+  const walk = (nodes: ReturnType<typeof buildTree>, depth: number): { id: string; name: string; depth: number }[] => nodes.flatMap((n) => [{ id: n.id, name: n.name, depth }, ...walk(n.children, depth + 1)]);
+  return walk(buildTree(flat as ShopCategory[]), 0);
+}
+
 export default function NewProduct() {
   const t = useT();
   const router = useRouter();
@@ -49,7 +57,7 @@ export default function NewProduct() {
           <Field label={t("products.name")}><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required /></Field>
           <Field label={t("products.description")}><Textarea rows={4} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} /></Field>
           <div className="grid gap-4 sm:grid-cols-3">
-            <Field label={t("products.category")}><Select value={f.categoryId} onChange={(e) => setF({ ...f, categoryId: e.target.value })}><option value="">-</option>{categories.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Select></Field>
+            <Field label={t("products.category")}><Select value={f.categoryId} onChange={(e) => setF({ ...f, categoryId: e.target.value })}><option value="">-</option>{treeOptions(categories.data ?? []).map((c) => <option key={c.id} value={c.id}>{"— ".repeat(c.depth)}{c.name}</option>)}</Select></Field>
             <Field label={t("products.brand")}><Input value={f.brand} onChange={(e) => setF({ ...f, brand: e.target.value })} /></Field>
             <Field label={t("admin.status")}><Select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}><option value="ACTIVE">{t("status.ACTIVE")}</option><option value="DRAFT">{t("status.DRAFT")}</option></Select></Field>
           </div>
