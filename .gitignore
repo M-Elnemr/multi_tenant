@@ -12,3 +12,6 @@ backend/build/
 build/
 web/.next
 web/node_modules
+
+# credentials mounted into containers (FCM service account etc.)
+secrets/

@@ -18,6 +18,6 @@ shop clients can still order as guests, and patients still see the queue refresh
 
 1. https://console.firebase.google.com -> add project -> add an **Android app** with package `com.elmanassa.app (iOS bundle id is the same)`.
 2. Download `google-services.json` into `mobile/apps/elmanassa/android/app/` (the build applies the Google services plugin automatically when the file exists). Do not commit it if the repo is public.
-3. Project settings -> **Service accounts -> Generate new private key**. Put the JSON on the server (for example `/opt/multitenant/secrets/fcm.json`, mode 600), mount it into the backend container
+3. Project settings -> **Service accounts -> Generate new private key**. Put the JSON on the server (for example `/opt/multitenant/secrets/fcm.json`, mode 600), the compose file mounts `./secrets` read-only at `/run/secrets` (create it: `mkdir -p secrets && chmod 700 secrets`)
    and set `FCM_CREDENTIALS_FILE=/run/secrets/fcm.json` in `.env`.
 4. Rebuild the app. After sign-in it registers the phone; pressing **Call** in the clinic's waiting room sends the notification.

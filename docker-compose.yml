@@ -54,6 +54,8 @@ services:
       REDIS_HOST: redis
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       JAVA_TOOL_OPTIONS: ${BACKEND_JAVA_OPTS:--XX:MaxRAMPercentage=70}
+    volumes:
+      - ./secrets:/run/secrets:ro   # e.g. secrets/fcm.json for FCM_CREDENTIALS_FILE=/run/secrets/fcm.json (never committed)
     expose:
       - "8080"
     healthcheck:
