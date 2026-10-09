@@ -4,8 +4,8 @@ import 'dart:convert';
 /// scheme + host for a tenant host returned by the API (https unless built with --dart-define=INSECURE_HTTP=true for local dev).
 String baseForHost(String host, {bool insecure = const bool.fromEnvironment('INSECURE_HTTP')}) => '${insecure ? 'http' : 'https'}://$host';
 
-/// Base URL of the platform site itself (sign-in that spans every clinic): --dart-define=ROOT_DOMAIN=platform.com
-String platformBase({String rootDomain = const String.fromEnvironment('ROOT_DOMAIN', defaultValue: 'platform.localtest.me')}) => baseForHost(rootDomain);
+/// Base URL of the platform site itself (sign-in that spans every clinic): --dart-define=ROOT_DOMAIN=<domain> (default: elmanassa.shop; use platform.localtest.me with INSECURE_HTTP for a local backend)
+String platformBase({String rootDomain = const String.fromEnvironment('ROOT_DOMAIN', defaultValue: 'elmanassa.shop')}) => baseForHost(rootDomain);
 
 /// Resolved identity of a store/clinic address.
 class TenantInfo {
@@ -21,8 +21,8 @@ class TenantInfo {
   static String? _color(Object? v) => v is String && RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(v) ? v : null;
 
   /// Accepts "fashion", "fashion.example.com" or a full URL. A bare slug is expanded with [rootDomain]
-  /// (set at build time: --dart-define=ROOT_DOMAIN=platform.com).
-  static Future<TenantInfo> resolve(String input, {String rootDomain = const String.fromEnvironment('ROOT_DOMAIN', defaultValue: 'platform.localtest.me'), bool insecure = const bool.fromEnvironment('INSECURE_HTTP')}) async {
+  /// (set at build time: --dart-define=ROOT_DOMAIN=<domain> (default: elmanassa.shop; use platform.localtest.me with INSECURE_HTTP for a local backend)).
+  static Future<TenantInfo> resolve(String input, {String rootDomain = const String.fromEnvironment('ROOT_DOMAIN', defaultValue: 'elmanassa.shop'), bool insecure = const bool.fromEnvironment('INSECURE_HTTP')}) async {
     var host = input.trim().toLowerCase().replaceFirst(RegExp(r'^https?://'), '').split('/').first;
     if (!host.contains('.') && !host.contains(':')) host = '$host.$rootDomain';
     final base = '${insecure ? 'http' : 'https'}://$host';
