@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        project: [packages/platform_core, apps/customer, apps/provider, apps/patient]
+        project: [packages/platform_core, apps/provider, apps/elmanassa]
     defaults:
       run:
         working-directory: mobile/${{ matrix.project }}

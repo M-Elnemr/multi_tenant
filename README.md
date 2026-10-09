@@ -7,7 +7,7 @@ Spec: `SaaS_MultiTenant_Ecommerce_Medical_Master_Spec.md`.
 |---|---|---|
 | API | Spring Boot 4.1 / Java 17 / Gradle / Flyway / PostgreSQL (modular monolith) | `backend/` |
 | Web | Next.js 16 (platform site, every storefront, every clinic site, all dashboards; Arabic RTL + English) | `web/` |
-| Mobile | Flutter: `customer`, `provider`, `patient` apps + shared `platform_core` | `mobile/` |
+| Mobile | Flutter: `elmanassa` (patients + shop clients, one app), `provider` apps + shared `platform_core` | `mobile/` |
 | Edge | Caddy with on-demand TLS, Docker Compose, GitHub Actions to ghcr.io | `infra/`, `docker-compose.yml`, `.github/` |
 
 ## Add a store or a doctor
@@ -37,7 +37,7 @@ Tests / checks:
 ```
 cd backend && DB_USERNAME=$USER ./gradlew test                      # integration tests against real Postgres
 cd web && npm run lint && npm run typecheck && npm run build       # lint also verifies every UI string exists in Arabic and English
-cd mobile/packages/platform_core && flutter test; cd ../../apps/customer && flutter analyze
+cd mobile/packages/platform_core && flutter test; cd ../../apps/elmanassa && flutter analyze
 ```
 
 ## Deploy (one VPS)
