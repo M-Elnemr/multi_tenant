@@ -33,9 +33,9 @@ export function GoogleComplete() {
     const mine = readGoogleHandoff();
     history.replaceState(null, "", window.location.pathname);   // the token must not stay in the address bar / history
     clearGoogleHandoff();
-    if (!credential || !mine || mine.state !== h.get("state")) { setFailed(true); return; }
-    api("auth/client/google", { body: { credential } })
-      .then(() => window.location.replace(safeNext(mine.next)))
+    const valid = !!credential && !!mine && mine.state === h.get("state");
+    (valid ? api("auth/client/google", { body: { credential } }) : Promise.reject(new Error("bad handoff")))
+      .then(() => window.location.replace(safeNext(mine?.next)))
       .catch(() => setFailed(true));
   }, []);
   if (failed) return <p className="text-center text-sm text-red-600">{t("login.googleFailed")} <a className="underline" href="/login">{t("login.title")}</a></p>;
