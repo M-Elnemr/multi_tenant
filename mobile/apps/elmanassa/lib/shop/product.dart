@@ -40,7 +40,11 @@ class _ProductPageState extends State<ProductPage> {
           final discount = compare != null && compare > price ? ((compare - price) * 100 / compare).round() : 0;
           final media = ((p['media'] as List?) ?? []).cast<Map<String, dynamic>>();
           final specs = ((p['specs'] as List?) ?? []).cast<Map<String, dynamic>>();
-          final label = options.map((o) => choice[o['name']]).join(' / ');
+          String disp(Map<String, dynamic> o, String v) {
+            for (final m in ((o['valueMeta'] as List?) ?? []).cast<Map<String, dynamic>>()) { if (m['value'] == v) return (s.ar ? m['nameAr'] : m['nameEn']) as String; }
+            return v;
+          }
+          final label = options.map((o) => disp(o, choice[o['name']] as String)).join(' / ');
           return ListView(children: [
             SizedBox(height: 360, child: media.isEmpty ? Container(color: cs.surfaceContainerHighest, child: const Icon(Icons.shopping_bag_outlined, size: 64)) : Stack(children: [
               PageView(controller: pager, children: [for (final m in media) Image.network(imageUrl(c.base, m) ?? '', fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: cs.surfaceContainerHighest))]),
@@ -56,9 +60,21 @@ class _ProductPageState extends State<ProductPage> {
               ]),
               for (final o in options) ...[
                 const SizedBox(height: 14),
-                Text('${o['name']}: ${choice[o['name']]}', style: const TextStyle(fontWeight: FontWeight.w800)),
+                Text('${(s.ar ? o['labelAr'] : o['labelEn']) ?? o['name']}: ${disp(o, choice[o['name']] as String)}', style: const TextStyle(fontWeight: FontWeight.w800)),
                 const SizedBox(height: 6),
-                Wrap(spacing: 8, children: [for (final val in (o['values'] as List).cast<String>()) ChoiceChip(label: Text(val), selected: choice[o['name']] == val, onSelected: (_) => setState(() { choice[o['name'] as String] = val; qty = 1; }))]),
+                if (o['attribute'] == 'COLOR')
+                  Wrap(spacing: 10, runSpacing: 8, children: [for (final val in (o['values'] as List).cast<String>()) GestureDetector(
+                    onTap: () => setState(() { choice[o['name'] as String] = val; qty = 1; }),
+                    child: Builder(builder: (_) {
+                      String? h; for (final m in ((o['valueMeta'] as List?) ?? []).cast<Map<String, dynamic>>()) { if (m['value'] == val) h = m['hex'] as String?; }
+                      final on = choice[o['name']] == val;
+                      return Container(width: 40, height: 40, decoration: BoxDecoration(shape: BoxShape.circle, color: h == null || h.length < 7 ? null : Color(int.parse('FF${h.substring(1)}', radix: 16)),
+                        gradient: h == null || h.length < 7 ? const SweepGradient(colors: [Colors.red, Colors.yellow, Colors.green, Colors.blue, Colors.purple, Colors.red]) : null,
+                        border: Border.all(color: on ? cs.primary : Colors.black26, width: on ? 3 : 1)), child: on ? const Icon(Icons.check, size: 18, color: Colors.white) : null);
+                    }),
+                  )])
+                else
+                  Wrap(spacing: 8, children: [for (final val in (o['values'] as List).cast<String>()) ChoiceChip(label: Text(disp(o, val)), selected: choice[o['name']] == val, onSelected: (_) => setState(() { choice[o['name'] as String] = val; qty = 1; }))]),
               ],
               if (inStock && (v['available'] as num) <= 5) Padding(padding: const EdgeInsets.only(top: 10), child: Text(s.ar ? '🔥 متبقي ${v['available']} فقط' : '🔥 Only ${v['available']} left', style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.w800))),
               const SizedBox(height: 16),

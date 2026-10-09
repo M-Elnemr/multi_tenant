@@ -4,35 +4,32 @@ import { use, useState } from "react";
 import { api } from "@/lib/client";
 import { fromMinor, toMinor } from "@/lib/format";
 import { useAction, useApi, useMe } from "@/components/hooks";
-import { useT } from "@/components/i18n-provider";
+import { useI18n } from "@/components/i18n-provider";
 import { Button, Card, ErrorText, Field, Input, Loading, PageHeader, Select, StatusBadge, Textarea } from "@/components/ui";
 import { useRouter } from "next/navigation";
 import { ProductExtras, type Extras } from "@/components/dashboard/product-extras";
 import { ProductImages, type ProductMedia } from "@/components/dashboard/product-images";
-import { buildTree, type ShopCategory } from "@/components/shop/types";
+import { TaxonomyPicker, type TaxonomyNode } from "@/components/dashboard/taxonomy-picker";
 
 type Detail = {
-  id: string; name: string; description: string; brand?: string; status: string; categoryId?: string | null; badge?: string; tags?: string[]; specs?: { k: string; v: string }[]; sizeGuide?: string; isFeatured?: boolean;
+  id: string; name: string; description: string; brand?: string; status: string; audience?: string; itemCondition?: string; taxonomy?: { id: number; slug: string; nameAr: string; nameEn: string; level: number }[]; badge?: string; tags?: string[]; specs?: { k: string; v: string }[]; sizeGuide?: string; isFeatured?: boolean;
   variants: { id: string; sku: string; priceMinor: number; comboKey: string; status: string; available: number }[];
   media: ProductMedia[];
 };
 
-type Flat = { id: string; name: string; depth: number };
-const flat = (nodes: ReturnType<typeof buildTree>, depth = 0): Flat[] => nodes.flatMap((n) => [{ id: n.id, name: n.name, depth }, ...flat(n.children, depth + 1)]);
-
 export default function EditProduct({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const t = useT();
+  const { t, locale } = useI18n();
   const router = useRouter();
   const { can } = useMe();
   const { data, loading, error, reload } = useApi<Detail>(`store/products/${id}`);
-  const cats = useApi<ShopCategory[]>("store/categories");
-  const [f, setF] = useState<{ name: string; description: string; status: string; brand: string; categoryId: string } | null>(null);
+  const [picked, setPicked] = useState<TaxonomyNode | null>(null);
+  const [f, setF] = useState<{ name: string; description: string; status: string; brand: string; audience: string; condition: string } | null>(null);
   const [prices, setPrices] = useState<Record<string, string>>({});
-  const form = f ?? (data ? { name: data.name, description: data.description, status: data.status, brand: data.brand ?? "", categoryId: data.categoryId ?? "" } : null);
+  const form = f ?? (data ? { name: data.name, description: data.description, status: data.status, brand: data.brand ?? "", audience: data.audience ?? "", condition: data.itemCondition ?? "NEW" } : null);
   const save = useAction(async () => {
     if (!form) return;
-    await api(`store/products/${id}`, { method: "PATCH", body: { ...form, categoryId: form.categoryId || undefined } });
+    await api(`store/products/${id}`, { method: "PATCH", body: { ...form, taxonomyId: picked?.id, audience: form.audience || undefined } });
     for (const [vid, p] of Object.entries(prices)) await api(`store/variants/${vid}`, { method: "PATCH", body: { priceMinor: toMinor(p) } });
     setPrices({});
     await reload();
@@ -46,9 +43,13 @@ export default function EditProduct({ params }: { params: Promise<{ id: string }
       <form onSubmit={(e) => { e.preventDefault(); void save.run(); }} className="space-y-5">
         <Card className="space-y-4">
           <Field label={t("products.name")}><Input value={form.name} onChange={(e) => setF({ ...form, name: e.target.value })} required /></Field>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <Field label={t("products.category")} hint={t("taxonomy.hint")}>
+            <TaxonomyPicker value={picked ?? (data.taxonomy?.length ? { id: data.taxonomy[data.taxonomy.length - 1].id, slug: data.taxonomy[data.taxonomy.length - 1].slug, name: "", breadcrumb: data.taxonomy.map((x) => (locale === "ar" ? x.nameAr : x.nameEn)).join(" › "), level: data.taxonomy.length, hasChildren: false, appliesAudience: true, sizeScales: [] } : null)} onChange={setPicked} />
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-3">
             <Field label={t("extras.brand")}><Input value={form.brand} onChange={(e) => setF({ ...form, brand: e.target.value })} /></Field>
-            <Field label={t("products.category")}><Select value={form.categoryId} onChange={(e) => setF({ ...form, categoryId: e.target.value })}><option value="">—</option>{flat(buildTree(cats.data ?? [])).map((r) => <option key={r.id} value={r.id}>{"— ".repeat(r.depth)}{r.name}</option>)}</Select></Field>
+            <Field label={t("filter.for")}><Select value={form.audience} onChange={(e) => setF({ ...form, audience: e.target.value })}><option value="">—</option>{["MEN", "WOMEN", "BOYS", "GIRLS", "BABY", "ALL"].map((a) => <option key={a} value={a}>{t(`audience.${a}`)}</option>)}</Select></Field>
+            <Field label={t("filter.condition")}><Select value={form.condition} onChange={(e) => setF({ ...form, condition: e.target.value })}>{["NEW", "USED", "REFURBISHED"].map((c) => <option key={c} value={c}>{t(`condition.${c}`)}</option>)}</Select></Field>
           </div>
           <Field label={t("products.description")}><Textarea rows={4} value={form.description} onChange={(e) => setF({ ...form, description: e.target.value })} /></Field>
           <Field label={t("admin.status")}><Select value={form.status} onChange={(e) => setF({ ...form, status: e.target.value })}>{["ACTIVE", "DRAFT", "ARCHIVED"].map((s) => <option key={s} value={s}>{t(`status.${s}`)}</option>)}</Select></Field>

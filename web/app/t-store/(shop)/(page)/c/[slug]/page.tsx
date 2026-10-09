@@ -3,10 +3,11 @@ import { Suspense } from "react";
 import { Listing, type ListingParams } from "@/components/shop/listing";
 import { backendJson } from "@/lib/backend";
 import type { ShopCategory } from "@/components/shop/types";
+import { getT } from "@/lib/i18n-server";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const slug = (await params).slug;
-  const cat = (await backendJson<ShopCategory[]>("/shop/categories").catch(() => [] as ShopCategory[])).find((c) => c.slug === slug);
+  const cat = (await backendJson<ShopCategory[]>(`/shop/categories?lang=${(await getT()).locale}`).catch(() => [] as ShopCategory[])).find((c) => c.slug === slug);
   return cat ? { title: cat.name } : {};
 }
 

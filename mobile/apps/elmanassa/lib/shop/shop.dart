@@ -21,14 +21,17 @@ class StoreLoader extends StatelessWidget {
   final TenantInfo tenant;
   final ApiClient api;
   @override
-  Widget build(BuildContext context) => Async<(Map<String, dynamic>, List<Map<String, dynamic>>)>(
+  Widget build(BuildContext context) {
+    final lang = S.of(context).ar ? 'ar' : 'en';
+    return Async<(Map<String, dynamic>, List<Map<String, dynamic>>)>(
         load: () async {
           final profile = await api.get('shop/profile') as Map<String, dynamic>;
-          final cats = ((await api.get('shop/categories')) as List).cast<Map<String, dynamic>>();
+          final cats = ((await api.get('shop/categories', query: {'lang': lang})) as List).cast<Map<String, dynamic>>();
           return (profile, cats);
         },
         builder: (context, data, _) => StoreHome(ctx: StoreCtx(tenant: tenant, api: api, cart: Cart(tenant.host), profile: data.$1, categories: data.$2)),
       );
+  }
 }
 
 class StoreHome extends StatefulWidget {

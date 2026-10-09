@@ -10,6 +10,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <nav className="flex gap-5 text-sm font-medium">
           <Link href="/admin" className="text-slate-700 hover:text-brand">{t("admin.overview")}</Link>
           <Link href="/admin/tenants" className="text-slate-700 hover:text-brand">{t("admin.tenants")}</Link>
+          <Link href="/admin/taxonomy" className="text-slate-700 hover:text-brand">{t("admin.taxonomy")}</Link>
           <Link href="/admin/audit" className="text-slate-700 hover:text-brand">{t("admin.audit")}</Link>
         </nav>
         <LogoutButton />

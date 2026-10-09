@@ -6,7 +6,6 @@ const NAV: NavItem[] = [
   { href: "/dashboard/returns", label: "nav.returns", perm: "order.read", icon: "file" },
   { href: "/dashboard/products", label: "nav.products", perm: ["product.update", "product.create"], icon: "bag" },
   { href: "/dashboard/inventory", label: "nav.inventory", perm: "inventory.adjust", icon: "inventory" },
-  { href: "/dashboard/categories", label: "nav.categories", perm: "category.manage", icon: "tag" },
   { href: "/dashboard/customers", label: "nav.customers", perm: "customer.read", icon: "users" },
   { href: "/dashboard/coupons", label: "nav.coupons", perm: "coupon.manage", icon: "coupon" },
   { href: "/dashboard/reviews", label: "nav.reviews", perm: "review.moderate", icon: "star" },

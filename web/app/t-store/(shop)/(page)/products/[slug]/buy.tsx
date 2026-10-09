@@ -15,7 +15,7 @@ import { ErrorText } from "@/components/ui";
 export type ProductDetail = {
   id: string; name: string; slug: string; description: string; shortDescription?: string; brand?: string; currency: string; hasVariants: boolean; badge?: string;
   sizeGuide?: string; tags?: string[]; specs?: { k: string; v: string }[];
-  options: { name: string; values: string[] }[];
+  options: { name: string; values: string[]; attribute?: string; labelAr?: string; labelEn?: string; valueMeta?: { value: string; nameAr: string; nameEn: string; hex: string }[] }[];
   variants: { id: string; sku: string; priceMinor: number; compareAtPriceMinor?: number; comboKey: string; available: number }[];
   media: { url: string; altText?: string; mediaBase?: string | null; mediaExt?: string | null }[];
   reviews: { average: number; count: number; reviews: { rating: number; reviewText?: string; firstName: string }[] };
@@ -37,7 +37,10 @@ export function ProductBuy({ product, whatsapp, storeName, isOpen, returnDays }:
   const inStock = (variant?.available ?? 0) > 0;
   const discount = variant?.compareAtPriceMinor && variant.compareAtPriceMinor > variant.priceMinor ? Math.round(((variant.compareAtPriceMinor - variant.priceMinor) * 100) / variant.compareAtPriceMinor) : 0;
   const badge = product.badge || (discount > 0 ? "SALE" : "");
-  const label = product.options.map((o) => choice[o.name]).join(" / ");
+  // what the shopper sees: the option name and value in their language (stored values are the Arabic standard names)
+  const optLabel = (o: ProductDetail["options"][number]) => (locale === "ar" ? o.labelAr : o.labelEn) ?? o.name;
+  const valLabel = (o: ProductDetail["options"][number], v: string) => { const m = o.valueMeta?.find((x) => x.value === v); return m ? (locale === "ar" ? m.nameAr : m.nameEn) : v; };
+  const label = product.options.map((o) => valLabel(o, choice[o.name])).join(" / ");
 
   const wish = useAction(async () => {
     if (!me) { router.push(`/login?next=${encodeURIComponent(`/products/${product.slug}`)}`); return; }
@@ -79,10 +82,17 @@ export function ProductBuy({ product, whatsapp, storeName, isOpen, returnDays }:
           </div>
           {product.options.map((o) => (
             <div key={o.name}>
-              <p className="mb-2 text-sm font-extrabold">{o.name}: <span className="font-medium text-[var(--s-mute)]">{choice[o.name]}</span></p>
-              <div className="flex flex-wrap gap-2">{o.values.map((v) => (
-                <button key={v} onClick={() => { setChoice({ ...choice, [o.name]: v }); setQty(1); }} className="s-chip !px-5 !py-2.5 !text-sm" data-active={choice[o.name] === v}>{v}</button>
-              ))}</div>
+              <p className="mb-2 text-sm font-extrabold">{optLabel(o)}: <span className="font-medium text-[var(--s-mute)]">{valLabel(o, choice[o.name])}</span></p>
+              <div className="flex flex-wrap gap-2">{o.values.map((v) => {
+                const hex = o.valueMeta?.find((x) => x.value === v)?.hex;
+                return o.attribute === "COLOR" ? (
+                  <button key={v} onClick={() => { setChoice({ ...choice, [o.name]: v }); setQty(1); }} title={valLabel(o, v)} aria-label={valLabel(o, v)} aria-pressed={choice[o.name] === v}
+                    className={`h-10 w-10 rounded-full border transition ${choice[o.name] === v ? "ring-2 ring-[var(--brand)] ring-offset-2" : "hover:scale-110"} border-black/15`}
+                    style={{ background: hex || "conic-gradient(red, yellow, lime, aqua, blue, magenta, red)" }} />
+                ) : (
+                  <button key={v} onClick={() => { setChoice({ ...choice, [o.name]: v }); setQty(1); }} className="s-chip !px-5 !py-2.5 !text-sm" data-active={choice[o.name] === v}>{valLabel(o, v)}</button>
+                );
+              })}</div>
             </div>
           ))}
           <div className="flex flex-wrap items-center gap-3">

@@ -1,4 +1,7 @@
-export type ShopCategory = { id: string; parentId: string | null; name: string; slug: string; imageFileId?: string | null; productCount: number; sortOrder: number };
+/** A standard platform category (the same list for every shop). `name` is already in the visitor's language. */
+export type ShopCategory = { id: string; parentId: string | null; name: string; nameAr?: string; nameEn?: string; slug: string; icon?: string | null; level?: number; appliesAudience?: boolean; imageFileId?: string | null; productCount: number; sortOrder: number };
+
+export const AUDIENCES = ["MEN", "WOMEN", "BOYS", "GIRLS", "BABY", "ALL"] as const;
 export type CategoryNode = ShopCategory & { children: CategoryNode[] };
 
 export function buildTree(flat: ShopCategory[]): CategoryNode[] {

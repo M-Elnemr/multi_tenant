@@ -20,6 +20,7 @@ ap.add_argument("--phone", required=True)
 ap.add_argument("--password", default=os.environ.get("DEMO_PASSWORD"))
 ap.add_argument("--connect", help="send requests to this URL (e.g. http://localhost:8080) but with the shop's Host header; for local dry runs")
 ap.add_argument("--stage", choices=["onboard", "seed", "all"], default="all")
+ap.add_argument("--parts", default="profile,branches,products,delivery", help="which parts of the seed to run (comma list): profile, branches, products, delivery")
 a = ap.parse_args()
 if not a.password:
     sys.exit("pass --password or set DEMO_PASSWORD")
@@ -82,64 +83,66 @@ def seed():
     def api(m, path, body=None):
         return call(m, shop_base, "/api/v1" + path, body, tok)
 
+    parts = set(a.parts.split(","))
     hours = {d: {"open": "10:00", "close": "22:00", "closed": d == "fri"} for d in ["sat", "sun", "mon", "tue", "wed", "thu", "fri"]}
-    logo = up(pic(256, 256, (31, 106, 153), (61, 154, 99)), "LOGO")
-    api("PATCH", "/tenant/branding", {"primaryColor": "#b4532a", "secondaryColor": "#e9a23b", "logoFileId": logo, "locale": "ar"})
-    api("PATCH", "/store/profile", {
-        "storeName": "متجر ديمو", "shortDescription": "ملابس ومستلزمات منزلية بجودة عالية وتوصيل لجميع المحافظات", "about": "هذا متجر تجريبي لتجربة كل مزايا المنصة: البحث، الأقسام، الدفع عند الاستلام، التوصيل حسب المحافظة، التتبع والاسترجاع.",
-        "supportPhone": "01001234567", "whatsapp": "01001234567", "extraPhones": ["01111234567"], "supportEmail": "hello@demo.example", "addressText": "٥ شارع التحرير، وسط البلد، القاهرة",
-        "mapsUrl": "https://maps.google.com/?q=Tahrir+Square", "facebookUrl": "https://facebook.com/demo", "instagramUrl": "https://instagram.com/demo", "tiktokUrl": "https://tiktok.com/@demo",
-        "announcement": "🚚 شحن مجاني للطلبات فوق ١٥٠٠ جنيه · الدفع عند الاستلام", "workingHours": hours, "returnWindowDays": 14, "taxId": "123-456-789", "vatIncluded": True, "vatPercent": 14,
-        "coverFileId": up(pic(1600, 700, (120, 60, 30), (233, 162, 59)), "PRODUCT_IMAGE")})
-    api("POST", "/store/branches", {"name": "فرع وسط البلد", "code": "DT", "phone": "01001234567", "whatsapp": "01001234567", "address": "٥ شارع التحرير", "city": "القاهرة", "governorateCode": "CAI", "area": "وسط البلد", "landmark": "بجوار ميدان التحرير", "isPickup": True, "mapsUrl": "https://maps.google.com/?q=Tahrir", "workingHours": hours})
-    api("POST", "/store/branches", {"name": "فرع الإسكندرية", "code": "ALX", "phone": "01111234567", "address": "٢٠ كورنيش النيل", "city": "الإسكندرية", "governorateCode": "ALX", "area": "سموحة"})
-    branch = api("GET", "/store/branches")[0]["id"]
+    if "profile" in parts:
+        logo = up(pic(256, 256, (31, 106, 153), (61, 154, 99)), "LOGO")
+        api("PATCH", "/tenant/branding", {"primaryColor": "#b4532a", "secondaryColor": "#e9a23b", "logoFileId": logo, "locale": "ar"})
+        api("PATCH", "/store/profile", {
+            "storeName": "متجر ديمو", "shortDescription": "ملابس ومستلزمات منزلية بجودة عالية وتوصيل لجميع المحافظات", "about": "هذا متجر تجريبي لتجربة كل مزايا المنصة: البحث، الأقسام، الدفع عند الاستلام، التوصيل حسب المحافظة، التتبع والاسترجاع.",
+            "supportPhone": "01001234567", "whatsapp": "01001234567", "extraPhones": ["01111234567"], "supportEmail": "hello@demo.example", "addressText": "٥ شارع التحرير، وسط البلد، القاهرة",
+            "mapsUrl": "https://maps.google.com/?q=Tahrir+Square", "facebookUrl": "https://facebook.com/demo", "instagramUrl": "https://instagram.com/demo", "tiktokUrl": "https://tiktok.com/@demo",
+            "announcement": "🚚 شحن مجاني للطلبات فوق ١٥٠٠ جنيه · الدفع عند الاستلام", "workingHours": hours, "returnWindowDays": 14, "taxId": "123-456-789", "vatIncluded": True, "vatPercent": 14,
+            "coverFileId": up(pic(1600, 700, (120, 60, 30), (233, 162, 59)), "PRODUCT_IMAGE")})
+    if "branches" in parts:
+        api("POST", "/store/branches", {"name": "فرع وسط البلد", "code": "DT", "phone": "01001234567", "whatsapp": "01001234567", "address": "٥ شارع التحرير", "city": "القاهرة", "governorateCode": "CAI", "area": "وسط البلد", "landmark": "بجوار ميدان التحرير", "isPickup": True, "mapsUrl": "https://maps.google.com/?q=Tahrir", "workingHours": hours})
+        api("POST", "/store/branches", {"name": "فرع الإسكندرية", "code": "ALX", "phone": "01111234567", "address": "٢٠ كورنيش النيل", "city": "الإسكندرية", "governorateCode": "ALX", "area": "سموحة"})
+        branch = api("GET", "/store/branches")[0]["id"]
 
-    def cat(name, parent=None, color=None):
-        c = api("POST", "/store/categories", {"name": name, **({"parentId": parent} if parent else {})})["id"]
-        if color:
-            api("PATCH", f"/store/categories/{c}", {"imageFileId": up(pic(600, 600, color, tuple(min(255, x + 70) for x in color)), "PRODUCT_IMAGE")})
-        return c
-    men = cat("رجالي", None, (40, 60, 90)); shirts = cat("قمصان", men); classic = cat("قمصان كلاسيك", shirts); pants = cat("بناطيل", men)
-    women = cat("نسائي", None, (150, 60, 90)); dresses = cat("فساتين", women); abayas = cat("عبايات", women)
-    kids = cat("أطفال", None, (60, 140, 110))
-    home = cat("المنزل", None, (120, 90, 40)); kitchen = cat("المطبخ", home); bedding = cat("مفروشات", home)
-
-    sizes = [("المقاس", ["S", "M", "L"])]
-    colors = [("اللون", ["أسود", "أبيض"])]
-    items = [  # name, brand, category, price, compare, color, badge, options, featured, stock
-        ("قميص قطن أزرق كلاسيك", "نور", classic, 45000, 60000, (40, 80, 140), "NEW", sizes, True, 15),
-        ("قميص كتان أبيض", "نور", shirts, 52000, None, (200, 200, 190), "", sizes, False, 10),
-        ("بنطلون جينز سليم", "Denim Co", pants, 80000, 100000, (30, 40, 70), "SALE", sizes, False, 12),
-        ("فستان سهرة أسود", "Elegance", dresses, 150000, None, (30, 30, 35), "BEST_SELLER", sizes, True, 6),
-        ("فستان صيفي زهري", "Elegance", dresses, 95000, 120000, (220, 130, 150), "", sizes, False, 8),
-        ("عباية كريب", "Hijab House", abayas, 120000, None, (25, 25, 30), "NEW", sizes, True, 9),
-        ("طقم أطفال قطن", "Kiddo", kids, 48000, 60000, (240, 190, 80), "", sizes, False, 14),
-        ("تيشيرت أطفال ملون", "Kiddo", kids, 25000, None, (80, 170, 140), "NEW", sizes, False, 20),
-        ("طقم أواني جرانيت ١٠ قطع", "Home+", kitchen, 380000, 450000, (110, 110, 120), "SALE", [], True, 5),
-        ("مجموعة سكاكين ستانلس", "Home+", kitchen, 95000, None, (150, 150, 160), "", [], False, 0),
-        ("طقم ملايات قطن مصري", "Nile Linen", bedding, 210000, 260000, (180, 160, 130), "BEST_SELLER", colors, True, 7),
-        ("مخدة طبية", "Nile Linen", bedding, 65000, None, (200, 190, 210), "LIMITED", [], False, 3),
-    ]
-    for i, (n, brand, c, price, cmp_, col, badge, opts, feat, stock) in enumerate(items):
-        f = up(pic(800, 1000, col, tuple(min(255, x + 70) for x in col), ["circle", "rect", "tri"][i % 3]), "PRODUCT_IMAGE")
-        combos = [dict()] if not opts else [{opts[0][0]: v} for v in opts[0][1]]
-        body = {"name": n, "brand": brand, "categoryId": c, "description": f"{n} بجودة عالية وخامات مريحة.\nمناسب للاستخدام اليومي، متوفر بأكثر من خيار.", "shortDescription": "جودة ممتازة وسعر مناسب",
-                "options": [{"name": k, "values": v} for k, v in opts],
-                "variants": [{"sku": f"DEMO{i:02d}-{j}", "priceMinor": price, "compareAtPriceMinor": cmp_, "optionValues": cv, "stock": [{"branchId": branch, "quantity": stock}]} for j, cv in enumerate(combos)],
-                "media": [{"fileId": f, "altText": n}]}
-        pid = api("POST", "/store/products", body)["id"]
-        api("PATCH", f"/store/products/{pid}/extras", {"badge": badge, "isFeatured": feat, "tags": ["ديمو", brand], "specs": [{"k": "الخامة", "v": "قطن ١٠٠٪"}, {"k": "بلد الصنع", "v": "مصر"}], "sizeGuide": "S: 36-38 · M: 40-42 · L: 44-46" if opts and opts[0][0] == "المقاس" else ""})
-    api("POST", "/store/banners", {"imageFileId": up(pic(1600, 640, (180, 83, 42), (233, 162, 59)), "PRODUCT_IMAGE"), "title": "تخفيضات الموسم", "subtitle": "خصم حتى ٣٠٪ على تشكيلة مختارة", "linkUrl": "/products?onSale=true"})
-    api("POST", "/store/shipping-methods", {"type": "ZONES", "name": "توصيل حسب المحافظة", "feeMinor": 0})
-    api("POST", "/store/shipping-zones", {"name": "القاهرة الكبرى", "governorateCodes": ["CAI", "GIZ", "QLY"], "feeMinor": 5000, "codFeeMinor": 1000, "etaMinDays": 1, "etaMaxDays": 2, "freeAboveMinor": 150000})
-    api("POST", "/store/shipping-zones", {"name": "الإسكندرية والدلتا", "governorateCodes": ["ALX", "DKH", "GHR", "SHR", "MNF", "BHR", "KFS", "DMT"], "feeMinor": 7500, "etaMinDays": 2, "etaMaxDays": 4, "freeAboveMinor": 150000})
-    api("POST", "/store/shipping-zones", {"name": "الصعيد", "governorateCodes": ["FYM", "BNS", "MNY", "AST", "SHG", "QNA", "LXR", "ASN"], "feeMinor": 10000, "etaMinDays": 3, "etaMaxDays": 6})
-    try:
-        api("POST", "/store/coupons", {"code": "WELCOME10", "discountType": "PERCENT", "value": 10, "minOrderMinor": 50000})
-    except SystemExit:
-        print("coupon skipped (plan does not include coupons)")
-    print(f"seeded {len(items)} products at {shop_base}")
+    if "products" in parts:
+        branch = api("GET", "/store/branches")[0]["id"]
+        sizes = [{"kind": "SIZE", "values": ["S", "M", "L"]}]
+        colors2 = lambda *c: {"kind": "COLOR", "values": list(c)}
+        items = [  # name, brand, category (standard slug), for whom, price, compare-at, picture colour, badge, options, featured, stock
+            ("قميص قطن أزرق كلاسيك", "نور", "shirts-tops", "MEN", 45000, 60000, (40, 80, 140), "NEW", [colors2("أزرق", "أبيض", "كحلي"), sizes[0]], True, 9),
+            ("قميص كتان أبيض", "نور", "shirts-tops", "MEN", 52000, None, (200, 200, 190), "", [colors2("أبيض", "بيج"), sizes[0]], False, 10),
+            ("بنطلون جينز سليم", "Denim Co", "pants-jeans", "MEN", 80000, 100000, (30, 40, 70), "SALE", [colors2("أزرق", "كحلي"), {"kind": "SIZE", "values": ["M", "L", "XL"]}], False, 12),
+            ("فستان سهرة أسود", "Elegance", "dresses", "WOMEN", 150000, None, (30, 30, 35), "BEST_SELLER", [colors2("أسود", "كحلي"), sizes[0]], True, 6),
+            ("فستان صيفي زهري", "Elegance", "dresses", "WOMEN", 95000, 120000, (220, 130, 150), "", [colors2("وردي", "أبيض", "أصفر"), sizes[0]], False, 8),
+            ("عباية كريب", "Hijab House", "abayas-modest", "WOMEN", 120000, None, (25, 25, 30), "NEW", [colors2("أسود", "كحلي"), {"kind": "SIZE", "values": ["M", "L", "XL"]}], True, 9),
+            ("طقم أطفال قطن", "Kiddo", "outfit-sets", "BOYS", 48000, 60000, (240, 190, 80), "", [colors2("أصفر", "أزرق"), {"kind": "SIZE", "scale": "KIDS", "values": ["2 سنة", "4 سنة", "6 سنة"]}], False, 14),
+            ("تيشيرت أطفال ملون", "Kiddo", "shirts-tops", "GIRLS", 25000, None, (80, 170, 140), "NEW", [colors2("أخضر", "وردي", "متعدد"), {"kind": "SIZE", "scale": "KIDS", "values": ["4 سنة", "6 سنة", "8 سنة"]}], False, 20),
+            ("طقم أواني جرانيت ١٠ قطع", "Home+", "cookware", "", 380000, 450000, (110, 110, 120), "SALE", [], True, 5),
+            ("مجموعة سكاكين ستانلس", "Home+", "kitchen-tools", "", 95000, None, (150, 150, 160), "", [], False, 0),
+            ("طقم ملايات قطن مصري", "Nile Linen", "bedding", "", 210000, 260000, (180, 160, 130), "BEST_SELLER", [colors2("أبيض", "بيج", "رمادي"), {"kind": "SIZE", "scale": "BED", "values": ["فردي", "كوين", "كينج"]}], True, 7),
+            ("مخدة طبية", "Nile Linen", "pillows-quilts", "", 65000, None, (200, 190, 210), "LIMITED", [], False, 3),
+        ]
+        for i, (n, brand, slug, aud, price, cmp_, col, badge, opts, feat, stock) in enumerate(items):
+            f = up(pic(800, 1000, col, tuple(min(255, x + 70) for x in col), ["circle", "rect", "tri"][i % 3]), "PRODUCT_IMAGE")
+            options = []
+            for o in opts:
+                options.append({"name": "اللون", "attribute": "COLOR", "values": o["values"]} if o["kind"] == "COLOR" else {"name": "المقاس", "attribute": "SIZE", **({"sizeScale": o["scale"]} if o.get("scale") else {}), "values": o["values"]})
+            combos = [dict()]
+            for o in options:
+                combos = [{**c, o["name"]: v} for c in combos for v in o["values"]]
+            body = {"name": n, "brand": brand, "taxonomySlug": slug, "audience": aud or None, "description": f"{n} بجودة عالية وخامات مريحة.\nمناسب للاستخدام اليومي، متوفر بأكثر من خيار.", "shortDescription": "جودة ممتازة وسعر مناسب",
+                    "options": options,
+                    "variants": [{"sku": f"DEMO{i:02d}-{j}", "priceMinor": price, "compareAtPriceMinor": cmp_, "optionValues": cv, "stock": [{"branchId": branch, "quantity": stock}]} for j, cv in enumerate(combos)],
+                    "media": [{"fileId": f, "altText": n}]}
+            pid = api("POST", "/store/products", body)["id"]
+            api("PATCH", f"/store/products/{pid}/extras", {"badge": badge, "isFeatured": feat, "tags": ["ديمو", brand], "specs": [{"k": "الخامة", "v": "قطن ١٠٠٪"}, {"k": "بلد الصنع", "v": "مصر"}], "sizeGuide": "S: 36-38 · M: 40-42 · L: 44-46" if any(o["name"] == "المقاس" and o.get("sizeScale") in (None, "APPAREL") for o in options) else ""})
+    if "profile" in parts:
+        api("POST", "/store/banners", {"imageFileId": up(pic(1600, 640, (180, 83, 42), (233, 162, 59)), "PRODUCT_IMAGE"), "title": "تخفيضات الموسم", "subtitle": "خصم حتى ٣٠٪ على تشكيلة مختارة", "linkUrl": "/products?onSale=true"})
+    if "delivery" in parts:
+        api("POST", "/store/shipping-methods", {"type": "ZONES", "name": "توصيل حسب المحافظة", "feeMinor": 0})
+        api("POST", "/store/shipping-zones", {"name": "القاهرة الكبرى", "governorateCodes": ["CAI", "GIZ", "QLY"], "feeMinor": 5000, "codFeeMinor": 1000, "etaMinDays": 1, "etaMaxDays": 2, "freeAboveMinor": 150000})
+        api("POST", "/store/shipping-zones", {"name": "الإسكندرية والدلتا", "governorateCodes": ["ALX", "DKH", "GHR", "SHR", "MNF", "BHR", "KFS", "DMT"], "feeMinor": 7500, "etaMinDays": 2, "etaMaxDays": 4, "freeAboveMinor": 150000})
+        api("POST", "/store/shipping-zones", {"name": "الصعيد", "governorateCodes": ["FYM", "BNS", "MNY", "AST", "SHG", "QNA", "LXR", "ASN"], "feeMinor": 10000, "etaMinDays": 3, "etaMaxDays": 6})
+        try:
+            api("POST", "/store/coupons", {"code": "WELCOME10", "discountType": "PERCENT", "value": 10, "minOrderMinor": 50000})
+        except SystemExit:
+            print("coupon skipped (plan does not include coupons)")
+    print(f"seeded parts {sorted(parts)} at {shop_base}")
 
 
 if a.stage in ("onboard", "all"):

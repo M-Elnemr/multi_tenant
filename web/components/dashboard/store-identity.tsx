@@ -148,7 +148,6 @@ export function SetupChecklist({ profile, hasLogo }: { profile: StoreProfile; ha
   const { t } = useI18n();
   const { can } = useMe();
   const branches = useApi<unknown[]>(can("branch.manage") ? "store/branches" : null);
-  const cats = useApi<unknown[]>(can("category.manage") ? "store/categories" : null);
   const prods = useApi<{ meta?: { total: number } }>("store/products?pageSize=1");
   const ships = useApi<unknown[]>(can("shipping.manage") ? "store/shipping-methods" : null);
   const steps: Step[] = [
@@ -158,7 +157,6 @@ export function SetupChecklist({ profile, hasLogo }: { profile: StoreProfile; ha
     { key: "address", done: !!profile.addressText, href: "/dashboard/settings#contact" },
     { key: "hours", done: !!profile.workingHours && Object.keys(profile.workingHours).length > 0, href: "/dashboard/settings#contact" },
     { key: "branch", done: (branches.data?.length ?? 0) > 0, href: "/dashboard/settings#branches" },
-    { key: "category", done: (cats.data?.length ?? 0) > 0, href: "/dashboard/categories" },
     { key: "product", done: (prods.data?.meta?.total ?? 0) > 0, href: "/dashboard/products/new" },
     { key: "shipping", done: (ships.data?.length ?? 0) > 0, href: "/dashboard/settings#shipping" },
   ];

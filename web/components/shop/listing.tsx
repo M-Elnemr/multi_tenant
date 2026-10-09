@@ -7,7 +7,7 @@ import { FilterSheet, FilterSidebar, SortSelect, type Facets } from "./filters";
 import { ShopProductCard, type ShopProduct } from "./product-card";
 import { buildTree, pathTo, type ShopCategory } from "./types";
 
-export type ListingParams = { q?: string; category?: string; page?: string; sort?: string; minPrice?: string; maxPrice?: string; brand?: string; inStock?: string; onSale?: string; minRating?: string };
+export type ListingParams = { q?: string; category?: string; page?: string; sort?: string; minPrice?: string; maxPrice?: string; brand?: string; inStock?: string; onSale?: string; minRating?: string; audience?: string; color?: string; size?: string; condition?: string };
 type PageData = { data: ShopProduct[]; meta: { page: number; pageSize: number; total: number; hasNext: boolean } };
 
 /** Product grid with breadcrumbs, filters, sorting and paging. Used by /products and /c/[slug]. */
@@ -17,11 +17,11 @@ export async function Listing({ params, category }: { params: ListingParams; cat
   const currency = info.kind === "TENANT" ? info.currency : "EGP";
   const slug = category ?? params.category ?? "";
   const qs = new URLSearchParams({ pageSize: "12" });
-  for (const k of ["q", "page", "sort", "minPrice", "maxPrice", "brand", "inStock", "onSale", "minRating"] as const) if (params[k]) qs.set(k, params[k]!);
+  for (const k of ["q", "page", "sort", "minPrice", "maxPrice", "brand", "inStock", "onSale", "minRating", "audience", "color", "size", "condition"] as const) if (params[k]) qs.set(k, params[k]!);
   if (slug) qs.set("category", slug);
   const fq = new URLSearchParams(); if (params.q) fq.set("q", params.q); if (slug) fq.set("category", slug);
   const [cats, res, facets] = await Promise.all([
-    backendJson<ShopCategory[]>("/shop/categories").catch(() => [] as ShopCategory[]),
+    backendJson<ShopCategory[]>(`/shop/categories?lang=${locale}`).catch(() => [] as ShopCategory[]),
     backendJson<PageData>(`/shop/products?${qs}`).catch(() => ({ data: [], meta: { page: 1, pageSize: 12, total: 0, hasNext: false } }) as PageData),
     backendJson<Facets>(`/shop/products/facets?${fq}`).catch(() => ({ brands: [], priceMinMinor: null, priceMaxMinor: null, total: 0 }) as Facets),
   ]);
@@ -33,7 +33,9 @@ export async function Listing({ params, category }: { params: ListingParams; cat
   const pageNo = res.meta.page;
   const pages = Math.max(1, Math.ceil(res.meta.total / res.meta.pageSize));
   const labels = { outOfStock: t("shop.outOfStock"), off: t("shop.off"), badges: { NEW: t("badge.NEW"), SALE: t("badge.SALE"), BEST_SELLER: t("badge.BEST_SELLER"), LIMITED: t("badge.LIMITED") } };
-  const title = params.q ? t("shop.resultsFor", { q: params.q }) : current?.name ?? (params.onSale === "true" ? t("shop.offers") : t("shop.allProducts"));
+  const aud = (params.audience ?? "").split(",").filter(Boolean);
+  const audTitle = aud.length === 0 ? "" : ["BOYS", "GIRLS", "BABY"].every((x) => aud.includes(x)) && aud.length === 3 ? t("audience.KIDS") : aud.map((x) => t(`audience.${x}`)).join(" · ");
+  const title = params.q ? t("shop.resultsFor", { q: params.q }) : current?.name ?? (params.onSale === "true" ? t("shop.offers") : audTitle || t("shop.allProducts"));
   const subcats = current ? cats.filter((c) => c.parentId === current.id && c.productCount > 0) : [];
   return (
     <div>

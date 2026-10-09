@@ -20,6 +20,7 @@ class _CatalogPageState extends State<CatalogPage> {
   String? category; // slug
   String sort = 'newest';
   bool onSale = false, inStock = false;
+  final audience = <String>{}, colors = <String>{}, sizes = <String>{};
   int page = 1, total = 0;
   bool loading = true, more = false;
   Object? error;
@@ -42,6 +43,7 @@ class _CatalogPageState extends State<CatalogPage> {
     try {
       final r = await widget.ctx.api.get('shop/products', query: {
         'q': search.text.trim(), 'category': category, 'sort': sort == 'newest' ? null : sort, 'onSale': onSale ? 'true' : null, 'inStock': inStock ? 'true' : null,
+        'audience': audience.isEmpty ? null : audience.join(','), 'color': colors.isEmpty ? null : colors.join(','), 'size': sizes.isEmpty ? null : sizes.join(','),
         'page': '$page', 'pageSize': '12',
       }) as Map<String, dynamic>;
       final data = (r['data'] as List).cast<Map<String, dynamic>>();
@@ -52,14 +54,52 @@ class _CatalogPageState extends State<CatalogPage> {
     }
   }
 
-  List<Map<String, dynamic>> _children(String? parentId) => widget.ctx.categories.where((c) => c['parentId'] == parentId && (c['productCount'] as num) > 0).toList();
+  /// Colour swatches and size chips for what is currently on screen (only options that lead to products).
+  Future<void> _openFilters() async {
+    final s = S.of(context);
+    Map<String, dynamic> facets = {};
+    try { facets = await widget.ctx.api.get('shop/products/facets', query: {'category': category, 'q': search.text.trim()}) as Map<String, dynamic>; } catch (_) {}
+    if (!mounted) return;
+    final colorList = ((facets['colors'] as List?) ?? []).cast<Map<String, dynamic>>();
+    final sizeList = ((facets['sizes'] as List?) ?? []).cast<Map<String, dynamic>>();
+    await showModalBottomSheet<void>(context: context, isScrollControlled: true, showDragHandle: true, builder: (ctx) => StatefulBuilder(builder: (ctx, setM) {
+      Color? hex(String? h) => h == null || h.length < 7 ? null : Color(int.parse('FF${h.substring(1)}', radix: 16));
+      return Padding(padding: EdgeInsets.fromLTRB(20, 4, 20, MediaQuery.of(ctx).viewInsets.bottom + 24), child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        if (colorList.isEmpty && sizeList.isEmpty) Padding(padding: const EdgeInsets.all(24), child: Text(s.ar ? 'لا توجد خيارات تصفية هنا' : 'No filters here', textAlign: TextAlign.center)),
+        if (colorList.isNotEmpty) ...[
+          Text(s.ar ? 'اللون' : 'Colour', style: const TextStyle(fontWeight: FontWeight.w900)),
+          const SizedBox(height: 10),
+          Wrap(spacing: 10, runSpacing: 10, children: [for (final c in colorList) GestureDetector(
+            onTap: () => setM(() { final code = c['code'] as String; colors.contains(code) ? colors.remove(code) : colors.add(code); }),
+            child: Container(width: 38, height: 38, decoration: BoxDecoration(shape: BoxShape.circle, color: hex(c['hex'] as String?), gradient: c['hex'] == null ? const SweepGradient(colors: [Colors.red, Colors.yellow, Colors.green, Colors.blue, Colors.purple, Colors.red]) : null,
+              border: Border.all(color: colors.contains(c['code']) ? Theme.of(ctx).colorScheme.primary : Colors.black26, width: colors.contains(c['code']) ? 3 : 1)),
+              child: colors.contains(c['code']) ? const Icon(Icons.check, size: 18, color: Colors.white) : null),
+          )]),
+          const SizedBox(height: 18),
+        ],
+        if (sizeList.isNotEmpty) ...[
+          Text(s.ar ? 'المقاس' : 'Size', style: const TextStyle(fontWeight: FontWeight.w900)),
+          const SizedBox(height: 10),
+          Wrap(spacing: 8, runSpacing: 8, children: [for (final z in sizeList) FilterChip(label: Text((s.ar ? z['nameAr'] : z['nameEn']) as String), selected: sizes.contains(z['code']), onSelected: (_) => setM(() { final code = z['code'] as String; sizes.contains(code) ? sizes.remove(code) : sizes.add(code); }))]),
+          const SizedBox(height: 18),
+        ],
+        Row(children: [
+          TextButton(onPressed: () => setM(() { colors.clear(); sizes.clear(); }), child: Text(s.ar ? 'مسح' : 'Clear')),
+          const Spacer(),
+          FilledButton(onPressed: () { Navigator.of(ctx).pop(); _load(reset: true); }, child: Text(s.ar ? 'عرض النتائج' : 'Show results')),
+        ]),
+      ])));
+    }));
+  }
+
+  List<Map<String, dynamic>> _children(Object? parentId) => widget.ctx.categories.where((c) => c['parentId'] == parentId && (c['productCount'] as num) > 0).toList();
 
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
     final c = widget.ctx;
     final current = category == null ? null : c.categories.cast<Map<String, dynamic>?>().firstWhere((x) => x!['slug'] == category, orElse: () => null);
-    final chips = _children(current?['id'] as String?);
+    final chips = _children(current?['id']);
     final parent = current == null ? null : c.categories.cast<Map<String, dynamic>?>().firstWhere((x) => x!['id'] == current['parentId'], orElse: () => null);
     return RefreshIndicator(
       onRefresh: () => _load(reset: true),
@@ -78,6 +118,18 @@ class _CatalogPageState extends State<CatalogPage> {
           if (current != null) Padding(padding: const EdgeInsets.symmetric(horizontal: 3), child: ActionChip(avatar: const Icon(Icons.arrow_back, size: 16), label: Text(parent?['name'] as String? ?? (s.ar ? 'الكل' : 'All')), onPressed: () { category = parent?['slug'] as String?; _load(reset: true); })),
           if (current != null) Padding(padding: const EdgeInsets.symmetric(horizontal: 3), child: FilterChip(selected: true, label: Text(current['name'] as String), onSelected: (_) {})),
           for (final x in chips) Padding(padding: const EdgeInsets.symmetric(horizontal: 3), child: FilterChip(selected: false, label: Text('${x['name']} (${x['productCount']})'), onSelected: (_) { category = x['slug'] as String; _load(reset: true); })),
+        ]))),
+        SliverToBoxAdapter(child: SizedBox(height: 44, child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), children: [
+          for (final f in [(s.ar ? 'رجالي' : 'Men', {'MEN'}), (s.ar ? 'نسائي' : 'Women', {'WOMEN'}), (s.ar ? 'أطفال' : 'Kids', {'BOYS', 'GIRLS', 'BABY'})])
+            Padding(padding: const EdgeInsets.symmetric(horizontal: 3), child: ChoiceChip(
+              label: Text(f.$1, style: const TextStyle(fontWeight: FontWeight.w800)),
+              selected: audience.containsAll(f.$2) && audience.length == f.$2.length,
+              onSelected: (v) { audience.clear(); if (v) audience.addAll(f.$2); _load(reset: true); },
+            )),
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 3), child: ActionChip(
+            avatar: Badge(isLabelVisible: colors.isNotEmpty || sizes.isNotEmpty, label: Text('${colors.length + sizes.length}'), child: const Icon(Icons.tune, size: 18)),
+            label: Text(s.ar ? 'اللون والمقاس' : 'Colour & size'), onPressed: _openFilters,
+          )),
         ]))),
         SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Row(children: [
           Expanded(child: Wrap(spacing: 6, children: [

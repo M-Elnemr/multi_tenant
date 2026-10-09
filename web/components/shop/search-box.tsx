@@ -10,7 +10,7 @@ import { useI18n } from "../i18n-provider";
 
 type Suggest = {
   products: { id: string; name: string; slug: string; minPriceMinor: number; currency: string; imageUrl?: string; imageMediaBase?: string; imageMediaExt?: string }[];
-  categories: { name: string; slug: string }[];
+  categories: { name: string; nameEn?: string; slug: string }[];
 };
 
 /** Search-as-you-type: a few matching products and categories under the box; Enter goes to the full results page. */
@@ -48,7 +48,7 @@ export function SearchBox({ className = "" }: { className?: string }) {
         <div className="s-dropdown absolute inset-x-0 top-full z-50 mt-2 overflow-hidden rounded-3xl border border-[var(--s-line)] bg-white shadow-[var(--s-shadow-lg)]">
           {res.categories.length > 0 && (
             <div className="flex flex-wrap gap-2 border-b border-[var(--s-line)] p-3">
-              {res.categories.map((c) => <a key={c.slug} href={`/c/${c.slug}`} className="s-chip">{c.name}</a>)}
+              {res.categories.map((c) => <a key={c.slug} href={`/c/${c.slug}`} className="s-chip">{locale === "en" && c.nameEn ? c.nameEn : c.name}</a>)}
             </div>
           )}
           <ul>

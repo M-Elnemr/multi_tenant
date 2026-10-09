@@ -8,7 +8,11 @@ import { useI18n } from "../i18n-provider";
 import { money } from "@/lib/format";
 import type { CategoryNode } from "./types";
 
-export type Facets = { brands: { brand: string; n: number }[]; priceMinMinor: number | null; priceMaxMinor: number | null; total: number };
+export type Facets = {
+  brands: { brand: string; n: number }[]; priceMinMinor: number | null; priceMaxMinor: number | null; total: number;
+  audiences?: { audience: string; n: number }[]; colors?: { code: string; nameAr: string; nameEn: string; hex: string | null; n: number }[];
+  sizes?: { scale: string; code: string; nameAr: string; nameEn: string; n: number }[]; conditions?: { condition: string; n: number }[];
+};
 
 /** URL-driven filters: every change rewrites the query string (page reset to 1), so results are shareable and the back button works. */
 function useFilterParams() {
@@ -60,6 +64,8 @@ function Panel({ tree, activeSlug, facets, currency }: { tree: CategoryNode[]; a
   const [max, setMax] = useState(sp.get("maxPrice") ? String(Number(sp.get("maxPrice")) / 100) : "");
   const brands = (sp.get("brand") ?? "").split(",").filter(Boolean);
   const toggleBrand = (b: string) => set({ brand: (brands.includes(b) ? brands.filter((x) => x !== b) : [...brands, b]).join(",") });
+  const list = (key: string) => (sp.get(key) ?? "").split(",").filter(Boolean);
+  const toggle = (key: string, v: string) => { const cur = list(key); set({ [key]: (cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v]).join(",") }); };
   const minor = (v: string) => (v.trim() && !Number.isNaN(Number(v)) ? String(Math.round(Number(v) * 100)) : null);
   return (
     <div className="space-y-7">
@@ -88,6 +94,42 @@ function Panel({ tree, activeSlug, facets, currency }: { tree: CategoryNode[]; a
           </ul>
         </div>
       )}
+      {(facets.audiences?.length ?? 0) > 0 && (
+        <div>
+          <h3 className="mb-2 text-sm font-extrabold">{t("filter.for")}</h3>
+          <div className="flex flex-wrap gap-1.5">{facets.audiences!.map((a) => <button key={a.audience} onClick={() => toggle("audience", a.audience)} className="s-chip" data-active={list("audience").includes(a.audience)}>{t(`audience.${a.audience}`)} <span className="opacity-60">{a.n}</span></button>)}</div>
+        </div>
+      )}
+      {(facets.colors?.length ?? 0) > 0 && (
+        <div>
+          <h3 className="mb-2 text-sm font-extrabold">{t("filter.color")}</h3>
+          <div className="flex flex-wrap gap-2">{facets.colors!.map((c) => {
+            const on = list("color").includes(c.code);
+            return (
+              <button key={c.code} onClick={() => toggle("color", c.code)} title={`${locale === "ar" ? c.nameAr : c.nameEn} (${c.n})`} aria-label={locale === "ar" ? c.nameAr : c.nameEn} aria-pressed={on}
+                className={`h-8 w-8 rounded-full border transition ${on ? "ring-2 ring-[var(--brand)] ring-offset-2" : "hover:scale-110"} ${c.code === "white" ? "border-slate-300" : "border-black/10"}`}
+                style={{ background: c.hex ?? "conic-gradient(red, yellow, lime, aqua, blue, magenta, red)" }} />
+            );
+          })}</div>
+        </div>
+      )}
+      {(facets.sizes?.length ?? 0) > 0 && (
+        <div>
+          <h3 className="mb-2 text-sm font-extrabold">{t("filter.size")}</h3>
+          {[...new Set(facets.sizes!.map((x) => x.scale))].map((scale) => (
+            <div key={scale} className="mb-2">
+              {new Set(facets.sizes!.map((x) => x.scale)).size > 1 && <p className="mb-1 text-xs text-[var(--s-mute)]">{t(`scale.${scale}`)}</p>}
+              <div className="flex flex-wrap gap-1.5">{facets.sizes!.filter((x) => x.scale === scale).map((z) => <button key={z.code} onClick={() => toggle("size", z.code)} className="s-chip !px-3" data-active={list("size").includes(z.code)}>{locale === "ar" ? z.nameAr : z.nameEn}</button>)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {(facets.conditions?.length ?? 0) > 1 && (
+        <div>
+          <h3 className="mb-2 text-sm font-extrabold">{t("filter.condition")}</h3>
+          <div className="flex flex-wrap gap-1.5">{facets.conditions!.map((c) => <button key={c.condition} onClick={() => toggle("condition", c.condition)} className="s-chip" data-active={list("condition").includes(c.condition)}>{t(`condition.${c.condition}`)} <span className="opacity-60">{c.n}</span></button>)}</div>
+        </div>
+      )}
       <div className="space-y-2">
         <label className="flex cursor-pointer items-center gap-2.5 text-sm font-semibold"><input type="checkbox" checked={sp.get("inStock") === "true"} onChange={(e) => set({ inStock: e.target.checked ? "true" : null })} className="h-4 w-4 accent-[var(--brand)]" />{t("filter.inStock")}</label>
         <label className="flex cursor-pointer items-center gap-2.5 text-sm font-semibold"><input type="checkbox" checked={sp.get("onSale") === "true"} onChange={(e) => set({ onSale: e.target.checked ? "true" : null })} className="h-4 w-4 accent-[var(--brand)]" />{t("filter.onSale")}</label>
@@ -98,8 +140,8 @@ function Panel({ tree, activeSlug, facets, currency }: { tree: CategoryNode[]; a
           {[4, 3].map((r) => <button key={r} onClick={() => set({ minRating: sp.get("minRating") === String(r) ? null : String(r) })} className="s-chip" data-active={sp.get("minRating") === String(r)}>★ {r}+</button>)}
         </div>
       </div>
-      {["q", "minPrice", "maxPrice", "brand", "inStock", "onSale", "minRating"].some((k) => sp.get(k)) && (
-        <button onClick={() => set({ q: null, minPrice: null, maxPrice: null, brand: null, inStock: null, onSale: null, minRating: null })} className="w-full text-center text-sm font-bold text-[#e5484d] hover:underline">{t("filter.clear")}</button>
+      {["q", "minPrice", "maxPrice", "brand", "inStock", "onSale", "minRating", "audience", "color", "size", "condition"].some((k) => sp.get(k)) && (
+        <button onClick={() => set({ q: null, minPrice: null, maxPrice: null, brand: null, inStock: null, onSale: null, minRating: null, audience: null, color: null, size: null, condition: null })} className="w-full text-center text-sm font-bold text-[#e5484d] hover:underline">{t("filter.clear")}</button>
       )}
     </div>
   );

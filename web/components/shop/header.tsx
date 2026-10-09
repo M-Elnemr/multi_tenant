@@ -9,6 +9,9 @@ import { useI18n } from "../i18n-provider";
 import { SearchBox } from "./search-box";
 import { buildTree, type CategoryNode, type ShopCategory } from "./types";
 
+/** Men / Women / Kids shortcuts: the standard "for whom" filter applied to the whole shop. */
+const FOR_LINKS = [{ key: "MEN", value: "MEN" }, { key: "WOMEN", value: "WOMEN" }, { key: "KIDS", value: "BOYS,GIRLS,BABY" }];
+
 function Logo({ name, logoUrl, size = "h-10 w-10" }: { name: string; logoUrl: string | null; size?: string }) {
   return (
     <span className="flex items-center gap-3">
@@ -108,7 +111,8 @@ export function ShopHeader({ name, logoUrl, announcement, closedMessage, isOpen,
         <nav className="hidden border-t border-[var(--s-line)] lg:block">
           <div className="s-container flex items-center gap-1 py-1.5">
             <Link href="/products" className="rounded-full px-4 py-2 text-sm font-extrabold" style={{ color: "var(--brand)" }}>{t("shop.allProducts")}</Link>
-            {tree.slice(0, 7).map((n) => <MegaItem key={n.id} node={n} />)}
+            {FOR_LINKS.map((f) => <Link key={f.key} href={`/products?audience=${f.value}`} className="rounded-full bg-[var(--s-soft)] px-3.5 py-1.5 text-sm font-extrabold transition hover:text-[var(--brand)]">{t(`audience.${f.key}`)}</Link>)}
+            {tree.slice(0, 6).map((n) => <MegaItem key={n.id} node={n} />)}
             <span className="ms-auto flex items-center gap-1">
               <Link href="/products?onSale=true" className="rounded-full px-4 py-2 text-sm font-extrabold text-[#e5484d] transition hover:bg-red-50">🔥 {t("shop.offers")}</Link>
               <Link href="/branches" className="rounded-full px-4 py-2 text-sm font-bold transition hover:bg-[var(--s-soft)]">{t("shop.branches")}</Link>
@@ -125,6 +129,7 @@ export function ShopHeader({ name, logoUrl, announcement, closedMessage, isOpen,
             <div className="flex-1 space-y-1 overflow-y-auto p-4">
               <Link href="/products" onClick={() => setDrawer(false)} className="block py-2.5 text-[15px] font-extrabold" style={{ color: "var(--brand)" }}>{t("shop.allProducts")}</Link>
               <Link href="/products?onSale=true" onClick={() => setDrawer(false)} className="block py-2.5 text-[15px] font-extrabold text-[#e5484d]">🔥 {t("shop.offers")}</Link>
+              <div className="flex gap-2 py-1.5">{FOR_LINKS.map((f) => <Link key={f.key} href={`/products?audience=${f.value}`} onClick={() => setDrawer(false)} className="s-chip flex-1 justify-center">{t(`audience.${f.key}`)}</Link>)}</div>
               <div className="my-2 border-t border-[var(--s-line)]" />
               {tree.map((n) => <DrawerNode key={n.id} node={n} depth={0} close={() => setDrawer(false)} />)}
               <div className="my-2 border-t border-[var(--s-line)]" />

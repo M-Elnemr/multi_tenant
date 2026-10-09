@@ -13,12 +13,12 @@ type ProfileRes = { profile: ShopProfile };
 
 /** The storefront shell. It deliberately shows the shop's own logo, name and colour, so a visitor sees the shop, not the platform behind it. */
 export default async function ShopLayout({ children }: { children: React.ReactNode }) {
-  const { t } = await getT();
+  const { t, locale } = await getT();
   const info = await resolveHost(await currentHost());
   const name = info.kind === "TENANT" ? info.name : "";
   const [res, categories, branches] = await Promise.all([
     backendJson<ProfileRes>("/shop/profile").catch(() => null),
-    backendJson<ShopCategory[]>("/shop/categories").catch(() => [] as ShopCategory[]),
+    backendJson<ShopCategory[]>(`/shop/categories?lang=${locale}`).catch(() => [] as ShopCategory[]),
     backendJson<ShopBranch[]>("/shop/branches").catch(() => [] as ShopBranch[]),
   ]);
   const p: ShopProfile = res?.profile ?? { storeName: name };

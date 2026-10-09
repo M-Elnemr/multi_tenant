@@ -2,8 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ShopProductCard, type ShopProduct } from "@/components/shop/product-card";
-import type { ShopCategory, ShopProfile } from "@/components/shop/types";
-import { pathTo } from "@/components/shop/types";
+import type { ShopProfile } from "@/components/shop/types";
 import { backendJson, BackendError } from "@/lib/backend";
 import { getT } from "@/lib/i18n-server";
 import { mediaUrl } from "@/lib/media";
@@ -12,9 +11,9 @@ import { ProductBuy, type ProductDetail } from "./buy";
 /** Route params arrive percent-encoded (Arabic slugs), so decode before encoding for the backend path. */
 const clean = (s: string) => { try { return decodeURIComponent(s); } catch { return s; } };
 
-async function load(slug: string): Promise<(ProductDetail & { categoryId?: string }) | null> {
+async function load(slug: string): Promise<(ProductDetail & { taxonomy?: { slug: string; nameAr: string; nameEn: string }[] }) | null> {
   try {
-    return await backendJson<ProductDetail & { categoryId?: string }>(`/shop/products/${encodeURIComponent(clean(slug))}`);
+    return await backendJson<ProductDetail & { taxonomy?: { slug: string; nameAr: string; nameEn: string }[] }>(`/shop/products/${encodeURIComponent(clean(slug))}`);
   } catch (e) {
     if (e instanceof BackendError && e.status === 404) return null;
     throw e;
@@ -34,12 +33,11 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const p = await load(slug);
   if (!p) notFound();
   const { t, locale } = await getT();
-  const [prof, related, cats] = await Promise.all([
+  const [prof, related] = await Promise.all([
     backendJson<{ profile: ShopProfile }>("/shop/profile").catch(() => null),
     backendJson<ShopProduct[]>(`/shop/products/${encodeURIComponent(clean(slug))}/related`).catch(() => [] as ShopProduct[]),
-    backendJson<ShopCategory[]>("/shop/categories").catch(() => [] as ShopCategory[]),
   ]);
-  const crumbs = p.categoryId ? pathTo(cats, cats.find((c) => c.id === p.categoryId)?.slug ?? "") : [];
+  const crumbs = (p.taxonomy ?? []).map((c) => ({ id: c.slug, slug: c.slug, name: locale === "ar" ? c.nameAr : c.nameEn }));
   const prices = p.variants.map((v) => v.priceMinor);
   const ld = {
     "@context": "https://schema.org", "@type": "Product", name: p.name, description: p.description, brand: p.brand ? { "@type": "Brand", name: p.brand } : undefined,

@@ -33,7 +33,7 @@ export default async function StoreHome() {
   const { t, locale } = await getT();
   const [profileRes, cats, home, branches] = await Promise.all([
     backendJson<{ profile: ShopProfile }>("/shop/profile").catch(() => null),
-    backendJson<ShopCategory[]>("/shop/categories").catch(() => [] as ShopCategory[]),
+    backendJson<ShopCategory[]>(`/shop/categories?lang=${locale}`).catch(() => [] as ShopCategory[]),
     backendJson<Home>("/shop/home").catch(() => ({ featured: [], newest: [], offers: [], bestSellers: [], banners: [] }) as Home),
     backendJson<ShopBranch[]>("/shop/branches").catch(() => [] as ShopBranch[]),
   ]);
@@ -87,12 +87,9 @@ export default async function StoreHome() {
           <div className="s-scroll-x">
             {tops.map((c) => (
               <Link key={c.id} href={`/c/${c.slug}`} className="s-lift group w-36 sm:w-44">
-                <div className="relative aspect-square overflow-hidden rounded-[26px] border border-[var(--s-line)] bg-[var(--s-soft)]">
-                  {c.imageFileId ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={fileUrl(c.imageFileId, "medium")} alt="" className="h-full w-full object-cover transition duration-700 group-hover:scale-110" loading="lazy" />
-                  ) : <div className="grid h-full place-items-center text-5xl font-extrabold opacity-20" style={{ color: "var(--brand)" }}>{c.name.charAt(0)}</div>}
-                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-3 pt-8" />
+                <div className="relative grid aspect-square place-items-center overflow-hidden rounded-[26px] border border-[var(--s-line)] bg-[var(--s-soft)] transition duration-500 group-hover:bg-white">
+                  <span className="text-6xl transition duration-500 group-hover:scale-125 sm:text-7xl" aria-hidden>{c.icon || c.name.charAt(0)}</span>
+                  <span className="absolute inset-x-0 bottom-0 h-1.5 origin-center scale-x-0 transition duration-500 group-hover:scale-x-100" style={{ background: "var(--brand)" }} />
                 </div>
                 <p className="mt-2.5 text-center text-sm font-extrabold">{c.name}</p>
                 <p className="text-center text-xs text-[var(--s-mute)]">{t("shop.itemsCount", { n: c.productCount })}</p>
