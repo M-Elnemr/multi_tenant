@@ -67,14 +67,17 @@ public class AccountAuthService {
     /** Empty when the identifier is not a patient phone or the password is wrong. Throws when the password is right but this clinic has no record of them. */
     @Transactional
     public Optional<TokenResponse> patientLogin(String identifier, String password, TenantContext.Current tenant, String ip, String ua) {
-        if (tenant == null || !"CLINIC".equals(tenant.type()) || identifier == null || PhoneNormalizer.looksLikeEmail(identifier)) return Optional.empty();
+        // A patient signs in on their clinic's address, or on the platform address (the patient app keeps one login for every clinic).
+        if ((tenant != null && !"CLINIC".equals(tenant.type())) || identifier == null || PhoneNormalizer.looksLikeEmail(identifier)) return Optional.empty();
         String phone;
         try { phone = PhoneNormalizer.normalize(identifier); } catch (BusinessException e) { return Optional.empty(); }
         var row = jdbc.sql("SELECT id, password_hash, status FROM medical.patient_accounts WHERE phone = :p").param("p", phone).query().listOfRows().stream().findFirst().orElse(null);
         if (row == null || !encoder.matches(password == null ? "" : password, (String) row.get("password_hash"))) return Optional.empty();
         if (!"ACTIVE".equals(row.get("status"))) throw BusinessException.forbidden("ACCOUNT_DISABLED", "Account is not active");
         UUID id = (UUID) row.get("id");
-        Long here = jdbc.sql("SELECT count(*) FROM medical.patients WHERE tenant_id = :t AND user_id = :u AND status = 'ACTIVE'").param("t", tenant.id()).param("u", id).query(Long.class).single();
+        Long here = tenant == null
+                ? jdbc.sql("SELECT count(*) FROM medical.patients WHERE user_id = :u AND status = 'ACTIVE'").param("u", id).query(Long.class).single()
+                : jdbc.sql("SELECT count(*) FROM medical.patients WHERE tenant_id = :t AND user_id = :u AND status = 'ACTIVE'").param("t", tenant.id()).param("u", id).query(Long.class).single();
         if (here == 0) throw BusinessException.forbidden("NOT_A_MEMBER", "This account has no access here");
         jdbc.sql("UPDATE medical.patient_accounts SET last_login_at = now() WHERE id = :u").param("u", id).update();
         return Optional.of(issue("PATIENT", id, ip, ua));

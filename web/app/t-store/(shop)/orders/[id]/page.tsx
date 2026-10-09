@@ -22,7 +22,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
   const cancel = useAction(async () => { await api(`shop/orders/${id}/cancel`, { body: {} }); await reload(); });
   if (loading && !data) return <Loading />;
   if (!data) return <ErrorText error={error} />;
-  const canCancel = ["PENDING", "CONFIRMED"].includes(data.status);
+  const canCancel = ["PENDING", "REQUESTED"].includes(data.status);
   return (
     <>
       <PageHeader title={`${t("orders.order")} ${data.orderNumber}`} subtitle={dateTime(data.createdAt, locale)} actions={<><StatusBadge status={data.status} /><StatusBadge status={data.paymentStatus} /></>} />

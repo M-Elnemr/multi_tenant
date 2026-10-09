@@ -68,7 +68,7 @@ const badgeTones: Record<string, string> = {
 };
 
 const STATUS_TONE: Record<string, string> = {
-  CONFIRMED: "green", COMPLETED: "green", DELIVERED: "green", PAID: "green", ACTIVE: "green", REVIEWED: "green", ISSUED: "green", SENT: "green", TRIAL: "blue", TRIALING: "blue",
+  CONFIRMED: "green", COMPLETED: "green", DELIVERED: "green", ARRIVED: "green", DONE: "green", SHIPPED: "blue", PREPARING: "amber", PAID: "green", ACTIVE: "green", REVIEWED: "green", ISSUED: "green", SENT: "green", TRIAL: "blue", TRIALING: "blue",
   PENDING: "amber", PENDING_CONFIRMATION: "amber", REQUESTED: "amber", UNPAID: "amber", PROCESSING: "blue", PACKED: "blue", OUT_FOR_DELIVERY: "blue", CHECKED_IN: "blue", IN_PROGRESS: "blue", UNDER_REVIEW: "amber", ORDERED: "slate", DRAFT: "slate",
   CANCELLED: "red", REJECTED: "red", NO_SHOW: "red", SUSPENDED: "red", PAST_DUE: "red", REFUNDED: "slate", PARTIALLY_REFUNDED: "amber", RETURN_REQUESTED: "amber", RETURNED: "slate", PATIENT_UPLOADED: "blue",
 };

@@ -6,6 +6,7 @@ import { toMinor } from "@/lib/format";
 import { useAction, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Button, Card, ErrorText, Field, Input, Loading, Modal, PageHeader, StatusBadge } from "@/components/ui";
+import { WhatsAppButton } from "@/components/whatsapp-button";
 import { dateTime, money } from "@/lib/format";
 
 type Detail = {
@@ -16,9 +17,9 @@ type Detail = {
   shippingAddress: Record<string, string>;
 };
 
+/** Requested -> preparing to ship -> shipped -> arrived (a shipped or arrived order can come back as returned). */
 const NEXT: Record<string, string[]> = {
-  PENDING: ["CONFIRMED", "CANCELLED"], CONFIRMED: ["PROCESSING", "CANCELLED"], PROCESSING: ["PACKED", "CANCELLED"], PACKED: ["OUT_FOR_DELIVERY", "CANCELLED"],
-  OUT_FOR_DELIVERY: ["DELIVERED"], DELIVERED: ["RETURN_REQUESTED"], RETURN_REQUESTED: ["RETURNED", "DELIVERED"],
+  PENDING: ["REQUESTED", "CANCELLED"], REQUESTED: ["PREPARING", "CANCELLED"], PREPARING: ["SHIPPED", "CANCELLED"], SHIPPED: ["ARRIVED", "RETURNED"], ARRIVED: ["RETURNED"],
 };
 
 export default function StoreOrder({ params }: { params: Promise<{ id: string }> }) {
@@ -54,7 +55,7 @@ export default function StoreOrder({ params }: { params: Promise<{ id: string }>
           </dl>
         </Card>
         <div className="space-y-4">
-          <Card className="text-sm"><h2 className="mb-1 font-medium">{t("orders.customer")}</h2><p>{data.customerNameSnapshot}</p><p dir="ltr">{data.customerPhoneSnapshot}</p>{data.shippingAddress?.addressLine1 && <p className="mt-2 text-slate-600">{data.shippingAddress.addressLine1}, {data.shippingAddress.city}</p>}{data.notes && <p className="mt-2 italic">{data.notes}</p>}</Card>
+          <Card className="text-sm"><h2 className="mb-1 font-medium">{t("orders.customer")}</h2><p>{data.customerNameSnapshot}</p><p className="flex items-center gap-2" dir="ltr"><a href={`tel:${data.customerPhoneSnapshot}`} className="text-brand">{data.customerPhoneSnapshot}</a><WhatsAppButton phone={data.customerPhoneSnapshot} message={t("orders.waHello", { name: data.customerNameSnapshot, number: data.orderNumber })} size={28} /></p>{data.shippingAddress?.addressLine1 && <p className="mt-2 text-slate-600">{data.shippingAddress.addressLine1}, {data.shippingAddress.city}</p>}{data.notes && <p className="mt-2 italic">{data.notes}</p>}</Card>
           <Card className="text-sm">
             <h2 className="mb-1 font-medium">{t("orders.payment")}</h2>
             <p>{t(`pay.${data.paymentMethod}`)} · {money(paid, data.currency, locale)}{refunded > 0 && <> · {t("orders.refunded")} {money(refunded, data.currency, locale)}</>}</p>

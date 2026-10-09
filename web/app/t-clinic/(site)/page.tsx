@@ -6,8 +6,8 @@ import { money } from "@/lib/format";
 import { getT } from "@/lib/i18n-server";
 
 type PublicProfile = {
-  clinicName: string; about?: string; phone?: string; email?: string; addressText?: string; bookingEnabled: boolean;
-  doctors: { id: string; displayName: string; bio?: string; consultationDurationMinutes: number; otherSpecialty?: string | null; specialties: { code: string; nameAr: string; nameEn: string }[] }[];
+  clinicName: string; about?: string; phone?: string; email?: string; addressText?: string; bookingEnabled: boolean; queueCount?: number;
+  doctors: { id: string; displayName: string; bio?: string; publicPhone?: string; consultationDurationMinutes: number; otherSpecialty?: string | null; specialties: { code: string; nameAr: string; nameEn: string }[] }[];
   services: { id: string; name: string; description?: string; durationMinutes: number; priceMinor?: number; currency: string }[];
   branches: { id: string; name: string; addressLine1?: string; city?: string; phone?: string }[];
 };
@@ -31,6 +31,11 @@ export default async function ClinicHome() {
         {p.about && <p className="relative mx-auto mt-3 max-w-xl text-lg opacity-90">{p.about}</p>}
         {p.bookingEnabled && <Link href="/book" className="relative mt-7 inline-block rounded-2xl bg-white px-7 py-3 font-semibold text-slate-900 shadow-lg transition hover:-translate-y-0.5 active:scale-[.97]">{t("clinic.bookNow")}</Link>}
       </section>
+      <section className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 text-sm shadow-soft"><p className="mb-1 text-xs font-medium text-slate-500">{t("clinic.phone")}</p>{p.phone ? <a href={`tel:${p.phone}`} dir="ltr" className="font-semibold text-brand">{p.phone}</a> : <p>-</p>}</div>
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 text-sm shadow-soft"><p className="mb-1 text-xs font-medium text-slate-500">{t("clinic.address")}</p><p className="font-semibold">{p.addressText || "-"}</p></div>
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 text-sm shadow-soft"><p className="mb-1 text-xs font-medium text-slate-500">{t("clinic.queueNow")}</p><p className="text-2xl font-extrabold text-brand">{p.queueCount ?? 0}</p></div>
+      </section>
       <section>
         <h2 className="mb-4 text-xl font-bold">{t("clinic.doctors")}</h2>
         <div className="stagger grid gap-4 sm:grid-cols-2">
@@ -39,6 +44,7 @@ export default async function ClinicHome() {
               <p className="text-lg font-semibold">{d.displayName}</p>
               <p className="text-sm text-brand">{d.specialties.map((s) => (s.code === "other" && d.otherSpecialty ? d.otherSpecialty : locale === "ar" ? s.nameAr : s.nameEn)).join(" · ")}</p>
               {d.bio && <p className="mt-2 text-sm text-slate-600">{d.bio}</p>}
+              {d.publicPhone && <a href={`tel:${d.publicPhone}`} dir="ltr" className="mt-2 inline-block text-sm font-semibold text-brand">{d.publicPhone}</a>}
             </div></div>
           ))}
         </div>

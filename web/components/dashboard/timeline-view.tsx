@@ -16,7 +16,7 @@ export type StaffTimeline = {
     notes: { id: string; noteType: string; content: string; isPatientVisible?: boolean; createdAt: string }[];
   }[];
   prescriptions: { id: string; status: string; imageFileId?: string | null; issuedAt?: string; doctorName: string; items: { medicationName: string; strength?: string; dosage?: string; frequency?: string; duration?: string }[] }[];
-  labOrders: { id: string; testName: string; status: string; priority: string; orderedAt: string; results: { id: string; resultText?: string; fileId?: string; uploadedByPatient: boolean }[] }[];
+  labOrders: { id: string; testName: string; kind?: string; status: string; priority: string; orderedAt: string; results: { id: string; resultText?: string; fileId?: string; uploadedByPatient: boolean }[] }[];
   documents: { id: string; title: string; documentType: string; fileId?: string; patientVisible?: boolean }[];
 };
 
@@ -53,7 +53,7 @@ export function TimelineView({ tl }: { tl: StaffTimeline }) {
         <h3 className="mb-2 font-medium">{t("portal.labs")}</h3>
         {tl.labOrders.length === 0 ? <Empty>{t("portal.none")}</Empty> : tl.labOrders.map((l) => (
           <Card key={l.id} className="mb-3 text-sm">
-            <p className="flex items-center justify-between"><b>{l.testName}</b><StatusBadge status={l.status} /></p>
+            <p className="flex items-center justify-between"><b>{l.kind === "RADIOLOGY" ? "🩻" : "🧪"} {l.testName}</b><StatusBadge status={l.status === "ORDERED" ? "REQUESTED" : l.status} /></p>
             {l.results.map((r) => <p key={r.id} className="mt-1 rounded-lg bg-slate-50 p-2">{r.resultText} {r.fileId && <a className="text-brand underline" href={`/api/bff/files/${r.fileId}/content`} target="_blank" rel="noreferrer">{t("portal.openFile")}</a>} {r.uploadedByPatient && <span className="text-xs text-slate-500">· {t("consult.byPatient")}</span>}</p>)}
           </Card>
         ))}

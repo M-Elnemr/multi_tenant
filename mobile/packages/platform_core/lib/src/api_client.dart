@@ -33,6 +33,18 @@ class ApiClient {
   Future<dynamic> get(String path, {Map<String, String?>? query}) => _send('GET', path, query: query);
   Future<dynamic> post(String path, [Object? body, String? idempotencyKey]) => _send('POST', path, body: body, idempotencyKey: idempotencyKey);
   Future<dynamic> patch(String path, Object? body) => _send('PATCH', path, body: body);
+  Future<dynamic> put(String path, Object? body) => _send('PUT', path, body: body);
+  Future<dynamic> delete(String path, [Object? body]) => _send('DELETE', path, body: body);
+
+  /// Uploads file bytes to the signed path the server returned from `files/presign` (e.g. /api/v1/files/<id>/content?exp=..&sig=..).
+  Future<void> putFile(String signedPath, List<int> bytes, String contentType) async {
+    final res = await _http.put(Uri.parse('$baseUrl$signedPath'), headers: {'Content-Type': contentType}, body: bytes);
+    if (res.statusCode >= 400) {
+      Map m = const {};
+      try { m = jsonDecode(utf8.decode(res.bodyBytes)) as Map; } catch (_) {}
+      throw ApiException(res.statusCode, (m['code'] ?? 'ERROR').toString(), (m['message'] ?? 'Upload failed').toString());
+    }
+  }
 
   Future<dynamic> _send(String method, String path, {Object? body, Map<String, String?>? query, String? idempotencyKey, bool retried = false}) async {
     final req = http.Request(method, _uri(path, query));

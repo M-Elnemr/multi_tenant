@@ -16,7 +16,7 @@ type Encounter = {
   id: string; patientId: string; appointmentId?: string; visitAt: string; chiefComplaint?: string; clinicalSummary?: string; followUpDate?: string;
   vitals: unknown[]; notes: { id: string; content: string; noteType: string; isPatientVisible: boolean }[]; conditions: { id: string; name: string }[];
   prescriptions: { id: string; status: string; imageFileId?: string | null; items: { medicationName: string; dosage?: string; frequency?: string }[] }[];
-  labOrders: { id: string; testName: string; status: string; priority: string }[];
+  labOrders: { id: string; testName: string; kind?: string; status: string; priority: string }[];
 };
 type Item = { medicationName: string; strength: string; dosage: string; frequency: string; duration: string; instructions: string };
 const EMPTY_ITEM: Item = { medicationName: "", strength: "", dosage: "", frequency: "", duration: "", instructions: "" };
@@ -55,7 +55,7 @@ function ConsultationForm({ id, e, reload }: { id: string; e: Encounter; reload:
   const [vit, setVit] = useState(EMPTY_VITALS);
   const [condition, setCondition] = useState("");
   const [items, setItems] = useState<Item[]>([{ ...EMPTY_ITEM }]);
-  const [lab, setLab] = useState({ testName: "", priority: "ROUTINE" });
+  const [lab, setLab] = useState({ testName: "", priority: "ROUTINE", kind: "LAB" });
   const [recovered, setRecovered] = useState(Boolean(draft && (draft.summary || draft.complaint || draft.note)));
 
   useEffect(() => {
@@ -89,7 +89,7 @@ function ConsultationForm({ id, e, reload }: { id: string; e: Encounter; reload:
   });
   const issue = useAction(async (pid: string) => { await api(`clinic/prescriptions/${pid}/issue`, { body: {} }); await refresh(); });
   const cancelRx = useAction(async (pid: string) => { await api(`clinic/prescriptions/${pid}/cancel`, { body: {} }); await refresh(); });
-  const orderLab = useAction(async () => { await api(`clinic/encounters/${id}/lab-orders`, { body: lab }); setLab({ testName: "", priority: "ROUTINE" }); await refresh(); });
+  const orderLab = useAction(async () => { await api(`clinic/encounters/${id}/lab-orders`, { body: lab }); setLab({ testName: "", priority: "ROUTINE", kind: "LAB" }); await refresh(); });
   // Finishing the exam saves it, closes the appointment, and goes back to "Current exam", which then shows nobody in the room until the next patient is sent in.
   // Any failure stops here (the error shows on this page) instead of leaving the doctor on a half-finished exam.
   const complete = useAction(async () => {
@@ -207,9 +207,10 @@ function ConsultationForm({ id, e, reload }: { id: string; e: Encounter; reload:
             {can("lab_order.create") && (
               <Card className="space-y-3">
                 <h3 className="font-medium">{t("portal.labs")}</h3>
-                <ul className="space-y-1 text-sm">{e.labOrders.map((l) => <li key={l.id} className="flex items-center justify-between"><span>{l.testName} {l.priority === "URGENT" && <Badge tone="red">{t("consult.urgent")}</Badge>}</span><StatusBadge status={l.status} /></li>)}</ul>
-                <div className="grid grid-cols-[1fr_auto_auto] gap-2">
-                  <Input placeholder={t("consult.testName")} value={lab.testName} onChange={(x) => setLab({ ...lab, testName: x.target.value })} />
+                <ul className="space-y-1 text-sm">{e.labOrders.map((l) => <li key={l.id} className="flex items-center justify-between"><span>{l.kind === "RADIOLOGY" ? "🩻" : "🧪"} {l.testName} {l.priority === "URGENT" && <Badge tone="red">{t("consult.urgent")}</Badge>}</span><StatusBadge status={l.status === "ORDERED" ? "REQUESTED" : l.status} /></li>)}</ul>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-[1fr_auto_auto_auto]">
+                  <Input className="col-span-2 sm:col-span-1" placeholder={t("consult.testName")} value={lab.testName} onChange={(x) => setLab({ ...lab, testName: x.target.value })} />
+                  <Select value={lab.kind} onChange={(x) => setLab({ ...lab, kind: x.target.value })} aria-label={t("lab.kind")}><option value="LAB">{t("lab.lab")}</option><option value="RADIOLOGY">{t("lab.radiology")}</option></Select>
                   <Select value={lab.priority} onChange={(x) => setLab({ ...lab, priority: x.target.value })}><option value="ROUTINE">{t("consult.routine")}</option><option value="URGENT">{t("consult.urgent")}</option></Select>
                   <Button size="sm" loading={orderLab.loading} disabled={!lab.testName.trim()} onClick={() => orderLab.run()}>{t("consult.order")}</Button>
                 </div>

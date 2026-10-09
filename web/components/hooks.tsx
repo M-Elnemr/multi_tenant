@@ -46,7 +46,7 @@ export function useAction<A extends unknown[], R>(fn: (...args: A) => Promise<R>
   return { run, loading, error, setError };
 }
 
-export type Me = { id: string; firstName: string; lastName: string; phone?: string; email?: string; roles: string[]; permissions: string[] };
+export type Me = { id: string; firstName: string; lastName: string; phone?: string; email?: string; roles: string[]; permissions: string[]; mustChangePassword?: boolean };
 
 export function useMe() {
   const [state, setState] = useState<{ me: Me | null; ready: boolean }>({ me: null, ready: false });

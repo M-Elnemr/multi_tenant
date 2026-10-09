@@ -12,6 +12,7 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   intl: ^0.20.2
+  google_sign_in: ^6.2.2
   platform_core:
     path: ../../packages/platform_core
 

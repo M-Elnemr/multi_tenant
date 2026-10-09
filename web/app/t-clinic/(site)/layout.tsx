@@ -8,8 +8,10 @@ import { resolveHost } from "@/lib/tenant";
 export default async function ClinicSiteLayout({ children }: { children: React.ReactNode }) {
   const { t, locale } = await getT();
   const info = await resolveHost(await currentHost());
-  // Patient accounts are off for now: no online booking and no patient login on the public site (staff still sign in).
-  const portal = await backendJson<{ patientPortalEnabled?: boolean }>("/clinic/public/profile").then((p) => p.patientPortalEnabled === true).catch(() => false);
+  // Patients sign in with the account their clinic created; online booking stays hidden while the platform has it switched off.
+  const profile = await backendJson<{ patientPortalEnabled?: boolean; bookingEnabled?: boolean }>("/clinic/public/profile").catch(() => null);
+  const portal = profile?.patientPortalEnabled === true;
+  const booking = profile?.bookingEnabled === true;
   const logo = info.kind === "TENANT" && (info.branding as { logo_file_id?: string }).logo_file_id;
   return (
     <div className="flex min-h-screen flex-col">
@@ -21,7 +23,7 @@ export default async function ClinicSiteLayout({ children }: { children: React.R
             {info.kind === "TENANT" ? info.name : ""}
           </Link>
           <nav className="flex items-center gap-2 text-sm">
-            {portal && <Link href="/book" className="rounded-xl bg-brand-gradient px-4 py-2 font-semibold text-white shadow-brand transition hover:-translate-y-px active:scale-[.97]">{t("clinic.book")}</Link>}
+            {booking && <Link href="/book" className="rounded-xl bg-brand-gradient px-4 py-2 font-semibold text-white shadow-brand transition hover:-translate-y-px active:scale-[.97]">{t("clinic.book")}</Link>}
             <ClinicAccountLink portal={portal} />
             <a href={`/api/lang?l=${locale === "ar" ? "en" : "ar"}`} className="rounded-lg px-2 py-1 font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-900">{locale === "ar" ? "EN" : "عربي"}</a>
           </nav>

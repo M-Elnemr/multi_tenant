@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { LogoutButton } from "@/components/logout-button";
+import { ForcePasswordChange } from "@/components/force-password-change";
 import { currentHost } from "@/lib/backend";
 import { getT } from "@/lib/i18n-server";
 import { resolveHost } from "@/lib/tenant";
@@ -16,13 +17,13 @@ export default async function PortalLayout({ children }: { children: React.React
             <Link href="/portal" className="rounded-lg px-3 py-1.5 hover:bg-slate-100">{t("portal.appointments")}</Link>
             <Link href="/portal/account" className="rounded-lg px-3 py-1.5 hover:bg-slate-100">{t("account.title")}</Link>
             <Link href="/portal/record" className="rounded-lg px-3 py-1.5 hover:bg-slate-100">{t("portal.record")}</Link>
-            <Link href="/book" className="rounded-lg bg-brand px-3 py-1.5 text-white">{t("clinic.book")}</Link>
+            <Link href="/" className="rounded-lg px-3 py-1.5 hover:bg-slate-100">{t("portal.clinicDetails")}</Link>
             <LogoutButton />
             <a href={`/api/lang?l=${locale === "ar" ? "en" : "ar"}`} className="px-1 text-slate-500">{locale === "ar" ? "EN" : "عربي"}</a>
           </nav>
         </div>
       </header>
-      <main className="mx-auto max-w-4xl px-4 py-8">{children}</main>
+      <main className="mx-auto max-w-4xl px-4 py-8"><ForcePasswordChange />{children}</main>
     </div>
   );
 }

@@ -21,7 +21,7 @@ export default function PortalAccount() {
     <>
       <PageHeader title={t("account.title")} subtitle={me ? `${me.firstName} ${me.lastName} · ${me.phone ?? ""}` : ""} />
       <div className="space-y-5">
-        <ChangePasswordCard />
+        <ChangePasswordCard forced={me?.mustChangePassword === true} onChanged={() => { if (me?.mustChangePassword) router.replace("/portal"); }} />
         <Card className="space-y-3">
           <h2 className="font-medium">{t("account.leaveTitle")}</h2>
           <p className="text-sm text-slate-600">{t("account.leaveHelp")}</p>

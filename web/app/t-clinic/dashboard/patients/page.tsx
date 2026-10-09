@@ -12,7 +12,7 @@ import { usePatientPortal } from "@/components/portal-flag";
 import { ageText } from "@/lib/format";
 
 type P = { id: string; patientCode: string; firstName: string; lastName: string; ageYears?: number; ageMonths?: number; sex?: string; phone?: string; hasPortal: boolean };
-type Created = { id: string; patientCode: string; portalAccess: string; activationPin?: string; linkPin?: string; firstName: string; password?: string };
+type Created = { id: string; patientCode: string; portalAccess: string; firstName: string; password?: string };
 
 export default function Patients() {
   const { t, locale } = useI18n();
@@ -25,12 +25,11 @@ export default function Patients() {
   const clinic = useApi<{ clinicName?: string }>("clinic/public/profile");
   const blank = { firstName: "", phone: "", ageYears: "", ageMonths: "0", sex: "" };
   const [f, setF] = useState(blank);
-  const [mode, setMode] = useState<"code" | "password">("code");
   const [pw, setPw] = useState("");
   const [created, setCreated] = useState<Created | null>(null);
   const create = useAction(async () => {
-    const r = await api<Created>("clinic/patients", { body: { firstName: f.firstName.trim(), phone: f.phone, ageYears: Number(f.ageYears), ageMonths: Number(f.ageMonths || 0), sex: f.sex || undefined, initialPassword: portal && mode === "password" && pw ? pw : undefined } });
-    setCreated({ ...r, password: portal && mode === "password" && r.portalAccess === "PASSWORD_SET" ? pw : undefined });
+    const r = await api<Created>("clinic/patients", { body: { firstName: f.firstName.trim(), phone: f.phone, ageYears: Number(f.ageYears), ageMonths: Number(f.ageMonths || 0), sex: f.sex || undefined, initialPassword: portal && pw ? pw : undefined } });
+    setCreated({ ...r, password: portal && r.portalAccess === "PASSWORD_SET" ? pw : undefined });
     setPw(""); setOpen(false); setF(blank);
     await reload();
   });
@@ -40,10 +39,8 @@ export default function Patients() {
       {created && (
         <div className="mb-5 space-y-3 rounded-xl border bg-white p-4">
           <p className="text-sm">{t("patients.created", { name: created.firstName, code: created.patientCode })}</p>
-          {portal && created.activationPin && <SecretBox label={t("patients.activationPin")} value={created.activationPin} />}
-          {portal && created.linkPin && <SecretBox label={t("patients.linkPin")} value={created.linkPin} />}
           {portal && created.password && <SecretBox label={t("patients.passwordSet")} value={created.password} />}
-          {portal && <p className="text-sm text-slate-600">{created.portalAccess === "PASSWORD_SET" ? t("patients.howPassword") : created.portalAccess === "ASSIGNED" ? t("patients.howAssigned") : created.portalAccess === "ACTIVATION_PIN" ? t("patients.howActivation") : created.portalAccess === "LINK_PIN" ? t("patients.howLink") : created.portalAccess === "GUARDIAN" ? t("patients.howGuardian") : t("patients.noPortal")}</p>}
+          {portal && <p className="text-sm text-slate-600">{created.portalAccess === "PASSWORD_SET" ? t("patients.howPassword") : created.portalAccess === "ASSIGNED" ? t("patients.howAssigned") : created.portalAccess === "GUARDIAN" ? t("patients.howGuardian") : t("patients.noPortal")}</p>}
         </div>
       )}
       <div className="mb-4 max-w-md"><Input placeholder={t("patients.searchHint")} value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} /></div>
@@ -69,9 +66,7 @@ export default function Patients() {
           {portal && f.phone && (
             <div className="space-y-2 rounded-lg border p-3 text-sm">
               <p className="font-medium">{t("patients.portalAccess")}</p>
-              <label className="flex items-center gap-2"><input type="radio" checked={mode === "code"} onChange={() => setMode("code")} />{t("patients.modeCode")}</label>
-              <label className="flex items-center gap-2"><input type="radio" checked={mode === "password"} onChange={() => setMode("password")} />{t("patients.modePassword")}</label>
-              {mode === "password" && <Field label={t("login.password")} hint={t("patients.passwordHint")}><Input value={pw} onChange={(e) => setPw(e.target.value)} minLength={8} dir="ltr" autoComplete="off" /></Field>}
+              <Field label={t("patients.tempPassword")} hint={t("patients.tempPasswordHint")}><Input value={pw} onChange={(e) => setPw(e.target.value)} minLength={8} dir="ltr" autoComplete="off" /></Field>
               <p className="text-xs text-slate-500">{t("patients.existingHint")}</p>
             </div>
           )}

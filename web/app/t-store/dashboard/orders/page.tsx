@@ -8,7 +8,7 @@ import { ErrorText, Loading, PageHeader, Pager, Select, StatusBadge, Table, Td }
 import { dateTime, money } from "@/lib/format";
 
 type Order = { id: string; orderNumber: string; status: string; paymentStatus: string; paymentMethod: string; totalMinor: number; currency: string; customerNameSnapshot: string; createdAt: string };
-const STATUSES = ["PENDING", "CONFIRMED", "PROCESSING", "PACKED", "OUT_FOR_DELIVERY", "DELIVERED", "CANCELLED", "RETURN_REQUESTED", "RETURNED", "REFUNDED"];
+const STATUSES = ["REQUESTED", "PREPARING", "SHIPPED", "ARRIVED", "RETURNED", "CANCELLED"];
 
 export default function StoreOrders() {
   const { t, locale } = useI18n();

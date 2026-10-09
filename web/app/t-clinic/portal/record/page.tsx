@@ -13,9 +13,15 @@ type PatientRef = { id: string; firstName: string; lastName: string; patientCode
 type Timeline = {
   visits: { id: string; visitAt: string; doctorName: string; visitType?: string | null; notes: { id: string; noteType: string; content: string; createdAt: string }[] }[];
   prescriptions: { id: string; issuedAt: string; doctorName: string; notes?: string; items: { medicationName: string; strength?: string; dosage?: string; frequency?: string; duration?: string; instructions?: string }[] }[];
-  labOrders: { id: string; testName: string; instructions?: string; status: string; orderedAt: string; results: { id: string; resultText?: string; resultSummary?: string; fileId?: string; uploadedAt: string }[] }[];
+  labOrders: { id: string; testName: string; kind?: string; instructions?: string; status: string; orderedAt: string; results: { id: string; resultText?: string; resultSummary?: string; fileId?: string; uploadedAt: string }[] }[];
   documents: { id: string; title: string; documentType: string; fileId?: string; createdAt: string }[];
 };
+
+function MarkDone({ labId, onDone }: { labId: string; onDone: () => void }) {
+  const t = useI18n().t;
+  const done = useAction(async () => { await api(`portal/lab-orders/${labId}/done`, { body: {} }); onDone(); });
+  return <div className="mt-2"><Button size="sm" loading={done.loading} onClick={() => done.run()}>✓ {t("portal.markDone")}</Button><ErrorText error={done.error} /></div>;
+}
 
 function LabUpload({ labId, onDone }: { labId: string; onDone: () => void }) {
   const t = useI18n().t;
@@ -61,10 +67,11 @@ export default function Record() {
             <h2 className="mb-2 font-medium">{t("portal.labs")}</h2>
             {tl.data.labOrders.length === 0 ? <Empty>{t("portal.none")}</Empty> : tl.data.labOrders.map((l) => (
               <Card key={l.id} className="mb-3 text-sm">
-                <div className="flex items-center justify-between"><p className="font-medium">{l.testName}</p><StatusBadge status={l.status} /></div>
+                <div className="flex items-center justify-between gap-2"><p className="font-medium">{l.kind === "RADIOLOGY" ? "🩻" : "🧪"} {l.testName} <span className="text-xs font-normal text-slate-500">· {t(l.kind === "RADIOLOGY" ? "lab.radiology" : "lab.lab")}</span></p><StatusBadge status={l.status === "ORDERED" ? "REQUESTED" : l.status} /></div>
                 {l.instructions && <p className="text-slate-500">{l.instructions}</p>}
                 {l.results.map((r) => <div key={r.id} className="mt-2 rounded-lg bg-slate-50 p-2">{r.resultSummary ?? r.resultText}{r.fileId && <> <a className="text-brand underline" href={`/api/bff/files/${r.fileId}/content`} target="_blank" rel="noreferrer">{t("portal.openFile")}</a></>}</div>)}
-                {["ORDERED", "PATIENT_UPLOADED", "UNDER_REVIEW"].includes(l.status) && <LabUpload labId={l.id} onDone={tl.reload} />}
+                {["ORDERED", "PATIENT_UPLOADED"].includes(l.status) && <MarkDone labId={l.id} onDone={tl.reload} />}
+                {["ORDERED", "PATIENT_UPLOADED", "DONE", "UNDER_REVIEW"].includes(l.status) && <LabUpload labId={l.id} onDone={tl.reload} />}
               </Card>
             ))}
           </section>

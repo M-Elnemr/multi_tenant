@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:platform_core/platform_core.dart';
 
 void main() => runApp(const CustomerApp());
@@ -182,9 +183,13 @@ class CartPage extends StatelessWidget {
               for (final l in lines)
                 ListTile(
                   title: Text(l.name),
-                  subtitle: Text('${l.label}  ×${l.qty}'),
-                  trailing: Text(s.money(l.priceMinor * l.qty, tenant.currency)),
-                  onLongPress: () => cart.value = cart.value.where((x) => x != l).toList(),
+                  subtitle: Text('${l.label}\n${s.money(l.priceMinor * l.qty, tenant.currency)}'),
+                  isThreeLine: l.label.isNotEmpty,
+                  trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                    IconButton(icon: const Icon(Icons.remove_circle_outline), onPressed: () { if (l.qty > 1) { l.qty--; cart.value = [...cart.value]; } else { cart.value = cart.value.where((x) => x != l).toList(); } }),
+                    Text('${l.qty}', style: const TextStyle(fontWeight: FontWeight.w700)),
+                    IconButton(icon: const Icon(Icons.add_circle_outline), onPressed: () { if (l.qty < 99) { l.qty++; cart.value = [...cart.value]; } }),
+                  ]),
                 ),
             ]),
           ),
@@ -253,7 +258,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
         'items': [for (final l in widget.cart.value) {'variantId': l.variantId, 'quantity': l.qty}],
         'shippingMethodId': shippingId,
         'paymentMethod': 'CASH_ON_DELIVERY',
-        if (!pickup) 'address': {'recipientName': name.text, 'phone': phone.text, 'addressLine1': line1.text, 'city': city.text},
+        'address': {'recipientName': name.text.trim(), 'phone': phone.text.trim(), if (!pickup) 'addressLine1': line1.text.trim(), if (!pickup) 'city': city.text.trim()},
       }, key) as Map<String, dynamic>;
       widget.cart.value = [];
       if (!mounted) return;
@@ -270,9 +275,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
   Widget build(BuildContext context) {
     final s = S.of(context);
     if (loggedIn == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    if (loggedIn == false) {
-      return LoginScreen(api: widget.api, title: s.login, onLoggedIn: (_) => setState(() => loggedIn = true));
-    }
+    final pickup = shipping.isNotEmpty && shippingId != null && shipping.firstWhere((x) => x['id'] == shippingId, orElse: () => shipping.first)['type'] == 'PICKUP';
     return Scaffold(
       appBar: AppBar(title: Text(s.checkout)),
       body: ListView(padding: const EdgeInsets.all(16), children: [
@@ -282,15 +285,19 @@ class _CheckoutPageState extends State<CheckoutPage> {
           onChanged: (v) => setState(() => shippingId = v),
         ),
         const SizedBox(height: 12),
-        TextField(controller: name, decoration: const InputDecoration(labelText: 'Name')),
+        TextField(controller: name, decoration: InputDecoration(labelText: s.ar ? 'الاسم' : 'Name')),
         const SizedBox(height: 12),
-        TextField(controller: phone, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Phone')),
+        TextField(controller: phone, keyboardType: TextInputType.phone, decoration: InputDecoration(labelText: s.ar ? 'رقم الموبايل' : 'Mobile number')),
         const SizedBox(height: 12),
-        TextField(controller: line1, decoration: InputDecoration(labelText: s.address1)),
-        const SizedBox(height: 12),
-        TextField(controller: city, decoration: InputDecoration(labelText: s.city)),
-        const SizedBox(height: 12),
+        if (!pickup) ...[
+          TextField(controller: line1, decoration: InputDecoration(labelText: s.address1)),
+          const SizedBox(height: 12),
+          TextField(controller: city, decoration: InputDecoration(labelText: s.city)),
+          const SizedBox(height: 12),
+        ],
         Text(s.cod),
+        const SizedBox(height: 4),
+        Text(s.ar ? 'لا تحتاج حسابًا لإتمام الطلب.' : 'No account needed to order.', style: Theme.of(context).textTheme.bodySmall),
         if (error != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error))),
         const SizedBox(height: 16),
         FilledButton(onPressed: busy ? null : _place, child: Text(s.placeOrder)),
@@ -311,12 +318,11 @@ class OrdersPage extends StatelessWidget {
       builder: (context, snap) {
         if (!snap.hasData) return const Center(child: CircularProgressIndicator());
         if (!snap.data!) {
-          return Center(
-            child: FilledButton(
-              onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => LoginScreen(api: api, title: s.login, onLoggedIn: (_) => Navigator.of(context).pop()))),
-              child: Text(s.login),
-            ),
-          );
+          return Center(child: Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text(s.ar ? 'سجّل الدخول بجوجل لمتابعة طلباتك. يمكنك الطلب دون حساب.' : 'Sign in with Google to follow your orders. You can order without an account.', textAlign: TextAlign.center),
+            const SizedBox(height: 16),
+            GoogleSignInButton(api: api, onSignedIn: () => (context as Element).markNeedsBuild()),
+          ])));
         }
         return Async<Map<String, dynamic>>(
           load: () async => await api.get('shop/orders') as Map<String, dynamic>,
@@ -326,12 +332,65 @@ class OrdersPage extends StatelessWidget {
             return RefreshIndicator(
               onRefresh: reload,
               child: ListView(children: [
-                for (final o in orders) ListTile(title: Text(o['orderNumber'] as String), subtitle: Text('${o['status']} · ${o['paymentStatus']}'), trailing: Text(s.money(o['totalMinor'] as num, tenant.currency))),
+                for (final o in orders) ListTile(title: Text(o['orderNumber'] as String), subtitle: Text(_status(s, o['status'] as String)), trailing: Text(s.money(o['totalMinor'] as num, tenant.currency))),
               ]),
             );
           },
         );
       },
     );
+  }
+}
+
+/// Order progress in the customer's language.
+String _status(S s, String code) => switch (code) {
+      'REQUESTED' || 'PENDING' => s.ar ? 'تم الطلب' : 'Requested',
+      'PREPARING' => s.ar ? 'جاري التجهيز للشحن' : 'Preparing to ship',
+      'SHIPPED' => s.ar ? 'تم الشحن' : 'Shipped',
+      'ARRIVED' => s.ar ? 'وصل' : 'Arrived',
+      'RETURNED' => s.ar ? 'مرتجع' : 'Returned',
+      'CANCELLED' => s.ar ? 'ملغي' : 'Cancelled',
+      _ => code,
+    };
+
+/// Google sign-in for shop clients. The OAuth client id is a build setting (--dart-define=GOOGLE_CLIENT_ID=...); until it is set the button explains that it is coming.
+class GoogleSignInButton extends StatefulWidget {
+  const GoogleSignInButton({super.key, required this.api, required this.onSignedIn});
+  final ApiClient api;
+  final VoidCallback onSignedIn;
+  @override
+  State<GoogleSignInButton> createState() => _GoogleSignInButtonState();
+}
+
+class _GoogleSignInButtonState extends State<GoogleSignInButton> {
+  static const clientId = String.fromEnvironment('GOOGLE_CLIENT_ID');
+  String? error;
+  bool busy = false;
+
+  Future<void> _go() async {
+    setState(() { busy = true; error = null; });
+    try {
+      final account = await GoogleSignIn(serverClientId: clientId, scopes: const ['email']).signIn();
+      if (account == null) return;
+      final idToken = (await account.authentication).idToken;
+      if (idToken == null) throw StateError('No Google token');
+      final r = await widget.api.post('auth/client/google', {'credential': idToken}) as Map<String, dynamic>;
+      await widget.api.session.save(r);
+      widget.onSignedIn();
+    } catch (e) {
+      if (mounted) setState(() => error = errorText(e));
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    if (clientId.isEmpty) return Text(s.ar ? 'تسجيل الدخول بجوجل سيتوفر قريبًا.' : 'Google sign-in is coming soon.', style: Theme.of(context).textTheme.bodySmall);
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      OutlinedButton.icon(onPressed: busy ? null : _go, icon: const Icon(Icons.login), label: Text(s.ar ? 'المتابعة بجوجل' : 'Continue with Google')),
+      if (error != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error))),
+    ]);
   }
 }

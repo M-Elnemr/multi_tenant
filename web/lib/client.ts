@@ -35,7 +35,7 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
     }
     throw new ApiError(res.status, d.code ?? "ERROR", d.message ?? res.statusText, d.fields);
   }
-  if (/^\/?(auth\/(login|activate|reset-password|logout)|shop\/customers\/register|clinic\/portal\/link)/.test(path) && typeof window !== "undefined") {
+  if (/^\/?(auth\/(login|activate|reset-password|logout|client\/google|change-password)|shop\/me)/.test(path) && typeof window !== "undefined") {
     window.dispatchEvent(new Event("auth:changed"));   // header/account widgets re-read who is logged in
   }
   return data as T;

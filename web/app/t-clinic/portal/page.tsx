@@ -12,6 +12,24 @@ import Link from "next/link";
 type Place = { appointmentId: string; queueNumber: number; called: boolean; doctorName: string; serviceName: string; aheadOfYou: number; doctorBusy: boolean };
 type Appt = { id: string; startAt: string; status: string; doctorName: string; serviceName: string; branchName: string; paymentStatus: string; paymentMethod: string; priceMinor?: number; patientName?: string };
 
+type ClinicInfo = { clinicName: string; phone?: string; addressText?: string; queueCount?: number; doctors: { id: string; displayName: string; publicPhone?: string }[] };
+
+/** Where the clinic is, how to call it and how long the line is right now. */
+function ClinicCard() {
+  const t = useI18n().t;
+  const { data, reload } = useApi<ClinicInfo>("clinic/public/profile");
+  useEffect(() => { const h = setInterval(() => { void reload(); }, 15_000); return () => clearInterval(h); }, [reload]);
+  if (!data) return null;
+  const phones = [data.phone, ...data.doctors.map((d) => d.publicPhone)].filter((x): x is string => !!x);
+  return (
+    <div className="mb-5 grid gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 text-sm shadow-soft sm:grid-cols-3">
+      <div><p className="text-xs text-slate-500">{t("clinic.address")}</p><p className="font-medium">{data.addressText || "-"}</p></div>
+      <div><p className="text-xs text-slate-500">{t("clinic.phone")}</p>{phones.length === 0 ? "-" : phones.map((x) => <a key={x} href={`tel:${x}`} dir="ltr" className="block font-medium text-brand">{x}</a>)}</div>
+      <div><p className="text-xs text-slate-500">{t("clinic.queueNow")}</p><p className="text-2xl font-extrabold text-brand">{data.queueCount ?? 0}</p></div>
+    </div>
+  );
+}
+
 function Inner() {
   const { t, locale, timezone } = useI18n();
   const booked = useSearchParams().get("booked");
@@ -35,6 +53,7 @@ function Inner() {
   return (
     <>
       <PageHeader title={t("portal.appointments")} />
+      <ClinicCard />
       {place.data?.map((p) => (
         <div key={p.appointmentId} className={`mb-4 rounded-2xl border-2 p-5 text-center ${p.called ? "border-emerald-500 bg-emerald-50" : "border-brand/40 bg-white"}`}>
           <p className="text-sm text-slate-500">{p.doctorName} · {p.serviceName}</p>
@@ -50,7 +69,7 @@ function Inner() {
       <ErrorText error={error ?? cancel.error} />
       {loading && !data ? <Loading /> : (
         <div className="space-y-6">
-          <section><h2 className="mb-2 font-medium">{t("portal.upcoming")}</h2>{upcoming.length === 0 ? <Empty>{t("portal.noUpcoming")} <Link href="/book" className="text-brand underline">{t("clinic.book")}</Link></Empty> : <ul className="space-y-2">{upcoming.map((a) => row(a, true))}</ul>}</section>
+          <section><h2 className="mb-2 font-medium">{t("portal.upcoming")}</h2>{upcoming.length === 0 ? <Empty>{t("portal.noUpcoming")}</Empty> : <ul className="space-y-2">{upcoming.map((a) => row(a, true))}</ul>}</section>
           {past.length > 0 && <section><h2 className="mb-2 font-medium">{t("portal.past")}</h2><ul className="space-y-2">{past.map((a) => row(a, false))}</ul></section>}
         </div>
       )}

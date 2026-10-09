@@ -8,7 +8,7 @@ import { SESSION_COOKIE } from "@/lib/session";
  *   platform host -> /t-platform/*,  store host -> /t-store/*,  clinic host -> /t-clinic/*
  */
 const INTERNAL = /^\/t-(platform|store|clinic|unknown)(\/|$)/;
-const PRIVATE_PREFIXES = ["/dashboard", "/account", "/portal", "/admin", "/orders", "/checkout"];
+const PRIVATE_PREFIXES = ["/dashboard", "/account", "/portal", "/admin", "/orders"];   // /checkout is open: guests can order without an account
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;

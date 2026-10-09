@@ -33,11 +33,6 @@ export default function PatientPage({ params }: { params: Promise<{ id: string }
     await p.reload();
   });
   const tl = useApi<StaffTimeline>(clinical ? `clinic/patients/${id}/timeline` : null);
-  const [pin, setPin] = useState<{ label: string; value: string } | null>(null);
-  const reissue = useAction(async () => {
-    const r = await api<{ activationPin?: string; linkPin?: string }>(`clinic/patients/${id}/access-pin`, { body: {} });
-    setPin(r.activationPin ? { label: t("patients.activationPin"), value: r.activationPin } : { label: t("patients.linkPin"), value: r.linkPin! });
-  });
   const [pwOpen, setPwOpen] = useState(false);
   const [newPw, setNewPw] = useState("");
   const [pwDone, setPwDone] = useState(false);
@@ -71,7 +66,6 @@ export default function PatientPage({ params }: { params: Promise<{ id: string }
         actions={<>
           <WhatsAppButton phone={d.phone} message={t("pq.waHello", { name: d.firstName, clinic: clinic.data?.clinicName ?? "" })} size={40} />
           {can("patient.update") && <Button variant="secondary" onClick={() => { setForm({ name: `${d.firstName} ${d.lastName}`.trim(), phone: d.phone ?? "", ageYears: d.ageYears === undefined ? "" : String(d.ageYears), ageMonths: String(d.ageMonths ?? 0), sex: d.sex ?? "", addressText: d.addressText ?? "", bloodType: d.bloodType ?? "", notes: d.notesInternal ?? "" }); setEditOpen(true); }}>{t("patients.edit")}</Button>}
-          {portal && can("patient.update") && d.phone && <Button variant="secondary" loading={reissue.loading} onClick={() => reissue.run()}>{t("patients.newPin")}</Button>}
           {can("appointment.manage") && <Button variant="secondary" onClick={() => { setVisitType(suggestFollowUp ? "FOLLOW_UP" : "CONSULTATION"); setQueueOpen(true); }}>{t("queue.walkIn")}</Button>}
           {portal && can("patient.update") && d.hasPortal && <Button variant="secondary" onClick={() => { setPwDone(false); setNewPw(""); setPwOpen(true); }}>{t("patients.setPassword")}</Button>}
           {can("patient.export") && clinical && <a className="inline-flex h-10 items-center rounded-lg border px-3 text-sm hover:bg-slate-50" href={`/api/bff/clinic/patients/${id}/export`}>{t("record.exportStaff")}</a>}
@@ -88,8 +82,7 @@ export default function PatientPage({ params }: { params: Promise<{ id: string }
           <Button className="w-full" loading={walkIn.loading} onClick={() => walkIn.run()}>{t("queue.add")}</Button>
         </div>
       </Modal>
-      <ErrorText error={reissue.error ?? start.error ?? tl.error} />
-      {pin && <div className="mb-4"><SecretBox label={pin.label} value={pin.value} /></div>}
+      <ErrorText error={start.error ?? tl.error} />
       {portal && !d.hasPortal && <div className="mb-4"><Alert tone="blue">{t("patients.noPortal")}</Alert></div>}
       <Card className="mb-4">
         <h2 className="mb-3 font-medium">{t("patients.detailsTitle")}</h2>

@@ -22,10 +22,11 @@ export function AccountLink() {
   if (!ready) return <span className="w-16" />;
   if (!me) return <Link href="/login" className="rounded-lg px-3 py-1.5 text-sm font-medium transition hover:bg-brand-soft hover:text-brand">{t("nav.login")}</Link>;
   const staff = me.roles.some((r) => r !== "CUSTOMER");
+  const client = !staff;
   return (
     <div className="flex items-center gap-1 text-sm">
       {staff && can("settings.manage") !== undefined && <Link href="/dashboard" className="rounded-lg bg-slate-900 px-3 py-1.5 font-medium text-white transition hover:bg-slate-700">{t("nav.dashboard")}</Link>}
-      <Link href="/account" className="rounded-lg px-2 py-1.5 hover:bg-slate-100">{me.firstName}</Link>
+      <Link href="/account" className="rounded-lg px-2 py-1.5 hover:bg-slate-100">{me.firstName || (client ? "👤" : "")}</Link>
     </div>
   );
 }

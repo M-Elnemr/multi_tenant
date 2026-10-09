@@ -14,7 +14,7 @@ type Profile = {
   clinicName: string; about?: string; phone?: string; email?: string; addressText?: string; bookingEnabled: boolean; takeNewPatients: boolean; requiresConfirmation: boolean;
   minimumBookingNoticeMinutes: number; maximumDaysAhead: number; cancellationWindowHours: number; cardEnabled: boolean; cashEnabled: boolean; cardAvailable: boolean;
 };
-type Doctor = { id: string; displayName: string; bio?: string; otherSpecialty?: string | null; defaultAppointmentFeeMinor?: number; specialties: { code: string; nameEn: string; nameAr: string }[] };
+type Doctor = { id: string; displayName: string; bio?: string; publicPhone?: string; otherSpecialty?: string | null; defaultAppointmentFeeMinor?: number; specialties: { code: string; nameEn: string; nameAr: string }[] };
 type Specialty = { code: string; nameAr: string; nameEn: string; popular?: boolean };
 type Branch = { id: string; name: string; code: string; city?: string };
 
@@ -32,12 +32,12 @@ export default function ClinicSettings() {
 
   // my doctor profile (only for users that have one)
   const mine = mineApi.data;
-  type DoctorForm = { displayName: string; bio: string; fee: string; codes: string[]; other: string };
+  type DoctorForm = { displayName: string; bio: string; publicPhone: string; fee: string; codes: string[]; other: string };
   const [editedDp, setDp] = useState<DoctorForm | null>(null);
-  const dp: DoctorForm | null = editedDp ?? (mine ? { displayName: mine.displayName, bio: mine.bio ?? "", fee: fromMinor(mine.defaultAppointmentFeeMinor), codes: mine.specialties.map((s) => s.code), other: mine.otherSpecialty ?? "" } : null);
+  const dp: DoctorForm | null = editedDp ?? (mine ? { displayName: mine.displayName, bio: mine.bio ?? "", publicPhone: mine.publicPhone ?? "", fee: fromMinor(mine.defaultAppointmentFeeMinor), codes: mine.specialties.map((s) => s.code), other: mine.otherSpecialty ?? "" } : null);
   const saveDoctor = useAction(async () => {
     if (!dp) return;
-    await api("clinic/doctors/me", { method: "PATCH", body: { fields: { displayName: dp.displayName, bio: dp.bio, defaultAppointmentFeeMinor: dp.fee ? toMinor(dp.fee) : undefined, otherSpecialty: dp.codes.includes("other") ? dp.other.trim() : undefined }, specialties: dp.codes } });
+    await api("clinic/doctors/me", { method: "PATCH", body: { fields: { displayName: dp.displayName, bio: dp.bio, publicPhone: dp.publicPhone || undefined, defaultAppointmentFeeMinor: dp.fee ? toMinor(dp.fee) : undefined, otherSpecialty: dp.codes.includes("other") ? dp.other.trim() : undefined }, specialties: dp.codes } });
     setSaved(true);
     await mineApi.reload();
   });
@@ -78,6 +78,7 @@ export default function ClinicSettings() {
           <Card className="space-y-4">
             <h2 className="font-medium">{t("clinicSettings.myProfile")}</h2>
             <Field label={t("clinicSettings.displayName")}><Input value={dp.displayName} onChange={(e) => setDp({ ...dp, displayName: e.target.value })} /></Field>
+            <Field label={t("clinicSettings.doctorPhone")} hint={t("clinicSettings.doctorPhoneHint")}><PhoneInput value={dp.publicPhone} onValue={(v) => setDp({ ...dp, publicPhone: v })} /></Field>
             <Field label={t("clinicSettings.bio")}><Textarea value={dp.bio} onChange={(e) => setDp({ ...dp, bio: e.target.value })} /></Field>
             <Field label={t("clinicSettings.fee")} hint={t("services.priceHint")}><Input value={dp.fee} onChange={(e) => setDp({ ...dp, fee: e.target.value })} inputMode="decimal" dir="ltr" className="max-w-40" /></Field>
             <div>

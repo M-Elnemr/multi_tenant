@@ -39,6 +39,12 @@ class PatientAccountsIntegrationTest extends IntegrationTestBase {
         String again = JsonPath.read(body(onHost(h, null, "POST", "/api/v1/auth/refresh", "{\"refreshToken\":\"%s\"}".formatted(refresh)).andExpect(status().isOk()).andExpect(jsonPath("$.user.roles[0]").value("PATIENT"))), "$.accessToken");
         onHost(h, again, "GET", "/api/v1/portal/queue", null).andExpect(status().isOk());
 
+        // the patient app signs in once on the platform address and then opens each clinic with the same login
+        String platformToken = JsonPath.read(body(onHost("platform.test", null, "POST", "/api/v1/auth/login", "{\"identifier\":\"%s\",\"password\":\"PatientPass1\"}".formatted(phone)).andExpect(status().isOk())), "$.accessToken");
+        onHost("platform.test", platformToken, "GET", "/api/v1/me/tenants", null).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1)).andExpect(jsonPath("$[0].host").value(h));
+        onHost(h, platformToken, "GET", "/api/v1/portal/queue", null).andExpect(status().isOk());
+        onHost("platform.test", null, "POST", "/api/v1/auth/login", "{\"identifier\":\"%s\",\"password\":\"nope\"}".formatted(phone)).andExpect(status().isUnauthorized());
+
         // booking is switched off: the public site says so and the portal refuses
         onHost(h, null, "GET", "/api/v1/clinic/public/profile", null).andExpect(jsonPath("$.bookingEnabled").value(false));
         onHost(h, p.token(), "POST", "/api/v1/portal/appointments", "{\"patientId\":\"%s\"}".formatted(p.patientId())).andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("BOOKING_DISABLED"));

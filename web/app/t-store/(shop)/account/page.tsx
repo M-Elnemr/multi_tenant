@@ -4,7 +4,6 @@ import { useState } from "react";
 import { api } from "@/lib/client";
 import { useAction, useApi, useMe } from "@/components/hooks";
 import { useT } from "@/components/i18n-provider";
-import { ChangePasswordCard } from "@/components/change-password";
 import { LogoutButton } from "@/components/logout-button";
 import { Button, Card, Empty, ErrorText, Field, Input, Loading, PageHeader } from "@/components/ui";
 import Link from "next/link";
@@ -12,6 +11,30 @@ import { PhoneInput } from "@/components/inputs";
 
 type Addr = { id: string; title?: string; recipientName: string; phone: string; addressLine1: string; city: string; isDefaultShipping: boolean };
 type Wish = { id: string; name: string; slug: string };
+
+/** The client's own name and mobile, kept on their account so the next order is pre-filled. */
+function ProfileCard() {
+  const t = useT();
+  const { me } = useMe();
+  const [edits, setEdits] = useState<{ name?: string; phone?: string }>({});
+  const [saved, setSaved] = useState(false);
+  const save = useAction(async () => {
+    await api("shop/me", { method: "PUT", body: { name: edits.name ?? me?.firstName ?? "", phone: edits.phone ?? me?.phone ?? "" } });
+    window.dispatchEvent(new Event("auth:changed"));
+    setSaved(true);
+  });
+  return (
+    <Card className="mb-6 space-y-3">
+      <h2 className="font-medium">{t("account.myDetails")}</h2>
+      <p className="text-sm text-slate-500">{me?.email}</p>
+      <form onSubmit={(e) => { e.preventDefault(); setSaved(false); void save.run(); }} className="grid gap-3 sm:grid-cols-2">
+        <Field label={t("form.name")}><Input value={edits.name ?? me?.firstName ?? ""} onChange={(e) => setEdits({ ...edits, name: e.target.value })} required /></Field>
+        <Field label={t("register.phone")}><PhoneInput value={edits.phone ?? me?.phone ?? ""} onValue={(phone) => setEdits({ ...edits, phone })} /></Field>
+        <div className="sm:col-span-2"><ErrorText error={save.error} />{saved && <p className="text-sm text-emerald-700">{t("account.saved")}</p>}<Button type="submit" size="sm" loading={save.loading}>{t("common.save")}</Button></div>
+      </form>
+    </Card>
+  );
+}
 
 export default function Account() {
   const t = useT();
@@ -28,8 +51,8 @@ export default function Account() {
   if (!ready) return <Loading />;
   return (
     <>
-      <PageHeader title={t("account.title")} subtitle={me ? `${me.firstName} ${me.lastName} · ${me.phone ?? ""}` : ""} actions={<><Link href="/orders" className="rounded-lg border bg-white px-3 py-2 text-sm">{t("orders.mine")}</Link><LogoutButton /></>} />
-      <div className="mb-6"><ChangePasswordCard /></div>
+      <PageHeader title={t("account.title")} subtitle={me ? `${me.firstName} ${me.phone ? "· " + me.phone : ""}` : ""} actions={<><Link href="/orders" className="rounded-lg border bg-white px-3 py-2 text-sm">{t("orders.mine")}</Link><LogoutButton /></>} />
+      <ProfileCard />
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
           <h2 className="mb-3 font-medium">{t("account.addresses")}</h2>
