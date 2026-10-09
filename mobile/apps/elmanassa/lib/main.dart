@@ -9,7 +9,7 @@ import 'package:platform_core/platform_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'push.dart';
-import 'shop.dart';
+import 'shop/shop.dart';
 
 void main() => runApp(const ElmanassaApp());
 
