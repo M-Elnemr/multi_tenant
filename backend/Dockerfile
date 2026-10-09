@@ -1,5 +1,5 @@
 # --- Build stage ---
-FROM gradle:9.5.1-jdk17 AS build
+FROM mirror.gcr.io/library/gradle:9.5.1-jdk17 AS build
 WORKDIR /app
 
 COPY build.gradle settings.gradle ./
@@ -12,7 +12,7 @@ COPY src ./src
 RUN ./gradlew bootJar --no-daemon -x test
 
 # --- Runtime stage ---
-FROM eclipse-temurin:17-jre-jammy
+FROM mirror.gcr.io/library/eclipse-temurin:17-jre-jammy
 WORKDIR /app
 
 RUN useradd --system --create-home --shell /usr/sbin/nologin appuser \
