@@ -26,6 +26,8 @@ export default async function PlatformLayout({ children }: { children: React.Rea
             <Link href="/pricing" className="hover:text-slate-900">{t("nav.pricing")}</Link>
             <Link href="/login" className="hover:text-slate-900">{t("nav.login")}</Link>
             <Link href="/register" className="hover:text-slate-900">{t("nav.startFree")}</Link>
+            <Link href="/privacy" className="hover:text-slate-900">{t("nav.privacy")}</Link>
+            <Link href="/delete-account" className="hover:text-slate-900">{t("nav.deleteAccount")}</Link>
           </nav>
           <p className="text-sm text-slate-400">© {new Date().getFullYear()} {t("brand.name")}</p>
         </div>

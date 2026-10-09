@@ -1,7 +1,7 @@
-name: platform_provider
-description: Platform provider app (same API as the website).
+name: elmanassa_business
+description: Elmanassa Business - for clinics, doctors and shop owners and staff.
 publish_to: none
-version: 0.1.0+1
+version: 1.0.0+1
 
 environment:
   sdk: ">=3.4.0 <4.0.0"

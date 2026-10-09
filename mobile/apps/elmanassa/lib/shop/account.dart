@@ -30,6 +30,31 @@ class _OrdersPageState extends State<OrdersPage> {
   @override
   void dispose() { number.dispose(); phone.dispose(); super.dispose(); }
 
+  Future<void> _deleteAccount(BuildContext context, S s) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text(s.ar ? 'حذف الحساب؟' : 'Delete your account?'),
+        content: Text(s.ar
+            ? 'سيتم حذف حسابك وعناوينك وقائمة المفضلة نهائيًا. تبقى طلباتك السابقة لدى المتاجر لأغراض المحاسبة والمرتجعات. لا يمكن التراجع.'
+            : 'Your account, addresses and wishlist will be deleted permanently. Past orders stay with the shops for their records and returns. This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: Text(s.ar ? 'إلغاء' : 'Cancel')),
+          FilledButton(style: FilledButton.styleFrom(backgroundColor: Theme.of(c).colorScheme.error), onPressed: () => Navigator.pop(c, true), child: Text(s.ar ? 'احذف حسابي' : 'Delete')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await widget.ctx.api.delete('shop/me');
+      try { await GoogleSignIn().signOut(); } catch (_) {}
+      await widget.ctx.api.session.clear();
+      if (mounted) setState(() => refresh++);
+    } catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.ar ? 'تعذّر حذف الحساب، حاول مرة أخرى' : 'Could not delete the account, try again')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
@@ -65,9 +90,8 @@ class _OrdersPageState extends State<OrdersPage> {
             load: () async => await api.get('shop/orders') as Map<String, dynamic>,
             builder: (context, data, reload) {
               final orders = (data['data'] as List).cast<Map<String, dynamic>>();
-              if (orders.isEmpty) return Center(child: Text(s.empty));
               return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(s.ar ? 'طلباتي' : 'My orders', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+                if (orders.isEmpty) Center(child: Padding(padding: const EdgeInsets.all(12), child: Text(s.empty))) else Text(s.ar ? 'طلباتي' : 'My orders', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
                 for (final o in orders) Card(child: ListTile(
                   title: Text(o['orderNumber'] as String, style: const TextStyle(fontWeight: FontWeight.w800), textDirection: TextDirection.ltr, textAlign: TextAlign.start),
                   subtitle: Text(statusLabel(s, o['status'] as String)),
@@ -77,6 +101,13 @@ class _OrdersPageState extends State<OrdersPage> {
                     final ph = (detail['customerPhoneSnapshot'] as String?) ?? '';
                     if (context.mounted) Navigator.of(context).push(MaterialPageRoute(builder: (_) => TrackPage(ctx: widget.ctx, orderNumber: o['orderNumber'] as String, phone: ph)));
                   },
+                )),
+                const SizedBox(height: 24),
+                Center(child: TextButton.icon(
+                  icon: const Icon(Icons.delete_outline),
+                  style: TextButton.styleFrom(foregroundColor: cs.error),
+                  label: Text(s.ar ? 'حذف حسابي' : 'Delete my account'),
+                  onPressed: () => _deleteAccount(context, s),
                 )),
               ]);
             },

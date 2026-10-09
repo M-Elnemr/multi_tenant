@@ -205,6 +205,14 @@ public class ShopController {
     @PreAuthorize("hasRole('CUSTOMER')")
     public Map<String, Object> updateMe(@RequestBody ProfileRequest r, Authentication a) { return shopper.updateProfile((UUID) a.getPrincipal(), r.name(), r.phone()); }
 
+    /** Deletes the signed-in client's account (login, contact details, addresses, wishlist, devices). Orders stay with the shops. */
+    @DeleteMapping("/me")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public Map<String, Object> deleteMe(Authentication a) {
+        shopper.deleteAccount((UUID) a.getPrincipal());
+        return Map.of("ok", true);
+    }
+
     @GetMapping("/addresses")
     @PreAuthorize("hasRole('CUSTOMER')")
     public List<Map<String, Object>> addresses(Authentication a) { return shopper.addresses((UUID) a.getPrincipal()); }

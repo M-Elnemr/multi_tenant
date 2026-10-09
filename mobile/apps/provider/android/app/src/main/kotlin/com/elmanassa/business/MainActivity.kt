@@ -1,4 +1,4 @@
-package com.platform.platform_provider
+package com.elmanassa.business
 
 import io.flutter.embedding.android.FlutterActivity
 

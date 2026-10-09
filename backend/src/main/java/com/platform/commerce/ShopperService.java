@@ -72,6 +72,23 @@ public class ShopperService {
         return profile(clientId);
     }
 
+    /**
+     * The client deletes their own account: login identity, contact details, saved addresses, wishlist, push devices and sessions
+     * are removed. Orders stay with the shops (they carry their own name/phone snapshot, needed for their accounting and returns).
+     */
+    @Transactional
+    public void deleteAccount(UUID clientId) {
+        jdbc.sql("UPDATE core.user_sessions SET revoked_at = now() WHERE user_id = :u AND revoked_at IS NULL").param("u", clientId).update();
+        jdbc.sql("DELETE FROM notifications.device_tokens WHERE principal_id = :u").param("u", clientId).update();
+        jdbc.sql("DELETE FROM commerce.addresses WHERE user_id = :u").param("u", clientId).update();
+        jdbc.sql("DELETE FROM commerce.wishlist_items WHERE user_id = :u").param("u", clientId).update();
+        jdbc.sql("UPDATE commerce.customers SET email = NULL, address_json = NULL, name = 'Deleted client' WHERE user_id = :u").param("u", clientId).update();
+        jdbc.sql("""
+                UPDATE commerce.client_accounts SET google_sub = 'deleted:' || id::text, email = NULL, name = '', phone = NULL,
+                       status = 'DELETED', deleted_at = now() WHERE id = :u
+                """).param("u", clientId).update();
+    }
+
     public Map<String, Object> publicReviews(UUID tenantId, UUID productId) {
         var list = Rows.camel(jdbc.sql("""
                 SELECT r.rating, r.review_text, r.created_at, split_part(c.name, ' ', 1) AS first_name FROM commerce.reviews r JOIN commerce.customers c ON c.id = r.customer_id
