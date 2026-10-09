@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { api } from "@/lib/client";
 import { TimelineView, type StaffTimeline } from "@/components/dashboard/timeline-view";
 import { PrintRxButton, RxPhoto } from "@/components/print-rx";
@@ -36,6 +37,7 @@ function readDraft(key: string): { summary?: string; complaint?: string; note?: 
 
 function ConsultationForm({ id, e, reload }: { id: string; e: Encounter; reload: () => Promise<void> }) {
   const { t, locale, timezone } = useI18n();
+  const router = useRouter();
   const { can } = useMe();
   const patientId = e.patientId;
   const patient = useApi<{ firstName: string; lastName: string; patientCode: string; ageYears?: number; ageMonths?: number; sex?: string }>(patientId ? `clinic/patients/${patientId}` : null);
@@ -87,10 +89,13 @@ function ConsultationForm({ id, e, reload }: { id: string; e: Encounter; reload:
   const issue = useAction(async (pid: string) => { await api(`clinic/prescriptions/${pid}/issue`, { body: {} }); await refresh(); });
   const cancelRx = useAction(async (pid: string) => { await api(`clinic/prescriptions/${pid}/cancel`, { body: {} }); await refresh(); });
   const orderLab = useAction(async () => { await api(`clinic/encounters/${id}/lab-orders`, { body: lab }); setLab({ testName: "", priority: "ROUTINE" }); await refresh(); });
+  // Finishing the exam saves it, closes the appointment, and goes back to "Current exam", which then shows nobody in the room until the next patient is sent in.
+  // Any failure stops here (the error shows on this page) instead of leaving the doctor on a half-finished exam.
   const complete = useAction(async () => {
-    await saveVisit.run();
+    await api(`clinic/encounters/${id}`, { method: "PATCH", body: { chiefComplaint: complaint, clinicalSummary: summary, followUpDate: followUp || undefined } });
+    localStorage.removeItem(draftKey);
     if (e.appointmentId) await api(`clinic/appointments/${e.appointmentId}/complete`, { body: {} });
-    await refresh();
+    router.push("/dashboard/current");
   });
 
   const age = patient.data?.ageYears !== undefined ? ageText(patient.data.ageYears, patient.data.ageMonths, locale) : null;
