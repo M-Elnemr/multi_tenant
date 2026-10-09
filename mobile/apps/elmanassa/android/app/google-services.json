@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "193111271180",
+    "project_id": "elmanassa-3653c",
+    "storage_bucket": "elmanassa-3653c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:193111271180:android:deda8451f7fcaa904c4b29",
+        "android_client_info": {
+          "package_name": "com.elmanassa.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBXnxiGfGaQn9hybK1v846gi4b_IhMwehU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
