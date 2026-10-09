@@ -57,21 +57,84 @@ public class CatalogService {
                 .param("i", id).param("t", tenantId).query().singleRow());
     }
 
+    /** Flat list (parentId links build the tree). productCount includes every sub-category; for the public view only sellable products count. */
     public List<Map<String, Object>> categories(UUID tenantId, boolean onlyActive) {
-        return Rows.camel(jdbc.sql("""
-                SELECT id, parent_id, name, slug, description, sort_order, is_active FROM commerce.categories
-                WHERE tenant_id = :t AND (NOT :a OR is_active) ORDER BY sort_order, name
-                """).param("t", tenantId).param("a", onlyActive).query().listOfRows());
+        var rows = new ArrayList<>(Rows.camel(jdbc.sql("""
+                SELECT c.id, c.parent_id, c.name, c.slug, c.description, c.sort_order, c.is_active, c.image_file_id,
+                  (SELECT count(*) FROM commerce.products p WHERE p.category_id = c.id AND (CASE WHEN :a THEN p.status = 'ACTIVE' ELSE p.status <> 'ARCHIVED' END)) AS own_count
+                FROM commerce.categories c WHERE c.tenant_id = :t AND (NOT :a OR c.is_active) ORDER BY c.sort_order, c.name
+                """).param("t", tenantId).param("a", onlyActive).query().listOfRows()));
+        Map<Object, Long> total = new java.util.HashMap<>();
+        Map<Object, Object> parent = new java.util.HashMap<>();
+        for (var r : rows) { total.put(r.get("id"), ((Number) r.get("ownCount")).longValue()); parent.put(r.get("id"), r.get("parentId")); }
+        for (var r : rows) {          // add each category's own count to all its ancestors
+            long own = ((Number) r.get("ownCount")).longValue();
+            Object up = parent.get(r.get("id"));
+            int guard = 0;
+            while (up != null && total.containsKey(up) && guard++ < 20) { total.merge(up, own, Long::sum); up = parent.get(up); }
+        }
+        for (var r : rows) { r.put("productCount", total.get(r.get("id"))); r.remove("ownCount"); }
+        return rows;
     }
 
     @Transactional
     public void updateCategory(UUID tenantId, UUID id, String name, String description, Boolean active, Integer sortOrder) {
+        updateCategory(tenantId, id, name, description, active, sortOrder, null, false, null);
+    }
+
+    /** moveParent=true re-parents (parentId null = top level); cycles are refused. imageFileId must be a file of this shop. */
+    @Transactional
+    public void updateCategory(UUID tenantId, UUID id, String name, String description, Boolean active, Integer sortOrder, UUID parentId, boolean moveParent, UUID imageFileId) {
         requireOwned("commerce.categories", id, tenantId);
+        if (moveParent && parentId != null) {
+            requireOwned("commerce.categories", parentId, tenantId);
+            long cycle = jdbc.sql("""
+                    WITH RECURSIVE sub AS (SELECT id FROM commerce.categories WHERE id = :i UNION ALL SELECT c.id FROM commerce.categories c JOIN sub ON c.parent_id = sub.id)
+                    SELECT count(*) FROM sub WHERE id = :p
+                    """).param("i", id).param("p", parentId).query(Long.class).single();
+            if (cycle > 0) throw BusinessException.badRequest("CATEGORY_CYCLE", "A category cannot be moved under itself");
+        }
         jdbc.sql("""
                 UPDATE commerce.categories SET name = coalesce(:n, name), description = coalesce(:d, description),
-                       is_active = coalesce(:a, is_active), sort_order = coalesce(:o, sort_order), updated_at = now()
+                       is_active = coalesce(:a, is_active), sort_order = coalesce(:o, sort_order),
+                       parent_id = CASE WHEN :mv THEN CAST(:p AS uuid) ELSE parent_id END,
+                       image_file_id = coalesce(CAST(:img AS uuid), image_file_id), updated_at = now()
                 WHERE id = :i AND tenant_id = :t
-                """).param("n", name).param("d", description).param("a", active).param("o", sortOrder).param("i", id).param("t", tenantId).update();
+                """).param("n", name == null || name.isBlank() ? null : name.trim()).param("d", description).param("a", active).param("o", sortOrder)
+                .param("mv", moveParent).param("p", parentId).param("img", imageFileId).param("i", id).param("t", tenantId).update();
+    }
+
+    /** A category with products or sub-categories cannot be deleted (hide it instead); an empty one is removed. */
+    @Transactional
+    public void deleteCategory(UUID tenantId, UUID id) {
+        requireOwned("commerce.categories", id, tenantId);
+        long kids = jdbc.sql("SELECT count(*) FROM commerce.categories WHERE parent_id = :i").param("i", id).query(Long.class).single();
+        long prods = jdbc.sql("SELECT count(*) FROM commerce.products WHERE category_id = :i").param("i", id).query(Long.class).single();
+        if (kids > 0 || prods > 0) throw BusinessException.conflict("CATEGORY_NOT_EMPTY", "Move or remove its products and sub-categories first, or hide the category");
+        jdbc.sql("DELETE FROM commerce.categories WHERE id = :i AND tenant_id = :t").param("i", id).param("t", tenantId).update();
+    }
+
+    /** Merchandising fields edited separately from the core product (tags, badge, specs table, size guide, featured, order). */
+    @Transactional
+    public Map<String, Object> updateExtras(UUID tenantId, UUID actor, UUID id, Map<String, Object> f) {
+        requireOwned("commerce.products", id, tenantId);
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        String badge = f.get("badge") instanceof String b ? b.trim().toUpperCase(Locale.ROOT) : null;
+        if (badge != null && !Set.of("", "NEW", "SALE", "BEST_SELLER", "LIMITED").contains(badge)) throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid badge");
+        String tagsCsv = f.get("tags") instanceof List<?> l ? String.join(",", l.stream().map(String::valueOf).map(String::trim).filter(x -> !x.isEmpty()).limit(15).toList()) : null;
+        String specs = null;
+        try { if (f.get("specs") instanceof List<?> l) specs = mapper.writeValueAsString(l.size() > 40 ? l.subList(0, 40) : l); }
+        catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid specs"); }
+        jdbc.sql("""
+                UPDATE commerce.products SET badge = coalesce(:b, badge), tags = CASE WHEN CAST(:tg AS varchar) IS NULL THEN tags ELSE string_to_array(NULLIF(CAST(:tg AS varchar), ''), ',') END,
+                  specs = coalesce(CAST(:sp AS jsonb), specs), size_guide = coalesce(:sg, size_guide), is_featured = coalesce(:ft, is_featured),
+                  sort_order = coalesce(:so, sort_order), updated_at = now()
+                WHERE id = :i AND tenant_id = :t
+                """).param("b", badge).param("tg", tagsCsv).param("sp", specs).param("sg", f.get("sizeGuide") instanceof String sg ? sg : null)
+                .param("ft", f.get("isFeatured") instanceof Boolean ft ? ft : null).param("so", f.get("sortOrder") instanceof Number so ? so.intValue() : null)
+                .param("i", id).param("t", tenantId).update();
+        audit.record(actor, tenantId, "PRODUCT_UPDATED", "product", id, null);
+        return detail(tenantId, id, false);
     }
 
     // ---- products -----------------------------------------------------------------------------------
@@ -293,8 +356,10 @@ public class CatalogService {
     private Map<String, Object> assemble(UUID tenantId, Map<String, Object> p, boolean publicOnly) {
         UUID id = (UUID) p.get("id");
         Map<String, Object> out = new LinkedHashMap<>();
-        for (String k : List.of("id", "name", "slug", "description", "short_description", "brand", "status", "has_variants", "currency", "category_id"))
+        for (String k : List.of("id", "name", "slug", "description", "short_description", "brand", "status", "has_variants", "currency", "category_id", "badge", "size_guide", "is_featured"))
             out.put(Rows.camel(Map.of(k, "")).keySet().iterator().next(), p.get(k));
+        out.put("tags", p.get("tags") instanceof java.sql.Array arr ? sqlArray(arr) : List.of());
+        out.put("specs", Rows.jsonList(p.get("specs") == null ? null : p.get("specs").toString()));
         out.put("options", jdbc.sql("""
                 SELECT o.name, coalesce(array_agg(ov.value ORDER BY ov.sort_order) FILTER (WHERE ov.id IS NOT NULL), '{}') AS vals
                 FROM commerce.product_options o LEFT JOIN commerce.product_option_values ov ON ov.option_id = o.id
@@ -309,6 +374,25 @@ public class CatalogService {
         out.put("media", Rows.camel(jdbc.sql("SELECT id, url, alt_text, sort_order, media_base, media_ext FROM commerce.product_media WHERE product_id = :p ORDER BY sort_order")
                 .param("p", id).query().listOfRows()));
         return out;
+    }
+
+    private static List<String> sqlArray(java.sql.Array a) {
+        try { return List.of((String[]) a.getArray()); } catch (java.sql.SQLException e) { return List.of(); }
+    }
+
+    /** A few other products from the same category (or the whole shop when the category is empty). */
+    public List<Map<String, Object>> related(UUID tenantId, UUID productId, int limit) {
+        return Rows.camel(jdbc.sql("""
+                SELECT p.id, p.name, p.slug, p.brand, p.currency, p.badge,
+                  (SELECT min(v.price_minor) FROM commerce.product_variants v WHERE v.product_id = p.id AND v.status = 'ACTIVE') AS min_price_minor,
+                  (SELECT max(v.compare_at_price_minor) FROM commerce.product_variants v WHERE v.product_id = p.id AND v.status = 'ACTIVE' AND v.compare_at_price_minor > v.price_minor) AS compare_at_minor,
+                  (SELECT m.url FROM commerce.product_media m WHERE m.product_id = p.id ORDER BY m.sort_order LIMIT 1) AS image_url,
+                  (SELECT m.media_base FROM commerce.product_media m WHERE m.product_id = p.id ORDER BY m.sort_order LIMIT 1) AS image_media_base,
+                  (SELECT m.media_ext FROM commerce.product_media m WHERE m.product_id = p.id ORDER BY m.sort_order LIMIT 1) AS image_media_ext,
+                  EXISTS (SELECT 1 FROM commerce.product_variants v JOIN commerce.inventory_items i ON i.variant_id = v.id WHERE v.product_id = p.id AND v.status = 'ACTIVE' AND i.quantity_on_hand - i.quantity_reserved > 0) AS in_stock
+                FROM commerce.products p WHERE p.tenant_id = :t AND p.status = 'ACTIVE' AND p.id <> :i
+                ORDER BY (p.category_id IS NOT DISTINCT FROM (SELECT category_id FROM commerce.products WHERE id = :i)) DESC, p.sold_count DESC, p.created_at DESC LIMIT :l
+                """).param("t", tenantId).param("i", productId).param("l", Math.min(Math.max(limit, 1), 12)).query().listOfRows());
     }
 
     // ---- helpers ---------------------------------------------------------------------------------------

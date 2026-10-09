@@ -199,6 +199,40 @@ public class StoreSettingsService {
         st.update();
     }
 
+    // ---- home banners -------------------------------------------------------------------------------------
+
+    public List<Map<String, Object>> banners(UUID tenantId) {
+        return Rows.camel(jdbc.sql("SELECT id, image_file_id, title, subtitle, link_url, sort_order, is_active FROM commerce.banners WHERE tenant_id = :t ORDER BY sort_order, created_at").param("t", tenantId).query().listOfRows());
+    }
+
+    @Transactional
+    public List<Map<String, Object>> saveBanner(UUID tenantId, UUID actor, UUID id, Map<String, Object> f) {
+        String link = f.get("linkUrl") instanceof String l ? l.trim() : null;
+        if (link != null && !link.isEmpty() && !(link.startsWith("/") && !link.startsWith("//")) && !link.matches("(?i)^https?://\\S+$")) throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid link");
+        String title = f.get("title") instanceof String x ? x.trim() : null, subtitle = f.get("subtitle") instanceof String x ? x.trim() : null;
+        Integer sort = f.get("sortOrder") instanceof Number n ? n.intValue() : null;
+        UUID img = f.get("imageFileId") instanceof String x && !x.isBlank() ? UUID.fromString(x) : null;
+        if (id == null) {
+            if (img == null) throw BusinessException.badRequest("VALIDATION_ERROR", "Image is required");
+            if (jdbc.sql("SELECT count(*) FROM commerce.banners WHERE tenant_id = :t").param("t", tenantId).query(Long.class).single() >= 8) throw BusinessException.badRequest("TOO_MANY_BANNERS", "Up to 8 banners");
+            jdbc.sql("INSERT INTO commerce.banners (tenant_id, image_file_id, title, subtitle, link_url, sort_order) VALUES (:t, :img, :ti, :su, :li, :so)")
+                    .param("t", tenantId).param("img", img).param("ti", title == null ? "" : title).param("su", subtitle == null ? "" : subtitle).param("li", link == null ? "" : link).param("so", sort == null ? 0 : sort).update();
+        } else {
+            int n = jdbc.sql("UPDATE commerce.banners SET title = coalesce(:ti, title), subtitle = coalesce(:su, subtitle), link_url = coalesce(:li, link_url), sort_order = coalesce(:so, sort_order), "
+                            + "is_active = coalesce(:ac, is_active), image_file_id = coalesce(CAST(:img AS uuid), image_file_id) WHERE id = :i AND tenant_id = :t")
+                    .param("ti", title).param("su", subtitle).param("li", link).param("so", sort).param("ac", f.get("isActive") instanceof Boolean b ? b : null).param("img", img).param("i", id).param("t", tenantId).update();
+            if (n == 0) throw BusinessException.notFound("RESOURCE_NOT_FOUND", "Not found");
+        }
+        audit.record(actor, tenantId, "SETTINGS_CHANGED", "banner", id, null);
+        return banners(tenantId);
+    }
+
+    @Transactional
+    public List<Map<String, Object>> deleteBanner(UUID tenantId, UUID id) {
+        jdbc.sql("DELETE FROM commerce.banners WHERE id = :i AND tenant_id = :t").param("i", id).param("t", tenantId).update();
+        return banners(tenantId);
+    }
+
     // ---- payment methods & shipping --------------------------------------------------------------------------
 
     public List<Map<String, Object>> paymentMethods(UUID tenantId) {

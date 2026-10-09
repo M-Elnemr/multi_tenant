@@ -51,7 +51,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/auth/**", "/api/v1/onboarding/**", "/api/v1/tenant/context",
                         "/api/v1/tenant/public", "/api/v1/tenant/resolve", "/internal/domains/allowed", "/api/v1/billing/plans", "/api/v1/billing/webhooks/**",
                         "/actuator/health/**", "/actuator/prometheus", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
-                .requestMatchers(HttpMethod.GET, "/api/v1/shop/profile", "/api/v1/shop/categories", "/api/v1/shop/products", "/api/v1/shop/products/*").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/shop/profile", "/api/v1/shop/categories", "/api/v1/shop/products", "/api/v1/shop/products/*", "/api/v1/shop/products/*/related", "/api/v1/shop/products/facets", "/api/v1/shop/search/suggest", "/api/v1/shop/home", "/api/v1/shop/branches").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/shop/cart/quote", "/api/v1/shop/checkout", "/api/v1/shop/webhooks/*").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/clinic/public/**", "/api/v1/files/*/content").permitAll()
                 .requestMatchers(HttpMethod.PUT, "/api/v1/files/*/content").permitAll()

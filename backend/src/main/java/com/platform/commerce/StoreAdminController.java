@@ -27,7 +27,7 @@ public class StoreAdminController {
         this.reports = reports;
     }
 
-    public record CategoryRequest(String name, UUID parentId, String description, Integer sortOrder, Boolean active) {}
+    public record CategoryRequest(String name, UUID parentId, String description, Integer sortOrder, Boolean active, Boolean moveToParent, UUID imageFileId) {}
     public record ProductPatch(String name, String description, String shortDescription, String brand, UUID categoryId, String status) {}
     public record VariantPatch(Long priceMinor, Long compareAtPriceMinor, String status) {}
     public record AdjustRequest(UUID branchId, UUID variantId, int delta, String type, String reason) {}
@@ -57,9 +57,20 @@ public class StoreAdminController {
     @PatchMapping("/categories/{id}")
     @PreAuthorize("hasAuthority('category.manage')")
     public Map<String, Object> updateCategory(@PathVariable UUID id, @RequestBody CategoryRequest r) {
-        catalog.updateCategory(StoreContext.tenantId(), id, r.name(), r.description(), r.active(), r.sortOrder());
+        catalog.updateCategory(StoreContext.tenantId(), id, r.name(), r.description(), r.active(), r.sortOrder(), r.parentId(), Boolean.TRUE.equals(r.moveToParent()), r.imageFileId());
         return Map.of("ok", true);
     }
+
+    @DeleteMapping("/categories/{id}")
+    @PreAuthorize("hasAuthority('category.manage')")
+    public Map<String, Object> deleteCategory(@PathVariable UUID id) {
+        catalog.deleteCategory(StoreContext.tenantId(), id);
+        return Map.of("ok", true);
+    }
+
+    @PatchMapping("/products/{id}/extras")
+    @PreAuthorize("hasAuthority('product.update')")
+    public Map<String, Object> productExtras(@PathVariable UUID id, @RequestBody Map<String, Object> r, Authentication a) { return catalog.updateExtras(StoreContext.tenantId(), user(a), id, r); }
 
     @GetMapping("/products")
     @PreAuthorize("hasAuthority('product.update') or hasAuthority('product.create')")
@@ -190,6 +201,22 @@ public class StoreAdminController {
     @PatchMapping("/branches/{id}")
     @PreAuthorize("hasAuthority('branch.manage')")
     public Map<String, Object> updateBranch(@PathVariable UUID id, @RequestBody Map<String, Object> r, Authentication a) { return settings.updateBranch(StoreContext.tenantId(), user(a), id, r); }
+
+    @GetMapping("/banners")
+    @PreAuthorize("hasAuthority('settings.manage')")
+    public List<Map<String, Object>> banners() { return settings.banners(StoreContext.tenantId()); }
+
+    @PostMapping("/banners")
+    @PreAuthorize("hasAuthority('settings.manage')")
+    public List<Map<String, Object>> addBanner(@RequestBody Map<String, Object> r, Authentication a) { return settings.saveBanner(StoreContext.tenantId(), user(a), null, r); }
+
+    @PatchMapping("/banners/{id}")
+    @PreAuthorize("hasAuthority('settings.manage')")
+    public List<Map<String, Object>> editBanner(@PathVariable UUID id, @RequestBody Map<String, Object> r, Authentication a) { return settings.saveBanner(StoreContext.tenantId(), user(a), id, r); }
+
+    @DeleteMapping("/banners/{id}")
+    @PreAuthorize("hasAuthority('settings.manage')")
+    public List<Map<String, Object>> deleteBanner(@PathVariable UUID id) { return settings.deleteBanner(StoreContext.tenantId(), id); }
 
     @GetMapping("/payment-methods")
     @PreAuthorize("hasAuthority('shipping.manage')")
