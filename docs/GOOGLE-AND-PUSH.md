@@ -7,8 +7,9 @@ shop clients can still order as guests, and patients still see the queue refresh
 
 1. Google Cloud Console -> create a project -> **APIs & Services -> OAuth consent screen** (External, app name "Elmanassa").
 2. **Credentials -> Create credentials -> OAuth client ID -> Web application**.
-   Authorized JavaScript origins: `https://elmanassa.shop` plus every shop address that should show the button
-   (Google needs each origin listed; a wildcard `*.elmanassa.shop` is not allowed - add shops as they are created, or use one shared sign-in page later).
+   Authorized JavaScript origins: only `https://elmanassa.shop`. Shops do NOT need to be listed: a shop's "Continue with Google" sends the visitor
+   to `https://elmanassa.shop/google`, which signs them in and hands the Google token back to the shop in the URL fragment
+   (checked against a per-browser `state`, and only to real shops of this platform). The shop then creates its own session.
 3. Copy the **Client ID** (it is public, not a secret) into the server `.env`:
    `GOOGLE_CLIENT_ID=1234567890-abc.apps.googleusercontent.com`, then `docker compose ... up -d`.
 4. Mobile app (Elmanassa): create an additional **Android** OAuth client (package `com.elmanassa.app` + your signing SHA-1)

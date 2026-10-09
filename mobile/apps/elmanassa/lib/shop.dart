@@ -355,7 +355,8 @@ class GoogleSignInButton extends StatefulWidget {
 }
 
 class _GoogleSignInButtonState extends State<GoogleSignInButton> {
-  static const clientId = String.fromEnvironment('GOOGLE_CLIENT_ID');
+  // The Web client id is public (it is in every page of the website); the Android OAuth client is matched by package + signing key, not by code.
+  static const clientId = String.fromEnvironment('GOOGLE_CLIENT_ID', defaultValue: '424377343706-6tbunl2hl4ev6ekqu9h2h2ppanarhi89.apps.googleusercontent.com');
   String? error;
   bool busy = false;
 
