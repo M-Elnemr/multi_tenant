@@ -6,7 +6,7 @@ import { toMinor, money } from "@/lib/format";
 import BrandingCard from "@/components/dashboard/branding";
 import { ZonesCard } from "@/components/dashboard/zones";
 import { BannersCard } from "@/components/dashboard/banners";
-import { BranchesCard, ContactCard, SetupChecklist, type StoreProfile } from "@/components/dashboard/store-identity";
+import { BranchesCard, ContactCard, MarketingCard, SetupChecklist, type StoreProfile } from "@/components/dashboard/store-identity";
 import { CategoryPicker, categoriesValid, type CategoryOption } from "@/components/category-picker";
 import { useAction, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
@@ -102,6 +102,7 @@ export default function StoreSettings() {
           </Card></section>
         )}
         {can("settings.manage") && <BannersCard />}
+        {profile.data && can("settings.manage") && <MarketingCard profile={profile.data} reload={profile.reload} />}
         {can("shipping.manage") && <ZonesCard />}
         {can("branch.manage") && <section id="branches"><BranchesCard /></section>}
       </div>

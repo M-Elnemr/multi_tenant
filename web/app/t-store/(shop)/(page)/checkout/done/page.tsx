@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ShopProfile } from "@/components/shop/types";
 import { backendJson } from "@/lib/backend";
 import { getT } from "@/lib/i18n-server";
+import { PurchaseEvent } from "@/components/shop/purchase-event";
 import { whatsappLink } from "@/lib/whatsapp";
 
 export default async function OrderPlaced({ searchParams }: { searchParams: Promise<{ n?: string; p?: string }> }) {
@@ -10,6 +11,7 @@ export default async function OrderPlaced({ searchParams }: { searchParams: Prom
   const profile = (await backendJson<{ profile: ShopProfile }>("/shop/profile").catch(() => null))?.profile;
   return (
     <div className="s-card mx-auto max-w-lg animate-scale-in space-y-4 p-8 text-center sm:p-12">
+      {n && <PurchaseEvent orderNumber={n} />}
       <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-emerald-100 text-4xl text-emerald-600">✓</div>
       <h1 className="text-3xl font-extrabold">{t("checkout.doneTitle")}</h1>
       {n && <p className="rounded-2xl bg-[var(--s-soft)] py-3 font-mono text-xl font-extrabold" dir="ltr" style={{ color: "var(--brand)" }}>{n}</p>}

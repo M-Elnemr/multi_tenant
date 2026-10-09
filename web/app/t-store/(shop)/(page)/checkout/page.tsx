@@ -77,6 +77,7 @@ export default function Checkout() {
 
   const place = useAction(async () => {
     const r = await api<Placed>("shop/checkout", { body, idempotencyKey: key });
+    try { sessionStorage.setItem("lastOrderTotal", String((quote?.totalMinor ?? r.totalMinor) / 100)); sessionStorage.setItem("lastOrderCurrency", currency); } catch { /* storage unavailable */ }
     clearCart();
     if (me && saveDetails) {
       await api("shop/me", { method: "PUT", body: { name: addr.recipientName, phone: addr.phone } }).catch(() => null);

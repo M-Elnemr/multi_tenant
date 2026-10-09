@@ -137,4 +137,21 @@ class StoreCatalogIntegrationTest extends IntegrationTestBase {
         onHost(t.host(), null, "GET", "/api/v1/shop/home", null).andExpect(jsonPath("$.featured.length()").value(1));
         onHost(t.host(), null, "GET", "/api/v1/shop/products/" + slug + "/related", null).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1)).andExpect(jsonPath("$[0].name").value("Runner Two"));
     }
+
+    @Test
+    void csvImportCreatesProductsAndCategoriesAndExportRoundTrips() throws Exception {
+        Tenant t = onboard("STORE");
+        String csv = "name,brand,category,sku,price,compare_at_price,stock,description,status\r\n"
+                + "قميص قطن,نور,رجالي > قمصان,SH-1,450.50,600,7,\"وصف, بفاصلة\",ACTIVE\r\n"
+                + "حقيبة,نون,إكسسوارات,,900,,3,,ACTIVE\r\n"
+                + "بدون سعر,,,,,,,,\r\n";
+        String body = com.fasterxml.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(java.util.Map.of("csv", csv));
+        String res = ok(onHost(t.host(), t.access(), "POST", "/api/v1/store/products/import", body).andExpect(status().isOk()).andExpect(jsonPath("$.created").value(2)).andExpect(jsonPath("$.errors.length()").value(1)));
+        assertThat((Integer) JsonPath.read(res, "$.errors[0].row")).isEqualTo(4);
+        onHost(t.host(), null, "GET", "/api/v1/shop/products?category=رجالي", null).andExpect(jsonPath("$.meta.total").value(1));          // the product sits under the new category tree
+        onHost(t.host(), null, "GET", "/api/v1/shop/products?q=قميص", null).andExpect(jsonPath("$.data[0].minPriceMinor").value(45050)).andExpect(jsonPath("$.data[0].compareAtMinor").value(60000));
+        // the web proxy always asks for JSON; the CSV must still be served
+        String out = ok(mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/v1/store/products/export.csv").header("Host", t.host()).header("Authorization", "Bearer " + t.access()).header("Accept", "application/json")).andExpect(status().isOk()));
+        assertThat(out).contains("رجالي > قمصان").contains("450.50").contains("\"وصف, بفاصلة\"");
+    }
 }

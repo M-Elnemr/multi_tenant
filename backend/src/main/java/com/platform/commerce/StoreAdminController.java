@@ -17,11 +17,13 @@ public class StoreAdminController {
     private final InventoryService inventory;
     private final OrderService orders;
     private final StoreFulfillmentService fulfilment;
+    private final ProductCsvService csv;
     private final StoreSettingsService settings;
     private final ReportService reports;
 
-    public StoreAdminController(CatalogService catalog, InventoryService inventory, OrderService orders, StoreSettingsService settings, ReportService reports, StoreFulfillmentService fulfilment) {
+    public StoreAdminController(CatalogService catalog, InventoryService inventory, OrderService orders, StoreSettingsService settings, ReportService reports, StoreFulfillmentService fulfilment, ProductCsvService csv) {
         this.fulfilment = fulfilment;
+        this.csv = csv;
         this.catalog = catalog;
         this.inventory = inventory;
         this.orders = orders;
@@ -73,6 +75,18 @@ public class StoreAdminController {
     @PatchMapping("/products/{id}/extras")
     @PreAuthorize("hasAuthority('product.update')")
     public Map<String, Object> productExtras(@PathVariable UUID id, @RequestBody Map<String, Object> r, Authentication a) { return catalog.updateExtras(StoreContext.tenantId(), user(a), id, r); }
+
+    @GetMapping("/products/export.csv")
+    @PreAuthorize("hasAuthority('product.update') or hasAuthority('product.create')")
+    public org.springframework.http.ResponseEntity<String> exportProducts() {
+        return org.springframework.http.ResponseEntity.ok().contentType(org.springframework.http.MediaType.parseMediaType("text/csv;charset=UTF-8")).header("Content-Disposition", "attachment; filename=\"products.csv\"").body(csv.export(StoreContext.tenantId()));
+    }
+
+    public record ImportRequest(String csv, UUID branchId) {}
+
+    @PostMapping("/products/import")
+    @PreAuthorize("hasAuthority('product.create')")
+    public Map<String, Object> importProducts(@RequestBody ImportRequest r, Authentication a) { return csv.importCsv(StoreContext.tenantId(), user(a), r.csv(), r.branchId()); }
 
     @GetMapping("/products")
     @PreAuthorize("hasAuthority('product.update') or hasAuthority('product.create')")

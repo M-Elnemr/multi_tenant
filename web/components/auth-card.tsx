@@ -12,6 +12,8 @@ export async function AuthCard({ title, subtitle, children, wide }: { title: str
         {logo ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={`/api/bff/files/${logo}/content?variant=thumb`} alt="" className="mx-auto mb-3 h-16 w-16 rounded-2xl object-cover shadow-soft" />
+        ) : info.kind === "TENANT" ? (
+          <span className="mx-auto mb-3 grid h-16 w-16 place-items-center rounded-2xl bg-brand-gradient text-2xl font-extrabold text-white shadow-soft">{info.name.trim().charAt(0).toUpperCase()}</span>
         ) : (
           <LogoMark className="mx-auto mb-3 h-16 w-16 animate-float" />
         )}

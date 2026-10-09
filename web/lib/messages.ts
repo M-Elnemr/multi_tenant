@@ -1087,6 +1087,20 @@ const en: Record<string, string> = {
   "zones.codHint": "Extra fee for cash on delivery (optional)",
   "zones.etaMin": "Delivery from (days)",
   "zones.etaMax": "Delivery to (days)",
+  "marketing.title": "Ads & analytics",
+  "marketing.hint": "Paste the IDs to measure visits and orders from your ads. Leave empty to turn off.",
+  "dash.openReturns": "{n} return requests need your decision.",
+  "dash.last14": "Sales, last 14 days",
+  "dash.outcome": "Last 30 days: {d} delivered · {r} returned · {c} cancelled",
+  "dash.byGovernorate": "Top governorates (30 days)",
+  "csv.title": "Spreadsheet",
+  "csv.export": "Export products",
+  "csv.import": "Import products",
+  "csv.template": "Download template",
+  "csv.result": "{n} products added, {e} rows skipped.",
+  "csv.row": "Row {n}",
+  "error.TOO_MANY_ROWS": "Up to 500 products per file.",
+  "error.NO_BRANCH": "Add a branch first.",
 };
 
 const ar: Record<string, string> = {
@@ -2160,6 +2174,20 @@ const ar: Record<string, string> = {
   "zones.codHint": "رسوم إضافية للدفع عند الاستلام (اختياري)",
   "zones.etaMin": "التوصيل من (أيام)",
   "zones.etaMax": "التوصيل حتى (أيام)",
+  "marketing.title": "الإعلانات والتحليلات",
+  "marketing.hint": "الصق المعرّفات لقياس الزيارات والطلبات القادمة من إعلاناتك. اتركها فارغة للإيقاف.",
+  "dash.openReturns": "{n} طلبات استرجاع تحتاج قرارك.",
+  "dash.last14": "المبيعات آخر 14 يومًا",
+  "dash.outcome": "آخر 30 يومًا: {d} وصل · {r} مرتجع · {c} ملغي",
+  "dash.byGovernorate": "أكثر المحافظات طلبًا (30 يومًا)",
+  "csv.title": "ملف إكسيل",
+  "csv.export": "تصدير المنتجات",
+  "csv.import": "استيراد منتجات",
+  "csv.template": "تحميل نموذج",
+  "csv.result": "تمت إضافة {n} منتج، وتخطي {e} صف.",
+  "csv.row": "الصف {n}",
+  "error.TOO_MANY_ROWS": "حتى 500 منتج في الملف الواحد.",
+  "error.NO_BRANCH": "أضف فرعًا أولًا.",
 };
 
 export const dictionaries: Record<Locale, Record<string, string>> = { en, ar };

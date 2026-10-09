@@ -16,6 +16,7 @@ export type StoreProfile = {
   storeName: string; shortDescription?: string; about?: string; supportPhone?: string; supportEmail?: string; addressText?: string;
   whatsapp?: string; extraPhones?: string[]; facebookUrl?: string; instagramUrl?: string; tiktokUrl?: string; websiteUrl?: string; mapsUrl?: string;
   workingHours?: WeekHours; isOpen?: boolean; closedMessage?: string; announcement?: string; coverFileId?: string | null;
+  metaPixelId?: string; tiktokPixelId?: string; gaId?: string;
   minOrderMinor?: number; taxId?: string; vatIncluded?: boolean; vatPercent?: number; returnWindowDays?: number;
 };
 
@@ -172,6 +173,27 @@ export function SetupChecklist({ profile, hasLogo }: { profile: StoreProfile; ha
           <li key={s.key}><Link href={s.href} className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition hover:bg-brand-soft ${s.done ? "text-slate-400 line-through" : "font-medium"}`}><span aria-hidden>{s.done ? "✅" : "⬜"}</span>{t(`setup.${s.key}`)}</Link></li>
         ))}
       </ul>
+    </Card>
+  );
+}
+
+/** Ads and analytics: paste the IDs from Meta Business, TikTok Ads and Google Analytics. Nothing loads until an ID is set. */
+export function MarketingCard({ profile, reload }: { profile: StoreProfile; reload: () => void }) {
+  const { t } = useI18n();
+  const [f, setF] = useState({ metaPixelId: profile.metaPixelId ?? "", tiktokPixelId: profile.tiktokPixelId ?? "", gaId: profile.gaId ?? "" });
+  const [saved, setSaved] = useState(false);
+  const save = useAction(async () => { await api("store/profile", { method: "PATCH", body: f }); setSaved(true); reload(); });
+  const set = (patch: Partial<typeof f>) => { setF({ ...f, ...patch }); setSaved(false); };
+  return (
+    <Card className="space-y-4">
+      <div><h2 className="font-semibold">📈 {t("marketing.title")}</h2><p className="text-sm text-slate-500">{t("marketing.hint")}</p></div>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Field label="Meta (Facebook) Pixel ID"><Input dir="ltr" value={f.metaPixelId} onChange={(e) => set({ metaPixelId: e.target.value })} placeholder="1234567890" /></Field>
+        <Field label="TikTok Pixel ID"><Input dir="ltr" value={f.tiktokPixelId} onChange={(e) => set({ tiktokPixelId: e.target.value })} placeholder="C1ABCDEF…" /></Field>
+        <Field label="Google Analytics ID"><Input dir="ltr" value={f.gaId} onChange={(e) => set({ gaId: e.target.value })} placeholder="G-XXXXXXXXXX" /></Field>
+      </div>
+      <ErrorText error={save.error} />{saved && <Alert tone="green">{t("common.saved")}</Alert>}
+      <Button loading={save.loading} onClick={() => save.run()}>{t("common.save")}</Button>
     </Card>
   );
 }

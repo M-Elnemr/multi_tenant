@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { ProductCsv } from "@/components/dashboard/product-csv";
 import { Page, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Empty, ErrorText, Input, Loading, PageHeader, Pager, StatusBadge, Table, Td } from "@/components/ui";
@@ -14,11 +15,12 @@ export default function Products() {
   const { can } = useMe();
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
-  const { data, loading, error } = useApi<Page<Row>>(`store/products?page=${page}&q=${encodeURIComponent(q)}`);
+  const { data, loading, error, reload } = useApi<Page<Row>>(`store/products?page=${page}&q=${encodeURIComponent(q)}`);
   return (
     <>
       <PageHeader title={t("nav.products")} actions={can("product.create") && <Link href="/dashboard/products/new" className="rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-white">{t("products.add")}</Link>} />
       <div className="mb-4 max-w-sm"><Input placeholder={t("common.search")} value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} /></div>
+      {can("product.create") && <ProductCsv onImported={reload} />}
       <ErrorText error={error} />
       {loading && !data ? <Loading /> : data?.data.length === 0 ? <Empty>{t("products.none")}</Empty> : (
         <>

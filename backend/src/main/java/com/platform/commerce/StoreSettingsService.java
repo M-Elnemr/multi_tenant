@@ -35,7 +35,7 @@ public class StoreSettingsService {
     public Map<String, Object> profile(UUID tenantId) {
         Map<String, Object> p = new java.util.LinkedHashMap<>(Rows.camel(jdbc.sql("SELECT store_name, short_description, about, support_phone, support_email, address_text, shipping_policy, return_policy, privacy_policy, terms_text, other_category, "
                 + "whatsapp, extra_phones::text AS extra_phones, facebook_url, instagram_url, tiktok_url, website_url, maps_url, working_hours::text AS working_hours, "
-                + "is_open, closed_message, min_order_minor, tax_id, vat_included, vat_percent, cover_file_id, announcement, return_window_days "
+                + "is_open, closed_message, min_order_minor, tax_id, vat_included, vat_percent, cover_file_id, announcement, return_window_days, meta_pixel_id, tiktok_pixel_id, ga_id "
                 + "FROM commerce.store_profiles WHERE tenant_id = :t")
                 .param("t", tenantId).query().singleRow()));
         p.put("extraPhones", Rows.jsonList(p.get("extraPhones")));
@@ -78,7 +78,8 @@ public class StoreSettingsService {
             Map.entry("shippingPolicy", "shipping_policy"), Map.entry("returnPolicy", "return_policy"), Map.entry("privacyPolicy", "privacy_policy"),
             Map.entry("termsText", "terms_text"), Map.entry("whatsapp", "whatsapp"), Map.entry("facebookUrl", "facebook_url"),
             Map.entry("instagramUrl", "instagram_url"), Map.entry("tiktokUrl", "tiktok_url"), Map.entry("websiteUrl", "website_url"),
-            Map.entry("mapsUrl", "maps_url"), Map.entry("closedMessage", "closed_message"), Map.entry("taxId", "tax_id"), Map.entry("announcement", "announcement"));
+            Map.entry("mapsUrl", "maps_url"), Map.entry("closedMessage", "closed_message"), Map.entry("taxId", "tax_id"), Map.entry("announcement", "announcement"),
+            Map.entry("metaPixelId", "meta_pixel_id"), Map.entry("tiktokPixelId", "tiktok_pixel_id"), Map.entry("gaId", "ga_id"));
     private static final Map<String, String> PROFILE_BOOL = Map.of("isOpen", "is_open", "vatIncluded", "vat_included");
     private static final Map<String, String> PROFILE_NUM = Map.of("minOrderMinor", "min_order_minor", "vatPercent", "vat_percent", "returnWindowDays", "return_window_days");
 
@@ -91,6 +92,7 @@ public class StoreSettingsService {
             if (!(f.get(e.getKey()) instanceof String v)) continue;
             String val = v.trim();
             if (e.getKey().equals("storeName") && val.isEmpty()) throw BusinessException.badRequest("VALIDATION_ERROR", "Store name is required");
+            if (e.getKey().endsWith("Id") && e.getKey().matches("(metaPixel|tiktokPixel|ga)Id") && !val.isEmpty() && !val.matches("^[A-Za-z0-9_-]{5,40}$")) throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid " + e.getKey());
             if (val.length() > 5000 || (e.getKey().endsWith("Url") && !val.isEmpty() && !val.matches("(?i)^https?://\\S+$"))) throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid " + e.getKey());
             set.append(e.getValue()).append(" = :").append(e.getKey()).append(", ");
             q.put(e.getKey(), val);

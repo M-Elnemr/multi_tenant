@@ -26,6 +26,7 @@ export type ShopProfile = {
   whatsapp?: string; extraPhones?: string[]; facebookUrl?: string; instagramUrl?: string; tiktokUrl?: string; websiteUrl?: string; mapsUrl?: string;
   workingHours?: Record<string, { open: string; close: string; closed: boolean }>; isOpen?: boolean; closedMessage?: string; announcement?: string; coverFileId?: string | null;
   minOrderMinor?: number; vatIncluded?: boolean; returnWindowDays?: number; shippingPolicy?: string; returnPolicy?: string; privacyPolicy?: string; termsText?: string;
+  metaPixelId?: string; tiktokPixelId?: string; gaId?: string;
   branding?: { logoFileId?: string | null; primaryColor?: string; secondaryColor?: string };
 };
 
