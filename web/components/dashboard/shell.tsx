@@ -26,7 +26,7 @@ function TenantMark({ className = "h-10 w-10" }: { className?: string }) {
   return <img src={b.data?.logoFileId ? fileUrl(b.data.logoFileId, "thumb") : "/api/monogram"} alt="" className={`${className} shrink-0 rounded-xl object-cover shadow-sm ring-1 ring-black/5`} />;
 }
 
-const COLLAPSE_KEY = "dash.collapsed";
+const COLLAPSE_KEY = "dashSidebarMini";
 const listeners = new Set<() => void>();
 const readCollapsed = () => { try { return localStorage.getItem(COLLAPSE_KEY) === "1"; } catch { return false; } };   // storage can be blocked: stay expanded
 const subscribe = (cb: () => void) => { listeners.add(cb); return () => { listeners.delete(cb); }; };
