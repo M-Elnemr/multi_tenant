@@ -8,6 +8,7 @@ import type { Locale } from "@/lib/i18n";
 import { whatsappLink } from "@/lib/whatsapp";
 import { nowInClinic, openStatus, type ClinicBranch, type ClinicDoctor, type ClinicService, type ClinicSite } from "@/lib/clinic-site";
 import { CountUp, Reveal } from "./reveal";
+import { Gallery, Marquee, Orbs, ParallaxBg, Rise } from "./motion";
 
 export type T = (k: string, v?: Record<string, string | number>) => string;
 
@@ -51,43 +52,46 @@ export function Hero({ p, t, logoId, hrefBook }: { p: ClinicSite; t: T; logoId?:
   return (
     <section className="c-hero">
       {p.coverFileId && (<>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={fileUrl(p.coverFileId, "original")} alt="" className="c-hero-img" />
+        <ParallaxBg className="absolute inset-0">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={fileUrl(p.coverFileId, "original")} alt="" className="c-hero-img" />
+        </ParallaxBg>
         <div className="c-hero-shade" />
       </>)}
+      <Orbs />
       {!p.coverFileId && (<>
         <div className="c-blob -end-20 -top-20 h-72 w-72" />
         <div className="c-blob -bottom-24 start-1/4 h-60 w-60 [animation-delay:-5s]" />
         <svg className="c-cross end-[10%] top-[18%] h-16 w-16" viewBox="0 0 24 24" fill="currentColor"><path d="M9 2h6v7h7v6h-7v7H9v-7H2V9h7z" /></svg>
         <svg className="c-cross start-[8%] top-[55%] h-10 w-10 [animation-delay:-3s]" viewBox="0 0 24 24" fill="currentColor"><path d="M9 2h6v7h7v6h-7v7H9v-7H2V9h7z" /></svg>
       </>)}
-      <div className="c-container relative pb-24 pt-14 text-center sm:pb-28 sm:pt-20">
+      <div className="c-container relative pb-28 pt-16 text-center sm:pb-32 sm:pt-28">
         {logoId && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={fileUrl(logoId, "medium")} alt="" className="c-up mx-auto mb-5 h-20 w-20 rounded-3xl border-4 border-white/70 bg-white object-cover shadow-xl" />
+          <Rise className="mx-auto mb-5 w-fit"><img src={fileUrl(logoId, "medium")} alt="" className="h-20 w-20 rounded-3xl border-4 border-white/70 bg-white object-cover shadow-xl" /></Rise>
         )}
         {st && st.state !== "unknown" && (
-          <p className="c-up mb-4" style={{ "--d": "60ms" } as React.CSSProperties}>
+          <Rise delay={60} className="mb-4"><p>
             <span className="c-status"><i className={`c-dot ${st.state === "open" ? "" : "c-dot-off"}`} />
               {st.state === "open" ? `${t("csite.openNow")} · ${t("csite.closesAt", { time: st.until })}`
                 : st.next ? `${t("csite.closedNow")} · ${st.next.today ? t("csite.opensToday", { time: st.next.time }) : t("csite.opensAt", { day: t(`day.${st.next.day}`), time: st.next.time })}` : t("csite.closedNow")}
             </span>
-          </p>
+          </p></Rise>
         )}
-        <h1 className="c-up text-4xl font-extrabold sm:text-6xl" style={{ "--d": "120ms" } as React.CSSProperties}>{p.clinicName}</h1>
-        {(p.tagline || p.about) && <p className="c-up mx-auto mt-4 max-w-2xl text-lg opacity-95 sm:text-xl" style={{ "--d": "200ms" } as React.CSSProperties}>{p.tagline || p.about?.slice(0, 160)}</p>}
-        <div className="c-up mt-8 flex flex-wrap justify-center gap-3" style={{ "--d": "280ms" } as React.CSSProperties}>
+        <Rise delay={120}><h1 className="text-balance text-4xl font-extrabold leading-tight sm:text-6xl lg:text-7xl">{p.clinicName}</h1></Rise>
+        {(p.tagline || p.about) && <Rise delay={220}><p className="mx-auto mt-5 max-w-2xl text-lg opacity-95 sm:text-xl">{p.tagline || p.about?.slice(0, 160)}</p></Rise>}
+        <Rise delay={320} className="mt-9 flex flex-wrap justify-center gap-3">
           {hrefBook && <Link href={hrefBook} className="c-btn c-btn-white">{t("clinic.bookNow")}</Link>}
           {phone && <a href={`tel:${phone}`} className="c-btn c-btn-white c-pulse"><Icon name="phone" className="h-5 w-5" />{t("csite.call")}</a>}
           {p.whatsapp && <a href={whatsappLink(p.whatsapp, `${p.clinicName} 👋`)} target="_blank" rel="noopener noreferrer" className="c-btn c-btn-wa"><WhatsAppGlyph />{t("csite.whatsapp")}</a>}
           {dir && <a href={dir} target="_blank" rel="noopener noreferrer" className="c-btn c-btn-glass"><Icon name="navigate" className="h-5 w-5" />{t("csite.directions")}</a>}
-        </div>
+        </Rise>
       </div>
       {stats.length > 0 && (
         <div className="c-container relative -mb-12 sm:-mb-14">
-          <div className="c-card c-up grid divide-x divide-[var(--c-line)] rtl:divide-x-reverse" style={{ gridTemplateColumns: `repeat(${stats.length}, minmax(0, 1fr))`, "--d": "380ms" } as React.CSSProperties}>
+          <Rise delay={460} className="c-card grid divide-x divide-[var(--c-line)] rtl:divide-x-reverse" style={{ gridTemplateColumns: `repeat(${stats.length}, minmax(0, 1fr))` }}>
             {stats.map((s) => <div key={s.label} className="c-stat"><b><CountUp to={s.n} />{s.label === t("csite.statYears") ? "+" : ""}</b><span className="c-mute text-xs font-semibold sm:text-sm">{s.label}</span></div>)}
-          </div>
+          </Rise>
         </div>
       )}
     </section>
@@ -265,28 +269,18 @@ export function GallerySection({ ids, t }: { ids: string[]; t: T }) {
   return (
     <section className="c-container pt-20">
       <SectionHead eyebrow={t("csite.gallery")} title={t("csite.galleryTitle")} />
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
-        {ids.map((id, i) => (
-          <Reveal key={id} delay={(i % 3) * 70} className={`c-gal ${i === 0 ? "col-span-2 aspect-[2/1]" : "aspect-[4/3]"}`}>
-            <a href={fileUrl(id, "original")} target="_blank" rel="noopener noreferrer" className="block h-full w-full">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={fileUrl(id, "medium")} alt="" className="h-full w-full object-cover" loading="lazy" />
-            </a>
-          </Reveal>
-        ))}
-      </div>
+      <Reveal><Gallery ids={ids.map((id) => ({ thumb: fileUrl(id, "medium"), full: fileUrl(id, "original") }))} /></Reveal>
     </section>
   );
 }
 
 export function InsuranceSection({ items, t }: { items?: string[]; t: T }) {
   if (!items?.length) return null;
+  const chip = (x: string) => <span key={x} className="c-card inline-flex shrink-0 items-center gap-2 px-5 py-3 text-sm font-bold"><Icon name="shield" className="h-5 w-5" style={{ color: "var(--brand)" }} />{x}</span>;
   return (
     <section className="c-container pt-20">
       <SectionHead eyebrow={t("csite.insuranceEyebrow")} title={t("csite.insurance")} />
-      <Reveal className="flex flex-wrap justify-center gap-3">
-        {items.map((x) => <span key={x} className="c-card inline-flex items-center gap-2 px-5 py-3 text-sm font-bold"><Icon name="shield" className="h-5 w-5" style={{ color: "var(--brand)" }} />{x}</span>)}
-      </Reveal>
+      {items.length > 5 ? <Marquee>{items.map(chip)}</Marquee> : <Reveal className="flex flex-wrap justify-center gap-3">{items.map(chip)}</Reveal>}
     </section>
   );
 }

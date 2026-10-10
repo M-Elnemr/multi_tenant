@@ -9,7 +9,7 @@ import { Alert, Button, Empty, ErrorText, Loading, PageHeader, StatusBadge } fro
 import { dateTime } from "@/lib/format";
 import Link from "next/link";
 
-type Place = { appointmentId: string; queueNumber: number; called: boolean; doctorName: string; serviceName: string; aheadOfYou: number; doctorBusy: boolean };
+type Place = { appointmentId: string; patientName?: string; dependent?: boolean; queueNumber: number; called: boolean; doctorName: string; serviceName: string; aheadOfYou: number; doctorBusy: boolean };
 type Appt = { id: string; startAt: string; status: string; doctorName: string; serviceName: string; branchName: string; paymentStatus: string; paymentMethod: string; priceMinor?: number; patientName?: string };
 
 type ClinicInfo = { clinicName: string; phone?: string; addressText?: string; queueCount?: number; doctors: { id: string; displayName: string; publicPhone?: string }[] };
@@ -56,6 +56,7 @@ function Inner() {
       <ClinicCard />
       {place.data?.map((p) => (
         <div key={p.appointmentId} className={`mb-4 rounded-2xl border-2 p-5 text-center ${p.called ? "border-emerald-500 bg-emerald-50" : "border-brand/40 bg-white"}`}>
+          {p.dependent && <p className="mb-1 font-semibold">{p.patientName}</p>}
           <p className="text-sm text-slate-500">{p.doctorName} · {p.serviceName}</p>
           {p.called ? <p className="mt-1 text-2xl font-bold text-emerald-700">{t("queue.yourTurn")}</p> : (
             <>

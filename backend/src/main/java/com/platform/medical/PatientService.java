@@ -57,22 +57,26 @@ public class PatientService {
     @Transactional
     public Map<String, Object> create(UUID tenantId, UUID actor, PatientReq r) {
         if (r.firstName() == null || r.firstName().isBlank()) throw BusinessException.badRequest("VALIDATION_ERROR", "First name is required");
-        if (r.phone() == null || r.phone().isBlank()) throw BusinessException.badRequest("VALIDATION_ERROR", "Mobile number is required");
-        String phone = PhoneNormalizer.normalize(r.phone());
+        boolean dependent = r.guardianPatientId() != null;   // a child: no phone, no login of their own
+        if (!dependent && (r.phone() == null || r.phone().isBlank())) throw BusinessException.badRequest("VALIDATION_ERROR", "Mobile number is required");
+        String phone = dependent ? null : PhoneNormalizer.normalize(r.phone());
         LocalDate[] dob = resolveDob(tenantId, r);
 
         boolean portalOn = portalPolicy.enabled();   // PATIENT_PORTAL_ENABLED=false keeps patients as plain records without any account
         UUID guardianUser = null;
-        if (portalOn && r.guardianPatientId() != null) {
-            guardianUser = jdbc.sql("SELECT user_id FROM medical.patients WHERE id = :p AND tenant_id = :t").param("p", r.guardianPatientId()).param("t", tenantId).query(UUID.class).optional()
+        if (dependent) {
+            var parent = jdbc.sql("SELECT user_id, guardian_patient_id FROM medical.patients WHERE id = :p AND tenant_id = :t AND status = 'ACTIVE'").param("p", r.guardianPatientId()).param("t", tenantId).query().listOfRows().stream().findFirst()
                     .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Guardian patient not found"));
+            if (parent.get("guardian_patient_id") != null) throw BusinessException.badRequest("GUARDIAN_IS_DEPENDENT", "A dependent cannot have dependents");
+            guardianUser = (UUID) parent.get("user_id");
+            if (!portalOn) throw BusinessException.badRequest("PORTAL_DISABLED", "Dependents need the patient portal");
             if (guardianUser == null) throw BusinessException.badRequest("GUARDIAN_NOT_LINKED", "The guardian has no account yet");
         }
 
         UUID accountId = null;
         UUID relinkPatientId = null;
         String portal = "NONE";
-        if (portalOn && guardianUser == null) {
+        if (portalOn && !dependent) {
             boolean hasAccount = jdbc.sql("SELECT count(*) FROM medical.patient_accounts WHERE phone = :p").param("p", phone).query(Long.class).single() > 0;
             if (!hasAccount && (r.initialPassword() == null || r.initialPassword().isBlank()))
                 throw BusinessException.badRequest("TEMP_PASSWORD_REQUIRED", "Give the patient a temporary password (they will change it when they sign in)");
@@ -87,6 +91,7 @@ public class PatientService {
         }
         if (relinkPatientId != null) {
             jdbc.sql("UPDATE medical.patients SET user_id = :u, updated_at = now() WHERE id = :p AND tenant_id = :t").param("u", accountId).param("p", relinkPatientId).param("t", tenantId).update();
+            restoreDependents(tenantId, relinkPatientId, accountId);
             audit.record(actor, tenantId, "ACCESS_GRANTED", "patient", relinkPatientId, "{\"mode\":\"relink\"}");
             events.publishEvent(new MedicalEvents.PatientUpdate(tenantId, relinkPatientId, "CLINIC_ADDED"));
             Map<String, Object> out = new LinkedHashMap<>(summary(tenantId, relinkPatientId));
@@ -98,17 +103,18 @@ public class PatientService {
         for (int i = 0; i < 5 && id == null; i++) {
             try {
                 id = jdbc.sql("""
-                        INSERT INTO medical.patients (tenant_id, user_id, patient_code, first_name, last_name, date_of_birth, dob_estimated, sex, phone, address_text, blood_type, notes_internal, created_by)
-                        VALUES (:t, :u, :c, :fn, :ln, :dob, :est, :sex, :ph, :ad, :bt, :ni, :cb) RETURNING id
+                        INSERT INTO medical.patients (tenant_id, user_id, patient_code, first_name, last_name, date_of_birth, dob_estimated, sex, phone, address_text, blood_type, notes_internal, created_by, guardian_patient_id)
+                        VALUES (:t, :u, :c, :fn, :ln, :dob, :est, :sex, :ph, :ad, :bt, :ni, :cb, :gp) RETURNING id
                         """).param("t", tenantId).param("u", accountId).param("c", newCode()).param("fn", r.firstName().trim()).param("ln", r.lastName() == null ? "" : r.lastName().trim())
                         .param("dob", dob[0] == null ? null : java.sql.Date.valueOf(dob[0])).param("est", dob[1] != null).param("sex", r.sex()).param("ph", phone)
                         .param("ad", r.addressText()).param("bt", r.bloodType()).param("ni", r.notesInternal())
-                        .param("cb", actor).query(UUID.class).single();
+                        .param("cb", actor).param("gp", r.guardianPatientId()).query(UUID.class).single();
             } catch (DuplicateKeyException e) {
                 // patient code collision: try another random code
             }
         }
         if (id == null) throw new IllegalStateException("Could not allocate a patient code");
+        if (!dependent && accountId != null) restoreDependents(tenantId, id, accountId);
         if (guardianUser != null) {
             jdbc.sql("INSERT INTO medical.patient_guardians (tenant_id, patient_id, guardian_user_id, relationship, is_primary) VALUES (:t, :p, :g, :r, TRUE)")
                     .param("t", tenantId).param("p", id).param("g", guardianUser).param("r", r.relationship() == null ? "GUARDIAN" : r.relationship()).update();
@@ -121,22 +127,43 @@ public class PatientService {
         return out;
     }
 
+    /** The parent got an account again (re-added after leaving): reconnect their children so they are not orphaned. */
+    private void restoreDependents(UUID tenantId, UUID parentPatientId, UUID accountId) {
+        jdbc.sql("""
+                INSERT INTO medical.patient_guardians (tenant_id, patient_id, guardian_user_id, relationship, is_primary)
+                SELECT :t, c.id, :u, 'GUARDIAN', TRUE FROM medical.patients c
+                WHERE c.tenant_id = :t AND c.guardian_patient_id = :p
+                  AND NOT EXISTS (SELECT 1 FROM medical.patient_guardians g WHERE g.patient_id = c.id AND g.guardian_user_id = :u)
+                """).param("t", tenantId).param("u", accountId).param("p", parentPatientId).update();
+    }
+
     // ---- reads / updates -----------------------------------------------------------------------------------------------
 
+    /** Clinic patient list: parents (and independent patients) paged, each with its dependents nested. A child is found by its own name/code, or through its parent's name/phone. */
     public Map<String, Object> search(UUID tenantId, String q, Page page) {
         String like = q == null || q.isBlank() ? null : "%" + q.trim() + "%";
         String code = q == null ? null : q.trim().toUpperCase();
-        String phone = q == null ? null : q.trim().replaceAll("[\\s\\-]", "");
-        String where = "tenant_id = :t AND status = 'ACTIVE' AND (CAST(:like AS varchar) IS NULL OR (first_name || ' ' || last_name) ILIKE CAST(:like AS varchar) OR patient_code = :code OR phone LIKE :ph)";
-        long total = jdbc.sql("SELECT count(*) FROM medical.patients WHERE " + where).param("t", tenantId).param("like", like).param("code", code).param("ph", phone == null ? "" : "%" + phone.replaceFirst("^0", "") + "%").query(Long.class).single();
-        var rows = jdbc.sql("SELECT id, patient_code, first_name, last_name, date_of_birth, sex, phone, (user_id IS NOT NULL) AS has_portal, created_at FROM medical.patients WHERE " + where + " ORDER BY first_name, last_name LIMIT :lim OFFSET :off")
-                .param("t", tenantId).param("like", like).param("code", code).param("ph", phone == null ? "" : "%" + phone.replaceFirst("^0", "") + "%").param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows();
+        String ph = q == null ? "" : "%" + q.trim().replaceAll("[\\s\\-]", "").replaceFirst("^0", "") + "%";
+        String match = "(CAST(:like AS varchar) IS NULL OR (%1$s.first_name || ' ' || %1$s.last_name) ILIKE CAST(:like AS varchar) OR %1$s.patient_code = :code OR %1$s.phone LIKE :ph)";
+        String roots = "r.tenant_id = :t AND r.status = 'ACTIVE' AND r.guardian_patient_id IS NULL AND (" + match.formatted("r")
+                + " OR EXISTS (SELECT 1 FROM medical.patients c WHERE c.guardian_patient_id = r.id AND c.status = 'ACTIVE' AND " + match.formatted("c") + "))";
+        long total = jdbc.sql("SELECT count(*) FROM medical.patients r WHERE " + roots).param("t", tenantId).param("like", like).param("code", code).param("ph", ph).query(Long.class).single();
+        var rows = Rows.camel(jdbc.sql("SELECT r.id, r.patient_code, r.first_name, r.last_name, r.date_of_birth, r.sex, r.phone, (r.user_id IS NOT NULL) AS has_portal, r.created_at FROM medical.patients r WHERE " + roots
+                + " ORDER BY r.first_name, r.last_name LIMIT :lim OFFSET :off")
+                .param("t", tenantId).param("like", like).param("code", code).param("ph", ph).param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows());
         ZoneId tz = zone(tenantId);
-        return page.wrap(Rows.camel(rows).stream().map(m -> withAge(m, tz)).toList(), total);
+        List<UUID> ids = rows.stream().map(m -> (UUID) m.get("id")).toList();
+        Map<Object, List<Map<String, Object>>> kids = ids.isEmpty() ? Map.of() : Rows.camel(jdbc.sql("SELECT id, patient_code, first_name, last_name, date_of_birth, sex, guardian_patient_id, FALSE AS has_portal, created_at FROM medical.patients WHERE tenant_id = :t AND status = 'ACTIVE' AND guardian_patient_id IN (:ids) ORDER BY first_name, last_name")
+                .param("t", tenantId).param("ids", ids).query().listOfRows()).stream().map(m -> withAge(m, tz)).collect(java.util.stream.Collectors.groupingBy(m -> m.get("guardianPatientId")));
+        return page.wrap(rows.stream().map(m -> {
+            Map<String, Object> out = new LinkedHashMap<>(withAge(m, tz));
+            out.put("dependents", kids.getOrDefault(m.get("id"), List.of()));
+            return out;
+        }).toList(), total);
     }
 
     Map<String, Object> summary(UUID tenantId, UUID id) {
-        return withAge(Rows.camel(jdbc.sql("SELECT id, patient_code, first_name, last_name, date_of_birth, dob_estimated, sex, phone, address_text, blood_type, (user_id IS NOT NULL) AS has_portal, status, created_at FROM medical.patients WHERE id = :p AND tenant_id = :t")
+        return withAge(Rows.camel(jdbc.sql("SELECT id, patient_code, first_name, last_name, date_of_birth, dob_estimated, sex, phone, address_text, blood_type, (user_id IS NOT NULL) AS has_portal, status, guardian_patient_id, (SELECT trim(g.first_name || ' ' || g.last_name) FROM medical.patients g WHERE g.id = medical.patients.guardian_patient_id) AS guardian_name, created_at FROM medical.patients WHERE id = :p AND tenant_id = :t")
                 .param("p", id).param("t", tenantId).query().listOfRows().stream().findFirst().orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Patient not found"))), zone(tenantId));
     }
 

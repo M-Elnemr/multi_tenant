@@ -1,7 +1,7 @@
 name: elmanassa
 description: Elmanassa app - patients and shop clients (same API as the website).
 publish_to: none
-version: 1.0.1+2
+version: 1.0.2+3
 
 environment:
   sdk: ">=3.4.0 <4.0.0"

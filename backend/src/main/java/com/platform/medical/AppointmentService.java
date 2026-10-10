@@ -253,11 +253,12 @@ public class AppointmentService {
         List<UUID> mine = patients.accessibleIds(tenantId, userId);
         if (mine.isEmpty()) return List.of();
         return Rows.camel(jdbc.sql("""
-                SELECT a.id AS appointment_id, a.queue_number, a.called_at IS NOT NULL AS called, d.display_name AS doctor_name, s.name AS service_name,
+                SELECT a.id AS appointment_id, a.patient_id, pt.first_name AS patient_name, (pt.guardian_patient_id IS NOT NULL) AS dependent, a.queue_number, a.called_at IS NOT NULL AS called, d.display_name AS doctor_name, s.name AS service_name,
                   (SELECT count(*) FROM medical.appointments b WHERE b.tenant_id = a.tenant_id AND b.doctor_id = a.doctor_id AND b.status = 'CHECKED_IN'
                      AND (b.checked_in_at AT TIME ZONE :tz)::date = (a.checked_in_at AT TIME ZONE :tz)::date AND b.queue_number < a.queue_number) AS ahead_of_you,
                   EXISTS (SELECT 1 FROM medical.appointments c WHERE c.tenant_id = a.tenant_id AND c.doctor_id = a.doctor_id AND c.status = 'IN_PROGRESS') AS doctor_busy
                 FROM medical.appointments a JOIN medical.doctors d ON d.id = a.doctor_id JOIN medical.appointment_services s ON s.id = a.service_id
+                JOIN medical.patients pt ON pt.id = a.patient_id
                 WHERE a.tenant_id = :t AND a.patient_id IN (:ids) AND a.status = 'CHECKED_IN' AND (a.checked_in_at AT TIME ZONE :tz)::date = (now() AT TIME ZONE :tz)::date
                 """).param("t", tenantId).param("tz", tz).param("ids", mine).query().listOfRows());
     }

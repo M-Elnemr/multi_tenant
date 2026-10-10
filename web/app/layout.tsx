@@ -7,6 +7,7 @@ import { currentHost } from "@/lib/backend";
 import { dir } from "@/lib/i18n";
 import { getLocale } from "@/lib/i18n-server";
 import { resolveHost } from "@/lib/tenant";
+import { readableBrand } from "@/lib/color";
 
 const cairo = Cairo({ subsets: ["arabic", "latin"], variable: "--font-cairo", display: "swap" });
 
@@ -45,8 +46,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // Tenant branding only ever overrides design tokens (validated colours), never injects arbitrary CSS (spec 28).
   const style: Record<string, string> = {};
   if (info.kind === "TENANT") {
-    if (info.branding.primary_color && HEX.test(info.branding.primary_color)) style["--brand"] = info.branding.primary_color;
-    if (info.branding.secondary_color && HEX.test(info.branding.secondary_color)) style["--brand-2"] = info.branding.secondary_color;
+    if (info.branding.primary_color && HEX.test(info.branding.primary_color)) style["--brand"] = readableBrand(info.branding.primary_color);   // white text must stay readable on it
+    if (info.branding.secondary_color && HEX.test(info.branding.secondary_color)) style["--brand-2"] = readableBrand(info.branding.secondary_color, 3);
   }
   return (
     <html lang={locale} dir={dir(locale)} style={style} className={cairo.variable}>

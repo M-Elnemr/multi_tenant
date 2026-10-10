@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Page, useApi } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
-import { Badge, Card, ErrorText, Input, Loading, Modal, PageHeader, Pager, StatusBadge, Table, Td } from "@/components/ui";
+import { Badge, Card, ErrorText, Input, Loading, Modal, PageHeader, Pager, StatusBadge, Table, Td, FilterBar } from "@/components/ui";
 import { Icon } from "@/components/icons";
 import { FlaggedPhones } from "@/components/dashboard/flagged-phones";
 import { WhatsAppButton } from "@/components/whatsapp-button";
@@ -31,7 +31,7 @@ export default function Customers() {
     <>
       <PageHeader title={t("nav.customers")} subtitle={t("customers.readOnly")} />
       <FlaggedPhones />
-      <div className="mb-4 max-w-md"><Input placeholder={t("customers.search")} value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} /></div>
+      <FilterBar><div className="relative w-full max-w-md flex-1"><Icon name="search" className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><Input className="ps-10" placeholder={t("customers.search")} value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} /></div></FilterBar>
       <ErrorText error={error} />
       {loading && !data ? <Loading /> : (
         <>

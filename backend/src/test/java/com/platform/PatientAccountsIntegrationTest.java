@@ -51,6 +51,46 @@ class PatientAccountsIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void clinicAddsPhonelessDependentsThatTheParentSeesAndIsNotifiedFor() throws Exception {
+        Tenant c = onboard("CLINIC");
+        String h = c.host();
+        String doctor = JsonPath.read(body(onHost(h, c.access(), "GET", "/api/v1/clinic/doctors", null)), "$[0].id");
+        String branch = JsonPath.read(body(onHost(h, c.access(), "GET", "/api/v1/clinic/branches", null)), "$[0].id");
+        String parentPhone = nextPhone();
+        PatientLogin parent = patientAt(c, "Mona", parentPhone);
+        PatientLogin stranger = patientAt(c, "Stranger");
+
+        // the clinic adds a child with no phone and no password
+        String child = JsonPath.read(body(onHost(h, c.access(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"Ziad\",\"guardianPatientId\":\"%s\",\"relationship\":\"MOTHER\",\"ageYears\":4}".formatted(parent.patientId()))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.portalAccess").value("GUARDIAN")).andExpect(jsonPath("$.guardianPatientId").value(parent.patientId()))), "$.id");
+        // a child cannot be a guardian
+        onHost(h, c.access(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"Grandchild\",\"guardianPatientId\":\"%s\"}".formatted(child)).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("GUARDIAN_IS_DEPENDENT"));
+
+        // the parent sees both and the child's history; a stranger sees nothing of the child
+        onHost(h, parent.token(), "GET", "/api/v1/portal/patients", null).andExpect(jsonPath("$.length()").value(2));
+        onHost(h, parent.token(), "GET", "/api/v1/portal/patients/" + child + "/timeline", null).andExpect(status().isOk());
+        onHost(h, stranger.token(), "GET", "/api/v1/portal/patients/" + child + "/timeline", null).andExpect(status().isNotFound());
+
+        // staff find the child under the parent: by the parent's phone, and by the child's own name
+        onHost(h, c.access(), "GET", "/api/v1/clinic/patients?q=" + parentPhone, null).andExpect(jsonPath("$.data[0].firstName").value("Mona")).andExpect(jsonPath("$.data[0].dependents[0].id").value(child));
+        onHost(h, c.access(), "GET", "/api/v1/clinic/patients?q=Ziad", null).andExpect(jsonPath("$.data.length()").value(1)).andExpect(jsonPath("$.data[0].dependents[0].firstName").value("Ziad"));
+
+        // the child's turn reaches the parent's phone and names the child
+        String tok = "fcm-parent-" + uniq();
+        onHost(h, parent.token(), "POST", "/api/v1/portal/devices", "{\"token\":\"%s\"}".formatted(tok)).andExpect(status().isOk());
+        String appt = JsonPath.read(body(onHost(h, c.access(), "POST", "/api/v1/clinic/appointments/walk-in", "{\"patientId\":\"%s\",\"doctorId\":\"%s\",\"branchId\":\"%s\",\"visitType\":\"CONSULTATION\"}".formatted(child, doctor, branch)).andExpect(status().isCreated())), "$.id");
+        onHost(h, parent.token(), "GET", "/api/v1/portal/queue", null).andExpect(jsonPath("$[0].patientName").value("Ziad")).andExpect(jsonPath("$[0].dependent").value(true));
+        onHost(h, c.access(), "POST", "/api/v1/clinic/appointments/" + appt + "/call", "{}").andExpect(status().isOk());
+        assertThat(jdbc.sql("SELECT title FROM notifications.notifications WHERE notification_type = 'APPOINTMENT_CALLED' AND tenant_id = (SELECT id FROM core.tenants WHERE slug = :s)").param("s", c.slug()).query(String.class).list()).anyMatch(x -> x.contains("Ziad"));
+
+        // the parent leaves and is added again: the child is reconnected
+        onHost(h, parent.token(), "POST", "/api/v1/portal/leave", null).andExpect(status().is2xxSuccessful());
+        onHost(h, c.access(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"Mona\",\"phone\":\"%s\"}".formatted(parentPhone)).andExpect(status().isCreated());
+        String back = JsonPath.read(body(onHost("platform.test", null, "POST", "/api/v1/auth/login", "{\"identifier\":\"%s\",\"password\":\"PatientPass1\"}".formatted(parentPhone))), "$.accessToken");
+        onHost(h, back, "GET", "/api/v1/portal/patients", null).andExpect(jsonPath("$.length()").value(2));
+    }
+
+    @Test
     void patientSeesTheirPlaceInTheQueueAndGetsAPushWhenCalled() throws Exception {
         Tenant c = onboard("CLINIC");
         String h = c.host();

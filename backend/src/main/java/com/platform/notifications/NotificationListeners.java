@@ -92,9 +92,10 @@ public class NotificationListeners {
         safely("AppointmentChanged", () -> {
             boolean ar = ar(e.tenantId());
             if ("CALLED".equals(e.status())) {
+                String child = dependentName(e.tenantId(), e.patientId());   // a child's turn names the child, since it reaches the parent's phone
                 for (UUID u : patientUsers(e.tenantId(), e.patientId())) {
-                    String title = ar ? "حان دورك" : "It's your turn";
-                    String body = ar ? "الطبيب جاهز لاستقبالك الآن." : "The doctor is ready to see you now.";
+                    String title = child != null ? (ar ? "حان دور " + child : child + "'s turn") : (ar ? "حان دورك" : "It's your turn");
+                    String body = child != null ? (ar ? "الطبيب جاهز لاستقبال " + child + " الآن." : "The doctor is ready to see " + child + " now.") : (ar ? "الطبيب جاهز لاستقبالك الآن." : "The doctor is ready to see you now.");
                     notifications.notify(u, e.tenantId(), "APPOINTMENT_CALLED", title, body, json("appointmentId", e.appointmentId()), false);
                     notifications.push(u, e.tenantId(), title, body);   // reaches the patient's phone through Firebase when it is set up
                 }
@@ -102,8 +103,9 @@ public class NotificationListeners {
                 for (UUID staff : staffWith(e.tenantId(), "appointment.manage"))
                     notifications.notify(staff, e.tenantId(), "BOOKING_REQUEST", ar ? "طلب حجز جديد" : "New booking request", ar ? "لديك طلب حجز جديد" : "You have a new booking request", json("appointmentId", e.appointmentId()), false);
             } else if (Set_PATIENT_VISIBLE.contains(e.status())) {
-                String title = ar ? "تحديث على موعدك" : "Appointment update";
-                String body = ar ? "هناك تحديث على موعدك. افتح بوابة المريض للتفاصيل." : "There is an update on your appointment. Open your patient portal for details.";
+                String child = dependentName(e.tenantId(), e.patientId());
+                String title = child != null ? (ar ? "تحديث على موعد " + child : "Appointment update for " + child) : (ar ? "تحديث على موعدك" : "Appointment update");
+                String body = ar ? "هناك تحديث على الموعد. افتح بوابة المريض للتفاصيل." : "There is an update on the appointment. Open your patient portal for details.";
                 for (UUID u : patientUsers(e.tenantId(), e.patientId())) notifications.notify(u, e.tenantId(), "APPOINTMENT_" + e.status(), title, body, json("appointmentId", e.appointmentId()), true);
             }
         });
@@ -164,6 +166,12 @@ public class NotificationListeners {
                 JOIN core.role_permissions rp ON rp.role_id = mr.role_id JOIN core.permissions p ON p.id = rp.permission_id
                 WHERE m.tenant_id = :t AND m.status = 'ACTIVE' AND p.code = :p
                 """).param("t", tenantId).param("p", permission).query(UUID.class).list();
+    }
+
+    /** First name when the patient is a dependent (a child managed by a parent), otherwise null. */
+    String dependentName(UUID tenantId, UUID patientId) {
+        return jdbc.sql("SELECT first_name FROM medical.patients WHERE id = :p AND tenant_id = :t AND guardian_patient_id IS NOT NULL")
+                .param("p", patientId).param("t", tenantId).query(String.class).optional().orElse(null);
     }
 
     List<UUID> patientUsers(UUID tenantId, UUID patientId) {

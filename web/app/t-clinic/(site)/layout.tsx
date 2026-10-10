@@ -9,6 +9,7 @@ import { type ClinicSite } from "@/lib/clinic-site";
 import { fileUrl } from "@/lib/media";
 import { getT } from "@/lib/i18n-server";
 import { resolveHost } from "@/lib/tenant";
+import { ScrollHeader, ScrollProgress } from "@/components/clinic/motion";
 import "./clinic.css";
 
 export default async function ClinicSiteLayout({ children }: { children: React.ReactNode }) {
@@ -31,7 +32,8 @@ export default async function ClinicSiteLayout({ children }: { children: React.R
   return (
     <div className="clinic flex min-h-screen flex-col">
       {p && <Announcement p={p} t={t} />}
-      <header className="c-header sticky top-0 z-30">
+      <ScrollProgress />
+      <ScrollHeader>
         <div className="c-container flex items-center justify-between gap-3 py-2.5">
           <Link href="/" className="flex min-w-0 items-center gap-2.5 text-lg font-extrabold" style={{ color: "var(--brand)" }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -46,7 +48,7 @@ export default async function ClinicSiteLayout({ children }: { children: React.R
             <a href={`/api/lang?l=${locale === "ar" ? "en" : "ar"}`} className="rounded-lg px-2 py-1 font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-900">{locale === "ar" ? "EN" : "عربي"}</a>
           </div>
         </div>
-      </header>
+      </ScrollHeader>
       <main className="flex-1 pb-24 md:pb-0">{children}</main>
       <footer className="mt-20 border-t border-[var(--c-line)] bg-white">
         <div className="c-container grid gap-8 py-10 md:grid-cols-3">

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useState } from "react";
 import { api } from "@/lib/client";
@@ -13,7 +14,8 @@ import { usePatientPortal } from "@/components/portal-flag";
 import { ageText } from "@/lib/format";
 import { VisitTypePicker, type VisitType } from "@/components/visit-type";
 
-type Patient = { id: string; patientCode: string; firstName: string; lastName: string; phone?: string; ageYears?: number; ageMonths?: number; sex?: string; hasPortal: boolean; notesInternal?: string; addressText?: string; bloodType?: string };
+type Patient = { id: string; patientCode: string; firstName: string; lastName: string; phone?: string; ageYears?: number; ageMonths?: number; sex?: string; hasPortal: boolean; notesInternal?: string; addressText?: string; bloodType?: string; guardianPatientId?: string; guardianName?: string };
+type Kid = { id: string; patientCode: string; firstName: string; lastName: string; ageYears?: number; ageMonths?: number };
 const BLOOD = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 
 export default function PatientPage({ params }: { params: Promise<{ id: string }> }) {
@@ -33,6 +35,16 @@ export default function PatientPage({ params }: { params: Promise<{ id: string }
     await p.reload();
   });
   const tl = useApi<StaffTimeline>(clinical ? `clinic/patients/${id}/timeline` : null);
+  // Children of this patient (clinic list nests them under the parent; search by this patient's code finds the parent row with them).
+  const kids = useApi<{ data: { id: string; dependents?: Kid[] }[] }>(portal && p.data?.hasPortal ? `clinic/patients?q=${encodeURIComponent(p.data.patientCode)}` : null);
+  const children = kids.data?.data.find((x) => x.id === id)?.dependents ?? [];
+  const [depOpen, setDepOpen] = useState(false);
+  const [dep, setDep] = useState({ name: "", ageYears: "", ageMonths: "0", sex: "" });
+  const addDep = useAction(async () => {
+    await api("clinic/patients", { body: { firstName: dep.name.trim(), guardianPatientId: id, relationship: "PARENT", ageYears: Number(dep.ageYears), ageMonths: Number(dep.ageMonths || 0), sex: dep.sex || undefined } });
+    setDepOpen(false); setDep({ name: "", ageYears: "", ageMonths: "0", sex: "" });
+    await kids.reload();
+  });
   const [pwOpen, setPwOpen] = useState(false);
   const [newPw, setNewPw] = useState("");
   const [pwDone, setPwDone] = useState(false);
@@ -83,7 +95,8 @@ export default function PatientPage({ params }: { params: Promise<{ id: string }
         </div>
       </Modal>
       <ErrorText error={start.error ?? tl.error} />
-      {portal && !d.hasPortal && <div className="mb-4"><Alert tone="blue">{t("patients.noPortal")}</Alert></div>}
+      {portal && !d.hasPortal && !d.guardianPatientId && <div className="mb-4"><Alert tone="blue">{t("patients.noPortal")}</Alert></div>}
+      {d.guardianPatientId && <div className="mb-4"><Alert tone="blue">{t("dep.childOf", { name: "" }).trim()} <Link href={`/dashboard/patients/${d.guardianPatientId}`} className="font-medium text-brand">{d.guardianName}</Link></Alert></div>}
       <Card className="mb-4">
         <h2 className="mb-3 font-medium">{t("patients.detailsTitle")}</h2>
         <dl className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
@@ -99,11 +112,30 @@ export default function PatientPage({ params }: { params: Promise<{ id: string }
         </dl>
         {d.notesInternal && <div className="mt-3 text-sm"><p className="mb-1 text-xs font-medium text-slate-500">{t("patients.notes")}</p><p className="whitespace-pre-wrap">{d.notesInternal}</p></div>}
       </Card>
+      {portal && d.hasPortal && !d.guardianPatientId && (
+        <Card className="mb-4">
+          <div className="mb-2 flex items-center justify-between"><h2 className="font-medium">{t("dep.title")}</h2>{can("patient.create") && <Button variant="secondary" onClick={() => setDepOpen(true)}>{t("dep.add")}</Button>}</div>
+          {children.length === 0 ? <p className="text-sm text-slate-500">{t("dep.none")}</p> : <ul className="divide-y text-sm">{children.map((c) => <li key={c.id} className="flex justify-between py-2"><Link href={`/dashboard/patients/${c.id}`} className="font-medium text-brand">{c.firstName} {c.lastName}</Link><span className="text-slate-500">{ageText(c.ageYears, c.ageMonths, locale)}</span></li>)}</ul>}
+        </Card>
+      )}
       {!clinical ? <Alert tone="blue">{t("patients.noClinicalAccess")}</Alert> : tl.loading && !tl.data ? <Loading /> : tl.data && <TimelineView tl={tl.data} />}
+      <Modal open={depOpen} onClose={() => setDepOpen(false)} title={t("dep.addTitle", { name: d.firstName })}>
+        <form onSubmit={(e) => { e.preventDefault(); void addDep.run(); }} className="space-y-3">
+          <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">{t("dep.noPhoneHint")}</p>
+          <Field label={t("patients.name")}><Input value={dep.name} onChange={(e) => setDep({ ...dep, name: e.target.value })} required maxLength={100} /></Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={t("patients.years")}><Input type="number" inputMode="numeric" min={0} max={130} step={1} value={dep.ageYears} onChange={(e) => setDep({ ...dep, ageYears: e.target.value })} required dir="ltr" /></Field>
+            <Field label={t("patients.months")}><Input type="number" inputMode="numeric" min={0} max={11} step={1} value={dep.ageMonths} onChange={(e) => setDep({ ...dep, ageMonths: String(Math.min(11, Math.max(0, Math.floor(Number(e.target.value) || 0)))) })} dir="ltr" /></Field>
+          </div>
+          <Field label={t("patients.sex")}><Select value={dep.sex} onChange={(e) => setDep({ ...dep, sex: e.target.value })}><option value="">-</option><option value="F">{t("patients.female")}</option><option value="M">{t("patients.male")}</option></Select></Field>
+          <ErrorText error={addDep.error} />
+          <Button type="submit" loading={addDep.loading} className="w-full">{t("common.save")}</Button>
+        </form>
+      </Modal>
       <Modal open={editOpen} onClose={() => setEditOpen(false)} title={t("patients.editTitle")}>
         <form onSubmit={(e) => { e.preventDefault(); void saveEdit.run(); }} className="space-y-3">
           <Field label={t("patients.name")}><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required maxLength={100} /></Field>
-          <Field label={t("patients.mobile")}><PhoneInput value={form.phone} onValue={(phone) => setForm({ ...form, phone })} required /></Field>
+          {!d.guardianPatientId && <Field label={t("patients.mobile")}><PhoneInput value={form.phone} onValue={(phone) => setForm({ ...form, phone })} required /></Field>}
           <div className="grid grid-cols-2 gap-3">
             <Field label={t("patients.years")}><Input type="number" inputMode="numeric" min={0} max={130} step={1} value={form.ageYears} onChange={(e) => setForm({ ...form, ageYears: e.target.value })} required dir="ltr" /></Field>
             <Field label={t("patients.months")}><Input type="number" inputMode="numeric" min={0} max={11} step={1} value={form.ageMonths} onChange={(e) => setForm({ ...form, ageMonths: String(Math.min(11, Math.max(0, Math.floor(Number(e.target.value) || 0)))) })} dir="ltr" /></Field>

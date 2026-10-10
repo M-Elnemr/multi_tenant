@@ -8,7 +8,8 @@
   --color-brand-dark: color-mix(in srgb, var(--brand) 78%, black);
   --color-ink: #0b1b2b;
   --font-sans: var(--font-family);
-  --shadow-soft: 0 1px 2px rgb(15 35 60 / 0.05), 0 4px 16px -4px rgb(15 35 60 / 0.08);
+  --shadow-soft: 0 1px 2px rgb(15 35 60 / 0.04), 0 8px 24px -10px rgb(15 35 60 / 0.10);
+  --shadow-card: 0 0 0 1px rgb(15 35 60 / 0.05), 0 1px 2px rgb(15 35 60 / 0.04), 0 12px 32px -14px rgb(15 35 60 / 0.14);
   --shadow-lift: 0 2px 4px rgb(15 35 60 / 0.06), 0 14px 32px -8px rgb(15 35 60 / 0.18);
   --shadow-brand: 0 8px 22px -8px color-mix(in srgb, var(--brand) 70%, transparent);
   --animate-fade-up: fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -73,6 +74,14 @@ img { -webkit-user-drag: none; }
 }
 .bg-brand-gradient { background-image: linear-gradient(135deg, var(--brand), color-mix(in srgb, var(--brand) 55%, var(--brand-2)) 60%, var(--brand-2)); }
 .glass { background: rgb(255 255 255 / 0.78); backdrop-filter: saturate(180%) blur(14px); -webkit-backdrop-filter: saturate(180%) blur(14px); }
+/* Dashboard surfaces */
+.surface { background: #fff; border-radius: 1.1rem; box-shadow: var(--shadow-card); }
+.hero-card { position: relative; overflow: hidden; background-image: linear-gradient(135deg, var(--brand), color-mix(in srgb, var(--brand) 60%, var(--brand-2))); color: #fff; border-radius: 1.5rem; box-shadow: var(--shadow-brand); }
+.hero-card::before { content: ""; position: absolute; inset: 0; background: radial-gradient(28rem 14rem at 90% -20%, rgb(255 255 255 / 0.28), transparent 60%), radial-gradient(18rem 12rem at 0% 120%, rgb(255 255 255 / 0.16), transparent 60%); pointer-events: none; }
+.hero-card > * { position: relative; }
+.sidebar-bg { background: linear-gradient(180deg, #fff, color-mix(in srgb, var(--brand) 3%, white)); }
+.nav-section { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #8696a8; padding: 0.9rem 0.75rem 0.35rem; }
+.dot-grid { background-image: radial-gradient(color-mix(in srgb, var(--brand) 18%, transparent) 1px, transparent 1px); background-size: 18px 18px; }
 .hover-lift { transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s ease, border-color 0.25s ease; }
 .hover-lift:hover { transform: translateY(-3px); box-shadow: var(--shadow-lift); }
 
@@ -83,3 +92,6 @@ img { -webkit-user-drag: none; }
 }
 
 @media print { body { background: #fff !important; } }
+
+/* a Table nested in a Section card: drop its own card chrome */
+.section-flat > div:last-child > div { box-shadow: none; border-radius: 0 0 1rem 1rem; }

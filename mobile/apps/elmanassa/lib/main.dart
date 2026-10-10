@@ -337,6 +337,7 @@ class _QueuePageState extends State<QueuePage> {
             child: Padding(
               padding: const EdgeInsets.all(20),
               child: Column(children: [
+                if (q['dependent'] == true) Padding(padding: const EdgeInsets.only(bottom: 6), child: Text('${q['patientName']}', style: Theme.of(context).textTheme.titleMedium)),
                 Text('${q['doctorName']} · ${q['serviceName']}'),
                 const SizedBox(height: 8),
                 if (q['called'] == true)
@@ -551,7 +552,9 @@ class _RecordPageState extends State<RecordPage> {
       load: () async {
         final patients = (await widget.api.get('portal/patients') as List).cast<Map<String, dynamic>>();
         if (patients.isEmpty) return <String, dynamic>{};
-        return await widget.api.get('portal/patients/${patients.first['id']}/timeline') as Map<String, dynamic>;
+        final chosen = patients.any((x) => x['id'] == patientId) ? patientId : patients.first['id'] as String;
+        final tl = await widget.api.get('portal/patients/$chosen/timeline') as Map<String, dynamic>;
+        return {...tl, '_patients': patients, '_chosen': chosen};
       },
       builder: (context, t, reload) {
         if (t.isEmpty) return Center(child: Text(s.empty));
@@ -569,6 +572,19 @@ class _RecordPageState extends State<RecordPage> {
         return RefreshIndicator(
           onRefresh: reload,
           child: ListView(padding: const EdgeInsets.all(16), children: [
+            // The account holder and the children the clinic added under them: pick whose record to see.
+            if ((t['_patients'] as List).length > 1)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Wrap(spacing: 8, children: [
+                  for (final p in (t['_patients'] as List).cast<Map<String, dynamic>>())
+                    ChoiceChip(
+                      label: Text('${p['firstName']}'),
+                      selected: p['id'] == t['_chosen'],
+                      onSelected: (_) => setState(() { patientId = p['id'] as String; version++; }),
+                    ),
+                ]),
+              ),
             Text(s.ar ? 'التحاليل والأشعة المطلوبة' : 'Requested tests & radiology', style: Theme.of(context).textTheme.titleMedium),
             for (final l in labs)
               Card(
