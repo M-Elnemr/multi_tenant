@@ -9,6 +9,7 @@ import { useAction, useApi, useMe } from "@/components/hooks";
 import { useT } from "@/components/i18n-provider";
 import { Alert, Button, Card, ErrorText, Field, Input, PageHeader, Textarea } from "@/components/ui";
 import { PhoneInput, EmailInput } from "@/components/inputs";
+import { BranchesWebsiteCard, DoctorsWebsiteCard, WebsiteCard } from "@/components/dashboard/clinic-website";
 
 type Profile = {
   clinicName: string; about?: string; phone?: string; email?: string; addressText?: string; bookingEnabled: boolean; takeNewPatients: boolean; requiresConfirmation: boolean;
@@ -89,6 +90,9 @@ export default function ClinicSettings() {
             <Button loading={saveDoctor.loading} disabled={!categoriesValid(dp.codes, dp.other)} onClick={() => { setSaved(false); void saveDoctor.run(); }}>{t("common.save")}</Button>
           </Card>
         )}
+        {can("settings.manage") && <WebsiteCard />}
+        {can("settings.manage") && <DoctorsWebsiteCard />}
+        {can("settings.manage") && <BranchesWebsiteCard />}
         {can("settings.manage") && <BrandingCard />}
         {branches.data && (
           <Card className="space-y-3">

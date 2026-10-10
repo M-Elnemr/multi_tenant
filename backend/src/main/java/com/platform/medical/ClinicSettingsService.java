@@ -35,10 +35,78 @@ public class ClinicSettingsService {
     public Map<String, Object> profile(UUID tenantId) {
         Map<String, Object> m = Rows.camel(jdbc.sql("SELECT clinic_name, about, phone, email, address_text, booking_enabled, take_new_patients, requires_confirmation, minimum_booking_notice_minutes, maximum_days_ahead, cancellation_window_hours, card_enabled, cash_enabled FROM medical.clinic_profiles WHERE tenant_id = :t")
                 .param("t", tenantId).query().singleRow());
+        m.putAll(identity(tenantId));
         m.put("patientPortalEnabled", portal.enabled());   // the dashboard and public site hide patient-login screens while this is false
         m.put("cardAvailable", policy.cardEnabled());
         m.put("cardEnabled", policy.cardEnabled() && Boolean.TRUE.equals(m.get("cardEnabled")));   // never advertised while the platform has card payments off
         return m;
+    }
+
+    private static final Map<String, String> IDENTITY_TEXT = Map.ofEntries(
+            Map.entry("tagline", "tagline"), Map.entry("whatsapp", "whatsapp"), Map.entry("facebookUrl", "facebook_url"), Map.entry("instagramUrl", "instagram_url"),
+            Map.entry("tiktokUrl", "tiktok_url"), Map.entry("websiteUrl", "website_url"), Map.entry("mapsUrl", "maps_url"), Map.entry("announcement", "announcement"),
+            Map.entry("closedMessage", "closed_message"));
+
+    /** The website-facing identity of the clinic: contact channels, hours, cover/gallery, announcement, insurance, FAQs. */
+    Map<String, Object> identity(UUID tenantId) {
+        Map<String, Object> m = Rows.camel(jdbc.sql("SELECT tagline, whatsapp, extra_phones::text AS extra_phones, facebook_url, instagram_url, tiktok_url, website_url, maps_url, working_hours::text AS working_hours, "
+                + "cover_file_id, gallery::text AS gallery, announcement, is_open, closed_message, insurance::text AS insurance, faqs::text AS faqs, established_year FROM medical.clinic_profiles WHERE tenant_id = :t")
+                .param("t", tenantId).query().singleRow());
+        m.put("extraPhones", Rows.jsonList(m.get("extraPhones")));
+        m.put("workingHours", Rows.json(m.get("workingHours")));
+        m.put("gallery", Rows.jsonList(m.get("gallery")));
+        m.put("insurance", Rows.jsonList(m.get("insurance")));
+        m.put("faqs", Rows.jsonList(m.get("faqs")));
+        return m;
+    }
+
+    private void updateIdentity(UUID tenantId, Map<String, Object> f) {
+        StringBuilder set = new StringBuilder();
+        var q = new java.util.LinkedHashMap<String, Object>();
+        for (var e : IDENTITY_TEXT.entrySet()) if (f.get(e.getKey()) instanceof String v) {
+            String val = v.trim();
+            if (val.length() > 500 || (e.getKey().endsWith("Url") && !val.isEmpty() && !val.matches("(?i)^https?://\\S+$"))) throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid " + e.getKey());
+            set.append(e.getValue()).append(" = :").append(e.getKey()).append(", ");
+            q.put(e.getKey(), val);
+        }
+        if (f.get("isOpen") instanceof Boolean b) { set.append("is_open = :isOpen, "); q.put("isOpen", b); }
+        if (f.containsKey("establishedYear")) {
+            Object y = f.get("establishedYear");
+            Integer year = y instanceof Number n ? n.intValue() : null;
+            if (year != null && (year < 1900 || year > 2100)) throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid establishedYear");
+            set.append("established_year = :establishedYear, "); q.put("establishedYear", year);
+        }
+        if (f.containsKey("coverFileId")) {
+            Object c = f.get("coverFileId");
+            set.append("cover_file_id = :coverFileId, "); q.put("coverFileId", c == null || String.valueOf(c).isBlank() ? null : UUID.fromString(String.valueOf(c)));
+        }
+        var json = new com.fasterxml.jackson.databind.ObjectMapper();
+        try {
+            if (f.get("extraPhones") instanceof List<?> l) {
+                set.append("extra_phones = CAST(:extraPhones AS jsonb), "); q.put("extraPhones", json.writeValueAsString(l.stream().map(String::valueOf).map(String::trim).filter(x -> !x.isEmpty()).limit(5).toList()));
+            }
+            if (f.get("gallery") instanceof List<?> l) {
+                var ids = l.stream().map(String::valueOf).map(UUID::fromString).map(UUID::toString).limit(12).toList();
+                set.append("gallery = CAST(:gallery AS jsonb), "); q.put("gallery", json.writeValueAsString(ids));
+            }
+            if (f.get("insurance") instanceof List<?> l) {
+                set.append("insurance = CAST(:insurance AS jsonb), "); q.put("insurance", json.writeValueAsString(l.stream().map(String::valueOf).map(String::trim).filter(x -> !x.isEmpty() && x.length() <= 80).limit(30).toList()));
+            }
+            if (f.get("faqs") instanceof List<?> l) {
+                var items = l.stream().filter(x -> x instanceof Map<?, ?>).map(x -> (Map<?, ?>) x)
+                        .map(x -> Map.of("q", String.valueOf(x.get("q")).trim(), "a", String.valueOf(x.get("a")).trim())).filter(x -> !x.get("q").isEmpty() && !x.get("a").isEmpty() && x.get("q").length() <= 200 && x.get("a").length() <= 1500).limit(20).toList();
+                set.append("faqs = CAST(:faqs AS jsonb), "); q.put("faqs", json.writeValueAsString(items));
+            }
+            if (f.get("workingHours") instanceof Map<?, ?> m) {
+                String wh = json.writeValueAsString(m);
+                if (wh.length() > 2000) throw BusinessException.badRequest("VALIDATION_ERROR", "Working hours too long");
+                set.append("working_hours = CAST(:workingHours AS jsonb), "); q.put("workingHours", wh);
+            }
+        } catch (com.fasterxml.jackson.core.JsonProcessingException | IllegalArgumentException e) { throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid value"); }
+        if (q.isEmpty()) return;
+        var st = jdbc.sql("UPDATE medical.clinic_profiles SET " + set + "updated_at = now() WHERE tenant_id = :t").param("t", tenantId);
+        for (var e : q.entrySet()) st = st.param(e.getKey(), e.getValue());
+        st.update();
     }
 
     @Transactional
@@ -54,6 +122,7 @@ public class ClinicSettingsService {
                 .param("addressText", str(f, "addressText")).param("bookingEnabled", bool(f, "bookingEnabled")).param("takeNewPatients", bool(f, "takeNewPatients"))
                 .param("requiresConfirmation", bool(f, "requiresConfirmation")).param("minNotice", num(f, "minimumBookingNoticeMinutes")).param("maxDays", num(f, "maximumDaysAhead"))
                 .param("cancelHours", num(f, "cancellationWindowHours")).param("cardEnabled", bool(f, "cardEnabled")).param("cashEnabled", bool(f, "cashEnabled")).update();
+        updateIdentity(tenantId, f);
         audit.record(actor, tenantId, "SETTINGS_CHANGED", "clinic_profile", null, null);
         return profile(tenantId);
     }
@@ -61,8 +130,39 @@ public class ClinicSettingsService {
     // ---- branches ---------------------------------------------------------------------------------------
 
     public List<Map<String, Object>> branches(UUID tenantId, boolean onlyActive) {
-        return Rows.camel(jdbc.sql("SELECT id, name, code, address_line1, city, district, phone, is_active FROM medical.clinic_branches WHERE tenant_id = :t AND (NOT :a OR is_active) ORDER BY created_at")
-                .param("t", tenantId).param("a", onlyActive).query().listOfRows());
+        return Rows.camel(jdbc.sql("SELECT id, name, code, address_line1, address_line2, city, district, phone, whatsapp, maps_url, landmark, working_hours::text AS working_hours, latitude, longitude, is_active "
+                + "FROM medical.clinic_branches WHERE tenant_id = :t AND (NOT :a OR is_active) ORDER BY created_at")
+                .param("t", tenantId).param("a", onlyActive).query().listOfRows()).stream().map(m -> { m.put("workingHours", Rows.json(m.remove("workingHours"))); return m; }).toList();
+    }
+
+    private static final Map<String, String> BRANCH_TEXT = Map.of("name", "name", "addressLine1", "address_line1", "addressLine2", "address_line2", "city", "city", "district", "district",
+            "phone", "phone", "whatsapp", "whatsapp", "mapsUrl", "maps_url", "landmark", "landmark");
+
+    @Transactional
+    public Map<String, Object> updateBranch(UUID tenantId, UUID actor, UUID id, Map<String, Object> f) {
+        StringBuilder set = new StringBuilder();
+        var q = new java.util.LinkedHashMap<String, Object>();
+        for (var e : BRANCH_TEXT.entrySet()) if (f.get(e.getKey()) instanceof String v) {
+            String val = v.trim();
+            if (e.getKey().equals("name") && val.isEmpty()) continue;
+            if (val.length() > 500 || (e.getKey().equals("mapsUrl") && !val.isEmpty() && !val.matches("(?i)^https?://\\S+$"))) throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid " + e.getKey());
+            set.append(e.getValue()).append(" = :").append(e.getKey()).append(", "); q.put(e.getKey(), val);
+        }
+        if (f.get("isActive") instanceof Boolean b) { set.append("is_active = :isActive, "); q.put("isActive", b); }
+        if (f.get("latitude") instanceof Number n) { set.append("latitude = :latitude, "); q.put("latitude", java.math.BigDecimal.valueOf(n.doubleValue())); }
+        if (f.get("longitude") instanceof Number n) { set.append("longitude = :longitude, "); q.put("longitude", java.math.BigDecimal.valueOf(n.doubleValue())); }
+        if (f.get("workingHours") instanceof Map<?, ?> m) {
+            try { set.append("working_hours = CAST(:workingHours AS jsonb), "); q.put("workingHours", new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(m)); }
+            catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid working hours"); }
+        }
+        if (!q.isEmpty()) {
+            var st = jdbc.sql("UPDATE medical.clinic_branches SET " + set + "updated_at = now() WHERE id = :i AND tenant_id = :t").param("i", id).param("t", tenantId);
+            for (var e : q.entrySet()) st = st.param(e.getKey(), e.getValue());
+            if (st.update() == 0) throw BusinessException.notFound("RESOURCE_NOT_FOUND", "Branch not found");
+        } else if (jdbc.sql("SELECT count(*) FROM medical.clinic_branches WHERE id = :i AND tenant_id = :t").param("i", id).param("t", tenantId).query(Long.class).single() == 0)
+            throw BusinessException.notFound("RESOURCE_NOT_FOUND", "Branch not found");
+        audit.record(actor, tenantId, "SETTINGS_CHANGED", "clinic_branch", id, null);
+        return branches(tenantId, false).stream().filter(b -> id.equals(b.get("id"))).findFirst().orElseThrow();
     }
 
     @Transactional
@@ -83,10 +183,10 @@ public class ClinicSettingsService {
 
     public List<Map<String, Object>> doctors(UUID tenantId) {
         return Rows.camel(jdbc.sql("""
-                SELECT d.id, d.display_name, d.bio, d.gender, d.public_phone, d.consultation_duration_minutes, d.default_appointment_fee_minor, d.currency, d.verification_status, d.other_specialty,
+                SELECT d.id, d.display_name, d.bio, d.gender, d.public_phone, d.consultation_duration_minutes, d.default_appointment_fee_minor, d.currency, d.verification_status, d.other_specialty, d.profile_image_file_id, d.years_experience, d.qualifications, d.languages::text AS languages,
                   coalesce((SELECT json_agg(json_build_object('code', s.code, 'nameAr', s.name_ar, 'nameEn', s.name_en))::text FROM medical.doctor_specialties ds JOIN medical.specialties s ON s.id = ds.specialty_id WHERE ds.doctor_id = d.id), '[]') AS specialties
                 FROM medical.doctors d WHERE d.tenant_id = :t AND d.is_active ORDER BY d.created_at
-                """).param("t", tenantId).query().listOfRows()).stream().peek(m -> m.put("specialties", Rows.jsonList(m.get("specialties")))).toList();
+                """).param("t", tenantId).query().listOfRows()).stream().peek(m -> { m.put("specialties", Rows.jsonList(m.get("specialties"))); m.put("languages", Rows.jsonList(m.get("languages"))); }).toList();
     }
 
     /** The calling user's own doctor profile, or 403 if they are not a doctor of this clinic. */
@@ -100,18 +200,47 @@ public class ClinicSettingsService {
     public Map<String, Object> updateMyDoctorProfile(UUID tenantId, UUID userId, Map<String, Object> f, List<String> specialtyCodes) {
         UUID doctorId = jdbc.sql("SELECT id FROM medical.doctors WHERE tenant_id = :t AND user_id = :u AND is_active").param("t", tenantId).param("u", userId).query(UUID.class).optional()
                 .orElseThrow(() -> BusinessException.forbidden("NOT_A_DOCTOR", "You do not have a doctor profile in this clinic"));
+        applyDoctor(doctorId, f, specialtyCodes);
+        audit.record(userId, tenantId, "SETTINGS_CHANGED", "doctor", doctorId, null);
+        return doctors(tenantId).stream().filter(d -> doctorId.equals(d.get("id"))).findFirst().orElseThrow();
+    }
+
+    /** The clinic owner edits any doctor's public profile (photo, bio, experience, qualifications, languages, fee). */
+    @Transactional
+    public Map<String, Object> updateDoctor(UUID tenantId, UUID actor, UUID doctorId, Map<String, Object> f, List<String> specialtyCodes) {
+        if (jdbc.sql("SELECT count(*) FROM medical.doctors WHERE id = :d AND tenant_id = :t AND is_active").param("d", doctorId).param("t", tenantId).query(Long.class).single() == 0)
+            throw BusinessException.notFound("RESOURCE_NOT_FOUND", "Doctor not found");
+        applyDoctor(doctorId, f, specialtyCodes);
+        audit.record(actor, tenantId, "SETTINGS_CHANGED", "doctor", doctorId, null);
+        return doctors(tenantId).stream().filter(d -> doctorId.equals(d.get("id"))).findFirst().orElseThrow();
+    }
+
+    private void applyDoctor(UUID doctorId, Map<String, Object> f, List<String> specialtyCodes) {
         jdbc.sql("""
                 UPDATE medical.doctors SET display_name = coalesce(:dn, display_name), bio = coalesce(:bio, bio), gender = coalesce(:g, gender),
                   license_number = coalesce(:ln, license_number), public_phone = coalesce(:pp, public_phone), consultation_duration_minutes = coalesce(:cd, consultation_duration_minutes),
-                  default_appointment_fee_minor = coalesce(:fee, default_appointment_fee_minor), updated_at = now() WHERE id = :d
+                  default_appointment_fee_minor = coalesce(:fee, default_appointment_fee_minor), qualifications = coalesce(:q, qualifications), updated_at = now() WHERE id = :d
                 """).param("dn", str(f, "displayName")).param("bio", str(f, "bio")).param("g", str(f, "gender")).param("ln", str(f, "licenseNumber")).param("pp", str(f, "publicPhone"))
-                .param("cd", num(f, "consultationDurationMinutes")).param("fee", num(f, "defaultAppointmentFeeMinor")).param("d", doctorId).update();
+                .param("cd", num(f, "consultationDurationMinutes")).param("fee", num(f, "defaultAppointmentFeeMinor")).param("q", str(f, "qualifications")).param("d", doctorId).update();
+        if (f.containsKey("yearsExperience")) {
+            Integer y = f.get("yearsExperience") instanceof Number n ? n.intValue() : null;
+            if (y != null && (y < 0 || y > 80)) throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid yearsExperience");
+            jdbc.sql("UPDATE medical.doctors SET years_experience = :y WHERE id = :d").param("y", y).param("d", doctorId).update();
+        }
+        if (f.containsKey("profileImageFileId")) {
+            Object c = f.get("profileImageFileId");
+            jdbc.sql("UPDATE medical.doctors SET profile_image_file_id = :c WHERE id = :d").param("c", c == null || String.valueOf(c).isBlank() ? null : UUID.fromString(String.valueOf(c))).param("d", doctorId).update();
+        }
+        if (f.get("languages") instanceof List<?> l) {
+            try {
+                jdbc.sql("UPDATE medical.doctors SET languages = CAST(:l AS jsonb) WHERE id = :d")
+                        .param("l", new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(l.stream().map(String::valueOf).map(String::trim).filter(x -> !x.isEmpty() && x.length() <= 40).limit(8).toList())).param("d", doctorId).update();
+            } catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid languages"); }
+        }
         if (specialtyCodes != null) {
             if (specialtyCodes.size() > 5) throw BusinessException.badRequest("TOO_MANY_CATEGORIES", "Choose up to 5");
             setSpecialties(jdbc, doctorId, specialtyCodes, str(f, "otherSpecialty"));
         }
-        audit.record(userId, tenantId, "SETTINGS_CHANGED", "doctor", doctorId, null);
-        return doctors(tenantId).stream().filter(d -> doctorId.equals(d.get("id"))).findFirst().orElseThrow();
     }
 
     public List<Map<String, Object>> specialties() {

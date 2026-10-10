@@ -1,0 +1,97 @@
+/* Public clinic website. Scoped to .clinic; the clinic's own colour (--brand / --brand-2 from its branding) is the accent. */
+.clinic {
+  --c-bg: color-mix(in srgb, var(--brand) 4%, #f7fafb);
+  --c-card: #fff;
+  --c-ink: #14232b;
+  --c-mute: #5f7079;
+  --c-line: #e3ebee;
+  --c-soft: color-mix(in srgb, var(--brand) 8%, #fff);
+  --c-radius: 24px;
+  --c-shadow: 0 1px 2px rgb(15 40 50 / .04), 0 10px 28px -12px rgb(15 40 50 / .14);
+  --c-shadow-lg: 0 2px 4px rgb(15 40 50 / .05), 0 26px 50px -18px rgb(15 40 50 / .3);
+  background: var(--c-bg);
+  color: var(--c-ink);
+}
+.clinic h1, .clinic h2, .clinic h3 { letter-spacing: -.012em; }
+.clinic .c-container { width: 100%; max-width: 72rem; margin-inline: auto; padding-inline: 1rem; }
+@media (min-width: 640px) { .clinic .c-container { padding-inline: 1.5rem; } }
+.clinic .c-card { background: var(--c-card); border: 1px solid var(--c-line); border-radius: var(--c-radius); box-shadow: var(--c-shadow); }
+.clinic .c-mute { color: var(--c-mute); }
+.clinic .c-eyebrow { font-size: .75rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--brand); }
+.clinic .c-title { font-size: 1.6rem; font-weight: 800; }
+@media (min-width: 640px) { .clinic .c-title { font-size: 2rem; } }
+
+.clinic .c-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: .5rem; border-radius: 999px; padding: .8rem 1.5rem; font-weight: 700; font-size: .95rem; border: 0; cursor: pointer;
+  background: var(--brand); color: #fff; box-shadow: 0 12px 26px -12px color-mix(in srgb, var(--brand) 85%, transparent);
+  transition: transform .2s cubic-bezier(.22,1,.36,1), box-shadow .2s ease, filter .2s ease, background .2s ease;
+}
+.clinic .c-btn:hover { transform: translateY(-2px); filter: brightness(1.07); }
+.clinic .c-btn:active { transform: scale(.97); }
+.clinic .c-btn-white { background: #fff; color: var(--c-ink); box-shadow: 0 12px 26px -14px rgb(0 0 0 / .5); }
+.clinic .c-btn-glass { background: rgb(255 255 255 / .16); color: #fff; box-shadow: none; backdrop-filter: blur(8px); border: 1px solid rgb(255 255 255 / .35); }
+.clinic .c-btn-glass:hover { background: rgb(255 255 255 / .26); }
+.clinic .c-btn-wa { background: #16a34a; box-shadow: 0 12px 26px -12px rgb(22 163 74 / .8); }
+.clinic .c-btn-ghost { background: #fff; color: var(--c-ink); border: 1px solid var(--c-line); box-shadow: none; }
+.clinic .c-btn-ghost:hover { border-color: var(--brand); color: var(--brand); }
+.clinic .c-btn-sm { padding: .5rem 1.05rem; font-size: .85rem; }
+
+.clinic .c-chip { display: inline-flex; align-items: center; gap: .35rem; border-radius: 999px; background: var(--c-soft); color: var(--brand); padding: .3rem .8rem; font-size: .8rem; font-weight: 700; }
+.clinic .c-lift { transition: transform .35s cubic-bezier(.22,1,.36,1), box-shadow .35s ease, border-color .35s ease; }
+.clinic .c-lift:hover { transform: translateY(-6px); box-shadow: var(--c-shadow-lg); border-color: color-mix(in srgb, var(--brand) 30%, var(--c-line)); }
+.clinic .c-icon { display: grid; place-items: center; border-radius: 16px; background: var(--c-soft); color: var(--brand); transition: background .3s, color .3s, transform .3s; }
+.clinic .c-lift:hover .c-icon { background: var(--brand); color: #fff; transform: rotate(-6deg) scale(1.06); }
+
+/* scroll reveal: only hidden when scripting is on, so the page is complete without JS */
+@media (scripting: enabled) and (prefers-reduced-motion: no-preference) {
+  .clinic [data-reveal] { opacity: 0; transform: translateY(26px); transition: opacity .7s cubic-bezier(.22,1,.36,1), transform .7s cubic-bezier(.22,1,.36,1); transition-delay: var(--d, 0ms); }
+  .clinic [data-reveal].c-in { opacity: 1; transform: none; }
+}
+
+/* hero */
+.clinic .c-hero { position: relative; overflow: hidden; color: #fff; background: linear-gradient(135deg, var(--brand), var(--brand-2, var(--brand))); }
+.clinic .c-hero::before { content: ""; position: absolute; inset: 0; background: radial-gradient(60rem 30rem at 85% -10%, rgb(255 255 255 / .24), transparent 60%), radial-gradient(40rem 24rem at -10% 110%, rgb(0 0 0 / .22), transparent 60%); pointer-events: none; }
+.clinic .c-hero-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; animation: c-zoom 24s ease-in-out infinite alternate; }
+.clinic .c-hero-shade { position: absolute; inset: 0; background: linear-gradient(to top, rgb(5 20 28 / .8), rgb(5 20 28 / .35) 55%, rgb(5 20 28 / .5)); }
+@keyframes c-zoom { to { transform: scale(1.08); } }
+.clinic .c-blob { position: absolute; border-radius: 999px; background: rgb(255 255 255 / .1); animation: drift 14s ease-in-out infinite; pointer-events: none; }
+.clinic .c-cross { position: absolute; color: rgb(255 255 255 / .16); animation: c-float 7s ease-in-out infinite; pointer-events: none; }
+@keyframes c-float { 50% { transform: translateY(-16px) rotate(8deg); } }
+.clinic .c-up { animation: fade-up .8s cubic-bezier(.22,1,.36,1) both; animation-delay: var(--d, 0ms); }
+.clinic .c-status { display: inline-flex; align-items: center; gap: .5rem; border-radius: 999px; padding: .4rem .95rem; font-size: .82rem; font-weight: 700; background: rgb(255 255 255 / .18); backdrop-filter: blur(8px); border: 1px solid rgb(255 255 255 / .3); }
+.clinic .c-dot { width: .55rem; height: .55rem; border-radius: 999px; background: #4ade80; box-shadow: 0 0 0 0 rgb(74 222 128 / .7); animation: c-ping 1.8s infinite; }
+.clinic .c-dot-off { background: #f87171; animation: none; }
+@keyframes c-ping { 70% { box-shadow: 0 0 0 .55rem rgb(74 222 128 / 0); } 100% { box-shadow: 0 0 0 0 rgb(74 222 128 / 0); } }
+.clinic .c-pulse { animation: c-pulse 2.4s ease-in-out infinite; }
+@keyframes c-pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--brand) 55%, transparent); } 50% { box-shadow: 0 0 0 14px transparent; } }
+
+.clinic .c-announce { background: var(--c-ink); color: #fff; font-size: .85rem; font-weight: 600; text-align: center; padding: .55rem 1rem; }
+.clinic .c-stat { text-align: center; padding: 1.1rem .5rem; }
+.clinic .c-stat b { display: block; font-size: 1.9rem; font-weight: 800; color: var(--brand); line-height: 1.1; }
+
+.clinic .c-avatar { background: linear-gradient(135deg, var(--brand), var(--brand-2, var(--brand))); color: #fff; font-weight: 800; }
+.clinic .c-photo { transition: transform .6s cubic-bezier(.22,1,.36,1); }
+.clinic .c-lift:hover .c-photo { transform: scale(1.06); }
+.clinic .c-gal { overflow: hidden; border-radius: 20px; }
+.clinic .c-gal img { transition: transform .6s cubic-bezier(.22,1,.36,1); }
+.clinic .c-gal:hover img { transform: scale(1.08); }
+
+.clinic details > summary { list-style: none; cursor: pointer; }
+.clinic details > summary::-webkit-details-marker { display: none; }
+.clinic details[open] .c-chev { transform: rotate(180deg); }
+.clinic .c-chev { transition: transform .3s ease; }
+.clinic details[open] > div { animation: fade-up .35s cubic-bezier(.22,1,.36,1) both; }
+.clinic .c-today { background: var(--c-soft); border-radius: 10px; padding-inline: .5rem; margin-inline: -.5rem; font-weight: 700; color: var(--brand); }
+
+.clinic .c-step { position: relative; }
+.clinic .c-step-n { width: 3rem; height: 3rem; border-radius: 999px; display: grid; place-items: center; font-weight: 800; font-size: 1.2rem; color: #fff; background: linear-gradient(135deg, var(--brand), var(--brand-2, var(--brand))); box-shadow: 0 12px 24px -10px color-mix(in srgb, var(--brand) 80%, transparent); }
+@media (min-width: 768px) { .clinic .c-step:not(:last-child)::after { content: ""; position: absolute; top: 1.5rem; inset-inline-start: calc(3rem + 1rem); inset-inline-end: -1rem; border-top: 2px dashed color-mix(in srgb, var(--brand) 35%, transparent); } }
+
+.clinic .c-header { background: rgb(255 255 255 / .82); backdrop-filter: blur(14px); border-bottom: 1px solid var(--c-line); }
+.clinic .c-nav a { border-radius: 999px; padding: .4rem .9rem; font-size: .9rem; font-weight: 600; color: var(--c-mute); transition: background .2s, color .2s; }
+.clinic .c-nav a:hover { background: var(--c-soft); color: var(--brand); }
+.clinic .c-mobilebar { position: fixed; inset-inline: 0; bottom: 0; z-index: 40; display: flex; gap: .5rem; padding: .6rem .75rem calc(.6rem + env(safe-area-inset-bottom)); background: rgb(255 255 255 / .94); backdrop-filter: blur(14px); border-top: 1px solid var(--c-line); box-shadow: 0 -10px 30px -16px rgb(0 0 0 / .25); }
+@media (min-width: 768px) { .clinic .c-mobilebar { display: none; } }
+html { scroll-behavior: smooth; }
+.clinic section[id] { scroll-margin-top: 5rem; }
+@media (prefers-reduced-motion: reduce) { .clinic .c-hero-img, .clinic .c-blob, .clinic .c-cross, .clinic .c-dot, .clinic .c-pulse { animation: none; } html { scroll-behavior: auto; } }

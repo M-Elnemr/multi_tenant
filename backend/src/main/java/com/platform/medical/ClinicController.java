@@ -67,6 +67,16 @@ public class ClinicController {
     @ResponseStatus(HttpStatus.CREATED)
     public Map<String, Object> createBranch(@RequestBody BranchReq r, Authentication a) { return settings.createBranch(ClinicContext.tenantId(), user(a), r.name(), r.code(), r.address(), r.city(), r.phone()); }
 
+    @PatchMapping("/branches/{id}")
+    @PreAuthorize("hasAuthority('settings.manage')")
+    public Map<String, Object> updateBranch(@PathVariable UUID id, @RequestBody Map<String, Object> r, Authentication a) { return settings.updateBranch(ClinicContext.tenantId(), user(a), id, r); }
+
+    @PatchMapping("/doctors/{id}")
+    @PreAuthorize("hasAuthority('settings.manage')")
+    public Map<String, Object> updateDoctor(@PathVariable UUID id, @RequestBody DoctorProfileReq r, Authentication a) {
+        return settings.updateDoctor(ClinicContext.tenantId(), user(a), id, r.fields() == null ? Map.of() : r.fields(), r.specialties());
+    }
+
     @GetMapping("/doctors")
     @PreAuthorize("hasAuthority('appointment.manage') or hasAuthority('settings.manage')")
     public List<Map<String, Object>> doctors() { return settings.doctors(ClinicContext.tenantId()); }

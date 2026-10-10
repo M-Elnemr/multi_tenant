@@ -1,71 +1,50 @@
-import Link from "next/link";
 import type { Metadata } from "next";
-import { Avatar } from "@/components/ui";
-import { backendJson } from "@/lib/backend";
-import { money } from "@/lib/format";
+import { AboutSection, ContactBand, DoctorsSection, FaqSection, GallerySection, Hero, HowSection, InsuranceSection, ServicesSection, VisitSection, mainPhone } from "@/components/clinic/sections";
+import { backendJson, currentHost } from "@/lib/backend";
+import { DAYS } from "@/lib/hours";
 import { getT } from "@/lib/i18n-server";
+import { resolveHost } from "@/lib/tenant";
+import { type ClinicSite } from "@/lib/clinic-site";
+import { fileUrl } from "@/lib/media";
 
-type PublicProfile = {
-  clinicName: string; about?: string; phone?: string; email?: string; addressText?: string; bookingEnabled: boolean; queueCount?: number;
-  doctors: { id: string; displayName: string; bio?: string; publicPhone?: string; consultationDurationMinutes: number; otherSpecialty?: string | null; specialties: { code: string; nameAr: string; nameEn: string }[] }[];
-  services: { id: string; name: string; description?: string; durationMinutes: number; priceMinor?: number; currency: string }[];
-  branches: { id: string; name: string; addressLine1?: string; city?: string; phone?: string }[];
-};
-
-const load = () => backendJson<PublicProfile>("/clinic/public/profile");
+const load = () => backendJson<ClinicSite>("/clinic/public/profile");
 
 export async function generateMetadata(): Promise<Metadata> {
   const p = await load().catch(() => null);
-  return p ? { title: { absolute: p.clinicName }, description: p.about?.slice(0, 160) ?? p.clinicName } : {};
+  if (!p) return {};
+  const description = (p.tagline || p.about || p.clinicName).slice(0, 160);
+  return { title: { absolute: p.clinicName }, description, openGraph: { title: p.clinicName, description, images: p.coverFileId ? [fileUrl(p.coverFileId, "medium")] : undefined } };
 }
+
+const SCHEMA_DAY: Record<string, string> = { sat: "Saturday", sun: "Sunday", mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday", fri: "Friday" };
 
 export default async function ClinicHome() {
   const { t, locale } = await getT();
   const p = await load();
-  const ld = { "@context": "https://schema.org", "@type": "MedicalClinic", name: p.clinicName, telephone: p.phone, email: p.email, address: p.addressText ? { "@type": "PostalAddress", streetAddress: p.addressText } : undefined };
+  const info = await resolveHost(await currentHost());
+  const logo = info.kind === "TENANT" ? (info.branding as { logo_file_id?: string }).logo_file_id ?? null : null;
+  const book = p.bookingEnabled ? "/book" : undefined;
+  const phone = mainPhone(p);
+  const sameAs = [p.facebookUrl, p.instagramUrl, p.tiktokUrl, p.websiteUrl].filter(Boolean);
+  const ld = {
+    "@context": "https://schema.org", "@type": "MedicalClinic", name: p.clinicName, description: p.tagline || p.about, telephone: phone || undefined, email: p.email || undefined,
+    address: p.addressText ? { "@type": "PostalAddress", streetAddress: p.addressText } : undefined, sameAs: sameAs.length ? sameAs : undefined,
+    openingHoursSpecification: p.workingHours ? DAYS.filter((d) => p.workingHours?.[d] && !p.workingHours[d].closed).map((d) => ({ "@type": "OpeningHoursSpecification", dayOfWeek: SCHEMA_DAY[d], opens: p.workingHours![d].open, closes: p.workingHours![d].close })) : undefined,
+    medicalSpecialty: p.doctors.flatMap((d) => d.specialties.map((s) => s.nameEn)).filter((x, i, a) => a.indexOf(x) === i),
+  };
   return (
-    <div className="space-y-10">
+    <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(ld).replace(/</g, "\\u003c") }} />
-      <section className="bg-brand-gradient relative animate-fade-up overflow-hidden rounded-3xl px-6 py-16 text-center text-white shadow-lift"><div className="pointer-events-none absolute -end-16 -top-16 h-64 w-64 rounded-full bg-white/10 [animation:drift_12s_ease-in-out_infinite]" /><div className="pointer-events-none absolute -bottom-20 start-0 h-56 w-56 rounded-full bg-white/10 [animation:drift_16s_ease-in-out_infinite_reverse]" />
-        <h1 className="relative text-3xl font-extrabold sm:text-5xl">{p.clinicName}</h1>
-        {p.about && <p className="relative mx-auto mt-3 max-w-xl text-lg opacity-90">{p.about}</p>}
-        {p.bookingEnabled && <Link href="/book" className="relative mt-7 inline-block rounded-2xl bg-white px-7 py-3 font-semibold text-slate-900 shadow-lg transition hover:-translate-y-0.5 active:scale-[.97]">{t("clinic.bookNow")}</Link>}
-      </section>
-      <section className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 text-sm shadow-soft"><p className="mb-1 text-xs font-medium text-slate-500">{t("clinic.phone")}</p>{p.phone ? <a href={`tel:${p.phone}`} dir="ltr" className="font-semibold text-brand">{p.phone}</a> : <p>-</p>}</div>
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 text-sm shadow-soft"><p className="mb-1 text-xs font-medium text-slate-500">{t("clinic.address")}</p><p className="font-semibold">{p.addressText || "-"}</p></div>
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 text-sm shadow-soft"><p className="mb-1 text-xs font-medium text-slate-500">{t("clinic.queueNow")}</p><p className="text-2xl font-extrabold text-brand">{p.queueCount ?? 0}</p></div>
-      </section>
-      <section>
-        <h2 className="mb-4 text-xl font-bold">{t("clinic.doctors")}</h2>
-        <div className="stagger grid gap-4 sm:grid-cols-2">
-          {p.doctors.map((d, i) => (
-            <div key={d.id} style={{ "--i": i } as React.CSSProperties} className="hover-lift flex gap-4 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-soft"><Avatar name={d.displayName} className="h-14 w-14 text-lg" /><div className="min-w-0">
-              <p className="text-lg font-semibold">{d.displayName}</p>
-              <p className="text-sm text-brand">{d.specialties.map((s) => (s.code === "other" && d.otherSpecialty ? d.otherSpecialty : locale === "ar" ? s.nameAr : s.nameEn)).join(" · ")}</p>
-              {d.bio && <p className="mt-2 text-sm text-slate-600">{d.bio}</p>}
-              {d.publicPhone && <a href={`tel:${d.publicPhone}`} dir="ltr" className="mt-2 inline-block text-sm font-semibold text-brand">{d.publicPhone}</a>}
-            </div></div>
-          ))}
-        </div>
-      </section>
-      <section>
-        <h2 className="mb-4 text-xl font-bold">{t("clinic.services")}</h2>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {p.services.map((s) => (
-            <div key={s.id} className="hover-lift flex items-center justify-between rounded-2xl border border-slate-200/80 bg-white p-4 text-sm shadow-soft">
-              <div><p className="font-medium">{s.name}</p><p className="text-slate-500">{s.durationMinutes} {t("clinic.minutes")}</p></div>
-              {s.priceMinor ? <b>{money(s.priceMinor, s.currency, locale)}</b> : null}
-            </div>
-          ))}
-        </div>
-      </section>
-      <section>
-        <h2 className="mb-4 text-xl font-bold">{t("clinic.branches")}</h2>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {p.branches.map((b) => <div key={b.id} className="rounded-2xl border border-slate-200/80 bg-white p-4 text-sm shadow-soft"><p className="font-semibold">{b.name}</p><p className="text-slate-600">{b.addressLine1} {b.city}</p>{b.phone && <p dir="ltr" className="text-slate-600">{b.phone}</p>}</div>)}
-        </div>
-      </section>
-    </div>
+      <Hero p={p} t={t} logoId={logo} hrefBook={book} />
+      <AboutSection p={p} t={t} />
+      <ServicesSection services={p.services} t={t} locale={locale} hrefBook={book} />
+      <DoctorsSection doctors={p.doctors} t={t} locale={locale} phone={phone} hrefBook={book} />
+      <HowSection t={t} />
+      <VisitSection p={p} t={t} />
+      <GallerySection ids={p.gallery ?? []} t={t} />
+      <InsuranceSection items={p.insurance} t={t} />
+      <FaqSection items={p.faqs} t={t} />
+      <ContactBand p={p} t={t} hrefBook={book} />
+    </>
   );
 }

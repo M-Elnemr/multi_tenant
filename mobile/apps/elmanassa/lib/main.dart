@@ -379,24 +379,82 @@ class ClinicInfoPage extends StatelessWidget {
               subtitle: Text(value == null || value.isEmpty ? '-' : value, textDirection: phone != null ? TextDirection.ltr : null),
               trailing: phone == null ? null : IconButton(icon: const Icon(Icons.call), onPressed: () => _dial(phone)),
             );
+        final services = ((p['services'] as List?) ?? const []).cast<Map<String, dynamic>>();
+        final branches = ((p['branches'] as List?) ?? const []).cast<Map<String, dynamic>>();
+        final hours = (p['workingHours'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{};
+        final insurance = ((p['insurance'] as List?) ?? const []).cast<String>();
+        final faqs = ((p['faqs'] as List?) ?? const []).cast<Map<String, dynamic>>();
+        final wa = (p['whatsapp'] as String?) ?? '';
+        final maps = (p['mapsUrl'] as String?) ?? '';
+        const days = ['sat', 'sun', 'mon', 'tue', 'wed', 'thu', 'fri'];
+        const dayAr = {'sat': 'السبت', 'sun': 'الأحد', 'mon': 'الاثنين', 'tue': 'الثلاثاء', 'wed': 'الأربعاء', 'thu': 'الخميس', 'fri': 'الجمعة'};
+        const dayEn = {'sat': 'Saturday', 'sun': 'Sunday', 'mon': 'Monday', 'tue': 'Tuesday', 'wed': 'Wednesday', 'thu': 'Thursday', 'fri': 'Friday'};
+        Widget title(String x) => Padding(padding: const EdgeInsets.only(top: 18, bottom: 6), child: Text(x, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)));
+        String money(num minor, String cur) => '${(minor / 100).toStringAsFixed(minor % 100 == 0 ? 0 : 2)} $cur';
         return RefreshIndicator(
           onRefresh: reload,
           child: ListView(padding: const EdgeInsets.all(16), children: [
+            if (((p['tagline'] as String?) ?? '').isNotEmpty) Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(p['tagline'] as String, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600))),
+            if (((p['announcement'] as String?) ?? '').isNotEmpty) Card(color: Theme.of(context).colorScheme.secondaryContainer, child: Padding(padding: const EdgeInsets.all(12), child: Text(p['announcement'] as String))),
+            if (p['isOpen'] == false) Card(color: Theme.of(context).colorScheme.errorContainer, child: Padding(padding: const EdgeInsets.all(12), child: Text(((p['closedMessage'] as String?) ?? '').isNotEmpty ? p['closedMessage'] as String : (s.ar ? 'العيادة مغلقة مؤقتًا' : 'Temporarily closed')))),
             Card(child: Column(children: [
               row(Icons.groups_outlined, s.ar ? 'في الانتظار الآن' : 'Waiting now', '${p['queueCount'] ?? 0}'),
               row(Icons.place_outlined, s.ar ? 'العنوان' : 'Address', p['addressText'] as String?),
               row(Icons.phone_outlined, s.ar ? 'هاتف العيادة' : 'Clinic phone', p['phone'] as String?, phone: p['phone'] as String?),
             ])),
             const SizedBox(height: 8),
-            Text(s.ar ? 'الأطباء' : 'Doctors', style: Theme.of(context).textTheme.titleMedium),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              if (wa.isNotEmpty) FilledButton.icon(onPressed: () => launchUrl(Uri.parse('https://wa.me/${wa.replaceAll(RegExp(r'\D'), '')}'), mode: LaunchMode.externalApplication), icon: const Icon(Icons.chat_outlined), label: const Text('WhatsApp')),
+              if (maps.isNotEmpty) OutlinedButton.icon(onPressed: () => launchUrl(Uri.parse(maps), mode: LaunchMode.externalApplication), icon: const Icon(Icons.navigation_outlined), label: Text(s.ar ? 'الاتجاهات' : 'Directions')),
+            ]),
+            if (((p['about'] as String?) ?? '').isNotEmpty) ...[title(s.ar ? 'من نحن' : 'About'), Text(p['about'] as String)],
+            if (hours.isNotEmpty) ...[
+              title(s.ar ? 'مواعيد العمل' : 'Opening hours'),
+              Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(children: [
+                for (final d in days)
+                  if (hours[d] is Map)
+                    Padding(padding: const EdgeInsets.symmetric(vertical: 3), child: Row(children: [
+                      Expanded(child: Text(s.ar ? dayAr[d]! : dayEn[d]!)),
+                      Text((hours[d] as Map)['closed'] == true ? (s.ar ? 'مغلق' : 'Closed') : '${(hours[d] as Map)['open']} – ${(hours[d] as Map)['close']}', textDirection: TextDirection.ltr, style: const TextStyle(fontWeight: FontWeight.w700)),
+                    ])),
+              ]))),
+            ],
+            if (services.isNotEmpty) ...[
+              title(s.ar ? 'الخدمات والأسعار' : 'Services and prices'),
+              for (final x in services)
+                Card(child: ListTile(
+                  title: Text(x['name'] as String),
+                  subtitle: Text('${x['durationMinutes']} ${s.ar ? 'دقيقة' : 'min'}${((x['description'] as String?) ?? '').isNotEmpty ? '\n${x['description']}' : ''}'),
+                  trailing: x['priceMinor'] == null ? null : Text(money(x['priceMinor'] as num, (x['currency'] as String?) ?? 'EGP'), style: const TextStyle(fontWeight: FontWeight.w800)),
+                )),
+            ],
+            title(s.ar ? 'الأطباء' : 'Doctors'),
             for (final d in doctors)
-              Card(child: ListTile(
-                leading: const CircleAvatar(child: Icon(Icons.medical_services_outlined)),
-                title: Text(d['displayName'] as String),
-                subtitle: Text([(d['specialties'] as List).map((x) => s.ar ? x['nameAr'] : x['nameEn']).join(' · '), d['publicPhone'] ?? ''].where((x) => '$x'.isNotEmpty).join('\n')),
-                isThreeLine: d['publicPhone'] != null,
-                trailing: d['publicPhone'] == null ? null : IconButton(icon: const Icon(Icons.call), onPressed: () => _dial(d['publicPhone'] as String)),
-              )),
+              Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const CircleAvatar(child: Icon(Icons.medical_services_outlined)),
+                  title: Text(d['displayName'] as String, style: const TextStyle(fontWeight: FontWeight.w800)),
+                  subtitle: Text((d['specialties'] as List).map((x) => s.ar ? x['nameAr'] : x['nameEn']).join(' · ')),
+                  trailing: d['publicPhone'] == null ? null : IconButton(icon: const Icon(Icons.call), onPressed: () => _dial(d['publicPhone'] as String)),
+                ),
+                if (d['yearsExperience'] != null) Text(s.ar ? 'خبرة ${d['yearsExperience']} سنة' : '${d['yearsExperience']} years of experience'),
+                if (((d['qualifications'] as String?) ?? '').isNotEmpty) Text(d['qualifications'] as String),
+                if (((d['bio'] as String?) ?? '').isNotEmpty) Padding(padding: const EdgeInsets.only(top: 6), child: Text(d['bio'] as String)),
+                if (d['defaultAppointmentFeeMinor'] != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text('${s.ar ? 'سعر الكشف' : 'Fee'}: ${money(d['defaultAppointmentFeeMinor'] as num, (d['currency'] as String?) ?? 'EGP')}', style: const TextStyle(fontWeight: FontWeight.w700))),
+              ]))),
+            if (branches.isNotEmpty) ...[
+              title(s.ar ? 'المواقع' : 'Locations'),
+              for (final b in branches)
+                Card(child: ListTile(
+                  leading: const Icon(Icons.place_outlined),
+                  title: Text(b['name'] as String),
+                  subtitle: Text([b['addressLine1'], b['city'], b['landmark']].where((x) => x != null && '$x'.isNotEmpty).join('، ')),
+                  trailing: ((b['mapsUrl'] as String?) ?? '').isEmpty ? null : IconButton(icon: const Icon(Icons.navigation_outlined), onPressed: () => launchUrl(Uri.parse(b['mapsUrl'] as String), mode: LaunchMode.externalApplication)),
+                )),
+            ],
+            if (insurance.isNotEmpty) ...[title(s.ar ? 'التأمين المقبول' : 'Accepted insurance'), Wrap(spacing: 8, runSpacing: 6, children: [for (final i in insurance) Chip(label: Text(i))])],
+            if (faqs.isNotEmpty) ...[title(s.ar ? 'الأسئلة الشائعة' : 'FAQ'), for (final f in faqs) Card(child: ExpansionTile(title: Text(f['q'] as String), childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12), expandedAlignment: Alignment.centerLeft, children: [Text(f['a'] as String)]))],
           ]),
         );
       },
