@@ -3,6 +3,7 @@ import type { ShopProfile } from "@/components/shop/types";
 import { backendJson } from "@/lib/backend";
 import { getT } from "@/lib/i18n-server";
 import { whatsappLink } from "@/lib/whatsapp";
+import { SocialLinks, hasSocial } from "@/components/social-icons";
 
 export default async function Contact() {
   const { t } = await getT();
@@ -23,7 +24,7 @@ export default async function Contact() {
           {phones.length > 0 && row("📞", t("identity.phone"), <div className="space-y-0.5">{phones.map((x) => <a key={x} href={`tel:${x}`} dir="ltr" className="block hover:underline">{x}</a>)}</div>)}
           {p.supportEmail && row("✉️", t("identity.email"), <a href={`mailto:${p.supportEmail}`} className="break-all hover:underline">{p.supportEmail}</a>)}
           {p.addressText && row("📍", t("identity.address"), <><p>{p.addressText}</p>{p.mapsUrl && <a href={p.mapsUrl} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block text-sm font-extrabold" style={{ color: "var(--brand)" }}>{t("shop.openMap")} →</a>}</>)}
-          {[["Facebook", p.facebookUrl], ["Instagram", p.instagramUrl], ["TikTok", p.tiktokUrl]].filter(([, u]) => u).length > 0 && row("🌐", t("contact.follow"), <div className="flex flex-wrap gap-3">{[["Facebook", p.facebookUrl], ["Instagram", p.instagramUrl], ["TikTok", p.tiktokUrl]].filter(([, u]) => u).map(([n, u]) => <a key={n} href={u} target="_blank" rel="noopener noreferrer" className="s-chip">{n}</a>)}</div>)}
+          {hasSocial(p) && row("🌐", t("contact.follow"), <SocialLinks p={p} withLabel />)}
         </div>
         <div className="s-card h-fit p-6"><h2 className="mb-3 text-lg font-extrabold">🕒 {t("identity.hours")}</h2>{p.workingHours && Object.keys(p.workingHours).length > 0 ? <HoursList hours={p.workingHours} t={t} /> : <p className="text-sm text-[var(--s-mute)]">{t("contact.noHours")}</p>}</div>
       </div>
