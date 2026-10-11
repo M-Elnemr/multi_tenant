@@ -70,7 +70,7 @@ class ApiClient {
         r.body = jsonEncode(body);
       }
       if (idempotencyKey != null) r.headers['Idempotency-Key'] = idempotencyKey;
-      if (token != null && !path.startsWith('auth/login')) r.headers['Authorization'] = 'Bearer $token';
+      if (token != null && !_open(path)) r.headers['Authorization'] = 'Bearer $token';
       try {
         return await http.Response.fromStream(await _http.send(r).timeout(attemptTimeout));
       } on TimeoutException catch (e) {
@@ -90,11 +90,23 @@ class ApiClient {
     throw ApiException(0, 'NETWORK', last?.toString() ?? 'Connection problem');
   }
 
+  /// Endpoints that are called without a session; sending an expired token to them can only get them rejected.
+  static bool _open(String path) => RegExp(r'^auth/(login|refresh|check-identifier|activate|reset-password)').hasMatch(path);
+
+  static Future<bool>? _refreshing;
+  Future<bool> _refreshOnce() {
+    final running = _refreshing;
+    if (running != null) return running;
+    final f = session.refresh(this).whenComplete(() => _refreshing = null);
+    return _refreshing = f;
+  }
+
   Future<dynamic> _send(String method, String path, {Object? body, Map<String, String?>? query, String? idempotencyKey, bool retried = false}) async {
     final token = await session.accessToken();
 
     final res = await _sendWithRetry(method, path, query, body, idempotencyKey, token);
-    if (res.statusCode == 401 && !retried && await session.refresh(this)) {
+    // never refresh because of an auth call itself (a rejected refresh must not trigger another refresh), and share one refresh between parallel requests
+    if (res.statusCode == 401 && !retried && !_open(path) && await _refreshOnce()) {
       return _send(method, path, body: body, query: query, idempotencyKey: idempotencyKey, retried: true);
     }
     final text = utf8.decode(res.bodyBytes);
