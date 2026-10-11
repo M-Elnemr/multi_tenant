@@ -137,7 +137,7 @@ class _CurrentExamState extends State<CurrentExam> {
           for (final e in others) QueueCard(
             leading: const Icon(Icons.meeting_room_rounded),
             title: '${e['patientName']}',
-            subtitle: '#${e['queueNumber']}',
+            subtitle: dotted(['#${e['queueNumber']}', visitTypeLabel(e['visitType'], isAr)]),
             actions: [if (clinical) OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)), onPressed: () => _open(e), child: Text(isAr ? 'فتح الكشف' : 'Open exam'))],
           ),
         ],
@@ -146,7 +146,7 @@ class _CurrentExamState extends State<CurrentExam> {
           color: blue.withValues(alpha: 0.06),
           leading: CircleAvatar(backgroundColor: blue.withValues(alpha: 0.12), foregroundColor: blue, child: Text('${next['queueNumber']}', style: const TextStyle(fontWeight: FontWeight.w900))),
           title: '${next['patientName']}',
-          subtitle: '${isAr ? 'انتظر' : 'waited'} ${next['waitedMinutes'] ?? 0} ${isAr ? 'د' : 'min'}',
+          subtitle: dotted([visitTypeLabel(next['visitType'], isAr), '${isAr ? 'انتظر' : 'waited'} ${next['waitedMinutes'] ?? 0} ${isAr ? 'د' : 'min'}']),
           actions: [
             if (ctx.can('appointment.manage')) FilledButton.tonal(style: FilledButton.styleFrom(minimumSize: const Size(0, 40)), onPressed: () async { if (await run(context, () => ctx.api.post('clinic/appointments/${next['id']}/call', {}))) await _load(); }, child: Text(next['calledAt'] != null ? (isAr ? 'نداء مرة أخرى' : 'Call again') : (isAr ? 'نداء' : 'Call'))),
           ],

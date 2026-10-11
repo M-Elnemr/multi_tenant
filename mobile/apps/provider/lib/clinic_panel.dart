@@ -78,7 +78,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                 StatusPill(a['status'] as String),
               ]),
               const SizedBox(height: 4),
-              Text('${a['serviceName']} · ${a['doctorName']}${a['queueNumber'] != null ? ' · #${a['queueNumber']}' : ''}', style: const TextStyle(color: Color(0xFF6B7C8D))),
+              Text(dotted([a['serviceName'], visitTypeLabel(a['visitType'], s.ar), a['doctorName'], a['queueNumber'] != null ? '#${a['queueNumber']}' : null]), style: const TextStyle(color: Color(0xFF6B7C8D))),
               if (_buttons(a, s, reload).isNotEmpty) Padding(padding: const EdgeInsets.only(top: 10), child: Wrap(runSpacing: 6, children: _buttons(a, s, reload))),
             ]),
           )),
@@ -115,7 +115,7 @@ class QueueScreen extends StatelessWidget {
               color: blue.withValues(alpha: 0.08),
               leading: Icon(Icons.medical_services_rounded, color: blue),
               title: '${e['patientName']}',
-              subtitle: '#${e['queueNumber']} · ${e['serviceName']}',
+              subtitle: dotted(['#${e['queueNumber']}', e['serviceName'], visitTypeLabel(e['visitType'], s.ar)]),
               actions: [OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)), onPressed: () => _act(context, e['id'] as String, 'complete', reload), child: Text(s.ar ? 'إنهاء' : 'Done'))],
             ),
             Padding(padding: const EdgeInsets.only(top: 10, bottom: 6), child: Text(s.waitingRoom, style: const TextStyle(fontWeight: FontWeight.w900))),
@@ -123,7 +123,7 @@ class QueueScreen extends StatelessWidget {
               FadeSlideIn(index: i, child: QueueCard(
                 leading: CircleAvatar(backgroundColor: blue.withValues(alpha: 0.12), foregroundColor: blue, child: Text('${waiting[i]['queueNumber']}', style: const TextStyle(fontWeight: FontWeight.w900))),
                 title: '${waiting[i]['patientName']}',
-                subtitle: '${waiting[i]['serviceName']} · ${waiting[i]['waitedMinutes']} min',
+                subtitle: dotted([waiting[i]['serviceName'], visitTypeLabel(waiting[i]['visitType'], s.ar), '${waiting[i]['waitedMinutes']} min']),
                 actions: [
                   OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)), onPressed: () => _act(context, waiting[i]['id'] as String, 'call', reload), child: Text(s.call)),
                   if (ctx.can('medical_note.create')) FilledButton(style: FilledButton.styleFrom(minimumSize: const Size(0, 40)), onPressed: () => _act(context, waiting[i]['id'] as String, 'start', reload), child: Text(s.startVisit)),
@@ -248,7 +248,7 @@ class _PatientDetailState extends State<PatientDetail> {
             ])),
             if (tl != null) ...[
               Padding(padding: const EdgeInsets.fromLTRB(4, 18, 4, 6), child: Text(s.ar ? 'الزيارات' : 'Visits', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16))),
-              for (final v in visits) Card(child: ListTile(leading: const Icon(Icons.event_note_rounded), title: Text(fmtDate(v['visitAt'] as String?), textDirection: TextDirection.ltr, textAlign: TextAlign.start), subtitle: Text('${v['doctorName'] ?? ''} ${v['diagnosis'] ?? v['summary'] ?? ''}'.trim()))),
+              for (final v in visits) Card(child: ListTile(leading: const Icon(Icons.event_note_rounded), title: Text(fmtDate(v['visitAt'] as String?), textDirection: TextDirection.ltr, textAlign: TextAlign.start), subtitle: Text(dotted([visitTypeLabel(v['visitType'], s.ar), v['doctorName'], v['diagnosis'] ?? v['clinicalSummary'] ?? v['summary'] ?? v['chiefComplaint']])), trailing: v['visitType'] == null ? null : _VisitChip(v['visitType'] as String, s.ar))),
               if (visits.isEmpty) emptyState(s.empty),
               if (rx.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(4, 14, 4, 6), child: Text(s.ar ? 'الروشتات' : 'Prescriptions', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16))),
               for (final r in rx) Card(child: ListTile(leading: const Icon(Icons.medication_rounded), title: Text(fmtDate(r['issuedAt'] as String? ?? r['createdAt'] as String?, time: false), textDirection: TextDirection.ltr, textAlign: TextAlign.start), subtitle: Text('${((r['items'] as List?) ?? const []).length} ${s.ar ? 'أصناف' : 'items'}'))),
@@ -294,6 +294,22 @@ class NotificationsScreen extends StatelessWidget {
           ]),
         );
       },
+    );
+  }
+}
+
+class _VisitChip extends StatelessWidget {
+  const _VisitChip(this.type, this.ar);
+  final String type;
+  final bool ar;
+  @override
+  Widget build(BuildContext context) {
+    final follow = type == 'FOLLOW_UP';
+    final c = follow ? const Color(0xFFB7791F) : Theme.of(context).colorScheme.primary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(color: c.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(14)),
+      child: Text(visitTypeLabel(type, ar), style: TextStyle(color: c, fontWeight: FontWeight.w800, fontSize: 12)),
     );
   }
 }

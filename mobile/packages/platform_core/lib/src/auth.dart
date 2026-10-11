@@ -41,8 +41,11 @@ class Session {
       final r = await caller.post('auth/refresh', {'refreshToken': refresh}) as Map<String, dynamic>;
       await save(r);
       return true;
+    } on ApiException catch (e) {
+      // only a real rejection ends the login; a dropped connection must never sign the user out
+      if (e.status == 400 || e.status == 401 || e.status == 403) await clear();
+      return false;
     } catch (_) {
-      await clear();
       return false;
     }
   }

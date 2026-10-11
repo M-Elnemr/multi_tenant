@@ -158,7 +158,15 @@ public class AuthService {
         UUID userId = (UUID) row.get("user_id");
         UUID sessionId = (UUID) row.get("id");
         if (row.get("revoked_at") != null) {
-            // A rotated-out token was presented again: assume theft and kill every session of the user.
+            // A phone that lost the answer of a refresh (network drop, app killed) presents the old token again: within a short grace window it simply gets a fresh pair.
+            Instant revokedAt = ((java.sql.Timestamp) row.get("revoked_at")).toInstant();
+            if (revokedAt.isAfter(Instant.now().minus(java.time.Duration.ofMinutes(30))) && !((java.sql.Timestamp) row.get("expires_at")).toInstant().isBefore(Instant.now())) {
+                String t = (String) row.get("principal_type");
+                if (!"STAFF".equals(t)) return accounts.reissue(t, userId, ip, userAgent);
+                return users.findById(userId).filter(u -> u.getStatus() == User.Status.ACTIVE).map(u -> issueTokens(u, ip, userAgent))
+                        .orElseThrow(() -> BusinessException.unauthorized("INVALID_REFRESH_TOKEN", "Invalid refresh token"));
+            }
+            // An old rotated-out token was presented again: assume theft and kill every session of the user.
             jdbc.sql("UPDATE core.user_sessions SET revoked_at = now() WHERE user_id = :u AND revoked_at IS NULL").param("u", userId).update();
             throw BusinessException.unauthorized("INVALID_REFRESH_TOKEN", "Invalid refresh token");
         }

@@ -242,3 +242,9 @@ class QueueCard extends StatelessWidget {
         ),
       );
 }
+
+/// "كشف" / "إعادة" for an appointment's visit type, or '' when unknown.
+String visitTypeLabel(Object? type, bool ar) => type == 'FOLLOW_UP' ? (ar ? 'إعادة' : 'Follow-up') : type == 'CONSULTATION' ? (ar ? 'كشف' : 'Consultation') : '';
+
+/// Joins the non-empty parts with " · ".
+String dotted(Iterable<Object?> parts) => parts.where((e) => e != null && '$e'.trim().isNotEmpty).join(' · ');
