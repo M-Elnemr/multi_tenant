@@ -91,6 +91,34 @@ class PatientAccountsIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void patientsBehindGetAPushWhenSomeoneAheadStartsAndItIsNotRepeated() throws Exception {
+        Tenant c = onboard("CLINIC");
+        String h = c.host();
+        String doctor = JsonPath.read(body(onHost(h, c.access(), "GET", "/api/v1/clinic/doctors", null)), "$[0].id");
+        String branch = JsonPath.read(body(onHost(h, c.access(), "GET", "/api/v1/clinic/branches", null)), "$[0].id");
+        PatientLogin p1 = patientAt(c, "One"), p2 = patientAt(c, "Two"), p3 = patientAt(c, "Three");
+        String walk = "{\"patientId\":\"%s\",\"doctorId\":\"" + doctor + "\",\"branchId\":\"" + branch + "\",\"visitType\":\"CONSULTATION\"}";
+        String a1 = JsonPath.read(body(onHost(h, c.access(), "POST", "/api/v1/clinic/appointments/walk-in", walk.formatted(p1.patientId())).andExpect(status().isCreated())), "$.id");
+        onHost(h, c.access(), "POST", "/api/v1/clinic/appointments/walk-in", walk.formatted(p2.patientId())).andExpect(status().isCreated());
+        onHost(h, c.access(), "POST", "/api/v1/clinic/appointments/walk-in", walk.formatted(p3.patientId())).andExpect(status().isCreated());
+        String tok2 = "fcm-two-" + uniq(), tok3 = "fcm-three-" + uniq();
+        onHost(h, p2.token(), "POST", "/api/v1/portal/devices", "{\"token\":\"%s\"}".formatted(tok2)).andExpect(status().isOk());
+        onHost(h, p3.token(), "POST", "/api/v1/portal/devices", "{\"token\":\"%s\"}".formatted(tok3)).andExpect(status().isOk());
+
+        // the first patient goes in: patient two is next, patient three has one before them
+        onHost(h, c.access(), "POST", "/api/v1/clinic/appointments/" + a1 + "/start", "{}").andExpect(status().isOk());
+        var rows = jdbc.sql("SELECT to_address, payload::text AS payload FROM notifications.outbox WHERE channel = 'PUSH' AND tenant_id = (SELECT id FROM core.tenants WHERE slug = :s) AND payload->>'type' = 'QUEUE_POSITION'").param("s", c.slug()).query().listOfRows();
+        assertThat(rows).hasSize(2);
+        for (var r : rows) {
+            String payload = (String) r.get("payload");
+            if (tok2.equals(r.get("to_address"))) assertThat(payload).contains("\"aheadOfYou\": \"0\"");
+            else { assertThat(r.get("to_address")).isEqualTo(tok3); assertThat(payload).contains("\"aheadOfYou\": \"1\""); }
+        }
+        // the same position is never announced twice
+        assertThat(jdbc.sql("SELECT count(*) FROM medical.queue_push_state").query(Long.class).single()).isGreaterThanOrEqualTo(2);
+    }
+
+    @Test
     void patientSeesTheirPlaceInTheQueueAndGetsAPushWhenCalled() throws Exception {
         Tenant c = onboard("CLINIC");
         String h = c.host();

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:platform_core/platform_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../main.dart' show Landing;
+import '../mode.dart';
 import 'common.dart';
 import 'shop.dart';
 
@@ -132,7 +134,7 @@ class _StoreDirectoryState extends State<StoreDirectory> {
               padding: const EdgeInsets.fromLTRB(8, 4, 16, 18),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [
-                  IconButton(onPressed: () => Navigator.of(context).maybePop(), icon: const Icon(Icons.arrow_back_rounded, color: Colors.white)),
+                  IconButton(tooltip: s.ar ? 'تغيير القسم' : 'Switch section', onPressed: () async { await AppMode.clear(); if (context.mounted) Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const Landing()), (r) => false); }, icon: const Icon(Icons.swap_horiz_rounded, color: Colors.white)),
                   Expanded(child: Text(s.chooseShop, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900))),
                   const LanguageChip(onDark: true),
                 ]),

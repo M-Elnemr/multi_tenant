@@ -49,17 +49,30 @@ public class PushChannel implements NotificationChannel {
     public boolean configured() { return !credentialsFile.isEmpty() && Files.isReadable(Path.of(credentialsFile)); }
 
     @Override
-    public void send(String token, String title, String body) throws Exception {
+    public void send(String token, String title, String body) throws Exception { send(token, title, body, null); }
+
+    @Override
+    public void send(String token, String title, String body, String payloadJson) throws Exception {
         if (!configured()) {
             log.info("Push not configured (set FCM_CREDENTIALS_FILE); would send '{}' to a device", title);
             return;
         }
         JsonNode sa = json.readTree(Files.readString(Path.of(credentialsFile)));
         String url = "https://fcm.googleapis.com/v1/projects/" + sa.path("project_id").asText() + "/messages:send";
-        Map<String, Object> message = Map.of("message", Map.of(
-                "token", token,
-                "notification", Map.of("title", title, "body", body),
-                "android", Map.of("priority", "HIGH", "notification", Map.of("sound", "default", "channel_id", "queue"))));
+        Map<String, String> data = new java.util.LinkedHashMap<>();
+        if (payloadJson != null && !payloadJson.isBlank()) {
+            for (var it = json.readTree(payloadJson).fields(); it.hasNext();) { var f = it.next(); data.put(f.getKey(), f.getValue().asText()); }   // FCM data values are strings
+        }
+        // a "your turn" call rings on the loud channel; position updates use a quieter one. One notification per appointment is replaced, not stacked.
+        boolean update = "QUEUE_POSITION".equals(data.get("type"));
+        Map<String, Object> androidNotification = new java.util.LinkedHashMap<>(Map.of("sound", "default", "channel_id", update ? "queue_updates" : "queue"));
+        if (data.get("appointmentId") != null) androidNotification.put("tag", "queue-" + data.get("appointmentId"));
+        Map<String, Object> msg = new java.util.LinkedHashMap<>();
+        msg.put("token", token);
+        msg.put("notification", Map.of("title", title, "body", body));
+        msg.put("android", Map.of("priority", "HIGH", "notification", androidNotification));
+        if (!data.isEmpty()) msg.put("data", data);
+        Map<String, Object> message = Map.of("message", msg);
         HttpRequest req = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(10))
                 .header("Authorization", "Bearer " + accessToken(sa)).header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(message))).build();
@@ -71,18 +84,28 @@ public class PushChannel implements NotificationChannel {
         if (res.statusCode() / 100 != 2) throw new IllegalStateException("FCM " + res.statusCode() + ": " + res.body());
     }
 
+    /** The signed request for a Google access token. `aud` MUST be a single string: Google answers 400 "Failed audience check" for a JSON array. */
+    static String assertion(String clientEmail, String tokenUri, PrivateKey key, Instant now) {
+        return Jwts.builder().issuer(clientEmail).claim("scope", "https://www.googleapis.com/auth/firebase.messaging")
+                .claim("aud", tokenUri).issuedAt(Date.from(now)).expiration(Date.from(now.plusSeconds(3000))).signWith(key, Jwts.SIG.RS256).compact();
+    }
+
+    @jakarta.annotation.PostConstruct
+    void warnIfNotConfigured() {
+        if (!configured()) log.warn("Phone push is NOT configured (FCM_CREDENTIALS_FILE missing or unreadable): notifications are logged, not delivered");
+    }
+
     private synchronized String accessToken(JsonNode sa) throws Exception {
         if (accessToken != null && Instant.now().isBefore(accessExpiry.minusSeconds(60))) return accessToken;
         String pem = sa.path("private_key").asText().replace("-----BEGIN PRIVATE KEY-----", "").replace("-----END PRIVATE KEY-----", "").replaceAll("\\s", "");
         PrivateKey key = KeyFactory.getInstance("RSA").generatePrivate(new PKCS8EncodedKeySpec(Base64.getDecoder().decode(pem)));
         String tokenUri = sa.path("token_uri").asText("https://oauth2.googleapis.com/token");
         Instant now = Instant.now();
-        String assertion = Jwts.builder().issuer(sa.path("client_email").asText()).claim("scope", "https://www.googleapis.com/auth/firebase.messaging")
-                .audience().add(tokenUri).and().issuedAt(Date.from(now)).expiration(Date.from(now.plusSeconds(3000))).signWith(key, Jwts.SIG.RS256).compact();
+        String assertion = assertion(sa.path("client_email").asText(), tokenUri, key, now);
         HttpRequest req = HttpRequest.newBuilder(URI.create(tokenUri)).timeout(Duration.ofSeconds(10)).header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString("grant_type=" + java.net.URLEncoder.encode("urn:ietf:params:oauth:grant-type:jwt-bearer", StandardCharsets.UTF_8) + "&assertion=" + assertion)).build();
         HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
-        if (res.statusCode() != 200) throw new IllegalStateException("Google token " + res.statusCode());
+        if (res.statusCode() != 200) throw new IllegalStateException("Google token " + res.statusCode() + ": " + res.body());
         JsonNode n = json.readTree(res.body());
         accessToken = n.path("access_token").asText();
         accessExpiry = now.plusSeconds(n.path("expires_in").asLong(3000));

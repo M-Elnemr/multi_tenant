@@ -97,8 +97,11 @@ public class NotificationListeners {
                     String title = child != null ? (ar ? "حان دور " + child : child + "'s turn") : (ar ? "حان دورك" : "It's your turn");
                     String body = child != null ? (ar ? "الطبيب جاهز لاستقبال " + child + " الآن." : "The doctor is ready to see " + child + " now.") : (ar ? "الطبيب جاهز لاستقبالك الآن." : "The doctor is ready to see you now.");
                     notifications.notify(u, e.tenantId(), "APPOINTMENT_CALLED", title, body, json("appointmentId", e.appointmentId()), false);
-                    notifications.push(u, e.tenantId(), title, body);   // reaches the patient's phone through Firebase when it is set up
+                    notifications.push(u, e.tenantId(), title, body, "{\"type\":\"QUEUE_CALLED\",\"appointmentId\":\"" + e.appointmentId() + "\"}");   // reaches the patient's phone through Firebase
                 }
+                notifications.dispatchSoon();   // a "your turn" push must not wait for the next 30-second poll
+            } else if ("IN_PROGRESS".equals(e.status()) || "NO_SHOW".equals(e.status())) {
+                queueMoved(e.tenantId(), e.appointmentId(), ar);
             } else if (Set_NEEDS_STAFF.contains(e.status())) {
                 for (UUID staff : staffWith(e.tenantId(), "appointment.manage"))
                     notifications.notify(staff, e.tenantId(), "BOOKING_REQUEST", ar ? "طلب حجز جديد" : "New booking request", ar ? "لديك طلب حجز جديد" : "You have a new booking request", json("appointmentId", e.appointmentId()), false);
@@ -109,6 +112,44 @@ public class NotificationListeners {
                 for (UUID u : patientUsers(e.tenantId(), e.patientId())) notifications.notify(u, e.tenantId(), "APPOINTMENT_" + e.status(), title, body, json("appointmentId", e.appointmentId()), true);
             }
         });
+    }
+
+    /**
+     * Someone ahead left the waiting line (started their visit, or did not show up): everybody behind them in the same doctor's queue that day
+     * is told how many patients are still before them. Each change is announced once (see medical.queue_push_state).
+     */
+    private void queueMoved(UUID tenantId, UUID leftAppointmentId, boolean ar) {
+        String tz = jdbc.sql("SELECT timezone FROM core.tenants WHERE id = :t").param("t", tenantId).query(String.class).optional().orElse("Africa/Cairo");
+        var left = jdbc.sql("SELECT doctor_id, queue_number, checked_in_at FROM medical.appointments WHERE id = :a AND tenant_id = :t").param("a", leftAppointmentId).param("t", tenantId).query().listOfRows().stream().findFirst().orElse(null);
+        if (left == null || left.get("queue_number") == null || left.get("checked_in_at") == null) return;
+        var behind = jdbc.sql("""
+                SELECT b.id, b.patient_id,
+                  (SELECT count(*) FROM medical.appointments c WHERE c.tenant_id = b.tenant_id AND c.doctor_id = b.doctor_id AND c.status = 'CHECKED_IN'
+                     AND (c.checked_in_at AT TIME ZONE :tz)::date = (b.checked_in_at AT TIME ZONE :tz)::date AND c.queue_number < b.queue_number) AS ahead
+                FROM medical.appointments b
+                WHERE b.tenant_id = :t AND b.doctor_id = :d AND b.status = 'CHECKED_IN' AND b.queue_number > :n
+                  AND (b.checked_in_at AT TIME ZONE :tz)::date = (CAST(:ci AS timestamptz) AT TIME ZONE :tz)::date
+                """).param("t", tenantId).param("d", left.get("doctor_id")).param("n", left.get("queue_number")).param("tz", tz).param("ci", left.get("checked_in_at")).query().listOfRows();
+        boolean any = false;
+        for (var b : behind) {
+            UUID appt = (UUID) b.get("id");
+            int ahead = ((Number) b.get("ahead")).intValue();
+            Integer last = jdbc.sql("SELECT last_ahead FROM medical.queue_push_state WHERE appointment_id = :a").param("a", appt).query(Integer.class).optional().orElse(null);
+            if (last != null && ahead >= last) continue;   // nothing new to say
+            jdbc.sql("""
+                    INSERT INTO medical.queue_push_state (appointment_id, last_ahead) VALUES (:a, :n)
+                    ON CONFLICT (appointment_id) DO UPDATE SET last_ahead = :n, updated_at = now()
+                    """).param("a", appt).param("n", ahead).update();
+            UUID patientId = (UUID) b.get("patient_id");
+            String child = dependentName(tenantId, patientId);
+            String title = ar ? "تقدّمت في الدور" : "You moved up in the queue";
+            String body = ahead == 0
+                    ? (child != null ? (ar ? child + " هو التالي" : child + " is next") : (ar ? "أنت التالي" : "You are next"))
+                    : (child != null ? (ar ? "قبل " + child + " " + ahead + " مرضى" : ahead + " patient(s) before " + child) : (ar ? ahead + " مرضى قبلك" : ahead + " patient(s) before you"));
+            String payload = "{\"type\":\"QUEUE_POSITION\",\"appointmentId\":\"" + appt + "\",\"aheadOfYou\":\"" + ahead + "\"}";
+            for (UUID u : patientUsers(tenantId, patientId)) { notifications.push(u, tenantId, title, body, payload); any = true; }
+        }
+        if (any) notifications.dispatchSoon();
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)

@@ -6,12 +6,14 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import 'package:platform_core/platform_core.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'mode.dart';
 import 'push.dart';
 import 'shop/shop.dart';
 
-const appVersion = '1.0.4';
+const appVersion = '1.0.5';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -32,8 +34,31 @@ class ElmanassaApp extends StatelessWidget {
           locale: locale,
           localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],
           supportedLocales: const [Locale('ar'), Locale('en')],
-          home: const Landing(),
+          home: const StartGate(),
         ),
+      );
+}
+
+/// Decides the first screen: the remembered side (clinics / shop) opens straight away; the choice screen only shows when nothing is remembered.
+class StartGate extends StatefulWidget {
+  const StartGate({super.key});
+  @override
+  State<StartGate> createState() => _StartGateState();
+}
+
+class _StartGateState extends State<StartGate> {
+  late final Future<String?> _mode = AppMode.get();
+  @override
+  Widget build(BuildContext context) => FutureBuilder<String?>(
+        future: _mode,
+        builder: (context, snap) {
+          if (snap.connectionState != ConnectionState.done) return const Scaffold(body: Center(child: BrandLogo(size: 110)));
+          return switch (snap.data) {
+            AppMode.clinics => const PlatformGate(autoOpen: true),
+            AppMode.shop => const ShopEntry(),
+            _ => const Landing(),
+          };
+        },
       );
 }
 
@@ -44,10 +69,10 @@ class Landing extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = S.of(context);
     final ar = s.ar;
-    Widget card(int i, IconData icon, String title, String sub, List<Color> colors, Widget Function() page) => FadeSlideIn(
+    Widget card(int i, String mode, IconData icon, String title, String sub, List<Color> colors, Widget Function() page) => FadeSlideIn(
           index: i + 2,
           child: PressScale(
-            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => page())),
+            onTap: () async { await AppMode.set(mode); if (context.mounted) Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => page())); },
             child: Container(
               margin: const EdgeInsets.only(bottom: 16),
               padding: const EdgeInsets.all(20),
@@ -86,8 +111,8 @@ class Landing extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.all(20),
           child: Column(children: [
-            card(0, Icons.local_hospital_rounded, ar ? 'العيادات' : 'Clinics', ar ? 'الدور، السجل الطبي، التحاليل والروشتات' : 'Queue, medical record, tests and prescriptions', [const Color(0xFF1F6A99), const Color(0xFF2E8FB8)], () => const PlatformGate()),
-            card(1, Icons.storefront_rounded, ar ? 'التسوق' : 'Shop', ar ? 'اختر متجراً واطلب بالدفع عند الاستلام' : 'Pick a shop and order, cash on delivery', [const Color(0xFF3D9A63), const Color(0xFF52B77B)], () => const ShopEntry()),
+            card(0, AppMode.clinics, Icons.local_hospital_rounded, ar ? 'العيادات' : 'Clinics', ar ? 'الدور، السجل الطبي، التحاليل والروشتات' : 'Queue, medical record, tests and prescriptions', [const Color(0xFF1F6A99), const Color(0xFF2E8FB8)], () => const PlatformGate()),
+            card(1, AppMode.shop, Icons.storefront_rounded, ar ? 'التسوق' : 'Shop', ar ? 'اختر متجراً واطلب بالدفع عند الاستلام' : 'Pick a shop and order, cash on delivery', [const Color(0xFF3D9A63), const Color(0xFF52B77B)], () => const ShopEntry()),
             const SizedBox(height: 4),
             FadeSlideIn(index: 5, child: Text('${s.version} $appVersion', style: const TextStyle(color: Color(0xFF8A99AA), fontSize: 12))),
           ]),
@@ -101,7 +126,9 @@ class Landing extends StatelessWidget {
 /// One sign-in covers every clinic the patient belongs to; the server decides per clinic address what the token may see,
 /// so each clinic's data stays separate.
 class PlatformGate extends StatefulWidget {
-  const PlatformGate({super.key});
+  const PlatformGate({super.key, this.autoOpen = false});
+  /// Reopening the app: go straight into the patient's own clinic (the only one, or the last used) instead of the list.
+  final bool autoOpen;
   @override
   State<PlatformGate> createState() => _PlatformGateState();
 }
@@ -137,7 +164,7 @@ class _PlatformGateState extends State<PlatformGate> {
       return LoginScreen(api: platform, app: 'client', title: S.of(context).ar ? 'العيادات' : 'Clinics', subtitle: S.of(context).ar ? 'سجّل الدخول بالرقم وكلمة المرور من عيادتك' : 'Sign in with the number and password from your clinic', onLoggedIn: (u) => setState(() { mustChange = u['mustChangePassword'] == true; loggedIn = true; }));
     }
     if (mustChange) return ChangeTempPassword(api: platform, onDone: () => setState(() => mustChange = false));
-    return MyClinics(platform: platform, session: session, onLogout: () => setState(() => loggedIn = false));
+    return MyClinics(platform: platform, session: session, autoOpen: widget.autoOpen, onLogout: () async { await AppMode.clear(); if (context.mounted) Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const Landing()), (r) => false); });
   }
 }
 
@@ -189,31 +216,51 @@ class _ChangeTempPasswordState extends State<ChangeTempPassword> {
 }
 
 class MyClinics extends StatefulWidget {
-  const MyClinics({super.key, required this.platform, required this.session, required this.onLogout});
+  const MyClinics({super.key, required this.platform, required this.session, required this.onLogout, this.autoOpen = false});
+  final bool autoOpen;
   final ApiClient platform;
   final Session session;
-  final VoidCallback onLogout;
+  final Future<void> Function() onLogout;
   @override
   State<MyClinics> createState() => _MyClinicsState();
 }
 
 class _MyClinicsState extends State<MyClinics> {
-  bool pushAsked = false;
   ApiClient? pushApi;
   String? pushToken;
+  bool autoOpened = false;
 
-  /// The phone's push token is registered through one of the patient's clinics (the account is the same everywhere).
+  /// The phone's push token belongs to the patient's account; it is registered through one of their clinics and the attempt is repeated
+  /// (on every build of this list) until it has succeeded, so a failed first try never leaves the phone without notifications.
   void _startPush(List<Map<String, dynamic>> clinics) {
-    if (pushAsked || clinics.isEmpty) return;
-    pushAsked = true;
+    if (PushService.registered || clinics.isEmpty) return;
     final api = ApiClient(baseUrl: baseForHost(clinics.first['host'] as String), session: widget.session);
     pushApi = api;
-    PushService.start((token) async {
+    PushService.ensure((token) async {
       pushToken = token;
-      try {
-        await api.post('portal/devices', {'token': token, 'platform': defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android'});
-      } catch (_) {}
+      await api.post('portal/devices', {'token': token, 'platform': defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android'});
     });
+  }
+
+  Future<void> _openClinic(Map<String, dynamic> c, Future<void> Function() reload) async {
+    try { (await SharedPreferences.getInstance()).setString('clinic.last', c['id'] as String); } catch (_) {}
+    if (!mounted) return;
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => ClinicScreen(name: c['name'] as String, api: ApiClient(baseUrl: baseForHost(c['host'] as String), session: widget.session), onLeft: reload),
+    ));
+  }
+
+  Future<void> _maybeAutoOpen(List<Map<String, dynamic>> clinics, Future<void> Function() reload) async {
+    if (!widget.autoOpen || autoOpened || clinics.isEmpty) return;
+    autoOpened = true;
+    Map<String, dynamic>? pick = clinics.length == 1 ? clinics.first : null;
+    if (pick == null) {
+      try {
+        final last = (await SharedPreferences.getInstance()).getString('clinic.last');
+        for (final c in clinics) { if (c['id'] == last) pick = c; }
+      } catch (_) {}
+    }
+    if (pick != null) await _openClinic(pick, reload);
   }
 
   @override
@@ -221,6 +268,7 @@ class _MyClinicsState extends State<MyClinics> {
     final s = S.of(context);
     return Scaffold(
       appBar: AppBar(title: Text(s.myClinics), actions: [
+        IconButton(tooltip: s.ar ? 'تغيير القسم' : 'Switch section', icon: const Icon(Icons.swap_horiz_rounded), onPressed: () async { await AppMode.clear(); if (context.mounted) Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const Landing()), (r) => false); }),
         IconButton(
           tooltip: s.logout,
           icon: const Icon(Icons.logout),
@@ -239,7 +287,7 @@ class _MyClinicsState extends State<MyClinics> {
         load: () async => await widget.platform.get('me/tenants') as List<dynamic>,
         builder: (context, all, reload) {
           final clinics = all.cast<Map<String, dynamic>>().where((t) => t['type'] == 'CLINIC' && t['host'] != null).toList();
-          WidgetsBinding.instance.addPostFrameCallback((_) => _startPush(clinics));
+          WidgetsBinding.instance.addPostFrameCallback((_) { _startPush(clinics); _maybeAutoOpen(clinics, reload); });
           if (clinics.isEmpty) return Center(child: Padding(padding: const EdgeInsets.all(32), child: Text(s.ar ? 'لا توجد عيادة مسجّل بها هذا الحساب بعد. العيادة هي من تضيفك.' : 'No clinic has added you yet. Your clinic registers you.', textAlign: TextAlign.center)));
           // One clinic: go straight in.
           return RefreshIndicator(
@@ -253,9 +301,7 @@ class _MyClinicsState extends State<MyClinics> {
                     title: Text(c['name'] as String),
                     subtitle: Text(c['host'] as String, textDirection: TextDirection.ltr),
                     trailing: const Icon(Icons.chevron_right),
-                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => ClinicScreen(name: c['name'] as String, api: ApiClient(baseUrl: baseForHost(c['host'] as String), session: widget.session), onLeft: reload),
-                    )),
+                    onTap: () => _openClinic(c, reload),
                   ),
                 ),
             ]),
@@ -338,15 +384,19 @@ class _QueuePageState extends State<QueuePage> {
   Map<String, dynamic>? data;
   Object? error;
 
+  void _ping() { _load(); }
+
   @override
   void initState() {
     super.initState();
     _load();
     timer = Timer.periodic(const Duration(seconds: 10), (_) => _load());
+    queuePing.addListener(_ping);   // a push arrived while the app is open: refresh now
   }
 
   @override
   void dispose() {
+    queuePing.removeListener(_ping);
     timer?.cancel();
     super.dispose();
   }
@@ -376,6 +426,12 @@ class _QueuePageState extends State<QueuePage> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(children: [
+        ValueListenableBuilder<bool?>(
+          valueListenable: PushService.allowed,
+          builder: (context, ok, _) => ok == false
+              ? Container(margin: const EdgeInsets.fromLTRB(16, 12, 16, 0), padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFFFF4DD), borderRadius: BorderRadius.circular(14)), child: Row(children: [const Icon(Icons.notifications_off_rounded, color: Color(0xFFD98200)), const SizedBox(width: 10), Expanded(child: Text(s.ar ? 'الإشعارات متوقفة. فعّلها من إعدادات الهاتف لتصلك رسالة عند حلول دورك.' : 'Notifications are off. Turn them on in the phone settings to be told when it is your turn.', style: const TextStyle(fontWeight: FontWeight.w600)))]))
+              : const SizedBox.shrink(),
+        ),
         for (final q in queue)
           Card(
             color: q['called'] == true ? Colors.green.shade50 : null,
@@ -625,7 +681,13 @@ class _RecordPageState extends State<RecordPage> {
                 child: Wrap(spacing: 8, children: [
                   for (final p in (t['_patients'] as List).cast<Map<String, dynamic>>())
                     ChoiceChip(
-                      label: Text('${p['firstName']}'),
+                      // solid colours: the default pale fill made the names hard to read
+                      showCheckmark: false,
+                      avatar: Icon(p['guardianPatientId'] == null ? Icons.person_rounded : Icons.child_care_rounded, size: 18, color: p['id'] == t['_chosen'] ? Colors.white : Theme.of(context).colorScheme.primary),
+                      label: Text('${p['firstName']}', style: TextStyle(fontWeight: FontWeight.w800, color: p['id'] == t['_chosen'] ? Colors.white : const Color(0xFF14232B))),
+                      selectedColor: Theme.of(context).colorScheme.primary,
+                      backgroundColor: Colors.white,
+                      side: BorderSide(color: p['id'] == t['_chosen'] ? Colors.transparent : const Color(0xFFB9C7D6), width: 1.2),
                       selected: p['id'] == t['_chosen'],
                       onSelected: (_) => setState(() { patientId = p['id'] as String; version++; }),
                     ),

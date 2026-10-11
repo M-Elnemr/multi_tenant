@@ -41,11 +41,22 @@ public class NotificationService {
 
     /** Phone push: one outbox row per registered device of this person (sent by PushChannel, with retry). */
     @Transactional
-    public void push(UUID principalId, UUID tenantId, String title, String body) {
+    public void push(UUID principalId, UUID tenantId, String title, String body) { push(principalId, tenantId, title, body, null); }
+
+    /** Same, with a JSON payload (e.g. {"type":"QUEUE_CALLED","appointmentId":"..."}) delivered with the push. */
+    @Transactional
+    public void push(UUID principalId, UUID tenantId, String title, String body, String payloadJson) {
         jdbc.sql("""
-                INSERT INTO notifications.outbox (user_id, tenant_id, channel, to_address, subject, body)
-                SELECT :u, :t, 'PUSH', token, :s, :b FROM notifications.device_tokens WHERE principal_id = :u
-                """).param("u", principalId).param("t", tenantId).param("s", title).param("b", body).update();
+                INSERT INTO notifications.outbox (user_id, tenant_id, channel, to_address, subject, body, payload)
+                SELECT :u, :t, 'PUSH', token, :s, :b, CAST(:p AS jsonb) FROM notifications.device_tokens WHERE principal_id = :u
+                """).param("u", principalId).param("t", tenantId).param("s", title).param("b", body).param("p", payloadJson).update();
+    }
+
+    /** Sends what is waiting in the outbox in a moment (not at the next 30-second poll): a "your turn" push should not wait. */
+    public void dispatchSoon() {
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            try { Thread.sleep(700); dispatchOutbox(); } catch (Exception e) { log.warn("Quick dispatch failed: {}", e.getMessage()); }
+        });
     }
 
     @Transactional
@@ -64,13 +75,13 @@ public class NotificationService {
 
     /** Background sender with retry; a failing provider only delays messages, never the business action that caused them. */
     @Scheduled(fixedDelayString = "PT30S", initialDelayString = "PT20S")
-    public void dispatchOutbox() {
-        var batch = jdbc.sql("SELECT id, channel, to_address, subject, body, attempts FROM notifications.outbox WHERE status = 'PENDING' ORDER BY created_at LIMIT 50").query().listOfRows();
+    public synchronized void dispatchOutbox() {
+        var batch = jdbc.sql("SELECT id, channel, to_address, subject, body, payload::text AS payload, attempts FROM notifications.outbox WHERE status = 'PENDING' ORDER BY created_at LIMIT 50").query().listOfRows();
         for (var m : batch) {
             UUID id = (UUID) m.get("id");
             try {
                 NotificationChannel ch = channels.stream().filter(c -> c.code().equals(m.get("channel"))).findFirst().orElseThrow(() -> new IllegalStateException("No channel " + m.get("channel")));
-                ch.send((String) m.get("to_address"), (String) m.get("subject"), (String) m.get("body"));
+                ch.send((String) m.get("to_address"), (String) m.get("subject"), (String) m.get("body"), (String) m.get("payload"));
                 jdbc.sql("UPDATE notifications.outbox SET status = 'SENT', sent_at = now(), attempts = attempts + 1 WHERE id = :i").param("i", id).update();
             } catch (Exception e) {
                 int attempts = ((Number) m.get("attempts")).intValue() + 1;

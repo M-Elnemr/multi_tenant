@@ -5,35 +5,46 @@ import 'package:flutter/material.dart';
 /// Messenger used to show a banner when a push arrives while the app is open (the system shows it when the app is closed).
 final GlobalKey<ScaffoldMessengerState> messengerKey = GlobalKey<ScaffoldMessengerState>();
 
-/// Firebase Cloud Messaging for "it's your turn". Safe before Firebase is set up: without google-services.json
-/// initialisation fails quietly and the queue screen simply keeps refreshing itself.
-class PushService {
-  static bool _started = false;
+/// Bumped whenever a queue push arrives while the app is open, so the queue screen refreshes itself at once.
+final ValueNotifier<int> queuePing = ValueNotifier<int>(0);
 
-  /// [register] sends the phone's token to the clinic server so the doctor's "call" reaches this phone.
-  static Future<void> start(Future<void> Function(String token) register) async {
-    if (_started) return;
+/// Firebase Cloud Messaging: "it's your turn" and "N patients before you". Registration is retried until it works.
+class PushService {
+  static bool _listening = false;
+  static bool registered = false;
+  /// null = unknown, false = the user turned notifications off for this app.
+  static final ValueNotifier<bool?> allowed = ValueNotifier<bool?>(null);
+
+  /// [register] sends the phone's token to the server (under the patient's account) so the clinic's calls reach this phone.
+  /// Safe to call again and again: it only does the work that is still missing.
+  static Future<void> ensure(Future<void> Function(String token) register) async {
     try {
-      await Firebase.initializeApp();
+      if (Firebase.apps.isEmpty) await Firebase.initializeApp();
       final m = FirebaseMessaging.instance;
-      await m.requestPermission();
+      final settings = await m.requestPermission();
+      allowed.value = settings.authorizationStatus == AuthorizationStatus.authorized || settings.authorizationStatus == AuthorizationStatus.provisional;
       final token = await m.getToken();
-      if (token != null) await register(token);
-      m.onTokenRefresh.listen((t) => register(t));
-      FirebaseMessaging.onMessage.listen((msg) {
-        final n = msg.notification;
-        if (n == null) return;
-        messengerKey.currentState?.showSnackBar(SnackBar(
-          duration: const Duration(seconds: 10),
-          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(n.title ?? '', style: const TextStyle(fontWeight: FontWeight.w700)),
-            if ((n.body ?? '').isNotEmpty) Text(n.body!),
-          ]),
-        ));
-      });
-      _started = true;
+      if (token != null) { await register(token); registered = true; }
+      if (!_listening) {
+        _listening = true;
+        m.onTokenRefresh.listen((t) { register(t).catchError((_) {}); });
+        FirebaseMessaging.onMessage.listen((msg) {
+          final type = msg.data['type'] as String?;
+          if (type == 'QUEUE_CALLED' || type == 'QUEUE_POSITION') queuePing.value++;
+          final n = msg.notification;
+          if (n == null) return;
+          messengerKey.currentState?.showSnackBar(SnackBar(
+            duration: const Duration(seconds: 10),
+            content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(n.title ?? '', style: const TextStyle(fontWeight: FontWeight.w700)),
+              if ((n.body ?? '').isNotEmpty) Text(n.body!),
+            ]),
+          ));
+        });
+        FirebaseMessaging.onMessageOpenedApp.listen((_) => queuePing.value++);
+      }
     } catch (_) {
-      // Firebase is not configured for this build yet
+      registered = false;   // tried again on the next app start / screen build
     }
   }
 
