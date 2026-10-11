@@ -5,6 +5,7 @@ import 'clinic_panel.dart';
 import 'common.dart';
 import 'dashboards.dart';
 import 'domains_billing.dart';
+import 'exam.dart';
 import 'settings.dart';
 import 'store_panel.dart';
 
@@ -25,7 +26,7 @@ List<PanelSection> clinicSections() => [
       PanelSection('قاعة الانتظار', 'Waiting room', Icons.groups_rounded, perm: 'appointment.manage', build: (c) => QueueScreen(ctx: c)),
       PanelSection('المواعيد', 'Appointments', Icons.calendar_month_rounded, perm: 'appointment.manage', build: (c) => AppointmentsScreen(ctx: c)),
       PanelSection('المرضى', 'Patients', Icons.people_alt_rounded, perm: 'patient.read', build: (c) => PatientsScreen(ctx: c)),
-      const PanelSection('الكشف الحالي', 'Current exam', Icons.medical_services_rounded, perm: 'medical_note.create', webPath: '/dashboard/current'),
+      PanelSection('الكشف الحالي', 'Current exam', Icons.medical_services_rounded, perm: 'medical_note.create', build: (c) => CurrentExam(ctx: c)),
       PanelSection('مواعيد العمل', 'Schedule', Icons.schedule_rounded, perm: 'schedule.manage', build: (c) => ScheduleScreen(ctx: c)),
       PanelSection('الخدمات', 'Services', Icons.checklist_rounded, perm: ['schedule.manage', 'appointment.manage'], build: (c) => ServicesScreen(ctx: c)),
       PanelSection('الإعدادات', 'Settings', Icons.settings_rounded, perm: ['settings.manage', 'schedule.manage'], build: (c) => ClinicSettings(ctx: c)),
