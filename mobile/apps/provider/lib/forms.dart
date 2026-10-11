@@ -6,7 +6,7 @@ import 'package:platform_core/platform_core.dart';
 import 'common.dart';
 
 /// Small declarative form kit so every settings page is a list of fields instead of hand-written widgets.
-enum FK { text, area, ltr, number, money, toggle, image, csv, hours, color, choice, faqs, gallery, chips }
+enum FK { text, area, ltr, number, money, toggle, image, csv, hours, color, choice, faqs, pairs, gallery, chips }
 
 class F {
   const F(this.kind, this.key, this.ar, this.en, {this.options, this.category = 'PRODUCT_IMAGE', this.hint, this.required = false});
@@ -304,16 +304,19 @@ class _FormCardState extends State<FormCard> {
             ),
           ]),
         ]));
+      case FK.pairs:
       case FK.faqs:
+        final pairs = f.kind == FK.pairs;
+        final k1 = pairs ? 'k' : 'q', k2 = pairs ? 'v' : 'a';
         final list = ((m![f.key] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
         return Padding(padding: const EdgeInsets.only(bottom: 10), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
           for (var i = 0; i < list.length; i++) Card(margin: const EdgeInsets.only(top: 8), child: Padding(padding: const EdgeInsets.all(10), child: Column(children: [
-            TextFormField(initialValue: '${list[i]['q'] ?? ''}', decoration: InputDecoration(labelText: isAr ? 'السؤال' : 'Question'), onChanged: (v) { list[i]['q'] = v; m![f.key] = list; }),
-            TextFormField(initialValue: '${list[i]['a'] ?? ''}', maxLines: 2, decoration: InputDecoration(labelText: isAr ? 'الإجابة' : 'Answer'), onChanged: (v) { list[i]['a'] = v; m![f.key] = list; }),
+            TextFormField(initialValue: '${list[i][k1] ?? ''}', decoration: InputDecoration(labelText: pairs ? (isAr ? 'الاسم' : 'Name') : (isAr ? 'السؤال' : 'Question')), onChanged: (v) { list[i][k1] = v; m![f.key] = list; }),
+            TextFormField(initialValue: '${list[i][k2] ?? ''}', maxLines: pairs ? 1 : 2, decoration: InputDecoration(labelText: pairs ? (isAr ? 'القيمة' : 'Value') : (isAr ? 'الإجابة' : 'Answer')), onChanged: (v) { list[i][k2] = v; m![f.key] = list; }),
             Align(alignment: AlignmentDirectional.centerEnd, child: TextButton.icon(onPressed: () => setState(() { list.removeAt(i); m![f.key] = list; }), icon: const Icon(Icons.delete_outline), label: Text(isAr ? 'حذف' : 'Remove'))),
           ]))),
-          TextButton.icon(onPressed: () => setState(() { list.add({'q': '', 'a': ''}); m![f.key] = list; }), icon: const Icon(Icons.add), label: Text(isAr ? 'إضافة سؤال' : 'Add question')),
+          TextButton.icon(onPressed: () => setState(() { list.add({k1: '', k2: ''}); m![f.key] = list; }), icon: const Icon(Icons.add), label: Text(pairs ? (isAr ? 'إضافة' : 'Add') : (isAr ? 'إضافة سؤال' : 'Add question'))),
         ]));
       case FK.hours:
         final h = Map<String, dynamic>.from((m![f.key] as Map?) ?? {});

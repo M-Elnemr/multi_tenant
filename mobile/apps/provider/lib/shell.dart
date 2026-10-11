@@ -6,6 +6,7 @@ import 'common.dart';
 import 'dashboards.dart';
 import 'domains_billing.dart';
 import 'exam.dart';
+import 'products.dart';
 import 'settings.dart';
 import 'store_panel.dart';
 

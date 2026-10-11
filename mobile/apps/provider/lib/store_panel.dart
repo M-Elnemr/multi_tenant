@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:platform_core/platform_core.dart';
 
 import 'common.dart';
+import 'products.dart';
 
 // ---------------------------------------------------------------- Orders
 
@@ -206,10 +207,10 @@ class ProductsScreen extends StatelessWidget {
           title: Text('${p['name']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800)),
           subtitle: Text('${s.money(p['minPriceMinor'] as num?, (p['currency'] as String?) ?? ctx.currency)} · ${ar ? 'متاح' : 'in stock'}: ${p['available']}'),
           trailing: StatusPill('${p['status']}'),
-          onTap: () => launch('https://${ctx.host}/dashboard/products/${p['id']}'),
+          onTap: () async { await Navigator.of(c).push(MaterialPageRoute(builder: (_) => ProductFormPage(ctx: ctx, id: '${p['id']}'))); reload(); },
         )),
       )),
-      Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 8), child: WebLinkCard(title: ar ? 'إضافة منتج جديد أو تعديل الصور والخيارات' : 'Add a product or edit photos and options', icon: Icons.add_photo_alternate_rounded, url: 'https://${ctx.host}/dashboard/products/new')),
+      if (ctx.can('product.create')) Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 8), child: FilledButton.icon(onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProductFormPage(ctx: ctx))), icon: const Icon(Icons.add_photo_alternate_rounded), label: Text(ar ? 'إضافة منتج جديد' : 'Add a new product'))),
     ]);
   }
 }
@@ -307,32 +308,3 @@ class CustomersScreen extends StatelessWidget {
   }
 }
 
-class CouponsScreen extends StatelessWidget {
-  const CouponsScreen({super.key, required this.ctx});
-  final Ctx ctx;
-  @override
-  Widget build(BuildContext context) {
-    final s = S.of(context);
-    final ar = s.ar;
-    return Async<List<dynamic>>(
-      load: () async => await ctx.api.get('store/coupons') as List<dynamic>,
-      builder: (context, list, reload) {
-        final items = list.cast<Map<String, dynamic>>();
-        return RefreshIndicator(
-          onRefresh: reload,
-          child: ListView(padding: const EdgeInsets.all(16), children: [
-            for (var i = 0; i < items.length; i++)
-              FadeSlideIn(index: i, child: Card(child: ListTile(
-                leading: const Icon(Icons.local_offer_rounded),
-                title: Text('${items[i]['code']}', textDirection: TextDirection.ltr, textAlign: TextAlign.start, style: const TextStyle(fontWeight: FontWeight.w900)),
-                subtitle: Text('${items[i]['discountType'] == 'PERCENT' ? '${items[i]['value']}%' : s.money(items[i]['value'] as num, ctx.currency)} · ${ar ? 'استخدم' : 'used'} ${items[i]['redemptions']}'),
-                trailing: StatusPill(items[i]['isActive'] == true ? 'ACTIVE' : 'HIDDEN'),
-              ))),
-            if (items.isEmpty) emptyState(ar ? 'لا توجد كوبونات' : 'No coupons'),
-            WebLinkCard(title: ar ? 'إنشاء أو تعديل الكوبونات' : 'Create or edit coupons', icon: Icons.edit_note_rounded, url: 'https://${ctx.host}/dashboard/coupons'),
-          ]),
-        );
-      },
-    );
-  }
-}
