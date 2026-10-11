@@ -19,12 +19,12 @@ class ApiException implements Exception {
 /// Talks to the platform API. The tenant (store/clinic) is chosen purely by the host in [baseUrl]
 /// (e.g. https://fashion.example.com), exactly like the website: the server never trusts a tenant id from the client.
 class ApiClient {
-  ApiClient({required this.baseUrl, required this.session, http.Client? client, this.maxAttempts = 3, this.attemptTimeout = const Duration(seconds: 20)}) : _http = client ?? _shared;
+  ApiClient({required this.baseUrl, required this.session, http.Client? client, this.maxAttempts = 5, this.attemptTimeout = const Duration(seconds: 20)}) : _http = client ?? _shared;
 
-  /// One connection pool for the whole app. A connection that cannot be opened within 6 s is abandoned and retried (the server edge sometimes drops a
+  /// One connection pool for the whole app. A connection that cannot be opened within 5 s is abandoned and retried (the server edge sometimes drops a
   /// new TCP connection; without this limit the screen would wait for the operating system's multi-minute timeout).
   static final http.Client _shared = IOClient(HttpClient()
-    ..connectionTimeout = const Duration(seconds: 6)
+    ..connectionTimeout = const Duration(seconds: 5)
     ..idleTimeout = const Duration(seconds: 20));
 
   final int maxAttempts;
