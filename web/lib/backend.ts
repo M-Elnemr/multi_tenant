@@ -50,10 +50,24 @@ export async function backendAsUser<T>(path: string, opts: Omit<Opts, "token"> =
   return backendJson<T>(path, { ...opts, token: s.accessToken });
 }
 
-export async function refreshTokens(s: SessionData, host: string): Promise<SessionData | null> {
-  if (!s.refreshToken) return null;
+// Several parallel requests can carry the same expiring session. A refresh token is single-use (reusing a rotated one is treated as theft and
+// revokes the whole session), so concurrent refreshes with the same token share ONE backend call, and its result is remembered briefly.
+const refreshing = new Map<string, Promise<SessionData | null>>();
+
+export function refreshTokens(s: SessionData, host: string): Promise<SessionData | null> {
+  if (!s.refreshToken) return Promise.resolve(null);
+  const key = `${host}|${s.refreshToken}`;
+  const hit = refreshing.get(key);
+  if (hit) return hit;
+  const p = refreshOnce(s.refreshToken, host);
+  refreshing.set(key, p);
+  void p.finally(() => setTimeout(() => refreshing.delete(key), 15_000));
+  return p;
+}
+
+async function refreshOnce(refreshToken: string, host: string): Promise<SessionData | null> {
   try {
-    const res = await backendFetch("/auth/refresh", { method: "POST", body: { refreshToken: s.refreshToken }, host });
+    const res = await backendFetch("/auth/refresh", { method: "POST", body: { refreshToken }, host });
     if (!res.ok) return null;
     const j = await res.json();
     return { accessToken: j.accessToken, refreshToken: j.refreshToken, accessExpiresAt: Date.now() + (j.expiresIn ?? 900) * 1000 };

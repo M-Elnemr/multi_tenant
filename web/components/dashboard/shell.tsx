@@ -49,7 +49,10 @@ export function DashboardShell({ nav, children }: { nav: NavItem[]; children: Re
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
   }, [open]);
-  if (!ready || !me) return <div className="p-6"><Loading /></div>;
+  // Patients and shop customers have no control panel: send them to their own area instead of an almost empty dashboard.
+  const customerOnly = !!me && me.roles.length > 0 && me.roles.every((r) => r === "PATIENT" || r === "CUSTOMER");
+  useEffect(() => { if (customerOnly) router.replace(me!.roles.includes("PATIENT") ? "/portal" : "/account"); }, [customerOnly, me, router]);
+  if (!ready || !me || customerOnly) return <div className="p-6"><Loading /></div>;
 
   const allowed = nav.filter((n) => !n.perm || (Array.isArray(n.perm) ? n.perm.some(can) : can(n.perm)));
   const isActive = (n: NavItem) => (n.href === "/dashboard" ? path === n.href : path.startsWith(n.href));

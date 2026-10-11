@@ -30,8 +30,10 @@ public class SsoService {
     private final UserRepository users;
     private final LoginThrottle throttle;
     private final AuditService audit;
+    private final AccountAuthService accounts;
 
-    public SsoService(JdbcClient jdbc, AuthService auth, UserRepository users, LoginThrottle throttle, AuditService audit) {
+    public SsoService(JdbcClient jdbc, AuthService auth, UserRepository users, LoginThrottle throttle, AuditService audit, AccountAuthService accounts) {
+        this.accounts = accounts;
         this.jdbc = jdbc;
         this.auth = auth;
         this.users = users;
@@ -45,7 +47,8 @@ public class SsoService {
                 SELECT count(*) FROM core.user_tenant_memberships m JOIN core.tenants t ON t.id = m.tenant_id
                 WHERE m.user_id = :u AND m.tenant_id = :t AND m.status = 'ACTIVE' AND t.status NOT IN ('ARCHIVED','CANCELLED')
                 """).param("u", userId).param("t", tenantId).query(Long.class).single();
-        if (member == 0) throw BusinessException.notFound("RESOURCE_NOT_FOUND", "Not found");   // same answer for "no such place" and "not yours"
+        // A patient (their own account, not a staff user) may also open a clinic where they have a record.
+        if (member == 0 && !accounts.hasPatientRecord(userId, tenantId)) throw BusinessException.notFound("RESOURCE_NOT_FOUND", "Not found");   // same answer for "no such place" and "not yours"
         byte[] raw = new byte[32];
         RANDOM.nextBytes(raw);
         String ticket = Base64.getUrlEncoder().withoutPadding().encodeToString(raw);
@@ -63,9 +66,15 @@ public class SsoService {
                 WHERE token_hash = :h AND tenant_id = :t AND used_at IS NULL AND expires_at > now() RETURNING user_id
                 """).param("h", hash(ticket)).param("t", tenantId).query(UUID.class).optional().orElse(null);
         if (userId == null) throw BusinessException.unauthorized("INVALID_TICKET", "This sign-in link is invalid or expired");
-        User user = users.findById(userId).filter(u -> u.getStatus() == User.Status.ACTIVE).orElseThrow(() -> BusinessException.unauthorized("INVALID_TICKET", "This sign-in link is invalid or expired"));
+        var staff = users.findById(userId).filter(u -> u.getStatus() == User.Status.ACTIVE);
+        if (staff.isEmpty()) {
+            // not a staff user: it is a patient account that was handed off to its clinic
+            if (!accounts.hasPatientRecord(userId, tenantId)) throw BusinessException.unauthorized("INVALID_TICKET", "This sign-in link is invalid or expired");
+            audit.record(userId, tenantId, "SSO_HANDOFF", "patient_account", userId, null);
+            return accounts.issuePatientTokens(userId, ip, userAgent);
+        }
         audit.record(userId, tenantId, "SSO_HANDOFF", "user", userId, null);
-        return auth.issueFor(user, ip, userAgent);
+        return auth.issueFor(staff.get(), ip, userAgent);
     }
 
     private static String hash(String ticket) {

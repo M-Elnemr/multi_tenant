@@ -8,7 +8,7 @@ import { useT } from "./i18n-provider";
 import { Button, ErrorText, Field, Input } from "./ui";
 import { IdentifierInput } from "@/components/inputs";
 
-type Me = { roles: string[]; permissions: string[] };
+type Me = { roles: string[]; permissions: string[]; mustChangePassword?: boolean };
 type Step = "identify" | "password" | "activate" | "reset";
 
 /** Phone/email + password. First-time users (and anyone who forgot their password) use the one-time PIN given by the business: no SMS. */
@@ -21,14 +21,20 @@ export function LoginForm({ defaultIdentifier = "" }: { defaultIdentifier?: stri
   const [password, setPassword] = useState("");
   const [pin, setPin] = useState("");
 
+  /** Where this identity belongs. `next` is honoured only when it is somewhere that identity can actually use. */
   async function finish() {
     const me = await api<Me>("auth/me");
+    const patient = me.roles.includes("PATIENT");
+    const staff = me.roles.some((r) => r !== "CUSTOMER" && r !== "PATIENT");
     let target = "/";
-    if (me.permissions.some((p) => p.startsWith("platform."))) target = "/admin";
-    else if (me.roles.includes("PATIENT")) target = "/portal";
-    else if (me.roles.length === 0) target = "/portal";   // platform host: show every place this person belongs to
-    else if (me.roles.some((r) => r !== "CUSTOMER")) target = "/dashboard";
-    router.replace(next && next.startsWith("/") && !next.startsWith("//") ? next : target);
+    let allowed: string[] = ["/"];
+    if (me.permissions.some((p) => p.startsWith("platform."))) { target = "/admin"; allowed = ["/admin"]; }
+    else if (patient && !staff) { target = me.mustChangePassword ? "/portal/account" : "/portal"; allowed = ["/portal"]; }
+    else if (me.roles.length === 0) { target = "/portal"; allowed = ["/portal"]; }   // platform host: show every place this person belongs to
+    else if (staff) { target = "/dashboard"; allowed = ["/dashboard", "/admin"]; }
+    else allowed = ["/"];   // shop customer: keep the default
+    const ok = !me.mustChangePassword && !!next && next.startsWith("/") && !next.startsWith("//") && allowed.some((a) => a === "/" ? next === "/" || !next.startsWith("/dashboard") : next === a || next.startsWith(a + "/") || next.startsWith(a + "?"));
+    router.replace(ok ? next : target);
     router.refresh();
   }
 

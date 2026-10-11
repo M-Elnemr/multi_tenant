@@ -24,6 +24,24 @@ class SsoHandoffIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void aPatientOpensTheirClinicAsAPatientFromThePlatformApp() throws Exception {
+        Tenant clinic = onboard("CLINIC");
+        Tenant other = onboard("CLINIC");
+        PatientLogin p = patientAt(clinic, "Mona");
+        String platformToken = JsonPath.read(body(onHost("platform.test", null, "POST", "/api/v1/auth/login", "{\"identifier\":\"%s\",\"password\":\"PatientPass1\"}".formatted(p.phone())).andExpect(status().isOk())), "$.accessToken");
+
+        // a clinic where they have a record: the ticket redeems into a PATIENT session (portal works, the staff dashboard does not)
+        String ticket = JsonPath.read(body(onHost("platform.test", platformToken, "POST", "/api/v1/auth/handoff", "{\"tenantId\":\"%s\"}".formatted(tenantId(clinic))).andExpect(status().isOk())), "$.ticket");
+        String redeemed = body(onHost(clinic.host(), null, "POST", "/api/v1/auth/handoff/redeem", "{\"ticket\":\"%s\"}".formatted(ticket)).andExpect(status().isOk()).andExpect(jsonPath("$.user.roles[0]").value("PATIENT")));
+        String access = JsonPath.read(redeemed, "$.accessToken");
+        onHost(clinic.host(), access, "GET", "/api/v1/portal/patients", null).andExpect(status().isOk()).andExpect(jsonPath("$[0].id").value(p.patientId()));
+        onHost(clinic.host(), access, "GET", "/api/v1/clinic/dashboard", null).andExpect(status().isForbidden());
+
+        // a clinic where they have no record: same answer as "no such place"
+        onHost("platform.test", platformToken, "POST", "/api/v1/auth/handoff", "{\"tenantId\":\"%s\"}".formatted(tenantId(other))).andExpect(status().isNotFound());
+    }
+
+    @Test
     void ticketOpensOnePlaceOnceAndOnlyThere() throws Exception {
         Tenant clinic = onboard("CLINIC");
         Tenant other = onboard("CLINIC");

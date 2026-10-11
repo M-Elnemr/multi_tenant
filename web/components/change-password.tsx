@@ -17,6 +17,8 @@ export function ChangePasswordCard({ forced = false, onChanged }: { forced?: boo
     setCur(""); setNext(""); setDone(true);
     window.dispatchEvent(new Event("auth:changed"));
     onChanged?.();
+    // A temporary password was just replaced: reload into the portal so no stale "must change" state survives (it used to bounce back here).
+    if (forced) window.location.assign("/portal");
   });
   return (
     <Card className="space-y-3">

@@ -153,6 +153,16 @@ public class AccountAuthService {
         return jdbc.sql("SELECT id, name, phone, email FROM commerce.client_accounts WHERE id = :u").param("u", id).query().listOfRows().stream().findFirst().map(this::clientSummary);
     }
 
+    /** Handoff to a clinic's own address for a patient: only when this account has an active record in that clinic. */
+    public boolean hasPatientRecord(UUID accountId, UUID tenantId) {
+        return jdbc.sql("""
+                SELECT count(*) FROM medical.patients p JOIN medical.patient_accounts a ON a.id = p.user_id JOIN core.tenants t ON t.id = p.tenant_id
+                WHERE p.tenant_id = :t AND p.user_id = :u AND p.status = 'ACTIVE' AND a.status = 'ACTIVE' AND t.status NOT IN ('ARCHIVED','CANCELLED')
+                """).param("t", tenantId).param("u", accountId).query(Long.class).single() > 0;
+    }
+
+    public TokenResponse issuePatientTokens(UUID accountId, String ip, String ua) { return issue("PATIENT", accountId, ip, ua); }
+
     private TokenResponse issue(String type, UUID id, String ip, String ua) {
         byte[] raw = new byte[32];
         RANDOM.nextBytes(raw);
