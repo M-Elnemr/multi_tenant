@@ -72,7 +72,7 @@ class Landing extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 30),
               child: Column(children: [
-                Row(mainAxisAlignment: MainAxisAlignment.end, children: const [LanguageChip(onDark: true)]),
+                const Row(mainAxisAlignment: MainAxisAlignment.end, children: [LanguageChip(onDark: true)]),
                 const SizedBox(height: 12),
                 const FadeSlideIn(child: DecoratedBox(decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Color(0x33000000), blurRadius: 24, offset: Offset(0, 10))]), child: Padding(padding: EdgeInsets.all(14), child: BrandLogo(size: 84)))),
                 const SizedBox(height: 14),
