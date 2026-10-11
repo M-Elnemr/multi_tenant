@@ -134,16 +134,22 @@ class _CurrentExamState extends State<CurrentExam> {
         ) else Card(child: Padding(padding: const EdgeInsets.symmetric(vertical: 28), child: Center(child: Text(isAr ? 'لا يوجد مريض في الغرفة الآن.' : 'No patient in the room right now.', style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 16))))),
         if (others.isNotEmpty) ...[
           sectionTitle(isAr ? 'مرضى آخرون داخل الغرفة' : 'Also in the room'),
-          for (final e in others) Card(child: ListTile(title: Text('${e['patientName']}', style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text('#${e['queueNumber']}'), trailing: clinical ? OutlinedButton(onPressed: () => _open(e), child: Text(isAr ? 'فتح الكشف' : 'Open exam')) : null)),
+          for (final e in others) QueueCard(
+            leading: const Icon(Icons.meeting_room_rounded),
+            title: '${e['patientName']}',
+            subtitle: '#${e['queueNumber']}',
+            actions: [if (clinical) OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)), onPressed: () => _open(e), child: Text(isAr ? 'فتح الكشف' : 'Open exam'))],
+          ),
         ],
         sectionTitle('${isAr ? 'التالي في الدور' : 'Next in line'} (${waiting.length})'),
-        if (next == null) Text(isAr ? 'لا أحد في الانتظار.' : 'Nobody is waiting.', style: const TextStyle(color: Color(0xFF8A97A5))) else Card(
+        if (next == null) Text(isAr ? 'لا أحد في الانتظار.' : 'Nobody is waiting.', style: const TextStyle(color: Color(0xFF8A97A5))) else QueueCard(
           color: blue.withValues(alpha: 0.06),
-          child: ListTile(
-            title: Text('${next['patientName']}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
-            subtitle: Text('#${next['queueNumber']} · ${isAr ? 'انتظر' : 'waited'} ${next['waitedMinutes'] ?? 0} ${isAr ? 'د' : 'min'}'),
-            trailing: ctx.can('appointment.manage') ? FilledButton.tonal(onPressed: () async { if (await run(context, () => ctx.api.post('clinic/appointments/${next['id']}/call', {}))) await _load(); }, child: Text(next['calledAt'] != null ? (isAr ? 'نداء مرة أخرى' : 'Call again') : (isAr ? 'نداء' : 'Call'))) : null,
-          ),
+          leading: CircleAvatar(backgroundColor: blue.withValues(alpha: 0.12), foregroundColor: blue, child: Text('${next['queueNumber']}', style: const TextStyle(fontWeight: FontWeight.w900))),
+          title: '${next['patientName']}',
+          subtitle: '${isAr ? 'انتظر' : 'waited'} ${next['waitedMinutes'] ?? 0} ${isAr ? 'د' : 'min'}',
+          actions: [
+            if (ctx.can('appointment.manage')) FilledButton.tonal(style: FilledButton.styleFrom(minimumSize: const Size(0, 40)), onPressed: () async { if (await run(context, () => ctx.api.post('clinic/appointments/${next['id']}/call', {}))) await _load(); }, child: Text(next['calledAt'] != null ? (isAr ? 'نداء مرة أخرى' : 'Call again') : (isAr ? 'نداء' : 'Call'))),
+          ],
         ),
       ]),
     );

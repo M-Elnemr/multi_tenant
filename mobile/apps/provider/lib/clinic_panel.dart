@@ -111,18 +111,24 @@ class QueueScreen extends StatelessWidget {
           onRefresh: reload,
           child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
             if (inProgress.isNotEmpty) Padding(padding: const EdgeInsets.only(bottom: 6), child: Text(s.ar ? 'مع الطبيب الآن' : 'With the doctor now', style: const TextStyle(fontWeight: FontWeight.w900))),
-            for (final e in inProgress) Card(color: blue.withValues(alpha: 0.08), child: ListTile(leading: Icon(Icons.medical_services_rounded, color: blue), title: Text('${e['patientName']}', style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text('#${e['queueNumber']} · ${e['serviceName']}'), trailing: TextButton(onPressed: () => _act(context, e['id'] as String, 'complete', reload), child: Text(s.ar ? 'إنهاء' : 'Done')))),
+            for (final e in inProgress) QueueCard(
+              color: blue.withValues(alpha: 0.08),
+              leading: Icon(Icons.medical_services_rounded, color: blue),
+              title: '${e['patientName']}',
+              subtitle: '#${e['queueNumber']} · ${e['serviceName']}',
+              actions: [OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)), onPressed: () => _act(context, e['id'] as String, 'complete', reload), child: Text(s.ar ? 'إنهاء' : 'Done'))],
+            ),
             Padding(padding: const EdgeInsets.only(top: 10, bottom: 6), child: Text(s.waitingRoom, style: const TextStyle(fontWeight: FontWeight.w900))),
             for (var i = 0; i < waiting.length; i++)
-              FadeSlideIn(index: i, child: Card(child: ListTile(
+              FadeSlideIn(index: i, child: QueueCard(
                 leading: CircleAvatar(backgroundColor: blue.withValues(alpha: 0.12), foregroundColor: blue, child: Text('${waiting[i]['queueNumber']}', style: const TextStyle(fontWeight: FontWeight.w900))),
-                title: Text('${waiting[i]['patientName']}', style: const TextStyle(fontWeight: FontWeight.w800)),
-                subtitle: Text('${waiting[i]['serviceName']} · ${waiting[i]['waitedMinutes']} min'),
-                trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                  TextButton(onPressed: () => _act(context, waiting[i]['id'] as String, 'call', reload), child: Text(s.call)),
-                  if (ctx.can('medical_note.create')) FilledButton(style: FilledButton.styleFrom(minimumSize: const Size(0, 36), padding: const EdgeInsets.symmetric(horizontal: 12)), onPressed: () => _act(context, waiting[i]['id'] as String, 'start', reload), child: Text(s.startVisit)),
-                ]),
-              ))),
+                title: '${waiting[i]['patientName']}',
+                subtitle: '${waiting[i]['serviceName']} · ${waiting[i]['waitedMinutes']} min',
+                actions: [
+                  OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)), onPressed: () => _act(context, waiting[i]['id'] as String, 'call', reload), child: Text(s.call)),
+                  if (ctx.can('medical_note.create')) FilledButton(style: FilledButton.styleFrom(minimumSize: const Size(0, 40)), onPressed: () => _act(context, waiting[i]['id'] as String, 'start', reload), child: Text(s.startVisit)),
+                ],
+              )),
             if (waiting.isEmpty && inProgress.isEmpty) emptyState(s.empty),
           ]),
         );

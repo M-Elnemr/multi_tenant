@@ -211,3 +211,34 @@ Widget kv(String k, String v, {bool ltr = false}) => Padding(
         Expanded(child: Text(v.isEmpty ? '-' : v, textDirection: ltr ? TextDirection.ltr : null, style: const TextStyle(fontWeight: FontWeight.w700))),
       ]),
     );
+
+/// A queue entry: avatar + full-width name/details on top, the action buttons below (side by side, sharing the width) so nothing squeezes the name.
+class QueueCard extends StatelessWidget {
+  const QueueCard({super.key, required this.leading, required this.title, required this.subtitle, this.actions = const [], this.color});
+  final Widget leading;
+  final String title, subtitle;
+  final List<Widget> actions;
+  final Color? color;
+  @override
+  Widget build(BuildContext context) => Card(
+        color: color,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              leading,
+              const SizedBox(width: 12),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+                const SizedBox(height: 2),
+                Text(subtitle, style: const TextStyle(color: Color(0xFF6B7C8D))),
+              ])),
+            ]),
+            if (actions.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Row(children: [for (var i = 0; i < actions.length; i++) ...[if (i > 0) const SizedBox(width: 8), Expanded(child: actions[i])]]),
+            ],
+          ]),
+        ),
+      );
+}
