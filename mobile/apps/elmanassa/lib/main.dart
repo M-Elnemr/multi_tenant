@@ -11,18 +11,29 @@ import 'package:url_launcher/url_launcher.dart';
 import 'push.dart';
 import 'shop/shop.dart';
 
-void main() => runApp(const ElmanassaApp());
+const appVersion = '1.0.3';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await AppLocale.load();
+  runApp(const ElmanassaApp());
+}
 
 class ElmanassaApp extends StatelessWidget {
   const ElmanassaApp({super.key});
   @override
-  Widget build(BuildContext context) => MaterialApp(
-        title: 'Elmanassa',
-        scaffoldMessengerKey: messengerKey,
-        theme: themeFor(null),
-        localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],
-        supportedLocales: const [Locale('ar'), Locale('en')],
-        home: const Landing(),
+  Widget build(BuildContext context) => ValueListenableBuilder<Locale>(
+        valueListenable: AppLocale.notifier,
+        builder: (context, locale, _) => MaterialApp(
+          title: 'Elmanassa',
+          debugShowCheckedModeBanner: false,
+          scaffoldMessengerKey: messengerKey,
+          theme: themeFor(null),
+          locale: locale,
+          localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],
+          supportedLocales: const [Locale('ar'), Locale('en')],
+          home: const Landing(),
+        ),
       );
 }
 
@@ -31,28 +42,57 @@ class Landing extends StatelessWidget {
   const Landing({super.key});
   @override
   Widget build(BuildContext context) {
-    final ar = S.of(context).ar;
-    Widget card(IconData icon, String title, String sub, Widget Function() page) => Card(
-          child: ListTile(
-            contentPadding: const EdgeInsets.all(16),
-            leading: Icon(icon, size: 36),
-            title: Text(title, style: Theme.of(context).textTheme.titleMedium),
-            subtitle: Text(sub),
-            trailing: const Icon(Icons.chevron_right),
+    final s = S.of(context);
+    final ar = s.ar;
+    Widget card(int i, IconData icon, String title, String sub, List<Color> colors, Widget Function() page) => FadeSlideIn(
+          index: i + 2,
+          child: PressScale(
             onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => page())),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(borderRadius: BorderRadius.circular(26), gradient: LinearGradient(begin: AlignmentDirectional.topStart, end: AlignmentDirectional.bottomEnd, colors: colors), boxShadow: [BoxShadow(color: colors.first.withValues(alpha: 0.3), blurRadius: 22, offset: const Offset(0, 10))]),
+              child: Row(children: [
+                Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(18)), child: Icon(icon, color: Colors.white, size: 32)),
+                const SizedBox(width: 16),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(title, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 4),
+                  Text(sub, style: TextStyle(color: Colors.white.withValues(alpha: 0.9), height: 1.35)),
+                ])),
+                const Icon(Icons.chevron_right_rounded, color: Colors.white, size: 28),
+              ]),
+            ),
           ),
         );
     return Scaffold(
-      body: SafeArea(
-        child: ListView(padding: const EdgeInsets.all(24), children: [
-          const SizedBox(height: 24),
-          const FadeSlideIn(child: Center(child: BrandLogo(size: 110))),
-          const SizedBox(height: 32),
-          card(Icons.local_hospital_outlined, ar ? 'أنا مريض' : "I'm a patient", ar ? 'الدور، السجل الطبي، التحاليل والروشتات' : 'Queue, medical record, tests and prescriptions', () => const PlatformGate()),
-          const SizedBox(height: 12),
-          card(Icons.storefront_outlined, ar ? 'التسوق' : 'Shop', ar ? 'تصفح متجر واطلب بالدفع عند الاستلام' : 'Browse a store and order, cash on delivery', () => const ShopEntry()),
-        ]),
-      ),
+      body: ListView(padding: EdgeInsets.zero, children: [
+        GradientHeader(
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 30),
+              child: Column(children: [
+                Row(mainAxisAlignment: MainAxisAlignment.end, children: const [LanguageChip(onDark: true)]),
+                const SizedBox(height: 12),
+                const FadeSlideIn(child: DecoratedBox(decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Color(0x33000000), blurRadius: 24, offset: Offset(0, 10))]), child: Padding(padding: EdgeInsets.all(14), child: BrandLogo(size: 84)))),
+                const SizedBox(height: 14),
+                FadeSlideIn(index: 1, child: Text(ar ? 'أهلاً بك في المنصة' : 'Welcome to Elmanassa', style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w900))),
+                const SizedBox(height: 4),
+                FadeSlideIn(index: 1, child: Text(ar ? 'صحتك وتسوقك في مكان واحد' : 'Your health and shopping in one place', style: TextStyle(color: Colors.white.withValues(alpha: 0.88)))),
+              ]),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(children: [
+            card(0, Icons.local_hospital_rounded, ar ? 'أنا مريض' : "I'm a patient", ar ? 'الدور، السجل الطبي، التحاليل والروشتات' : 'Queue, medical record, tests and prescriptions', [const Color(0xFF1F6A99), const Color(0xFF2E8FB8)], () => const PlatformGate()),
+            card(1, Icons.storefront_rounded, ar ? 'التسوق' : 'Shop', ar ? 'اختر متجراً واطلب بالدفع عند الاستلام' : 'Pick a shop and order, cash on delivery', [const Color(0xFF3D9A63), const Color(0xFF52B77B)], () => const ShopEntry()),
+            const SizedBox(height: 4),
+            FadeSlideIn(index: 5, child: Text('${s.version} $appVersion', style: const TextStyle(color: Color(0xFF8A99AA), fontSize: 12))),
+          ]),
+        ),
+      ]),
     );
   }
 }
@@ -67,7 +107,7 @@ class PlatformGate extends StatefulWidget {
 }
 
 class _PlatformGateState extends State<PlatformGate> {
-  final session = Session('patient-app');
+  final session = Session('patient-app', refreshBase: platformBase());
   late final ApiClient platform = ApiClient(baseUrl: platformBase(), session: session);
   bool? loggedIn;
   bool mustChange = false;
@@ -94,7 +134,7 @@ class _PlatformGateState extends State<PlatformGate> {
   Widget build(BuildContext context) {
     if (loggedIn == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
     if (loggedIn == false) {
-      return LoginScreen(api: platform, title: S.of(context).login, onLoggedIn: (u) => setState(() { mustChange = u['mustChangePassword'] == true; loggedIn = true; }));
+      return LoginScreen(api: platform, app: 'client', title: S.of(context).ar ? 'أنا مريض' : "I'm a patient", subtitle: S.of(context).ar ? 'سجّل الدخول بالرقم وكلمة المرور من عيادتك' : 'Sign in with the number and password from your clinic', onLoggedIn: (u) => setState(() { mustChange = u['mustChangePassword'] == true; loggedIn = true; }));
     }
     if (mustChange) return ChangeTempPassword(api: platform, onDone: () => setState(() => mustChange = false));
     return MyClinics(platform: platform, session: session, onLogout: () => setState(() => loggedIn = false));
@@ -673,6 +713,8 @@ class _AccountPageState extends State<AccountPage> {
   Widget build(BuildContext context) {
     final s = S.of(context);
     return ListView(padding: const EdgeInsets.all(16), children: [
+      Card(child: ListTile(leading: const Icon(Icons.translate_rounded), title: Text(s.language, style: const TextStyle(fontWeight: FontWeight.w700)), trailing: const LanguageChip())),
+      const SizedBox(height: 12),
       Text(s.changePassword, style: Theme.of(context).textTheme.titleMedium),
       const SizedBox(height: 12),
       TextField(controller: cur, obscureText: true, decoration: InputDecoration(labelText: s.currentPassword)),

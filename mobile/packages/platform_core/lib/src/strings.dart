@@ -45,6 +45,30 @@ class S {
   String get waitingRoom => ar ? 'قاعة الانتظار' : 'Waiting room';
   String get call => ar ? 'نداء' : 'Call';
   String get startVisit => ar ? 'بدء الكشف' : 'Start visit';
+  String get forgotPassword => ar ? 'نسيت كلمة المرور؟' : 'Forgot password?';
+  String get resetInfo => ar ? 'أدخل الكود الذي أعطاه لك النشاط واختر كلمة مرور جديدة.' : 'Enter the code the business gave you and choose a new password.';
+  String get setPassword => ar ? 'تعيين كلمة المرور' : 'Set password';
+  String get back => ar ? 'رجوع' : 'Back';
+  String get show => ar ? 'إظهار' : 'Show';
+  String get hide => ar ? 'إخفاء' : 'Hide';
+  String get welcomeBack => ar ? 'أهلاً بك' : 'Welcome back';
+  String get signInHint => ar ? 'سجّل الدخول للمتابعة' : 'Sign in to continue';
+  String get settings => ar ? 'الإعدادات' : 'Settings';
+  String get language => ar ? 'اللغة' : 'Language';
+  String get arabic => 'العربية';
+  String get english => 'English';
+  String get chooseBusiness => ar ? 'اختر نشاطك' : 'Choose your business';
+  String get switchBusiness => ar ? 'تبديل النشاط' : 'Switch business';
+  String get noBusinesses => ar ? 'لا توجد أنشطة مرتبطة بحسابك.' : 'No businesses are linked to your account.';
+  String get yourRole => ar ? 'دورك' : 'Your role';
+  String get searchShops => ar ? 'ابحث عن متجر' : 'Search shops';
+  String get specialty => ar ? 'التخصص' : 'Specialty';
+  String get cityLabel => ar ? 'المدينة' : 'City';
+  String get all => ar ? 'الكل' : 'All';
+  String get noShops => ar ? 'لا توجد متاجر مطابقة.' : 'No matching shops.';
+  String get chooseShop => ar ? 'اختر متجراً' : 'Choose a shop';
+  String get version => ar ? 'الإصدار' : 'Version';
+  String get signOut => ar ? 'تسجيل الخروج' : 'Sign out';
   String get orderPlaced => ar ? 'تم استلام طلبك' : 'Order received';
 
   /// Integer minor units -> localized currency text (19999 EGP -> 199.99).

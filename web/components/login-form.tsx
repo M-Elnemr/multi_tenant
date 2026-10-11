@@ -9,14 +9,15 @@ import { Button, ErrorText, Field, Input } from "./ui";
 import { IdentifierInput } from "@/components/inputs";
 
 type Me = { roles: string[]; permissions: string[]; mustChangePassword?: boolean };
-type Step = "identify" | "password" | "activate" | "reset";
+type Step = "login" | "activate" | "reset";
 
 /** Phone/email + password. First-time users (and anyone who forgot their password) use the one-time PIN given by the business: no SMS. */
 export function LoginForm({ defaultIdentifier = "" }: { defaultIdentifier?: string }) {
   const t = useT();
   const router = useRouter();
   const next = useSearchParams().get("next");
-  const [step, setStep] = useState<Step>("identify");
+  const [step, setStep] = useState<Step>("login");
+  const [show, setShow] = useState(false);
   const [identifier, setIdentifier] = useState(defaultIdentifier);
   const [password, setPassword] = useState("");
   const [pin, setPin] = useState("");
@@ -38,12 +39,14 @@ export function LoginForm({ defaultIdentifier = "" }: { defaultIdentifier?: stri
     router.refresh();
   }
 
-  const identify = useAction(async () => {
-    const r = await api<{ next: "ENTER_PASSWORD" | "ACTIVATE" }>("auth/check-identifier", { body: { identifier: identifier.trim() } });
-    setStep(r.next === "ACTIVATE" ? "activate" : "password");
-  });
   const login = useAction(async () => {
-    await api("auth/login", { body: { identifier: identifier.trim(), password } });
+    try {
+      await api("auth/login", { body: { identifier: identifier.trim(), password } });
+    } catch (e) {
+      // a colleague who was invited has no password yet: carry on with the one-time PIN instead of "wrong password"
+      if ((e as { code?: string }).code === "ACTIVATION_REQUIRED") { setStep("activate"); setPassword(""); return; }
+      throw e;
+    }
     await finish();
   });
   const activate = useAction(async (path: "auth/activate" | "auth/reset-password") => {
@@ -53,38 +56,36 @@ export function LoginForm({ defaultIdentifier = "" }: { defaultIdentifier?: stri
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (step === "identify") void identify.run();
-    else if (step === "password") void login.run();
+    if (step === "login") void login.run();
     else void activate.run(step === "activate" ? "auth/activate" : "auth/reset-password");
   };
-  const busy = identify.loading || login.loading || activate.loading;
-  const error = identify.error ?? login.error ?? activate.error;
+  const busy = login.loading || activate.loading;
+  const error = login.error ?? activate.error;
 
   return (
     <form onSubmit={submit} className="space-y-4">
-      <Field label={t("login.identifier")} hint={t("login.identifierHint")}>
-        <IdentifierInput value={identifier} onValue={setIdentifier} required disabled={step !== "identify"} autoFocus />
+      <Field label={t("login.identifier")} hint={step === "login" ? t("login.identifierHint") : undefined}>
+        <IdentifierInput value={identifier} onValue={setIdentifier} required disabled={step !== "login"} autoFocus />
       </Field>
 
       {step === "activate" && <p className="rounded-lg bg-sky-50 p-3 text-sm text-sky-900">{t("login.firstTime")}</p>}
       {step === "reset" && <p className="rounded-lg bg-sky-50 p-3 text-sm text-sky-900">{t("login.resetInfo")}</p>}
-      {(step === "activate" || step === "reset") && (
+      {step !== "login" && (
         <Field label={t("login.pin")} hint={t("login.pinHint")}>
           <Input value={pin} onChange={(e) => setPin(e.target.value)} inputMode="numeric" dir="ltr" autoComplete="one-time-code" required autoFocus />
         </Field>
       )}
-      {step !== "identify" && (
-        <Field label={step === "password" ? t("login.password") : t("login.newPassword")} hint={step === "password" ? undefined : t("login.passwordRule")}>
-          <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={step === "password" ? "current-password" : "new-password"} minLength={step === "password" ? undefined : 8} required autoFocus={step === "password"} />
-        </Field>
-      )}
+      <Field label={step === "login" ? t("login.password") : t("login.newPassword")} hint={step === "login" ? undefined : t("login.passwordRule")}>
+        <div className="relative">
+          <Input type={show ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={step === "login" ? "current-password" : "new-password"} minLength={step === "login" ? undefined : 8} required className="pe-16" />
+          <button type="button" onClick={() => setShow((v) => !v)} className="absolute end-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-500 hover:text-brand" tabIndex={-1}>{show ? t("login.hide") : t("login.show")}</button>
+        </div>
+      </Field>
 
       <ErrorText error={error} />
-      <Button type="submit" loading={busy} className="w-full">
-        {step === "identify" ? t("common.continue") : step === "password" ? t("login.submit") : t("login.createPassword")}
-      </Button>
-      {step === "password" && <button type="button" onClick={() => { setStep("reset"); setPassword(""); }} className="block w-full text-center text-sm text-slate-500 underline">{t("login.forgot")}</button>}
-      {step !== "identify" && <button type="button" onClick={() => { setStep("identify"); setPassword(""); setPin(""); }} className="block w-full text-center text-sm text-slate-500 underline">{t("common.back")}</button>}
+      <Button type="submit" loading={busy} className="w-full">{step === "login" ? t("login.submit") : t("login.createPassword")}</Button>
+      {step === "login" && <button type="button" onClick={() => { setStep("reset"); setPassword(""); }} className="block w-full text-center text-sm text-slate-500 underline">{t("login.forgot")}</button>}
+      {step !== "login" && <button type="button" onClick={() => { setStep("login"); setPassword(""); setPin(""); }} className="block w-full text-center text-sm text-slate-500 underline">{t("common.back")}</button>}
     </form>
   );
 }

@@ -1,205 +1,344 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:platform_core/platform_core.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-void main() => runApp(const ProviderApp());
+import 'dashboards.dart';
+
+const appVersion = '1.0.3';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await AppLocale.load();
+  runApp(const ProviderApp());
+}
 
 class ProviderApp extends StatelessWidget {
   const ProviderApp({super.key});
   @override
-  Widget build(BuildContext context) => MaterialApp(
-        title: 'Business',
-        theme: themeFor(null),
-        localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],
-        supportedLocales: const [Locale('ar'), Locale('en')],
-        home: TenantGate(initial: null, expectedType: 'ANY', builder: (c, t, api) => Gate(tenant: t, api: api)),
+  Widget build(BuildContext context) => ValueListenableBuilder<Locale>(
+        valueListenable: AppLocale.notifier,
+        builder: (context, locale, _) => MaterialApp(
+          title: 'Elmanassa Business',
+          debugShowCheckedModeBanner: false,
+          theme: themeFor(null),
+          locale: locale,
+          localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],
+          supportedLocales: const [Locale('ar'), Locale('en')],
+          home: const Root(),
+        ),
       );
 }
 
-/// Store owners, doctors and staff use one app: the dashboard shown depends on the tenant type and on the permissions
-/// the server grants them (the app hides what they cannot use; the server enforces it regardless).
-class Gate extends StatefulWidget {
-  const Gate({super.key, required this.tenant, required this.api});
-  final TenantInfo tenant;
-  final ApiClient api;
+/// One sign-in on the platform address, no domain to type: the businesses of this account (stores and clinics) are listed after login.
+class Root extends StatefulWidget {
+  const Root({super.key});
   @override
-  State<Gate> createState() => _GateState();
+  State<Root> createState() => _RootState();
 }
 
-class _GateState extends State<Gate> {
-  Map<String, dynamic>? me;
-  bool checked = false;
+class _RootState extends State<Root> {
+  static final _base = platformBase();
+  final _session = Session('business', refreshBase: _base);
+  late final _api = ApiClient(baseUrl: _base, session: _session);
+  bool _checked = false;
+  List<Map<String, dynamic>>? _businesses;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _check();
+    _load();
   }
 
-  Future<void> _check() async {
-    Map<String, dynamic>? m;
-    if (await widget.api.session.loggedIn) {
+  Future<void> _load() async {
+    List<Map<String, dynamic>>? list;
+    String? error;
+    if (await _session.loggedIn) {
       try {
-        m = await AuthRepository(widget.api).me();
-      } catch (_) {
-        m = null;
+        list = ((await _api.get('me/businesses')) as List).cast<Map<String, dynamic>>();
+      } on ApiException catch (e) {
+        if (e.status != 401) error = errorText(e);
+      } catch (e) {
+        error = errorText(e);
       }
     }
-    if (mounted) {
-      setState(() {
-        me = m;
-        checked = true;
-      });
-    }
+    if (mounted) setState(() { _businesses = list; _error = error; _checked = true; });
+  }
+
+  Future<void> _signOut() async {
+    await AuthRepository(_api).logout();
+    try { (await SharedPreferences.getInstance()).remove('business.last'); } catch (_) {}
+    if (mounted) setState(() => _businesses = null);
   }
 
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
-    if (!checked) return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    if (me == null) return LoginScreen(api: widget.api, title: widget.tenant.name, onLoggedIn: (u) => _check());
-    final perms = (me!['permissions'] as List).cast<String>();
+    Widget body;
+    if (!_checked) {
+      body = const Scaffold(key: ValueKey('boot'), body: Center(child: BrandLogo(size: 110)));
+    } else if (_businesses == null && _error == null) {
+      body = LoginScreen(
+        key: const ValueKey('login'),
+        api: _api,
+        app: 'business',
+        title: 'Elmanassa Business',
+        subtitle: s.ar ? 'أدر عيادتك أو متجرك من هاتفك' : 'Run your clinic or shop from your phone',
+        onLoggedIn: (u) => _load(),
+      );
+    } else if (_error != null) {
+      body = Scaffold(key: const ValueKey('err'), body: Center(child: Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Icon(Icons.cloud_off_rounded, size: 52, color: Color(0xFF9AA9BA)),
+        const SizedBox(height: 12),
+        Text(_error!, textAlign: TextAlign.center),
+        const SizedBox(height: 12),
+        FilledButton(onPressed: () { setState(() { _checked = false; _error = null; }); _load(); }, child: Text(s.retry)),
+        TextButton(onPressed: _signOut, child: Text(s.signOut)),
+      ]))));
+    } else {
+      body = BusinessPicker(key: const ValueKey('picker'), session: _session, businesses: _businesses!, onSignOut: _signOut, onReload: _load);
+    }
+    return AnimatedSwitcher(duration: const Duration(milliseconds: 380), switchInCurve: Curves.easeOutCubic, child: body);
+  }
+}
+
+/// Lists the account's businesses; opens the only one (or the last used one) straight away, and lets the user switch from settings.
+class BusinessPicker extends StatefulWidget {
+  const BusinessPicker({super.key, required this.session, required this.businesses, required this.onSignOut, required this.onReload});
+  final Session session;
+  final List<Map<String, dynamic>> businesses;
+  final VoidCallback onSignOut;
+  final Future<void> Function() onReload;
+  @override
+  State<BusinessPicker> createState() => _BusinessPickerState();
+}
+
+class _BusinessPickerState extends State<BusinessPicker> {
+  Map<String, dynamic>? _open;
+  bool _auto = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _autoOpen();
+  }
+
+  Future<void> _autoOpen() async {
+    final list = widget.businesses;
+    Map<String, dynamic>? pick = list.length == 1 ? list.first : null;
+    if (pick == null && list.length > 1) {
+      try {
+        final last = (await SharedPreferences.getInstance()).getString('business.last');
+        pick = list.cast<Map<String, dynamic>?>().firstWhere((b) => b!['id'] == last, orElse: () => null);
+      } catch (_) {}
+    }
+    if (mounted) setState(() { _open = pick; _auto = false; });
+  }
+
+  Future<void> _choose(Map<String, dynamic> b) async {
+    try { await (await SharedPreferences.getInstance()).setString('business.last', b['id'] as String); } catch (_) {}
+    setState(() => _open = b);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_auto) return const Scaffold(body: Center(child: BrandLogo(size: 110)));
+    if (_open != null) {
+      final b = _open!;
+      return BusinessHome(
+        key: ValueKey(b['id']),
+        business: b,
+        session: widget.session,
+        canSwitch: widget.businesses.length > 1,
+        onSwitch: () => setState(() => _open = null),
+        onSignOut: widget.onSignOut,
+      );
+    }
+    final s = S.of(context);
+    final list = widget.businesses;
     return Scaffold(
-      appBar: AppBar(title: Text(widget.tenant.name), actions: [
-        IconButton(
-          tooltip: s.logout,
-          icon: const Icon(Icons.logout),
-          onPressed: () async {
-            await AuthRepository(widget.api).logout();
-            setState(() => me = null);
+      body: RefreshIndicator(
+        onRefresh: widget.onReload,
+        child: ListView(padding: EdgeInsets.zero, children: [
+          GradientHeader(
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const LanguageChip(onDark: true), IconButton(onPressed: widget.onSignOut, icon: const Icon(Icons.logout_rounded, color: Colors.white), tooltip: s.signOut)]),
+                  const SizedBox(height: 22),
+                  FadeSlideIn(child: Text(s.chooseBusiness, style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w900))),
+                  const SizedBox(height: 6),
+                  FadeSlideIn(index: 1, child: Text(s.ar ? 'اختر النشاط الذي تريد إدارته' : 'Pick the business you want to manage', style: TextStyle(color: Colors.white.withValues(alpha: 0.85)))),
+                ]),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: list.isEmpty
+                ? Padding(padding: const EdgeInsets.all(32), child: Center(child: Text(s.noBusinesses, textAlign: TextAlign.center)))
+                : Column(children: [for (var i = 0; i < list.length; i++) FadeSlideIn(index: i + 2, child: BusinessCard(business: list[i], onTap: () => _choose(list[i])))]),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+class BusinessCard extends StatelessWidget {
+  const BusinessCard({super.key, required this.business, required this.onTap});
+  final Map<String, dynamic> business;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    final color = hexColor(business['primaryColor']) ?? kBrandBlue;
+    final store = business['type'] == 'STORE';
+    final roles = (business['roles'] as List?)?.cast<String>() ?? const [];
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: PressScale(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            gradient: LinearGradient(begin: AlignmentDirectional.topStart, end: AlignmentDirectional.bottomEnd, colors: [color.withValues(alpha: 0.95), Color.lerp(color, kBrandGreen, 0.5)!.withValues(alpha: 0.9)]),
+            boxShadow: [BoxShadow(color: color.withValues(alpha: 0.28), blurRadius: 18, offset: const Offset(0, 8))],
+          ),
+          child: Row(children: [
+            BusinessLogo(url: business['logoUrl'] as String?, name: business['name'] as String, size: 58),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(business['name'] as String, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 6),
+                Wrap(spacing: 6, runSpacing: 4, children: [
+                  _Pill(store ? (s.ar ? 'متجر' : 'Shop') : (s.ar ? 'عيادة' : 'Clinic'), store ? Icons.storefront_rounded : Icons.local_hospital_rounded),
+                  if (roles.isNotEmpty) _Pill(roles.first.replaceAll('_', ' ').toLowerCase(), Icons.badge_outlined),
+                ]),
+              ]),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: Colors.white, size: 28),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+class _Pill extends StatelessWidget {
+  const _Pill(this.text, this.icon);
+  final String text;
+  final IconData icon;
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(14)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 13, color: Colors.white), const SizedBox(width: 4), Text(text, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700))]),
+      );
+}
+
+/// A business logo, or its first letter on a brand tile when it has none.
+class BusinessLogo extends StatelessWidget {
+  const BusinessLogo({super.key, required this.url, required this.name, this.size = 44});
+  final String? url;
+  final String name;
+  final double size;
+  @override
+  Widget build(BuildContext context) {
+    final letter = name.trim().isEmpty ? 'E' : String.fromCharCode(name.trim().runes.first).toUpperCase();
+    final fallback = Center(child: Text(letter, style: TextStyle(fontSize: size * 0.45, fontWeight: FontWeight.w900, color: Theme.of(context).colorScheme.primary)));
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(size * 0.3), boxShadow: const [BoxShadow(color: Color(0x22000000), blurRadius: 8, offset: Offset(0, 3))]),
+      clipBehavior: Clip.antiAlias,
+      child: url == null ? fallback : Image.network(url!, fit: BoxFit.cover, errorBuilder: (_, __, ___) => fallback),
+    );
+  }
+}
+
+/// A business opened on its own address with the account's platform session (staff tokens work on every business they belong to).
+class BusinessHome extends StatefulWidget {
+  const BusinessHome({super.key, required this.business, required this.session, required this.canSwitch, required this.onSwitch, required this.onSignOut});
+  final Map<String, dynamic> business;
+  final Session session;
+  final bool canSwitch;
+  final VoidCallback onSwitch;
+  final VoidCallback onSignOut;
+  @override
+  State<BusinessHome> createState() => _BusinessHomeState();
+}
+
+class _BusinessHomeState extends State<BusinessHome> {
+  late final ApiClient _api = ApiClient(baseUrl: widget.business['baseUrl'] as String, session: widget.session);
+  late Future<Map<String, dynamic>> _me = AuthRepository(_api).me();
+
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    final b = widget.business;
+    final color = hexColor(b['primaryColor']);
+    final store = b['type'] == 'STORE';
+    return Theme(
+      data: themeFor(null, seed: color),
+      child: Scaffold(
+        appBar: AppBar(
+          centerTitle: false,
+          titleSpacing: 16,
+          title: Row(children: [BusinessLogo(url: b['logoUrl'] as String?, name: b['name'] as String, size: 36), const SizedBox(width: 10), Expanded(child: Text(b['name'] as String, overflow: TextOverflow.ellipsis))]),
+          actions: [
+            IconButton(
+              tooltip: s.settings,
+              icon: const Icon(Icons.tune_rounded),
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => SettingsPage(businessName: b['name'] as String, canSwitch: widget.canSwitch, onSwitch: () { Navigator.of(context).pop(); widget.onSwitch(); }, onSignOut: () { Navigator.of(context).pop(); widget.onSignOut(); }))),
+            ),
+          ],
+        ),
+        body: FutureBuilder<Map<String, dynamic>>(
+          future: _me,
+          builder: (context, snap) {
+            if (snap.connectionState != ConnectionState.done) return const Padding(padding: EdgeInsets.all(16), child: Column(children: [Skeleton(height: 130), SizedBox(height: 12), Skeleton(), SizedBox(height: 12), Skeleton()]));
+            if (snap.hasError) {
+              return Center(child: Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.cloud_off_rounded, size: 46, color: Color(0xFF9AA9BA)),
+                const SizedBox(height: 10),
+                Text(errorText(snap.error!), textAlign: TextAlign.center),
+                TextButton.icon(onPressed: () => setState(() => _me = AuthRepository(_api).me()), icon: const Icon(Icons.refresh_rounded), label: Text(s.retry)),
+              ])));
+            }
+            final perms = (snap.data!['permissions'] as List).cast<String>();
+            final currency = (b['currency'] as String?) ?? 'EGP';
+            return store ? StoreDashboard(api: _api, currency: currency, perms: perms) : ClinicDashboard(api: _api, perms: perms);
           },
         ),
+      ),
+    );
+  }
+}
+
+class SettingsPage extends StatelessWidget {
+  const SettingsPage({super.key, required this.businessName, required this.canSwitch, required this.onSwitch, required this.onSignOut});
+  final String businessName;
+  final bool canSwitch;
+  final VoidCallback onSwitch;
+  final VoidCallback onSignOut;
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    Widget tile(IconData i, String t, {Widget? trailing, VoidCallback? onTap, Color? color}) => Card(child: ListTile(leading: Icon(i, color: color), title: Text(t, style: TextStyle(fontWeight: FontWeight.w700, color: color)), trailing: trailing, onTap: onTap));
+    return Scaffold(
+      appBar: AppBar(title: Text(s.settings)),
+      body: ListView(padding: const EdgeInsets.all(16), children: [
+        FadeSlideIn(child: tile(Icons.business_center_rounded, businessName)),
+        FadeSlideIn(index: 1, child: tile(Icons.translate_rounded, s.language, trailing: const LanguageChip())),
+        if (canSwitch) FadeSlideIn(index: 2, child: tile(Icons.swap_horiz_rounded, s.switchBusiness, onTap: onSwitch, trailing: const Icon(Icons.chevron_right_rounded))),
+        FadeSlideIn(index: 3, child: tile(Icons.info_outline_rounded, s.version, trailing: const Text(appVersion))),
+        FadeSlideIn(index: 4, child: tile(Icons.logout_rounded, s.signOut, onTap: onSignOut, color: Theme.of(context).colorScheme.error)),
       ]),
-      body: widget.tenant.type == 'STORE' ? StoreDashboard(api: widget.api, tenant: widget.tenant, perms: perms) : ClinicDashboard(api: widget.api, perms: perms),
     );
   }
-}
-
-class StoreDashboard extends StatelessWidget {
-  const StoreDashboard({super.key, required this.api, required this.tenant, required this.perms});
-  final ApiClient api;
-  final TenantInfo tenant;
-  final List<String> perms;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = S.of(context);
-    return Async<Map<String, dynamic>>(
-      load: () async => <String, dynamic>{
-        if (perms.contains('report.read')) 'summary': await api.get('store/reports/summary'),
-        if (perms.contains('order.read')) 'orders': await api.get('store/orders', query: {'pageSize': '20'}),
-      },
-      builder: (context, d, reload) {
-        final sum = d['summary'] as Map<String, dynamic>?;
-        final orders = ((d['orders'] as Map?)?['data'] as List?)?.cast<Map<String, dynamic>>() ?? [];
-        return RefreshIndicator(
-          onRefresh: reload,
-          child: ListView(padding: const EdgeInsets.all(16), children: [
-            if (sum != null)
-              Wrap(spacing: 12, runSpacing: 12, children: [
-                _Stat(s.ar ? 'مبيعات اليوم' : 'Sales today', s.money(sum['salesTodayMinor'] as num, tenant.currency)),
-                _Stat(s.ar ? 'طلبات اليوم' : 'Orders today', '${sum['ordersToday']}'),
-                _Stat(s.ar ? 'مبيعات الشهر' : 'Sales this month', s.money(sum['salesThisMonthMinor'] as num, tenant.currency)),
-                _Stat(s.ar ? 'مخزون منخفض' : 'Low stock', '${sum['lowStockCount']}'),
-              ]),
-            const SizedBox(height: 16),
-            Text(s.orders, style: Theme.of(context).textTheme.titleMedium),
-            for (final o in orders) ListTile(title: Text(o['orderNumber'] as String), subtitle: Text('${o['customerNameSnapshot']} · ${o['status']}'), trailing: Text(s.money(o['totalMinor'] as num, tenant.currency))),
-            if (orders.isEmpty) Padding(padding: const EdgeInsets.all(24), child: Center(child: Text(s.empty))),
-          ]),
-        );
-      },
-    );
-  }
-}
-
-class ClinicDashboard extends StatelessWidget {
-  const ClinicDashboard({super.key, required this.api, required this.perms});
-  final ApiClient api;
-  final List<String> perms;
-
-  Future<void> _act(BuildContext context, String id, String action, Future<void> Function() reload) async {
-    try {
-      await api.post('clinic/appointments/$id/$action', {});
-      await reload();
-    } catch (e) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final s = S.of(context);
-    if (!perms.contains('appointment.manage')) return Center(child: Text(s.empty));
-    return Async<Map<String, dynamic>>(
-      load: () async => {...(await api.get('clinic/dashboard') as Map<String, dynamic>), 'queue': await api.get('clinic/queue')},
-      builder: (context, d, reload) {
-        final today = (d['today'] as List).cast<Map<String, dynamic>>();
-        final queue = d['queue'] as Map<String, dynamic>;
-        final waiting = (queue['waiting'] as List).cast<Map<String, dynamic>>();
-        final inProgress = (queue['inProgress'] as List).cast<Map<String, dynamic>>();
-        return RefreshIndicator(
-          onRefresh: reload,
-          child: ListView(padding: const EdgeInsets.all(16), children: [
-            Wrap(spacing: 12, runSpacing: 12, children: [
-              _Stat(s.today, '${today.length}'),
-              _Stat(s.ar ? 'بانتظار الموافقة' : 'Awaiting approval', '${d['pendingRequests']}'),
-              _Stat(s.ar ? 'في الانتظار' : 'Waiting', '${d['checkedIn']}'),
-            ]),
-            const SizedBox(height: 16),
-            const SizedBox(height: 8),
-            Text(s.waitingRoom, style: Theme.of(context).textTheme.titleMedium),
-            for (final e in inProgress) Card(color: Colors.blue.shade50, child: ListTile(leading: const Icon(Icons.medical_services_outlined), title: Text('${e['patientName']}'), subtitle: Text('#${e['queueNumber']} · ${e['serviceName']}'))),
-            for (var i = 0; i < waiting.length; i++)
-              Card(
-                child: ListTile(
-                  leading: CircleAvatar(child: Text('${waiting[i]['queueNumber']}')),
-                  title: Text('${waiting[i]['patientName']}'),
-                  subtitle: Text('${waiting[i]['serviceName']} · ${waiting[i]['waitedMinutes']} min'),
-                  trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                    TextButton(onPressed: () => _act(context, waiting[i]['id'] as String, 'call', reload), child: Text(s.call)),
-                    if (perms.contains('medical_note.create')) TextButton(onPressed: () => _act(context, waiting[i]['id'] as String, 'start', reload), child: Text(s.startVisit)),
-                  ]),
-                ),
-              ),
-            if (waiting.isEmpty && inProgress.isEmpty) Padding(padding: const EdgeInsets.all(16), child: Center(child: Text(s.empty))),
-            const SizedBox(height: 16),
-            Text(s.appointments, style: Theme.of(context).textTheme.titleMedium),
-            for (final a in today)
-              Card(
-                child: ListTile(
-                  title: Text('${a['patientName']}'),
-                  subtitle: Text('${a['serviceName']} · ${a['status']}'),
-                  trailing: switch (a['status']) {
-                    'PENDING_CONFIRMATION' => TextButton(onPressed: () => _act(context, a['id'] as String, 'confirm', reload), child: Text(s.ar ? 'تأكيد' : 'Confirm')),
-                    'CONFIRMED' => TextButton(onPressed: () => _act(context, a['id'] as String, 'check-in', reload), child: Text(s.ar ? 'حضر' : 'Check in')),
-                    _ => null,
-                  },
-                ),
-              ),
-            if (today.isEmpty) Padding(padding: const EdgeInsets.all(24), child: Center(child: Text(s.empty))),
-          ]),
-        );
-      },
-    );
-  }
-}
-
-class _Stat extends StatelessWidget {
-  const _Stat(this.label, this.value);
-  final String label, value;
-  @override
-  Widget build(BuildContext context) => SizedBox(
-        width: 160,
-        child: Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(label, style: Theme.of(context).textTheme.bodySmall),
-              const SizedBox(height: 4),
-              Text(value, style: Theme.of(context).textTheme.titleLarge),
-            ]),
-          ),
-        ),
-      );
 }

@@ -269,6 +269,11 @@ const en: Record<string, string> = {
 
   // login
   "login.title": "Log in",
+  "login.show": "Show",
+  "login.hide": "Hide",
+  "error.ACTIVATION_REQUIRED": "First sign-in: enter the one-time PIN you were given.",
+  "error.WRONG_APP_STAFF": "This is a business account. Use the Elmanassa Business app.",
+  "error.WRONG_APP_PATIENT": "This is a patient account. Use the Elmanassa app.",
   "login.identifier": "Phone number or email",
   "login.identifierHint": "The number you registered with.",
   "login.password": "Password",
@@ -1510,6 +1515,11 @@ const ar: Record<string, string> = {
   "register.domainTip": "نصيحة: يمكنك ربط نطاقك الخاص من لوحة التحكم ← النطاقات.",
 
   "login.title": "تسجيل الدخول",
+  "login.show": "إظهار",
+  "login.hide": "إخفاء",
+  "error.ACTIVATION_REQUIRED": "أول تسجيل دخول: أدخل الرقم السري المؤقت الذي حصلت عليه.",
+  "error.WRONG_APP_STAFF": "هذا حساب نشاط تجاري. استخدم تطبيق المنصة للأعمال.",
+  "error.WRONG_APP_PATIENT": "هذا حساب مريض. استخدم تطبيق المنصة.",
   "login.identifier": "رقم الهاتف أو البريد",
   "login.identifierHint": "الرقم الذي سجلت به.",
   "login.password": "كلمة المرور",

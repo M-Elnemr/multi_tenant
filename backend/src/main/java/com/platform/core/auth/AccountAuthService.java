@@ -120,7 +120,7 @@ public class AccountAuthService {
 
     @Transactional
     public TokenResponse clientGoogle(String credential, TenantContext.Current tenant, String ip, String ua) {
-        if (tenant == null || !"STORE".equals(tenant.type())) throw BusinessException.notFound("TENANT_NOT_FOUND", "Not available here");
+        if (tenant != null && !"STORE".equals(tenant.type())) throw BusinessException.notFound("TENANT_NOT_FOUND", "Not available here");   // a shop client signs in on a shop, or once on the platform host for every shop
         throttle.check("google|" + ip, 20, Duration.ofMinutes(5));
         GoogleIdTokenVerifier.GoogleIdentity g = google.verify(credential);
         var found = jdbc.sql("SELECT id, status FROM commerce.client_accounts WHERE google_sub = :s").param("s", g.sub()).query().listOfRows().stream().findFirst();

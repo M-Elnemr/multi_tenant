@@ -79,19 +79,25 @@ public class AuthService {
                 .map(u -> IdentifierState.ACTIVATE).orElse(IdentifierState.ENTER_PASSWORD);
     }
 
+    public TokenResponse login(String identifier, String password, String ip, String userAgent) { return login(identifier, password, null, ip, userAgent); }
+
+    /** `app` = "business" | "client" for the mobile apps: each only accepts its own kind of account and explains the mismatch. */
     @Transactional
-    public TokenResponse login(String identifier, String password, String ip, String userAgent) {
+    public TokenResponse login(String identifier, String password, String app, String ip, String userAgent) {
         String key = "login|" + ip + "|" + (identifier == null ? "" : identifier.toLowerCase());
         throttle.check(key, 5, Duration.ofMinutes(1));
         Optional<User> found = findByIdentifier(identifier);
         String hash = found.map(User::getPasswordHash).orElse(null);
         boolean ok = encoder.matches(password == null ? "" : password, hash != null ? hash : dummyHash) && hash != null;
         BusinessException staffProblem = null;
+        // A colleague invited by the business has no password yet: tell the app to ask for the one-time PIN instead of "wrong password".
+        if (found.isPresent() && hash == null && found.get().getStatus() == User.Status.INVITED) throw BusinessException.forbidden("ACTIVATION_REQUIRED", "First sign-in: enter the one-time PIN you were given");
         if (ok && found.isPresent()) {
             User user = found.get();
             if (user.getStatus() != User.Status.ACTIVE) throw BusinessException.forbidden("ACCOUNT_DISABLED", "Account is not active");
             try {
                 requireTenantAccess(user);
+                if ("client".equals(app)) throw BusinessException.forbidden("WRONG_APP_STAFF", "This is a business account. Use the Elmanassa Business app");
                 throttle.reset(key);
                 user.setLastLoginAt(Instant.now());
                 users.save(user);
@@ -103,6 +109,7 @@ public class AuthService {
         // On a clinic's own host a patient signs in with the phone + password the clinic gave them (patients are not staff accounts).
         Optional<TokenResponse> patient = accounts.patientLogin(identifier, password, TenantContext.get(), ip, userAgent);
         if (patient.isPresent()) {
+            if ("business".equals(app)) throw BusinessException.forbidden("WRONG_APP_PATIENT", "This is a patient account. Use the Elmanassa app");
             throttle.reset(key);
             return patient.get();
         }

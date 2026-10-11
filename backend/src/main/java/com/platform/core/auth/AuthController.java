@@ -25,7 +25,8 @@ public class AuthController {
     public AuthController(AuthService auth, SsoService sso, AccountAuthService accounts, com.platform.shared.PlatformProperties props) { this.auth = auth; this.sso = sso; this.accounts = accounts; this.props = props; }
 
     public record IdentifierRequest(@NotBlank String identifier) {}
-    public record LoginRequest(@NotBlank String identifier, @NotBlank String password) {}
+    /** `app` says which mobile app is signing in ("business" or "client"); web and unknown callers leave it empty. */
+    public record LoginRequest(@NotBlank String identifier, @NotBlank String password, String app) {}
     public record ActivateRequest(@NotBlank String identifier, @NotBlank String pin, @NotBlank String newPassword) {}
     public record RefreshRequest(@NotBlank String refreshToken) {}
     public record ChangePasswordRequest(@NotBlank String currentPassword, @NotBlank String newPassword) {}
@@ -40,7 +41,7 @@ public class AuthController {
 
     @PostMapping("/login")
     public TokenResponse login(@Valid @RequestBody LoginRequest r, HttpServletRequest req) {
-        return auth.login(r.identifier(), r.password(), ClientInfo.ip(req), req.getHeader("User-Agent"));
+        return auth.login(r.identifier(), r.password(), r.app(), ClientInfo.ip(req), req.getHeader("User-Agent"));
     }
 
     /** First-time password creation (or reset) with the PIN given by the clinic/store. */

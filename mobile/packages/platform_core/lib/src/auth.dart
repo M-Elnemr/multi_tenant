@@ -5,9 +5,12 @@ import 'api_client.dart';
 /// Tokens live in the OS keystore (Keychain / Keystore), never in plain preferences.
 /// The session is per tenant host so one phone can be logged in to several stores and clinics.
 class Session {
-  Session(this.host, {FlutterSecureStorage? storage}) : _s = storage ?? const FlutterSecureStorage();
+  Session(this.host, {FlutterSecureStorage? storage, this.refreshBase}) : _s = storage ?? const FlutterSecureStorage();
 
   final String host;
+  /// When one login is reused on several hosts (the Business app signs in on the platform address, then opens each business on its own address)
+  /// the token is always refreshed on this base, so a refresh token is never presented to a different host.
+  final String? refreshBase;
   final FlutterSecureStorage _s;
   String get _a => 'access:$host';
   String get _r => 'refresh:$host';
@@ -33,7 +36,8 @@ class Session {
     final refresh = await _s.read(key: _r);
     if (refresh == null) return false;
     try {
-      final r = await api.post('auth/refresh', {'refreshToken': refresh}) as Map<String, dynamic>;
+      final caller = refreshBase == null || refreshBase == api.baseUrl ? api : ApiClient(baseUrl: refreshBase!, session: this);
+      final r = await caller.post('auth/refresh', {'refreshToken': refresh}) as Map<String, dynamic>;
       await save(r);
       return true;
     } catch (_) {
@@ -53,14 +57,22 @@ class AuthRepository {
     return r['next'] as String;
   }
 
-  Future<Map<String, dynamic>> login(String identifier, String password) async {
-    final r = await api.post('auth/login', {'identifier': identifier, 'password': password}) as Map<String, dynamic>;
+  /// `app` is "business" or "client" for the mobile apps (each refuses the other kind of account with a clear message).
+  Future<Map<String, dynamic>> login(String identifier, String password, {String? app}) async {
+    final r = await api.post('auth/login', {'identifier': identifier, 'password': password, if (app != null) 'app': app}) as Map<String, dynamic>;
     await api.session.save(r);
     return r['user'] as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> activate(String identifier, String pin, String newPassword) async {
     final r = await api.post('auth/activate', {'identifier': identifier, 'pin': pin, 'newPassword': newPassword}) as Map<String, dynamic>;
+    await api.session.save(r);
+    return r['user'] as Map<String, dynamic>;
+  }
+
+  /// Forgot password: the business issues a new one-time code, the user picks a new password with it.
+  Future<Map<String, dynamic>> resetPassword(String identifier, String pin, String newPassword) async {
+    final r = await api.post('auth/reset-password', {'identifier': identifier, 'pin': pin, 'newPassword': newPassword}) as Map<String, dynamic>;
     await api.session.save(r);
     return r['user'] as Map<String, dynamic>;
   }

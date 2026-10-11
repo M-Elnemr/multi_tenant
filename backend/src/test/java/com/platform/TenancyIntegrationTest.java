@@ -106,9 +106,9 @@ class TenancyIntegrationTest extends IntegrationTestBase {
 
         onHost(clinic.host(), null, "POST", "/api/v1/auth/check-identifier", "{\"identifier\":\"%s\"}".formatted(phone))
                 .andExpect(jsonPath("$.next").value("ACTIVATE"));
-        // cannot log in without a password yet
+        // cannot log in without a password yet: the app is told to ask for the one-time PIN
         onHost(clinic.host(), null, "POST", "/api/v1/auth/login", "{\"identifier\":\"%s\",\"password\":\"whatever123\"}".formatted(phone))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("ACTIVATION_REQUIRED"));
         // wrong PIN rejected, right PIN creates the password and signs in
         onHost(clinic.host(), null, "POST", "/api/v1/auth/activate",
                 "{\"identifier\":\"%s\",\"pin\":\"00000000\",\"newPassword\":\"MyNewPass123\"}".formatted(phone))

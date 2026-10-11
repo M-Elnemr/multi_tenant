@@ -5,14 +5,15 @@ import 'account.dart';
 import 'catalog.dart';
 import 'checkout.dart';
 import 'common.dart';
+import 'directory.dart';
 import 'info.dart';
 
-/// The shop side of the app: the client enters a store's address, then browses, searches, orders (guest checkout, cash on delivery),
-/// follows orders and reaches the shop. Everything the website offers for a shop works here too.
+/// The shop side of the app: the client picks a shop from the directory (no address to type), then browses, searches, orders (guest checkout,
+/// cash on delivery), follows orders and reaches the shop. Everything the website offers for a shop works here too.
 class ShopEntry extends StatelessWidget {
   const ShopEntry({super.key});
   @override
-  Widget build(BuildContext context) => TenantGate(initial: null, expectedType: 'STORE', builder: (c, t, api) => StoreLoader(tenant: t, api: api));
+  Widget build(BuildContext context) => const StoreDirectory();
 }
 
 /// Loads the store's public profile and category tree once, then shows the store.

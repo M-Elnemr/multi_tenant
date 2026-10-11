@@ -48,6 +48,10 @@ android {
             // Release builds are signed with the upload key from android/key.properties (never committed).
             // Without it the build fails instead of silently falling back to the debug key.
             signingConfig = signingConfigs.getByName("release")
+            // Smaller, harder-to-read release builds: R8 shrinks and obfuscates the Java/Kotlin side, unused resources are dropped.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 }

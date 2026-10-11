@@ -37,4 +37,26 @@ public class MeController {
                 WHERE m.user_id = :u AND m.status = 'ACTIVE' AND t.status NOT IN ('ARCHIVED','CANCELLED') ORDER BY m.created_at
                 """).param("u", (UUID) a.getPrincipal()).query().listOfRows());
     }
+
+    /** Staff: every business this person works in, with what the Business app needs to show a picker and open one (no domain typing). */
+    @GetMapping("/businesses")
+    public List<Map<String, Object>> businesses(Authentication a) {
+        var rows = Rows.camel(jdbc.sql("""
+                SELECT t.id, t.slug, t.name, t.tenant_type AS type, t.status, t.default_locale AS locale, t.default_currency AS currency, b.primary_color, b.logo_file_id,
+                       (SELECT d.host FROM core.tenant_domains d WHERE d.tenant_id = t.id AND d.is_primary AND d.is_verified) AS host,
+                       (SELECT string_agg(r.code, ',' ORDER BY r.code) FROM core.membership_roles mr JOIN core.roles r ON r.id = mr.role_id WHERE mr.membership_id = m.id) AS roles
+                FROM core.user_tenant_memberships m JOIN core.tenants t ON t.id = m.tenant_id LEFT JOIN core.branding b ON b.tenant_id = t.id
+                WHERE m.user_id = :u AND m.status = 'ACTIVE' AND t.status NOT IN ('ARCHIVED','CANCELLED') ORDER BY m.created_at
+                """).param("u", (UUID) a.getPrincipal()).query().listOfRows());
+        return rows.stream().filter(r -> r.get("host") != null).map(r -> {
+            Map<String, Object> out = new java.util.LinkedHashMap<>(r);
+            String host = (String) r.get("host");
+            out.put("roles", r.get("roles") == null ? List.of() : java.util.Arrays.asList(((String) r.get("roles")).split(",")));
+            out.put("baseUrl", "https://" + host);
+            Object logo = r.get("logoFileId");
+            out.remove("logoFileId");
+            out.put("logoUrl", logo == null ? null : "https://" + host + "/api/v1/files/" + logo + "/content?variant=thumb");
+            return out;
+        }).toList();
+    }
 }
