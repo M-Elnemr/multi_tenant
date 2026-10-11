@@ -4,6 +4,8 @@ import 'package:platform_core/platform_core.dart';
 import 'clinic_panel.dart';
 import 'common.dart';
 import 'dashboards.dart';
+import 'domains_billing.dart';
+import 'settings.dart';
 import 'store_panel.dart';
 
 /// One section of the control panel. Mirrors the website's menu: the same sections, hidden without the same permission.
@@ -26,10 +28,10 @@ List<PanelSection> clinicSections() => [
       const PanelSection('الكشف الحالي', 'Current exam', Icons.medical_services_rounded, perm: 'medical_note.create', webPath: '/dashboard/current'),
       PanelSection('مواعيد العمل', 'Schedule', Icons.schedule_rounded, perm: 'schedule.manage', build: (c) => ScheduleScreen(ctx: c)),
       PanelSection('الخدمات', 'Services', Icons.checklist_rounded, perm: ['schedule.manage', 'appointment.manage'], build: (c) => ServicesScreen(ctx: c)),
-      const PanelSection('الإعدادات', 'Settings', Icons.settings_rounded, perm: ['settings.manage', 'schedule.manage'], webPath: '/dashboard/settings'),
-      const PanelSection('النطاقات', 'Domains', Icons.language_rounded, perm: 'domain.manage', webPath: '/dashboard/domains'),
+      PanelSection('الإعدادات', 'Settings', Icons.settings_rounded, perm: ['settings.manage', 'schedule.manage'], build: (c) => ClinicSettings(ctx: c)),
+      PanelSection('النطاقات', 'Domains', Icons.language_rounded, perm: 'domain.manage', build: (c) => DomainsScreen(ctx: c)),
       PanelSection('الموظفون', 'Staff', Icons.badge_rounded, perm: 'staff.manage', build: (c) => StaffScreen(ctx: c)),
-      const PanelSection('الفواتير والاشتراك', 'Billing', Icons.credit_card_rounded, perm: 'billing.read', webPath: '/dashboard/billing'),
+      PanelSection('الفواتير والاشتراك', 'Billing', Icons.credit_card_rounded, perm: 'billing.read', build: (c) => BillingScreen(ctx: c)),
       PanelSection('الإشعارات', 'Notifications', Icons.notifications_rounded, build: (c) => NotificationsScreen(ctx: c)),
     ];
 
@@ -42,10 +44,10 @@ List<PanelSection> storeSections() => [
       PanelSection('العملاء', 'Customers', Icons.people_alt_rounded, perm: 'customer.read', build: (c) => CustomersScreen(ctx: c)),
       PanelSection('الكوبونات', 'Coupons', Icons.local_offer_rounded, perm: 'coupon.manage', build: (c) => CouponsScreen(ctx: c)),
       PanelSection('التقييمات', 'Reviews', Icons.star_rounded, perm: 'review.moderate', build: (c) => ReviewsScreen(ctx: c)),
-      const PanelSection('الإعدادات', 'Settings', Icons.settings_rounded, perm: ['settings.manage', 'shipping.manage'], webPath: '/dashboard/settings'),
-      const PanelSection('النطاقات', 'Domains', Icons.language_rounded, perm: 'domain.manage', webPath: '/dashboard/domains'),
+      PanelSection('الإعدادات', 'Settings', Icons.settings_rounded, perm: ['settings.manage', 'shipping.manage'], build: (c) => StoreSettings(ctx: c)),
+      PanelSection('النطاقات', 'Domains', Icons.language_rounded, perm: 'domain.manage', build: (c) => DomainsScreen(ctx: c)),
       PanelSection('الموظفون', 'Staff', Icons.badge_rounded, perm: 'staff.manage', build: (c) => StaffScreen(ctx: c)),
-      const PanelSection('الفواتير والاشتراك', 'Billing', Icons.credit_card_rounded, perm: 'billing.read', webPath: '/dashboard/billing'),
+      PanelSection('الفواتير والاشتراك', 'Billing', Icons.credit_card_rounded, perm: 'billing.read', build: (c) => BillingScreen(ctx: c)),
       PanelSection('الإشعارات', 'Notifications', Icons.notifications_rounded, build: (c) => NotificationsScreen(ctx: c)),
     ];
 
