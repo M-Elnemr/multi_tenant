@@ -230,29 +230,37 @@ class Async<T> extends StatefulWidget {
 }
 
 class _AsyncState<T> extends State<Async<T>> {
-  late Future<T> _f = widget.load();
+  late Future<T> _f = _track(widget.load());
+  T? _last;
+  bool _has = false;
+
+  Future<T> _track(Future<T> f) => f.then((v) { _last = v; _has = true; return v; });
+
+  /// Refreshes in the background: the list that is already on screen stays (no skeleton flash, no re-animation) until the new answer lands.
   Future<void> _reload() async {
-    setState(() { _f = widget.load(); });
-    await _f.catchError((_) => null as T);
+    final next = _track(widget.load());
+    try { await next; } catch (_) { /* the old data stays; a pull-to-refresh shows its own error */ }
+    if (mounted) setState(() { _f = next; });
   }
 
   @override
   Widget build(BuildContext context) => FutureBuilder<T>(
         future: _f,
         builder: (context, snap) {
-          if (snap.connectionState != ConnectionState.done) {
+          if (snap.connectionState != ConnectionState.done && !_has) {
             return const Padding(padding: EdgeInsets.all(16), child: Column(children: [Skeleton(), SizedBox(height: 12), Skeleton(), SizedBox(height: 12), Skeleton()]));
           }
-          if (snap.hasError) {
+          if (snap.hasError && !_has) {
             return Center(child: Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [
               const Icon(Icons.cloud_off_rounded, size: 46, color: Color(0xFF9AA9BA)),
               const SizedBox(height: 10),
               Text(errorText(snap.error!), textAlign: TextAlign.center),
               const SizedBox(height: 6),
-              TextButton.icon(onPressed: _reload, icon: const Icon(Icons.refresh_rounded), label: Text(S.of(context).retry)),
+              TextButton.icon(onPressed: () { setState(() { _f = _track(widget.load()); }); }, icon: const Icon(Icons.refresh_rounded), label: Text(S.of(context).retry)),
             ])));
           }
-          return FadeSlideIn(child: widget.builder(context, snap.data as T, _reload));
+          final body = widget.builder(context, (snap.hasData ? snap.data : _last) as T, _reload);
+          return FadeSlideIn(child: body);
         },
       );
 }
