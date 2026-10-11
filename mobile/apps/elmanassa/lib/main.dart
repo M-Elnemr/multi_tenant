@@ -11,7 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'push.dart';
 import 'shop/shop.dart';
 
-const appVersion = '1.0.3';
+const appVersion = '1.0.4';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -86,7 +86,7 @@ class Landing extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.all(20),
           child: Column(children: [
-            card(0, Icons.local_hospital_rounded, ar ? 'أنا مريض' : "I'm a patient", ar ? 'الدور، السجل الطبي، التحاليل والروشتات' : 'Queue, medical record, tests and prescriptions', [const Color(0xFF1F6A99), const Color(0xFF2E8FB8)], () => const PlatformGate()),
+            card(0, Icons.local_hospital_rounded, ar ? 'العيادات' : 'Clinics', ar ? 'الدور، السجل الطبي، التحاليل والروشتات' : 'Queue, medical record, tests and prescriptions', [const Color(0xFF1F6A99), const Color(0xFF2E8FB8)], () => const PlatformGate()),
             card(1, Icons.storefront_rounded, ar ? 'التسوق' : 'Shop', ar ? 'اختر متجراً واطلب بالدفع عند الاستلام' : 'Pick a shop and order, cash on delivery', [const Color(0xFF3D9A63), const Color(0xFF52B77B)], () => const ShopEntry()),
             const SizedBox(height: 4),
             FadeSlideIn(index: 5, child: Text('${s.version} $appVersion', style: const TextStyle(color: Color(0xFF8A99AA), fontSize: 12))),
@@ -134,7 +134,7 @@ class _PlatformGateState extends State<PlatformGate> {
   Widget build(BuildContext context) {
     if (loggedIn == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
     if (loggedIn == false) {
-      return LoginScreen(api: platform, app: 'client', title: S.of(context).ar ? 'أنا مريض' : "I'm a patient", subtitle: S.of(context).ar ? 'سجّل الدخول بالرقم وكلمة المرور من عيادتك' : 'Sign in with the number and password from your clinic', onLoggedIn: (u) => setState(() { mustChange = u['mustChangePassword'] == true; loggedIn = true; }));
+      return LoginScreen(api: platform, app: 'client', title: S.of(context).ar ? 'العيادات' : 'Clinics', subtitle: S.of(context).ar ? 'سجّل الدخول بالرقم وكلمة المرور من عيادتك' : 'Sign in with the number and password from your clinic', onLoggedIn: (u) => setState(() { mustChange = u['mustChangePassword'] == true; loggedIn = true; }));
     }
     if (mustChange) return ChangeTempPassword(api: platform, onDone: () => setState(() => mustChange = false));
     return MyClinics(platform: platform, session: session, onLogout: () => setState(() => loggedIn = false));
@@ -234,7 +234,8 @@ class _MyClinicsState extends State<MyClinics> {
           },
         ),
       ]),
-      body: Async<List<dynamic>>(
+      body: CachedAsync<List<dynamic>>(
+        cacheKey: 'patient.clinics',
         load: () async => await widget.platform.get('me/tenants') as List<dynamic>,
         builder: (context, all, reload) {
           final clinics = all.cast<Map<String, dynamic>>().where((t) => t['type'] == 'CLINIC' && t['host'] != null).toList();
@@ -312,10 +313,15 @@ Widget _visitChip(BuildContext context, String? type) {
   if (type == null) return const SizedBox.shrink();
   final ar = S.of(context).ar;
   final follow = type == 'FOLLOW_UP';
+  // solid colours with explicit white/dark text: the old pale fills were almost invisible on the white cards
+  final bg = follow ? const Color(0xFFF59E0B) : Theme.of(context).colorScheme.primary;
+  final fg = follow ? const Color(0xFF3B2A00) : Colors.white;
   return Chip(
     visualDensity: VisualDensity.compact,
-    label: Text(follow ? (ar ? 'إعادة' : 'Follow-up') : (ar ? 'كشف' : 'Consultation')),
-    backgroundColor: follow ? Colors.amber.shade50 : Colors.blue.shade50,
+    side: BorderSide.none,
+    padding: const EdgeInsets.symmetric(horizontal: 4),
+    label: Text(follow ? (ar ? 'إعادة' : 'Follow-up') : (ar ? 'كشف' : 'Consultation'), style: TextStyle(color: fg, fontWeight: FontWeight.w800, fontSize: 12)),
+    backgroundColor: bg,
   );
 }
 

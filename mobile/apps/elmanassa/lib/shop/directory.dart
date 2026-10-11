@@ -57,13 +57,20 @@ class _StoreDirectoryState extends State<StoreDirectory> {
   }
 
   Future<void> _fetch() async {
-    setState(() { _loading = true; _error = null; _page = 1; });
+    final plain = _search.text.trim().isEmpty && _category == null && _gov == null;
+    // the unfiltered first page is remembered: reopening shows it at once while the fresh list loads behind it
+    if (plain && _stores.isEmpty) {
+      final c = await ListCache.read<Map<String, dynamic>>('shops.first');
+      if (c != null && mounted) setState(() { _stores = (c['data'] as List).cast<Map<String, dynamic>>(); _hasNext = (c['meta'] as Map)['hasNext'] == true; _loading = false; });
+    }
+    setState(() { _loading = _stores.isEmpty; _error = null; _page = 1; });
     try {
       final r = await _api.get('tenant/stores', query: {'q': _search.text.trim(), 'category': _category, 'governorate': _gov, 'page': '1', 'pageSize': '20'}) as Map<String, dynamic>;
+      if (plain) ListCache.write('shops.first', r);
       if (!mounted) return;
       setState(() { _stores = (r['data'] as List).cast<Map<String, dynamic>>(); _hasNext = (r['meta'] as Map)['hasNext'] == true; _loading = false; });
     } catch (e) {
-      if (mounted) setState(() { _error = e; _loading = false; });
+      if (mounted) setState(() { if (_stores.isEmpty) _error = e; _loading = false; });
     }
   }
 

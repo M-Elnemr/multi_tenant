@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -53,5 +54,36 @@ void main() {
     });
     await ApiClient(baseUrl: 'https://t.example.com', session: session, client: client).post('auth/login', {'identifier': 'x', 'password': 'y'});
     expect(seen, isNull);
+  });
+  retryTests();
+}
+
+void retryTests() {
+  test('a dropped connection is retried and the user never sees it', () async {
+    var calls = 0;
+    final api = ApiClient(
+      baseUrl: 'https://x.example.com',
+      session: _MemorySession(),
+      maxAttempts: 3,
+      client: MockClient((req) async {
+        calls++;
+        if (calls < 3) throw const SocketException('Connection timed out');
+        return http.Response(jsonEncode({'ok': true}), 200, headers: {'content-type': 'application/json'});
+      }),
+    );
+    expect(await api.get('anything'), {'ok': true});
+    expect(calls, 3);
+  });
+
+  test('gives a clear NETWORK error after the last attempt', () async {
+    final api = ApiClient(baseUrl: 'https://x.example.com', session: _MemorySession(), maxAttempts: 2, client: MockClient((req) async => throw const SocketException('down')));
+    await expectLater(api.get('anything'), throwsA(isA<ApiException>().having((e) => e.code, 'code', 'NETWORK')));
+  });
+
+  test('a POST that may already have been received is not sent twice', () async {
+    var calls = 0;
+    final api = ApiClient(baseUrl: 'https://x.example.com', session: _MemorySession(), client: MockClient((req) async { calls++; throw http.ClientException('connection closed while receiving data'); }));
+    await expectLater(api.post('shop/checkout', {'a': 1}), throwsA(isA<ApiException>()));
+    expect(calls, 1);
   });
 }

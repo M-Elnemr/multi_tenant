@@ -1,6 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 
 import 'auth.dart';
 
@@ -16,7 +19,16 @@ class ApiException implements Exception {
 /// Talks to the platform API. The tenant (store/clinic) is chosen purely by the host in [baseUrl]
 /// (e.g. https://fashion.example.com), exactly like the website: the server never trusts a tenant id from the client.
 class ApiClient {
-  ApiClient({required this.baseUrl, required this.session, http.Client? client}) : _http = client ?? http.Client();
+  ApiClient({required this.baseUrl, required this.session, http.Client? client, this.maxAttempts = 3, this.attemptTimeout = const Duration(seconds: 20)}) : _http = client ?? _shared;
+
+  /// One connection pool for the whole app. A connection that cannot be opened within 6 s is abandoned and retried (the server edge sometimes drops a
+  /// new TCP connection; without this limit the screen would wait for the operating system's multi-minute timeout).
+  static final http.Client _shared = IOClient(HttpClient()
+    ..connectionTimeout = const Duration(seconds: 6)
+    ..idleTimeout = const Duration(seconds: 20));
+
+  final int maxAttempts;
+  final Duration attemptTimeout;
 
   final String baseUrl; // scheme + host (+port), no trailing slash
   final Session session;
@@ -46,18 +58,42 @@ class ApiClient {
     }
   }
 
-  Future<dynamic> _send(String method, String path, {Object? body, Map<String, String?>? query, String? idempotencyKey, bool retried = false}) async {
-    final req = http.Request(method, _uri(path, query));
-    req.headers['Accept'] = 'application/json';
-    if (body != null) {
-      req.headers['Content-Type'] = 'application/json';
-      req.body = jsonEncode(body);
+  /// A request that never reached the server (connection refused/timed out/reset before any answer) is simply tried again, up to
+  /// [maxAttempts] times with a short pause, so a dropped connection is invisible to the user. Gives up with a clear NETWORK error.
+  Future<http.Response> _sendWithRetry(String method, String path, Map<String, String?>? query, Object? body, String? idempotencyKey, String? token) async {
+    Object? last;
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      final r = http.Request(method, _uri(path, query));
+      r.headers['Accept'] = 'application/json';
+      if (body != null) {
+        r.headers['Content-Type'] = 'application/json';
+        r.body = jsonEncode(body);
+      }
+      if (idempotencyKey != null) r.headers['Idempotency-Key'] = idempotencyKey;
+      if (token != null && !path.startsWith('auth/login')) r.headers['Authorization'] = 'Bearer $token';
+      try {
+        return await http.Response.fromStream(await _http.send(r).timeout(attemptTimeout));
+      } on TimeoutException catch (e) {
+        // the request may have reached the server: only repeat it when repeating is harmless
+        if (method != 'GET' && idempotencyKey == null) throw ApiException(0, 'NETWORK', e.toString());
+        last = e;
+      } on SocketException catch (e) {
+        last = e;
+      } on http.ClientException catch (e) {
+        if (method != 'GET' && idempotencyKey == null && !e.toString().contains('SocketException')) throw ApiException(0, 'NETWORK', e.toString());
+        last = e;
+      } on HandshakeException catch (e) {
+        last = e;
+      }
+      if (attempt < maxAttempts) await Future<void>.delayed(Duration(milliseconds: 400 * attempt));
     }
-    if (idempotencyKey != null) req.headers['Idempotency-Key'] = idempotencyKey;
-    final token = await session.accessToken();
-    if (token != null && !path.startsWith('auth/login')) req.headers['Authorization'] = 'Bearer $token';
+    throw ApiException(0, 'NETWORK', last?.toString() ?? 'Connection problem');
+  }
 
-    final res = await http.Response.fromStream(await _http.send(req));
+  Future<dynamic> _send(String method, String path, {Object? body, Map<String, String?>? query, String? idempotencyKey, bool retried = false}) async {
+    final token = await session.accessToken();
+
+    final res = await _sendWithRetry(method, path, query, body, idempotencyKey, token);
     if (res.statusCode == 401 && !retried && await session.refresh(this)) {
       return _send(method, path, body: body, query: query, idempotencyKey: idempotencyKey, retried: true);
     }

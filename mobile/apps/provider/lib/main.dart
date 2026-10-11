@@ -3,9 +3,10 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:platform_core/platform_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'dashboards.dart';
+import 'common.dart';
+import 'shell.dart';
 
-const appVersion = '1.0.3';
+const appVersion = '1.0.4';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -55,12 +56,16 @@ class _RootState extends State<Root> {
     List<Map<String, dynamic>>? list;
     String? error;
     if (await _session.loggedIn) {
+      // show the last known list at once; the fresh one replaces it as soon as it arrives
+      final cached = await ListCache.read<List<dynamic>>('business.list');
+      if (cached != null && mounted) setState(() { _businesses = cached.cast<Map<String, dynamic>>(); _checked = true; });
       try {
         list = ((await _api.get('me/businesses')) as List).cast<Map<String, dynamic>>();
+        await ListCache.write('business.list', list);
       } on ApiException catch (e) {
-        if (e.status != 401) error = errorText(e);
+        if (e.status == 401) { list = null; await ListCache.clear(); } else if (cached != null) { list = cached.cast<Map<String, dynamic>>(); } else { error = errorText(e); }
       } catch (e) {
-        error = errorText(e);
+        if (cached != null) { list = cached.cast<Map<String, dynamic>>(); } else { error = errorText(e); }
       }
     }
     if (mounted) setState(() { _businesses = list; _error = error; _checked = true; });
@@ -282,7 +287,6 @@ class _BusinessHomeState extends State<BusinessHome> {
     final s = S.of(context);
     final b = widget.business;
     final color = hexColor(b['primaryColor']);
-    final store = b['type'] == 'STORE';
     return Theme(
       data: themeFor(null, seed: color),
       child: Scaffold(
@@ -312,7 +316,7 @@ class _BusinessHomeState extends State<BusinessHome> {
             }
             final perms = (snap.data!['permissions'] as List).cast<String>();
             final currency = (b['currency'] as String?) ?? 'EGP';
-            return store ? StoreDashboard(api: _api, currency: currency, perms: perms) : ClinicDashboard(api: _api, perms: perms);
+            return PanelShell(ctx: Ctx(api: _api, currency: currency, perms: perms, host: b['host'] as String, type: b['type'] as String));
           },
         ),
       ),

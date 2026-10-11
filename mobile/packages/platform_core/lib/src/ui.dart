@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'api_client.dart';
+import 'cache.dart';
 import 'locale.dart';
 import 'strings.dart';
 import 'theme.dart';
@@ -201,6 +202,7 @@ String errorText(Object e) {
   final ar = AppLocale.isAr;
   if (e is ApiException) {
     final m = <String, List<String>>{
+      'NETWORK': ['تعذّر الاتصال بالخادم. تحقق من الإنترنت وأعد المحاولة', 'Could not reach the server. Check your internet and try again'],
       'INVALID_CREDENTIALS': ['رقم الهاتف/البريد أو كلمة المرور غير صحيحة', 'Wrong phone/email or password'],
       'ACTIVATION_REQUIRED': ['أول دخول: أدخل الكود المؤقت الذي حصلت عليه', 'First sign-in: enter the one-time code you were given'],
       'WRONG_APP_STAFF': ['هذا حساب نشاط تجاري. استخدم تطبيق Elmanassa Business', 'This is a business account. Use the Elmanassa Business app'],
@@ -251,6 +253,45 @@ class _AsyncState<T> extends State<Async<T>> {
             ])));
           }
           return FadeSlideIn(child: widget.builder(context, snap.data as T, _reload));
+        },
+      );
+}
+
+/// Like [Async] but remembers the last answer under [cacheKey]: reopening shows the old data at once and refreshes behind it.
+/// Never an endless spinner: after the network retries are used up the error card with Retry appears (or the old data stays).
+class CachedAsync<T> extends StatefulWidget {
+  const CachedAsync({super.key, required this.cacheKey, required this.load, required this.builder});
+  final String cacheKey;
+  final Future<T> Function() load;
+  final Widget Function(BuildContext, T, Future<void> Function() reload) builder;
+  @override
+  State<CachedAsync<T>> createState() => _CachedAsyncState<T>();
+}
+
+class _CachedAsyncState<T> extends State<CachedAsync<T>> {
+  late Stream<T> _s = cachedThenFresh<T>(widget.cacheKey, widget.load);
+  int _n = 0;
+
+  Future<void> _reload() async {
+    setState(() { _s = cachedThenFresh<T>(widget.cacheKey, widget.load); _n++; });
+  }
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<T>(
+        key: ValueKey(_n),
+        stream: _s,
+        builder: (context, snap) {
+          if (snap.hasData) return widget.builder(context, snap.data as T, _reload);
+          if (snap.hasError) {
+            return Center(child: Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.cloud_off_rounded, size: 46, color: Color(0xFF9AA9BA)),
+              const SizedBox(height: 10),
+              Text(errorText(snap.error!), textAlign: TextAlign.center),
+              const SizedBox(height: 6),
+              TextButton.icon(onPressed: _reload, icon: const Icon(Icons.refresh_rounded), label: Text(S.of(context).retry)),
+            ])));
+          }
+          return const Padding(padding: EdgeInsets.all(16), child: Column(children: [Skeleton(), SizedBox(height: 12), Skeleton(), SizedBox(height: 12), Skeleton()]));
         },
       );
 }

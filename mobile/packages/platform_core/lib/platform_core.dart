@@ -1,5 +1,6 @@
 export 'src/api_client.dart';
 export 'src/auth.dart';
+export 'src/cache.dart';
 export 'src/locale.dart';
 export 'src/login_screen.dart';
 export 'src/strings.dart';

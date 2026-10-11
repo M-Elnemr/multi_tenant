@@ -1,6 +1,7 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'api_client.dart';
+import 'cache.dart';
 
 /// Tokens live in the OS keystore (Keychain / Keystore), never in plain preferences.
 /// The session is per tenant host so one phone can be logged in to several stores and clinics.
@@ -93,5 +94,6 @@ class AuthRepository {
       } catch (_) {}
     }
     await api.session.clear();
+    await ListCache.clear();
   }
 }
