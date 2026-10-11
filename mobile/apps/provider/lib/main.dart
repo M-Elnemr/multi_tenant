@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'common.dart';
 import 'shell.dart';
 
-const appVersion = '1.0.5';
+const appVersion = '1.0.6';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

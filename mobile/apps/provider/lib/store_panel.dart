@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:platform_core/platform_core.dart';
 
 import 'common.dart';
+import 'forms.dart';
 import 'products.dart';
 
 // ---------------------------------------------------------------- Orders
@@ -87,6 +88,40 @@ class OrderDetail extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(child: OutlinedButton.icon(onPressed: () => whatsapp(phone, ar ? 'مرحباً ${o['customerNameSnapshot']}، بخصوص طلبك ${o['orderNumber']}' : 'Hello ${o['customerNameSnapshot']}, about your order ${o['orderNumber']}'), icon: const Icon(Icons.chat_rounded), label: const Text('WhatsApp'))),
             ]),
+            if (ctx.can('order.update_status') && ['PREPARING', 'SHIPPED', 'ARRIVED'].contains(o['status']))
+              Padding(padding: const EdgeInsets.only(top: 8), child: OutlinedButton.icon(
+                icon: const Icon(Icons.local_shipping_outlined),
+                label: Text(ar ? 'بيانات التتبع والشحن' : 'Courier and tracking'),
+                onPressed: () async {
+                  final courier = TextEditingController(text: '${o['courierName'] ?? ''}'), number = TextEditingController(text: '${o['trackingNumber'] ?? ''}'), url = TextEditingController(text: '${o['trackingUrl'] ?? ''}');
+                  if (await formSheet(context, title: ar ? 'التتبع والشحن' : 'Courier and tracking', body: (x, set) => [tf(courier, ar ? 'شركة الشحن' : 'Courier', hint: 'Bosta, Aramex, Mylerz…'), tf(number, ar ? 'رقم الشحنة' : 'Tracking number', ltr: true), tf(url, ar ? 'رابط التتبع' : 'Tracking link', ltr: true)],
+                      onSave: () async { await ctx.api.patch('store/orders/$id/tracking', {'courierName': courier.text.trim(), 'trackingNumber': number.text.trim(), 'trackingUrl': url.text.trim()}); })) {
+                    await reload();
+                  }
+                },
+              )),
+            if (ctx.can('refund.create') && !['CANCELLED', 'PENDING'].contains(o['status']) && o['paymentStatus'] == 'PAID')
+              Padding(padding: const EdgeInsets.only(top: 8), child: OutlinedButton.icon(
+                icon: const Icon(Icons.currency_exchange_rounded),
+                label: Text(ar ? 'استرداد مبلغ' : 'Refund'),
+                onPressed: () async {
+                  final amount = TextEditingController(text: fmtMoney(o['totalMinor'] as num?));
+                  if (await formSheet(context, title: ar ? 'استرداد مبلغ' : 'Refund', canSave: () => toMinor(amount.text) > 0,
+                      body: (x, set) => [tf(amount, '${ar ? 'المبلغ' : 'Amount'} ($cur)', number: true, ltr: true, onChanged: (_) => set(() {}))],
+                      onSave: () async { await ctx.api.post('store/orders/$id/refund', {'amountMinor': toMinor(amount.text)}); })) {
+                    await reload();
+                  }
+                },
+              )),
+            if (ctx.can('order.update_status') && (phone ?? '').isNotEmpty)
+              Padding(padding: const EdgeInsets.only(top: 8), child: TextButton.icon(
+                icon: const Icon(Icons.block_rounded, color: Color(0xFFD14343)),
+                label: Text(ar ? 'حظر هذا الرقم' : 'Block this number', style: const TextStyle(color: Color(0xFFD14343))),
+                onPressed: () async {
+                  if (!await confirm(context, ar ? 'حظر الرقم من الطلب مستقبلًا؟' : 'Block this number from ordering?') || !context.mounted) return;
+                  if (await run(context, () => ctx.api.post('store/phone-flags', {'phone': phone, 'blocked': true})) && context.mounted) toast(context, ar ? 'تم الحظر' : 'Blocked');
+                },
+              )),
             if (o['confirmedAt'] == null && o['status'] == 'REQUESTED' && ctx.can('order.update_status'))
               Padding(padding: const EdgeInsets.only(top: 8), child: FilledButton.tonalIcon(onPressed: () async { if (await run(context, () => ctx.api.post('store/orders/$id/confirm', {}))) await reload(); }, icon: const Icon(Icons.verified_rounded), label: Text(ar ? 'تم الاتصال وتأكيد الطلب' : 'Customer confirmed by phone'))),
             if (next.isNotEmpty && ctx.can('order.update_status'))

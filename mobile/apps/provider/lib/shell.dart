@@ -13,12 +13,11 @@ import 'store_panel.dart';
 
 /// One section of the control panel. Mirrors the website's menu: the same sections, hidden without the same permission.
 class PanelSection {
-  const PanelSection(this.ar, this.en, this.icon, {this.perm, this.build, this.webPath});
+  const PanelSection(this.ar, this.en, this.icon, {this.perm, required this.build});
   final String ar, en;
   final IconData icon;
   final dynamic perm; // String or List<String>; null = everyone
-  final Widget Function(Ctx)? build; // null = managed on the website
-  final String? webPath;
+  final Widget Function(Ctx) build;
   String title(bool isAr) => isAr ? ar : en;
   bool allowed(Ctx c) => perm == null || (perm is List ? c.canAny((perm as List).cast<String>()) : c.can(perm as String));
 }
@@ -65,12 +64,12 @@ class PanelShell extends StatefulWidget {
 class _PanelShellState extends State<PanelShell> {
   int _tab = 0;
   late final List<PanelSection> _all = (widget.ctx.type == 'STORE' ? storeSections() : clinicSections()).where((s) => s.allowed(widget.ctx)).toList();
-  late final List<PanelSection> _native = _all.where((s) => s.build != null).toList();
+  late final List<PanelSection> _native = _all;
   late final List<PanelSection> _bottom = _native.take(_native.length > 5 ? 4 : _native.length).toList();
   late final List<PanelSection> _more = _all.where((s) => !_bottom.contains(s)).toList();
   final Map<int, Widget> _pages = {};
 
-  Widget _page(int i) => _pages.putIfAbsent(i, () => i < _bottom.length ? _bottom[i].build!(widget.ctx) : _MoreList(ctx: widget.ctx, sections: _more));
+  Widget _page(int i) => _pages.putIfAbsent(i, () => i < _bottom.length ? _bottom[i].build(widget.ctx) : _MoreList(ctx: widget.ctx, sections: _more));
 
   @override
   Widget build(BuildContext context) {
@@ -108,12 +107,10 @@ class _MoreList extends StatelessWidget {
         FadeSlideIn(index: i, child: Card(child: ListTile(
           leading: Container(padding: const EdgeInsets.all(9), decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)), child: Icon(sections[i].icon, color: Theme.of(context).colorScheme.primary)),
           title: Text(sections[i].title(isAr), style: const TextStyle(fontWeight: FontWeight.w800)),
-          subtitle: sections[i].build == null ? Text(isAr ? 'تُفتح في موقع الويب' : 'Opens on the website') : null,
-          trailing: Icon(sections[i].build == null ? Icons.open_in_new_rounded : Icons.chevron_right_rounded),
+          trailing: const Icon(Icons.chevron_right_rounded),
           onTap: () {
             final sec = sections[i];
-            if (sec.build == null) { launch('https://${ctx.host}${sec.webPath}'); return; }
-            Navigator.of(context).push(MaterialPageRoute(builder: (_) => Scaffold(appBar: AppBar(title: Text(sec.title(isAr))), body: sec.build!(ctx))));
+            Navigator.of(context).push(MaterialPageRoute(builder: (_) => Scaffold(appBar: AppBar(title: Text(sec.title(isAr))), body: sec.build(ctx))));
           },
         ))),
     ]);

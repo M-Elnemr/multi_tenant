@@ -211,20 +211,3 @@ Widget kv(String k, String v, {bool ltr = false}) => Padding(
         Expanded(child: Text(v.isEmpty ? '-' : v, textDirection: ltr ? TextDirection.ltr : null, style: const TextStyle(fontWeight: FontWeight.w700))),
       ]),
     );
-
-/// A card used for "manage on the web" entries: heavy configuration stays on the website, one tap away.
-class WebLinkCard extends StatelessWidget {
-  const WebLinkCard({super.key, required this.title, required this.icon, required this.url, this.subtitle});
-  final String title;
-  final String? subtitle;
-  final IconData icon;
-  final String url;
-  @override
-  Widget build(BuildContext context) => Card(child: ListTile(
-        leading: Icon(icon, color: Theme.of(context).colorScheme.primary),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-        subtitle: Text(subtitle ?? (AppLocale.isAr ? 'تُدار من موقع الويب' : 'Managed on the website')),
-        trailing: const Icon(Icons.open_in_new_rounded, size: 20),
-        onTap: () => launch(url),
-      ));
-}

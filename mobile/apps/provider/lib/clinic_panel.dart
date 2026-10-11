@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:platform_core/platform_core.dart';
 
 import 'common.dart';
+import 'patients.dart';
 
 // ---------------------------------------------------------------- Appointments
 
@@ -66,6 +67,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
           pageSize: 100,
           query: {'from': _key, 'to': _key},
           emptyText: s.ar ? 'لا توجد مواعيد في هذا اليوم' : 'No appointments on this day',
+          fab: widget.ctx.can('appointment.manage') ? FloatingActionButton.extended(onPressed: () async { if (await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => BookingPage(ctx: widget.ctx))) == true) setState(() => _n++); }, icon: const Icon(Icons.add_rounded), label: Text(s.ar ? 'حجز جديد' : 'New booking')) : null,
           itemBuilder: (c, a, reload) => Card(child: Padding(
             padding: const EdgeInsets.all(14),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -131,9 +133,16 @@ class QueueScreen extends StatelessWidget {
 
 // ---------------------------------------------------------------- Patients
 
-class PatientsScreen extends StatelessWidget {
+class PatientsScreen extends StatefulWidget {
   const PatientsScreen({super.key, required this.ctx});
   final Ctx ctx;
+  @override
+  State<PatientsScreen> createState() => _PatientsScreenState();
+}
+
+class _PatientsScreenState extends State<PatientsScreen> {
+  int _n = 0;
+  Ctx get ctx => widget.ctx;
 
   @override
   Widget build(BuildContext context) {
@@ -154,8 +163,10 @@ class PatientsScreen extends StatelessWidget {
     }
 
     return PagedList(
+      key: ValueKey('patients$_n'),
       api: ctx.api,
       path: 'clinic/patients',
+      fab: ctx.can('patient.create') ? FloatingActionButton.extended(onPressed: () async { if (await patientSheet(context, ctx) != null && mounted) setState(() => _n++); }, icon: const Icon(Icons.person_add_alt_1_rounded), label: Text(s.ar ? 'مريض جديد' : 'New patient')) : null,
       searchHint: s.ar ? 'ابحث بالاسم أو الهاتف أو الكود' : 'Name, phone or patient code',
       emptyText: s.ar ? 'لا يوجد مرضى' : 'No patients',
       itemBuilder: (c, p, reload) {
@@ -176,14 +187,8 @@ class PatientDetail extends StatefulWidget {
 }
 
 class _PatientDetailState extends State<PatientDetail> {
-  Future<void> _walkIn(Map<String, dynamic> p) async {
-    final ctx = widget.ctx;
-    final ok = await run(context, () async {
-      final docs = (await ctx.api.get('clinic/doctors') as List).cast<Map<String, dynamic>>();
-      final branches = (await ctx.api.get('clinic/branches') as List).cast<Map<String, dynamic>>();
-      await ctx.api.post('clinic/appointments/walk-in', {'patientId': widget.id, 'doctorId': docs.first['id'], 'branchId': branches.first['id'], 'visitType': 'CONSULTATION'});
-    });
-    if (ok && mounted) toast(context, S.of(context).ar ? 'تمت إضافته إلى قاعة الانتظار' : 'Added to the waiting room');
+  Future<void> _walkIn() async {
+    if (await walkInSheet(context, widget.ctx, widget.id) && mounted) toast(context, S.of(context).ar ? 'تمت إضافته إلى قاعة الانتظار' : 'Added to the waiting room');
   }
 
   @override
@@ -228,8 +233,13 @@ class _PatientDetailState extends State<PatientDetail> {
                 Expanded(child: OutlinedButton.icon(onPressed: () => whatsapp(p['phone'] as String?), icon: const Icon(Icons.chat_rounded), label: const Text('WhatsApp'))),
                 const SizedBox(width: 8),
               ],
-              if (ctx.can('appointment.manage')) Expanded(child: FilledButton.icon(onPressed: () => _walkIn(p), icon: const Icon(Icons.add_rounded), label: Text(s.ar ? 'أضف للانتظار' : 'Add to queue'))),
+              if (ctx.can('appointment.manage')) Expanded(child: FilledButton.icon(onPressed: _walkIn, icon: const Icon(Icons.add_rounded), label: Text(s.ar ? 'أضف للانتظار' : 'Add to queue'))),
             ]),
+            Padding(padding: const EdgeInsets.only(top: 8), child: Wrap(spacing: 8, runSpacing: 8, children: [
+              if (ctx.can('patient.update') || ctx.can('patient.create')) OutlinedButton.icon(onPressed: () async { if (await patientSheet(context, ctx, patient: p) != null) await reload(); }, icon: const Icon(Icons.edit_outlined), label: Text(s.ar ? 'تعديل' : 'Edit')),
+              if (guardian == null && ctx.can('patient.create')) OutlinedButton.icon(onPressed: () async { if (await patientSheet(context, ctx, guardian: p) != null && context.mounted) toast(context, s.ar ? 'تمت إضافة الطفل' : 'Child added'); }, icon: const Icon(Icons.child_care_rounded), label: Text(s.ar ? 'إضافة طفل' : 'Add a child')),
+              if (p['hasPortal'] == true) OutlinedButton.icon(onPressed: () async { if (await setPatientPasswordSheet(context, ctx, widget.id) && context.mounted) toast(context, s.ar ? 'تم تعيين كلمة المرور' : 'Password set'); }, icon: const Icon(Icons.key_rounded), label: Text(s.ar ? 'كلمة مرور المريض' : 'Patient password')),
+            ])),
             if (tl != null) ...[
               Padding(padding: const EdgeInsets.fromLTRB(4, 18, 4, 6), child: Text(s.ar ? 'الزيارات' : 'Visits', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16))),
               for (final v in visits) Card(child: ListTile(leading: const Icon(Icons.event_note_rounded), title: Text(fmtDate(v['visitAt'] as String?), textDirection: TextDirection.ltr, textAlign: TextAlign.start), subtitle: Text('${v['doctorName'] ?? ''} ${v['diagnosis'] ?? v['summary'] ?? ''}'.trim()))),
