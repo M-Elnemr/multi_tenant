@@ -247,68 +247,6 @@ class _PatientDetailState extends State<PatientDetail> {
   }
 }
 
-// ---------------------------------------------------------------- Services
-
-class ServicesScreen extends StatelessWidget {
-  const ServicesScreen({super.key, required this.ctx});
-  final Ctx ctx;
-  @override
-  Widget build(BuildContext context) {
-    final s = S.of(context);
-    final canEdit = ctx.can('schedule.manage');
-    return Async<List<dynamic>>(
-      load: () async => await ctx.api.get('clinic/services') as List<dynamic>,
-      builder: (context, list, reload) {
-        final items = list.cast<Map<String, dynamic>>();
-        return RefreshIndicator(
-          onRefresh: reload,
-          child: ListView(padding: const EdgeInsets.all(16), children: [
-            for (var i = 0; i < items.length; i++)
-              FadeSlideIn(index: i, child: Card(child: SwitchListTile(
-                value: items[i]['isActive'] == true,
-                onChanged: canEdit ? (v) async { if (await run(context, () => ctx.api.put('clinic/services/${items[i]['id']}/active', {'active': v}))) await reload(); } : null,
-                title: Text('${items[i]['name']}', style: const TextStyle(fontWeight: FontWeight.w800)),
-                subtitle: Text('${items[i]['durationMinutes']} ${s.ar ? 'دقيقة' : 'min'}${items[i]['priceMinor'] != null ? ' · ${s.money(items[i]['priceMinor'] as num, (items[i]['currency'] as String?) ?? ctx.currency)}' : ''}'),
-              ))),
-            if (items.isEmpty) emptyState(s.empty),
-            WebLinkCard(title: s.ar ? 'إضافة أو تعديل الخدمات' : 'Add or edit services', icon: Icons.edit_note_rounded, url: 'https://${ctx.host}/dashboard/services'),
-          ]),
-        );
-      },
-    );
-  }
-}
-
-// ---------------------------------------------------------------- Schedule (read-only summary)
-
-class ScheduleScreen extends StatelessWidget {
-  const ScheduleScreen({super.key, required this.ctx});
-  final Ctx ctx;
-  @override
-  Widget build(BuildContext context) {
-    final s = S.of(context);
-    return Async<List<dynamic>>(
-      load: () async => await ctx.api.get('clinic/schedules') as List<dynamic>,
-      builder: (context, list, reload) {
-        final items = list.cast<Map<String, dynamic>>();
-        return RefreshIndicator(
-          onRefresh: reload,
-          child: ListView(padding: const EdgeInsets.all(16), children: [
-            for (var i = 0; i < items.length; i++)
-              FadeSlideIn(index: i, child: Card(child: ListTile(
-                leading: const Icon(Icons.schedule_rounded),
-                title: Text('${items[i]['doctorName'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.w800)),
-                subtitle: Text('${items[i]['weekday'] ?? items[i]['dayOfWeek'] ?? ''}  ${items[i]['startTime'] ?? ''} – ${items[i]['endTime'] ?? ''}', textDirection: TextDirection.ltr, textAlign: TextAlign.start),
-              ))),
-            if (items.isEmpty) emptyState(s.empty),
-            WebLinkCard(title: s.ar ? 'تعديل مواعيد العمل والإجازات' : 'Edit working hours and days off', icon: Icons.edit_calendar_rounded, url: 'https://${ctx.host}/dashboard/schedule'),
-          ]),
-        );
-      },
-    );
-  }
-}
-
 // ---------------------------------------------------------------- Notifications / Staff (shared with the shop)
 
 class NotificationsScreen extends StatelessWidget {
@@ -337,36 +275,6 @@ class NotificationsScreen extends StatelessWidget {
                 ),
               )),
             if (items.isEmpty) emptyState(s.ar ? 'لا توجد إشعارات' : 'No notifications', icon: Icons.notifications_off_outlined),
-          ]),
-        );
-      },
-    );
-  }
-}
-
-class StaffScreen extends StatelessWidget {
-  const StaffScreen({super.key, required this.ctx});
-  final Ctx ctx;
-  @override
-  Widget build(BuildContext context) {
-    final s = S.of(context);
-    return Async<List<dynamic>>(
-      load: () async => await ctx.api.get('tenant/members') as List<dynamic>,
-      builder: (context, list, reload) {
-        final items = list.cast<Map<String, dynamic>>();
-        return RefreshIndicator(
-          onRefresh: reload,
-          child: ListView(padding: const EdgeInsets.all(16), children: [
-            for (var i = 0; i < items.length; i++)
-              FadeSlideIn(index: i, child: Card(child: ListTile(
-                leading: CircleAvatar(child: Text(('${items[i]['firstName']}'.isEmpty ? '?' : '${items[i]['firstName']}'[0]).toUpperCase())),
-                title: Text('${items[i]['firstName']} ${items[i]['lastName'] ?? ''}'.trim(), style: const TextStyle(fontWeight: FontWeight.w800)),
-                subtitle: Text('${items[i]['roles']}\n${items[i]['phone'] ?? ''}', textDirection: TextDirection.ltr, textAlign: TextAlign.start),
-                isThreeLine: true,
-                trailing: StatusPill('${items[i]['userStatus']}'),
-              ))),
-            if (items.isEmpty) emptyState(s.empty),
-            WebLinkCard(title: s.ar ? 'دعوة موظف أو تغيير الصلاحيات' : 'Invite staff or change roles', icon: Icons.group_add_rounded, url: 'https://${ctx.host}/dashboard/staff'),
           ]),
         );
       },

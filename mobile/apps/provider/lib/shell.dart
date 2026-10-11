@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:platform_core/platform_core.dart';
 
 import 'clinic_panel.dart';
+import 'admin.dart';
 import 'common.dart';
 import 'dashboards.dart';
 import 'domains_billing.dart';
