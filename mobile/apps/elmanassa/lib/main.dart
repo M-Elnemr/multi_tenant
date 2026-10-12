@@ -13,7 +13,7 @@ import 'mode.dart';
 import 'push.dart';
 import 'shop/shop.dart';
 
-const appVersion = '1.0.5';
+const appVersion = '1.1.0';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
