@@ -15,3 +15,7 @@ web/node_modules
 
 # credentials mounted into containers (FCM service account etc.)
 secrets/
+
+# runtime uploads (patient files, shop images) and local release bundles
+backend/uploads/
+release/
