@@ -9,7 +9,7 @@ import { useI18n } from "../i18n-provider";
 import { EmailInput, PhoneInput } from "../inputs";
 import { Button, Field, Input } from "../ui";
 import { DrawerShell } from "./drawer-shell";
-import { Group, OpenStatusField, PhotoField, TextField, validUrl } from "./fields";
+import { Group, LogoField, OpenStatusField, PhotoField, TextField, validUrl } from "./fields";
 import { useSectionForm } from "./use-section-form";
 import type { EditorProps } from "./clinic-editors";
 
@@ -35,6 +35,7 @@ export function BannersEditor({ onClose }: EditorProps) {
   return (
     <DrawerShell icon="tag" title={t("site.section.banners")} description={t("se.d.banners")} form={f} onClose={onClose} wide>
       <Group title={t("se.bannerList")} hint={t("banners.hint")}><BannersCard /></Group>
+      <LogoField />
       <Group title={t("se.mainBanner")} hint={t("se.mainBannerHint")}>
         <TextField label={t("se.storeName")} value={f.v.storeName} max={120} error={f.errors.storeName} onChange={(v) => f.set({ storeName: v })} />
         <TextField label={t("se.shortDescription")} value={f.v.shortDescription} max={300} onChange={(v) => f.set({ shortDescription: v })} />

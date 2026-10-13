@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState, type ReactNode } from "react";
+import { api } from "@/lib/client";
 import { useI18n } from "../i18n-provider";
 import { ImageUploader } from "../uploader";
 import { Button, Field, Input, Textarea } from "../ui";
@@ -124,5 +126,37 @@ export function OpenStatusField({ isOpen, message, onChange }: { isOpen?: boolea
       </label>
       {closed && <TextField label={t("identity.vacationMsg")} value={message} max={300} onChange={(v) => onChange({ closedMessage: v })} />}
     </div>
+  );
+}
+
+/** The logo shown in the header and the browser tab. It is saved on its own right after the upload (it belongs to the brand, not to this section's form). */
+export function LogoField() {
+  const { t } = useI18n();
+  const router = useRouter();
+  const [logo, setLogo] = useState<string | null | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => { api<{ logoFileId?: string | null }>("tenant/branding").then((b) => setLogo(b.logoFileId ?? null)).catch(() => setLogo(null)); }, []);
+  const save = async (id: string) => {
+    setBusy(true); setError(""); setDone(false);
+    try { await api("tenant/branding", { method: "PATCH", body: { logoFileId: id } }); setLogo(id); setDone(true); router.refresh(); }
+    catch { setError(t("se.logoFailed")); } finally { setBusy(false); }
+  };
+  return (
+    <Group title={t("se.logo")} hint={t("se.logoHint")}>
+      <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50/60 p-4">
+        {logo ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={thumbUrl(logo)} alt="" className="h-20 w-20 rounded-2xl bg-white object-contain p-1 shadow-sm ring-1 ring-slate-200" />
+        ) : <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-slate-100 text-xs text-slate-400">{logo === undefined ? "…" : t("se.noPhoto")}</div>}
+        <div className="flex flex-col items-start gap-1.5">
+          <ImageUploader category="LOGO" label={logo ? t("se.replaceLogo") : t("se.uploadLogo")} onUploaded={(id) => void save(id)} />
+          {busy && <span className="text-xs text-slate-500">{t("se.saving")}</span>}
+          {done && !busy && <span className="text-xs font-semibold text-emerald-600">✓ {t("common.saved")}</span>}
+          {error && <span className="text-xs text-red-600">{error}</span>}
+        </div>
+      </div>
+    </Group>
   );
 }

@@ -9,7 +9,7 @@ import { useI18n } from "../i18n-provider";
 import { EmailInput, PhoneInput } from "../inputs";
 import { Button, Field, Input } from "../ui";
 import { DrawerShell } from "./drawer-shell";
-import { AreaField, FaqField, GalleryField, Group, OpenStatusField, PhotoField, TagsField, TextField, validUrl } from "./fields";
+import { AreaField, FaqField, GalleryField, Group, LogoField, OpenStatusField, PhotoField, TagsField, TextField, validUrl } from "./fields";
 import { useSectionForm } from "./use-section-form";
 
 type P = {
@@ -35,6 +35,7 @@ export function HeroEditor({ onClose }: EditorProps) {
   const f = useClinicForm(["clinicName", "tagline", "coverFileId"], (v): Record<string, string> => (v.clinicName?.trim() ? {} : { clinicName: t("se.required") }));
   return (
     <DrawerShell icon="stethoscope" title={t("site.section.hero")} description={t("se.d.hero")} form={f} onClose={onClose}>
+      <LogoField />
       <TextField label={t("register.clinicName")} value={f.v.clinicName} max={120} error={f.errors.clinicName} onChange={(v) => f.set({ clinicName: v })} />
       <TextField label={t("cweb.tagline")} hint={t("cweb.taglineHint")} value={f.v.tagline} max={200} onChange={(v) => f.set({ tagline: v })} />
       <PhotoField label={t("identity.cover")} hint={t("identity.coverHint")} value={f.v.coverFileId} onChange={(id) => f.set({ coverFileId: id })} />
