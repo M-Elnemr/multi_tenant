@@ -10,7 +10,7 @@ import 'offline_ops.dart';
 import 'shell.dart';
 import 'site_editor.dart';
 
-const appVersion = '1.3.1';
+const appVersion = '1.3.2';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

@@ -5,7 +5,7 @@
 | Folder | `mobile/apps/elmanassa` | `mobile/apps/provider` |
 | Package | `com.elmanassa.app` | `com.elmanassa.business` |
 | Name | Tabib - طبيب | Elmanassa Business |
-| Version | 1.3.0 (code 10) | 1.3.1 (code 14) |
+| Version | 1.3.1 (code 11) | 1.3.2 (code 15) |
 
 ## Build (signed)
 Each app needs `android/key.properties` (git-ignored) with `storeFile`, `storePassword`, `keyAlias`, `keyPassword` of its **upload keystore**

@@ -220,10 +220,10 @@ class _BookingPageState extends State<BookingPage> {
 
 // ---------------------------------------------------------------- Existing patient (by ID, phone or scan)
 
-/// Pulls the patient number out of a scanned QR ("TABIB:123456") or barcode ("123456").
+/// Pulls the patient number out of a scanned QR ("TABIB:123456") (or the plain number).
 String? parsePatientCode(String raw) => RegExp(r'^(?:TABIB:)?(\d{6,9})$', caseSensitive: false).firstMatch(raw.trim())?.group(1);
 
-/// Full-screen camera that reads a patient's QR code or barcode and returns the number.
+/// Full-screen camera that reads a patient's QR code and returns the number.
 class ScanPage extends StatefulWidget {
   const ScanPage({super.key});
   @override
@@ -231,7 +231,7 @@ class ScanPage extends StatefulWidget {
 }
 
 class _ScanPageState extends State<ScanPage> {
-  final _c = MobileScannerController(formats: const [BarcodeFormat.qrCode, BarcodeFormat.code128], detectionSpeed: DetectionSpeed.noDuplicates);
+  final _c = MobileScannerController(formats: const [BarcodeFormat.qrCode], detectionSpeed: DetectionSpeed.noDuplicates);
   bool _done = false;
 
   @override
@@ -256,13 +256,13 @@ class _ScanPageState extends State<ScanPage> {
           errorBuilder: (c, e) => Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(isAr ? 'تعذر فتح الكاميرا. اسمح بالوصول إلى الكاميرا من إعدادات الهاتف.' : 'The camera could not open. Allow camera access in the phone settings.', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white)))),
         ),
         Center(child: Container(width: 250, height: 250, decoration: BoxDecoration(border: Border.all(color: Colors.white, width: 3), borderRadius: BorderRadius.circular(24)))),
-        Positioned(left: 0, right: 0, bottom: 40, child: Text(isAr ? 'وجّه الكاميرا إلى QR أو باركود المريض' : "Point the camera at the patient's QR code or barcode", textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700))),
+        Positioned(left: 0, right: 0, bottom: 40, child: Text(isAr ? 'وجّه الكاميرا إلى رمز QR المريض' : "Point the camera at the patient's QR code", textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700))),
       ]),
     );
   }
 }
 
-/// Add a patient who already uses the platform: type the 6-digit ID or the mobile number, or scan the QR / barcode. Returns the clinic patient when added.
+/// Add a patient who already uses the platform: type the 6-digit ID or the mobile number, or scan the QR code. Returns the clinic patient when added.
 Future<Map<String, dynamic>?> existingPatientSheet(BuildContext c, Ctx ctx) async {
   final isAr = S.of(c).ar;
   final code = TextEditingController();
@@ -305,7 +305,7 @@ Future<Map<String, dynamic>?> existingPatientSheet(BuildContext c, Ctx ctx) asyn
           Row(children: [
             Expanded(child: TextField(controller: code, keyboardType: TextInputType.number, textDirection: TextDirection.ltr, onChanged: (_) => set(() { found = null; error = null; }), onSubmitted: (_) => look(), decoration: InputDecoration(labelText: isAr ? 'رقم المريض أو الموبايل' : 'Patient ID or mobile', hintText: '123456'))),
             const SizedBox(width: 8),
-            IconButton.filledTonal(tooltip: isAr ? 'مسح QR / باركود' : 'Scan QR / barcode', iconSize: 30, onPressed: busy ? null : scan, icon: const Icon(Icons.qr_code_scanner_rounded)),
+            IconButton.filledTonal(tooltip: isAr ? 'مسح رمز QR' : 'Scan QR code', iconSize: 30, onPressed: busy ? null : scan, icon: const Icon(Icons.qr_code_scanner_rounded)),
           ]),
           const SizedBox(height: 10),
           OutlinedButton(onPressed: busy ? null : () => look(), child: busy ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : Text(isAr ? 'بحث' : 'Find')),
@@ -344,7 +344,7 @@ Future<Map<String, dynamic>?> addPatientChooser(BuildContext c, Ctx ctx) async {
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Card(child: ListTile(leading: const Icon(Icons.person_add_alt_1_rounded), title: Text(isAr ? 'مريض جديد' : 'New patient', style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text(isAr ? 'سجّل بياناته لأول مرة' : 'Register their details'), onTap: () => Navigator.pop(sheet, 'new'))),
-        Card(child: ListTile(leading: const Icon(Icons.qr_code_scanner_rounded), title: Text(isAr ? 'مريض موجود' : 'Existing patient', style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text(isAr ? 'بالرقم أو الموبايل أو مسح QR / باركود' : 'By ID, mobile number or QR / barcode scan'), onTap: () => Navigator.pop(sheet, 'existing'))),
+        Card(child: ListTile(leading: const Icon(Icons.qr_code_scanner_rounded), title: Text(isAr ? 'مريض موجود' : 'Existing patient', style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text(isAr ? 'بالرقم أو الموبايل أو مسح رمز QR' : 'By ID, mobile number or QR code scan'), onTap: () => Navigator.pop(sheet, 'existing'))),
       ]),
     )),
   );
