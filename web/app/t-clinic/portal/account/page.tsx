@@ -8,6 +8,7 @@ import { useAction, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Icon, type IconName } from "@/components/icons";
 import { PatientIdCard } from "@/components/patient-id-card";
+import { PortalQuickLinks } from "@/components/portal-quick-links";
 import { Avatar, ErrorText } from "@/components/ui";
 
 function Block({ icon, title, hint, tone = "brand", children }: { icon: IconName; title: string; hint?: string; tone?: "brand" | "red"; children: ReactNode }) {
@@ -49,6 +50,8 @@ export default function PortalAccount() {
           </p>
         </div>
       </div>
+
+      <PortalQuickLinks />
 
       {idInfo.data?.publicId ? <PatientIdCard publicId={idInfo.data.publicId} name={full} subtitle={siteName} /> : null}
 

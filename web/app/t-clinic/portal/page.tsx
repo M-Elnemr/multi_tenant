@@ -8,6 +8,7 @@ import { useI18n } from "@/components/i18n-provider";
 import { Alert, Button, Empty, ErrorText, Loading, PageHeader, StatusBadge } from "@/components/ui";
 import { dateTime } from "@/lib/format";
 import Link from "next/link";
+import { PortalQuickLinks } from "@/components/portal-quick-links";
 
 type Place = { appointmentId: string; patientName?: string; dependent?: boolean; queueNumber: number; called: boolean; doctorName: string; serviceName: string; aheadOfYou: number; doctorBusy: boolean };
 type Appt = { id: string; startAt: string; status: string; doctorName: string; serviceName: string; branchName: string; paymentStatus: string; paymentMethod: string; priceMinor?: number; patientName?: string };
@@ -53,6 +54,7 @@ function Inner() {
   return (
     <>
       <PageHeader title={t("portal.appointments")} />
+      <div className="mb-5"><PortalQuickLinks skip="/portal" /></div>
       <ClinicCard />
       {place.data?.map((p) => (
         <div key={p.appointmentId} className={`mb-4 rounded-2xl border-2 p-5 text-center ${p.called ? "border-emerald-500 bg-emerald-50" : "border-brand/40 bg-white"}`}>

@@ -45,11 +45,13 @@ export function PortalNav({ name, logo }: { name: string; logo: string | null })
           </Link>
           <nav className="hidden items-center gap-1 rounded-full bg-slate-100/80 p-1 md:flex" aria-label="Portal">
             {ITEMS.map((i) => (
-              <Link key={i.href} href={i.href} className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${on(i) ? "bg-white text-brand shadow-sm" : "text-slate-600 hover:text-brand"}`}>
-                <Icon name={i.icon} className="h-4 w-4" />{t(i.key)}
+              <Link key={i.href} href={i.href} className={`flex items-center gap-2 rounded-full px-5 py-2.5 text-[15px] font-bold transition ${on(i) ? "bg-white text-brand shadow-sm" : "text-slate-600 hover:bg-white/60 hover:text-brand"}`}>
+                <Icon name={i.icon} className="h-[18px] w-[18px]" />{t(i.key)}
               </Link>
             ))}
           </nav>
+          <div className="flex items-center gap-2">
+          <Link href="/book" className="hidden items-center gap-1.5 rounded-full bg-brand-gradient px-4 py-2.5 text-sm font-bold text-white shadow-brand transition hover:brightness-110 active:scale-95 lg:flex"><Icon name="plus" className="h-4 w-4" />{t("clinic.book")}</Link>
           <div className="relative" ref={menu}>
             <button onClick={() => setOpen(!open)} className="flex items-center gap-2 rounded-full p-1 pe-3 ring-1 ring-slate-200 transition hover:bg-slate-50 active:scale-95" aria-haspopup="menu" aria-expanded={open}>
               <Avatar name={full || "?"} className="h-8 w-8 text-xs" />
@@ -65,13 +67,14 @@ export function PortalNav({ name, logo }: { name: string; logo: string | null })
               </div>
             )}
           </div>
+          </div>
         </div>
       </header>
       <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200/80 bg-white/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden" aria-label="Portal">
         <div className="mx-auto grid max-w-md grid-cols-4">
           {ITEMS.map((i) => (
-            <Link key={i.href} href={i.href} className={`flex flex-col items-center gap-0.5 py-2 text-[11px] font-bold transition ${on(i) ? "text-brand" : "text-slate-500"}`}>
-              <span className={`flex h-7 w-12 items-center justify-center rounded-full transition ${on(i) ? "bg-brand-soft" : ""}`}><Icon name={i.icon} className="h-5 w-5" /></span>{t(i.key)}
+            <Link key={i.href} href={i.href} className={`flex flex-col items-center gap-1 py-2.5 text-xs font-bold transition active:scale-95 ${on(i) ? "text-brand" : "text-slate-500"}`}>
+              <span className={`flex h-9 w-16 items-center justify-center rounded-full transition ${on(i) ? "bg-brand-soft" : ""}`}><Icon name={i.icon} className="h-6 w-6" /></span>{t(i.key)}
             </Link>
           ))}
         </div>
