@@ -29,6 +29,8 @@ import org.springframework.test.web.servlet.ResultActions;
 
 @Import(TenancyIntegrationTest.FakeDns.class)
 class TenancyIntegrationTest extends IntegrationTestBase {
+    @org.springframework.beans.factory.annotation.Autowired org.springframework.jdbc.core.simple.JdbcClient jdbc;
+
 
     static final Map<String, List<String>> TXT = new ConcurrentHashMap<>();
 
@@ -199,13 +201,18 @@ class TenancyIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void refreshTokenRotatesAndReuseRevokesEverything() throws Exception {
+    void refreshTokenRotatesAndAStaleReuseRevokesEverything() throws Exception {
         Tenant t = onboard("STORE");
         String r1 = JsonPath.read(onHost(t.host(), null, "POST", "/api/v1/auth/refresh", "{\"refreshToken\":\"%s\"}".formatted(t.refresh()))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), "$.refreshToken");
-        // old token reuse -> rejected and all sessions killed
+        // a phone that lost the answer retries with the old token: it simply gets a fresh pair (nobody is logged out)
+        String r2 = JsonPath.read(onHost(t.host(), null, "POST", "/api/v1/auth/refresh", "{\"refreshToken\":\"%s\"}".formatted(t.refresh()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), "$.refreshToken");
+        onHost(t.host(), null, "POST", "/api/v1/auth/refresh", "{\"refreshToken\":\"%s\"}".formatted(r1)).andExpect(status().isOk());
+        // a token rotated out long ago and shown again looks stolen: rejected and all sessions killed
+        jdbc.sql("UPDATE core.user_sessions SET rotated_at = now() - interval '31 days' WHERE rotated_at IS NOT NULL").update();
         onHost(t.host(), null, "POST", "/api/v1/auth/refresh", "{\"refreshToken\":\"%s\"}".formatted(t.refresh())).andExpect(status().isUnauthorized());
-        onHost(t.host(), null, "POST", "/api/v1/auth/refresh", "{\"refreshToken\":\"%s\"}".formatted(r1)).andExpect(status().isUnauthorized());
+        onHost(t.host(), null, "POST", "/api/v1/auth/refresh", "{\"refreshToken\":\"%s\"}".formatted(r2)).andExpect(status().isUnauthorized());
     }
 
     @Test

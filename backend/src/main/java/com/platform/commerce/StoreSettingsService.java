@@ -35,11 +35,13 @@ public class StoreSettingsService {
     public Map<String, Object> profile(UUID tenantId) {
         Map<String, Object> p = new java.util.LinkedHashMap<>(Rows.camel(jdbc.sql("SELECT store_name, short_description, about, support_phone, support_email, address_text, shipping_policy, return_policy, privacy_policy, terms_text, other_category, "
                 + "whatsapp, extra_phones::text AS extra_phones, facebook_url, instagram_url, tiktok_url, website_url, maps_url, working_hours::text AS working_hours, "
-                + "is_open, closed_message, min_order_minor, tax_id, vat_included, vat_percent, cover_file_id, announcement, return_window_days, meta_pixel_id, tiktok_pixel_id, ga_id "
+                + "is_open, closed_message, min_order_minor, tax_id, vat_included, vat_percent, cover_file_id, announcement, return_window_days, meta_pixel_id, tiktok_pixel_id, ga_id, site_layout::text AS site_layout, trust_tiles::text AS trust_tiles "
                 + "FROM commerce.store_profiles WHERE tenant_id = :t")
                 .param("t", tenantId).query().singleRow()));
         p.put("extraPhones", Rows.jsonList(p.get("extraPhones")));
         p.put("workingHours", Rows.json(p.get("workingHours")));
+        p.put("siteLayout", Rows.json(p.remove("siteLayout")));
+        p.put("trustTiles", Rows.jsonList(p.remove("trustTiles")));
         p.put("categories", Rows.camel(jdbc.sql("SELECT c.code, c.name_ar, c.name_en FROM commerce.store_category_links l JOIN commerce.store_categories c ON c.id = l.category_id WHERE l.tenant_id = :t ORDER BY c.sort_order").param("t", tenantId).query().listOfRows()));
         return p;
     }
@@ -113,6 +115,15 @@ public class StoreSettingsService {
                 String wh = json.writeValueAsString(m);
                 if (wh.length() > 2000) throw BusinessException.badRequest("VALIDATION_ERROR", "Working hours too long");
                 set.append("working_hours = CAST(:workingHours AS jsonb), "); q.put("workingHours", wh);
+            }
+            if (f.get("siteLayout") instanceof Map<?, ?> m) {
+                set.append("site_layout = CAST(:siteLayout AS jsonb), "); q.put("siteLayout", json.writeValueAsString(com.platform.medical.SiteLayout.clean(m, com.platform.medical.SiteLayout.STORE)));
+            }
+            if (f.get("trustTiles") instanceof List<?> l) {
+                var tiles = l.stream().filter(x -> x instanceof Map<?, ?>).map(x -> (Map<?, ?>) x)
+                        .map(x -> Map.of("title", String.valueOf(x.get("title")).trim(), "text", x.get("text") == null ? "" : String.valueOf(x.get("text")).trim()))
+                        .filter(x -> !x.get("title").isEmpty() && x.get("title").length() <= 60 && x.get("text").length() <= 160).limit(6).toList();
+                set.append("trust_tiles = CAST(:trustTiles AS jsonb), "); q.put("trustTiles", json.writeValueAsString(tiles));
             }
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid value"); }
         if (f.containsKey("coverFileId")) {

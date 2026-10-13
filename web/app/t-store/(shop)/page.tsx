@@ -8,6 +8,9 @@ import { governorateName } from "@/lib/governorates";
 import { fileUrl } from "@/lib/media";
 import { whatsappLink } from "@/lib/whatsapp";
 import { getT } from "@/lib/i18n-server";
+import { STORE_SECTIONS, arrange } from "@/lib/site-layout";
+import { ownerEditMode } from "@/lib/edit-mode";
+import { EditBar, EditFrame } from "@/components/site-edit";
 
 type Home = { featured: ShopProduct[]; newest: ShopProduct[]; offers: ShopProduct[]; bestSellers: ShopProduct[]; banners: { id: string; imageFileId: string; title: string; subtitle: string; linkUrl: string }[] };
 
@@ -29,8 +32,9 @@ function Grid({ items, locale, labels }: { items: ShopProduct[]; locale: "ar" | 
   return <div className="stagger grid grid-cols-2 gap-3 sm:gap-5 md:grid-cols-3 lg:grid-cols-4">{shown.map((p, i) => <div key={p.id} style={{ "--i": i } as React.CSSProperties}><ShopProductCard p={p} locale={locale} labels={labels} /></div>)}</div>;
 }
 
-export default async function StoreHome() {
+export default async function StoreHome({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const { t, locale } = await getT();
+  const edit = await ownerEditMode(searchParams);
   const [profileRes, cats, home, branches] = await Promise.all([
     backendJson<{ profile: ShopProfile }>("/shop/profile").catch(() => null),
     backendJson<ShopCategory[]>(`/shop/categories?lang=${locale}`).catch(() => [] as ShopCategory[]),
@@ -48,8 +52,9 @@ export default async function StoreHome() {
     { icon: "↩️", title: t("trust.returns"), text: t("trust.returnsText", { n: days }) },
     { icon: "💬", title: t("trust.support"), text: t("trust.supportText") },
   ];
-  return (
-    <>
+  const trustShown = p?.trustTiles?.length ? p.trustTiles.map((x, i) => ({ icon: ["💵", "🚚", "↩️", "💬", "⭐", "🎁"][i] ?? "✨", title: x.title, text: x.text })) : trust;
+  const nodes: Record<(typeof STORE_SECTIONS)[number], React.ReactNode> = {
+    banners: <>
       <section className="s-container pt-5 sm:pt-8">
         {slides.length > 0 ? <BannerCarousel slides={slides} cta={t("shop.browse")} /> : (
           <div className="s-hero-shine relative overflow-hidden rounded-[28px] shadow-[var(--s-shadow-lg)]">
@@ -70,10 +75,11 @@ export default async function StoreHome() {
           </div>
         )}
       </section>
-
+</>,
+    trust: <>
       <section className="s-container mt-6">
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {trust.map((x) => (
+          {trustShown.map((x) => (
             <div key={x.title} className="flex items-center gap-3 rounded-2xl border border-[var(--s-line)] bg-white p-3.5 sm:p-4">
               <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[var(--s-soft)] text-xl">{x.icon}</span>
               <div className="min-w-0"><p className="truncate text-sm font-extrabold">{x.title}</p><p className="line-clamp-2 text-xs text-[var(--s-mute)]">{x.text}</p></div>
@@ -81,7 +87,8 @@ export default async function StoreHome() {
           ))}
         </div>
       </section>
-
+</>,
+    categories: <>
       {tops.length > 0 && (
         <Section title={t("shop.categories")} eyebrow={t("shop.shopBy")}>
           <div className="s-scroll-x">
@@ -98,14 +105,22 @@ export default async function StoreHome() {
           </div>
         </Section>
       )}
-
+</>,
+    featured: <>
       {home.featured.length > 0 && <Section title={t("shop.featured")} eyebrow={t("shop.handpicked")} href="/products" more={t("shop.viewAll")}><Grid items={home.featured} locale={locale} labels={labels} /></Section>}
+</>,
+    offers: <>
       {home.offers.length > 0 && <Section title={t("shop.offers")} eyebrow={t("shop.limitedTime")} href="/products?onSale=true&sort=discount" more={t("shop.viewAll")}><Grid items={home.offers} locale={locale} labels={labels} /></Section>}
+</>,
+    bestSellers: <>
       {home.bestSellers.length > 0 && <Section title={t("shop.bestSellers")} eyebrow={t("shop.loved")} href="/products?sort=popular" more={t("shop.viewAll")}><Grid items={home.bestSellers} locale={locale} labels={labels} /></Section>}
+</>,
+    newest: <>
       <Section title={t("shop.newest")} eyebrow={t("shop.justIn")} href="/products?sort=newest" more={t("shop.viewAll")}>
         {home.newest.length === 0 ? <p className="rounded-3xl border border-dashed border-[var(--s-line)] p-12 text-center text-[var(--s-mute)]">{t("shop.empty")}</p> : <Grid items={home.newest} locale={locale} labels={labels} />}
       </Section>
-
+</>,
+    whatsapp: <>
       {p?.whatsapp && (
         <section className="s-container mt-16 sm:mt-24">
           <div className="relative overflow-hidden rounded-[28px] bg-[#15120f] p-8 text-white sm:p-12">
@@ -117,7 +132,8 @@ export default async function StoreHome() {
           </div>
         </section>
       )}
-
+</>,
+    branches: <>
       {branches.length > 0 && (
         <Section title={t("shop.visitUs")} eyebrow={t("shop.branches")} href="/branches" more={t("shop.viewAll")}>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -132,6 +148,17 @@ export default async function StoreHome() {
           </div>
         </Section>
       )}
+</>,
+  };
+  const sections = arrange(STORE_SECTIONS, p?.siteLayout, edit);
+  const order = arrange(STORE_SECTIONS, p?.siteLayout, true).map((x) => x.key as string);
+  const hiddenKeys = p?.siteLayout?.hidden ?? [];
+  return (
+    <>
+      {sections.map(({ key, hidden }) => edit
+        ? <EditFrame key={key} kind="store" section={key} hidden={hidden} order={order} hiddenKeys={hiddenKeys}>{nodes[key]}</EditFrame>
+        : <div key={key} className="contents">{nodes[key]}</div>)}
+      {edit && <EditBar kind="store" />}
     </>
   );
 }

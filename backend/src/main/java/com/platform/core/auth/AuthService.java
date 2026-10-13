@@ -152,15 +152,15 @@ public class AuthService {
     @Transactional(noRollbackFor = BusinessException.class)
     public TokenResponse refresh(String refreshToken, String ip, String userAgent) {
         if (refreshToken == null || refreshToken.isBlank()) throw BusinessException.unauthorized("INVALID_REFRESH_TOKEN", "Invalid refresh token");
-        var row = jdbc.sql("SELECT id, user_id, principal_type, expires_at, revoked_at FROM core.user_sessions WHERE refresh_token_hash = :h FOR UPDATE")
+        var row = jdbc.sql("SELECT id, user_id, principal_type, expires_at, revoked_at, rotated_at FROM core.user_sessions WHERE refresh_token_hash = :h FOR UPDATE")
                 .param("h", sha256(refreshToken)).query().listOfRows().stream().findFirst()
                 .orElseThrow(() -> BusinessException.unauthorized("INVALID_REFRESH_TOKEN", "Invalid refresh token"));
         UUID userId = (UUID) row.get("user_id");
         UUID sessionId = (UUID) row.get("id");
         if (row.get("revoked_at") != null) {
             // A phone that lost the answer of a refresh (network drop, app killed) presents the old token again: within a short grace window it simply gets a fresh pair.
-            Instant revokedAt = ((java.sql.Timestamp) row.get("revoked_at")).toInstant();
-            if (revokedAt.isAfter(Instant.now().minus(java.time.Duration.ofMinutes(30))) && !((java.sql.Timestamp) row.get("expires_at")).toInstant().isBefore(Instant.now())) {
+            java.sql.Timestamp rotated = (java.sql.Timestamp) row.get("rotated_at");
+            if (rotated != null && rotated.toInstant().isAfter(Instant.now().minus(java.time.Duration.ofDays(30))) && !((java.sql.Timestamp) row.get("expires_at")).toInstant().isBefore(Instant.now())) {
                 String t = (String) row.get("principal_type");
                 if (!"STAFF".equals(t)) return accounts.reissue(t, userId, ip, userAgent);
                 return users.findById(userId).filter(u -> u.getStatus() == User.Status.ACTIVE).map(u -> issueTokens(u, ip, userAgent))
@@ -174,12 +174,12 @@ public class AuthService {
             throw BusinessException.unauthorized("INVALID_REFRESH_TOKEN", "Invalid refresh token");
         String type = (String) row.get("principal_type");
         if (!"STAFF".equals(type)) {
-            jdbc.sql("UPDATE core.user_sessions SET revoked_at = now() WHERE id = :id").param("id", sessionId).update();
+            jdbc.sql("UPDATE core.user_sessions SET revoked_at = now(), rotated_at = now() WHERE id = :id").param("id", sessionId).update();
             return accounts.reissue(type, userId, ip, userAgent);
         }
         User user = users.findById(userId).filter(u -> u.getStatus() == User.Status.ACTIVE)
                 .orElseThrow(() -> BusinessException.unauthorized("INVALID_REFRESH_TOKEN", "Invalid refresh token"));
-        jdbc.sql("UPDATE core.user_sessions SET revoked_at = now() WHERE id = :id").param("id", sessionId).update();
+        jdbc.sql("UPDATE core.user_sessions SET revoked_at = now(), rotated_at = now() WHERE id = :id").param("id", sessionId).update();
         return issueTokens(user, ip, userAgent);
     }
 

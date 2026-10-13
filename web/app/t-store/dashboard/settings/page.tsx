@@ -43,7 +43,7 @@ export default function StoreSettings() {
 
   return (
     <>
-      <PageHeader title={t("nav.settings")} />
+      <PageHeader title={t("nav.settings")} actions={can("settings.manage") ? <a href="/?edit=1" className="inline-flex items-center gap-2 rounded-xl bg-brand-gradient px-4 py-2 text-sm font-semibold text-white shadow-brand transition hover:brightness-110 active:scale-95">✨ {t("site.customize")}</a> : undefined} />
       <div className="space-y-6">
         {profile.data && <SetupChecklist profile={profile.data} hasLogo={!!brand.data?.logoFileId} />}
         {profile.data && <section id="contact"><ContactCard key={JSON.stringify(profile.data.workingHours) + profile.data.coverFileId} profile={profile.data} reload={profile.reload} /></section>}

@@ -14,7 +14,7 @@ export type ClinicSite = {
   clinicName: string; about?: string; phone?: string; email?: string; addressText?: string; bookingEnabled: boolean; patientPortalEnabled?: boolean; queueCount?: number;
   tagline?: string; whatsapp?: string; extraPhones?: string[]; facebookUrl?: string; instagramUrl?: string; tiktokUrl?: string; websiteUrl?: string; mapsUrl?: string;
   workingHours?: WeekHours; coverFileId?: string | null; gallery?: string[]; announcement?: string; isOpen?: boolean; closedMessage?: string; insurance?: string[];
-  faqs?: { q: string; a: string }[]; establishedYear?: number | null;
+  faqs?: { q: string; a: string }[]; establishedYear?: number | null; siteLayout?: { order?: string[]; hidden?: string[] } | null;
   doctors: ClinicDoctor[]; services: ClinicService[]; branches: ClinicBranch[];
 };
 

@@ -50,13 +50,14 @@ public class ClinicSettingsService {
     /** The website-facing identity of the clinic: contact channels, hours, cover/gallery, announcement, insurance, FAQs. */
     Map<String, Object> identity(UUID tenantId) {
         Map<String, Object> m = Rows.camel(jdbc.sql("SELECT tagline, whatsapp, extra_phones::text AS extra_phones, facebook_url, instagram_url, tiktok_url, website_url, maps_url, working_hours::text AS working_hours, "
-                + "cover_file_id, gallery::text AS gallery, announcement, is_open, closed_message, insurance::text AS insurance, faqs::text AS faqs, established_year FROM medical.clinic_profiles WHERE tenant_id = :t")
+                + "cover_file_id, gallery::text AS gallery, announcement, is_open, closed_message, insurance::text AS insurance, faqs::text AS faqs, established_year, site_layout::text AS site_layout FROM medical.clinic_profiles WHERE tenant_id = :t")
                 .param("t", tenantId).query().singleRow());
         m.put("extraPhones", Rows.jsonList(m.get("extraPhones")));
         m.put("workingHours", Rows.json(m.get("workingHours")));
         m.put("gallery", Rows.jsonList(m.get("gallery")));
         m.put("insurance", Rows.jsonList(m.get("insurance")));
         m.put("faqs", Rows.jsonList(m.get("faqs")));
+        m.put("siteLayout", Rows.json(m.remove("siteLayout")));
         return m;
     }
 
@@ -101,6 +102,9 @@ public class ClinicSettingsService {
                 String wh = json.writeValueAsString(m);
                 if (wh.length() > 2000) throw BusinessException.badRequest("VALIDATION_ERROR", "Working hours too long");
                 set.append("working_hours = CAST(:workingHours AS jsonb), "); q.put("workingHours", wh);
+            }
+            if (f.get("siteLayout") instanceof Map<?, ?> m) {
+                set.append("site_layout = CAST(:siteLayout AS jsonb), "); q.put("siteLayout", json.writeValueAsString(SiteLayout.clean(m, SiteLayout.CLINIC)));
             }
         } catch (com.fasterxml.jackson.core.JsonProcessingException | IllegalArgumentException e) { throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid value"); }
         if (q.isEmpty()) return;

@@ -12,17 +12,16 @@ const SHOWN = ["max_products", "max_branches", "max_staff", "max_monthly_orders"
 export default async function Pricing() {
   const { t, locale } = await getT();
   const plans = await backendJson<Plan[]>("/billing/plans").catch(() => [] as Plan[]);
-  const price = plans[0];
+  const any = plans.length > 0;
   return (
     <div className="mx-auto max-w-4xl px-4 py-14">
       <h1 className="text-gradient animate-fade-up text-center text-3xl font-extrabold sm:text-4xl">{t("pricing.title")}</h1>
       <p className="mx-auto mt-3 max-w-xl text-center text-slate-600">{t("pricing.subtitle")}</p>
-      {price && (
+      {any && (
         <div className="animate-fade-up mx-auto mt-10 max-w-3xl overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-soft">
           <div className="bg-brand-gradient px-8 py-9 text-center text-white">
             <p className="text-sm font-semibold opacity-90">{t("pricing.onePlan")}</p>
-            <p className="mt-2"><span className="text-5xl font-extrabold">{money(price.priceMinor, price.currency, locale)}</span><span className="opacity-90"> / {t("pricing.month")}</span></p>
-            <p className="mt-2 text-sm opacity-90">{t("pricing.sameForBoth")}</p>
+            <p className="mt-2 text-2xl font-extrabold">{t("pricing.freeTrial")}</p>
           </div>
           <div className="grid gap-8 p-8 md:grid-cols-2">
             {(["STORE", "CLINIC"] as const).map((type) => {
@@ -31,6 +30,7 @@ export default async function Pricing() {
               return (
                 <section key={type}>
                   <h2 className="mb-3 flex items-center gap-2 text-lg font-bold"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-soft text-brand"><Icon name={type === "STORE" ? "bag" : "stethoscope"} className="h-5 w-5" /></span>{type === "STORE" ? t("type.store") : t("type.clinic")}</h2>
+                  <p className="mb-4"><span className="text-3xl font-extrabold text-brand">{money(p.priceMinor, p.currency, locale)}</span><span className="text-slate-500"> / {t("pricing.month")}</span></p>
                   <ul className="space-y-1.5 text-sm text-slate-700">
                     {SHOWN.filter((k) => k in p.features && p.features[k] !== false).map((k) => {
                       const v = p.features[k];

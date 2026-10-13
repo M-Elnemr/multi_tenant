@@ -192,7 +192,42 @@ public class AppointmentService {
             start = busyUntil.toInstant();
         }
         Map<String, Object> booked = doBook(tenantId, actor, null, new BookReq(patientId, doctorId, branchId, svcId, start, "CASH_AT_CLINIC", null, "RECEPTION", vt), false);
+        jdbc.sql("UPDATE medical.appointments SET is_walk_in = TRUE WHERE id = :i").param("i", booked.get("id")).update();
         return transition(tenantId, actor, (UUID) booked.get("id"), "CHECKED_IN", null);
+    }
+
+    /**
+     * Takes a waiting patient out of the line. A booked patient goes back to "reserved" (still on today's list, can be added again);
+     * someone who only walked in is cancelled. Everybody behind them is told they moved up.
+     */
+    @Transactional
+    public Map<String, Object> removeFromQueue(UUID tenantId, UUID actor, UUID id) {
+        var a = lock(tenantId, id);
+        if (!"CHECKED_IN".equals(a.get("status"))) throw new BusinessException(HttpStatus.CONFLICT, "INVALID_STATUS_TRANSITION", "Only a waiting patient can be removed from the queue");
+        boolean walkIn = Boolean.TRUE.equals(a.get("is_walk_in"));
+        String to = walkIn ? "CANCELLED" : "CONFIRMED";
+        jdbc.sql("UPDATE medical.appointments SET status = :s, called_at = NULL, cancel_reason = CASE WHEN :w THEN 'Removed from the queue' ELSE cancel_reason END, updated_at = now() WHERE id = :i")
+                .param("s", to).param("w", walkIn).param("i", id).update();
+        jdbc.sql("DELETE FROM medical.queue_push_state WHERE appointment_id = :i").param("i", id).update();
+        audit.record(actor, tenantId, "APPOINTMENT_REMOVED_FROM_QUEUE", "appointment", id, null);
+        events.publishEvent(new MedicalEvents.AppointmentChanged(tenantId, id, (UUID) a.get("patient_id"), "QUEUE_LEFT"));
+        return get(tenantId, id);
+    }
+
+    /** The doctor drags the waiting list into a new order: the same queue numbers are handed out again in that order. */
+    @Transactional
+    public Map<String, Object> reorder(UUID tenantId, UUID actor, List<UUID> ids) {
+        if (ids == null || ids.size() < 2) return Map.of("reordered", 0);
+        var rows = jdbc.sql("SELECT id, doctor_id, queue_number FROM medical.appointments WHERE tenant_id = :t AND id IN (:ids) AND status = 'CHECKED_IN' AND queue_number IS NOT NULL FOR UPDATE")
+                .param("t", tenantId).param("ids", ids).query().listOfRows();
+        if (rows.size() != ids.size()) throw BusinessException.badRequest("QUEUE_CHANGED", "The queue changed, refresh and try again");
+        if (rows.stream().map(r -> r.get("doctor_id")).distinct().count() != 1) throw BusinessException.badRequest("QUEUE_MIXED_DOCTORS", "Only one doctor's queue can be reordered at a time");
+        var numbers = rows.stream().map(r -> ((Number) r.get("queue_number")).intValue()).sorted().toList();
+        for (int i = 0; i < ids.size(); i++)
+            jdbc.sql("UPDATE medical.appointments SET queue_number = :n, updated_at = now() WHERE id = :i AND tenant_id = :t").param("n", numbers.get(i)).param("i", ids.get(i)).param("t", tenantId).update();
+        audit.record(actor, tenantId, "QUEUE_REORDERED", "appointment", ids.get(0), null);
+        events.publishEvent(new MedicalEvents.AppointmentChanged(tenantId, ids.get(0), null, "QUEUE_REORDERED"));
+        return Map.of("reordered", ids.size());
     }
 
     static String validVisitType(String v) {
@@ -237,6 +272,16 @@ public class AppointmentService {
         Map<String, Object> out = new java.util.LinkedHashMap<>();
         out.put("inProgress", all.stream().filter(x -> "IN_PROGRESS".equals(x.get("status"))).toList());
         out.put("waiting", all.stream().filter(x -> "CHECKED_IN".equals(x.get("status"))).toList());
+        // booked for today but not here yet: one tap adds them to the line
+        out.put("reserved", Rows.camel(jdbc.sql("""
+                SELECT a.id, a.status, a.start_at, a.doctor_id, d.display_name AS doctor_name, s.name AS service_name, a.visit_type, a.patient_note,
+                       p.id AS patient_id, trim(p.first_name || ' ' || coalesce(p.last_name, '')) AS patient_name, p.patient_code, p.phone AS patient_phone, p.sex AS patient_sex,
+                       date_part('year', age(p.date_of_birth))::int AS patient_age_years
+                FROM medical.appointments a JOIN medical.patients p ON p.id = a.patient_id JOIN medical.doctors d ON d.id = a.doctor_id JOIN medical.appointment_services s ON s.id = a.service_id
+                WHERE a.tenant_id = :t AND a.status IN ('CONFIRMED','PENDING_CONFIRMATION') AND (a.start_at AT TIME ZONE :tz)::date = (now() AT TIME ZONE :tz)::date
+                  AND (CAST(:d AS uuid) IS NULL OR a.doctor_id = CAST(:d AS uuid))
+                ORDER BY a.start_at
+                """).param("t", tenantId).param("tz", tz).param("d", doctorId).query().listOfRows()));
         return out;
     }
 
@@ -318,7 +363,7 @@ public class AppointmentService {
     private static final String SELECT = """
             SELECT a.id, a.patient_id, p.first_name || ' ' || p.last_name AS patient_name, p.patient_code, a.doctor_id, d.display_name AS doctor_name, a.branch_id, b.name AS branch_name,
                    a.service_id, s.name AS service_name, a.start_at, a.end_at, a.status, a.booking_source, a.payment_method, a.payment_status, a.price_minor, a.currency,
-                   a.patient_note, a.queue_number, a.created_at, a.visit_type
+                   a.patient_note, a.queue_number, a.created_at, a.visit_type, p.phone AS patient_phone, p.sex AS patient_sex, date_part('year', age(p.date_of_birth))::int AS patient_age_years
             FROM medical.appointments a JOIN medical.patients p ON p.id = a.patient_id JOIN medical.doctors d ON d.id = a.doctor_id
             JOIN medical.clinic_branches b ON b.id = a.branch_id JOIN medical.appointment_services s ON s.id = a.service_id
             """;
@@ -340,7 +385,7 @@ public class AppointmentService {
         Instant f = from == null ? null : from.atStartOfDay(tz).toInstant();
         Instant t = to == null ? null : to.plusDays(1).atStartOfDay(tz).toInstant();
         String where = " WHERE a.tenant_id = :t AND (CAST(:f AS timestamptz) IS NULL OR a.start_at >= CAST(:f AS timestamptz)) AND (CAST(:to AS timestamptz) IS NULL OR a.start_at < CAST(:to AS timestamptz))"
-                + " AND (CAST(:d AS uuid) IS NULL OR a.doctor_id = CAST(:d AS uuid)) AND (CAST(:s AS varchar) IS NULL OR a.status = CAST(:s AS varchar)) AND (CAST(:p AS uuid) IS NULL OR a.patient_id = CAST(:p AS uuid))"
+                + " AND (CAST(:d AS uuid) IS NULL OR a.doctor_id = CAST(:d AS uuid)) AND (CAST(:s AS varchar) IS NULL OR a.status = ANY(string_to_array(CAST(:s AS varchar), ','))) AND (CAST(:p AS uuid) IS NULL OR a.patient_id = CAST(:p AS uuid))"
                 + (restrictPatients != null ? " AND a.patient_id IN (:rp)" : "");
         var cnt = jdbc.sql("SELECT count(*) FROM medical.appointments a" + where).param("t", tenantId).param("f", f == null ? null : java.sql.Timestamp.from(f)).param("to", t == null ? null : java.sql.Timestamp.from(t))
                 .param("d", doctorId).param("s", status).param("p", patientId);

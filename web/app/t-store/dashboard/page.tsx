@@ -25,6 +25,12 @@ export default function StoreOverview() {
   return (
     <div className="space-y-6">
       <ErrorText error={summary.error} />
+      {can("settings.manage") && (
+        <a href="/?edit=1" className="flex animate-fade-up items-center justify-between gap-3 rounded-2xl border border-brand/20 bg-brand-soft px-5 py-4 transition hover:-translate-y-px hover:shadow-md">
+          <span><span className="block font-bold text-brand-dark">✨ {t("site.customize")}</span><span className="text-sm text-slate-600">{t("site.customizeHint")}</span></span>
+          <span className="text-xl text-brand">→</span>
+        </a>
+      )}
       {s && (
         <div className="hero-card animate-fade-up p-6 sm:p-8">
           <div className="flex flex-wrap items-end justify-between gap-6">

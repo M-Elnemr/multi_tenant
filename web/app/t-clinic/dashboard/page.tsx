@@ -19,7 +19,7 @@ export default function ClinicOverview() {
   if (loading && !data) return <Loading />;
   if (!data) return <ErrorText error={error} />;
   const hero: [string, number][] = [[t("clinic.today"), data.today.length], [t("clinic.waiting"), data.checkedIn], [t("clinic.pending"), data.pendingRequests]];
-  const quick: [string, string, IconName, string][] = [["/dashboard/queue", t("nav.queue"), "queue", "appointment.manage"], ["/dashboard/appointments", t("nav.appointments"), "calendar", "appointment.manage"], ["/dashboard/patients", t("nav.patients"), "patients", "patient.read"]];
+  const quick: [string, string, IconName, string][] = [["/dashboard/queue", t("nav.queue"), "queue", "appointment.manage"], ["/dashboard/appointments", t("nav.appointments"), "calendar", "appointment.manage"], ["/dashboard/patients", t("nav.patients"), "patients", "patient.read"], ["/?edit=1", t("site.customize"), "edit", "settings.manage"]];
   const stats = [[t("clinic.labReviews"), data.pendingLabReviews, "file", "amber"], [t("clinic.revenueMonth"), money(data.revenueThisMonthMinor, currency, locale), "billing", "green"], [t("clinic.completed"), data.completedThisMonth, "check", "green"], [t("clinic.newPatients"), data.newPatientsThisMonth, "patients", "brand"], [t("clinic.noShows"), data.noShowsThisMonth, "close", "red"], [t("clinic.unpaid"), `${money(data.unpaidVisitsMinor, currency, locale)} (${data.unpaidVisitsCount})`, "coupon", "red"]] as const;
   return (
     <div className="space-y-6">

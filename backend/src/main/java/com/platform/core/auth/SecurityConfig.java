@@ -42,7 +42,7 @@ public class SecurityConfig {
     SecurityFilterChain chain(HttpSecurity http, TenantResolutionFilter tenantFilter, JwtService jwt,
                               MembershipRepository memberships, RbacService rbac, AccountAuthService accounts,
                               @Value("${app.ratelimit.enabled:true}") boolean rateLimitEnabled,
-                              com.platform.shared.RateLimitStore rateLimitStore) throws Exception {
+                              com.platform.shared.RateLimitStore rateLimitStore, org.springframework.jdbc.core.simple.JdbcClient jdbc) throws Exception {
         http.csrf(c -> c.disable())
             .cors(Customizer -> {})
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -77,7 +77,8 @@ public class SecurityConfig {
             .addFilterBefore(new RateLimitFilter(jwt, rateLimitStore, rateLimitEnabled), UsernamePasswordAuthenticationFilter.class)
             .addFilterAfter(tenantFilter, RateLimitFilter.class)
             .addFilterAfter(new JwtAuthFilter(jwt, memberships, rbac, accounts), TenantResolutionFilter.class)
-            .addFilterAfter(new RequestContextFilter(), JwtAuthFilter.class);
+            .addFilterAfter(new RequestContextFilter(), JwtAuthFilter.class)
+            .addFilterAfter(new com.platform.shared.IdempotencyFilter(jdbc), RequestContextFilter.class);
         return http.build();
     }
 

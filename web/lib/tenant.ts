@@ -20,7 +20,7 @@ export type HostInfo =
     };
 
 const cache = new Map<string, { at: number; info: HostInfo }>();
-const TTL_MS = 30_000;
+const TTL_MS = 5_000;   // short: a colour or logo the owner just saved shows almost at once
 
 /** Host -> what is behind it. Short in-memory cache so every page view does not hit the backend. */
 export async function resolveHost(host: string): Promise<HostInfo> {

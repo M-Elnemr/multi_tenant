@@ -30,6 +30,7 @@ export type ShopProfile = {
   workingHours?: Record<string, { open: string; close: string; closed: boolean }>; isOpen?: boolean; closedMessage?: string; announcement?: string; coverFileId?: string | null;
   minOrderMinor?: number; vatIncluded?: boolean; returnWindowDays?: number; shippingPolicy?: string; returnPolicy?: string; privacyPolicy?: string; termsText?: string;
   metaPixelId?: string; tiktokPixelId?: string; gaId?: string;
+  siteLayout?: { order?: string[]; hidden?: string[] } | null; trustTiles?: { title: string; text: string }[];
   branding?: { logoFileId?: string | null; primaryColor?: string; secondaryColor?: string };
 };
 

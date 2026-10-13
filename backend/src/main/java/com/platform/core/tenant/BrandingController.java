@@ -26,8 +26,10 @@ public class BrandingController {
     private final JdbcClient jdbc;
     private final FileService files;
     private final AuditService audit;
+    private final TenantDirectory directory;
 
-    public BrandingController(JdbcClient jdbc, FileService files, AuditService audit) {
+    public BrandingController(JdbcClient jdbc, FileService files, AuditService audit, TenantDirectory directory) {
+        this.directory = directory;
         this.jdbc = jdbc;
         this.files = files;
         this.audit = audit;
@@ -49,6 +51,7 @@ public class BrandingController {
         jdbc.sql("UPDATE core.branding SET primary_color = coalesce(:p, primary_color), secondary_color = coalesce(:s, secondary_color), logo_file_id = coalesce(:l, logo_file_id), updated_at = now() WHERE tenant_id = :t")
                 .param("p", r.primaryColor()).param("s", r.secondaryColor()).param("l", r.logoFileId()).param("t", tenantId).update();
         if (r.locale() != null) jdbc.sql("UPDATE core.tenants SET default_locale = :l, updated_at = now() WHERE id = :t").param("l", r.locale()).param("t", tenantId).update();
+        directory.invalidateAll();   // colours and logo show on the site at once
         audit.record((UUID) a.getPrincipal(), tenantId, "SETTINGS_CHANGED", "branding", null, null);
         return load(tenantId);
     }

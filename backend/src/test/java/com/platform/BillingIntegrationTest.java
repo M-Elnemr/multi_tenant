@@ -31,7 +31,7 @@ class BillingIntegrationTest extends IntegrationTestBase {
         onHost(t.host(), t.access(), "GET", "/api/v1/billing/subscription", null)
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("TRIALING")).andExpect(jsonPath("$.planCode").value("STORE_PRO"));
         onHost(t.host(), null, "GET", "/api/v1/billing/plans", null)
-                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1)).andExpect(jsonPath("$[0].tenantType").value("STORE")).andExpect(jsonPath("$[0].priceMinor").value(100000));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1)).andExpect(jsonPath("$[0].tenantType").value("STORE")).andExpect(jsonPath("$[0].priceMinor").value(50000));
         // custom domains are part of the trial (Pro features)
         onHost(t.host(), t.access(), "POST", "/api/v1/tenant/domains", "{\"host\":\"www.trial-" + uniq() + ".com\"}").andExpect(status().isCreated());
     }

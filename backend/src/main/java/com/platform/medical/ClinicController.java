@@ -221,6 +221,12 @@ public class ClinicController {
     @PreAuthorize("hasAuthority('appointment.manage')")
     public Map<String, Object> queue(@RequestParam(required = false) UUID doctorId) { return appointments.queue(ClinicContext.tenantId(), doctorId); }
 
+    public record ReorderReq(List<UUID> ids) {}
+
+    @PostMapping("/queue/reorder")
+    @PreAuthorize("hasAuthority('appointment.manage')")
+    public Map<String, Object> reorderQueue(@RequestBody ReorderReq r, Authentication a) { return appointments.reorder(ClinicContext.tenantId(), user(a), r.ids()); }
+
     @PostMapping("/appointments/walk-in")
     @PreAuthorize("hasAuthority('appointment.manage')")
     @ResponseStatus(HttpStatus.CREATED)
@@ -244,6 +250,7 @@ public class ClinicController {
             case "complete" -> appointments.transition(t, user(a), id, "COMPLETED", reason);
             case "no-show" -> appointments.transition(t, user(a), id, "NO_SHOW", reason);
             case "call" -> appointments.call(t, user(a), id);
+            case "remove-from-queue" -> appointments.removeFromQueue(t, user(a), id);
             case "mark-paid" -> appointments.markPaid(t, user(a), id);
             default -> throw com.platform.shared.BusinessException.notFound("RESOURCE_NOT_FOUND", "Unknown action");
         };

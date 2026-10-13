@@ -100,8 +100,10 @@ public class NotificationListeners {
                     notifications.push(u, e.tenantId(), title, body, "{\"type\":\"QUEUE_CALLED\",\"appointmentId\":\"" + e.appointmentId() + "\"}");   // reaches the patient's phone through Firebase
                 }
                 notifications.dispatchSoon();   // a "your turn" push must not wait for the next 30-second poll
-            } else if ("IN_PROGRESS".equals(e.status()) || "NO_SHOW".equals(e.status())) {
+            } else if ("IN_PROGRESS".equals(e.status()) || "NO_SHOW".equals(e.status()) || "QUEUE_LEFT".equals(e.status())) {
                 queueMoved(e.tenantId(), e.appointmentId(), ar);
+            } else if ("QUEUE_REORDERED".equals(e.status())) {
+                queueReordered(e.tenantId(), e.appointmentId(), ar);
             } else if (Set_NEEDS_STAFF.contains(e.status())) {
                 for (UUID staff : staffWith(e.tenantId(), "appointment.manage"))
                     notifications.notify(staff, e.tenantId(), "BOOKING_REQUEST", ar ? "طلب حجز جديد" : "New booking request", ar ? "لديك طلب حجز جديد" : "You have a new booking request", json("appointmentId", e.appointmentId()), false);
@@ -130,11 +132,32 @@ public class NotificationListeners {
                 WHERE b.tenant_id = :t AND b.doctor_id = :d AND b.status = 'CHECKED_IN' AND b.queue_number > :n
                   AND (b.checked_in_at AT TIME ZONE :tz)::date = (CAST(:ci AS timestamptz) AT TIME ZONE :tz)::date
                 """).param("t", tenantId).param("d", left.get("doctor_id")).param("n", left.get("queue_number")).param("tz", tz).param("ci", left.get("checked_in_at")).query().listOfRows();
+        announceAhead(tenantId, behind, ar);
+    }
+
+    /** The line was rearranged: everyone who moved closer to the front is told once (those pushed back hear nothing). */
+    private void queueReordered(UUID tenantId, UUID anyAppointmentId, boolean ar) {
+        String tz = jdbc.sql("SELECT timezone FROM core.tenants WHERE id = :t").param("t", tenantId).query(String.class).optional().orElse("Africa/Cairo");
+        var any = jdbc.sql("SELECT doctor_id, checked_in_at FROM medical.appointments WHERE id = :a AND tenant_id = :t").param("a", anyAppointmentId).param("t", tenantId).query().listOfRows().stream().findFirst().orElse(null);
+        if (any == null || any.get("checked_in_at") == null) return;
+        var waiting = jdbc.sql("""
+                SELECT b.id, b.patient_id,
+                  (SELECT count(*) FROM medical.appointments c WHERE c.tenant_id = b.tenant_id AND c.doctor_id = b.doctor_id AND c.status = 'CHECKED_IN'
+                     AND (c.checked_in_at AT TIME ZONE :tz)::date = (b.checked_in_at AT TIME ZONE :tz)::date AND c.queue_number < b.queue_number) AS ahead
+                FROM medical.appointments b
+                WHERE b.tenant_id = :t AND b.doctor_id = :d AND b.status = 'CHECKED_IN'
+                  AND (b.checked_in_at AT TIME ZONE :tz)::date = (CAST(:ci AS timestamptz) AT TIME ZONE :tz)::date
+                """).param("t", tenantId).param("d", any.get("doctor_id")).param("tz", tz).param("ci", any.get("checked_in_at")).query().listOfRows();
+        announceAhead(tenantId, waiting, ar);
+    }
+
+    private void announceAhead(UUID tenantId, java.util.List<java.util.Map<String, Object>> behind, boolean ar) {
         boolean any = false;
         for (var b : behind) {
             UUID appt = (UUID) b.get("id");
             int ahead = ((Number) b.get("ahead")).intValue();
             Integer last = jdbc.sql("SELECT last_ahead FROM medical.queue_push_state WHERE appointment_id = :a").param("a", appt).query(Integer.class).optional().orElse(null);
+            if (last != null && ahead > last) { jdbc.sql("UPDATE medical.queue_push_state SET last_ahead = :n, updated_at = now() WHERE appointment_id = :a").param("a", appt).param("n", ahead).update(); continue; }   // pushed back: remember it silently
             if (last != null && ahead >= last) continue;   // nothing new to say
             jdbc.sql("""
                     INSERT INTO medical.queue_push_state (appointment_id, last_ahead) VALUES (:a, :n)

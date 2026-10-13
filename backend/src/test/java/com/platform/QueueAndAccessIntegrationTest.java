@@ -212,6 +212,37 @@ class QueueAndAccessIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void removeReorderAndReplayKeepTheQueueConsistent() throws Exception {
+        Clinic c = clinic();
+        String[] a = patientWithPassword(c, "Alpha", nextPhone(), "WalkPass1234");
+        String[] b = patientWithPassword(c, "Bravo", nextPhone(), "WalkPass1234");
+        String[] d = patientWithPassword(c, "Delta", nextPhone(), "WalkPass1234");
+        String walk = "{\"patientId\":\"%s\",\"doctorId\":\"" + c.doctorId() + "\",\"branchId\":\"" + c.branchId() + "\",\"serviceId\":\"" + c.serviceId() + "\"}";
+        String ia = JsonPath.read(body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/appointments/walk-in", walk.formatted(a[0])).andExpect(status().isCreated())), "$.id");
+        String ib = JsonPath.read(body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/appointments/walk-in", walk.formatted(b[0])).andExpect(status().isCreated())), "$.id");
+        String id = JsonPath.read(body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/appointments/walk-in", walk.formatted(d[0])).andExpect(status().isCreated())), "$.id");
+
+        // drag the last patient to the front: the same numbers 1..3 are handed out in the new order
+        onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/queue/reorder", "{\"ids\":[\"%s\",\"%s\",\"%s\"]}".formatted(id, ia, ib)).andExpect(status().isOk());
+        String q = body(onHost(c.host(), c.owner(), "GET", "/api/v1/clinic/queue", null).andExpect(status().isOk()));
+        assertThat(JsonPath.<List<String>>read(q, "$.waiting[*].id")).containsExactly(id, ia, ib);
+        assertThat(JsonPath.<List<Integer>>read(q, "$.waiting[*].queueNumber")).containsExactly(1, 2, 3);
+
+        // a walk-in who is removed from the line is cancelled and leaves the queue
+        onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/appointments/" + ia + "/remove-from-queue", "{}").andExpect(status().isOk()).andExpect(jsonPath("$.status").value("CANCELLED"));
+        assertThat(JsonPath.<List<String>>read(body(onHost(c.host(), c.owner(), "GET", "/api/v1/clinic/queue", null)), "$.waiting[*].id")).containsExactly(id, ib);
+        // only a waiting patient can be removed
+        onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/appointments/" + ia + "/remove-from-queue", "{}").andExpect(status().isConflict());
+
+        // an offline replay with the same key does not add the patient twice
+        String again = walk.formatted(a[0]);
+        String first = body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/appointments/walk-in", again, "replay-1").andExpect(status().isCreated()));
+        String second = body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/appointments/walk-in", again, "replay-1").andExpect(status().isCreated()));
+        assertThat(JsonPath.<String>read(second, "$.id")).isEqualTo(JsonPath.<String>read(first, "$.id"));
+        assertThat(JsonPath.<List<String>>read(body(onHost(c.host(), c.owner(), "GET", "/api/v1/clinic/queue", null)), "$.waiting[*].id")).hasSize(3);
+    }
+
+    @Test
     void bookingPageKnowsWhichWeekdaysTheDoctorWorks() throws Exception {
         Clinic c = clinic();
         // default hours: Sunday-Thursday (ISO 7,1,2,3,4); Friday and Saturday are days off

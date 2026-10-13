@@ -27,6 +27,7 @@ public class RetentionJob {
         total += purge("notifications.notifications", "created_at", "read_at IS NOT NULL AND created_at < now() - interval '90 days'");
         total += purge("notifications.notifications", "created_at", "created_at < now() - interval '1 year'");
         total += purge("core.idempotency_keys", "created_at", "created_at < now() - interval '7 days'");
+        total += purge("core.request_replays", "created_at", "created_at < now() - interval '3 days'");
         total += purge("billing.webhook_events", "created_at", "created_at < now() - interval '90 days'");
         total += purge("core.user_sessions", "created_at", "(revoked_at IS NOT NULL OR expires_at < now()) AND created_at < now() - interval '30 days'");
         total += purge("core.sso_tickets", "created_at", "created_at < now() - interval '1 day'");
