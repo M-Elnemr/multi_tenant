@@ -70,7 +70,13 @@ public class AccountAuthService {
         // A patient signs in on their clinic's address, or on the platform address (the patient app keeps one login for every clinic).
         if ((tenant != null && !"CLINIC".equals(tenant.type())) || identifier == null || PhoneNormalizer.looksLikeEmail(identifier)) return Optional.empty();
         String phone;
-        try { phone = PhoneNormalizer.normalize(identifier); } catch (BusinessException e) { return Optional.empty(); }
+        Integer publicId = com.platform.medical.PatientIds.parse(identifier);   // the patient number works as a login name too (a mobile number has 10+ digits)
+        if (publicId != null) {
+            phone = jdbc.sql("SELECT phone FROM medical.patient_accounts WHERE public_id = :n").param("n", publicId).query(String.class).optional().orElse(null);
+            if (phone == null) return Optional.empty();
+        } else {
+            try { phone = PhoneNormalizer.normalize(identifier); } catch (BusinessException e) { return Optional.empty(); }
+        }
         var row = jdbc.sql("SELECT id, password_hash, status FROM medical.patient_accounts WHERE phone = :p").param("p", phone).query().listOfRows().stream().findFirst().orElse(null);
         if (row == null || !encoder.matches(password == null ? "" : password, (String) row.get("password_hash"))) return Optional.empty();
         if (!"ACTIVE".equals(row.get("status"))) throw BusinessException.forbidden("ACCOUNT_DISABLED", "Account is not active");
@@ -106,8 +112,8 @@ public class AccountAuthService {
         var existing = jdbc.sql("SELECT id FROM medical.patient_accounts WHERE phone = :p").param("p", phone).query(UUID.class).optional();
         if (existing.isPresent()) return new PatientAccount(existing.get(), false);
         validatePassword(tempPassword);
-        UUID id = jdbc.sql("INSERT INTO medical.patient_accounts (phone, display_name, password_hash, must_change_password) VALUES (:p, :n, :h, TRUE) RETURNING id")
-                .param("p", phone).param("n", displayName == null ? "" : displayName).param("h", encoder.encode(tempPassword)).query(UUID.class).single();
+        UUID id = jdbc.sql("INSERT INTO medical.patient_accounts (phone, display_name, password_hash, must_change_password, public_id) VALUES (:p, :n, :h, TRUE, :pid) RETURNING id")
+                .param("p", phone).param("n", displayName == null ? "" : displayName).param("h", encoder.encode(tempPassword)).param("pid", com.platform.medical.PatientIds.allocate(jdbc)).query(UUID.class).single();
         return new PatientAccount(id, true);
     }
 

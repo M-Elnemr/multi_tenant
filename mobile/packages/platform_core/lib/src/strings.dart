@@ -9,7 +9,7 @@ class S {
   bool get ar => code == 'ar';
 
   String get login => ar ? 'تسجيل الدخول' : 'Log in';
-  String get phone => ar ? 'رقم الهاتف أو البريد' : 'Phone or email';
+  String get phone => ar ? 'رقم الهاتف أو البريد أو رقم المريض' : 'Phone, email or patient ID';
   String get password => ar ? 'كلمة المرور' : 'Password';
   String get newPassword => ar ? 'كلمة مرور جديدة (8 أحرف على الأقل)' : 'New password (min 8 characters)';
   String get code_ => ar ? 'الكود من النشاط' : 'Code from the business';

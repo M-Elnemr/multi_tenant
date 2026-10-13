@@ -10,10 +10,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'mode.dart';
+import 'patient_id.dart';
 import 'push.dart';
 import 'shop/shop.dart';
 
-const appVersion = '1.2.1';
+const appVersion = '1.3.0';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -304,6 +305,7 @@ class _MyClinicsState extends State<MyClinics> {
           return RefreshIndicator(
             onRefresh: reload,
             child: ListView(children: [
+              PatientIdCard(api: widget.platform),
               for (final c in clinics)
                 Card(
                   margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -792,6 +794,7 @@ class _AccountPageState extends State<AccountPage> {
   Widget build(BuildContext context) {
     final s = S.of(context);
     return ListView(padding: const EdgeInsets.all(16), children: [
+      PatientIdCard(api: widget.api, margin: const EdgeInsets.only(bottom: 8)),
       Card(child: ListTile(leading: const Icon(Icons.translate_rounded), title: Text(s.language, style: const TextStyle(fontWeight: FontWeight.w700)), trailing: const LanguageChip())),
       const SizedBox(height: 12),
       Text(s.changePassword, style: Theme.of(context).textTheme.titleMedium),

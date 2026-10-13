@@ -38,6 +38,13 @@ public class MeController {
                 """).param("u", (UUID) a.getPrincipal()).query().listOfRows());
     }
 
+    /** A patient's own number (shown as a QR/barcode in the app and used by clinics to add them). Empty for other kinds of account. */
+    @GetMapping("/patient")
+    public Map<String, Object> patient(Authentication a) {
+        return jdbc.sql("SELECT public_id, display_name, phone FROM medical.patient_accounts WHERE id = :u").param("u", (UUID) a.getPrincipal()).query().listOfRows().stream().findFirst()
+                .map(Rows::camel).orElse(Map.of());
+    }
+
     /** Staff: every business this person works in, with what the Business app needs to show a picker and open one (no domain typing). */
     @GetMapping("/businesses")
     public List<Map<String, Object>> businesses(Authentication a) {

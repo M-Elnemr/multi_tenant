@@ -12,9 +12,10 @@ import { PhoneInput } from "@/components/inputs";
 import { WhatsAppButton } from "@/components/whatsapp-button";
 import { usePatientPortal } from "@/components/portal-flag";
 import { ageText } from "@/lib/format";
+import { PatientIdCard } from "@/components/patient-id-card";
 import { VisitTypePicker, type VisitType } from "@/components/visit-type";
 
-type Patient = { id: string; patientCode: string; firstName: string; lastName: string; phone?: string; ageYears?: number; ageMonths?: number; sex?: string; hasPortal: boolean; notesInternal?: string; addressText?: string; bloodType?: string; guardianPatientId?: string; guardianName?: string };
+type Patient = { id: string; patientCode: string; firstName: string; lastName: string; phone?: string; ageYears?: number; ageMonths?: number; sex?: string; hasPortal: boolean; publicId?: number; notesInternal?: string; addressText?: string; bloodType?: string; guardianPatientId?: string; guardianName?: string };
 type Kid = { id: string; patientCode: string; firstName: string; lastName: string; ageYears?: number; ageMonths?: number };
 const BLOOD = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 
@@ -97,12 +98,14 @@ export default function PatientPage({ params }: { params: Promise<{ id: string }
       <ErrorText error={start.error ?? tl.error} />
       {portal && !d.hasPortal && !d.guardianPatientId && <div className="mb-4"><Alert tone="blue">{t("patients.noPortal")}</Alert></div>}
       {d.guardianPatientId && <div className="mb-4"><Alert tone="blue">{t("dep.childOf", { name: "" }).trim()} <Link href={`/dashboard/patients/${d.guardianPatientId}`} className="font-medium text-brand">{d.guardianName}</Link></Alert></div>}
+      {d.publicId && !d.guardianPatientId && <div className="mb-4"><PatientIdCard publicId={d.publicId} name={`${d.firstName} ${d.lastName}`.trim()} compact /></div>}
       <Card className="mb-4">
         <h2 className="mb-3 font-medium">{t("patients.detailsTitle")}</h2>
         <dl className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
           {([
             [t("patients.name"), `${d.firstName} ${d.lastName}`.trim()],
             [t("patients.code"), d.patientCode],
+            ...(d.publicId ? [[t("patients.idLabel"), String(d.publicId)] as const] : []),
             [t("patients.mobile"), d.phone ?? "-"],
             [t("patients.age"), ageText(d.ageYears, d.ageMonths, locale)],
             [t("patients.sex"), d.sex === "F" ? t("patients.female") : d.sex === "M" ? t("patients.male") : "-"],

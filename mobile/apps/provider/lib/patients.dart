@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:platform_core/platform_core.dart';
 
 import 'common.dart';
@@ -215,4 +216,138 @@ class _BookingPageState extends State<BookingPage> {
       )),
     );
   }
+}
+
+// ---------------------------------------------------------------- Existing patient (by ID, phone or scan)
+
+/// Pulls the patient number out of a scanned QR ("TABIB:123456") or barcode ("123456").
+String? parsePatientCode(String raw) => RegExp(r'^(?:TABIB:)?(\d{6,9})$', caseSensitive: false).firstMatch(raw.trim())?.group(1);
+
+/// Full-screen camera that reads a patient's QR code or barcode and returns the number.
+class ScanPage extends StatefulWidget {
+  const ScanPage({super.key});
+  @override
+  State<ScanPage> createState() => _ScanPageState();
+}
+
+class _ScanPageState extends State<ScanPage> {
+  final _c = MobileScannerController(formats: const [BarcodeFormat.qrCode, BarcodeFormat.code128], detectionSpeed: DetectionSpeed.noDuplicates);
+  bool _done = false;
+
+  @override
+  void dispose() { _c.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    final isAr = S.of(context).ar;
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(backgroundColor: Colors.black, foregroundColor: Colors.white, title: Text(isAr ? 'مسح كود المريض' : 'Scan patient code'), actions: [IconButton(icon: const Icon(Icons.flashlight_on_rounded), onPressed: () => _c.toggleTorch())]),
+      body: Stack(children: [
+        MobileScanner(
+          controller: _c,
+          onDetect: (cap) {
+            if (_done) return;
+            for (final b in cap.barcodes) {
+              final code = parsePatientCode(b.rawValue ?? '');
+              if (code != null) { _done = true; Navigator.of(context).pop(code); return; }
+            }
+          },
+          errorBuilder: (c, e) => Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(isAr ? 'تعذر فتح الكاميرا. اسمح بالوصول إلى الكاميرا من إعدادات الهاتف.' : 'The camera could not open. Allow camera access in the phone settings.', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white)))),
+        ),
+        Center(child: Container(width: 250, height: 250, decoration: BoxDecoration(border: Border.all(color: Colors.white, width: 3), borderRadius: BorderRadius.circular(24)))),
+        Positioned(left: 0, right: 0, bottom: 40, child: Text(isAr ? 'وجّه الكاميرا إلى QR أو باركود المريض' : "Point the camera at the patient's QR code or barcode", textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700))),
+      ]),
+    );
+  }
+}
+
+/// Add a patient who already uses the platform: type the 6-digit ID or the mobile number, or scan the QR / barcode. Returns the clinic patient when added.
+Future<Map<String, dynamic>?> existingPatientSheet(BuildContext c, Ctx ctx) async {
+  final isAr = S.of(c).ar;
+  final code = TextEditingController();
+  Map<String, dynamic>? found, added;
+  var busy = false;
+  String? error;
+  await showModalBottomSheet<void>(
+    context: c,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (sheet) => StatefulBuilder(builder: (sheet, set) {
+      Future<void> look([String? v]) async {
+        final q = (v ?? code.text).trim();
+        if (q.isEmpty) return;
+        set(() { busy = true; error = null; found = null; });
+        try {
+          found = Map<String, dynamic>.from(await ctx.api.get('clinic/patients/lookup', query: {'q': q}) as Map);
+        } on ApiException catch (e) {
+          error = e.code == 'NETWORK' ? (isAr ? 'لا يوجد اتصال بالإنترنت. إضافة مريض موجود تحتاج اتصالًا.' : 'No internet. Adding an existing patient needs a connection.') : errorText(e);
+        } catch (e) { error = errorText(e); }
+        set(() => busy = false);
+      }
+      Future<void> scan() async {
+        final r = await Navigator.of(sheet).push<String>(MaterialPageRoute(builder: (_) => const ScanPage()));
+        if (r != null) { code.text = r; await look(r); }
+      }
+      Future<void> add() async {
+        set(() { busy = true; error = null; });
+        try {
+          added = Map<String, dynamic>.from(await ctx.api.post('clinic/patients/link', {'q': code.text.trim()}) as Map);
+          if (sheet.mounted) Navigator.of(sheet).pop();
+        } catch (e) { error = errorText(e); set(() => busy = false); }
+      }
+      final f = found;
+      return Padding(
+        padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + MediaQuery.of(sheet).viewInsets.bottom),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text(isAr ? 'إضافة مريض موجود' : 'Add an existing patient', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(child: TextField(controller: code, keyboardType: TextInputType.number, textDirection: TextDirection.ltr, onChanged: (_) => set(() { found = null; error = null; }), onSubmitted: (_) => look(), decoration: InputDecoration(labelText: isAr ? 'رقم المريض أو الموبايل' : 'Patient ID or mobile', hintText: '123456'))),
+            const SizedBox(width: 8),
+            IconButton.filledTonal(tooltip: isAr ? 'مسح QR / باركود' : 'Scan QR / barcode', iconSize: 30, onPressed: busy ? null : scan, icon: const Icon(Icons.qr_code_scanner_rounded)),
+          ]),
+          const SizedBox(height: 10),
+          OutlinedButton(onPressed: busy ? null : () => look(), child: busy ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : Text(isAr ? 'بحث' : 'Find')),
+          if (error != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(error!, style: TextStyle(color: Theme.of(sheet).colorScheme.error, fontWeight: FontWeight.w700))),
+          if (f != null && f['found'] != true) Padding(padding: const EdgeInsets.only(top: 10), child: Text(isAr ? 'لا يوجد مريض بهذا الرقم.' : 'No patient found with this ID or number.', style: const TextStyle(color: Color(0xFFD98200), fontWeight: FontWeight.w700))),
+          if (f != null && f['found'] == true) ...[
+            const SizedBox(height: 12),
+            Card(
+              color: Theme.of(sheet).colorScheme.primary.withValues(alpha: 0.07),
+              child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('${f['displayName']}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                Text('${f['publicId']}', textDirection: TextDirection.ltr, style: const TextStyle(color: Color(0xFF6B7C8D), letterSpacing: 2, fontWeight: FontWeight.w700)),
+                if (f['alreadyInClinic'] == true) Padding(padding: const EdgeInsets.only(top: 8), child: Text(isAr ? 'هذا المريض موجود بالفعل في عيادتك.' : 'This patient is already in your clinic.', style: const TextStyle(color: Color(0xFF1E9E5A), fontWeight: FontWeight.w800))),
+              ])),
+            ),
+            const SizedBox(height: 8),
+            if (f['alreadyInClinic'] == true)
+              FilledButton(onPressed: () { added = {'id': f['patientId'], 'existing': true}; Navigator.of(sheet).pop(); }, child: Text(isAr ? 'فتح المريض' : 'Open patient'))
+            else
+              FilledButton(onPressed: busy ? null : add, child: Text(isAr ? 'إضافته إلى عيادتي' : 'Add to my clinic')),
+          ],
+        ]),
+      );
+    }),
+  );
+  return added;
+}
+
+/// New patient or an existing one: the choice shown when the doctor taps "New patient".
+Future<Map<String, dynamic>?> addPatientChooser(BuildContext c, Ctx ctx) async {
+  final isAr = S.of(c).ar;
+  final choice = await showModalBottomSheet<String>(
+    context: c,
+    showDragHandle: true,
+    builder: (sheet) => SafeArea(child: Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Card(child: ListTile(leading: const Icon(Icons.person_add_alt_1_rounded), title: Text(isAr ? 'مريض جديد' : 'New patient', style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text(isAr ? 'سجّل بياناته لأول مرة' : 'Register their details'), onTap: () => Navigator.pop(sheet, 'new'))),
+        Card(child: ListTile(leading: const Icon(Icons.qr_code_scanner_rounded), title: Text(isAr ? 'مريض موجود' : 'Existing patient', style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text(isAr ? 'بالرقم أو الموبايل أو مسح QR / باركود' : 'By ID, mobile number or QR / barcode scan'), onTap: () => Navigator.pop(sheet, 'existing'))),
+      ]),
+    )),
+  );
+  if (choice == null || !c.mounted) return null;
+  return choice == 'new' ? patientSheet(c, ctx) : existingPatientSheet(c, ctx);
 }

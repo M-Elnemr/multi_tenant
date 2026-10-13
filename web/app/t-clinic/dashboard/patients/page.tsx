@@ -11,8 +11,9 @@ import { Button, ErrorText, Field, Input, Loading, Modal, PageHeader, Pager, Sec
 import { WhatsAppButton } from "@/components/whatsapp-button";
 import { usePatientPortal } from "@/components/portal-flag";
 import { ageText } from "@/lib/format";
+import { QrScan } from "@/components/qr-scan";
 
-type P = { id: string; patientCode: string; firstName: string; lastName: string; ageYears?: number; ageMonths?: number; sex?: string; phone?: string; hasPortal: boolean; dependents?: P[] };
+type P = { id: string; patientCode: string; firstName: string; lastName: string; ageYears?: number; ageMonths?: number; sex?: string; phone?: string; hasPortal: boolean; publicId?: number; dependents?: P[] };
 type Created = { id: string; patientCode: string; portalAccess: string; firstName: string; password?: string };
 
 export default function Patients() {
@@ -29,6 +30,22 @@ export default function Patients() {
   const [pw, setPw] = useState("");
   const [created, setCreated] = useState<Created | null>(null);
   const [depOf, setDepOf] = useState<P | null>(null);   // adding a child under this patient (no phone, no password)
+  // "Existing patient" tab: find a patient who already uses the platform by ID, phone or scan, and add them to this clinic
+  const [tab, setTab] = useState<"new" | "existing">("new");
+  const [code, setCode] = useState("");
+  const [scanning, setScanning] = useState(false);
+  const [found, setFound] = useState<{ found: boolean; displayName?: string; alreadyInClinic?: boolean; patientId?: string; publicId?: number } | null>(null);
+  const lookup = useAction(async (c?: string) => {
+    const v = (c ?? code).trim();
+    if (!v) return;
+    setFound(await api(`clinic/patients/lookup?q=${encodeURIComponent(v)}`));
+  });
+  const addExisting = useAction(async () => {
+    const r = await api<Created>("clinic/patients/link", { body: { q: code.trim() } });
+    setCreated({ ...r, password: undefined });
+    setOpen(false); setFound(null); setCode(""); setTab("new");
+    await reload();
+  });
   const create = useAction(async () => {
     const r = await api<Created>("clinic/patients", { body: { firstName: f.firstName.trim(), phone: depOf ? undefined : f.phone, guardianPatientId: depOf?.id, relationship: depOf ? "PARENT" : undefined, ageYears: Number(f.ageYears), ageMonths: Number(f.ageMonths || 0), sex: f.sex || undefined, initialPassword: portal && pw ? pw : undefined } });
     setCreated({ ...r, password: portal && r.portalAccess === "PASSWORD_SET" ? pw : undefined });
@@ -37,7 +54,7 @@ export default function Patients() {
   });
   return (
     <>
-      <PageHeader title={t("nav.patients")} actions={can("patient.create") && <Button onClick={() => { setDepOf(null); setOpen(true); }}>{t("patients.add")}</Button>} />
+      <PageHeader title={t("nav.patients")} actions={can("patient.create") && <Button onClick={() => { setDepOf(null); setTab("new"); setFound(null); setCode(""); setOpen(true); }}>{t("patients.add")}</Button>} />
       {created && (
         <div className="mb-5 space-y-3 rounded-xl border bg-white p-4">
           <p className="text-sm">{t("patients.created", { name: created.firstName, code: created.patientCode })}</p>
@@ -59,6 +76,40 @@ export default function Patients() {
         </>
       )}
       <Modal open={open} onClose={() => setOpen(false)} title={depOf ? t("dep.addTitle", { name: depOf.firstName }) : t("patients.add")}>
+        {!depOf && portal && (
+          <div className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 text-sm font-semibold">
+            {(["new", "existing"] as const).map((k) => <button key={k} type="button" onClick={() => { setTab(k); setScanning(false); }} className={`rounded-lg py-2 transition ${tab === k ? "bg-white text-brand shadow-sm" : "text-slate-500"}`}>{k === "new" ? t("patients.newTab") : t("patients.existingTab")}</button>)}
+          </div>
+        )}
+        {tab === "existing" && !depOf ? (
+          <div className="space-y-3">
+            {scanning ? <QrScan onClose={() => setScanning(false)} onCode={(c) => { setScanning(false); setCode(c); void lookup.run(c); }} /> : (
+              <>
+                <Field label={t("patients.findHint")}>
+                  <div className="flex gap-2">
+                    <Input value={code} onChange={(e) => { setCode(e.target.value); setFound(null); }} inputMode="numeric" dir="ltr" placeholder="123456" onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void lookup.run(); } }} />
+                    <Button type="button" variant="secondary" loading={lookup.loading} onClick={() => void lookup.run()}>{t("patients.find")}</Button>
+                  </div>
+                </Field>
+                <Button type="button" variant="secondary" className="w-full" onClick={() => setScanning(true)}>📷 {t("patients.scan")}</Button>
+                {found && !found.found && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{t("patients.notFound")}</p>}
+                {found?.found && (
+                  <div className="space-y-3 rounded-xl border bg-brand-soft/40 p-4">
+                    <p className="text-lg font-bold">{found.displayName}</p>
+                    <p className="font-mono text-sm text-slate-500" dir="ltr">{found.publicId}</p>
+                    {found.alreadyInClinic ? (
+                      <>
+                        <p className="text-sm text-emerald-700">{t("patients.alreadyYours")}</p>
+                        <Link href={`/dashboard/patients/${found.patientId}`} className="font-semibold text-brand">{t("patients.openPatient")} →</Link>
+                      </>
+                    ) : <Button type="button" className="w-full" loading={addExisting.loading} onClick={() => void addExisting.run()}>{t("patients.addExisting")}</Button>}
+                  </div>
+                )}
+                <ErrorText error={lookup.error ?? addExisting.error} />
+              </>
+            )}
+          </div>
+        ) : (
         <form onSubmit={(e) => { e.preventDefault(); void create.run(); }} className="space-y-3">
           <Field label={t("patients.name")}><Input value={f.firstName} onChange={(e) => setF({ ...f, firstName: e.target.value })} required maxLength={100} /></Field>
           {depOf ? <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">{t("dep.noPhoneHint")}</p> : <Field label={t("patients.mobile")} hint={t("patients.mobileHint")}><PhoneInput value={f.phone} onValue={(phone) => setF({ ...f, phone })} required /></Field>}
@@ -78,6 +129,7 @@ export default function Patients() {
           <ErrorText error={create.error} />
           <Button type="submit" loading={create.loading} className="w-full">{t("common.save")}</Button>
         </form>
+        )}
       </Modal>
     </>
   );

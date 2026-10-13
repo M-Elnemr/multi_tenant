@@ -43,9 +43,11 @@ public class PatientService {
     private final AuditService audit;
     private final org.springframework.context.ApplicationEventPublisher events;
     private final com.platform.shared.PatientPortalPolicy portalPolicy;
+    private final com.platform.core.auth.LoginThrottle throttleRef;
 
     public PatientService(JdbcClient jdbc, PasswordEncoder encoder, AccountAuthService accounts, AuditService audit, org.springframework.context.ApplicationEventPublisher events,
-                          com.platform.shared.PatientPortalPolicy portalPolicy) {
+                          com.platform.shared.PatientPortalPolicy portalPolicy, com.platform.core.auth.LoginThrottle throttleRef) {
+        this.throttleRef = throttleRef;
         this.events = events;
         this.portalPolicy = portalPolicy;
         this.jdbc = jdbc;
@@ -127,6 +129,46 @@ public class PatientService {
         return out;
     }
 
+    /** Finds an existing patient account by platform number or phone (null when there is none). Only what a clinic needs to confirm who it is. */
+    private Map<String, Object> accountBy(String q) {
+        Integer pid = PatientIds.parse(q);
+        String phone = null;
+        if (pid == null) {
+            try { phone = PhoneNormalizer.normalize(q); } catch (BusinessException e) { return null; }
+        }
+        return jdbc.sql("SELECT id, public_id, display_name, phone, status FROM medical.patient_accounts WHERE " + (pid != null ? "public_id = :v" : "phone = :v"))
+                .param("v", pid != null ? (Object) pid : phone).query().listOfRows().stream().findFirst().orElse(null);
+    }
+
+    /** Clinic staff typed or scanned a patient number / phone: is there such a patient on the platform, and are they already in this clinic? */
+    public Map<String, Object> lookup(UUID tenantId, String q) {
+        guard(tenantId);
+        var acc = accountBy(q);
+        if (acc == null || !"ACTIVE".equals(acc.get("status"))) return Map.of("found", false);
+        UUID id = (UUID) acc.get("id");
+        var mine = jdbc.sql("SELECT id FROM medical.patients WHERE tenant_id = :t AND user_id = :u AND status = 'ACTIVE'").param("t", tenantId).param("u", id).query(UUID.class).optional();
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("found", true);
+        out.put("publicId", acc.get("public_id"));
+        out.put("displayName", acc.get("display_name"));
+        out.put("alreadyInClinic", mine.isPresent());
+        mine.ifPresent(p -> out.put("patientId", p));
+        return out;
+    }
+
+    /** Adds an existing platform patient to this clinic (same rules as typing their phone: they are notified and can leave the clinic any time). */
+    @Transactional
+    public Map<String, Object> link(UUID tenantId, UUID actor, String q) {
+        guard(tenantId);
+        if (!portalPolicy.enabled()) throw BusinessException.badRequest("PORTAL_DISABLED", "Patient accounts are switched off");
+        var acc = accountBy(q);
+        if (acc == null || !"ACTIVE".equals(acc.get("status"))) throw BusinessException.notFound("PATIENT_NOT_FOUND", "No patient with this number");
+        String name = acc.get("display_name") == null || ((String) acc.get("display_name")).isBlank() ? (String) acc.get("phone") : (String) acc.get("display_name");
+        return create(tenantId, actor, new PatientReq(name, "", (String) acc.get("phone"), null, null, null, null, null, null, null, null, null, null, null, null));
+    }
+
+    private void guard(UUID tenantId) { throttleRef.check("patient-lookup|" + tenantId, 120, java.time.Duration.ofMinutes(1)); }
+
     /** The parent got an account again (re-added after leaving): reconnect their children so they are not orphaned. */
     private void restoreDependents(UUID tenantId, UUID parentPatientId, UUID accountId) {
         jdbc.sql("""
@@ -145,12 +187,14 @@ public class PatientService {
         String code = q == null ? null : q.trim().toUpperCase();
         String ph = q == null ? "" : "%" + q.trim().replaceAll("[\\s\\-]", "").replaceFirst("^0", "") + "%";
         String match = "(CAST(:like AS varchar) IS NULL OR (%1$s.first_name || ' ' || %1$s.last_name) ILIKE CAST(:like AS varchar) OR %1$s.patient_code = :code OR %1$s.phone LIKE :ph)";
+        Integer pid = PatientIds.parse(q);
         String roots = "r.tenant_id = :t AND r.status = 'ACTIVE' AND r.guardian_patient_id IS NULL AND (" + match.formatted("r")
+                + " OR (CAST(:pid AS int) IS NOT NULL AND r.user_id IN (SELECT a.id FROM medical.patient_accounts a WHERE a.public_id = CAST(:pid AS int)))"
                 + " OR EXISTS (SELECT 1 FROM medical.patients c WHERE c.guardian_patient_id = r.id AND c.status = 'ACTIVE' AND " + match.formatted("c") + "))";
-        long total = jdbc.sql("SELECT count(*) FROM medical.patients r WHERE " + roots).param("t", tenantId).param("like", like).param("code", code).param("ph", ph).query(Long.class).single();
-        var rows = Rows.camel(jdbc.sql("SELECT r.id, r.patient_code, r.first_name, r.last_name, r.date_of_birth, r.sex, r.phone, (r.user_id IS NOT NULL) AS has_portal, r.created_at FROM medical.patients r WHERE " + roots
+        long total = jdbc.sql("SELECT count(*) FROM medical.patients r WHERE " + roots).param("t", tenantId).param("like", like).param("code", code).param("ph", ph).param("pid", pid).query(Long.class).single();
+        var rows = Rows.camel(jdbc.sql("SELECT r.id, r.patient_code, r.first_name, r.last_name, r.date_of_birth, r.sex, r.phone, (r.user_id IS NOT NULL) AS has_portal, (SELECT a.public_id FROM medical.patient_accounts a WHERE a.id = r.user_id) AS public_id, r.created_at FROM medical.patients r WHERE " + roots
                 + " ORDER BY r.first_name, r.last_name LIMIT :lim OFFSET :off")
-                .param("t", tenantId).param("like", like).param("code", code).param("ph", ph).param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows());
+                .param("t", tenantId).param("like", like).param("code", code).param("ph", ph).param("pid", pid).param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows());
         ZoneId tz = zone(tenantId);
         List<UUID> ids = rows.stream().map(m -> (UUID) m.get("id")).toList();
         Map<Object, List<Map<String, Object>>> kids = ids.isEmpty() ? Map.of() : Rows.camel(jdbc.sql("SELECT id, patient_code, first_name, last_name, date_of_birth, sex, guardian_patient_id, FALSE AS has_portal, created_at FROM medical.patients WHERE tenant_id = :t AND status = 'ACTIVE' AND guardian_patient_id IN (:ids) ORDER BY first_name, last_name")
@@ -163,7 +207,7 @@ public class PatientService {
     }
 
     Map<String, Object> summary(UUID tenantId, UUID id) {
-        return withAge(Rows.camel(jdbc.sql("SELECT id, patient_code, first_name, last_name, date_of_birth, dob_estimated, sex, phone, address_text, blood_type, (user_id IS NOT NULL) AS has_portal, status, guardian_patient_id, (SELECT trim(g.first_name || ' ' || g.last_name) FROM medical.patients g WHERE g.id = medical.patients.guardian_patient_id) AS guardian_name, created_at FROM medical.patients WHERE id = :p AND tenant_id = :t")
+        return withAge(Rows.camel(jdbc.sql("SELECT id, patient_code, first_name, last_name, date_of_birth, dob_estimated, sex, phone, address_text, blood_type, (user_id IS NOT NULL) AS has_portal, (SELECT a.public_id FROM medical.patient_accounts a WHERE a.id = medical.patients.user_id) AS public_id, status, guardian_patient_id, (SELECT trim(g.first_name || ' ' || g.last_name) FROM medical.patients g WHERE g.id = medical.patients.guardian_patient_id) AS guardian_name, created_at FROM medical.patients WHERE id = :p AND tenant_id = :t")
                 .param("p", id).param("t", tenantId).query().listOfRows().stream().findFirst().orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Patient not found"))), zone(tenantId));
     }
 

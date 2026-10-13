@@ -148,6 +148,17 @@ public class ClinicController {
     @ResponseStatus(HttpStatus.CREATED)
     public Map<String, Object> createPatient(@RequestBody PatientService.PatientReq r, Authentication a) { return patients.create(ClinicContext.tenantId(), user(a), r); }
 
+    public record LinkReq(String q) {}
+
+    @GetMapping("/patients/lookup")
+    @PreAuthorize("hasAuthority('patient.create')")
+    public Map<String, Object> lookupPatient(@RequestParam String q) { return patients.lookup(ClinicContext.tenantId(), q); }
+
+    @PostMapping("/patients/link")
+    @PreAuthorize("hasAuthority('patient.create')")
+    @ResponseStatus(HttpStatus.CREATED)
+    public Map<String, Object> linkPatient(@RequestBody LinkReq r, Authentication a) { return patients.link(ClinicContext.tenantId(), user(a), r.q()); }
+
     @GetMapping("/patients/{id}")
     @PreAuthorize("hasAuthority('patient.read')")
     public Map<String, Object> patient(@PathVariable UUID id, Authentication a) { return patients.detail(ClinicContext.tenantId(), user(a), id); }
