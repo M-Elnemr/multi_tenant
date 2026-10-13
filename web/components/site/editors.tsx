@@ -90,7 +90,7 @@ function SectionsPanel({ kind, order, hidden, onClose }: { kind: Kind; order: st
               <span className="text-lg text-slate-300" aria-hidden>⠿</span>
               <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-soft text-brand"><Icon name={SECTION_ICON[k] ?? "sparkles"} className="h-4.5 w-4.5" /></span>
               <span className="flex-1 font-semibold">{t(`site.section.${k}`)}</span>
-              <label className="flex items-center gap-2 text-xs font-semibold text-slate-500"><input type="checkbox" role="switch" checked={!hide} onChange={(e) => { const n = e.target.checked ? off.filter((x) => x !== k) : [...off, k]; setOff(n); push(list, n); }} className="h-5 w-9 cursor-pointer" />{hide ? t("common.hidden") : t("common.show")}</label>
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-500"><input type="checkbox" role="switch" checked={!hide} onChange={(e) => { const n = e.target.checked ? off.filter((x) => x !== k) : [...off, k]; setOff(n); push(list, n); }} className="h-5 w-9 cursor-pointer" />{hide ? t("common.hidden") : t("se.visible")}</label>
             </Reorder.Item>
           );
         })}

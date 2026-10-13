@@ -105,7 +105,7 @@ export function InsuranceEditor({ onClose }: EditorProps) {
   const f = useClinicForm(["insurance"]);
   return (
     <DrawerShell icon="shield" title={t("site.section.insurance")} description={t("se.d.insurance")} form={f} onClose={onClose}>
-      <TagsField label={t("cweb.insurance")} hint={t("se.insuranceHint")} values={f.v.insurance ?? []} onChange={(insurance) => f.set({ insurance })} />
+      <TagsField label={t("se.insuranceLabel")} hint={t("se.insuranceHint")} values={f.v.insurance ?? []} onChange={(insurance) => f.set({ insurance })} />
     </DrawerShell>
   );
 }
