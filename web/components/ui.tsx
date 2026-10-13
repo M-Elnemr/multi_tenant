@@ -183,7 +183,7 @@ export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { key:
   return (
     <div role="tablist" className="inline-flex max-w-full gap-1 overflow-x-auto rounded-xl bg-slate-100/80 p-1">
       {tabs.map((tb) => (
-        <button key={tb.key} role="tab" aria-selected={tb.key === value} onClick={() => onChange(tb.key)} className={cx("whitespace-nowrap rounded-lg px-3.5 py-1.5 text-sm font-semibold transition", tb.key === value ? "bg-white text-brand shadow-sm" : "text-slate-500 hover:text-slate-800")}>
+        <button key={tb.key} role="tab" aria-selected={tb.key === value} onClick={() => onChange(tb.key)} className={cx("whitespace-nowrap rounded-lg px-3.5 py-1.5 text-sm font-semibold transition", tb.key === value ? "bg-white text-brand-dark shadow-sm" : "text-slate-600 hover:text-slate-800")}>
           {tb.label}{tb.count !== undefined && <span className="ms-1.5 rounded-full bg-slate-200/70 px-1.5 text-xs">{tb.count}</span>}
         </button>
       ))}

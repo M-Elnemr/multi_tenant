@@ -6,6 +6,7 @@ import 'package:platform_core/platform_core.dart';
 import 'clinic_panel.dart';
 import 'common.dart';
 import 'forms.dart';
+import 'lab_sheet.dart';
 
 List<Map<String, dynamic>> _maps(dynamic v) => ((v as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
 
@@ -404,6 +405,7 @@ class _EncounterPageState extends State<EncounterPage> {
             if (labs.isEmpty) Text(isAr ? 'لا يوجد' : 'None', style: const TextStyle(color: Color(0xFF8A97A5))),
             for (final l in labs) ListTile(
               contentPadding: EdgeInsets.zero, dense: true,
+              onTap: () async { if (await showLabSheet(context, ctx, l)) await _load(); },
               leading: Text(l['kind'] == 'RADIOLOGY' ? '🩻' : '🧪', style: const TextStyle(fontSize: 20)),
               title: Text('${l['testName']}${l['priority'] == 'URGENT' ? (isAr ? ' · عاجل' : ' · urgent') : ''}'),
               trailing: StatusPill(l['status'] == 'ORDERED' ? 'REQUESTED' : '${l['status']}'),

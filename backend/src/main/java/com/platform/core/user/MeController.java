@@ -15,8 +15,24 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/me")
 public class MeController {
     private final JdbcClient jdbc;
+    private final com.platform.notifications.NotificationService notifications;
 
-    public MeController(JdbcClient jdbc) { this.jdbc = jdbc; }
+    public MeController(JdbcClient jdbc, com.platform.notifications.NotificationService notifications) { this.jdbc = jdbc; this.notifications = notifications; }
+
+    public record DeviceReq(String token, String platform) {}
+
+    /** A staff phone registers its Firebase token so "a patient uploaded a result" and booking requests reach it. */
+    @org.springframework.web.bind.annotation.PostMapping("/devices")
+    public Map<String, Object> registerDevice(@org.springframework.web.bind.annotation.RequestBody DeviceReq r, Authentication a) {
+        notifications.registerDevice((UUID) a.getPrincipal(), r.token(), r.platform());
+        return Map.of("ok", true);
+    }
+
+    @org.springframework.web.bind.annotation.DeleteMapping("/devices")
+    public Map<String, Object> unregisterDevice(@org.springframework.web.bind.annotation.RequestBody DeviceReq r, Authentication a) {
+        notifications.unregisterDevice((UUID) a.getPrincipal(), r.token());
+        return Map.of("ok", true);
+    }
 
     /** Every store/clinic this person belongs to, so one app login can show several doctors with separate data. */
     @GetMapping("/tenants")

@@ -41,7 +41,7 @@ export function CategoryPicker({ options, value, onChange, other, onOther, max =
     const full = !on && value.length >= max;
     return (
       <button type="button" key={o.code} onClick={() => toggle(o.code)} disabled={full} aria-pressed={on} title={sub(o)}
-        className={`rounded-full border px-3 py-1.5 text-sm transition ${on ? "border-brand bg-brand text-white" : "bg-white hover:border-brand"} ${full ? "opacity-40" : ""}`}>
+        className={`rounded-full border px-3 py-1.5 text-sm transition ${on ? "border-brand bg-brand text-white" : "bg-white text-slate-800 hover:border-brand"} ${full ? "opacity-40" : ""}`}>
         {on && "✓ "}{label(o)}
       </button>
     );

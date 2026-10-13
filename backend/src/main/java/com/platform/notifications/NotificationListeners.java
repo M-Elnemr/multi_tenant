@@ -180,11 +180,36 @@ public class NotificationListeners {
     public void onPatientUpdate(MedicalEvents.PatientUpdate e) {
         safely("PatientUpdate", () -> {
             boolean ar = ar(e.tenantId());
-            boolean added = "CLINIC_ADDED".equals(e.kind());
-            for (UUID u : patientUsers(e.tenantId(), e.patientId()))
-                notifications.notify(u, e.tenantId(), e.kind(), added ? (ar ? "تمت إضافتك إلى عيادة" : "A clinic added you") : (ar ? "تحديث جديد" : "New update"),
-                        added ? (ar ? "أضافتك عيادة إلى قائمة مرضاها. افتح التطبيق لرؤيتها." : "A clinic added you to its patients. Open the app to see it.")
-                              : (ar ? "لديك تحديث جديد في بوابة المريض." : "You have a new update in your patient portal."), null, true);
+            String title, body;
+            switch (e.kind()) {
+                case "CLINIC_ADDED" -> { title = ar ? "تمت إضافتك إلى عيادة" : "A clinic added you"; body = ar ? "أضافتك عيادة إلى قائمة مرضاها. افتح التطبيق لرؤيتها." : "A clinic added you to its patients. Open the app to see it."; }
+                case "LAB_ORDERED" -> { title = ar ? "طلب جديد من الطبيب" : "New request from your doctor"; body = ar ? "طلب لك الطبيب تحليلًا أو أشعة. افتح التطبيق لرفع النتيجة." : "Your doctor requested a test. Open the app to upload the result."; }
+                case "LAB_REVIEWED" -> { title = ar ? "الطبيب راجع نتيجتك" : "Your doctor reviewed your result"; body = ar ? "افتح ملفك الطبي لمشاهدة التفاصيل." : "Open your medical file to see the details."; }
+                default -> { title = ar ? "تحديث جديد" : "New update"; body = ar ? "لديك تحديث جديد في بوابة المريض." : "You have a new update in your patient portal."; }
+            }
+            boolean phone = !"CLINIC_ADDED".equals(e.kind());
+            for (UUID u : patientUsers(e.tenantId(), e.patientId())) {
+                notifications.notify(u, e.tenantId(), e.kind(), title, body, null, true);
+                if (phone) notifications.push(u, e.tenantId(), title, body, "{\"type\":\"PATIENT_UPDATE\",\"kind\":\"" + e.kind() + "\"}");
+            }
+            if (phone) notifications.dispatchSoon();
+        });
+    }
+
+    /** A patient uploaded a result (or ticked a test as done): everyone who reviews results is told, in the app and on the phone. No clinical content in the text. */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void onLabFromPatient(MedicalEvents.LabResultFromPatient e) {
+        safely("LabResultFromPatient", () -> {
+            boolean ar = ar(e.tenantId());
+            String title = e.markedDone() ? (ar ? "مريض أنهى تحليلًا مطلوبًا" : "A patient finished a requested test") : (ar ? "نتيجة تحليل جديدة من مريض" : "New test result from a patient");
+            String body = ar ? "افتح ملف المريض لمراجعة النتيجة." : "Open the patient's file to review the result.";
+            String payload = "{\"type\":\"LAB_RESULT_FROM_PATIENT\",\"labOrderId\":\"" + e.labOrderId() + "\",\"patientId\":\"" + e.patientId() + "\"}";
+            for (UUID staff : staffWith(e.tenantId(), "lab_result.review")) {
+                notifications.notify(staff, e.tenantId(), "LAB_RESULT_FROM_PATIENT", title, body, payload, false);
+                notifications.push(staff, e.tenantId(), title, body, payload);
+            }
+            notifications.dispatchSoon();
         });
     }
 

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
@@ -14,7 +15,7 @@ import 'patient_id.dart';
 import 'push.dart';
 import 'shop/shop.dart';
 
-const appVersion = '1.3.2';
+const appVersion = '1.3.3';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -367,6 +368,16 @@ String _when(String iso) => DateFormat.yMMMd().add_jm().format(DateTime.parse(is
 
 Future<void> _dial(String phone) async => launchUrl(Uri(scheme: 'tel', path: phone));
 
+/// A lab/test status as a solid coloured pill (amber = waiting, blue = uploaded, green = done / reviewed).
+Widget _statusPill(String code, String label) {
+  final (bg, fg) = switch (code) {
+    'REVIEWED' || 'DONE' => (const Color(0xFFDCFCE7), const Color(0xFF166534)),
+    'PATIENT_UPLOADED' => (const Color(0xFFE0F2FE), const Color(0xFF075985)),
+    _ => (const Color(0xFFFEF3C7), const Color(0xFF78350F)),
+  };
+  return Chip(visualDensity: VisualDensity.compact, side: BorderSide.none, backgroundColor: bg, label: Text(label, style: TextStyle(color: fg, fontWeight: FontWeight.w800, fontSize: 12)));
+}
+
 /// Visit type chip (كشف / إعادة).
 Widget _visitChip(BuildContext context, String? type) {
   if (type == null) return const SizedBox.shrink();
@@ -603,60 +614,77 @@ class _RecordPageState extends State<RecordPage> {
     final s = S.of(context);
     final text = TextEditingController();
     XFile? picked;
+    Uint8List? preview;
+    String? error;
     var busy = false;
     final sent = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
       builder: (ctx) => StatefulBuilder(builder: (ctx, setM) {
-        return Padding(
+        Future<void> pick(ImageSource src) async {
+          try {
+            final f = await ImagePicker().pickImage(source: src, maxWidth: 2200, imageQuality: 85);
+            if (f == null) return;
+            final bytes = await f.readAsBytes();
+            setM(() { picked = f; preview = bytes; error = null; });
+          } catch (e) {
+            // a denied camera/photo permission or a missing camera is shown here, inside the sheet, where the patient can see it
+            setM(() => error = s.ar ? 'تعذر فتح ${src == ImageSource.camera ? 'الكاميرا' : 'المعرض'}. اسمح للتطبيق بالوصول من إعدادات الهاتف ثم حاول مرة أخرى.' : 'Could not open the ${src == ImageSource.camera ? 'camera' : 'gallery'}. Allow access in the phone settings and try again.');
+          }
+        }
+        Future<void> send() async {
+          setM(() { busy = true; error = null; });
+          try {
+            String? fileId;
+            if (picked != null) {
+              final bytes = preview ?? await picked!.readAsBytes();
+              final type = picked!.path.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+              final p = await widget.api.post('files/presign', {'filename': picked!.name, 'contentType': type, 'size': bytes.length, 'category': 'LAB_RESULT'}) as Map<String, dynamic>;
+              await widget.api.putFile(p['uploadUrl'] as String, bytes, type);
+              fileId = p['fileId'] as String;
+            }
+            await widget.api.post('portal/lab-orders/${lab['id']}/results', {if (text.text.trim().isNotEmpty) 'resultText': text.text.trim(), if (fileId != null) 'fileId': fileId});
+            if (ctx.mounted) Navigator.of(ctx).pop(true);
+          } catch (e) {
+            setM(() { busy = false; error = s.ar ? 'لم يتم إرسال النتيجة: ${errorText(e)}' : 'The result was not sent: ${errorText(e)}'; });
+          }
+        }
+        return SingleChildScrollView(child: Padding(
           padding: EdgeInsets.fromLTRB(20, 4, 20, MediaQuery.of(ctx).viewInsets.bottom + 20),
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Text(s.ar ? 'رفع نتيجة: ${lab['testName']}' : 'Upload result: ${lab['testName']}', style: Theme.of(ctx).textTheme.titleMedium),
-            const SizedBox(height: 12),
-            TextField(controller: text, maxLines: 2, onChanged: (_) => setM(() {}), decoration: InputDecoration(labelText: s.ar ? 'ملاحظة أو قيمة (اختياري)' : 'Note or value (optional)')),
+            const SizedBox(height: 4),
+            Text(s.ar ? 'صوّر ورقة النتيجة أو اخترها من المعرض، وسيصل إشعار للطبيب.' : 'Take a photo of the result or pick it from your gallery. Your doctor is notified.', style: const TextStyle(color: Color(0xFF6B7C8D))),
             const SizedBox(height: 12),
             Row(children: [
-              Expanded(child: OutlinedButton.icon(
-                icon: const Icon(Icons.photo_camera_outlined),
-                label: Text(s.ar ? 'كاميرا' : 'Camera'),
-                onPressed: () async { final f = await ImagePicker().pickImage(source: ImageSource.camera, maxWidth: 2200, imageQuality: 85); if (f != null) setM(() => picked = f); },
-              )),
+              Expanded(child: OutlinedButton.icon(icon: const Icon(Icons.photo_camera_outlined), label: Text(s.ar ? 'كاميرا' : 'Camera'), onPressed: busy ? null : () => pick(ImageSource.camera))),
               const SizedBox(width: 8),
-              Expanded(child: OutlinedButton.icon(
-                icon: const Icon(Icons.photo_library_outlined),
-                label: Text(s.ar ? 'المعرض' : 'Gallery'),
-                onPressed: () async { final f = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 2200, imageQuality: 85); if (f != null) setM(() => picked = f); },
-              )),
+              Expanded(child: OutlinedButton.icon(icon: const Icon(Icons.photo_library_outlined), label: Text(s.ar ? 'المعرض' : 'Gallery'), onPressed: busy ? null : () => pick(ImageSource.gallery))),
             ]),
-            if (picked != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text('📎 ${picked!.name}')),
+            if (preview != null) Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: ClipRRect(borderRadius: BorderRadius.circular(14), child: Stack(alignment: AlignmentDirectional.topEnd, children: [
+                Image.memory(preview!, height: 180, width: double.infinity, fit: BoxFit.cover),
+                IconButton.filled(style: IconButton.styleFrom(backgroundColor: Colors.black54), icon: const Icon(Icons.close_rounded, color: Colors.white), onPressed: busy ? null : () => setM(() { picked = null; preview = null; })),
+              ])),
+            ),
+            const SizedBox(height: 12),
+            TextField(controller: text, maxLines: 2, onChanged: (_) => setM(() {}), decoration: InputDecoration(labelText: s.ar ? 'ملاحظة أو قيمة (اختياري)' : 'Note or value (optional)')),
+            if (error != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(error!, style: TextStyle(color: Theme.of(ctx).colorScheme.error, fontWeight: FontWeight.w700))),
             const SizedBox(height: 16),
             FilledButton(
-              onPressed: busy || (picked == null && text.text.trim().isEmpty) ? null : () async {
-                setM(() => busy = true);
-                try {
-                  String? fileId;
-                  if (picked != null) {
-                    final bytes = await picked!.readAsBytes();
-                    final type = picked!.path.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
-                    final p = await widget.api.post('files/presign', {'filename': picked!.name, 'contentType': type, 'size': bytes.length, 'category': 'LAB_RESULT'}) as Map<String, dynamic>;
-                    await widget.api.putFile(p['uploadUrl'] as String, bytes, type);
-                    fileId = p['fileId'] as String;
-                  }
-                  await widget.api.post('portal/lab-orders/${lab['id']}/results', {if (text.text.trim().isNotEmpty) 'resultText': text.text.trim(), if (fileId != null) 'fileId': fileId});
-                  if (ctx.mounted) Navigator.of(ctx).pop(true);
-                } catch (e) {
-                  if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(errorText(e))));
-                  setM(() => busy = false);
-                }
-              },
-              child: Text(s.ar ? 'إرسال' : 'Send'),
+              onPressed: busy || (picked == null && text.text.trim().isEmpty) ? null : send,
+              child: busy ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white)) : Text(s.ar ? 'إرسال للطبيب' : 'Send to the doctor'),
             ),
           ]),
-        );
+        ));
       }),
     );
-    if (sent == true) setState(() => version++);
+    if (sent == true && mounted) {
+      setState(() => version++);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.ar ? 'تم إرسال النتيجة إلى الطبيب' : 'Result sent to your doctor')));
+    }
   }
 
   @override
@@ -716,7 +744,7 @@ class _RecordPageState extends State<RecordPage> {
                       Text(l['kind'] == 'RADIOLOGY' ? '🩻' : '🧪', style: const TextStyle(fontSize: 20)),
                       const SizedBox(width: 8),
                       Expanded(child: Text(l['testName'] as String, style: const TextStyle(fontWeight: FontWeight.w700))),
-                      Chip(visualDensity: VisualDensity.compact, label: Text(status(l['status'] as String))),
+                      _statusPill(l['status'] as String, status(l['status'] as String)),
                     ]),
                     if ((l['instructions'] ?? '').toString().isNotEmpty) Text(l['instructions'] as String),
                     for (final r in (l['results'] as List)) if ((r['resultText'] ?? '').toString().isNotEmpty) Padding(padding: const EdgeInsets.only(top: 6), child: Text('• ${r['resultText']}')),

@@ -29,7 +29,7 @@
 }
 .shop .s-btn:hover { transform: translateY(-2px); filter: brightness(1.07); box-shadow: 0 16px 30px -12px color-mix(in srgb, var(--brand) 85%, transparent); }
 .shop .s-btn:active { transform: scale(.97); }
-.shop .s-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; box-shadow: none; }
+.shop .s-btn:disabled { opacity: .7; filter: grayscale(.25); cursor: not-allowed; transform: none; box-shadow: none; }
 .shop .s-btn-ghost { background: #fff; color: var(--s-ink); border: 1px solid var(--s-line); box-shadow: none; }
 .shop .s-btn-ghost:hover { background: var(--s-soft); border-color: color-mix(in srgb, var(--brand) 35%, var(--s-line)); box-shadow: none; }
 .shop .s-btn-dark { background: var(--s-ink); box-shadow: none; }

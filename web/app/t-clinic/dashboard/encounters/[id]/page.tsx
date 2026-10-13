@@ -8,6 +8,7 @@ import { PrintRxButton, RxPhoto } from "@/components/print-rx";
 import { uploadFile } from "@/components/uploader";
 import { useAction, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
+import { LabResults, type LabOrder } from "@/components/dashboard/lab-result";
 import { Alert, Badge, Button, Card, ErrorText, Field, Input, Loading, PageHeader, Select, StatusBadge, Textarea } from "@/components/ui";
 import { VisitTypeBadge } from "@/components/visit-type";
 import { ageText, dateTime } from "@/lib/format";
@@ -16,7 +17,7 @@ type Encounter = {
   id: string; patientId: string; appointmentId?: string; visitAt: string; chiefComplaint?: string; clinicalSummary?: string; followUpDate?: string;
   vitals: unknown[]; notes: { id: string; content: string; noteType: string; isPatientVisible: boolean }[]; conditions: { id: string; name: string }[];
   prescriptions: { id: string; status: string; imageFileId?: string | null; items: { medicationName: string; dosage?: string; frequency?: string }[] }[];
-  labOrders: { id: string; testName: string; kind?: string; status: string; priority: string }[];
+  labOrders: LabOrder[];
 };
 type Item = { medicationName: string; strength: string; dosage: string; frequency: string; duration: string; instructions: string };
 const EMPTY_ITEM: Item = { medicationName: "", strength: "", dosage: "", frequency: "", duration: "", instructions: "" };
@@ -207,7 +208,7 @@ function ConsultationForm({ id, e, reload }: { id: string; e: Encounter; reload:
             {can("lab_order.create") && (
               <Card className="space-y-3">
                 <h3 className="font-medium">{t("portal.labs")}</h3>
-                <ul className="space-y-1 text-sm">{e.labOrders.map((l) => <li key={l.id} className="flex items-center justify-between"><span>{l.kind === "RADIOLOGY" ? "🩻" : "🧪"} {l.testName} {l.priority === "URGENT" && <Badge tone="red">{t("consult.urgent")}</Badge>}</span><StatusBadge status={l.status === "ORDERED" ? "REQUESTED" : l.status} /></li>)}</ul>
+                <ul className="space-y-2 text-sm">{e.labOrders.map((l) => <li key={l.id} className="space-y-1.5"><div className="flex items-center justify-between"><span>{l.kind === "RADIOLOGY" ? "🩻" : "🧪"} {l.testName} {l.priority === "URGENT" && <Badge tone="red">{t("consult.urgent")}</Badge>}</span><StatusBadge status={l.status === "ORDERED" ? "REQUESTED" : l.status} /></div><LabResults lab={l} canReview={can("lab_result.review")} onChanged={() => void refresh()} /></li>)}</ul>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-[1fr_auto_auto_auto]">
                   <Input className="col-span-2 sm:col-span-1" placeholder={t("consult.testName")} value={lab.testName} onChange={(x) => setLab({ ...lab, testName: x.target.value })} />
                   <Select value={lab.kind} onChange={(x) => setLab({ ...lab, kind: x.target.value })} aria-label={t("lab.kind")}><option value="LAB">{t("lab.lab")}</option><option value="RADIOLOGY">{t("lab.radiology")}</option></Select>

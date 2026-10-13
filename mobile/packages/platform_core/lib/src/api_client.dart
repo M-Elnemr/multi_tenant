@@ -90,6 +90,16 @@ class ApiClient {
   Future<dynamic> put(String path, Object? body) => _write('PUT', path, body, null);
   Future<dynamic> delete(String path, [Object? body]) => _write('DELETE', path, body, null);
 
+  /// Downloads a file the signed-in user may see (e.g. `files/<id>/content`) as bytes, with the same token renewal as every other request.
+  Future<List<int>> getBytes(String path) async {
+    var res = await _sendWithRetry('GET', path, null, null, null, await session.accessToken());
+    if (res.statusCode == 401 && await _refreshOnce() == RefreshResult.ok) {
+      res = await _sendWithRetry('GET', path, null, null, null, await session.accessToken());
+    }
+    if (res.statusCode >= 400) throw ApiException(res.statusCode, 'ERROR', res.reasonPhrase ?? 'Download failed');
+    return res.bodyBytes;
+  }
+
   /// Sends a queued change (used by the offline sync): no queuing, same Idempotency-Key as the first try.
   Future<dynamic> sendRaw(String method, String path, Object? body, String idem) => _send(method, path, body: body, idempotencyKey: idem);
 

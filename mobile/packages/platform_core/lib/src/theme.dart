@@ -41,11 +41,21 @@ ThemeData themeFor(TenantInfo? t, {Color? seed}) {
       enabledBorder: OutlineInputBorder(borderRadius: radius, borderSide: const BorderSide(color: Color(0xFFD5DEE9))),
       focusedBorder: OutlineInputBorder(borderRadius: radius, borderSide: BorderSide(color: scheme.primary, width: 2)),
     ),
-    filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(54), shape: RoundedRectangleBorder(borderRadius: radius), textStyle: const TextStyle(fontFamily: kFont, fontWeight: FontWeight.w800, fontSize: 16))),
-    outlinedButtonTheme: OutlinedButtonThemeData(style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(54), shape: RoundedRectangleBorder(borderRadius: radius), textStyle: const TextStyle(fontFamily: kFont, fontWeight: FontWeight.w700))),
+    filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(54), disabledBackgroundColor: const Color(0xFFD5DEE9), disabledForegroundColor: const Color(0xFF4A5A6B), shape: RoundedRectangleBorder(borderRadius: radius), textStyle: const TextStyle(fontFamily: kFont, fontWeight: FontWeight.w800, fontSize: 16))),
+    outlinedButtonTheme: OutlinedButtonThemeData(style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(54), disabledForegroundColor: const Color(0xFF6B7C8D), shape: RoundedRectangleBorder(borderRadius: radius), textStyle: const TextStyle(fontFamily: kFont, fontWeight: FontWeight.w700))),
     navigationBarTheme: NavigationBarThemeData(backgroundColor: Colors.white, surfaceTintColor: Colors.transparent, indicatorColor: scheme.primary.withValues(alpha: 0.14), height: 70, labelTextStyle: WidgetStateProperty.all(const TextStyle(fontFamily: kFont, fontSize: 12, fontWeight: FontWeight.w700))),
     snackBarTheme: SnackBarThemeData(behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: radius)),
     listTileTheme: ListTileThemeData(shape: RoundedRectangleBorder(borderRadius: radius)),
-    chipTheme: ChipThemeData(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)), labelStyle: const TextStyle(fontFamily: kFont, fontWeight: FontWeight.w700)),
+    // chips are solid and readable: white with a visible border and dark text; selected ones are the brand colour with white text (the Material defaults were pale on pale)
+    chipTheme: ChipThemeData(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      backgroundColor: Colors.white,
+      selectedColor: scheme.primary,
+      disabledColor: const Color(0xFFE9EEF4),
+      side: const BorderSide(color: Color(0xFFB9C7D6)),
+      checkmarkColor: Colors.white,
+      labelStyle: WidgetStateTextStyle.resolveWith((states) => TextStyle(fontFamily: kFont, fontWeight: FontWeight.w700, color: states.contains(WidgetState.selected) ? Colors.white : const Color(0xFF14232B))),
+    ),
+    segmentedButtonTheme: SegmentedButtonThemeData(style: SegmentedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: const Color(0xFF14232B), selectedBackgroundColor: scheme.primary, selectedForegroundColor: Colors.white, side: const BorderSide(color: Color(0xFFB9C7D6)))),
   );
 }

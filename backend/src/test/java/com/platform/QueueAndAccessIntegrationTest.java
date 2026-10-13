@@ -212,6 +212,34 @@ class QueueAndAccessIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void labRequestUploadAndReviewNotifyTheRightPeople() throws Exception {
+        Clinic c = clinic();
+        String phone = nextPhone();
+        String[] p = patientWithPassword(c, "Labby", phone, "ClinicSet123");
+        String patient = login(c.host(), phone, "ClinicSet123");
+        String walk = "{\"patientId\":\"%s\",\"doctorId\":\"%s\",\"branchId\":\"%s\",\"serviceId\":\"%s\"}".formatted(p[0], c.doctorId(), c.branchId(), c.serviceId());
+        String appt = JsonPath.read(body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/appointments/walk-in", walk).andExpect(status().isCreated())), "$.id");
+        onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/appointments/" + appt + "/start", "{}").andExpect(status().isOk());
+        String enc = JsonPath.read(body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/encounters", "{\"patientId\":\"%s\",\"appointmentId\":\"%s\"}".formatted(p[0], appt)).andExpect(status().isCreated())), "$.id");
+        UUID tenant = jdbc.sql("SELECT tenant_id FROM medical.patients WHERE id = :p").param("p", UUID.fromString(p[0])).query(UUID.class).single();
+        java.util.function.Function<String, Long> count = type -> jdbc.sql("SELECT count(*) FROM notifications.notifications WHERE tenant_id = :t AND notification_type = :ty").param("t", tenant).param("ty", type).query(Long.class).single();
+
+        // the doctor requests a test: the patient is told
+        String lab = JsonPath.read(body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/encounters/" + enc + "/lab-orders", "{\"testName\":\"CBC\"}").andExpect(status().isCreated())), "$.id");
+        assertThat(count.apply("LAB_ORDERED")).isEqualTo(1);
+        assertThat(count.apply("LAB_RESULT_FROM_PATIENT")).isZero();
+
+        // the patient uploads: the reviewing staff (here the owner doctor) get a notification with the lab id, nobody else
+        onHost(c.host(), patient, "POST", "/api/v1/portal/lab-orders/" + lab + "/results", "{\"resultText\":\"Hb 13\"}").andExpect(status().isCreated());
+        assertThat(count.apply("LAB_RESULT_FROM_PATIENT")).isEqualTo(1);
+        assertThat(jdbc.sql("SELECT payload::text FROM notifications.notifications WHERE tenant_id = :t AND notification_type = 'LAB_RESULT_FROM_PATIENT'").param("t", tenant).query(String.class).single()).contains(lab);
+
+        // the doctor reviews and shares: the patient is told
+        onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/lab-orders/" + lab + "/review", "{\"shareWithPatient\":true}").andExpect(status().isOk()).andExpect(jsonPath("$.status").value("REVIEWED"));
+        assertThat(count.apply("LAB_REVIEWED")).isEqualTo(1);
+    }
+
+    @Test
     void removeReorderAndReplayKeepTheQueueConsistent() throws Exception {
         Clinic c = clinic();
         String[] a = patientWithPassword(c, "Alpha", nextPhone(), "WalkPass1234");

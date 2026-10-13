@@ -1,15 +1,18 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:platform_core/platform_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'common.dart';
+import 'clinic_panel.dart';
 import 'offline_ops.dart';
+import 'push.dart';
 import 'shell.dart';
 
-const appVersion = '1.3.5';
+const appVersion = '1.3.6';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -76,6 +79,8 @@ class _RootState extends State<Root> {
   }
 
   Future<void> _signOut() async {
+    final pushToken = await PushService.token();
+    if (pushToken != null) { try { await _api.delete('me/devices', {'token': pushToken}); } catch (_) {} }
     await AuthRepository(_api).logout();
     await OfflineStore.clearAll();
     try { (await SharedPreferences.getInstance()).remove('business.last'); } catch (_) {}
@@ -292,12 +297,17 @@ class _BusinessHomeState extends State<BusinessHome> with WidgetsBindingObserver
   late final OfflineStore? _off = widget.business['type'] == 'CLINIC' ? OfflineStore(widget.business['host'] as String) : null;
   late final ApiClient _api = ApiClient(baseUrl: widget.business['baseUrl'] as String, session: widget.session, maxAttempts: _off == null ? 5 : 3, attemptTimeout: _off == null ? const Duration(seconds: 20) : const Duration(seconds: 12), offline: _off);
   late Future<Map<String, dynamic>> _me = _loadMe();
-  Timer? _timer;
+  Timer? _timer, _unreadTimer;
   Ctx? _ctx;
+  final ValueNotifier<int> _unread = ValueNotifier(0);
 
   @override
   void initState() {
     super.initState();
+    _unreadTimer = Timer.periodic(const Duration(seconds: 30), (_) { _pollUnread(); });
+    _pollUnread();
+    PushService.ensure((token) async { await _api.post('me/devices', {'token': token, 'platform': defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android'}); });
+    pushOpened.addListener(_openFromPush);
     final off = _off;
     if (off != null) {
       registerClinicOffline(off);
@@ -311,6 +321,8 @@ class _BusinessHomeState extends State<BusinessHome> with WidgetsBindingObserver
   @override
   void dispose() {
     _timer?.cancel();
+    _unreadTimer?.cancel();
+    pushOpened.removeListener(_openFromPush);
     WidgetsBinding.instance.removeObserver(this);
     _off?.dispose();
     super.dispose();
@@ -319,7 +331,24 @@ class _BusinessHomeState extends State<BusinessHome> with WidgetsBindingObserver
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) { if (state == AppLifecycleState.resumed) _tick(); }
 
+  /// A tapped push about a patient (e.g. an uploaded test result) opens that patient, and the lab when it names one.
+  void _openFromPush() {
+    final d = pushOpened.value, c = _ctx;
+    if (d == null || c == null || d['patientId'] == null) return;
+    pushOpened.value = null;
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => PatientDetail(ctx: c, id: '${d['patientId']}', openLabId: d['labOrderId'] == null ? null : '${d['labOrderId']}')));
+  }
+
+  /// The bell's red number: notifications nobody has read yet (a patient uploaded a result, a booking arrived...).
+  Future<void> _pollUnread() async {
+    try {
+      final r = await _api.get('notifications/unread-count') as Map;
+      if (mounted) _unread.value = (r['count'] as num?)?.toInt() ?? 0;
+    } catch (_) {}
+  }
+
   Future<void> _tick() async {
+    unawaited(_pollUnread());
     final off = _off, ctx = _ctx;
     if (off == null) return;
     if (off.pending.value > 0) await off.flush();
@@ -355,6 +384,19 @@ class _BusinessHomeState extends State<BusinessHome> with WidgetsBindingObserver
           titleSpacing: 16,
           title: Row(children: [BusinessLogo(url: b['logoUrl'] as String?, name: b['name'] as String, size: 36), const SizedBox(width: 10), Expanded(child: Text(b['name'] as String, overflow: TextOverflow.ellipsis))]),
           actions: [
+            ValueListenableBuilder<int>(
+              valueListenable: _unread,
+              builder: (context, n, _) => IconButton(
+                tooltip: s.ar ? 'الإشعارات' : 'Notifications',
+                icon: Badge(isLabelVisible: n > 0, label: Text(n > 99 ? '99+' : '$n'), child: const Icon(Icons.notifications_none_rounded)),
+                onPressed: () async {
+                  final c = _ctx;
+                  if (c == null) return;
+                  await Navigator.of(context).push(MaterialPageRoute(builder: (_) => Scaffold(appBar: AppBar(title: Text(s.ar ? 'الإشعارات' : 'Notifications')), body: NotificationsScreen(ctx: c))));
+                  unawaited(_pollUnread());
+                },
+              ),
+            ),
             IconButton(
               tooltip: s.settings,
               icon: const Icon(Icons.tune_rounded),

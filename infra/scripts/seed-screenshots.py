@@ -247,6 +247,10 @@ def clinic(s=None):
         visit(tabib, walk(tabib, "CONSULTATION" if k == 0 else "FOLLOW_UP"), COMPLAINTS[k], True, with_lab=(k < 2))
     visit(p1, walk(p1), COMPLAINTS[3], True, with_lab=True)
     visit(p2, walk(p2, "FOLLOW_UP"), COMPLAINTS[4], True, with_rx=True)
+    # two requests are still waiting for the patient's result (so Tabib shows the upload button and the doctor gets a notification when she sends it)
+    last_enc = MANIFEST["encounters"][2]
+    s.api("POST", f"/clinic/encounters/{last_enc}/lab-orders", {"testName": "صورة دم كاملة CBC", "instructions": "صيام ٨ ساعات", "priority": "ROUTINE", "kind": "LAB"})
+    s.api("POST", f"/clinic/encounters/{last_enc}/lab-orders", {"testName": "أشعة على الصدر", "instructions": "بدون ارتداء مجوهرات", "priority": "URGENT", "kind": "RADIOLOGY"})
     print("  finished visits created")
 
     # the line right now: one with the doctor, then four waiting (the Tabib patient is third, so two are ahead)

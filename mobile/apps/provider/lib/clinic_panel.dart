@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:platform_core/platform_core.dart';
 
 import 'common.dart';
+import 'lab_sheet.dart';
 import 'patients.dart';
 
 // ---------------------------------------------------------------- Appointments
@@ -138,14 +139,17 @@ class _PatientsScreenState extends State<PatientsScreen> {
 }
 
 class PatientDetail extends StatefulWidget {
-  const PatientDetail({super.key, required this.ctx, required this.id});
+  const PatientDetail({super.key, required this.ctx, required this.id, this.openLabId});
   final Ctx ctx;
   final String id;
+  /// Opens this lab's sheet as soon as the patient has loaded (from a notification about an uploaded result).
+  final String? openLabId;
   @override
   State<PatientDetail> createState() => _PatientDetailState();
 }
 
 class _PatientDetailState extends State<PatientDetail> {
+  bool _openedLab = false;
   Future<void> _walkIn() async {
     if (await walkInSheet(context, widget.ctx, widget.id) && mounted) toast(context, S.of(context).ar ? 'تمت إضافته إلى قاعة الانتظار' : 'Added to the waiting room');
   }
@@ -177,6 +181,13 @@ class _PatientDetailState extends State<PatientDetail> {
           final visits = ((tl?['visits'] as List?) ?? const []).cast<Map<String, dynamic>>();
           final rx = ((tl?['prescriptions'] as List?) ?? const []).cast<Map<String, dynamic>>();
           final labs = ((tl?['labOrders'] as List?) ?? const []).cast<Map<String, dynamic>>();
+          if (!_openedLab && widget.openLabId != null) {
+            final target = labs.where((l) => l['id'] == widget.openLabId).toList();
+            if (target.isNotEmpty) {
+              _openedLab = true;
+              WidgetsBinding.instance.addPostFrameCallback((_) async { if (mounted && await showLabSheet(context, ctx, target.first)) await reload(); });
+            }
+          }
           final guardian = p['guardianName'] as String?;
           return ListView(padding: const EdgeInsets.all(16), children: [
             Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -212,7 +223,7 @@ class _PatientDetailState extends State<PatientDetail> {
               if (rx.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(4, 14, 4, 6), child: Text(s.ar ? 'الروشتات' : 'Prescriptions', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16))),
               for (final r in rx) Card(child: ListTile(leading: const Icon(Icons.medication_rounded), title: Text(fmtDate(r['issuedAt'] as String? ?? r['createdAt'] as String?, time: false), textDirection: TextDirection.ltr, textAlign: TextAlign.start), subtitle: Text('${((r['items'] as List?) ?? const []).length} ${s.ar ? 'أصناف' : 'items'}'))),
               if (labs.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(4, 14, 4, 6), child: Text(s.ar ? 'التحاليل والأشعة' : 'Tests & radiology', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16))),
-              for (final l in labs) Card(child: ListTile(leading: const Icon(Icons.science_rounded), title: Text('${l['testName']}'), trailing: StatusPill('${l['status']}'))),
+              for (final l in labs) Card(child: ListTile(leading: const Icon(Icons.science_rounded), title: Text('${l['testName']}'), trailing: StatusPill('${l['status']}'), onTap: () async { if (await showLabSheet(context, ctx, l)) await reload(); })),
             ] else
               Padding(padding: const EdgeInsets.all(16), child: Text(s.ar ? 'السجل الطبي متاح للأطباء فقط.' : 'The medical record is for clinical staff only.', style: const TextStyle(color: Color(0xFF6B7C8D)))),
           ]);
@@ -246,7 +257,16 @@ class NotificationsScreen extends StatelessWidget {
                   title: Text('${items[i]['title']}', style: const TextStyle(fontWeight: FontWeight.w800)),
                   subtitle: Text('${items[i]['body']}\n${fmtDate(items[i]['createdAt'] as String?)}'),
                   isThreeLine: true,
-                  onTap: items[i]['readAt'] == null ? () async { if (await run(context, () => ctx.api.post('notifications/${items[i]['id']}/read', {}))) await reload(); } : null,
+                  trailing: (items[i]['payload'] is Map && (items[i]['payload'] as Map)['patientId'] != null) ? const Icon(Icons.chevron_right_rounded) : null,
+                  onTap: () async {
+                    final n = items[i];
+                    if (n['readAt'] == null) await run(context, () => ctx.api.post('notifications/${n['id']}/read', {}));
+                    final payload = n['payload'];
+                    if (context.mounted && payload is Map && payload['patientId'] != null) {
+                      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => PatientDetail(ctx: ctx, id: '${payload['patientId']}', openLabId: payload['labOrderId'] == null ? null : '${payload['labOrderId']}')));
+                    }
+                    await reload();
+                  },
                 ),
               )),
             if (items.isEmpty) emptyState(s.ar ? 'لا توجد إشعارات' : 'No notifications', icon: Icons.notifications_off_outlined),

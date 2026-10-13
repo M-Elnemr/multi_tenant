@@ -234,6 +234,7 @@ public class ClinicalService {
                 .param("t", tenantId).param("p", e.get("patient_id")).param("e", encounterId).param("d", doctor).param("n", r.testName().trim()).param("i", r.instructions())
                 .param("pr", r.priority()).param("du", r.dueDate() == null ? null : java.sql.Date.valueOf(r.dueDate())).param("k", r.kind()).query(UUID.class).single();
         audit.record(actor, tenantId, "LAB_ORDER_CREATED", "lab_order", id, null);
+        events.publishEvent(new MedicalEvents.PatientUpdate(tenantId, (UUID) e.get("patient_id"), "LAB_ORDERED"));
         return labOrders(tenantId, "o.id = :x", id, false).get(0);
     }
 
@@ -256,6 +257,7 @@ public class ClinicalService {
         addResult(tenantId, userId, labOrderId, new LabResultReq(r.resultText(), r.resultSummary(), r.fileId(), true), true);
         jdbc.sql("UPDATE medical.lab_orders SET status = CASE WHEN status = 'ORDERED' THEN 'PATIENT_UPLOADED' ELSE status END, updated_at = now() WHERE id = :i").param("i", labOrderId).update();
         audit.record(userId, tenantId, "LAB_RESULT_UPLOADED", "lab_order", labOrderId, "{\"by\":\"patient\"}");
+        events.publishEvent(new MedicalEvents.LabResultFromPatient(tenantId, (UUID) o.get("patient_id"), labOrderId, false));
         return Map.of("labOrderId", labOrderId, "status", "UPLOADED");
     }
 
@@ -275,17 +277,19 @@ public class ClinicalService {
             throw BusinessException.conflict("INVALID_STATUS_TRANSITION", "This request cannot be marked as done");
         jdbc.sql("UPDATE medical.lab_orders SET status = 'DONE', done_at = now(), updated_at = now() WHERE id = :i").param("i", labOrderId).update();
         audit.record(userId, tenantId, "LAB_MARKED_DONE", "lab_order", labOrderId, "{\"by\":\"patient\"}");
+        events.publishEvent(new MedicalEvents.LabResultFromPatient(tenantId, (UUID) o.get("patient_id"), labOrderId, true));
         return labOrders(tenantId, "o.id = :x", labOrderId, true).get(0);
     }
 
     @Transactional
     public Map<String, Object> reviewLab(UUID tenantId, UUID actor, UUID labOrderId, boolean shareWithPatient) {
-        lockLab(tenantId, labOrderId);
+        var lab = lockLab(tenantId, labOrderId);
         if (jdbc.sql("SELECT count(*) FROM medical.lab_results WHERE lab_order_id = :o").param("o", labOrderId).query(Long.class).single() == 0)
             throw BusinessException.badRequest("NO_RESULTS", "There are no results to review");
         jdbc.sql("UPDATE medical.lab_results SET reviewed_at = now(), reviewed_by = :u, patient_visible = patient_visible OR :s WHERE lab_order_id = :o").param("u", actor).param("s", shareWithPatient).param("o", labOrderId).update();
         jdbc.sql("UPDATE medical.lab_orders SET status = 'REVIEWED', reviewed_at = now(), reviewed_by = :u, updated_at = now() WHERE id = :o").param("u", actor).param("o", labOrderId).update();
         audit.record(actor, tenantId, "LAB_RESULT_REVIEWED", "lab_order", labOrderId, null);
+        events.publishEvent(new MedicalEvents.PatientUpdate(tenantId, (UUID) lab.get("patient_id"), "LAB_REVIEWED"));
         return labOrders(tenantId, "o.id = :x", labOrderId, false).get(0);
     }
 

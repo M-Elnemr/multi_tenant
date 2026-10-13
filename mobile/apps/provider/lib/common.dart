@@ -107,8 +107,8 @@ Future<bool> run(BuildContext c, Future<void> Function() f) async {
 }
 
 Color toneFor(String status) => switch (status) {
-      'CONFIRMED' || 'COMPLETED' || 'DELIVERED' || 'ARRIVED' || 'PAID' || 'ACTIVE' || 'APPROVED' || 'PUBLISHED' => const Color(0xFF1E9E5A),
-      'PENDING' || 'PENDING_CONFIRMATION' || 'REQUESTED' || 'UNPAID' || 'PREPARING' || 'DRAFT' => const Color(0xFFD98200),
+      'CONFIRMED' || 'COMPLETED' || 'DELIVERED' || 'ARRIVED' || 'PAID' || 'ACTIVE' || 'APPROVED' || 'PUBLISHED' || 'REVIEWED' || 'DONE' => const Color(0xFF1E9E5A),
+      'PENDING' || 'PENDING_CONFIRMATION' || 'REQUESTED' || 'UNPAID' || 'PREPARING' || 'DRAFT' || 'PATIENT_UPLOADED' || 'UNDER_REVIEW' => const Color(0xFFD98200),
       'CHECKED_IN' || 'IN_PROGRESS' || 'SHIPPED' || 'PROCESSING' => const Color(0xFF1F6A99),
       'CANCELLED' || 'REJECTED' || 'NO_SHOW' || 'RETURNED' || 'REFUNDED' || 'HIDDEN' => const Color(0xFFD14343),
       _ => const Color(0xFF6B7C8D),
@@ -121,7 +121,7 @@ class StatusPill extends StatelessWidget {
   static const _ar = {
     'PENDING': 'قيد الانتظار', 'PENDING_CONFIRMATION': 'بانتظار التأكيد', 'REQUESTED': 'جديد', 'CONFIRMED': 'مؤكد', 'CHECKED_IN': 'حضر', 'IN_PROGRESS': 'قيد الكشف', 'COMPLETED': 'مكتمل',
     'CANCELLED': 'ملغي', 'NO_SHOW': 'لم يحضر', 'REJECTED': 'مرفوض', 'PREPARING': 'قيد التجهيز', 'SHIPPED': 'تم الشحن', 'ARRIVED': 'تم التسليم', 'RETURNED': 'مرتجع', 'DELIVERED': 'تم التسليم',
-    'PAID': 'مدفوع', 'UNPAID': 'غير مدفوع', 'APPROVED': 'مقبول', 'PUBLISHED': 'منشور', 'HIDDEN': 'مخفي', 'ACTIVE': 'نشط', 'DRAFT': 'مسودة', 'REFUNDED': 'مسترد', 'INVITED': 'مدعو',
+    'ORDERED': 'مطلوب', 'PATIENT_UPLOADED': 'رفع المريض نتيجة', 'UNDER_REVIEW': 'قيد المراجعة', 'DONE': 'تم', 'REVIEWED': 'تمت المراجعة', 'PAID': 'مدفوع', 'UNPAID': 'غير مدفوع', 'APPROVED': 'مقبول', 'PUBLISHED': 'منشور', 'HIDDEN': 'مخفي', 'ACTIVE': 'نشط', 'DRAFT': 'مسودة', 'REFUNDED': 'مسترد', 'INVITED': 'مدعو',
   };
   @override
   Widget build(BuildContext context) {
@@ -259,7 +259,7 @@ class PagedListState extends State<PagedList> {
               for (final f in widget.filters!)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: ChoiceChip(label: Text(f.$2), selected: _filter == f.$1, selectedColor: scheme.primary, labelStyle: TextStyle(color: _filter == f.$1 ? Colors.white : null, fontWeight: FontWeight.w700), showCheckmark: false, onSelected: (_) { setState(() => _filter = f.$1); reload(); }),
+                  child: ChoiceChip(label: Text(f.$2), selected: _filter == f.$1, selectedColor: scheme.primary, backgroundColor: Colors.white, side: const BorderSide(color: Color(0xFFB9C7D6)), labelStyle: TextStyle(color: _filter == f.$1 ? Colors.white : const Color(0xFF14232B), fontWeight: FontWeight.w700), showCheckmark: false, onSelected: (_) { setState(() => _filter = f.$1); reload(); }),
                 ),
             ]),
           ),
