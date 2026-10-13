@@ -1,13 +1,12 @@
-import { backendAsUser } from "./backend";
+import { cookies } from "next/headers";
+import { SESSION_COOKIE } from "./session";
 
-/** True when the owner (or a manager) opened the public site with ?edit=1 while signed in: sections then get their edit toolbar. */
-export async function ownerEditMode(searchParams: Promise<Record<string, string | string[] | undefined>> | undefined): Promise<boolean> {
+/**
+ * Is the public site opened for editing (`?edit=1`) by someone with a session? The permission itself is checked in the browser
+ * (EditProvider -> /auth/me through the BFF, which renews an expired token); the server can only see the cookie, whose access token may be old.
+ */
+export async function wantsEdit(searchParams: Promise<Record<string, string | string[] | undefined>> | undefined): Promise<boolean> {
   const sp = searchParams ? await searchParams : {};
   if (sp.edit !== "1") return false;
-  try {
-    const me = await backendAsUser<{ permissions: string[] }>("/auth/me");
-    return me.permissions.includes("settings.manage");
-  } catch {
-    return false;
-  }
+  return (await cookies()).has(SESSION_COOKIE);
 }

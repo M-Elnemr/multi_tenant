@@ -7,8 +7,8 @@ import { resolveHost } from "@/lib/tenant";
 import { type ClinicSite } from "@/lib/clinic-site";
 import { fileUrl } from "@/lib/media";
 import { CLINIC_SECTIONS, arrange } from "@/lib/site-layout";
-import { ownerEditMode } from "@/lib/edit-mode";
-import { EditBar, EditFrame } from "@/components/site-edit";
+import { wantsEdit } from "@/lib/edit-mode";
+import { EditBar, EditFrame, EditProvider } from "@/components/site-edit";
 
 const load = () => backendJson<ClinicSite>("/clinic/public/profile");
 
@@ -23,7 +23,7 @@ const SCHEMA_DAY: Record<string, string> = { sat: "Saturday", sun: "Sunday", mon
 
 export default async function ClinicHome({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const { t, locale } = await getT();
-  const edit = await ownerEditMode(searchParams);
+  const edit = await wantsEdit(searchParams);
   const p = await load();
   const info = await resolveHost(await currentHost());
   const logo = info.kind === "TENANT" ? (info.branding as { logo_file_id?: string }).logo_file_id ?? null : null;
@@ -54,10 +54,12 @@ export default async function ClinicHome({ searchParams }: { searchParams?: Prom
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(ld).replace(/</g, "\\u003c") }} />
-      {sections.map(({ key, hidden }) => edit
-        ? <EditFrame key={key} kind="clinic" section={key} hidden={hidden} order={order} hiddenKeys={hiddenKeys}>{nodes[key]}</EditFrame>
-        : <div key={key} className="contents">{nodes[key]}</div>)}
-      {edit && <EditBar kind="clinic" order={order} hiddenKeys={hiddenKeys} />}
+      {edit ? (
+        <EditProvider>
+          {sections.map(({ key, hidden }) => <EditFrame key={key} kind="clinic" section={key} hidden={hidden} order={order} hiddenKeys={hiddenKeys}>{nodes[key]}</EditFrame>)}
+          <EditBar kind="clinic" order={order} hiddenKeys={hiddenKeys} />
+        </EditProvider>
+      ) : sections.map(({ key }) => <div key={key} className="contents">{nodes[key]}</div>)}
     </>
   );
 }

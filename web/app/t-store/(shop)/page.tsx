@@ -9,8 +9,8 @@ import { fileUrl } from "@/lib/media";
 import { whatsappLink } from "@/lib/whatsapp";
 import { getT } from "@/lib/i18n-server";
 import { STORE_SECTIONS, arrange } from "@/lib/site-layout";
-import { ownerEditMode } from "@/lib/edit-mode";
-import { EditBar, EditFrame } from "@/components/site-edit";
+import { wantsEdit } from "@/lib/edit-mode";
+import { EditBar, EditFrame, EditProvider } from "@/components/site-edit";
 
 type Home = { featured: ShopProduct[]; newest: ShopProduct[]; offers: ShopProduct[]; bestSellers: ShopProduct[]; banners: { id: string; imageFileId: string; title: string; subtitle: string; linkUrl: string }[] };
 
@@ -34,7 +34,7 @@ function Grid({ items, locale, labels }: { items: ShopProduct[]; locale: "ar" | 
 
 export default async function StoreHome({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const { t, locale } = await getT();
-  const edit = await ownerEditMode(searchParams);
+  const edit = await wantsEdit(searchParams);
   const [profileRes, cats, home, branches] = await Promise.all([
     backendJson<{ profile: ShopProfile }>("/shop/profile").catch(() => null),
     backendJson<ShopCategory[]>(`/shop/categories?lang=${locale}`).catch(() => [] as ShopCategory[]),
@@ -155,10 +155,12 @@ export default async function StoreHome({ searchParams }: { searchParams?: Promi
   const hiddenKeys = p?.siteLayout?.hidden ?? [];
   return (
     <>
-      {sections.map(({ key, hidden }) => edit
-        ? <EditFrame key={key} kind="store" section={key} hidden={hidden} order={order} hiddenKeys={hiddenKeys}>{nodes[key]}</EditFrame>
-        : <div key={key} className="contents">{nodes[key]}</div>)}
-      {edit && <EditBar kind="store" order={order} hiddenKeys={hiddenKeys} />}
+      {edit ? (
+        <EditProvider>
+          {sections.map(({ key, hidden }) => <EditFrame key={key} kind="store" section={key} hidden={hidden} order={order} hiddenKeys={hiddenKeys}>{nodes[key]}</EditFrame>)}
+          <EditBar kind="store" order={order} hiddenKeys={hiddenKeys} />
+        </EditProvider>
+      ) : sections.map(({ key }) => <div key={key} className="contents">{nodes[key]}</div>)}
     </>
   );
 }

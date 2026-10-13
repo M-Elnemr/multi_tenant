@@ -2,22 +2,32 @@
 
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 import { api } from "@/lib/client";
-import { useAction } from "./hooks";
+import { useAction, useMe } from "./hooks";
 import { useI18n } from "./i18n-provider";
 import { Icon } from "./icons";
 import { SECTION_ICON, SectionEditor, SiteWideEditor, type Kind, type SiteWide } from "./site/editors";
+
+const EditContext = createContext(false);
+
+/** Tells the editing controls whether this visitor may edit the site (settings.manage). Checked through the BFF, so an expired token is renewed first. */
+export function EditProvider({ children }: { children: ReactNode }) {
+  const { can } = useMe();
+  return <EditContext.Provider value={can("settings.manage")}>{children}</EditContext.Provider>;
+}
 
 /** The owner's view of one section: an outline with the section's name and Edit / Hide / Move buttons. Edit opens that section's own editor. */
 export function EditFrame({ kind, section, hidden, order, hiddenKeys, children }: { kind: Kind; section: string; hidden: boolean; order: string[]; hiddenKeys: string[]; children: ReactNode }) {
   const { t } = useI18n();
   const router = useRouter();
+  const allowed = useContext(EditContext);
   const [open, setOpen] = useState(false);
   const i = order.indexOf(section);
   const save = useAction(async (o: string[], h: string[]) => { await api(`${kind}/profile`, { method: "PATCH", body: { siteLayout: { order: o, hidden: h } } }); router.refresh(); });
   const move = (d: -1 | 1) => { const o = [...order]; const j = i + d; if (j < 0 || j >= o.length) return; [o[i], o[j]] = [o[j], o[i]]; void save.run(o, hiddenKeys); };
   const toggle = () => void save.run(order, hidden ? hiddenKeys.filter((k) => k !== section) : [...hiddenKeys, section]);
+  if (!allowed) return hidden ? null : <div className="contents">{children}</div>;   // not an editor: the page looks like the public one
   const btn = "flex h-9 items-center gap-1.5 rounded-full bg-white px-3 text-xs font-bold text-slate-800 shadow-md ring-1 ring-black/5 transition hover:bg-brand hover:text-white active:scale-95 disabled:opacity-40";
   return (
     <div className={`group/s relative my-1 rounded-3xl outline-2 outline-dashed outline-offset-[-4px] outline-brand/30 transition hover:outline-brand ${hidden ? "opacity-45" : ""}`}>
@@ -39,10 +49,12 @@ export function EditFrame({ kind, section, hidden, order, hiddenKeys, children }
 /** The dock at the bottom while editing: the list of sections, site-wide settings (colours, announcement, footer), all settings, and Done. */
 export function EditBar({ kind, order = [], hiddenKeys = [] }: { kind: Kind; order?: string[]; hiddenKeys?: string[] }) {
   const { t } = useI18n();
+  const allowed = useContext(EditContext);
   const [panel, setPanel] = useState<SiteWide | null>(null);
   const [menu, setMenu] = useState(false);
   const item = "flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-start text-sm font-semibold hover:bg-slate-50";
   const open = (p: SiteWide) => { setMenu(false); setPanel(p); };
+  if (!allowed) return null;
   return (
     <>
       <div className="fixed inset-x-3 bottom-3 z-40 mx-auto flex max-w-2xl items-center justify-between gap-2 rounded-full bg-slate-900/95 px-4 py-2.5 text-white shadow-2xl backdrop-blur">
