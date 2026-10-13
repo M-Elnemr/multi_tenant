@@ -441,7 +441,7 @@ def customize_clinic(s):
     branch = s.api("GET", "/clinic/branches")[0]["id"]
     s.api("PATCH", "/clinic/doctors/me", {"fields": {"displayName": "د. نور الهدى منصور", "bio": "استشارية طب الأطفال وحديثي الولادة، خبرة تزيد عن ١٢ عامًا في متابعة نمو الأطفال والتطعيمات وعلاج أمراض الصدر والحساسية. أؤمن بأن طفلك يستحق وقتًا كافيًا وشرحًا واضحًا لكل خطوة.",
                                           "publicPhone": "01099990002", "qualifications": "بكالوريوس الطب والجراحة - جامعة القاهرة، ماجستير طب الأطفال، زمالة الأمراض الصدرية للأطفال", "yearsExperience": 12,
-                                          "languages": ["العربية", "English"], "defaultAppointmentFeeMinor": 40000, "gender": "F", "profileImageFileId": s.up(photo("c_doctor", 800, 1000), "AVATAR", jpeg=True)}}, ok404=True)
+                                          "languages": ["العربية", "English"], "defaultAppointmentFeeMinor": 40000, "gender": "F", "profileImageFileId": s.up(photo("c_doctor", 800, 1000), "PRODUCT_IMAGE", jpeg=True)}}, ok404=True)
     s.api("PATCH", f"/clinic/branches/{branch}", {"name": "فرع مدينة نصر", "addressLine1": "٢٤ شارع عباس العقاد، مدينة نصر", "city": "القاهرة", "district": "مدينة نصر", "phone": "01099990002", "landmark": "بجوار سيتي ستارز",
                                                  "mapsUrl": "https://maps.google.com/?q=Abbas+El+Akkad+Nasr+City"}, ok404=True)
     gallery = [s.up(photo(k, 1200, 900), "PRODUCT_IMAGE", jpeg=True) for k in ("c_reception1", "c_waiting", "c_reception2", "c_ped", "c_toys", "c_exam")]
