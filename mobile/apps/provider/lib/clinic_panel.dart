@@ -193,10 +193,10 @@ class _PatientDetailState extends State<PatientDetail> {
             ]))),
             Row(children: [
               if ((p['phone'] as String?)?.isNotEmpty == true) ...[
-                Expanded(child: OutlinedButton.icon(onPressed: () => dial(p['phone'] as String?), icon: const Icon(Icons.call_rounded), label: Text(s.ar ? 'اتصال' : 'Call'))),
+                IconButton.filledTonal(tooltip: s.ar ? 'اتصال' : 'Call', iconSize: 26, style: IconButton.styleFrom(minimumSize: const Size(54, 54)), onPressed: () => dial(p['phone'] as String?), icon: const Icon(Icons.call_rounded)),
                 const SizedBox(width: 8),
-                Expanded(child: OutlinedButton.icon(onPressed: () => whatsapp(p['phone'] as String?), icon: const Icon(Icons.chat_rounded), label: const Text('WhatsApp'))),
-                const SizedBox(width: 8),
+                IconButton.filledTonal(tooltip: 'WhatsApp', iconSize: 26, style: IconButton.styleFrom(minimumSize: const Size(54, 54), backgroundColor: const Color(0xFFDDF5E6), foregroundColor: const Color(0xFF1E9E5A)), onPressed: () => whatsapp(p['phone'] as String?), icon: const Icon(Icons.chat_rounded)),
+                const SizedBox(width: 10),
               ],
               if (ctx.can('appointment.manage')) Expanded(child: FilledButton.icon(onPressed: _walkIn, icon: const Icon(Icons.add_rounded), label: Text(s.ar ? 'أضف للانتظار' : 'Add to queue'))),
             ]),

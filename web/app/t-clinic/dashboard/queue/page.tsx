@@ -15,26 +15,29 @@ type Entry = {
   id: string; status: string; queueNumber?: number; calledAt?: string; startAt: string; waitedMinutes?: number;
   doctorId: string; doctorName: string; serviceName: string; visitType?: string; patientId: string; patientName: string; patientCode: string; isWalkIn?: boolean;
 };
-type Reserved = { id: string; status: string; startAt: string; doctorName: string; serviceName: string; visitType?: string; patientName: string; patientCode: string; patientPhone?: string; patientSex?: string; patientAgeYears?: number };
+type Reserved = { id: string; patientId: string; status: string; startAt: string; doctorName: string; serviceName: string; visitType?: string; patientName: string; patientCode: string; patientPhone?: string; patientSex?: string; patientAgeYears?: number };
 type Queue = { inProgress: Entry[]; waiting: Entry[]; reserved?: Reserved[] };
 type Doctor = { id: string; displayName: string };
 
 
+/** Clicking empty space on a card opens the patient; buttons, links and form controls inside keep their own action. */
+const openOnClick = (go: () => void) => (ev: React.MouseEvent) => { if (!(ev.target as HTMLElement).closest("button,a,select,input,[data-nogo]")) go(); };
+
 /** One waiting patient: drag handle, number, details and the actions. Dragging only starts from the handle so buttons stay clickable. */
-function WaitingRow({ e, i, last, canReorder, clinical, canManage, onCall, onSendIn, onNoShow, onRemove, onMove, onChanged }: {
+function WaitingRow({ e, i, last, canReorder, clinical, canManage, onCall, onSendIn, onNoShow, onRemove, onMove, onChanged, onOpen }: {
   e: Entry; i: number; last: boolean; canReorder: boolean; clinical: boolean; canManage: boolean;
-  onCall: () => void; onSendIn: () => void; onNoShow: () => void; onRemove: () => void; onMove: (d: -1 | 1) => void; onChanged: () => void;
+  onCall: () => void; onSendIn: () => void; onNoShow: () => void; onRemove: () => void; onMove: (d: -1 | 1) => void; onChanged: () => void; onOpen: () => void;
 }) {
   const { t, locale, timezone } = useI18n();
   const controls = useDragControls();
   return (
     <Reorder.Item value={e} dragListener={false} dragControls={controls} layout="position" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: locale === "ar" ? 80 : -80, height: 0, marginBottom: 0 }} whileDrag={{ scale: 1.02, boxShadow: "0 18px 40px -12px rgb(15 35 60 / 0.35)", zIndex: 20 }} className="relative list-none">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-white p-4 text-sm">
+      <div onClick={openOnClick(onOpen)} className="flex cursor-pointer flex-wrap items-center justify-between gap-3 rounded-2xl border bg-white p-4 text-sm transition hover:border-brand/40 hover:shadow-sm">
         <div className="flex items-center gap-3">
           {canReorder && (
             <div className="flex flex-col items-center">
               <button type="button" aria-label={t("queue.moveUp")} disabled={i === 0} onClick={() => onMove(-1)} className="rounded p-0.5 text-slate-400 hover:text-brand disabled:opacity-20"><Icon name="arrow" className="h-3.5 w-3.5 -rotate-90" /></button>
-              <span onPointerDown={(ev) => controls.start(ev)} className="cursor-grab touch-none select-none px-1 text-lg leading-none text-slate-400 active:cursor-grabbing" title={t("queue.reorderHint")} aria-hidden>⠿</span>
+              <span data-nogo onPointerDown={(ev) => controls.start(ev)} className="cursor-grab touch-none select-none px-1 text-lg leading-none text-slate-400 active:cursor-grabbing" title={t("queue.reorderHint")} aria-hidden>⠿</span>
               <button type="button" aria-label={t("queue.moveDown")} disabled={last} onClick={() => onMove(1)} className="rounded p-0.5 text-slate-400 hover:text-brand disabled:opacity-20"><Icon name="arrow" className="h-3.5 w-3.5 rotate-90" /></button>
             </div>
           )}
@@ -102,6 +105,7 @@ export default function QueuePage() {
     busy.current = true;
     setRemoved((r) => [...r, e.id]);
     setToast({ id: e.id, name: e.patientName });
+    setTimeout(() => setToast((cur) => (cur?.id === e.id ? null : cur)), 3000);   // the message hides itself after 3 s
     removals.current.set(e.id, setTimeout(async () => {
       removals.current.delete(e.id);
       try { await api(`clinic/appointments/${e.id}/remove-from-queue`, { body: {} }); } catch { /* shown by the refresh */ }
@@ -109,7 +113,7 @@ export default function QueuePage() {
       setRemoved((r) => r.filter((x) => x !== e.id));
       setToast((cur) => (cur?.id === e.id ? null : cur));
       await reload();
-    }, 4500));
+    }, 3500));
   };
   const undoRemove = () => {
     if (!toast) return;
@@ -171,7 +175,7 @@ export default function QueuePage() {
         <Card className="border-2 border-brand/40">
           <p className="mb-2 text-sm font-medium text-slate-500">{t("queue.nowServing")}</p>
           {q?.inProgress.length ? q.inProgress.map((e) => (
-            <div key={e.id} className="flex items-center justify-between gap-3">
+            <div key={e.id} onClick={openOnClick(() => router.push(`/dashboard/patients/${e.patientId}`))} className="flex cursor-pointer items-center justify-between gap-3">
               <div>
                 <p className="flex flex-wrap items-center gap-2 text-2xl font-bold">{e.patientName} <VisitTypeEditable appointmentId={e.id} type={e.visitType} onChanged={queue.reload} /></p>
                 <p className="text-sm text-slate-500">#{e.queueNumber} · {e.serviceName} · {e.doctorName}</p>
@@ -183,7 +187,7 @@ export default function QueuePage() {
         <Card className="bg-brand/5">
           <p className="mb-2 text-sm font-medium text-slate-500">{t("queue.next")}</p>
           {next ? (
-            <div className="flex items-center justify-between gap-3">
+            <div onClick={openOnClick(() => router.push(`/dashboard/patients/${next.patientId}`))} className="flex cursor-pointer items-center justify-between gap-3">
               <div>
                 <p className="text-2xl font-bold">{next.patientName}</p>
                 <p className="text-sm text-slate-500">#{next.queueNumber} · {t("queue.waited", { n: next.waitedMinutes ?? 0 })}</p>
@@ -205,7 +209,7 @@ export default function QueuePage() {
           <AnimatePresence initial={false}>
             {waitingNow.map((e, i) => (
               <WaitingRow key={e.id} e={e} i={i} last={i === waitingNow.length - 1} canReorder={can("appointment.manage")} clinical={clinical} canManage={can("appointment.manage")}
-                onCall={() => act.run(e.id, "call")} onSendIn={() => trySendIn(e)} onNoShow={() => act.run(e.id, "no-show")} onRemove={() => removeEntry(e)} onMove={(d) => move(i, d)} onChanged={queue.reload} />
+                onCall={() => act.run(e.id, "call")} onSendIn={() => trySendIn(e)} onNoShow={() => act.run(e.id, "no-show")} onRemove={() => removeEntry(e)} onMove={(d) => move(i, d)} onChanged={queue.reload} onOpen={() => router.push(`/dashboard/patients/${e.patientId}`)} />
             ))}
           </AnimatePresence>
         </Reorder.Group>
@@ -216,7 +220,7 @@ export default function QueuePage() {
           <h2 className="mb-2 flex items-center gap-2 font-medium">{t("queue.reserved")} <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-800">{q?.reserved?.length}</span></h2>
           <ul className="space-y-2">
             {q?.reserved?.map((r, i) => (
-              <motion.li key={r.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50/50 p-4 text-sm">
+              <motion.li key={r.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }} onClick={openOnClick(() => router.push(`/dashboard/patients/${r.patientId}`))} className="flex cursor-pointer flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50/50 p-4 text-sm transition hover:border-amber-400">
                 <div className="flex items-center gap-3">
                   <span className="flex min-w-[4.5rem] flex-col items-center rounded-xl bg-amber-100 px-3 py-2 font-bold text-amber-800"><Icon name="clock" className="h-4 w-4" /><span dir="ltr">{timeOnly(r.startAt, locale, timezone)}</span></span>
                   <div>
@@ -235,7 +239,7 @@ export default function QueuePage() {
 
       <AnimatePresence>
         {toast && (
-          <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 30 }} className="fixed inset-x-3 bottom-20 z-50 mx-auto flex max-w-md items-center justify-between gap-3 rounded-full bg-slate-900 px-5 py-3 text-sm text-white shadow-2xl md:bottom-6">
+          <motion.div initial={{ opacity: 0, y: -30 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -30 }} className="fixed inset-x-3 top-4 z-50 mx-auto flex max-w-md items-center justify-between gap-3 rounded-full bg-slate-900 px-5 py-3 text-sm text-white shadow-2xl">
             <span className="truncate">{t("queue.removed", { name: toast.name })}</span>
             <button onClick={undoRemove} className="shrink-0 rounded-full bg-white/20 px-3 py-1 font-bold hover:bg-white/30">{t("queue.undo")}</button>
           </motion.div>

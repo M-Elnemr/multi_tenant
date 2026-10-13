@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:platform_core/platform_core.dart';
+import 'common.dart';
 
 /// Big gradient card with the day's headline number, plus two small figures beside it.
 class _Hero extends StatelessWidget {
@@ -120,7 +121,7 @@ class ClinicDashboard extends StatelessWidget {
       await api.post('clinic/appointments/$id/$action', {});
       await reload();
     } catch (e) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
+      if (context.mounted) toast(context, errorText(e), isError: true);
     }
   }
 

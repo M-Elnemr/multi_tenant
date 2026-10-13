@@ -31,11 +31,79 @@ Future<void> whatsapp(String? phone, [String text = '']) async {
   await launch('https://wa.me/$digits${text.isEmpty ? '' : '?text=${Uri.encodeComponent(text)}'}');
 }
 
-void toast(BuildContext c, String msg) => ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text(msg)));
+OverlayEntry? _toastEntry;
+Timer? _toastTimer;
+
+/// A message at the TOP of the screen that hides itself after 3 seconds (tap or swipe up to close it sooner). An optional action (e.g. Undo) closes it too.
+void toast(BuildContext c, String msg, {bool isError = false, String? actionLabel, VoidCallback? onAction}) {
+  final overlay = navigatorKey.currentState?.overlay ?? Overlay.maybeOf(c, rootOverlay: true);
+  if (overlay == null) return;
+  _toastTimer?.cancel();
+  _toastEntry?.remove();
+  late final OverlayEntry entry;
+  void close() { _toastTimer?.cancel(); if (_toastEntry == entry) { entry.remove(); _toastEntry = null; } }
+  entry = OverlayEntry(builder: (context) => _TopToast(message: msg, isError: isError, actionLabel: actionLabel, onAction: onAction == null ? null : () { close(); onAction(); }, onClose: close));
+  _toastEntry = entry;
+  overlay.insert(entry);
+  _toastTimer = Timer(const Duration(seconds: 3), close);
+}
+
+class _TopToast extends StatefulWidget {
+  const _TopToast({required this.message, required this.isError, required this.onClose, this.actionLabel, this.onAction});
+  final String message;
+  final bool isError;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+  final VoidCallback onClose;
+  @override
+  State<_TopToast> createState() => _TopToastState();
+}
+
+class _TopToastState extends State<_TopToast> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 280))..forward();
+  @override
+  void dispose() { _c.dispose(); super.dispose(); }
+  @override
+  Widget build(BuildContext context) {
+    final bg = widget.isError ? const Color(0xFFB3261E) : const Color(0xFF1B2733);
+    return Positioned(
+      top: MediaQuery.of(context).padding.top + 10,
+      left: 14,
+      right: 14,
+      child: SlideTransition(
+        position: Tween(begin: const Offset(0, -1.4), end: Offset.zero).animate(CurvedAnimation(parent: _c, curve: Curves.easeOutBack)),
+        child: FadeTransition(
+          opacity: _c,
+          child: Dismissible(
+            key: UniqueKey(),
+            direction: DismissDirection.up,
+            onDismissed: (_) => widget.onClose(),
+            child: Material(
+              color: Colors.transparent,
+              child: GestureDetector(
+                onTap: widget.onClose,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(18), boxShadow: const [BoxShadow(color: Color(0x44000000), blurRadius: 18, offset: Offset(0, 6))]),
+                  child: Row(children: [
+                    Icon(widget.isError ? Icons.error_outline_rounded : Icons.check_circle_outline_rounded, color: Colors.white, size: 22),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text(widget.message, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14, height: 1.3))),
+                    if (widget.actionLabel != null) TextButton(onPressed: widget.onAction, style: TextButton.styleFrom(foregroundColor: const Color(0xFF8FD3FF), padding: const EdgeInsets.symmetric(horizontal: 10), minimumSize: const Size(0, 36)), child: Text(widget.actionLabel!, style: const TextStyle(fontWeight: FontWeight.w900))),
+                  ]),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 /// Runs an action, shows a readable error if it fails and reports success so the caller can refresh.
 Future<bool> run(BuildContext c, Future<void> Function() f) async {
-  try { await f(); return true; } catch (e) { if (c.mounted) toast(c, errorText(e)); return false; }
+  try { await f(); return true; } catch (e) { if (c.mounted) toast(c, errorText(e), isError: true); return false; }
 }
 
 Color toneFor(String status) => switch (status) {
@@ -229,16 +297,20 @@ Widget kv(String k, String v, {bool ltr = false}) => Padding(
 
 /// A queue entry: avatar + full-width name/details on top, the action buttons below (side by side, sharing the width) so nothing squeezes the name.
 class QueueCard extends StatelessWidget {
-  const QueueCard({super.key, required this.leading, required this.title, required this.subtitle, this.actions = const [], this.color, this.trailing});
+  const QueueCard({super.key, required this.leading, required this.title, required this.subtitle, this.actions = const [], this.color, this.trailing, this.onTap});
   final Widget leading;
   final String title, subtitle;
   final List<Widget> actions;
   final Color? color;
   final Widget? trailing;
+  final VoidCallback? onTap;
   @override
   Widget build(BuildContext context) => Card(
         color: color,
-        child: Padding(
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -256,6 +328,7 @@ class QueueCard extends StatelessWidget {
               Row(children: [for (var i = 0; i < actions.length; i++) ...[if (i > 0) const SizedBox(width: 8), Expanded(child: actions[i])]]),
             ],
           ]),
+        ),
         ),
       );
 }

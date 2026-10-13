@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:platform_core/platform_core.dart';
 
+import 'clinic_panel.dart';
 import 'common.dart';
 
 List<Map<String, dynamic>> _list(Object? v) => ((v as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
@@ -79,6 +80,11 @@ class _QueueScreenState extends State<QueueScreen> {
     if (ok || mounted) await _load();
   }
 
+  void _open(Map<String, dynamic> e) {
+    final pid = e['patientId'];
+    if (pid != null) Navigator.of(context).push(MaterialPageRoute(builder: (_) => PatientDetail(ctx: ctx, id: '$pid')));
+  }
+
   Future<void> _checkIn(Map<String, dynamic> e) async {
     final id = e['id'] as String;
     if (_busy.contains(id)) return;
@@ -97,22 +103,16 @@ class _QueueScreenState extends State<QueueScreen> {
     final id = e['id'] as String;
     setState(() => _waiting = _waiting.where((x) => x['id'] != id).toList());
     HapticFeedback.mediumImpact();
-    _removing[id] = Timer(const Duration(seconds: 4), () async {
+    _removing[id] = Timer(const Duration(milliseconds: 3500), () async {
       _removing.remove(id);
       if (!mounted) return;
       await run(context, () => ctx.api.post('clinic/appointments/$id/remove-from-queue', {}));
       await _load();
     });
-    final m = ScaffoldMessenger.of(context);
-    m.hideCurrentSnackBar();
-    m.showSnackBar(SnackBar(
-      duration: const Duration(seconds: 4),
-      content: Text(s.ar ? 'تمت إزالة ${e['patientName']} من الطابور' : '${e['patientName']} removed from the queue'),
-      action: SnackBarAction(label: s.ar ? 'تراجع' : 'Undo', onPressed: () {
-        _removing.remove(id)?.cancel();
-        setState(() => _waiting = [..._waiting, e]..sort((a, b) => ((a['queueNumber'] as num?) ?? 0).compareTo((b['queueNumber'] as num?) ?? 0)));
-      }),
-    ));
+    toast(context, s.ar ? 'تمت إزالة ${e['patientName']} من الطابور' : '${e['patientName']} removed from the queue', actionLabel: s.ar ? 'تراجع' : 'Undo', onAction: () {
+      _removing.remove(id)?.cancel();
+      setState(() => _waiting = [..._waiting, e]..sort((a, b) => ((a['queueNumber'] as num?) ?? 0).compareTo((b['queueNumber'] as num?) ?? 0)));
+    });
   }
 
   void _reorder(int from, int to) {
@@ -144,6 +144,7 @@ class _QueueScreenState extends State<QueueScreen> {
             sliver: SliverList(delegate: SliverChildListDelegate([
               if (_inProgress.isNotEmpty) head(s.ar ? 'مع الطبيب الآن' : 'With the doctor now'),
               for (final e in _inProgress) FadeSlideIn(key: ValueKey('p${e['id']}'), child: QueueCard(
+                onTap: () => _open(e),
                 color: blue.withValues(alpha: 0.08),
                 leading: Icon(Icons.medical_services_rounded, color: blue),
                 title: '${e['patientName']}',
@@ -194,6 +195,7 @@ class _QueueScreenState extends State<QueueScreen> {
       },
       onDismissed: (_) => _remove(e),
       child: QueueCard(
+        onTap: () => _open(e),
         leading: CircleAvatar(backgroundColor: blue.withValues(alpha: 0.12), foregroundColor: blue, child: Text('${e['queueNumber']}', style: const TextStyle(fontWeight: FontWeight.w900))),
         title: '${e['patientName']}',
         subtitle: dotted([e['serviceName'], visitTypeLabel(e['visitType'], s.ar), '${e['waitedMinutes'] ?? 0} ${s.ar ? 'د' : 'min'}', if (called) (s.ar ? 'تم النداء' : 'called')]),
@@ -224,6 +226,7 @@ class _QueueScreenState extends State<QueueScreen> {
     final sex = e['patientSex'] == 'F' ? (s.ar ? 'أنثى' : 'Female') : e['patientSex'] == 'M' ? (s.ar ? 'ذكر' : 'Male') : null;
     final pending = e['status'] == 'PENDING_CONFIRMATION';
     return QueueCard(
+      onTap: () => _open(e),
       leading: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(color: const Color(0xFFFFF3DC), borderRadius: BorderRadius.circular(14)),

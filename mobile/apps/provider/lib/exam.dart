@@ -135,6 +135,7 @@ class _CurrentExamState extends State<CurrentExam> {
         if (others.isNotEmpty) ...[
           sectionTitle(isAr ? 'مرضى آخرون داخل الغرفة' : 'Also in the room'),
           for (final e in others) QueueCard(
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => PatientDetail(ctx: ctx, id: '${e['patientId']}'))),
             leading: const Icon(Icons.meeting_room_rounded),
             title: '${e['patientName']}',
             subtitle: dotted(['#${e['queueNumber']}', visitTypeLabel(e['visitType'], isAr)]),
@@ -143,6 +144,7 @@ class _CurrentExamState extends State<CurrentExam> {
         ],
         sectionTitle('${isAr ? 'التالي في الدور' : 'Next in line'} (${waiting.length})'),
         if (next == null) Text(isAr ? 'لا أحد في الانتظار.' : 'Nobody is waiting.', style: const TextStyle(color: Color(0xFF8A97A5))) else QueueCard(
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => PatientDetail(ctx: ctx, id: '${next['patientId']}'))),
           color: blue.withValues(alpha: 0.06),
           leading: CircleAvatar(backgroundColor: blue.withValues(alpha: 0.12), foregroundColor: blue, child: Text('${next['queueNumber']}', style: const TextStyle(fontWeight: FontWeight.w900))),
           title: '${next['patientName']}',
