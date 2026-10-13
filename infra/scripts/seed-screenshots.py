@@ -18,6 +18,12 @@ from PIL import Image, ImageDraw
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--part", choices=["clinic", "shop", "all"], default="all")
+ap.add_argument("--new", action="store_true", help="create a brand-new demo clinic and shop (with a new owner) and customize them, instead of filling existing tenants")
+ap.add_argument("--owner-phone", default="01099990001")
+ap.add_argument("--owner-password", default=os.environ.get("OWNER_PASSWORD", "Noor#Demo2026"))
+ap.add_argument("--clinic-slug", default="dr-nour")
+ap.add_argument("--shop-slug", default="layan-store")
+ap.add_argument("--presign-wait", type=float, default=3.2, help="seconds to wait after each upload (limit: 20 per minute)")
 ap.add_argument("--clinic-base", default="https://tarek-test.elmanassa.shop")
 ap.add_argument("--clinic-phone", help="the clinic owner's login phone")
 ap.add_argument("--shop-base", default="https://demo.elmanassa.shop")
@@ -107,7 +113,8 @@ def pic(w, h, c1, c2, shape="circle", text=None):
 
 # Real product photos (Pexels, free licence, no attribution required; each one was looked at before it was chosen). Downloaded once into infra/scripts/.demo-images/.
 PHOTOS = {"shirt_blue": 9558253, "shirt_white": 16825851, "jeans": 6764007, "dress_black": 16894090, "dress_pink": 902030, "abaya": 7249429, "kids_set": 18493878,
-          "kids_tee": 19725676, "cookware": 5782042, "knife": 4226864, "bedding": 212269, "pillow": 3705540, "wide_clothes": 581087}
+          "kids_tee": 19725676, "cookware": 5782042, "knife": 4226864, "bedding": 212269, "pillow": 3705540, "wide_clothes": 581087,
+          "c_waiting": 8459996, "c_reception1": 7108318, "c_reception2": 7108329, "c_doctor": 6749773, "c_ped": 7653122, "c_exam": 4173248, "c_toys": 27177493, "store_cover": 1827130}
 IMG_DIR = os.path.join(os.path.dirname(__file__), ".demo-images")
 
 
@@ -143,6 +150,7 @@ class Site:
         ct, fn = ("image/jpeg", "x.jpg") if jpeg else ("image/png", "x.png")
         p = self.api("POST", "/files/presign", {"filename": fn, "contentType": ct, "size": len(png), "category": cat})
         call("PUT", self.base, p["uploadUrl"], raw=png, ctype=ct)
+        time.sleep(a.presign_wait)
         MANIFEST["files"].append(p["fileId"])
         return p["fileId"]
 
@@ -159,8 +167,11 @@ MEDS = [("Augmentin", "Amoxicillin/Clavulanate", "625 mg", "قرص", "مرتين
 LABS = ["صورة دم كاملة CBC", "سكر صائم HbA1c", "وظائف كبد وكلى", "مزرعة حلق"]
 
 
-def clinic():
-    s = Site(a.clinic_base, a.clinic_phone, a.clinic_password)
+CONSULT_NAME, FOLLOW_NAME = "كشف جديد", "إعادة كشف"
+
+
+def clinic(s=None):
+    s = s or Site(a.clinic_base, a.clinic_phone, a.clinic_password)
     cairo = ZoneInfo("Africa/Cairo")
     now = datetime.now(cairo)
     doctor = s.api("GET", "/clinic/doctors")[0]["id"]
@@ -169,13 +180,13 @@ def clinic():
     byType = lambda vt: next((x["id"] for x in services if x.get("visitType") == vt and x.get("isActive", True)), services[0]["id"])
 
     # services in Arabic (only when the clinic has no Arabic ones yet)
-    if not any(x["name"] == "كشف جديد" for x in services):
-        for name, mins, price, vt in [("كشف جديد", 30, 30000, "CONSULTATION"), ("إعادة كشف", 15, 15000, "FOLLOW_UP")]:
+    if not any(x["name"] == CONSULT_NAME for x in services):
+        for name, mins, price, vt in [(CONSULT_NAME, 30, 30000, "CONSULTATION"), (FOLLOW_NAME, 15, 15000, "FOLLOW_UP")]:
             r = s.api("POST", "/clinic/services", {"name": name, "description": "", "durationMinutes": mins, "priceMinor": price, "visitType": vt})
             MANIFEST["services"].append(r["id"])
         services = s.api("GET", "/clinic/services")
-    consult = next(x["id"] for x in services if x["name"] == "كشف جديد")
-    follow = next(x["id"] for x in services if x["name"] == "إعادة كشف")
+    consult = next(x["id"] for x in services if x["name"] == CONSULT_NAME)
+    follow = next(x["id"] for x in services if x["name"] == FOLLOW_NAME)
 
     # a late schedule for TODAY ONLY so there are bookable slots this evening
     wd = now.isoweekday()
@@ -274,8 +285,8 @@ BUYERS = ["منى السيد", "أحمد جمال", "هبة عمرو", "كريم
 CITIES = [("القاهرة", "CAI", "مدينة نصر"), ("الجيزة", "GIZ", "الدقي"), ("الإسكندرية", "ALX", "سموحة"), ("القاهرة", "CAI", "المعادي"), ("الجيزة", "GIZ", "6 أكتوبر")]
 
 
-def shop():
-    s = Site(a.shop_base, a.shop_phone, a.shop_password)
+def shop(s=None):
+    s = s or Site(a.shop_base, a.shop_phone, a.shop_password)
     methods = s.api("GET", "/store/shipping-methods")
     if not methods:
         s.api("POST", "/store/shipping-methods", {"type": "ZONES", "name": "توصيل حسب المحافظة", "feeMinor": 0})
@@ -285,7 +296,7 @@ def shop():
     method = methods[0]["id"]
     existing_banners = len(s.api("GET", "/store/banners"))
     for i, (t, sub, key) in enumerate([("وصل حديثًا", "تشكيلة الخريف الجديدة بأسعار مميزة", "wide_clothes"), ("بيت أنيق براحة أكثر", "مفروشات ومستلزمات منزلية بأسعار مناسبة", "bedding")]):
-        if existing_banners + i >= 6:
+        if a.new or existing_banners + i >= 6:
             break
         before = {b["id"] for b in s.api("GET", "/store/banners")}
         s.api("POST", "/store/banners", {"imageFileId": s.up(photo(key, 1600, 640), "PRODUCT_IMAGE", jpeg=True), "title": t, "subtitle": sub, "linkUrl": "/products"})
@@ -294,8 +305,8 @@ def shop():
     # replace the drawn sample pictures of the products with real photos
     KEYS = [("قميص قطن", "shirt_blue"), ("قميص كتان", "shirt_white"), ("جينز", "jeans"), ("فستان سهرة", "dress_black"), ("فستان صيفي", "dress_pink"), ("عباية", "abaya"), ("طقم أطفال", "kids_set"),
             ("تيشيرت أطفال", "kids_tee"), ("أواني", "cookware"), ("سكاكين", "knife"), ("ملايات", "bedding"), ("مخدة", "pillow")]
-    prods = s.api("GET", "/store/products?pageSize=100")
-    for pr in (prods["data"] if isinstance(prods, dict) else prods):
+    prods = {} if a.new else s.api("GET", "/store/products?pageSize=100")   # a new shop already has real photos
+    for pr in (prods["data"] if isinstance(prods, dict) and prods else prods):
         key = next((k for kw, k in KEYS if kw in pr["name"]), None)
         if not key:
             continue
@@ -359,6 +370,185 @@ def shop():
             s.api("POST", f"/store/orders/{oid}/status", {"status": "RETURNED", "reason": "المقاس غير مناسب"}, ok404=True)
     print(f"  {len(ids)} orders created and moved through the statuses")
 
+
+
+# ------------------------------------------------------------------------------------------------ brand-new tenants (--new)
+
+import ssl
+
+HOURS = {d: {"open": "10:00", "close": "22:00", "closed": d == "fri"} for d in ["sat", "sun", "mon", "tue", "wed", "thu", "fri"]}
+
+
+def logo(kind, c1, c2):
+    """A clean app-style logo: gradient rounded square with a white symbol."""
+    S = 512
+    im = Image.new("RGB", (S, S), c1)
+    d = ImageDraw.Draw(im)
+    for y in range(S):
+        t = y / S
+        d.line([(0, y), (S, y)], fill=tuple(int(c1[i] * (1 - t) + c2[i] * t) for i in range(3)))
+    if kind == "clinic":   # medical cross with a heart-beat notch
+        d.rounded_rectangle([S * .42, S * .2, S * .58, S * .8], radius=22, fill="white")
+        d.rounded_rectangle([S * .2, S * .42, S * .8, S * .58], radius=22, fill="white")
+        d.ellipse([S * .44, S * .44, S * .56, S * .56], fill=c2)
+    else:                  # shopping bag
+        d.rounded_rectangle([S * .24, S * .36, S * .76, S * .8], radius=34, fill="white")
+        d.arc([S * .36, S * .18, S * .64, S * .5], 180, 360, fill="white", width=26)
+        d.ellipse([S * .38, S * .5, S * .46, S * .58], fill=c2)
+        d.ellipse([S * .54, S * .5, S * .62, S * .58], fill=c2)
+    b = io.BytesIO()
+    im.save(b, "PNG")
+    return b.getvalue()
+
+
+def category(kind, prefs):
+    cats = call("GET", a.platform_base, f"/api/v1/onboarding/categories?type={kind}")
+    codes = [c["code"] for c in (cats["data"] if isinstance(cats, dict) and "data" in cats else cats)]
+    return next((p for p in prefs if p in codes), codes[0])
+
+
+def onboard(kind, name, slug, first, last, prefs):
+    r = call("POST", a.platform_base, "/api/v1/onboarding/tenants", {"type": kind, "name": name, "slug": slug, "ownerFirstName": first, "ownerLastName": last, "phone": norm(a.owner_phone),
+             "password": a.owner_password, "locale": "ar", "categories": [category(kind, prefs)]}, ok404=True)
+    host = f"{slug}.{urlparse(a.platform_base).netloc}"
+    print(("  created " if r else "  already exists: ") + host)
+    if r:
+        MANIFEST["tenants"] = MANIFEST.get("tenants", []) + [r["tenant"]["id"]]
+    return f"{urlparse(a.platform_base).scheme}://{host}"
+
+
+def wait_https(base):
+    host = urlparse(base).netloc
+    if a.connect:
+        return   # local test: no TLS
+    for i in range(120):
+        try:
+            urllib.request.urlopen(urllib.request.Request(base + "/api/v1/clinic/public/working-days?doctorId=x&branchId=x", headers={"Accept": "application/json"}), timeout=15, context=ssl.create_default_context())
+            return
+        except urllib.error.HTTPError:
+            return   # the server answered over valid TLS
+        except Exception:
+            if i == 0:
+                print(f"  waiting for a valid HTTPS certificate for {host} (add it to the certificate on the server) ...")
+            time.sleep(5)
+    sys.exit(f"no valid HTTPS for {host}")
+
+
+def customize_clinic(s):
+    wait_logo = logo("clinic", (13, 148, 136), (59, 130, 246))
+    s.api("PATCH", "/tenant/branding", {"primaryColor": "#0e9488", "secondaryColor": "#3b82f6", "logoFileId": s.up(wait_logo, "LOGO"), "locale": "ar"})
+    doctor = s.api("GET", "/clinic/doctors")[0]
+    branch = s.api("GET", "/clinic/branches")[0]["id"]
+    s.api("PATCH", "/clinic/doctors/me", {"fields": {"displayName": "د. نور الهدى منصور", "bio": "استشارية طب الأطفال وحديثي الولادة، خبرة تزيد عن ١٢ عامًا في متابعة نمو الأطفال والتطعيمات وعلاج أمراض الصدر والحساسية. أؤمن بأن طفلك يستحق وقتًا كافيًا وشرحًا واضحًا لكل خطوة.",
+                                          "publicPhone": "01099990002", "qualifications": "بكالوريوس الطب والجراحة - جامعة القاهرة، ماجستير طب الأطفال، زمالة الأمراض الصدرية للأطفال", "yearsExperience": 12,
+                                          "languages": ["العربية", "English"], "defaultAppointmentFeeMinor": 40000, "gender": "F", "profileImageFileId": s.up(photo("c_doctor", 800, 1000), "AVATAR", jpeg=True)}}, ok404=True)
+    s.api("PATCH", f"/clinic/branches/{branch}", {"name": "فرع مدينة نصر", "addressLine1": "٢٤ شارع عباس العقاد، مدينة نصر", "city": "القاهرة", "district": "مدينة نصر", "phone": "01099990002", "landmark": "بجوار سيتي ستارز",
+                                                 "mapsUrl": "https://maps.google.com/?q=Abbas+El+Akkad+Nasr+City"}, ok404=True)
+    gallery = [s.up(photo(k, 1200, 900), "PRODUCT_IMAGE", jpeg=True) for k in ("c_reception1", "c_waiting", "c_reception2", "c_ped", "c_toys", "c_exam")]
+    s.api("PATCH", "/clinic/profile", {
+        "clinicName": "عيادة د. نور الهدى لطب الأطفال", "tagline": "رعاية دافئة لطفلك من أول يوم",
+        "about": "عيادة متخصصة في طب الأطفال وحديثي الولادة بمدينة نصر. نقدّم كشفًا شاملًا، متابعة النمو والتغذية، التطعيمات، وعلاج الحساسية وأمراض الصدر، في بيئة هادئة مجهزة بأحدث الأجهزة وركن ألعاب لطفلك.",
+        "phone": "01099990002", "email": "info@dr-nour.example", "addressText": "٢٤ شارع عباس العقاد، مدينة نصر، القاهرة", "whatsapp": "01099990002", "extraPhones": ["01099990003"],
+        "facebookUrl": "https://facebook.com/dr.nour.clinic", "instagramUrl": "https://instagram.com/dr.nour.clinic", "tiktokUrl": "https://tiktok.com/@dr.nour.clinic", "mapsUrl": "https://maps.google.com/?q=Abbas+El+Akkad+Nasr+City",
+        "workingHours": HOURS, "coverFileId": s.up(photo("c_waiting", 1600, 700), "PRODUCT_IMAGE", jpeg=True), "gallery": gallery, "establishedYear": 2014,
+        "announcement": "🩺 الحجز متاح اليوم - كشف الأطفال والتطعيمات - تقبل العيادة جميع شركات التأمين الكبرى", "isOpen": True,
+        "insurance": ["بوبا مصر", "ميدنت", "أليانز", "أكسا", "مصر للتأمين", "ميتلايف"],
+        "faqs": [{"q": "كيف أحجز موعدًا؟", "a": "من زر احجز الآن بالموقع أو التطبيق، واختر الخدمة والموعد المناسب، وستصلك رسالة تأكيد."},
+                 {"q": "ما هي مواعيد التطعيمات؟", "a": "نقدّم التطعيمات الأساسية والاختيارية يوميًا بنظام الجدول الزمني الرسمي لوزارة الصحة."},
+                 {"q": "هل توجد خدمة استشارة هاتفية؟", "a": "نعم، استشارة هاتفية قصيرة للمتابعة بعد الكشف بسعر مخفّض."},
+                 {"q": "هل يمكن إحضار الأشقاء في نفس الموعد؟", "a": "يمكنك حجز كشف منفصل لكل طفل بنفس الوقت وسننسّق بينهما."},
+                 {"q": "ماذا أحضر معي في أول زيارة؟", "a": "كارت التطعيمات وأي تحاليل أو أشعة سابقة وأسماء الأدوية الحالية."}],
+        "siteLayout": {"order": ["hero", "about", "doctors", "services", "visit", "gallery", "faq", "insurance", "contact", "how"], "hidden": []}})
+    print("  clinic customized")
+
+
+PRODUCTS = [  # name, brand, category, audience, price, compare-at, photo key, badge, colours, sizes, featured, stock
+    ("قميص قطن أزرق كلاسيك", "نور", "shirts-tops", "MEN", 45000, 60000, "shirt_blue", "NEW", ["أزرق", "أبيض", "كحلي"], ["S", "M", "L"], True, 9),
+    ("قميص كتان أبيض", "نور", "shirts-tops", "MEN", 52000, None, "shirt_white", "", ["أبيض", "بيج"], ["S", "M", "L"], False, 10),
+    ("بنطلون جينز سليم", "دينم", "pants-jeans", "MEN", 80000, 100000, "jeans", "SALE", ["أزرق", "كحلي"], ["M", "L", "XL"], False, 12),
+    ("فستان سهرة أسود", "أناقة", "dresses", "WOMEN", 150000, None, "dress_black", "BEST_SELLER", ["أسود", "كحلي"], ["S", "M", "L"], True, 6),
+    ("فستان صيفي زهري", "أناقة", "dresses", "WOMEN", 95000, 120000, "dress_pink", "", ["وردي", "أبيض"], ["S", "M", "L"], False, 8),
+    ("عباية كريب أصفر", "بيت الحجاب", "abayas-modest", "WOMEN", 120000, None, "abaya", "NEW", ["أصفر", "أسود"], ["M", "L", "XL"], True, 9),
+    ("طقم أطفال قطن", "كيدو", "outfit-sets", "BOYS", 48000, 60000, "kids_set", "", ["رمادي", "أزرق"], ["2 سنة", "4 سنة", "6 سنة"], False, 14),
+    ("تيشيرت أطفال وردي", "كيدو", "shirts-tops", "GIRLS", 25000, None, "kids_tee", "NEW", ["وردي", "أبيض"], ["4 سنة", "6 سنة", "8 سنة"], False, 20),
+    ("طقم أواني ستانلس ١٠ قطع", "هوم بلس", "cookware", "", 380000, 450000, "cookware", "SALE", [], [], True, 7),
+    ("سكين شيف ياباني", "هوم بلس", "kitchen-tools", "", 65000, None, "knife", "", [], [], False, 11),
+    ("طقم ملايات قطن مصري", "نيل لينن", "bedding", "", 210000, 260000, "bedding", "BEST_SELLER", ["أبيض", "بيج"], [], True, 8),
+    ("مخدة طبية مريحة", "نيل لينن", "pillows-quilts", "", 65000, None, "pillow", "LIMITED", [], [], False, 9),
+]
+
+
+def customize_shop(s):
+    s.api("PATCH", "/tenant/branding", {"primaryColor": "#be185d", "secondaryColor": "#f59e0b", "logoFileId": s.up(logo("shop", (190, 24, 93), (245, 158, 11)), "LOGO"), "locale": "ar"})
+    s.api("PATCH", "/store/profile", {
+        "storeName": "متجر ليان للأزياء والمنزل", "shortDescription": "أزياء عصرية ومستلزمات منزلية بجودة عالية وتوصيل لجميع المحافظات",
+        "about": "متجر ليان يقدّم تشكيلة مختارة من الأزياء الرجالية والنسائية والأطفال ومستلزمات المطبخ والمفروشات بأسعار مناسبة، مع الدفع عند الاستلام وسياسة استرجاع مرنة.",
+        "supportPhone": "01099990004", "whatsapp": "01099990004", "extraPhones": ["01099990005"], "supportEmail": "hello@layan.example", "addressText": "١٢ شارع الهرم، الجيزة", "mapsUrl": "https://maps.google.com/?q=Haram+Giza",
+        "facebookUrl": "https://facebook.com/layan.store", "instagramUrl": "https://instagram.com/layan.store", "tiktokUrl": "https://tiktok.com/@layan.store",
+        "announcement": "🚚 شحن مجاني للطلبات فوق ١٥٠٠ جنيه · الدفع عند الاستلام · خصم ١٠٪ بكود WELCOME10", "workingHours": HOURS, "returnWindowDays": 14, "vatIncluded": True, "vatPercent": 14,
+        "shippingPolicy": "نوصّل لجميع المحافظات خلال ١-٤ أيام عمل، والشحن مجاني للطلبات فوق ١٥٠٠ جنيه.", "returnPolicy": "يمكنك استرجاع المنتج خلال ١٤ يومًا من الاستلام بشرط عدم الاستخدام.",
+        "coverFileId": s.up(photo("store_cover", 1600, 700), "PRODUCT_IMAGE", jpeg=True),
+        "trustTiles": [{"title": "الدفع عند الاستلام", "text": "ادفع عند وصول طلبك"}, {"title": "توصيل لكل المحافظات", "text": "خلال ١-٤ أيام عمل"}, {"title": "استرجاع خلال ١٤ يومًا", "text": "استبدال سهل بدون تعقيد"}, {"title": "دعم عبر واتساب", "text": "نرد عليك خلال دقائق"}],
+        "siteLayout": {"order": ["banners", "trust", "categories", "featured", "offers", "bestSellers", "newest", "whatsapp", "branches"], "hidden": []}})
+    s.api("POST", "/store/branches", {"name": "فرع الهرم", "code": "HRM", "phone": "01099990004", "whatsapp": "01099990004", "address": "١٢ شارع الهرم", "city": "الجيزة", "governorateCode": "GIZ", "area": "الهرم", "landmark": "أمام محطة المترو", "isPickup": True, "workingHours": HOURS}, ok404=True)
+    branch = s.api("GET", "/store/branches")[0]["id"]
+    for i, (t, sub, key) in enumerate([("وصل حديثًا", "تشكيلة الخريف الجديدة بأسعار مميزة", "wide_clothes"), ("أناقة بلا حدود", "ملابس رجالي وحريمي وأطفال", "store_cover"), ("بيت أنيق براحة أكثر", "مفروشات ومستلزمات منزلية", "bedding")]):
+        s.api("POST", "/store/banners", {"imageFileId": s.up(photo(key, 1600, 640), "PRODUCT_IMAGE", jpeg=True), "title": t, "subtitle": sub, "linkUrl": "/products"})
+    s.api("POST", "/store/shipping-methods", {"type": "ZONES", "name": "توصيل حسب المحافظة", "feeMinor": 0}, ok404=True)
+    s.api("POST", "/store/shipping-zones", {"name": "القاهرة الكبرى", "governorateCodes": ["CAI", "GIZ", "QLY"], "feeMinor": 5000, "codFeeMinor": 1000, "etaMinDays": 1, "etaMaxDays": 2, "freeAboveMinor": 150000}, ok404=True)
+    s.api("POST", "/store/shipping-zones", {"name": "الإسكندرية والدلتا", "governorateCodes": ["ALX", "DKH", "GHR", "SHR", "MNF", "BHR", "KFS", "DMT"], "feeMinor": 7500, "etaMinDays": 2, "etaMaxDays": 4, "freeAboveMinor": 150000}, ok404=True)
+    s.api("POST", "/store/shipping-zones", {"name": "الصعيد", "governorateCodes": ["FYM", "BNS", "MNY", "AST", "SHG", "QNA", "LXR", "ASN"], "feeMinor": 10000, "etaMinDays": 3, "etaMaxDays": 6}, ok404=True)
+    s.api("POST", "/store/coupons", {"code": "WELCOME10", "discountType": "PERCENT", "value": 10, "minOrderMinor": 50000}, ok404=True)
+    for i, (n, brand, slug, aud, price, cmp_, key, badge, colors, sizes, feat, stock) in enumerate(PRODUCTS):
+        options = ([{"name": "اللون", "attribute": "COLOR", "values": colors}] if colors else []) + ([{"name": "المقاس", "attribute": "SIZE", "values": sizes, **({"sizeScale": "KIDS"} if "سنة" in sizes[0] else {})}] if sizes else [])
+        combos = [dict()]
+        for o in options:
+            combos = [{**c, o["name"]: v} for c in combos for v in o["values"]]
+        body = {"name": n, "brand": brand, "taxonomySlug": slug, "audience": aud or None, "description": f"{n} بخامات ممتازة وتصميم عملي يناسب الاستخدام اليومي.\nجودة مضمونة وسهولة في الاسترجاع.", "shortDescription": "جودة ممتازة وسعر مناسب",
+                "options": options, "variants": [{"sku": f"LYN{i:02d}-{j}", "priceMinor": price, "compareAtPriceMinor": cmp_, "optionValues": cv, "stock": [{"branchId": branch, "quantity": stock}]} for j, cv in enumerate(combos)],
+                "media": [{"fileId": s.up(photo(key, 900, 1125), "PRODUCT_IMAGE", jpeg=True), "altText": n}]}
+        pid = s.api("POST", "/store/products", body)["id"]
+        s.api("PATCH", f"/store/products/{pid}/extras", {"badge": badge, "isFeatured": feat, "tags": [brand], "specs": [{"k": "الخامة", "v": "جودة عالية"}, {"k": "بلد الصنع", "v": "مصر"}], "sizeGuide": ""})
+    print("  shop customized with", len(PRODUCTS), "products")
+
+
+def write_credentials():
+    path = os.path.join(os.path.dirname(__file__), "DEMO-CREDENTIALS.local.md")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(f"""# Demo logins (dummy data, git-ignored)
+
+Business app (one login, shows both businesses):  phone {a.owner_phone}  password {a.owner_password}
+  - clinic: عيادة د. نور الهدى لطب الأطفال  https://{a.clinic_slug}.elmanassa.shop
+  - shop:   متجر ليان للأزياء والمنزل        https://{a.shop_slug}.elmanassa.shop
+Tabib patient:  phone 01099990100 (or the 6-digit patient ID)  password {a.patient_password}
+""")
+    print("credentials written to", path)
+
+
+if a.new:
+    write_credentials()
+    scheme_root = a.platform_base
+    cb = onboard("CLINIC", "عيادة د. نور الهدى لطب الأطفال", a.clinic_slug, "نور", "الهدى منصور", ["pediatrics", "general_practice"])
+    sb = onboard("STORE", "متجر ليان للأزياء والمنزل", a.shop_slug, "نور", "الهدى منصور", ["fashion_women", "fashion_men"])
+    save()
+    wait_https(cb); wait_https(sb)
+    a.clinic_base, a.shop_base, a.clinic_phone, a.shop_phone = cb, sb, a.owner_phone, a.owner_phone
+    a.clinic_password = a.shop_password = a.owner_password
+    CONSULT_NAME, FOLLOW_NAME = "كشف أطفال", "إعادة كشف"
+    print("clinic:"); cs = Site(cb, a.owner_phone, a.owner_password)
+    # Arabic services only: the two English defaults are switched off
+    for sv in cs.api("GET", "/clinic/services"):
+        if sv["name"] in ("Consultation", "Follow-up"):
+            cs.api("PUT", f"/clinic/services/{sv['id']}/active", {"active": False}, ok404=True)
+    customize_clinic(cs)
+    for name, mins, price, vt in [("استشارة هاتفية", 15, 25000, None), ("متابعة نمو وتغذية", 30, 35000, None)]:
+        r = cs.api("POST", "/clinic/services", {"name": name, "description": "", "durationMinutes": mins, "priceMinor": price, **({"visitType": vt} if vt else {})}); MANIFEST["services"].append(r["id"])
+    clinic(cs); save()
+    print("shop:"); ss = Site(sb, a.owner_phone, a.owner_password)
+    customize_shop(ss)
+    shop(ss); save()
+    print("done. manifest:", a.manifest)
+    sys.exit(0)
 
 if a.part in ("clinic", "all"):
     if not (a.clinic_phone and a.clinic_password):
