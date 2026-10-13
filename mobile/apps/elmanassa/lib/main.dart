@@ -13,7 +13,7 @@ import 'mode.dart';
 import 'push.dart';
 import 'shop/shop.dart';
 
-const appVersion = '1.2.0';
+const appVersion = '1.2.1';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -122,7 +122,7 @@ class Landing extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.all(20),
           child: Column(children: [
-            card(0, AppMode.clinics, Icons.local_hospital_rounded, ar ? 'العيادات' : 'Clinics', ar ? 'الدور، السجل الطبي، التحاليل والروشتات' : 'Queue, medical record, tests and prescriptions', [const Color(0xFF1F6A99), const Color(0xFF2E8FB8)], () => const PlatformGate()),
+            card(0, AppMode.clinics, Icons.local_hospital_rounded, ar ? 'طبيب' : 'Tabib', ar ? 'الدور، السجل الطبي، التحاليل والروشتات' : 'Queue, medical record, tests and prescriptions', [const Color(0xFF1F6A99), const Color(0xFF2E8FB8)], () => const PlatformGate()),
             if (kShopEnabled) card(1, AppMode.shop, Icons.storefront_rounded, ar ? 'التسوق' : 'Shop', ar ? 'اختر متجراً واطلب بالدفع عند الاستلام' : 'Pick a shop and order, cash on delivery', [const Color(0xFF3D9A63), const Color(0xFF52B77B)], () => const ShopEntry()),
             const SizedBox(height: 4),
             FadeSlideIn(index: 5, child: Text('${s.version} $appVersion', style: const TextStyle(color: Color(0xFF8A99AA), fontSize: 12))),
@@ -170,9 +170,9 @@ class _PlatformGateState extends State<PlatformGate> {
 
   @override
   Widget build(BuildContext context) {
-    if (loggedIn == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (loggedIn == null) return Scaffold(body: Container(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topRight, end: Alignment.bottomLeft, colors: [kBrandBlue, Color.lerp(kBrandBlue, kBrandGreen, 0.6)!, kBrandGreen]))));
     if (loggedIn == false) {
-      return LoginScreen(api: platform, app: 'client', title: S.of(context).ar ? 'العيادات' : 'Clinics', subtitle: S.of(context).ar ? 'سجّل الدخول بالرقم وكلمة المرور من عيادتك' : 'Sign in with the number and password from your clinic', onLoggedIn: (u) => setState(() { mustChange = u['mustChangePassword'] == true; loggedIn = true; }));
+      return LoginScreen(api: platform, app: 'client', title: S.of(context).ar ? 'طبيب' : 'Tabib', subtitle: S.of(context).ar ? 'سجّل الدخول بالرقم وكلمة المرور من عيادتك' : 'Sign in with the number and password from your clinic', onLoggedIn: (u) => setState(() { mustChange = u['mustChangePassword'] == true; loggedIn = true; }));
     }
     if (mustChange) return ChangeTempPassword(api: platform, onDone: () => setState(() => mustChange = false));
     return MyClinics(platform: platform, session: session, autoOpen: widget.autoOpen, onLogout: () async { await AppMode.clear(); if (context.mounted) Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => kShopEnabled ? const Landing() : const PlatformGate()), (r) => false); });
