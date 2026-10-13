@@ -158,7 +158,7 @@ export default async function StoreHome({ searchParams }: { searchParams?: Promi
       {sections.map(({ key, hidden }) => edit
         ? <EditFrame key={key} kind="store" section={key} hidden={hidden} order={order} hiddenKeys={hiddenKeys}>{nodes[key]}</EditFrame>
         : <div key={key} className="contents">{nodes[key]}</div>)}
-      {edit && <EditBar kind="store" />}
+      {edit && <EditBar kind="store" order={order} hiddenKeys={hiddenKeys} />}
     </>
   );
 }

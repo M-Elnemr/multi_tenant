@@ -57,7 +57,7 @@ export default async function ClinicHome({ searchParams }: { searchParams?: Prom
       {sections.map(({ key, hidden }) => edit
         ? <EditFrame key={key} kind="clinic" section={key} hidden={hidden} order={order} hiddenKeys={hiddenKeys}>{nodes[key]}</EditFrame>
         : <div key={key} className="contents">{nodes[key]}</div>)}
-      {edit && <EditBar kind="clinic" />}
+      {edit && <EditBar kind="clinic" order={order} hiddenKeys={hiddenKeys} />}
     </>
   );
 }

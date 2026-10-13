@@ -1,80 +1,15 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { api } from "@/lib/client";
-import { useAction, useApi } from "./hooks";
+import { useAction } from "./hooks";
 import { useI18n } from "./i18n-provider";
 import { Icon } from "./icons";
-import { Button, Card, ErrorText, Input, Modal } from "./ui";
-import BrandingCard from "./dashboard/branding";
-import { BannersCard } from "./dashboard/banners";
-import { BranchesWebsiteCard, DoctorsWebsiteCard, WebsiteCard } from "./dashboard/clinic-website";
-import { BranchesCard, ContactCard, type StoreProfile } from "./dashboard/store-identity";
+import { SECTION_ICON, SectionEditor, SiteWideEditor, type Kind, type SiteWide } from "./site/editors";
 
-type Kind = "clinic" | "store";
-
-function StoreContact() {
-  const profile = useApi<StoreProfile>("store/profile");
-  if (!profile.data) return null;
-  return <ContactCard profile={profile.data} reload={profile.reload} />;
-}
-
-/** Up to 6 short promises shown under the banner (cash on delivery, returns...). Empty = the standard four. */
-function TrustTilesCard() {
-  const { t } = useI18n();
-  const profile = useApi<{ trustTiles?: { title: string; text: string }[] }>("store/profile");
-  const [tiles, setTiles] = useState<{ title: string; text: string }[] | null>(null);
-  const cur = tiles ?? profile.data?.trustTiles ?? [];
-  const save = useAction(async () => { await api("store/profile", { method: "PATCH", body: { trustTiles: cur } }); await profile.reload(); });
-  if (!profile.data) return null;
-  const set = (i: number, k: "title" | "text", v: string) => setTiles(cur.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
-  return (
-    <Card className="space-y-3">
-      <div><h2 className="font-semibold">{t("site.tiles")}</h2><p className="text-sm text-slate-500">{t("site.tilesHint")}</p></div>
-      {cur.map((x, i) => (
-        <div key={i} className="flex items-center gap-2">
-          <Input value={x.title} maxLength={60} placeholder={t("site.tileTitle")} onChange={(e) => set(i, "title", e.target.value)} />
-          <Input value={x.text} maxLength={160} placeholder={t("site.tileText")} onChange={(e) => set(i, "text", e.target.value)} />
-          <Button size="sm" variant="ghost" onClick={() => setTiles(cur.filter((_, j) => j !== i))}>{t("common.delete")}</Button>
-        </div>
-      ))}
-      <div className="flex gap-2">
-        {cur.length < 6 && <Button variant="secondary" onClick={() => setTiles([...cur, { title: "", text: "" }])}>+ {t("site.addTile")}</Button>}
-        <Button loading={save.loading} onClick={() => void save.run()}>{t("common.save")}</Button>
-      </div>
-      <ErrorText error={save.error} />
-    </Card>
-  );
-}
-
-function DashLink({ href, label }: { href: string; label: string }) {
-  return <Link href={href} className="block rounded-2xl border border-slate-200 p-4 text-center font-semibold text-brand hover:bg-brand-soft">{label} →</Link>;
-}
-
-function Editor({ kind, section }: { kind: Kind; section: string }) {
-  const { t } = useI18n();
-  if (kind === "clinic") {
-    switch (section) {
-      case "doctors": return <DoctorsWebsiteCard />;
-      case "services": return <DashLink href="/dashboard/services" label={t("site.manageServices")} />;
-      case "visit": return <><BranchesWebsiteCard /><WebsiteCard /></>;
-      case "how": return <p className="text-sm text-slate-500">{t("site.fixedSection")}</p>;
-      default: return <WebsiteCard />;
-    }
-  }
-  switch (section) {
-    case "banners": return <BannersCard />;
-    case "trust": return <TrustTilesCard />;
-    case "branches": return <BranchesCard />;
-    case "whatsapp": return <StoreContact />;
-    case "categories": return <DashLink href="/dashboard/products" label={t("site.manageProducts")} />;
-    default: return <DashLink href="/dashboard/products" label={t("site.manageProducts")} />;
-  }
-}
-
-/** The owner's view of one section of the public site: a dashed frame with Edit, Hide/Show and Move buttons. Every change shows at once. */
+/** The owner's view of one section: an outline with the section's name and Edit / Hide / Move buttons. Edit opens that section's own editor. */
 export function EditFrame({ kind, section, hidden, order, hiddenKeys, children }: { kind: Kind; section: string; hidden: boolean; order: string[]; hiddenKeys: string[]; children: ReactNode }) {
   const { t } = useI18n();
   const router = useRouter();
@@ -83,41 +18,52 @@ export function EditFrame({ kind, section, hidden, order, hiddenKeys, children }
   const save = useAction(async (o: string[], h: string[]) => { await api(`${kind}/profile`, { method: "PATCH", body: { siteLayout: { order: o, hidden: h } } }); router.refresh(); });
   const move = (d: -1 | 1) => { const o = [...order]; const j = i + d; if (j < 0 || j >= o.length) return; [o[i], o[j]] = [o[j], o[i]]; void save.run(o, hiddenKeys); };
   const toggle = () => void save.run(order, hidden ? hiddenKeys.filter((k) => k !== section) : [...hiddenKeys, section]);
-  const btn = "flex h-9 items-center gap-1.5 rounded-full bg-white/95 px-3 text-xs font-bold text-slate-800 shadow-md transition hover:bg-brand hover:text-white active:scale-95 disabled:opacity-40";
+  const btn = "flex h-9 items-center gap-1.5 rounded-full bg-white px-3 text-xs font-bold text-slate-800 shadow-md ring-1 ring-black/5 transition hover:bg-brand hover:text-white active:scale-95 disabled:opacity-40";
   return (
-    <div className={`relative my-1 rounded-3xl outline-2 outline-dashed outline-offset-[-4px] outline-brand/50 transition ${hidden ? "opacity-40" : ""}`}>
+    <div className={`group/s relative my-1 rounded-3xl outline-2 outline-dashed outline-offset-[-4px] outline-brand/30 transition hover:outline-brand ${hidden ? "opacity-45" : ""}`}>
+      <div className="pointer-events-none absolute start-3 top-3 z-30 flex items-center gap-1.5 rounded-full bg-slate-900/85 px-3 py-1.5 text-xs font-bold text-white opacity-90 backdrop-blur">
+        <Icon name={SECTION_ICON[section] ?? "sparkles"} className="h-3.5 w-3.5" />{t(`site.section.${section}`)}{hidden && <span className="rounded-full bg-amber-400 px-2 text-[10px] text-slate-900">{t("site.hiddenBadge")}</span>}
+      </div>
       <div className="absolute end-3 top-3 z-30 flex flex-wrap items-center gap-1.5">
-        {hidden && <span className="rounded-full bg-slate-900/80 px-3 py-1 text-xs font-bold text-white">{t("site.hiddenBadge")}</span>}
-        <button className={btn} onClick={() => setOpen(true)}><Icon name="edit" className="h-4 w-4" />{t("site.edit")}</button>
+        <button className={`${btn} !bg-brand !text-white hover:!brightness-110`} onClick={() => setOpen(true)}><Icon name="edit" className="h-4 w-4" />{t("site.edit")}</button>
         <button className={btn} onClick={toggle} disabled={save.loading}>{hidden ? t("common.show") : t("common.hide")}</button>
         <button className={btn} onClick={() => move(-1)} disabled={i <= 0 || save.loading} aria-label={t("site.moveUp")}>↑</button>
         <button className={btn} onClick={() => move(1)} disabled={i < 0 || i >= order.length - 1 || save.loading} aria-label={t("site.moveDown")}>↓</button>
       </div>
       {children}
-      <Modal open={open} onClose={() => { setOpen(false); router.refresh(); }} title={t(`site.section.${section}`)} wide>
-        <div className="space-y-4"><Editor kind={kind} section={section} /></div>
-      </Modal>
+      {open && <SectionEditor kind={kind} section={section} onClose={() => { setOpen(false); router.refresh(); }} />}
     </div>
   );
 }
 
-/** Floating bar while editing: exit, branding (colours and logo) and a link to the full settings. */
-export function EditBar({ kind }: { kind: Kind }) {
+/** The dock at the bottom while editing: the list of sections, site-wide settings (colours, announcement, footer), all settings, and Done. */
+export function EditBar({ kind, order = [], hiddenKeys = [] }: { kind: Kind; order?: string[]; hiddenKeys?: string[] }) {
   const { t } = useI18n();
-  const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [panel, setPanel] = useState<SiteWide | null>(null);
+  const [menu, setMenu] = useState(false);
+  const item = "flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-start text-sm font-semibold hover:bg-slate-50";
+  const open = (p: SiteWide) => { setMenu(false); setPanel(p); };
   return (
     <>
-      <div className="fixed inset-x-3 bottom-3 z-40 mx-auto flex max-w-xl items-center justify-between gap-2 rounded-full bg-slate-900 px-4 py-2.5 text-white shadow-2xl">
-        <span className="flex items-center gap-2 text-sm font-bold"><span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />{t("site.editing")}</span>
-        <span className="flex items-center gap-1.5">
-          <button onClick={() => setOpen(true)} className="rounded-full bg-white/15 px-3 py-1.5 text-xs font-bold hover:bg-white/25">{t("site.branding")}</button>
-          <Link href="/dashboard/settings" className="rounded-full bg-white/15 px-3 py-1.5 text-xs font-bold hover:bg-white/25">{t("site.allSettings")}</Link>
-          <Link href="/" className="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-slate-900">{t("site.exit")}</Link>
+      <div className="fixed inset-x-3 bottom-3 z-40 mx-auto flex max-w-2xl items-center justify-between gap-2 rounded-full bg-slate-900/95 px-4 py-2.5 text-white shadow-2xl backdrop-blur">
+        <span className="hidden items-center gap-2 text-sm font-bold sm:flex"><span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />{t("site.editing")}</span>
+        <span className="flex flex-1 items-center justify-end gap-1.5 sm:flex-none">
+          <button onClick={() => open("sections")} className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3.5 py-2 text-xs font-bold hover:bg-white/25"><Icon name="menu" className="h-4 w-4" />{t("se.sections")}</button>
+          <div className="relative">
+            <button onClick={() => setMenu(!menu)} aria-expanded={menu} className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3.5 py-2 text-xs font-bold hover:bg-white/25"><Icon name="settings" className="h-4 w-4" />{t("se.siteWide")}</button>
+            {menu && (
+              <div className="absolute bottom-full mb-2 w-64 animate-scale-in rounded-2xl bg-white p-1.5 text-slate-800 shadow-2xl" onMouseLeave={() => setMenu(false)}>
+                <button className={item} onClick={() => open("branding")}><Icon name="sparkles" className="h-4 w-4 text-brand" />{t("site.branding")}</button>
+                <button className={item} onClick={() => open("announce")}><Icon name="bell" className="h-4 w-4 text-brand" />{t("se.announce")}</button>
+                <button className={item} onClick={() => open("footer")}><Icon name="phone" className="h-4 w-4 text-brand" />{kind === "clinic" ? t("site.section.contact") : t("se.footer")}</button>
+                <Link href="/dashboard/settings" className={item}><Icon name="settings" className="h-4 w-4 text-brand" />{t("site.allSettings")}</Link>
+              </div>
+            )}
+          </div>
+          <Link href="/" className="inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-xs font-bold text-slate-900"><Icon name="check" className="h-4 w-4" />{t("se.done")}</Link>
         </span>
       </div>
-      <Modal open={open} onClose={() => { setOpen(false); router.refresh(); }} title={t("site.branding")} wide><BrandingCard /></Modal>
-      <span className="hidden">{kind}</span>
+      {panel && <SiteWideEditor kind={kind} which={panel} order={order} hidden={hiddenKeys} onClose={() => setPanel(null)} />}
     </>
   );
 }

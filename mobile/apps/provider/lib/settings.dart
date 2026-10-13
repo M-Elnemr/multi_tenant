@@ -536,9 +536,3 @@ class _StoreBranches extends StatelessWidget {
         ),
       );
 }
-
-// Cards reused by the "My page" screen (customize the public site section by section).
-Widget clinicDoctorsCard(Ctx c) => _DoctorsCard(ctx: c);
-Widget clinicBranchesCard(Ctx c) => _ClinicBranches(ctx: c);
-Widget storeBannersCard(Ctx c) => _Banners(ctx: c);
-Widget storeBranchesCard(Ctx c) => _StoreBranches(ctx: c);

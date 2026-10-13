@@ -8,9 +8,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'common.dart';
 import 'offline_ops.dart';
 import 'shell.dart';
-import 'site_editor.dart';
 
-const appVersion = '1.3.3';
+const appVersion = '1.3.4';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -359,7 +358,7 @@ class _BusinessHomeState extends State<BusinessHome> with WidgetsBindingObserver
             IconButton(
               tooltip: s.settings,
               icon: const Icon(Icons.tune_rounded),
-              onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => SettingsPage(ctx: _ctx, businessName: b['name'] as String, canSwitch: widget.canSwitch, onSwitch: () { Navigator.of(context).pop(); widget.onSwitch(); }, onSignOut: () { Navigator.of(context).pop(); widget.onSignOut(); }))),
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => SettingsPage(businessName: b['name'] as String, canSwitch: widget.canSwitch, onSwitch: () { Navigator.of(context).pop(); widget.onSwitch(); }, onSignOut: () { Navigator.of(context).pop(); widget.onSignOut(); }))),
             ),
           ],
         ),
@@ -388,8 +387,7 @@ class _BusinessHomeState extends State<BusinessHome> with WidgetsBindingObserver
 }
 
 class SettingsPage extends StatelessWidget {
-  const SettingsPage({super.key, this.ctx, required this.businessName, required this.canSwitch, required this.onSwitch, required this.onSignOut});
-  final Ctx? ctx;
+  const SettingsPage({super.key, required this.businessName, required this.canSwitch, required this.onSwitch, required this.onSignOut});
   final String businessName;
   final bool canSwitch;
   final VoidCallback onSwitch;
@@ -402,7 +400,6 @@ class SettingsPage extends StatelessWidget {
       appBar: AppBar(title: Text(s.settings)),
       body: ListView(padding: const EdgeInsets.all(16), children: [
         FadeSlideIn(child: tile(Icons.business_center_rounded, businessName)),
-        if (ctx != null && ctx!.can('settings.manage')) FadeSlideIn(index: 1, child: tile(Icons.auto_awesome_rounded, s.ar ? 'خصّص صفحتي' : 'Customize my page', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => MyPageScreen(ctx: ctx!))), trailing: const Icon(Icons.chevron_right_rounded), color: Theme.of(context).colorScheme.primary)),
         FadeSlideIn(index: 1, child: tile(Icons.translate_rounded, s.language, trailing: const LanguageChip())),
         if (canSwitch) FadeSlideIn(index: 2, child: tile(Icons.swap_horiz_rounded, s.switchBusiness, onTap: onSwitch, trailing: const Icon(Icons.chevron_right_rounded))),
         FadeSlideIn(index: 3, child: tile(Icons.info_outline_rounded, s.version, trailing: const Text(appVersion))),
