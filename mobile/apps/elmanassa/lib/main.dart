@@ -13,7 +13,7 @@ import 'mode.dart';
 import 'push.dart';
 import 'shop/shop.dart';
 
-const appVersion = '1.1.0';
+const appVersion = '1.2.0';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,7 +27,7 @@ class ElmanassaApp extends StatelessWidget {
   Widget build(BuildContext context) => ValueListenableBuilder<Locale>(
         valueListenable: AppLocale.notifier,
         builder: (context, locale, _) => MaterialApp(
-          title: 'Elmanassa',
+          title: 'Tabib',
           debugShowCheckedModeBanner: false,
           scaffoldMessengerKey: messengerKey,
           theme: themeFor(null),
@@ -49,17 +49,28 @@ class StartGate extends StatefulWidget {
 class _StartGateState extends State<StartGate> {
   late final Future<String?> _mode = AppMode.get();
   @override
-  Widget build(BuildContext context) => FutureBuilder<String?>(
-        future: _mode,
-        builder: (context, snap) {
-          if (snap.connectionState != ConnectionState.done) return const Scaffold(body: Center(child: BrandLogo(size: 110)));
-          return switch (snap.data) {
-            AppMode.clinics => const PlatformGate(autoOpen: true),
-            AppMode.shop => const ShopEntry(),
-            _ => const Landing(),
-          };
-        },
+  Widget build(BuildContext context) {
+    final ar = S.of(context).ar;
+    // Tabib is for patients: straight to the clinics, behind the animated splash (the shop side stays in the code, hidden by kShopEnabled)
+    if (!kShopEnabled) {
+      return SplashGate(
+        ready: true,
+        splash: AnimatedSplash(title: ar ? 'طبيب' : 'Tabib', tagline: ar ? 'صحتك في جيبك' : 'Your health, in your pocket'),
+        child: const PlatformGate(autoOpen: true),
       );
+    }
+    return FutureBuilder<String?>(
+      future: _mode,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) return const Scaffold(body: Center(child: BrandLogo(size: 110)));
+        return switch (snap.data) {
+          AppMode.clinics => const PlatformGate(autoOpen: true),
+          AppMode.shop => const ShopEntry(),
+          _ => const Landing(),
+        };
+      },
+    );
+  }
 }
 
 /// Entry screen: one app, two separate worlds. Patient and shop sessions are stored apart (different keys), so signing into one never signs into the other.
@@ -101,9 +112,9 @@ class Landing extends StatelessWidget {
                 const SizedBox(height: 12),
                 const FadeSlideIn(child: DecoratedBox(decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Color(0x33000000), blurRadius: 24, offset: Offset(0, 10))]), child: Padding(padding: EdgeInsets.all(14), child: BrandLogo(size: 84)))),
                 const SizedBox(height: 14),
-                FadeSlideIn(index: 1, child: Text(ar ? 'أهلاً بك في المنصة' : 'Welcome to Elmanassa', style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w900))),
+                FadeSlideIn(index: 1, child: Text(ar ? 'أهلاً بك في طبيب' : 'Welcome to Tabib', style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w900))),
                 const SizedBox(height: 4),
-                FadeSlideIn(index: 1, child: Text(ar ? 'صحتك وتسوقك في مكان واحد' : 'Your health and shopping in one place', style: TextStyle(color: Colors.white.withValues(alpha: 0.88)))),
+                FadeSlideIn(index: 1, child: Text(kShopEnabled ? (ar ? 'صحتك وتسوقك في مكان واحد' : 'Your health and shopping in one place') : (ar ? 'صحتك في جيبك' : 'Your health, in your pocket'), style: TextStyle(color: Colors.white.withValues(alpha: 0.88)))),
               ]),
             ),
           ),
@@ -112,7 +123,7 @@ class Landing extends StatelessWidget {
           padding: const EdgeInsets.all(20),
           child: Column(children: [
             card(0, AppMode.clinics, Icons.local_hospital_rounded, ar ? 'العيادات' : 'Clinics', ar ? 'الدور، السجل الطبي، التحاليل والروشتات' : 'Queue, medical record, tests and prescriptions', [const Color(0xFF1F6A99), const Color(0xFF2E8FB8)], () => const PlatformGate()),
-            card(1, AppMode.shop, Icons.storefront_rounded, ar ? 'التسوق' : 'Shop', ar ? 'اختر متجراً واطلب بالدفع عند الاستلام' : 'Pick a shop and order, cash on delivery', [const Color(0xFF3D9A63), const Color(0xFF52B77B)], () => const ShopEntry()),
+            if (kShopEnabled) card(1, AppMode.shop, Icons.storefront_rounded, ar ? 'التسوق' : 'Shop', ar ? 'اختر متجراً واطلب بالدفع عند الاستلام' : 'Pick a shop and order, cash on delivery', [const Color(0xFF3D9A63), const Color(0xFF52B77B)], () => const ShopEntry()),
             const SizedBox(height: 4),
             FadeSlideIn(index: 5, child: Text('${s.version} $appVersion', style: const TextStyle(color: Color(0xFF8A99AA), fontSize: 12))),
           ]),
@@ -164,7 +175,7 @@ class _PlatformGateState extends State<PlatformGate> {
       return LoginScreen(api: platform, app: 'client', title: S.of(context).ar ? 'العيادات' : 'Clinics', subtitle: S.of(context).ar ? 'سجّل الدخول بالرقم وكلمة المرور من عيادتك' : 'Sign in with the number and password from your clinic', onLoggedIn: (u) => setState(() { mustChange = u['mustChangePassword'] == true; loggedIn = true; }));
     }
     if (mustChange) return ChangeTempPassword(api: platform, onDone: () => setState(() => mustChange = false));
-    return MyClinics(platform: platform, session: session, autoOpen: widget.autoOpen, onLogout: () async { await AppMode.clear(); if (context.mounted) Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const Landing()), (r) => false); });
+    return MyClinics(platform: platform, session: session, autoOpen: widget.autoOpen, onLogout: () async { await AppMode.clear(); if (context.mounted) Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => kShopEnabled ? const Landing() : const PlatformGate()), (r) => false); });
   }
 }
 
@@ -268,7 +279,7 @@ class _MyClinicsState extends State<MyClinics> {
     final s = S.of(context);
     return Scaffold(
       appBar: AppBar(title: Text(s.myClinics), actions: [
-        IconButton(tooltip: s.ar ? 'تغيير القسم' : 'Switch section', icon: const Icon(Icons.swap_horiz_rounded), onPressed: () async { await AppMode.clear(); if (context.mounted) Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const Landing()), (r) => false); }),
+        if (kShopEnabled) IconButton(tooltip: s.ar ? 'تغيير القسم' : 'Switch section', icon: const Icon(Icons.swap_horiz_rounded), onPressed: () async { await AppMode.clear(); if (context.mounted) Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const Landing()), (r) => false); }),
         IconButton(
           tooltip: s.logout,
           icon: const Icon(Icons.logout),

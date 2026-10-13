@@ -206,7 +206,7 @@ String errorText(Object e) {
       'INVALID_CREDENTIALS': ['رقم الهاتف/البريد أو كلمة المرور غير صحيحة', 'Wrong phone/email or password'],
       'ACTIVATION_REQUIRED': ['أول دخول: أدخل الكود المؤقت الذي حصلت عليه', 'First sign-in: enter the one-time code you were given'],
       'WRONG_APP_STAFF': ['هذا حساب نشاط تجاري. استخدم تطبيق Elmanassa Business', 'This is a business account. Use the Elmanassa Business app'],
-      'WRONG_APP_PATIENT': ['هذا حساب مريض. استخدم تطبيق Elmanassa', 'This is a patient account. Use the Elmanassa app'],
+      'WRONG_APP_PATIENT': ['هذا حساب مريض. استخدم تطبيق طبيب', 'This is a patient account. Use the Tabib app'],
       'NOT_A_MEMBER': ['هذا الحساب ليس له صلاحية هنا', 'This account has no access here'],
       'ACCOUNT_DISABLED': ['هذا الحساب غير مفعّل', 'This account is not active'],
       'TOO_MANY_ATTEMPTS': ['محاولات كثيرة، انتظر قليلاً ثم أعد المحاولة', 'Too many attempts, wait a moment and try again'],
@@ -222,8 +222,10 @@ String errorText(Object e) {
 
 /// Loads a future and shows skeletons / error+retry / content (fades in).
 class Async<T> extends StatefulWidget {
-  const Async({super.key, required this.load, required this.builder});
+  const Async({super.key, required this.load, required this.builder, this.peek});
   final Future<T> Function() load;
+  /// What the phone already has (if anything): shown at once while [load] runs.
+  final Future<T?> Function()? peek;
   final Widget Function(BuildContext, T, Future<void> Function() reload) builder;
   @override
   State<Async<T>> createState() => _AsyncState<T>();
@@ -233,6 +235,12 @@ class _AsyncState<T> extends State<Async<T>> {
   late Future<T> _f = _track(widget.load());
   T? _last;
   bool _has = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.peek?.call().then((v) { if (v != null && mounted && !_has) setState(() { _last = v; _has = true; }); }, onError: (_) {});
+  }
 
   Future<T> _track(Future<T> f) => f.then((v) { _last = v; _has = true; return v; });
 

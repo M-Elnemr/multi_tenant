@@ -1,12 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:platform_core/platform_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'common.dart';
+import 'offline_ops.dart';
 import 'shell.dart';
+import 'site_editor.dart';
 
-const appVersion = '1.1.0';
+const appVersion = '1.2.0';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,6 +26,7 @@ class ProviderApp extends StatelessWidget {
         builder: (context, locale, _) => MaterialApp(
           title: 'Elmanassa Business',
           debugShowCheckedModeBanner: false,
+          navigatorKey: navigatorKey,
           theme: themeFor(null),
           locale: locale,
           localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],
@@ -73,6 +78,7 @@ class _RootState extends State<Root> {
 
   Future<void> _signOut() async {
     await AuthRepository(_api).logout();
+    await OfflineStore.clearAll();
     try { (await SharedPreferences.getInstance()).remove('business.last'); } catch (_) {}
     if (mounted) setState(() => _businesses = null);
   }
@@ -82,7 +88,7 @@ class _RootState extends State<Root> {
     final s = S.of(context);
     Widget body;
     if (!_checked) {
-      body = const Scaffold(key: ValueKey('boot'), body: Center(child: BrandLogo(size: 110)));
+      body = const Scaffold(key: ValueKey('boot'), body: SizedBox.shrink());
     } else if (_businesses == null && _error == null) {
       body = LoginScreen(
         key: const ValueKey('login'),
@@ -104,7 +110,11 @@ class _RootState extends State<Root> {
     } else {
       body = BusinessPicker(key: const ValueKey('picker'), session: _session, businesses: _businesses!, onSignOut: _signOut, onReload: _load);
     }
-    return AnimatedSwitcher(duration: const Duration(milliseconds: 380), switchInCurve: Curves.easeOutCubic, child: body);
+    return SplashGate(
+      ready: _checked,
+      splash: AnimatedSplash(title: 'Elmanassa Business', tagline: s.ar ? 'أدر عيادتك أو متجرك من هاتفك' : 'Run your clinic or shop from your phone'),
+      child: AnimatedSwitcher(duration: const Duration(milliseconds: 380), switchInCurve: Curves.easeOutCubic, child: body),
+    );
   }
 }
 
@@ -148,7 +158,7 @@ class _BusinessPickerState extends State<BusinessPicker> {
 
   @override
   Widget build(BuildContext context) {
-    if (_auto) return const Scaffold(body: Center(child: BrandLogo(size: 110)));
+    if (_auto) return Scaffold(body: Container(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topRight, end: Alignment.bottomLeft, colors: [kBrandBlue, Color.lerp(kBrandBlue, kBrandGreen, 0.6)!, kBrandGreen]))));
     if (_open != null) {
       final b = _open!;
       return BusinessHome(
@@ -278,9 +288,60 @@ class BusinessHome extends StatefulWidget {
   State<BusinessHome> createState() => _BusinessHomeState();
 }
 
-class _BusinessHomeState extends State<BusinessHome> {
-  late final ApiClient _api = ApiClient(baseUrl: widget.business['baseUrl'] as String, session: widget.session);
-  late Future<Map<String, dynamic>> _me = AuthRepository(_api).me();
+class _BusinessHomeState extends State<BusinessHome> with WidgetsBindingObserver {
+  /// Clinics keep a copy of their data on the phone and queue changes made offline; shops use the plain client.
+  late final OfflineStore? _off = widget.business['type'] == 'CLINIC' ? OfflineStore(widget.business['host'] as String) : null;
+  late final ApiClient _api = ApiClient(baseUrl: widget.business['baseUrl'] as String, session: widget.session, maxAttempts: _off == null ? 5 : 3, attemptTimeout: _off == null ? const Duration(seconds: 20) : const Duration(seconds: 12), offline: _off);
+  late Future<Map<String, dynamic>> _me = _loadMe();
+  Timer? _timer;
+  Ctx? _ctx;
+
+  @override
+  void initState() {
+    super.initState();
+    final off = _off;
+    if (off != null) {
+      registerClinicOffline(off);
+      off.refreshCounts().then((_) => off.flush());
+      off.synced.addListener(() { final c = _ctx; if (c != null) unawaited(warmUp(c, force: true)); });
+      WidgetsBinding.instance.addObserver(this);
+      _timer = Timer.periodic(const Duration(seconds: 45), (_) { _tick(); });
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    _off?.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) { if (state == AppLifecycleState.resumed) _tick(); }
+
+  Future<void> _tick() async {
+    final off = _off, ctx = _ctx;
+    if (off == null) return;
+    if (off.pending.value > 0) await off.flush();
+    if (ctx != null) unawaited(warmUp(ctx));
+  }
+
+  /// The permissions come from the phone's copy at once (the fresh answer replaces it for the next open), so the app opens even without internet.
+  Future<Map<String, dynamic>> _loadMe() async {
+    final key = 'me.${widget.business['id']}';
+    final cached = await ListCache.read<Map<String, dynamic>>(key);
+    Future<Map<String, dynamic>> fresh() async {
+      final r = await AuthRepository(_api).me();
+      await ListCache.write(key, r);
+      return r;
+    }
+    if (cached != null) {
+      unawaited(fresh().then((_) {}, onError: (_) {}));
+      return cached;
+    }
+    return fresh();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -298,7 +359,7 @@ class _BusinessHomeState extends State<BusinessHome> {
             IconButton(
               tooltip: s.settings,
               icon: const Icon(Icons.tune_rounded),
-              onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => SettingsPage(businessName: b['name'] as String, canSwitch: widget.canSwitch, onSwitch: () { Navigator.of(context).pop(); widget.onSwitch(); }, onSignOut: () { Navigator.of(context).pop(); widget.onSignOut(); }))),
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => SettingsPage(ctx: _ctx, businessName: b['name'] as String, canSwitch: widget.canSwitch, onSwitch: () { Navigator.of(context).pop(); widget.onSwitch(); }, onSignOut: () { Navigator.of(context).pop(); widget.onSignOut(); }))),
             ),
           ],
         ),
@@ -311,12 +372,14 @@ class _BusinessHomeState extends State<BusinessHome> {
                 const Icon(Icons.cloud_off_rounded, size: 46, color: Color(0xFF9AA9BA)),
                 const SizedBox(height: 10),
                 Text(errorText(snap.error!), textAlign: TextAlign.center),
-                TextButton.icon(onPressed: () => setState(() => _me = AuthRepository(_api).me()), icon: const Icon(Icons.refresh_rounded), label: Text(s.retry)),
+                TextButton.icon(onPressed: () => setState(() => _me = _loadMe()), icon: const Icon(Icons.refresh_rounded), label: Text(s.retry)),
               ])));
             }
             final perms = (snap.data!['permissions'] as List).cast<String>();
             final currency = (b['currency'] as String?) ?? 'EGP';
-            return PanelShell(ctx: Ctx(api: _api, currency: currency, perms: perms, host: b['host'] as String, type: b['type'] as String));
+            final ctx = _ctx ??= Ctx(api: _api, currency: currency, perms: perms, host: b['host'] as String, type: b['type'] as String);
+            unawaited(warmUp(ctx));
+            return PanelShell(ctx: ctx);
           },
         ),
       ),
@@ -325,7 +388,8 @@ class _BusinessHomeState extends State<BusinessHome> {
 }
 
 class SettingsPage extends StatelessWidget {
-  const SettingsPage({super.key, required this.businessName, required this.canSwitch, required this.onSwitch, required this.onSignOut});
+  const SettingsPage({super.key, this.ctx, required this.businessName, required this.canSwitch, required this.onSwitch, required this.onSignOut});
+  final Ctx? ctx;
   final String businessName;
   final bool canSwitch;
   final VoidCallback onSwitch;
@@ -338,6 +402,7 @@ class SettingsPage extends StatelessWidget {
       appBar: AppBar(title: Text(s.settings)),
       body: ListView(padding: const EdgeInsets.all(16), children: [
         FadeSlideIn(child: tile(Icons.business_center_rounded, businessName)),
+        if (ctx != null && ctx!.can('settings.manage')) FadeSlideIn(index: 1, child: tile(Icons.auto_awesome_rounded, s.ar ? 'خصّص صفحتي' : 'Customize my page', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => MyPageScreen(ctx: ctx!))), trailing: const Icon(Icons.chevron_right_rounded), color: Theme.of(context).colorScheme.primary)),
         FadeSlideIn(index: 1, child: tile(Icons.translate_rounded, s.language, trailing: const LanguageChip())),
         if (canSwitch) FadeSlideIn(index: 2, child: tile(Icons.swap_horiz_rounded, s.switchBusiness, onTap: onSwitch, trailing: const Icon(Icons.chevron_right_rounded))),
         FadeSlideIn(index: 3, child: tile(Icons.info_outline_rounded, s.version, trailing: const Text(appVersion))),

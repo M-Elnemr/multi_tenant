@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_client.dart';
 import 'auth.dart';
@@ -30,6 +31,22 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _error;
   bool _busy = false;
 
+  String get _idKey => 'login.last.${widget.app ?? 'app'}';
+
+  @override
+  void initState() {
+    super.initState();
+    _restoreId();
+  }
+
+  /// The number/email used last time is filled in again (kept after sign-out on purpose).
+  Future<void> _restoreId() async {
+    try {
+      final v = (await SharedPreferences.getInstance()).getString(_idKey);
+      if (v != null && v.isNotEmpty && _id.text.isEmpty && mounted) setState(() => _id.text = v);
+    } catch (_) {}
+  }
+
   @override
   void dispose() { _id.dispose(); _pw.dispose(); _pin.dispose(); super.dispose(); }
 
@@ -46,6 +63,7 @@ class _LoginScreenState extends State<LoginScreen> {
         _Step.activate => await auth.activate(id, _pin.text.trim(), _pw.text),
         _Step.reset => await auth.resetPassword(id, _pin.text.trim(), _pw.text),
       };
+      try { await (await SharedPreferences.getInstance()).setString(_idKey, id); } catch (_) {}
       widget.onLoggedIn(user);
     } on ApiException catch (e) {
       if (e.code == 'ACTIVATION_REQUIRED' && _step == _Step.login) {

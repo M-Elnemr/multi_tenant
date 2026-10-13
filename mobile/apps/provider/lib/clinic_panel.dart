@@ -90,53 +90,6 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
 
 // ---------------------------------------------------------------- Waiting room
 
-class QueueScreen extends StatelessWidget {
-  const QueueScreen({super.key, required this.ctx});
-  final Ctx ctx;
-
-  Future<void> _act(BuildContext c, String id, String action, Future<void> Function() reload) async {
-    if (await run(c, () => ctx.api.post('clinic/appointments/$id/$action', {}))) await reload();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final s = S.of(context);
-    final blue = Theme.of(context).colorScheme.primary;
-    return Async<Map<String, dynamic>>(
-      load: () async => await ctx.api.get('clinic/queue') as Map<String, dynamic>,
-      builder: (context, q, reload) {
-        final waiting = (q['waiting'] as List).cast<Map<String, dynamic>>();
-        final inProgress = (q['inProgress'] as List).cast<Map<String, dynamic>>();
-        return RefreshIndicator(
-          onRefresh: reload,
-          child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
-            if (inProgress.isNotEmpty) Padding(padding: const EdgeInsets.only(bottom: 6), child: Text(s.ar ? 'مع الطبيب الآن' : 'With the doctor now', style: const TextStyle(fontWeight: FontWeight.w900))),
-            for (final e in inProgress) QueueCard(
-              color: blue.withValues(alpha: 0.08),
-              leading: Icon(Icons.medical_services_rounded, color: blue),
-              title: '${e['patientName']}',
-              subtitle: dotted(['#${e['queueNumber']}', e['serviceName'], visitTypeLabel(e['visitType'], s.ar)]),
-              actions: [OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)), onPressed: () => _act(context, e['id'] as String, 'complete', reload), child: Text(s.ar ? 'إنهاء' : 'Done'))],
-            ),
-            Padding(padding: const EdgeInsets.only(top: 10, bottom: 6), child: Text(s.waitingRoom, style: const TextStyle(fontWeight: FontWeight.w900))),
-            for (var i = 0; i < waiting.length; i++)
-              FadeSlideIn(index: i, child: QueueCard(
-                leading: CircleAvatar(backgroundColor: blue.withValues(alpha: 0.12), foregroundColor: blue, child: Text('${waiting[i]['queueNumber']}', style: const TextStyle(fontWeight: FontWeight.w900))),
-                title: '${waiting[i]['patientName']}',
-                subtitle: dotted([waiting[i]['serviceName'], visitTypeLabel(waiting[i]['visitType'], s.ar), '${waiting[i]['waitedMinutes']} min']),
-                actions: [
-                  OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)), onPressed: () => _act(context, waiting[i]['id'] as String, 'call', reload), child: Text(s.call)),
-                  if (ctx.can('medical_note.create')) FilledButton(style: FilledButton.styleFrom(minimumSize: const Size(0, 40)), onPressed: () => _act(context, waiting[i]['id'] as String, 'start', reload), child: Text(s.startVisit)),
-                ],
-              )),
-            if (waiting.isEmpty && inProgress.isEmpty) emptyState(s.empty),
-          ]),
-        );
-      },
-    );
-  }
-}
-
 // ---------------------------------------------------------------- Patients
 
 class PatientsScreen extends StatefulWidget {
@@ -204,6 +157,12 @@ class _PatientDetailState extends State<PatientDetail> {
     return Scaffold(
       appBar: AppBar(title: Text(s.ar ? 'بيانات المريض' : 'Patient')),
       body: Async<Map<String, dynamic>>(
+        peek: () async {
+          final p = await ctx.api.peek('clinic/patients/${widget.id}');
+          if (p is! Map) return null;
+          final tl = await ctx.api.peek('clinic/patients/${widget.id}/timeline');
+          return {'p': Map<String, dynamic>.from(p), 'tl': tl is Map ? Map<String, dynamic>.from(tl) : null};
+        },
         load: () async {
           final p = await ctx.api.get('clinic/patients/${widget.id}') as Map<String, dynamic>;
           Map<String, dynamic>? tl;

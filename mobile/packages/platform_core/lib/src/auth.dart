@@ -18,7 +18,10 @@ class Session {
   String get _e => 'expires:$host';
 
   Future<String?> accessToken() async => _s.read(key: _a);
-  Future<bool> get loggedIn async => (await _s.read(key: _r)) != null;
+  /// A keystore that cannot be read right now counts as "still signed in" (the next request decides), never as signed out.
+  Future<bool> get loggedIn async {
+    try { return (await _s.read(key: _r)) != null; } catch (_) { return true; }
+  }
 
   Future<void> save(Map<String, dynamic> tokens) async {
     await _s.write(key: _a, value: tokens['accessToken'] as String);
@@ -32,24 +35,30 @@ class Session {
     await _s.delete(key: _e);
   }
 
-  /// Rotates the refresh token. Returns false (and clears the session) if the server rejects it.
-  Future<bool> refresh(ApiClient api) async {
-    final refresh = await _s.read(key: _r);
-    if (refresh == null) return false;
+  /// Rotates the refresh token. Only a real rejection by the server (the token is unknown/revoked) ends the login; an unreachable server
+  /// (no signal, timeout, restart) leaves the saved login untouched so the user is never thrown out because of a bad connection.
+  Future<RefreshResult> refresh(ApiClient api) async {
+    String? refresh;
+    try { refresh = await _s.read(key: _r); } catch (_) { return RefreshResult.unreachable; }
+    if (refresh == null) return RefreshResult.rejected;
     try {
       final caller = refreshBase == null || refreshBase == api.baseUrl ? api : ApiClient(baseUrl: refreshBase!, session: this);
       final r = await caller.post('auth/refresh', {'refreshToken': refresh}) as Map<String, dynamic>;
       await save(r);
-      return true;
+      return RefreshResult.ok;
     } on ApiException catch (e) {
-      // only a real rejection ends the login; a dropped connection must never sign the user out
-      if (e.status == 400 || e.status == 401 || e.status == 403) await clear();
-      return false;
+      if (e.status == 400 || e.status == 401) {
+        await clear();
+        return RefreshResult.rejected;
+      }
+      return RefreshResult.unreachable;
     } catch (_) {
-      return false;
+      return RefreshResult.unreachable;
     }
   }
 }
+
+enum RefreshResult { ok, rejected, unreachable }
 
 class AuthRepository {
   AuthRepository(this.api);

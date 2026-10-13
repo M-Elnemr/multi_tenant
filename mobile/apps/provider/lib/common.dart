@@ -16,6 +16,9 @@ class Ctx {
   bool canAny(List<String> ps) => ps.any(perms.contains);
 }
 
+/// Lets screens deep in the panel open full pages without passing a context around.
+final navigatorKey = GlobalKey<NavigatorState>();
+
 Future<void> launch(String url) async {
   try { await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication); } catch (_) {}
 }
@@ -116,7 +119,19 @@ class PagedListState extends State<PagedList> {
   void initState() {
     super.initState();
     _scroll.addListener(() { if (_scroll.position.pixels > _scroll.position.maxScrollExtent - 300 && _hasNext && !_more && !_loading) _loadMore(); });
-    reload();
+    _first();
+  }
+
+  /// The phone's copy of the first page shows at once; the fresh answer replaces it.
+  Future<void> _first() async {
+    try {
+      final c = await widget.api.peek(widget.path, query: _q(1));
+      final list = c is Map ? c['data'] : c;
+      if (list is List && mounted && _items.isEmpty) {
+        setState(() { _items = list.map((e) => Map<String, dynamic>.from(e as Map)).toList(); _hasNext = c is Map && (c['meta'] as Map?)?['hasNext'] == true; _loading = false; });
+      }
+    } catch (_) {}
+    await reload();
   }
 
   @override
@@ -214,11 +229,12 @@ Widget kv(String k, String v, {bool ltr = false}) => Padding(
 
 /// A queue entry: avatar + full-width name/details on top, the action buttons below (side by side, sharing the width) so nothing squeezes the name.
 class QueueCard extends StatelessWidget {
-  const QueueCard({super.key, required this.leading, required this.title, required this.subtitle, this.actions = const [], this.color});
+  const QueueCard({super.key, required this.leading, required this.title, required this.subtitle, this.actions = const [], this.color, this.trailing});
   final Widget leading;
   final String title, subtitle;
   final List<Widget> actions;
   final Color? color;
+  final Widget? trailing;
   @override
   Widget build(BuildContext context) => Card(
         color: color,
@@ -233,6 +249,7 @@ class QueueCard extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(subtitle, style: const TextStyle(color: Color(0xFF6B7C8D))),
               ])),
+              if (trailing != null) trailing!,
             ]),
             if (actions.isNotEmpty) ...[
               const SizedBox(height: 10),

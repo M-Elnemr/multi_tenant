@@ -1,7 +1,7 @@
 name: elmanassa
-description: Elmanassa app - patients and shop clients (same API as the website).
+description: Tabib - the patient app (queue, medical record, tests and prescriptions).
 publish_to: none
-version: 1.1.0+7
+version: 1.2.0+8
 
 environment:
   sdk: ">=3.4.0 <4.0.0"

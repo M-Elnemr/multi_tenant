@@ -1,5 +1,8 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// The shop side of the app is kept in the code but hidden: Tabib is for patients only. Build with --dart-define=SHOP_ENABLED=true to bring it back.
+const kShopEnabled = bool.fromEnvironment('SHOP_ENABLED', defaultValue: false);
+
 /// Which side of the app the user chose ("clinics" or "shop"). Remembered, so reopening the app skips the choice screen until they switch
 /// or log out.
 class AppMode {

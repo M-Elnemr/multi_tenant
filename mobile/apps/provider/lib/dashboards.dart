@@ -63,7 +63,8 @@ Widget _title(BuildContext context, String t) => Padding(padding: const EdgeInse
 Widget _empty(String t) => Padding(padding: const EdgeInsets.all(28), child: Center(child: Column(children: [const Icon(Icons.inbox_outlined, size: 40, color: Color(0xFF9AA9BA)), const SizedBox(height: 8), Text(t, style: const TextStyle(color: Color(0xFF6B7C8D)))])));
 
 class StoreDashboard extends StatelessWidget {
-  const StoreDashboard({super.key, required this.api, required this.currency, required this.perms});
+  const StoreDashboard({super.key, required this.api, required this.currency, required this.perms, this.onCustomize});
+  final VoidCallback? onCustomize;
   final ApiClient api;
   final String currency;
   final List<String> perms;
@@ -85,6 +86,7 @@ class StoreDashboard extends StatelessWidget {
           child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
             if (sum != null) ...[
               FadeSlideIn(child: _Hero(title: s.ar ? 'مبيعات اليوم' : 'Sales today', value: (sum['salesTodayMinor'] as num), format: (v) => s.money(v, currency), chips: [(s.ar ? 'طلبات اليوم' : 'Orders today', sum['ordersToday'] as num), (s.ar ? 'مخزون منخفض' : 'Low stock', sum['lowStockCount'] as num)])),
+              if (onCustomize != null) FadeSlideIn(index: 1, child: _CustomizeCard(onTap: onCustomize!)),
               const SizedBox(height: 12),
               _grid([
                 _StatTile(s.ar ? 'مبيعات الشهر' : 'Sales this month', 0, Icons.bar_chart_rounded, blue, text: s.money(sum['salesThisMonthMinor'] as num, currency)),
@@ -108,7 +110,8 @@ class StoreDashboard extends StatelessWidget {
 }
 
 class ClinicDashboard extends StatelessWidget {
-  const ClinicDashboard({super.key, required this.api, required this.perms});
+  const ClinicDashboard({super.key, required this.api, required this.perms, this.onCustomize});
+  final VoidCallback? onCustomize;
   final ApiClient api;
   final List<String> perms;
 
@@ -137,6 +140,7 @@ class ClinicDashboard extends StatelessWidget {
           onRefresh: reload,
           child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
             FadeSlideIn(child: _Hero(title: s.ar ? 'مواعيد اليوم' : "Today's appointments", value: today.length, chips: [(s.ar ? 'في الانتظار' : 'Waiting', (d['checkedIn'] as num?) ?? 0), (s.ar ? 'بانتظار الموافقة' : 'Awaiting approval', (d['pendingRequests'] as num?) ?? 0)])),
+              if (onCustomize != null) FadeSlideIn(index: 1, child: _CustomizeCard(onTap: onCustomize!)),
             _title(context, s.waitingRoom),
             for (final e in inProgress)
               FadeSlideIn(child: Card(color: blue.withValues(alpha: 0.08), child: ListTile(leading: Icon(Icons.medical_services_rounded, color: blue), title: Text('${e['patientName']}', style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text('#${e['queueNumber']} · ${e['serviceName']}')))),
@@ -170,6 +174,36 @@ class ClinicDashboard extends StatelessWidget {
           ]),
         );
       },
+    );
+  }
+}
+
+/// One tap from the overview to the "My page" editor.
+class _CustomizeCard extends StatelessWidget {
+  const _CustomizeCard({required this.onTap});
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    final c = Theme.of(context).colorScheme.primary;
+    return Card(
+      color: c.withValues(alpha: 0.08),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(children: [
+            Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(14)), child: const Icon(Icons.auto_awesome_rounded, color: Colors.white)),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(s.ar ? 'خصّص صفحتي' : 'Customize my page', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+              Text(s.ar ? 'شاهد موقعك وعدّل أي قسم فورًا' : 'See your site and change any section instantly', style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 12.5)),
+            ])),
+            Icon(Icons.chevron_right_rounded, color: c),
+          ]),
+        ),
+      ),
     );
   }
 }
