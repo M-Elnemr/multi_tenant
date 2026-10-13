@@ -28,8 +28,66 @@ Raise `version:` in `pubspec.yaml` (the number after `+`) for every upload.
 6. Screenshots (phone, min 2) from a real device, then promote to production.
 
 ## Listing text
-**Tabib (ar)** — Title: طبيب · Short: احجز عند طبيبك وتابع دورك وسجلك الطبي والروشتات من تطبيق واحد.
-**Tabib (en)** — Title: Tabib · Short: Book your doctor, follow your place in the queue and keep your records and prescriptions in one app.
-(The shop side of the app is kept in the code, hidden with `SHOP_ENABLED=false`; build with `--dart-define=SHOP_ENABLED=true` to bring it back.)
+**Tabib (ar)** — Title: طبيب · Short: تابع دورك في العيادة وسجلك الطبي وروشتاتك وتحاليلك من تطبيق واحد.
+**Tabib (en)** — Title: Tabib · Short: Follow your place in the clinic queue and keep your visits, prescriptions and test results in one app.
+
+**Tabib full description (ar)** — every line below is a feature the app has today (no shopping, no online booking, no online payment):
+```
+طبيب هو تطبيق المريض لمتابعة زيارتك للعيادة وحفظ ملفك الطبي في مكان واحد، بدون انتظار مجهول ولا أوراق ضائعة.
+
+⏱️ تابع دورك في العيادة
+• شاهد دورك في الانتظار لحظة بلحظة: رقمك وعدد المرضى الذين قبلك.
+• يصلك إشعار على هاتفك عندما يحين دورك أو عندما تتقدم في الدور.
+• تابع دور أطفالك المسجّلين لدى العيادة من نفس الحساب.
+• اعرف عدد المنتظرين الآن وحالة العيادة (مفتوحة أو مغلقة مؤقتًا).
+
+📋 ملفك الطبي في مكان واحد
+• راجع زياراتك السابقة وتواريخها والطبيب والخدمة.
+• اطّلع على الروشتات والملاحظات الطبية التي أتاحها لك الطبيب.
+• راجع طلبات التحاليل والأشعة ونتائجها، ورقم الحالة: قيد مراجعة الطبيب أو تمت المراجعة.
+• ارفع نتيجة التحليل المطلوبة بالكاميرا أو من المعرض لتصل إلى طبيبك.
+
+🏥 كل ما تحتاجه عن العيادة
+• العنوان والاتجاهات على الخريطة، واتصال مباشر أو رسالة واتساب.
+• مواعيد العمل، والخدمات وأسعارها، والأطباء وخبراتهم وسعر الكشف.
+• شركات التأمين المقبولة والأسئلة الشائعة.
+
+🪪 رقم المريض ورمز QR
+• احصل على رقم مريض خاص بك ورمز QR، لتضيفك أي عيادة تتعامل مع المنصة بسرعة دون تكرار بياناتك.
+• يمكنك أيضًا تسجيل الدخول برقم المريض أو برقم الهاتف.
+
+⚙️ حسابك
+• تغيير كلمة المرور في أي وقت.
+• التطبيق بالعربية والإنجليزية.
+• يمكنك مغادرة العيادة من حسابك متى شئت.
+
+ملاحظة: حساب المريض تنشئه العيادة لك عند أول زيارة، وتعطيك رقم هاتفك وكلمة مرور مؤقتة لتبدأ.
+
+طبيب — دورك، وملفك، وروشتاتك في جيبك.
+```
+**Tabib full description (en)**
+```
+Tabib is the patient app for following your clinic visit and keeping your medical file in one place.
+
+Follow your place in the queue
+- See your number and how many patients are ahead of you, live.
+- Get a notification when it is your turn or when you move up.
+- Follow your children's turn from the same account.
+- See how many people are waiting and whether the clinic is open.
+
+Your medical file
+- Review your past visits with the doctor and service.
+- See the prescriptions and notes your doctor shared with you.
+- Review requested lab and radiology tests and their status, and upload a requested result with your camera or gallery.
+
+About the clinic
+- Address, directions, one-tap call or WhatsApp, opening hours, services and prices, doctors, accepted insurance and FAQs.
+
+Your patient ID and QR code
+- A personal patient ID and QR code so any clinic on the platform can add you quickly. Sign in with your ID or phone number.
+
+Account: change your password, switch between Arabic and English, leave a clinic anytime.
+Note: your clinic creates your account at your first visit and gives you a temporary password.
+```
 **Business (ar)** — Title: المنصّة للأعمال · Short: تابع طلبات متجرك ومواعيد عيادتك وإحصاءاتك من هاتفك.
 **Business (en)** — Title: Elmanassa Business · Short: Follow your shop orders, clinic queue and daily stats from your phone.
