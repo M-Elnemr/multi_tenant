@@ -114,7 +114,7 @@ class _PatientsScreenState extends State<PatientsScreen> {
         child: ListTile(
           leading: CircleAvatar(backgroundColor: Theme.of(c).colorScheme.primary.withValues(alpha: child ? 0.08 : 0.14), child: Icon(child ? Icons.child_care_rounded : Icons.person_rounded, color: Theme.of(c).colorScheme.primary)),
           title: Text(name, style: const TextStyle(fontWeight: FontWeight.w800)),
-          subtitle: Text([p['patientCode'], if (p['publicId'] != null) '#${p['publicId']}', age, if (child) (s.ar ? 'تابع لـ $parent' : 'child of $parent'), if (!child && (p['phone'] as String?)?.isNotEmpty == true) '\u2066${p['phone']}\u2069'].where((e) => e != null && '$e'.isNotEmpty).join(' · ')),
+          subtitle: Text([p['patientCode'], age, if (child) (s.ar ? 'تابع لـ $parent' : 'child of $parent'), if (!child && (p['phone'] as String?)?.isNotEmpty == true) '\u2066${p['phone']}\u2069'].where((e) => e != null && '$e'.isNotEmpty).join(' · ')),
           trailing: const Icon(Icons.chevron_right_rounded),
           onTap: () => Navigator.of(c).push(MaterialPageRoute(builder: (_) => PatientDetail(ctx: ctx, id: p['id'] as String))),
         ),
@@ -183,8 +183,7 @@ class _PatientDetailState extends State<PatientDetail> {
               Text('${p['firstName']} ${p['lastName'] ?? ''}'.trim(), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
               if (guardian != null) Padding(padding: const EdgeInsets.only(top: 4), child: Text(s.ar ? 'تابع لـ $guardian' : 'Dependent of $guardian', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w700))),
               const SizedBox(height: 10),
-              kv(s.ar ? 'الكود' : 'Code', '${p['patientCode']}', ltr: true),
-              if (p['publicId'] != null) kv(s.ar ? 'رقم المريض' : 'Patient ID', '${p['publicId']}', ltr: true),
+              kv(s.ar ? 'رقم المريض' : 'Patient ID', '${p['patientCode']}', ltr: true),
               kv(s.phone, '${p['phone'] ?? ''}', ltr: true),
               kv(s.ar ? 'السن' : 'Age', p['ageYears'] == null ? '' : '${p['ageYears']}'),
               kv(s.ar ? 'النوع' : 'Sex', p['sex'] == 'F' ? (s.ar ? 'أنثى' : 'Female') : p['sex'] == 'M' ? (s.ar ? 'ذكر' : 'Male') : ''),

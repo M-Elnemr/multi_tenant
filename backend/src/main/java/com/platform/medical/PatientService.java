@@ -103,11 +103,12 @@ public class PatientService {
 
         UUID id = null;
         for (int i = 0; i < 5 && id == null; i++) {
+            String code = codeFor(tenantId, accountId, r.guardianPatientId(), i);
             try {
                 id = jdbc.sql("""
                         INSERT INTO medical.patients (tenant_id, user_id, patient_code, first_name, last_name, date_of_birth, dob_estimated, sex, phone, address_text, blood_type, notes_internal, created_by, guardian_patient_id)
                         VALUES (:t, :u, :c, :fn, :ln, :dob, :est, :sex, :ph, :ad, :bt, :ni, :cb, :gp) RETURNING id
-                        """).param("t", tenantId).param("u", accountId).param("c", newCode()).param("fn", r.firstName().trim()).param("ln", r.lastName() == null ? "" : r.lastName().trim())
+                        """).param("t", tenantId).param("u", accountId).param("c", code).param("fn", r.firstName().trim()).param("ln", r.lastName() == null ? "" : r.lastName().trim())
                         .param("dob", dob[0] == null ? null : java.sql.Date.valueOf(dob[0])).param("est", dob[1] != null).param("sex", r.sex()).param("ph", phone)
                         .param("ad", r.addressText()).param("bt", r.bloodType()).param("ni", r.notesInternal())
                         .param("cb", actor).param("gp", r.guardianPatientId()).query(UUID.class).single();
@@ -168,6 +169,22 @@ public class PatientService {
     }
 
     private void guard(UUID tenantId) { throttleRef.check("patient-lookup|" + tenantId, 120, java.time.Duration.ofMinutes(1)); }
+
+    /** The code shown for a patient in this clinic: their 6-digit platform number; a child gets the parent's number plus -1, -2...; a record with no account keeps a random PAT code. */
+    private String codeFor(UUID tenantId, UUID accountId, UUID guardianPatientId, int attempt) {
+        if (guardianPatientId != null) {
+            String parent = jdbc.sql("SELECT patient_code FROM medical.patients WHERE id = :p AND tenant_id = :t").param("p", guardianPatientId).param("t", tenantId).query(String.class).optional().orElse(null);
+            if (parent != null) {
+                long n = jdbc.sql("SELECT count(*) FROM medical.patients WHERE guardian_patient_id = :p AND tenant_id = :t").param("p", guardianPatientId).param("t", tenantId).query(Long.class).single();
+                return parent + "-" + (n + 1 + attempt);
+            }
+        }
+        if (accountId != null && attempt == 0) {
+            var pid = jdbc.sql("SELECT public_id FROM medical.patient_accounts WHERE id = :u").param("u", accountId).query(Integer.class).optional();
+            if (pid.isPresent()) return String.valueOf(pid.get());
+        }
+        return newCode();
+    }
 
     /** The parent got an account again (re-added after leaving): reconnect their children so they are not orphaned. */
     private void restoreDependents(UUID tenantId, UUID parentPatientId, UUID accountId) {

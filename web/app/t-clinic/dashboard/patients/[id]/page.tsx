@@ -105,7 +105,6 @@ export default function PatientPage({ params }: { params: Promise<{ id: string }
           {([
             [t("patients.name"), `${d.firstName} ${d.lastName}`.trim()],
             [t("patients.code"), d.patientCode],
-            ...(d.publicId ? [[t("patients.idLabel"), String(d.publicId)] as const] : []),
             [t("patients.mobile"), d.phone ?? "-"],
             [t("patients.age"), ageText(d.ageYears, d.ageMonths, locale)],
             [t("patients.sex"), d.sex === "F" ? t("patients.female") : d.sex === "M" ? t("patients.male") : "-"],

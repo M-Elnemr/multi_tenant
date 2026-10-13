@@ -61,7 +61,7 @@ class MedicalIntegrationTest extends IntegrationTestBase {
     String[] patientWithPortal(Clinic c, String first) throws Exception {
         String phone = nextPhone();
         String res = body(onHost(c.host(), c.owner(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"%s\",\"lastName\":\"Test\",\"phone\":\"%s\",\"initialPassword\":\"TempPass123\"}".formatted(first, phone))
-                .andExpect(status().isCreated()).andExpect(jsonPath("$.portalAccess").value("PASSWORD_SET")).andExpect(jsonPath("$.patientCode").value(org.hamcrest.Matchers.matchesPattern("PAT-[A-Z0-9]{4}-[A-Z0-9]{4}"))));
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.portalAccess").value("PASSWORD_SET")).andExpect(jsonPath("$.patientCode").value(org.hamcrest.Matchers.matchesPattern("[0-9]{6}"))));
         String temp = read(body(onHost(c.host(), null, "POST", "/api/v1/auth/login", "{\"identifier\":\"%s\",\"password\":\"TempPass123\"}".formatted(phone)).andExpect(status().isOk()).andExpect(jsonPath("$.user.roles[0]").value("PATIENT"))), "$.accessToken");
         String token = read(body(onHost(c.host(), temp, "POST", "/api/v1/auth/change-password", "{\"currentPassword\":\"TempPass123\",\"newPassword\":\"PatientPass1\"}").andExpect(status().isOk())), "$.accessToken");
         return new String[] {read(res, "$.id"), read(res, "$.patientCode"), token, phone};
