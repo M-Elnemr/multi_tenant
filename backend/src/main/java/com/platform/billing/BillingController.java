@@ -21,8 +21,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/billing")
 public class BillingController {
     private final BillingService billing;
+    private final PayRequestService payRequests;
 
-    public BillingController(BillingService billing) { this.billing = billing; }
+    public BillingController(BillingService billing, PayRequestService payRequests) { this.billing = billing; this.payRequests = payRequests; }
+
+    public record PayRequest(@NotBlank String planCode, String phone, String note) {}
 
     public record ChangePlanRequest(@NotBlank String planCode, String provider) {}
 
@@ -36,6 +39,23 @@ public class BillingController {
     @GetMapping("/subscription")
     @PreAuthorize("hasAuthority('billing.read')")
     public Map<String, Object> subscription() { return billing.subscription(TenantContext.require().id()); }
+
+    /** For the "free plan ends / renew" bar and the disabled screen; open to every signed-in member (also when the business is suspended). */
+    @GetMapping("/status")
+    @PreAuthorize("isAuthenticated()")
+    public Map<String, Object> status() { return billing.status(TenantContext.require().id()); }
+
+    /** "Proceed to pay": online payment is not live, customer service contacts the owner. */
+    @PostMapping("/pay-requests")
+    @PreAuthorize("hasAuthority('billing.manage')")
+    public Map<String, Object> payRequest(@Valid @RequestBody PayRequest r, Authentication a) {
+        var t = TenantContext.require();
+        return payRequests.create(t.id(), t.type(), (UUID) a.getPrincipal(), r.planCode(), r.phone(), r.note());
+    }
+
+    @GetMapping("/pay-requests")
+    @PreAuthorize("hasAuthority('billing.read')")
+    public List<Map<String, Object>> payRequests() { return payRequests.forTenant(TenantContext.require().id()); }
 
     @GetMapping("/invoices")
     @PreAuthorize("hasAuthority('billing.read')")

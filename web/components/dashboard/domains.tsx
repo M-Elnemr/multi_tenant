@@ -61,7 +61,7 @@ export default function DomainsPage() {
         <h2 className="mb-3 font-medium">{t("domains.add")}</h2>
         <form onSubmit={(e) => { e.preventDefault(); void add.run(); }} className="space-y-3">
           <Field label={t("domains.host")} hint={t("domains.hostHint")}><Input value={host} onChange={(e) => setHost(e.target.value)} placeholder="www.my-brand.com" dir="ltr" required /></Field>
-          {notAllowed ? <Alert tone="amber">{t("domains.upgrade")} <Link href="/dashboard/billing" className="font-medium underline">{t("nav.billing")}</Link></Alert> : <ErrorText error={add.error} />}
+          {notAllowed ? <Alert tone="amber">{t("domains.upgrade")} <Link href="/dashboard/billing/pay?plan=STORE_PRO" className="font-medium underline">{t("sub.action")}</Link></Alert> : <ErrorText error={add.error} />}
           <Button type="submit" loading={add.loading}>{t("domains.addBtn")}</Button>
         </form>
         <ErrorText error={verify.error ?? makePrimary.error ?? remove.error} />

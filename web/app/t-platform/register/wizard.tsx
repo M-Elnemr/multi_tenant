@@ -16,6 +16,9 @@ function slugify(s: string) {
   return s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
 }
 
+/** A mobile number is required to register: Egyptian 01x xxxxxxxx, or an international +number. */
+const validMobile = (p: string) => /^(\+\d{8,15}|01[0125]\d{8}|1[0125]\d{8})$/.test(p.trim());
+
 /** Create a store or a clinic in one screen. The site is live on its own subdomain the moment this finishes. */
 export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string; initialType: Type | null }) {
   const t = useT();
@@ -123,7 +126,7 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
     );
   }
 
-  const valid = name.trim().length >= 2 && avail === "ok" && owner.name.trim() && owner.phone.trim() && owner.password.length >= 8 && categoriesValid(cats, otherCat);
+  const valid = name.trim().length >= 2 && avail === "ok" && owner.name.trim() && validMobile(owner.phone) && owner.password.length >= 8 && categoriesValid(cats, otherCat);
   return (
     <div className="mx-auto max-w-xl animate-fade-up px-4 py-12">
       <button onClick={() => { setType(null); setCats([]); setOtherCat(""); }} className="mb-4 inline-flex items-center gap-1 text-sm text-slate-500 transition hover:text-brand"><Icon name="arrow" className="h-4 w-4 rotate-180 rtl:rotate-0" />{t("common.back")}</button>
@@ -148,7 +151,7 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
         </Field>
         <hr className="border-slate-100" />
         <Field label={t("register.ownerName")}><Input value={owner.name} onChange={(e) => setOwner({ ...owner, name: e.target.value })} required maxLength={100} autoComplete="name" /></Field>
-        <Field label={t("register.phone")} hint={t("register.phoneHint")}><PhoneInput value={owner.phone} onValue={(phone) => setOwner({ ...owner, phone })} required /></Field>
+        <Field label={t("register.phone")} hint={t("register.phoneHint")} error={owner.phone && !validMobile(owner.phone) ? t("register.phoneInvalid") : undefined}><PhoneInput value={owner.phone} onValue={(phone) => setOwner({ ...owner, phone })} required /></Field>
         <Field label={t("register.email")} hint={t("register.emailHint")}><EmailInput value={owner.email} onValue={(email) => setOwner({ ...owner, email })} /></Field>
         <Field label={t("login.password")} hint={t("login.passwordRule")}><Input type="password" value={owner.password} onChange={(e) => setOwner({ ...owner, password: e.target.value })} required minLength={8} autoComplete="new-password" /></Field>
         <ErrorText error={create.error} />

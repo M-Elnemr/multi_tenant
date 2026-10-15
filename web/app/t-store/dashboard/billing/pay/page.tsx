@@ -1,5 +1,5 @@
-import MockPayPage from "@/components/dashboard/mock-pay";
+import PayScreen from "@/components/dashboard/pay-screen";
 
 export default function Pay() {
-  return <MockPayPage back="/dashboard/billing" />;
+  return <PayScreen />;
 }

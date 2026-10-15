@@ -21,12 +21,13 @@ public class TenantDirectory {
 
     private final LoadingCache<String, Optional<TenantContext.Current>> cache;
 
-    public TenantDirectory(TenantDomainRepository domains, TenantRepository tenants) {
+    public TenantDirectory(TenantDomainRepository domains, TenantRepository tenants, com.platform.billing.EntitlementService entitlements) {
         this.cache = Caffeine.newBuilder().maximumSize(50_000).expireAfter(new Expiry<String, Optional<TenantContext.Current>>() {
             @Override public long expireAfterCreate(String k, Optional<TenantContext.Current> v, long now) { return (v.isPresent() ? KNOWN : UNKNOWN).toNanos(); }
             @Override public long expireAfterUpdate(String k, Optional<TenantContext.Current> v, long now, long cur) { return cur; }
             @Override public long expireAfterRead(String k, Optional<TenantContext.Current> v, long now, long cur) { return cur; }
-        }).build(host -> domains.findByHost(host).filter(TenantDomain::isVerified).flatMap(d -> tenants.findById(d.getTenantId()))
+        }).build(host -> domains.findByHost(host).filter(TenantDomain::isVerified).flatMap(d -> tenants.findById(d.getTenantId()).filter(t -> d.getKind() != TenantDomain.Kind.CUSTOM
+                        || t.getStatus() == TenantStatus.SUSPENDED || entitlements.hasFeature(t.getId(), "custom_domain")))   // a plan without custom domains serves the platform address only
                 .map(t -> new TenantContext.Current(t.getId(), t.getSlug(), t.getTenantType().name(), t.getStatus().name(), host)));
     }
 

@@ -99,6 +99,7 @@ public class DomainService {
     public TenantDomain verify(UUID tenantId, UUID domainId) {
         TenantDomain d = domains.findByIdAndTenantId(domainId, tenantId)
                 .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Domain not found"));
+        if (d.getKind() == TenantDomain.Kind.CUSTOM) entitlements.requireFeature(tenantId, "custom_domain");
         tryVerify(d);
         return d;
     }
@@ -119,6 +120,7 @@ public class DomainService {
     public TenantDomain makePrimary(UUID tenantId, UUID domainId) {
         TenantDomain target = domains.findByIdAndTenantId(domainId, tenantId)
                 .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Domain not found"));
+        if (target.getKind() == TenantDomain.Kind.CUSTOM) entitlements.requireFeature(tenantId, "custom_domain");
         if (!target.isVerified()) throw BusinessException.badRequest("DOMAIN_NOT_VERIFIED", "Verify the domain first");
         for (TenantDomain other : domains.findByTenantIdOrderByCreatedAtAsc(tenantId)) {
             if (other.isPrimary() && !other.getId().equals(target.getId())) {
@@ -153,7 +155,7 @@ public class DomainService {
         return domains.findByHost(host).filter(TenantDomain::isVerified)
                 .flatMap(d -> tenants.findById(d.getTenantId()))
                 .map(t -> t.getStatus() != TenantStatus.ARCHIVED && t.getStatus() != TenantStatus.CANCELLED)
-                .orElse(false);
+                .orElse(false);   // (a custom domain whose plan lost the feature stops resolving, see TenantDirectory)
     }
 
     /** Background job: poll DNS for custom domains still waiting for verification. */

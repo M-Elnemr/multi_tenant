@@ -211,6 +211,11 @@ String errorText(Object e) {
       'ACCOUNT_DISABLED': ['هذا الحساب غير مفعّل', 'This account is not active'],
       'TOO_MANY_ATTEMPTS': ['محاولات كثيرة، انتظر قليلاً ثم أعد المحاولة', 'Too many attempts, wait a moment and try again'],
       'ACTIVATION_INVALID': ['الكود غير صحيح أو منتهي', 'The code is wrong or expired'],
+      'TENANT_DISABLED': ['هذا النشاط متوقف حاليًا', 'This business is currently disabled'],
+      'TENANT_SUSPENDED': ['هذا النشاط متوقف حاليًا', 'This business is currently disabled'],
+      'PHONE_REQUIRED': ['رقم الموبايل مطلوب ليتواصل معك فريق خدمة العملاء', 'A mobile number is required so customer service can contact you'],
+      'FEATURE_NOT_AVAILABLE': ['باقتك الحالية لا تشمل هذه الميزة. ارفع باقتك من شاشة الدفع', 'Your plan does not include this feature. Upgrade from the pay screen'],
+      'CONFIRMATION_MISMATCH': ['الاسم الذي كتبته غير مطابق', 'The name you typed does not match'],
       'WEAK_PASSWORD': ['كلمة المرور قصيرة (8 أحرف على الأقل)', 'Password too short (8 characters minimum)'],
     }[e.code];
     if (m != null) return ar ? m[0] : m[1];

@@ -17,6 +17,9 @@ public interface FileStorage {
     /** Deleting a missing object is not an error. */
     void delete(Bucket bucket, String key) throws IOException;
 
+    /** Removes every object whose key starts with the prefix (used when a tenant is deleted for good). Missing = nothing to do. */
+    void deletePrefix(Bucket bucket, String prefix) throws IOException;
+
     /** Browser-reachable path of a PUBLIC object (served by the edge proxy straight from the bucket), or null if the backend must stream it. */
     default String publicPath(String key) { return null; }
 }

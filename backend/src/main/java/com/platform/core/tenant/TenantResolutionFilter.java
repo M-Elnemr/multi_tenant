@@ -33,10 +33,10 @@ public class TenantResolutionFilter extends OncePerRequestFilter {
             if (host != null && !props.isPlatformHost(host)) {
                 directory.resolve(host).ifPresent(TenantContext::set);
                 TenantContext.Current c = TenantContext.get();
-                if (c != null && "SUSPENDED".equals(c.status()) && !"GET".equals(req.getMethod())) {
+                if (c != null && "SUSPENDED".equals(c.status()) && !allowedWhileDisabled(req)) {
                     res.setStatus(403);
                     res.setContentType("application/problem+json");
-                    res.getWriter().write("{\"status\":403,\"code\":\"TENANT_SUSPENDED\",\"message\":\"This account is suspended\"}");
+                    res.getWriter().write("{\"status\":403,\"code\":\"TENANT_DISABLED\",\"message\":\"This business is currently disabled\"}");
                     return;
                 }
             }
@@ -44,6 +44,17 @@ public class TenantResolutionFilter extends OncePerRequestFilter {
         } finally {
             TenantContext.clear();
         }
+    }
+
+    /** A disabled business is closed to everyone but its staff: sign in, see the subscription and ask to pay - nothing else. */
+    private static boolean allowedWhileDisabled(HttpServletRequest req) {
+        String path = req.getRequestURI();
+        if (path == null) return false;
+        boolean get = "GET".equals(req.getMethod());
+        if (path.startsWith("/api/v1/auth/") && !path.startsWith("/api/v1/auth/client/")) return true;
+        if (path.equals("/api/v1/billing/status") || path.equals("/api/v1/billing/plans") || path.equals("/api/v1/billing/pay-requests")) return true;
+        if (get && (path.startsWith("/api/v1/tenant/context") || path.startsWith("/api/v1/tenant/resolve") || path.startsWith("/api/v1/tenant/public") || path.startsWith("/api/v1/tenant/branding"))) return true;
+        return get && (path.startsWith("/api/v1/me/") || path.startsWith("/api/v1/notifications"));   // the owner can still read why the business was switched off
     }
 
     public String requestHost(HttpServletRequest req) {

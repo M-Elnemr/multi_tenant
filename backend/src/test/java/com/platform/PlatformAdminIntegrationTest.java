@@ -32,7 +32,7 @@ class PlatformAdminIntegrationTest extends IntegrationTestBase {
 
         onHost("platform.test", admin, "GET", "/api/v1/platform/overview", null).andExpect(status().isOk()).andExpect(jsonPath("$.totalTenants").isNumber());
         String list = onHost("platform.test", admin, "GET", "/api/v1/platform/tenants?type=CLINIC&q=" + clinic.slug(), null).andExpect(status().isOk()).andExpect(jsonPath("$.meta.total").value(1))
-                .andExpect(jsonPath("$.data[0].planCode").value("CLINIC_PRO")).andReturn().getResponse().getContentAsString();
+                .andExpect(jsonPath("$.data[0].planCode").value("CLINIC_FREE")).andReturn().getResponse().getContentAsString();
         String id = JsonPath.read(list, "$.data[0].id");
         String detail = onHost("platform.test", admin, "GET", "/api/v1/platform/tenants/" + id, null).andExpect(status().isOk()).andExpect(jsonPath("$.domains[0].host").value(clinic.host())).andReturn().getResponse().getContentAsString();
         assertThat(detail).doesNotContain("patient");   // control plane exposes metadata only, never clinical content
@@ -41,10 +41,10 @@ class PlatformAdminIntegrationTest extends IntegrationTestBase {
         onHost("platform.test", store.access(), "GET", "/api/v1/platform/tenants", null).andExpect(status().isForbidden());
         onHost("platform.test", null, "GET", "/api/v1/platform/overview", null).andExpect(status().isUnauthorized());
 
-        // suspension blocks the tenant's writes (reads stay) and is audited
+        // suspension closes the whole business (staff can still sign in and pay) and is audited
         onHost("platform.test", admin, "POST", "/api/v1/platform/tenants/" + id + "/status", "{\"status\":\"SUSPENDED\",\"reason\":\"abuse report\"}").andExpect(status().isOk()).andExpect(jsonPath("$.status").value("SUSPENDED"));
-        onHost(clinic.host(), clinic.access(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"X\"}").andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("TENANT_SUSPENDED"));
-        onHost(clinic.host(), null, "GET", "/api/v1/clinic/public/profile", null).andExpect(status().isOk());
+        onHost(clinic.host(), clinic.access(), "POST", "/api/v1/clinic/patients", "{\"firstName\":\"X\"}").andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("TENANT_DISABLED"));
+        onHost(clinic.host(), null, "GET", "/api/v1/clinic/public/profile", null).andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("TENANT_DISABLED"));
         onHost("platform.test", admin, "GET", "/api/v1/platform/audit?action=TENANT_STATUS_CHANGED&tenantId=" + id, null).andExpect(status().isOk()).andExpect(jsonPath("$.meta.total").value(1));
         onHost("platform.test", admin, "POST", "/api/v1/platform/tenants/" + id + "/status", "{\"status\":\"ACTIVE\"}").andExpect(jsonPath("$.status").value("ACTIVE"));
         onHost("platform.test", admin, "POST", "/api/v1/platform/tenants/" + id + "/status", "{\"status\":\"BOGUS\"}").andExpect(status().isBadRequest());

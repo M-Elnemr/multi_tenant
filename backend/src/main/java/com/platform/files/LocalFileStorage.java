@@ -37,4 +37,13 @@ public class LocalFileStorage implements FileStorage {
 
     @Override
     public void delete(Bucket b, String key) throws IOException { Files.deleteIfExists(resolve(b, key)); }
+
+    @Override
+    public void deletePrefix(Bucket b, String prefix) throws IOException {
+        Path dir = resolve(b, prefix);
+        if (!Files.exists(dir)) return;
+        try (var walk = Files.walk(dir)) {
+            for (Path p : (Iterable<Path>) walk.sorted(java.util.Comparator.reverseOrder())::iterator) Files.deleteIfExists(p);
+        }
+    }
 }

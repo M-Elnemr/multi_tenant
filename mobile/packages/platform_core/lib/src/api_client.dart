@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 
@@ -23,6 +24,9 @@ class ApiClient {
   ApiClient({required this.baseUrl, required this.session, http.Client? client, this.maxAttempts = 5, this.attemptTimeout = const Duration(seconds: 20), this.offline}) : _http = client ?? _shared {
     offline?.api = this;
   }
+
+  /// Bumped when any call is answered "this business is disabled" (unpaid subscription); the Business app then shows its pay screen.
+  static final ValueNotifier<int> tenantDisabled = ValueNotifier<int>(0);
 
   /// When set (the Business app's clinic API), reads are saved on the phone and answered from there without internet, and the clinic's
   /// registered changes are queued and sent later.
@@ -188,6 +192,7 @@ class ApiClient {
     final data = text.isEmpty ? null : jsonDecode(text);
     if (res.statusCode >= 400) {
       final m = data is Map ? data : const {};
+      if (m['code'] == 'TENANT_DISABLED') tenantDisabled.value++;
       throw ApiException(res.statusCode, (m['code'] ?? 'ERROR').toString(), (m['message'] ?? res.reasonPhrase ?? 'Error').toString());
     }
     return data;

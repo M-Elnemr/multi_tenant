@@ -79,6 +79,24 @@ public class S3FileStorage implements FileStorage {
         }
     }
 
+    @Override
+    public void deletePrefix(Bucket b, String prefix) throws IOException {
+        try {
+            String token = null;
+            do {
+                var page = s3.listObjectsV2(software.amazon.awssdk.services.s3.model.ListObjectsV2Request.builder().bucket(bucket(b)).prefix(prefix).continuationToken(token).build());
+                var ids = page.contents().stream().map(o -> software.amazon.awssdk.services.s3.model.ObjectIdentifier.builder().key(o.key()).build()).toList();
+                if (!ids.isEmpty()) s3.deleteObjects(software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.builder().bucket(bucket(b))
+                        .delete(software.amazon.awssdk.services.s3.model.Delete.builder().objects(ids).build()).build());
+                token = Boolean.TRUE.equals(page.isTruncated()) ? page.nextContinuationToken() : null;
+            } while (token != null);
+        } catch (S3Exception e) {
+            throw new IOException("Storage delete failed: " + e.awsErrorDetails().errorMessage(), e);
+        } catch (SdkException e) {
+            throw new IOException("Storage unreachable", e);
+        }
+    }
+
     /** The edge proxy maps {publicPrefix}/... to the public bucket, so the browser reads images without touching the app. */
     @Override
     public String publicPath(String key) { return publicPrefix + "/" + key; }

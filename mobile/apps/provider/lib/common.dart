@@ -108,9 +108,9 @@ Future<bool> run(BuildContext c, Future<void> Function() f) async {
 
 Color toneFor(String status) => switch (status) {
       'CONFIRMED' || 'COMPLETED' || 'DELIVERED' || 'ARRIVED' || 'PAID' || 'ACTIVE' || 'APPROVED' || 'PUBLISHED' || 'REVIEWED' || 'DONE' => const Color(0xFF1E9E5A),
-      'PENDING' || 'PENDING_CONFIRMATION' || 'REQUESTED' || 'UNPAID' || 'PREPARING' || 'DRAFT' || 'PATIENT_UPLOADED' || 'UNDER_REVIEW' => const Color(0xFFD98200),
-      'CHECKED_IN' || 'IN_PROGRESS' || 'SHIPPED' || 'PROCESSING' => const Color(0xFF1F6A99),
-      'CANCELLED' || 'REJECTED' || 'NO_SHOW' || 'RETURNED' || 'REFUNDED' || 'HIDDEN' => const Color(0xFFD14343),
+      'PENDING' || 'PENDING_CONFIRMATION' || 'REQUESTED' || 'NEW' || 'UNPAID' || 'PREPARING' || 'DRAFT' || 'PATIENT_UPLOADED' || 'UNDER_REVIEW' => const Color(0xFFD98200),
+      'CHECKED_IN' || 'IN_PROGRESS' || 'SHIPPED' || 'PROCESSING' || 'TRIALING' || 'CONTACTED' => const Color(0xFF1F6A99),
+      'CANCELLED' || 'REJECTED' || 'NO_SHOW' || 'RETURNED' || 'REFUNDED' || 'HIDDEN' || 'SUSPENDED' || 'PAST_DUE' || 'EXPIRED' => const Color(0xFFD14343),
       _ => const Color(0xFF6B7C8D),
     };
 
@@ -121,7 +121,7 @@ class StatusPill extends StatelessWidget {
   static const _ar = {
     'PENDING': 'قيد الانتظار', 'PENDING_CONFIRMATION': 'بانتظار التأكيد', 'REQUESTED': 'جديد', 'CONFIRMED': 'مؤكد', 'CHECKED_IN': 'حضر', 'IN_PROGRESS': 'قيد الكشف', 'COMPLETED': 'مكتمل',
     'CANCELLED': 'ملغي', 'NO_SHOW': 'لم يحضر', 'REJECTED': 'مرفوض', 'PREPARING': 'قيد التجهيز', 'SHIPPED': 'تم الشحن', 'ARRIVED': 'تم التسليم', 'RETURNED': 'مرتجع', 'DELIVERED': 'تم التسليم',
-    'ORDERED': 'مطلوب', 'PATIENT_UPLOADED': 'رفع المريض نتيجة', 'UNDER_REVIEW': 'قيد المراجعة', 'DONE': 'تم', 'REVIEWED': 'تمت المراجعة', 'PAID': 'مدفوع', 'UNPAID': 'غير مدفوع', 'APPROVED': 'مقبول', 'PUBLISHED': 'منشور', 'HIDDEN': 'مخفي', 'ACTIVE': 'نشط', 'DRAFT': 'مسودة', 'REFUNDED': 'مسترد', 'INVITED': 'مدعو',
+    'ORDERED': 'مطلوب', 'PATIENT_UPLOADED': 'رفع المريض نتيجة', 'UNDER_REVIEW': 'قيد المراجعة', 'DONE': 'تم', 'REVIEWED': 'تمت المراجعة', 'PAID': 'مدفوع', 'UNPAID': 'غير مدفوع', 'APPROVED': 'مقبول', 'PUBLISHED': 'منشور', 'HIDDEN': 'مخفي', 'ACTIVE': 'نشط', 'DRAFT': 'مسودة', 'REFUNDED': 'مسترد', 'INVITED': 'مدعو', 'TRIAL': 'تجربة', 'TRIALING': 'تجربة مجانية', 'PAST_DUE': 'بانتظار التجديد', 'SUSPENDED': 'متوقف', 'EXPIRED': 'منتهي', 'NEW': 'جديد', 'CONTACTED': 'تم التواصل',
   };
   @override
   Widget build(BuildContext context) {

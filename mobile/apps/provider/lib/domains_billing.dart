@@ -3,6 +3,7 @@ import 'package:intl/intl.dart' as intl;
 import 'package:platform_core/platform_core.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import 'billing_ui.dart';
 import 'common.dart';
 import 'forms.dart';
 
@@ -109,7 +110,6 @@ class BillingScreen extends StatefulWidget {
 
 class _BillingScreenState extends State<BillingScreen> {
   int _n = 0;
-  bool _busy = false;
   Ctx get ctx => widget.ctx;
 
   Future<dynamic> _load() async {
@@ -121,35 +121,10 @@ class _BillingScreenState extends State<BillingScreen> {
     return r;
   }
 
+  /// Online payment is not live yet: choosing a plan opens the manual pay screen (customer service calls the owner).
   Future<void> _change(Map<String, dynamic> plan) async {
-    final isAr = S.of(context).ar;
-    if (!await confirm(context, isAr ? 'الانتقال إلى باقة ${plan['name']}؟' : 'Switch to the ${plan['name']} plan?')) return;
-    setState(() => _busy = true);
-    try {
-      final r = await ctx.api.post('billing/subscription/change', {'planCode': plan['code']}) as Map<String, dynamic>;
-      if (r['status'] != 'PAID') {
-        if (!mounted) return;
-        await _pay(r, plan);
-      }
-      if (mounted) setState(() => _n++);
-    } catch (e) {
-      if (mounted) toast(context, errorText(e));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  /// A real gateway returns a hosted checkout URL (shown inside the app); the development gateway is confirmed with one tap.
-  Future<void> _pay(Map<String, dynamic> checkout, Map<String, dynamic> plan) async {
-    final isAr = S.of(context).ar;
-    final url = checkout['checkoutUrl'] as String?;
-    if (url != null && url.startsWith('http')) {
-      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => PaymentPage(url: url, title: isAr ? 'الدفع' : 'Payment')));
-      return;
-    }
-    final ok = await confirm(context, isAr ? 'بوابة الدفع التجريبية: تأكيد دفع ${fmtMoney(plan['priceMinor'] as num?)} ${plan['currency']}؟' : 'Test payment gateway: confirm paying ${fmtMoney(plan['priceMinor'] as num?)} ${plan['currency']}?');
-    if (!ok || !mounted) return;
-    await ctx.api.post('dev/mock-pay', {'kind': 'subscription', 'id': checkout['invoiceId'], 'amountMinor': plan['priceMinor']});
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => PayPage(api: ctx.api, plan: '${plan['code']}')));
+    if (mounted) setState(() => _n++);
   }
 
   @override
@@ -161,7 +136,7 @@ class _BillingScreenState extends State<BillingScreen> {
       load: _load,
       builder: (context, data, reload) {
         final sub = data[0] == null ? null : Map<String, dynamic>.from(data[0] as Map);
-        final plans = _maps(data[1]);
+        final plans = _maps(data[1]).where((p) => ((p['priceMinor'] as num?) ?? 0) > 0).toList();
         final invoices = _maps(data[2]);
         final current = sub?['planCode'];
         return RefreshIndicator(
@@ -169,7 +144,7 @@ class _BillingScreenState extends State<BillingScreen> {
           child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 32), children: [
             if (sub != null) Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(isAr ? 'باقتك الحالية' : 'Current plan', style: const TextStyle(color: Color(0xFF6B7C8D))),
-              Row(children: [Expanded(child: Text('${sub['planName']}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 20))), StatusPill('${sub['status']}')]),
+              Row(children: [Expanded(child: Text(planLabel('${sub['planCode']}'), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 20))), StatusPill('${sub['status']}')]),
               const SizedBox(height: 4),
               Text(sub['status'] == 'TRIALING' ? (isAr ? 'تنتهي التجربة في ${_date(sub['currentPeriodEnd'])}' : 'Trial ends ${_date(sub['currentPeriodEnd'])}') : (isAr ? 'يتجدد في ${_date(sub['currentPeriodEnd'])}' : 'Renews ${_date(sub['currentPeriodEnd'])}')),
               if (sub['status'] == 'PAST_DUE') Padding(padding: const EdgeInsets.only(top: 8), child: Text(isAr ? 'هناك دفعة متأخرة. اختر باقة للسداد.' : 'A payment is overdue. Choose a plan to pay.', style: const TextStyle(color: Color(0xFFD98200), fontWeight: FontWeight.w700))),
@@ -182,14 +157,14 @@ class _BillingScreenState extends State<BillingScreen> {
             ]))),
             sectionTitle(isAr ? 'الباقات' : 'Plans'),
             for (final p in plans) Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Text('${p['name']}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
+              Text(planLabel('${p['code']}'), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
               Text('${fmtMoney(p['priceMinor'] as num?)} ${p['currency']} / ${isAr ? 'شهر' : 'month'}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 22)),
               const SizedBox(height: 6),
               for (final e in ((p['features'] as Map?) ?? const {}).entries) Text('${e.value == false ? '✕' : '✓'} ${_feature(e.key, isAr)}${e.value is num ? ': ${e.value}' : ''}', style: TextStyle(color: e.value == false ? const Color(0xFFA0AAB6) : null, decoration: e.value == false ? TextDecoration.lineThrough : null)),
               const SizedBox(height: 10),
               FilledButton(
-                onPressed: !canManage || _busy || (current == p['code'] && sub?['status'] == 'ACTIVE') ? null : () => _change(p),
-                child: _busy ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : Text(current == p['code'] && sub?['status'] == 'ACTIVE' ? (isAr ? 'باقتك الحالية' : 'Current plan') : (isAr ? 'اختيار' : 'Choose')),
+                onPressed: !canManage || (current == p['code'] && sub?['status'] == 'ACTIVE') ? null : () => _change(p),
+                child: Text(current == p['code'] && sub?['status'] == 'ACTIVE' ? (isAr ? 'باقتك الحالية' : 'Current plan') : (isAr ? 'اختيار' : 'Choose')),
               ),
             ]))),
             sectionTitle(isAr ? 'الفواتير' : 'Invoices'),

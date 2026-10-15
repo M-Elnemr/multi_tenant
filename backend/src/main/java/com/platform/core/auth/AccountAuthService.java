@@ -80,6 +80,7 @@ public class AccountAuthService {
         var row = jdbc.sql("SELECT id, password_hash, status FROM medical.patient_accounts WHERE phone = :p").param("p", phone).query().listOfRows().stream().findFirst().orElse(null);
         if (row == null || !encoder.matches(password == null ? "" : password, (String) row.get("password_hash"))) return Optional.empty();
         if (!"ACTIVE".equals(row.get("status"))) throw BusinessException.forbidden("ACCOUNT_DISABLED", "Account is not active");
+        requireOpen(tenant);   // right password, but the clinic is switched off: say so
         UUID id = (UUID) row.get("id");
         Long here = tenant == null
                 ? jdbc.sql("SELECT count(*) FROM medical.patients WHERE user_id = :u AND status = 'ACTIVE'").param("u", id).query(Long.class).single()
@@ -87,6 +88,12 @@ public class AccountAuthService {
         if (here == 0) throw BusinessException.forbidden("NOT_A_MEMBER", "This account has no access here");
         jdbc.sql("UPDATE medical.patient_accounts SET last_login_at = now() WHERE id = :u").param("u", id).update();
         return Optional.of(issue("PATIENT", id, ip, ua));
+    }
+
+    /** A disabled (suspended / cancelled) business is closed to its patients and customers. */
+    private static void requireOpen(TenantContext.Current tenant) {
+        if (tenant != null && ("SUSPENDED".equals(tenant.status()) || "CANCELLED".equals(tenant.status()) || "ARCHIVED".equals(tenant.status())))
+            throw BusinessException.forbidden("TENANT_DISABLED", "This business is currently disabled");
     }
 
     public boolean isPatient(UUID id) { return jdbc.sql("SELECT count(*) FROM medical.patient_accounts WHERE id = :u").param("u", id).query(Long.class).single() > 0; }
@@ -126,6 +133,7 @@ public class AccountAuthService {
 
     @Transactional
     public TokenResponse clientGoogle(String credential, TenantContext.Current tenant, String ip, String ua) {
+        requireOpen(tenant);
         if (tenant != null && !"STORE".equals(tenant.type())) throw BusinessException.notFound("TENANT_NOT_FOUND", "Not available here");   // a shop client signs in on a shop, or once on the platform host for every shop
         throttle.check("google|" + ip, 20, Duration.ofMinutes(5));
         GoogleIdTokenVerifier.GoogleIdentity g = google.verify(credential);

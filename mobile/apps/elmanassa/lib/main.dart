@@ -15,7 +15,7 @@ import 'patient_id.dart';
 import 'push.dart';
 import 'shop/shop.dart';
 
-const appVersion = '1.3.3';
+const appVersion = '1.3.4';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -255,6 +255,9 @@ class _MyClinicsState extends State<MyClinics> {
     });
   }
 
+  /// A clinic whose subscription lapsed is switched off by the platform: patients see it but cannot enter.
+  bool _off(Map<String, dynamic> c) => const {'SUSPENDED', 'CANCELLED', 'ARCHIVED'}.contains(c['status']);
+
   Future<void> _openClinic(Map<String, dynamic> c, Future<void> Function() reload) async {
     try { (await SharedPreferences.getInstance()).setString('clinic.last', c['id'] as String); } catch (_) {}
     if (!mounted) return;
@@ -266,11 +269,12 @@ class _MyClinicsState extends State<MyClinics> {
   Future<void> _maybeAutoOpen(List<Map<String, dynamic>> clinics, Future<void> Function() reload) async {
     if (!widget.autoOpen || autoOpened || clinics.isEmpty) return;
     autoOpened = true;
-    Map<String, dynamic>? pick = clinics.length == 1 ? clinics.first : null;
+    final open = clinics.where((c) => !_off(c)).toList();   // a closed clinic is never opened automatically
+    Map<String, dynamic>? pick = clinics.length == 1 && open.isNotEmpty ? open.first : null;
     if (pick == null) {
       try {
         final last = (await SharedPreferences.getInstance()).getString('clinic.last');
-        for (final c in clinics) { if (c['id'] == last) pick = c; }
+        for (final c in open) { if (c['id'] == last) pick = c; }
       } catch (_) {}
     }
     if (pick != null) await _openClinic(pick, reload);
@@ -311,11 +315,13 @@ class _MyClinicsState extends State<MyClinics> {
                 Card(
                   margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   child: ListTile(
-                    leading: const Icon(Icons.local_hospital_outlined),
-                    title: Text(c['name'] as String),
-                    subtitle: Text(c['host'] as String, textDirection: TextDirection.ltr),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => _openClinic(c, reload),
+                    leading: Icon(Icons.local_hospital_outlined, color: _off(c) ? const Color(0xFF9AA9BA) : null),
+                    title: Text(c['name'] as String, style: TextStyle(color: _off(c) ? const Color(0xFF6B7C8D) : null)),
+                    subtitle: _off(c)
+                        ? Text(s.ar ? 'هذه العيادة متوقفة حاليًا ولا يمكن الدخول إليها' : 'This clinic is currently closed', style: const TextStyle(color: Color(0xFFD14343), fontWeight: FontWeight.w700))
+                        : Text(c['host'] as String, textDirection: TextDirection.ltr),
+                    trailing: Icon(_off(c) ? Icons.lock_outline_rounded : Icons.chevron_right),
+                    onTap: _off(c) ? () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.ar ? 'هذه العيادة متوقفة حاليًا. تواصل معها مباشرة.' : 'This clinic is currently closed. Please contact it directly.'))) : () => _openClinic(c, reload),
                   ),
                 ),
             ]),

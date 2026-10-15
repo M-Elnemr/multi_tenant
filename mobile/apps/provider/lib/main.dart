@@ -6,13 +6,15 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:platform_core/platform_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'billing_ui.dart';
 import 'common.dart';
 import 'clinic_panel.dart';
 import 'offline_ops.dart';
+import 'platform_admin.dart';
 import 'push.dart';
 import 'shell.dart';
 
-const appVersion = '1.3.6';
+const appVersion = '1.3.7';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -33,6 +35,7 @@ class ProviderApp extends StatelessWidget {
           locale: locale,
           localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],
           supportedLocales: const [Locale('ar'), Locale('en')],
+          builder: (context, child) => BillingBarHost(child: child),
           home: const Root(),
         ),
       );
@@ -52,6 +55,7 @@ class _RootState extends State<Root> {
   bool _checked = false;
   List<Map<String, dynamic>>? _businesses;
   String? _error;
+  List<String> _platformPerms = const [];   // the platform owner / admin's permissions (empty for everyone else)
 
   @override
   void initState() {
@@ -75,7 +79,20 @@ class _RootState extends State<Root> {
         if (cached != null) { list = cached.cast<Map<String, dynamic>>(); } else { error = errorText(e); }
       }
     }
-    if (mounted) setState(() { _businesses = list; _error = error; _checked = true; });
+    var perms = _platformPerms;
+    if (list != null) {
+      try {
+        final me = await AuthRepository(_api).me();
+        perms = ((me['permissions'] as List?) ?? const []).cast<String>().where((p) => p.startsWith('platform.')).toList();
+        await ListCache.write('me.platform', {'permissions': perms});
+      } catch (_) {
+        final c = await ListCache.read<Map<String, dynamic>>('me.platform');
+        if (c != null) perms = ((c['permissions'] as List?) ?? const []).cast<String>();
+      }
+    } else {
+      perms = const [];
+    }
+    if (mounted) setState(() { _businesses = list; _platformPerms = perms; _error = error; _checked = true; });
   }
 
   Future<void> _signOut() async {
@@ -83,8 +100,9 @@ class _RootState extends State<Root> {
     if (pushToken != null) { try { await _api.delete('me/devices', {'token': pushToken}); } catch (_) {} }
     await AuthRepository(_api).logout();
     await OfflineStore.clearAll();
+    BillingHub.clear();
     try { (await SharedPreferences.getInstance()).remove('business.last'); } catch (_) {}
-    if (mounted) setState(() => _businesses = null);
+    if (mounted) setState(() { _businesses = null; _platformPerms = const []; });
   }
 
   @override
@@ -111,8 +129,10 @@ class _RootState extends State<Root> {
         FilledButton(onPressed: () { setState(() { _checked = false; _error = null; }); _load(); }, child: Text(s.retry)),
         TextButton(onPressed: _signOut, child: Text(s.signOut)),
       ]))));
+    } else if (_businesses!.isEmpty && _platformPerms.contains('platform.tenant.manage')) {
+      body = AdminHome(key: const ValueKey('admin'), api: _api, perms: _platformPerms, onSignOut: _signOut);
     } else {
-      body = BusinessPicker(key: const ValueKey('picker'), session: _session, businesses: _businesses!, onSignOut: _signOut, onReload: _load);
+      body = BusinessPicker(key: const ValueKey('picker'), session: _session, businesses: _businesses!, onSignOut: _signOut, onReload: _load, adminApi: _platformPerms.contains('platform.tenant.manage') ? _api : null, adminPerms: _platformPerms);
     }
     return SplashGate(
       ready: _checked,
@@ -124,7 +144,9 @@ class _RootState extends State<Root> {
 
 /// Lists the account's businesses; opens the only one (or the last used one) straight away, and lets the user switch from settings.
 class BusinessPicker extends StatefulWidget {
-  const BusinessPicker({super.key, required this.session, required this.businesses, required this.onSignOut, required this.onReload});
+  const BusinessPicker({super.key, required this.session, required this.businesses, required this.onSignOut, required this.onReload, this.adminApi, this.adminPerms = const []});
+  final ApiClient? adminApi;
+  final List<String> adminPerms;
   final Session session;
   final List<Map<String, dynamic>> businesses;
   final VoidCallback onSignOut;
@@ -196,9 +218,17 @@ class _BusinessPickerState extends State<BusinessPicker> {
           ),
           Padding(
             padding: const EdgeInsets.all(16),
-            child: list.isEmpty
-                ? Padding(padding: const EdgeInsets.all(32), child: Center(child: Text(s.noBusinesses, textAlign: TextAlign.center)))
-                : Column(children: [for (var i = 0; i < list.length; i++) FadeSlideIn(index: i + 2, child: BusinessCard(business: list[i], onTap: () => _choose(list[i])))]),
+            child: Column(children: [
+              if (widget.adminApi != null) FadeSlideIn(index: 1, child: Card(child: ListTile(
+                leading: const Icon(Icons.admin_panel_settings_rounded),
+                title: Text(s.ar ? 'لوحة المنصة' : 'Platform admin', style: const TextStyle(fontWeight: FontWeight.w800)),
+                subtitle: Text(s.ar ? 'كل المتاجر والعيادات وطلبات الدفع' : 'All shops, clinics and pay requests'),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (ctx) => AdminHome(api: widget.adminApi!, perms: widget.adminPerms, onSignOut: widget.onSignOut, onBack: () => Navigator.of(ctx).pop()))),
+              ))),
+              if (list.isEmpty) Padding(padding: const EdgeInsets.all(32), child: Center(child: Text(s.noBusinesses, textAlign: TextAlign.center)))
+              else for (var i = 0; i < list.length; i++) FadeSlideIn(index: i + 2, child: BusinessCard(business: list[i], onTap: () => _choose(list[i]))),
+            ]),
           ),
         ]),
       ),
@@ -300,12 +330,17 @@ class _BusinessHomeState extends State<BusinessHome> with WidgetsBindingObserver
   Timer? _timer, _unreadTimer;
   Ctx? _ctx;
   final ValueNotifier<int> _unread = ValueNotifier(0);
+  late bool _disabled = widget.business['status'] == 'SUSPENDED';   // unpaid subscription: only the pay screen is available
+  Timer? _billingTimer;
 
   @override
   void initState() {
     super.initState();
     _unreadTimer = Timer.periodic(const Duration(seconds: 30), (_) { _pollUnread(); });
     _pollUnread();
+    ApiClient.tenantDisabled.addListener(_onDisabled);
+    _billingTimer = Timer.periodic(const Duration(minutes: 5), (_) { _pollBilling(); });
+    _pollBilling();
     PushService.ensure((token) async { await _api.post('me/devices', {'token': token, 'platform': defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android'}); });
     pushOpened.addListener(_openFromPush);
     final off = _off;
@@ -322,6 +357,9 @@ class _BusinessHomeState extends State<BusinessHome> with WidgetsBindingObserver
   void dispose() {
     _timer?.cancel();
     _unreadTimer?.cancel();
+    _billingTimer?.cancel();
+    ApiClient.tenantDisabled.removeListener(_onDisabled);
+    BillingHub.clear();
     pushOpened.removeListener(_openFromPush);
     WidgetsBinding.instance.removeObserver(this);
     _off?.dispose();
@@ -329,7 +367,17 @@ class _BusinessHomeState extends State<BusinessHome> with WidgetsBindingObserver
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) { if (state == AppLifecycleState.resumed) _tick(); }
+  void didChangeAppLifecycleState(AppLifecycleState state) { if (state == AppLifecycleState.resumed) { _tick(); _pollBilling(); } }
+
+  void _onDisabled() { if (mounted && !_disabled) setState(() => _disabled = true); }
+
+  /// Updates the "free plan ends / renew" bar and notices when the business was switched off (or back on) by the platform.
+  Future<void> _pollBilling() async {
+    final state = await BillingHub.refresh(_api, canPay: _ctx?.can('billing.manage') ?? true);
+    if (state == null || !mounted) return;
+    final off = state == 'DISABLED';
+    if (off != _disabled) setState(() => _disabled = off);
+  }
 
   /// A tapped push about a patient (e.g. an uploaded test result) opens that patient, and the lab when it names one.
   void _openFromPush() {
@@ -419,6 +467,11 @@ class _BusinessHomeState extends State<BusinessHome> with WidgetsBindingObserver
             final perms = (snap.data!['permissions'] as List).cast<String>();
             final currency = (b['currency'] as String?) ?? 'EGP';
             final ctx = _ctx ??= Ctx(api: _api, currency: currency, perms: perms, host: b['host'] as String, type: b['type'] as String);
+            if (_disabled) {
+              return ctx.can('billing.manage')
+                  ? PayBody(api: _api, disabled: true)
+                  : Center(child: Padding(padding: const EdgeInsets.all(28), child: Text(s.ar ? 'هذا النشاط متوقف. برجاء مطالبة صاحب النشاط بتجديد الاشتراك.' : 'This business is disabled. Please ask the owner to renew the subscription.', textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16))));
+            }
             unawaited(warmUp(ctx));
             return PanelShell(ctx: ctx);
           },

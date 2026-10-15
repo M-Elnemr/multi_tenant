@@ -18,6 +18,11 @@ export async function proxy(request: NextRequest) {
   const info = await resolveHost(host);
   if (info.kind === "UNKNOWN") return NextResponse.rewrite(new URL("/t-unknown", request.url), { status: 404 });
 
+  // A disabled business (unpaid subscription) is closed to visitors, patients and customers; only its staff can sign in to the pay screen.
+  if (info.kind === "TENANT" && ["SUSPENDED", "CANCELLED", "ARCHIVED"].includes(info.status) && !(pathname === "/login" || pathname === "/dashboard" || pathname.startsWith("/dashboard/"))) {
+    return NextResponse.rewrite(new URL("/t-unknown?reason=disabled", request.url), { status: 403 });
+  }
+
   if (PRIVATE_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/")) && !request.cookies.has(SESSION_COOKIE)) {
     const login = new URL("/login", request.url);
     login.searchParams.set("next", pathname + request.nextUrl.search);

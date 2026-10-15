@@ -29,7 +29,7 @@ public class BillingService {
     private final com.platform.core.tenant.TenantDirectory directory;
 
     public BillingService(JdbcClient jdbc, PlatformProperties props, List<PaymentProvider> providers, AuditService audit,
-                          @Value("${app.billing.grace-days:7}") int graceDays, org.springframework.context.ApplicationEventPublisher events, com.platform.core.tenant.TenantDirectory directory) {
+                          @Value("${app.billing.grace-days:14}") int graceDays, org.springframework.context.ApplicationEventPublisher events, com.platform.core.tenant.TenantDirectory directory) {
         this.events = events;
         this.directory = directory;
         this.jdbc = jdbc;
@@ -41,10 +41,10 @@ public class BillingService {
 
     // ---- lifecycle ------------------------------------------------------------------------------
 
-    /** Every new tenant starts a trial on the full-featured (Pro) plan of its type. Runs in the onboarding transaction. */
+    /** Every new tenant starts a free trial (all Professional features) of its type. Runs in the onboarding transaction. */
     @EventListener
     public void onTenantCreated(TenantCreatedEvent e) {
-        String planCode = e.type().name() + "_PRO";
+        String planCode = e.type().name() + "_FREE";
         Instant end = Instant.now().plus(props.trialDays(), ChronoUnit.DAYS);
         jdbc.sql("""
                 INSERT INTO billing.tenant_subscriptions (tenant_id, plan_id, status, current_period_end)
@@ -179,35 +179,104 @@ public class BillingService {
         if (inv == null || !"OPEN".equals(inv.get("status"))) return;
         UUID tenantId = (UUID) inv.get("tenant_id");
         jdbc.sql("UPDATE billing.subscription_invoices SET status = 'PAID', paid_at = now() WHERE id = :i").param("i", invoiceId).update();
-        jdbc.sql("""
-                UPDATE billing.tenant_subscriptions SET plan_id = :p, status = 'ACTIVE', current_period_start = now(),
-                       current_period_end = now() + interval '1 month', cancel_at_period_end = FALSE, updated_at = now()
-                WHERE tenant_id = :t AND status IN ('TRIALING','ACTIVE','PAST_DUE','PAUSED')
-                """).param("p", inv.get("target_plan_id")).param("t", tenantId).update();
-        jdbc.sql("UPDATE core.tenants SET status = 'ACTIVE', updated_at = now() WHERE id = :t AND status IN ('TRIAL','PAST_DUE','SUSPENDED')")
+        activatePlan(tenantId, (UUID) inv.get("target_plan_id"), 30);
+        event(tenantId, "PAYMENT_APPLIED", "{\"invoiceId\":\"" + invoiceId + "\"}");
+    }
+
+    // ---- plan activation (payment webhook and platform admin) ------------------------------------
+
+    /**
+     * Puts the tenant on the plan as ACTIVE for another {@code days} days. A still-running paid period is extended, a
+     * trial / lapsed / expired one starts today. Also re-enables a suspended tenant.
+     */
+    @Transactional
+    public void activatePlan(UUID tenantId, UUID planId, int days) {
+        int n = jdbc.sql("""
+                UPDATE billing.tenant_subscriptions SET plan_id = :p, status = 'ACTIVE',
+                       current_period_start = CASE WHEN status = 'ACTIVE' AND current_period_end > now() THEN current_period_start ELSE now() END,
+                       current_period_end = (CASE WHEN status = 'ACTIVE' AND current_period_end > now() THEN current_period_end ELSE now() END) + make_interval(days => :d),
+                       cancel_at_period_end = FALSE, updated_at = now()
+                WHERE id = (SELECT id FROM billing.tenant_subscriptions WHERE tenant_id = :t ORDER BY created_at DESC LIMIT 1)
+                """).param("p", planId).param("t", tenantId).param("d", days).update();
+        if (n == 0) {
+            jdbc.sql("INSERT INTO billing.tenant_subscriptions (tenant_id, plan_id, status, current_period_end) VALUES (:t, :p, 'ACTIVE', now() + make_interval(days => :d))")
+                    .param("t", tenantId).param("p", planId).param("d", days).update();
+        }
+        jdbc.sql("UPDATE core.tenants SET status = 'ACTIVE', updated_at = now() WHERE id = :t AND status IN ('TRIAL','PAST_DUE','SUSPENDED','ACTIVE')")
                 .param("t", tenantId).update();
         directory.invalidateAll();
-        event(tenantId, "PAYMENT_APPLIED", "{\"invoiceId\":\"" + invoiceId + "\"}");
+        event(tenantId, "PLAN_ACTIVATED", "{\"days\":" + days + "}");
+    }
+
+    public UUID planId(String code) {
+        return jdbc.sql("SELECT id FROM billing.subscription_plans WHERE code = :c AND is_active").param("c", code).query(UUID.class).optional()
+                .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Plan not found"));
+    }
+
+    /**
+     * What the apps need for the "free plan ends / renew" bar and the disabled screen. Works for a suspended tenant too.
+     * state: OK, TRIAL_ENDING (free plan, 5 days or less), WAIT_RENEW (paid period over, grace running), DISABLED.
+     */
+    public Map<String, Object> status(UUID tenantId) {
+        var tenantStatus = jdbc.sql("SELECT status FROM core.tenants WHERE id = :t").param("t", tenantId).query(String.class).single();
+        var sub = jdbc.sql("""
+                SELECT s.status, s.current_period_end, s.cancel_at_period_end, p.code AS plan_code, p.name AS plan_name, p.price_minor, p.currency, p.tenant_type
+                FROM billing.tenant_subscriptions s JOIN billing.subscription_plans p ON p.id = s.plan_id
+                WHERE s.tenant_id = :t ORDER BY s.created_at DESC LIMIT 1
+                """).param("t", tenantId).query().listOfRows().stream().findFirst().orElse(null);
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("tenantStatus", tenantStatus);
+        if (sub == null) { out.put("state", "DISABLED"); return out; }
+        Instant end = ((java.sql.Timestamp) sub.get("current_period_end")).toInstant();
+        String subStatus = (String) sub.get("status");
+        long daysLeft = (long) Math.ceil((end.toEpochMilli() - System.currentTimeMillis()) / 86_400_000.0);
+        Instant graceEnd = end.plus(graceDays, ChronoUnit.DAYS);
+        String state = "OK";
+        if (!java.util.Set.of("TRIAL", "ACTIVE", "PAST_DUE").contains(tenantStatus) || java.util.Set.of("EXPIRED", "CANCELLED").contains(subStatus)) state = "DISABLED";
+        else if ("PAST_DUE".equals(subStatus)) { state = "WAIT_RENEW"; daysLeft = (long) Math.ceil((graceEnd.toEpochMilli() - System.currentTimeMillis()) / 86_400_000.0); }
+        else if ("TRIALING".equals(subStatus) && daysLeft <= 5) state = "TRIAL_ENDING";
+        out.put("state", state);
+        out.put("subscriptionStatus", subStatus);
+        out.put("planCode", sub.get("plan_code"));
+        out.put("planName", sub.get("plan_name"));
+        out.put("tenantType", sub.get("tenant_type"));
+        out.put("priceMinor", sub.get("price_minor"));
+        out.put("currency", sub.get("currency"));
+        out.put("periodEnd", end.toString());
+        out.put("graceEnd", graceEnd.toString());
+        out.put("daysLeft", Math.max(daysLeft, 0));
+        out.put("trial", "TRIALING".equals(subStatus) || String.valueOf(sub.get("plan_code")).endsWith("_FREE"));
+        return out;
     }
 
     // ---- expiry job -------------------------------------------------------------------------------
 
-    /** Trial/period end -> PAST_DUE (grace) -> EXPIRED + tenant SUSPENDED. Data is never deleted (spec 7). */
+    /**
+     * Free trial over -> EXPIRED + tenant SUSPENDED at once. Paid period over -> PAST_DUE ("waiting for renew", still working)
+     * for the grace days -> EXPIRED + SUSPENDED. Data is never deleted by the job.
+     */
     @Scheduled(fixedDelayString = "PT15M", initialDelayString = "PT1M")
     @Transactional
     public void expiryCheck() {
-        for (var row : jdbc.sql("SELECT tenant_id FROM billing.tenant_subscriptions WHERE status IN ('TRIALING','ACTIVE') AND current_period_end < now()")
+        for (var row : jdbc.sql("SELECT tenant_id, status, cancel_at_period_end FROM billing.tenant_subscriptions WHERE status IN ('TRIALING','ACTIVE') AND current_period_end < now()")
                 .query().listOfRows()) {
             UUID t = (UUID) row.get("tenant_id");
-            jdbc.sql("""
-                    UPDATE billing.tenant_subscriptions SET status = CASE WHEN cancel_at_period_end THEN 'CANCELLED' ELSE 'PAST_DUE' END, updated_at = now()
-                    WHERE tenant_id = :t AND status IN ('TRIALING','ACTIVE')
-                    """).param("t", t).update();
-            jdbc.sql("UPDATE core.tenants SET status = CASE WHEN (SELECT status FROM billing.tenant_subscriptions WHERE tenant_id = :t ORDER BY updated_at DESC LIMIT 1) = 'CANCELLED' THEN 'CANCELLED' ELSE 'PAST_DUE' END, updated_at = now() WHERE id = :t")
+            boolean trial = "TRIALING".equals(row.get("status"));
+            boolean cancelled = Boolean.TRUE.equals(row.get("cancel_at_period_end"));
+            if (trial) {
+                jdbc.sql("UPDATE billing.tenant_subscriptions SET status = 'EXPIRED', updated_at = now() WHERE tenant_id = :t AND status = 'TRIALING'").param("t", t).update();
+                jdbc.sql("UPDATE core.tenants SET status = 'SUSPENDED', updated_at = now() WHERE id = :t").param("t", t).update();
+                tenantStateChanged();
+                event(t, "TRIAL_ENDED", null);
+                events.publishEvent(new SubscriptionEvents.StateChanged(t, "SUSPENDED"));
+                continue;
+            }
+            jdbc.sql("UPDATE billing.tenant_subscriptions SET status = CASE WHEN cancel_at_period_end THEN 'CANCELLED' ELSE 'PAST_DUE' END, updated_at = now() WHERE tenant_id = :t AND status = 'ACTIVE'")
                     .param("t", t).update();
+            jdbc.sql("UPDATE core.tenants SET status = :s, updated_at = now() WHERE id = :t").param("s", cancelled ? "CANCELLED" : "PAST_DUE").param("t", t).update();
             tenantStateChanged();
             event(t, "PERIOD_ENDED", null);
-            events.publishEvent(new SubscriptionEvents.StateChanged(t, "PAST_DUE"));
+            events.publishEvent(new SubscriptionEvents.StateChanged(t, cancelled ? "CANCELLED" : "PAST_DUE"));
         }
         for (var row : jdbc.sql("SELECT tenant_id FROM billing.tenant_subscriptions WHERE status = 'PAST_DUE' AND current_period_end < now() - make_interval(days => :g)")
                 .param("g", graceDays).query().listOfRows()) {
