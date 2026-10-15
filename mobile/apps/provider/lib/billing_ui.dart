@@ -75,7 +75,7 @@ class BillingBarHost extends StatelessWidget {
                     const SizedBox(width: 8),
                     Expanded(child: Text(billingBarText(b), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12.5, decoration: TextDecoration.none))),
                     const SizedBox(width: 8),
-                    Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(12)), child: Text(AppLocale.isAr ? 'ادفع الآن' : 'Pay now', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12, decoration: TextDecoration.none))),
+                    Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(12)), child: Text(AppLocale.isAr ? 'التفاصيل' : 'Details', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12, decoration: TextDecoration.none))),
                   ]),
                 ),
               ),
@@ -105,7 +105,7 @@ class PayPage extends StatelessWidget {
   final ApiClient api;
   final String? plan;
   @override
-  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text(AppLocale.isAr ? 'سداد الاشتراك' : 'Pay for your subscription')), body: PayBody(api: api, plan: plan));
+  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text(AppLocale.isAr ? 'الاشتراك' : 'Subscription')), body: PayBody(api: api, plan: plan));
 }
 
 /// Manual payment for now: the owner presses "Proceed to pay" and customer service calls them (online payment is not live yet).
@@ -183,7 +183,7 @@ class _PayBodyState extends State<PayBody> {
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(ar ? 'نشاطك متوقف' : 'Your business is disabled', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: Color(0xFFB71C1C))),
                 const SizedBox(height: 4),
-                Text(ar ? 'لا يستطيع موقعك ولا مرضاك ولا عملاؤك الوصول إلى نشاطك حتى تجدّد الاشتراك. اختر الباقة واضغط متابعة للدفع.' : 'Your website, patients and customers cannot reach your business until you renew. Choose a plan and press Proceed to pay.'),
+                Text(ar ? 'لا يستطيع موقعك ولا مرضاك ولا عملاؤك الوصول إلى نشاطك حتى تجدّد الاشتراك. اختر الباقة واطلب اتصالًا من خدمة العملاء.' : 'Your website, patients and customers cannot reach your business until you renew. Choose a plan and request a call from customer service.'),
               ]),
             ),
             if (!disabled && status['planCode'] != null) Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -195,7 +195,7 @@ class _PayBodyState extends State<PayBody> {
               margin: const EdgeInsets.symmetric(vertical: 8),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(color: const Color(0xFFE8F3FA), borderRadius: BorderRadius.circular(14)),
-              child: Text(ar ? 'الدفع الإلكتروني قيد التجهيز حاليًا. في الوقت الحالي يتم الدفع يدويًا: اضغط متابعة للدفع وسيتواصل معك فريق خدمة العملاء قريبًا جدًا.' : 'Online payment is coming soon. For now payment is done manually: press Proceed to pay and our customer service will contact you very soon.', style: const TextStyle(color: Color(0xFF14516F), fontWeight: FontWeight.w600)),
+              child: Text(ar ? 'للاشتراك أو التجديد اضغط «طلب اتصال» وسيتواصل معك فريق خدمة العملاء قريبًا جدًا.' : 'To subscribe or renew, press “Request a call” and our customer service will contact you very soon.', style: const TextStyle(color: Color(0xFF14516F), fontWeight: FontWeight.w600)),
             ),
             if (open != null && !_editing)
               Card(child: Padding(padding: const EdgeInsets.all(18), child: Column(children: [
@@ -203,7 +203,7 @@ class _PayBodyState extends State<PayBody> {
                 const SizedBox(height: 6),
                 Text(ar ? 'تم استلام طلبك' : 'We received your request', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
                 const SizedBox(height: 4),
-                Text(ar ? 'سيتواصل معك فريق خدمة العملاء على ${open['phone']} قريبًا جدًا لإتمام الدفع.' : 'Customer service will contact you on ${open['phone']} very soon to complete the payment.', textAlign: TextAlign.center),
+                Text(ar ? 'سيتواصل معك فريق خدمة العملاء على ${open['phone']} قريبًا جدًا لإتمام اشتراكك.' : 'Customer service will contact you on ${open['phone']} very soon to complete your subscription.', textAlign: TextAlign.center),
                 const SizedBox(height: 6),
                 Text('${planLabel('${open['planCode']}')} · ${fmtMoney(open['amountMinor'] as num?)} ${open['currency'] ?? 'EGP'}', style: const TextStyle(fontWeight: FontWeight.w700)),
                 TextButton(onPressed: () => setState(() { _picked = '${open['planCode']}'; _phone.text = '${open['phone']}'; _editing = true; }), child: Text(ar ? 'تعديل طلبي' : 'Change my request')),
@@ -223,7 +223,7 @@ class _PayBodyState extends State<PayBody> {
               const SizedBox(height: 14),
               FilledButton(
                 onPressed: _busy || choice.isEmpty || _phone.text.trim().length < 8 ? null : () => _send(choice),
-                child: _busy ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : Text(ar ? 'متابعة للدفع' : 'Proceed to pay'),
+                child: _busy ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : Text(ar ? 'طلب اتصال من خدمة العملاء' : 'Request a call from customer service'),
               ),
             ],
           ]),

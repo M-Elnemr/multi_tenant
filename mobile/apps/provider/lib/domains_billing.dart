@@ -147,7 +147,7 @@ class _BillingScreenState extends State<BillingScreen> {
               Row(children: [Expanded(child: Text(planLabel('${sub['planCode']}'), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 20))), StatusPill('${sub['status']}')]),
               const SizedBox(height: 4),
               Text(sub['status'] == 'TRIALING' ? (isAr ? 'تنتهي التجربة في ${_date(sub['currentPeriodEnd'])}' : 'Trial ends ${_date(sub['currentPeriodEnd'])}') : (isAr ? 'يتجدد في ${_date(sub['currentPeriodEnd'])}' : 'Renews ${_date(sub['currentPeriodEnd'])}')),
-              if (sub['status'] == 'PAST_DUE') Padding(padding: const EdgeInsets.only(top: 8), child: Text(isAr ? 'هناك دفعة متأخرة. اختر باقة للسداد.' : 'A payment is overdue. Choose a plan to pay.', style: const TextStyle(color: Color(0xFFD98200), fontWeight: FontWeight.w700))),
+              if (sub['status'] == 'PAST_DUE') Padding(padding: const EdgeInsets.only(top: 8), child: Text(isAr ? 'انتهى اشتراكك. اختر باقة وتواصل معنا.' : 'Your subscription ended. Choose a plan and contact us.', style: const TextStyle(color: Color(0xFFD98200), fontWeight: FontWeight.w700))),
               if (canManage) Align(
                 alignment: AlignmentDirectional.centerEnd,
                 child: sub['cancelAtPeriodEnd'] == true
