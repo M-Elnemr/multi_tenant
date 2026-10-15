@@ -13,8 +13,9 @@ import 'offline_ops.dart';
 import 'platform_admin.dart';
 import 'push.dart';
 import 'shell.dart';
+import 'store_panel.dart';
 
-const appVersion = '1.3.7';
+const appVersion = '1.3.8';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -382,7 +383,13 @@ class _BusinessHomeState extends State<BusinessHome> with WidgetsBindingObserver
   /// A tapped push about a patient (e.g. an uploaded test result) opens that patient, and the lab when it names one.
   void _openFromPush() {
     final d = pushOpened.value, c = _ctx;
-    if (d == null || c == null || d['patientId'] == null) return;
+    if (d == null || c == null) return;
+    if (d['orderId'] != null) {   // a customer placed an order: open it
+      pushOpened.value = null;
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => OrderDetail(ctx: c, id: '${d['orderId']}')));
+      return;
+    }
+    if (d['patientId'] == null) return;
     pushOpened.value = null;
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => PatientDetail(ctx: c, id: '${d['patientId']}', openLabId: d['labOrderId'] == null ? null : '${d['labOrderId']}')));
   }

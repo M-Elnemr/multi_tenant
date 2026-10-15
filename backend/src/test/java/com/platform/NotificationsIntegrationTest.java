@@ -38,6 +38,8 @@ class NotificationsIntegrationTest extends IntegrationTestBase {
                 "{\"taxonomySlug\":\"home-lighting\",\"name\":\"Lamp %s\",\"variants\":[{\"sku\":\"L-%s\",\"priceMinor\":5000,\"optionValues\":{},\"stock\":[{\"branchId\":\"%s\",\"quantity\":5}]}]}".formatted(uniq(), uniq(), branch)).andExpect(status().isCreated())), "$.variants[0].id");
         String shopper = googleClient(h);
         String ship = JsonPath.<List<String>>read(body(onHost(h, null, "GET", "/api/v1/shop/profile", null)), "$.shippingMethods[?(@.type=='PICKUP')].id").get(0);
+        String phoneToken = "owner-phone-" + uniq();
+        onHost(h, store.access(), "POST", "/api/v1/me/devices", "{\"token\":\"" + phoneToken + "\",\"platform\":\"android\"}").andExpect(status().is2xxSuccessful());
 
         String order = body(onHost(h, shopper, "POST", "/api/v1/shop/checkout",
                 "{\"items\":[{\"variantId\":\"%s\",\"quantity\":3}],\"shippingMethodId\":\"%s\",\"paymentMethod\":\"CASH_ON_DELIVERY\",\"address\":{\"recipientName\":\"Salma\",\"phone\":\"01022223333\"}}".formatted(variant, ship)).andExpect(status().isCreated()));
@@ -45,6 +47,9 @@ class NotificationsIntegrationTest extends IntegrationTestBase {
 
         assertThat(types(h, shopper)).contains("ORDER_CREATED");
         assertThat(types(h, store.access())).contains("NEW_ORDER", "LOW_STOCK");   // 5 -> 2 crosses the threshold of 3
+        // the owner's phone gets a push for the new order (generic text, order id in the data)
+        assertThat(jdbc.sql("SELECT count(*) FROM notifications.outbox WHERE channel = 'PUSH' AND to_address = :t AND payload ->> 'type' = 'NEW_ORDER' AND payload ->> 'orderId' = :o")
+                .param("t", phoneToken).param("o", orderId).query(Long.class).single()).isEqualTo(1);
         // the shopper does not receive the merchant's alerts, and vice versa
         assertThat(types(h, shopper)).doesNotContain("NEW_ORDER", "LOW_STOCK");
 

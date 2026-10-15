@@ -46,8 +46,13 @@ public class NotificationListeners {
             if (e.userId() != null)   // guests have no account to notify
                 notifications.notify(e.userId(), e.tenantId(), "ORDER_CREATED", ar ? "تم استلام طلبك" : "Order received",
                         ar ? "استلمنا طلبك رقم " + e.orderNumber() : "We received your order " + e.orderNumber(), json("orderId", e.orderId()), true);
-            for (UUID staff : staffWith(e.tenantId(), "order.update_status"))
-                notifications.notify(staff, e.tenantId(), "NEW_ORDER", ar ? "طلب جديد" : "New order", (ar ? "طلب جديد رقم " : "New order ") + e.orderNumber(), json("orderId", e.orderId()), true);
+            String title = ar ? "طلب جديد" : "New order", body = (ar ? "طلب جديد رقم " : "New order ") + e.orderNumber();
+            List<UUID> owners = staffWith(e.tenantId(), "order.update_status");
+            for (UUID staff : owners) {
+                notifications.notify(staff, e.tenantId(), "NEW_ORDER", title, body, json("orderId", e.orderId()), true);
+                notifications.push(staff, e.tenantId(), title, body, "{\"type\":\"NEW_ORDER\",\"orderId\":\"" + e.orderId() + "\"}");   // the shop owner's phone rings through Firebase
+            }
+            if (!owners.isEmpty()) notifications.dispatchSoon();
         });
     }
 

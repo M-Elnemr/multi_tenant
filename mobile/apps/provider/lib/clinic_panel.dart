@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:platform_core/platform_core.dart';
 
 import 'common.dart';
+import 'store_panel.dart';
 import 'lab_sheet.dart';
 import 'patients.dart';
 
@@ -257,12 +258,14 @@ class NotificationsScreen extends StatelessWidget {
                   title: Text('${items[i]['title']}', style: const TextStyle(fontWeight: FontWeight.w800)),
                   subtitle: Text('${items[i]['body']}\n${fmtDate(items[i]['createdAt'] as String?)}'),
                   isThreeLine: true,
-                  trailing: (items[i]['payload'] is Map && (items[i]['payload'] as Map)['patientId'] != null) ? const Icon(Icons.chevron_right_rounded) : null,
+                  trailing: (items[i]['payload'] is Map && ((items[i]['payload'] as Map)['patientId'] != null || (items[i]['payload'] as Map)['orderId'] != null)) ? const Icon(Icons.chevron_right_rounded) : null,
                   onTap: () async {
                     final n = items[i];
                     if (n['readAt'] == null) await run(context, () => ctx.api.post('notifications/${n['id']}/read', {}));
                     final payload = n['payload'];
-                    if (context.mounted && payload is Map && payload['patientId'] != null) {
+                    if (context.mounted && payload is Map && payload['orderId'] != null) {
+                      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => OrderDetail(ctx: ctx, id: '${payload['orderId']}')));
+                    } else if (context.mounted && payload is Map && payload['patientId'] != null) {
                       await Navigator.of(context).push(MaterialPageRoute(builder: (_) => PatientDetail(ctx: ctx, id: '${payload['patientId']}', openLabId: payload['labOrderId'] == null ? null : '${payload['labOrderId']}')));
                     }
                     await reload();
