@@ -15,7 +15,7 @@ import 'push.dart';
 import 'shell.dart';
 import 'store_panel.dart';
 
-const appVersion = '1.3.10';
+const appVersion = '1.3.11';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

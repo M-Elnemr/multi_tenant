@@ -90,13 +90,15 @@ class BillingBarHost extends StatelessWidget {
 
 String planLabel(String? code) {
   final ar = AppLocale.isAr;
-  final kind = (code ?? '').split('_').last;
-  return switch (kind) {
+  final yearly = (code ?? '').endsWith('_YEARLY');
+  final kind = (code ?? '').replaceAll('_YEARLY', '').split('_').last;
+  final base = switch (kind) {
     'FREE' => ar ? 'مجانية (14 يومًا)' : 'Free (14 days)',
     'STANDARD' => ar ? 'قياسية' : 'Standard',
     'PRO' => ar ? 'احترافية' : 'Professional',
     _ => code ?? '-',
   };
+  return yearly ? '$base (${ar ? 'سنوي' : 'yearly'})' : base;
 }
 
 /// A pushed page around [PayBody] (opened from the bar and from the billing screen).
@@ -121,6 +123,7 @@ class PayBody extends StatefulWidget {
 class _PayBodyState extends State<PayBody> {
   final _phone = TextEditingController();
   String? _picked;
+  String? _cycle;   // 'month' | 'year'
   Map<String, dynamic>? _saved;
   bool _editing = false, _busy = false, _phoneSet = false;
   int _n = 0;
@@ -166,12 +169,15 @@ class _PayBodyState extends State<PayBody> {
       load: _load,
       builder: (context, data, reload) {
         final status = Map<String, dynamic>.from(data[0] as Map);
-        final plans = (data[1] as List).cast<Map>().map((e) => Map<String, dynamic>.from(e)).where((p) => ((p['priceMinor'] as num?) ?? 0) > 0).toList();
+        final paid = (data[1] as List).cast<Map>().map((e) => Map<String, dynamic>.from(e)).where((p) => ((p['priceMinor'] as num?) ?? 0) > 0).toList();
+        final cycle = _cycle ?? ('${_picked ?? widget.plan ?? status['planCode'] ?? ''}'.endsWith('_YEARLY') ? 'year' : 'month');
+        final plans = paid.where((p) => (p['interval'] == 'YEAR') == (cycle == 'year')).toList();
+        String? sameLevel(String? c) { final base = (c ?? '').replaceAll('_YEARLY', ''); for (final p in plans) { if ('${p['code']}'.replaceAll('_YEARLY', '') == base) return '${p['code']}'; } return null; }
         final reqs = (data[2] as List).cast<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
         final me = Map<String, dynamic>.from(data[3] as Map);
         if (!_phoneSet) { _phone.text = '${me['phone'] ?? ''}'; _phoneSet = true; }
         final open = _saved ?? reqs.cast<Map<String, dynamic>?>().firstWhere((r) => r!['status'] == 'NEW' || r['status'] == 'CONTACTED', orElse: () => null);
-        final choice = (_picked ?? widget.plan) != null && plans.any((p) => p['code'] == (_picked ?? widget.plan)) ? (_picked ?? widget.plan)! : (plans.any((p) => p['code'] == status['planCode']) ? '${status['planCode']}' : (plans.isEmpty ? '' : '${plans.first['code']}'));
+        final choice = sameLevel(_picked ?? widget.plan) ?? sameLevel('${status['planCode']}') ?? (plans.isEmpty ? '' : '${plans.first['code']}');
         final disabled = widget.disabled || status['state'] == 'DISABLED';
         return RefreshIndicator(
           onRefresh: reload,
@@ -210,6 +216,11 @@ class _PayBodyState extends State<PayBody> {
               ])))
             else ...[
               sectionTitle(ar ? 'اختر باقتك' : 'Choose your plan'),
+              Wrap(spacing: 8, children: [
+                ChoiceChip(label: Text(ar ? 'شهري' : 'Monthly'), selected: cycle == 'month', showCheckmark: false, onSelected: (_) => setState(() { _cycle = 'month'; _picked = null; })),
+                ChoiceChip(label: Text(ar ? 'سنوي · شهران مجانًا' : 'Yearly · 2 months free'), selected: cycle == 'year', showCheckmark: false, onSelected: (_) => setState(() { _cycle = 'year'; _picked = null; })),
+              ]),
+              const SizedBox(height: 8),
               for (final p in plans) _PlanTile(plan: p, selected: p['code'] == choice, onTap: () => setState(() => _picked = '${p['code']}')),
               const SizedBox(height: 8),
               TextField(
@@ -259,7 +270,7 @@ class _PlanTile extends StatelessWidget {
               Text(planLabel('${plan['code']}'), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
               Text('${domain ? '✓' : '✕'} ${domain ? (ar ? 'يشمل نطاقًا خاصًا' : 'Includes a custom domain') : (ar ? 'بدون نطاق خاص' : 'No custom domain')}', style: TextStyle(color: domain ? const Color(0xFF1E7A4A) : const Color(0xFF6B7C8D), fontSize: 13)),
             ])),
-            Text('${fmtMoney(plan['priceMinor'] as num?)} ${plan['currency']}\n${ar ? '/ شهر' : '/ month'}', textAlign: TextAlign.end, style: const TextStyle(fontWeight: FontWeight.w900)),
+            Text('${fmtMoney(plan['priceMinor'] as num?)} ${plan['currency']}\n${plan['interval'] == 'YEAR' ? (ar ? '/ سنة' : '/ year') : (ar ? '/ شهر' : '/ month')}', textAlign: TextAlign.end, style: const TextStyle(fontWeight: FontWeight.w900)),
           ]),
         ),
       ),

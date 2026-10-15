@@ -22,9 +22,16 @@ public class PlatformAdminService {
     private final com.platform.core.tenant.TenantDirectory directory;
     private final com.platform.billing.BillingService billing;
     private final com.platform.billing.PayRequestService payRequests;
+    private final com.platform.core.auth.ActivationService activation;
+    private final com.platform.core.auth.SsoService sso;
+    private final com.platform.shared.PlatformProperties props;
 
     public PlatformAdminService(JdbcClient jdbc, AuditService audit, com.platform.core.tenant.TenantDirectory directory,
-                                com.platform.billing.BillingService billing, com.platform.billing.PayRequestService payRequests) {
+                                com.platform.billing.BillingService billing, com.platform.billing.PayRequestService payRequests,
+                                com.platform.core.auth.ActivationService activation, com.platform.core.auth.SsoService sso, com.platform.shared.PlatformProperties props) {
+        this.activation = activation;
+        this.sso = sso;
+        this.props = props;
         this.billing = billing;
         this.payRequests = payRequests;
         this.directory = directory;
@@ -44,7 +51,7 @@ public class PlatformAdminService {
                 SELECT p.code AS plan, s.status, count(*) AS c FROM billing.tenant_subscriptions s JOIN billing.subscription_plans p ON p.id = s.plan_id
                 WHERE s.status IN ('TRIALING','ACTIVE','PAST_DUE') GROUP BY p.code, s.status ORDER BY p.code, s.status
                 """).query().listOfRows()));
-        out.put("monthlyRecurringRevenueMinor", jdbc.sql("SELECT coalesce(sum(p.price_minor), 0) FROM billing.tenant_subscriptions s JOIN billing.subscription_plans p ON p.id = s.plan_id WHERE s.status = 'ACTIVE' AND p.interval = 'MONTH'").query(Long.class).single());
+        out.put("monthlyRecurringRevenueMinor", jdbc.sql("SELECT coalesce(sum(p.price_minor), 0) FROM billing.tenant_subscriptions s JOIN billing.subscription_plans p ON p.id = s.plan_id WHERE s.status = 'ACTIVE' AND p.interval = 'MONTH'").query(Long.class).single() + jdbc.sql("SELECT coalesce(sum(p.price_minor / 12), 0) FROM billing.tenant_subscriptions s JOIN billing.subscription_plans p ON p.id = s.plan_id WHERE s.status = 'ACTIVE' AND p.interval = 'YEAR'").query(Long.class).single());
         out.put("trialsEndingIn7Days", jdbc.sql("SELECT count(*) FROM billing.tenant_subscriptions WHERE status = 'TRIALING' AND current_period_end < now() + interval '7 days'").query(Long.class).single());
         out.put("newPayRequests", payRequests.newCount());
         out.put("waitingForRenew", jdbc.sql("SELECT count(*) FROM billing.tenant_subscriptions WHERE status = 'PAST_DUE'").query(Long.class).single());
@@ -125,11 +132,80 @@ public class PlatformAdminService {
         var plan = jdbc.sql("SELECT id, tenant_type FROM billing.subscription_plans WHERE code = :c AND is_active").param("c", planCode).query().listOfRows().stream().findFirst()
                 .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Plan not found"));
         if (!tenantType.equals(plan.get("tenant_type"))) throw BusinessException.badRequest("PLAN_NOT_FOR_TENANT_TYPE", "This plan is not available for this account type");
-        int d = days == null ? 30 : days;
+        int d = days == null ? billing.planDays((UUID) plan.get("id")) : days;
         if (d < 1 || d > 3650) throw BusinessException.badRequest("VALIDATION_ERROR", "Days must be between 1 and 3650");
         billing.activatePlan(id, (UUID) plan.get("id"), d);
         audit.record(actor, id, "TENANT_PLAN_CHANGED", "tenant", id, "{\"plan\":\"" + planCode + "\",\"days\":" + d + "}");
         return tenant(id);
+    }
+
+    private UUID ownerId(UUID tenantId) {
+        Object id = payRequests.ownerContact(tenantId).get("id");
+        if (id == null) throw BusinessException.notFound("RESOURCE_NOT_FOUND", "This business has no owner account");
+        return (UUID) id;
+    }
+
+    /** A one-time PIN the owner uses on the sign-in screen ("forgot password"); the platform never sets or sees a password. */
+    @Transactional
+    public Map<String, Object> resetOwnerPassword(UUID actor, UUID tenantId) {
+        UUID owner = ownerId(tenantId);
+        String pin = activation.issue(owner, tenantId, actor);
+        audit.record(actor, tenantId, "OWNER_PASSWORD_RESET_ISSUED", "user", owner, null);
+        return Map.of("pin", pin, "phone", String.valueOf(payRequests.ownerContact(tenantId).get("phone")));
+    }
+
+    @Transactional
+    public Map<String, Object> updateOwner(UUID actor, UUID tenantId, String phone, String email) {
+        UUID owner = ownerId(tenantId);
+        String p = phone == null || phone.isBlank() ? null : com.platform.shared.PhoneNormalizer.normalize(phone);
+        String e = email == null || email.isBlank() ? null : com.platform.shared.PhoneNormalizer.cleanEmail(email);
+        if (p != null && jdbc.sql("SELECT count(*) FROM core.users WHERE phone = :p AND id <> :u").param("p", p).param("u", owner).query(Long.class).single() > 0)
+            throw new BusinessException(org.springframework.http.HttpStatus.CONFLICT, "ACCOUNT_EXISTS", "This phone number belongs to another account");
+        if (e != null && jdbc.sql("SELECT count(*) FROM core.users WHERE lower(email) = :e AND id <> :u").param("e", e).param("u", owner).query(Long.class).single() > 0)
+            throw new BusinessException(org.springframework.http.HttpStatus.CONFLICT, "ACCOUNT_EXISTS", "This email belongs to another account");
+        jdbc.sql("UPDATE core.users SET phone = coalesce(:p, phone), email = coalesce(:e, email), updated_at = now() WHERE id = :u").param("p", p).param("e", e).param("u", owner).update();
+        audit.record(actor, tenantId, "OWNER_CONTACT_CHANGED", "user", owner, null);
+        return tenant(tenantId);
+    }
+
+    /** Renames the business and/or its address name (subdomain). The old address stops working at once. */
+    @Transactional
+    public Map<String, Object> updateTenant(UUID actor, UUID tenantId, String name, String slugRaw) {
+        var t = jdbc.sql("SELECT slug, tenant_type FROM core.tenants WHERE id = :i").param("i", tenantId).query().listOfRows().stream().findFirst()
+                .orElseThrow(() -> BusinessException.notFound("TENANT_NOT_FOUND", "Tenant not found"));
+        if (name != null && !name.isBlank()) {
+            if (name.trim().length() < 2) throw BusinessException.badRequest("VALIDATION_ERROR", "Name is too short");
+            jdbc.sql("UPDATE core.tenants SET name = :n, updated_at = now() WHERE id = :i").param("n", name.trim()).param("i", tenantId).update();
+            jdbc.sql("UPDATE commerce.store_profiles SET store_name = :n WHERE tenant_id = :i").param("n", name.trim()).param("i", tenantId).update();
+            jdbc.sql("UPDATE medical.clinic_profiles SET clinic_name = :n WHERE tenant_id = :i").param("n", name.trim()).param("i", tenantId).update();
+        }
+        if (slugRaw != null && !slugRaw.isBlank()) {
+            String slug = com.platform.core.onboarding.SlugPolicy.validate(slugRaw);
+            if (!slug.equals(t.get("slug"))) {
+                String host = props.subdomainHost(slug);
+                if (jdbc.sql("SELECT count(*) FROM core.tenants WHERE slug = :s AND id <> :i").param("s", slug).param("i", tenantId).query(Long.class).single() > 0
+                        || jdbc.sql("SELECT count(*) FROM core.tenant_domains WHERE host = :h AND tenant_id <> :i").param("h", host).param("i", tenantId).query(Long.class).single() > 0)
+                    throw new BusinessException(org.springframework.http.HttpStatus.CONFLICT, "SLUG_TAKEN", "This address name is already taken");
+                jdbc.sql("UPDATE core.tenants SET slug = :s, updated_at = now() WHERE id = :i").param("s", slug).param("i", tenantId).update();
+                jdbc.sql("UPDATE core.tenant_domains SET host = :h WHERE tenant_id = :i AND kind = 'SUBDOMAIN'").param("h", host).param("i", tenantId).update();
+            }
+        }
+        directory.invalidateAll();
+        audit.record(actor, tenantId, "TENANT_RENAMED", "tenant", tenantId, null);
+        return tenant(tenantId);
+    }
+
+    /** Support access: audited, then the caller signs in to the business (web: SSO ticket; app: its own session). */
+    @Transactional
+    public Map<String, Object> supportAccess(UUID actor, UUID tenantId) {
+        var t = jdbc.sql("SELECT tenant_type, name, status, default_currency, (SELECT d.host FROM core.tenant_domains d WHERE d.tenant_id = core.tenants.id AND d.is_primary) AS host FROM core.tenants WHERE id = :i").param("i", tenantId).query().listOfRows().stream().findFirst()
+                .orElseThrow(() -> BusinessException.notFound("TENANT_NOT_FOUND", "Tenant not found"));
+        String ticket = sso.createSupportTicket(actor, tenantId);
+        audit.record(actor, tenantId, "SUPPORT_ACCESS", "tenant", tenantId, null);
+        Map<String, Object> out = new LinkedHashMap<>(Rows.camel(t));
+        out.put("id", tenantId);
+        out.put("ticket", ticket);
+        return out;
     }
 
     public Map<String, Object> audit(UUID tenantId, String action, Page page) {

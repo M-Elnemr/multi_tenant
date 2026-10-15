@@ -101,7 +101,7 @@ public class PayRequestService {
         var r = jdbc.sql("SELECT tenant_id, plan_code, status FROM billing.pay_requests WHERE id = :i FOR UPDATE").param("i", id).query().listOfRows().stream().findFirst()
                 .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Request not found"));
         UUID tenantId = (UUID) r.get("tenant_id");
-        if ("PAID".equals(status) && activate) billing.activatePlan(tenantId, billing.planId((String) r.get("plan_code")), 30);
+        if ("PAID".equals(status) && activate) { UUID planId = billing.planId((String) r.get("plan_code")); billing.activatePlan(tenantId, planId, billing.planDays(planId)); }
         jdbc.sql("UPDATE billing.pay_requests SET status = :s, admin_note = coalesce(:n, admin_note), handled_by = :a, handled_at = now() WHERE id = :i")
                 .param("s", status).param("n", adminNote).param("a", actor).param("i", id).update();
         audit.record(actor, tenantId, "PAY_REQUEST_" + status, "pay_request", id, null);

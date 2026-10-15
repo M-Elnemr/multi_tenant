@@ -223,7 +223,7 @@ public class AuthService {
         TenantContext.Current t = TenantContext.get();
         if (t == null) return;
         boolean member = memberships.findByUserIdAndTenantId(user.getId(), t.id())
-                .filter(m -> m.getStatus() == Membership.Status.ACTIVE).isPresent();
+                .filter(m -> m.getStatus() == Membership.Status.ACTIVE).isPresent() || rbac.hasSupportAccess(user.getId());
         if (!member) throw BusinessException.forbidden("NOT_A_MEMBER", "This account has no access here");
     }
 
@@ -252,6 +252,10 @@ public class AuthService {
             var m = memberships.findByUserIdAndTenantId(u.getId(), t.id()).filter(x -> x.getStatus() == Membership.Status.ACTIVE);
             roles = m.map(x -> rbac.roleCodes(x.getId())).orElse(List.of());
             m.ifPresent(x -> perms.addAll(rbac.permissionCodes(x.getId())));
+            if (m.isEmpty() && rbac.hasSupportAccess(u.getId())) {   // platform support access: shown as the business's owner
+                perms.addAll(rbac.supportPermissions(u.getId(), t.type()));
+                roles = List.of(rbac.supportRole(t.type()));
+            }
         }
         return new TokenResponse.UserSummary(u.getId(), u.getFirstName(), u.getLastName(), u.getPhone(), u.getEmail(), roles, List.copyOf(perms));
     }

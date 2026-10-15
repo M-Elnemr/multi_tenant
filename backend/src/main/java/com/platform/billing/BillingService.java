@@ -179,7 +179,7 @@ public class BillingService {
         if (inv == null || !"OPEN".equals(inv.get("status"))) return;
         UUID tenantId = (UUID) inv.get("tenant_id");
         jdbc.sql("UPDATE billing.subscription_invoices SET status = 'PAID', paid_at = now() WHERE id = :i").param("i", invoiceId).update();
-        activatePlan(tenantId, (UUID) inv.get("target_plan_id"), 30);
+        activatePlan(tenantId, (UUID) inv.get("target_plan_id"), planDays((UUID) inv.get("target_plan_id")));
         event(tenantId, "PAYMENT_APPLIED", "{\"invoiceId\":\"" + invoiceId + "\"}");
     }
 
@@ -206,6 +206,11 @@ public class BillingService {
                 .param("t", tenantId).update();
         directory.invalidateAll();
         event(tenantId, "PLAN_ACTIVATED", "{\"days\":" + days + "}");
+    }
+
+    /** How long one purchase of this plan lasts: 30 days for a monthly plan, 365 for a yearly one. */
+    public int planDays(UUID planId) {
+        return "YEAR".equals(jdbc.sql("SELECT interval FROM billing.subscription_plans WHERE id = :p").param("p", planId).query(String.class).optional().orElse("MONTH")) ? 365 : 30;
     }
 
     public UUID planId(String code) {

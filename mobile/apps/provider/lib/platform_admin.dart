@@ -6,6 +6,7 @@ import 'package:platform_core/platform_core.dart';
 import 'billing_ui.dart';
 import 'common.dart';
 import 'forms.dart';
+import 'main.dart' show BusinessHome;
 
 /// The platform owner's area: every shop and clinic, their subscriptions and contacts, and the "Proceed to pay" requests to call back.
 class AdminHome extends StatefulWidget {
@@ -239,17 +240,72 @@ class _TenantDetailPageState extends State<TenantDetailPage> {
   Future<void> _changePlan(Map<String, dynamic> d) async {
     final ar = AppLocale.isAr;
     final store = d['tenantType'] == 'STORE';
-    final plans = store ? ['STORE_STANDARD', 'STORE_PRO'] : ['CLINIC_PRO'];
+    final plans = store ? ['STORE_STANDARD', 'STORE_PRO', 'STORE_STANDARD_YEARLY', 'STORE_PRO_YEARLY'] : ['CLINIC_PRO', 'CLINIC_PRO_YEARLY'];
     var plan = plans.contains((d['subscription'] as Map?)?['planCode']) ? '${(d['subscription'] as Map)['planCode']}' : plans.last;
-    final days = TextEditingController(text: '30');
+    final days = TextEditingController(text: plan.endsWith('_YEARLY') ? '365' : '30');
     final ok = await formSheet(context, title: ar ? 'تغيير الباقة / إضافة أيام' : 'Change plan / add days', saveLabel: ar ? 'تطبيق' : 'Apply', body: (c, set) => [
-      DropdownButtonFormField<String>(initialValue: plan, items: [for (final p in plans) DropdownMenuItem(value: p, child: Text(planLabel(p)))], onChanged: (v) => set(() => plan = v ?? plan), decoration: InputDecoration(labelText: ar ? 'الباقة' : 'Plan')),
+      DropdownButtonFormField<String>(initialValue: plan, items: [for (final p in plans) DropdownMenuItem(value: p, child: Text(planLabel(p)))], onChanged: (v) { set(() => plan = v ?? plan); days.text = plan.endsWith('_YEARLY') ? '365' : '30'; }, decoration: InputDecoration(labelText: ar ? 'الباقة' : 'Plan')),
       const SizedBox(height: 10),
       tf(days, ar ? 'عدد الأيام' : 'Days to add', number: true, ltr: true),
     ], onSave: () async {
       await widget.api.post('platform/tenants/${widget.id}/plan', {'planCode': plan, 'days': int.tryParse(days.text.trim()) ?? 30});
     });
     if (ok) setState(() => _n++);
+  }
+
+  Future<void> _resetPassword() async {
+    final ar = AppLocale.isAr;
+    if (!await confirm(context, ar ? 'إصدار كود مؤقت لإعادة تعيين كلمة مرور المالك؟' : 'Issue a one-time code to reset the owner\'s password?')) return;
+    if (!mounted) return;
+    try {
+      final r = await widget.api.post('platform/tenants/${widget.id}/owner/reset-password', {}) as Map;
+      if (!mounted) return;
+      await showDialog<void>(context: context, builder: (c) => AlertDialog(
+        title: Text(ar ? 'الكود المؤقت' : 'One-time code'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          SelectableText('${r['pin']}', textDirection: TextDirection.ltr, style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w900, letterSpacing: 4)),
+          const SizedBox(height: 8),
+          Text(ar ? 'أعطه للمالك: في شاشة الدخول يختار «نسيت كلمة المرور» ويكتب هذا الكود. يعمل مرة واحدة.' : 'Give it to the owner: on the sign-in screen they choose forgot password and enter this code. It works once.'),
+        ]),
+        actions: [TextButton(onPressed: () => Navigator.pop(c), child: Text(ar ? 'تم' : 'Done'))],
+      ));
+    } catch (e) {
+      if (mounted) toast(context, errorText(e), isError: true);
+    }
+  }
+
+  Future<void> _editOwner(Map<String, dynamic> owner) async {
+    final ar = AppLocale.isAr;
+    final phone = TextEditingController(text: '${owner['phone'] ?? ''}');
+    final email = TextEditingController(text: '${owner['email'] ?? ''}');
+    final ok = await formSheet(context, title: ar ? 'تعديل بيانات تواصل المالك' : 'Edit owner contact', body: (c, set) => [tf(phone, ar ? 'موبايل المالك' : 'Owner phone', ltr: true), tf(email, ar ? 'بريد المالك' : 'Owner email', ltr: true)],
+        onSave: () async { await widget.api.patch('platform/tenants/${widget.id}/owner', {'phone': phone.text.trim().isEmpty ? null : phone.text.trim(), 'email': email.text.trim().isEmpty ? null : email.text.trim()}); });
+    if (ok) setState(() => _n++);
+  }
+
+  Future<void> _rename(Map<String, dynamic> d) async {
+    final ar = AppLocale.isAr;
+    final name = TextEditingController(text: '${d['name']}');
+    final slug = TextEditingController(text: '${d['slug']}');
+    final ok = await formSheet(context, title: ar ? 'تعديل اسم النشاط / العنوان' : 'Edit business name / address', body: (c, set) => [
+      tf(name, ar ? 'اسم النشاط' : 'Business name'),
+      tf(slug, ar ? 'اسم العنوان (قبل النقطة)' : 'Address name (before the dot)', ltr: true),
+      Text(ar ? 'العنوان القديم يتوقف فورًا.' : 'The old address stops working immediately.', style: const TextStyle(color: Color(0xFFD98200), fontWeight: FontWeight.w700)),
+    ], onSave: () async { await widget.api.patch('platform/tenants/${widget.id}', {'name': name.text.trim(), 'slug': slug.text.trim().toLowerCase()}); });
+    if (ok) setState(() => _n++);
+  }
+
+  /// Support access: audited on the server, then the business opens with the admin's own session (acting as its owner).
+  Future<void> _openAsSupport() async {
+    try {
+      final r = Map<String, dynamic>.from(await widget.api.post('platform/tenants/${widget.id}/support-access', {}) as Map);
+      final host = r['host'] as String?;
+      if (host == null || !mounted) return;
+      final business = {'id': widget.id, 'name': r['name'], 'type': r['tenantType'], 'status': r['status'], 'currency': r['defaultCurrency'] ?? 'EGP', 'host': host, 'baseUrl': baseForHost(host), 'roles': <String>[]};
+      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => SupportBusiness(business: business, api: widget.api)));
+    } catch (e) {
+      if (mounted) toast(context, errorText(e), isError: true);
+    }
   }
 
   Future<void> _delete(Map<String, dynamic> d) async {
@@ -299,6 +355,10 @@ class _TenantDetailPageState extends State<TenantDetailPage> {
                   IconButton.filledTonal(icon: const Icon(Icons.chat_rounded, color: Color(0xFF1E9E5A)), onPressed: () => whatsapp('${owner['phone']}', '${d['name']}')),
                 ]),
                 if (owner['email'] != null) Text('${owner['email']}', textDirection: TextDirection.ltr),
+                Wrap(spacing: 8, children: [
+                  OutlinedButton.icon(onPressed: _resetPassword, icon: const Icon(Icons.lock_reset_rounded), label: Text(ar ? 'إعادة تعيين كلمة المرور' : 'Reset password')),
+                  OutlinedButton.icon(onPressed: () => _editOwner(owner), icon: const Icon(Icons.edit_rounded), label: Text(ar ? 'تعديل التواصل' : 'Edit contact')),
+                ]),
                 const SizedBox(height: 4),
                 Text('${ar ? 'تاريخ التسجيل' : 'Signed up'}: ${fmtDate('${d['createdAt']}', time: false)}  ·  ${ar ? 'الموظفون' : 'Staff'}: ${d['staffCount']}', style: const TextStyle(color: Color(0xFF6B7C8D))),
               ]))),
@@ -309,7 +369,7 @@ class _TenantDetailPageState extends State<TenantDetailPage> {
                 kv(ar ? 'ينتهي في' : 'Ends on', fmtDate(sub['currentPeriodEnd'] as String?, time: false)),
                 if (state['daysLeft'] != null && state['state'] != 'DISABLED') kv(ar ? 'المتبقي' : 'Days left', '${state['daysLeft']}'),
                 const SizedBox(height: 6),
-                Wrap(spacing: 8, children: [
+                Wrap(spacing: 8, runSpacing: 4, children: [
                   FilledButton.icon(onPressed: () => _changePlan(d), icon: const Icon(Icons.swap_vert_rounded), label: Text(ar ? 'تغيير الباقة / أيام' : 'Change plan / days')),
                   if (!disabled) OutlinedButton.icon(onPressed: () => _setStatus('SUSPENDED'), icon: const Icon(Icons.block_rounded, color: Color(0xFFD14343)), label: Text(ar ? 'إيقاف' : 'Disable', style: const TextStyle(color: Color(0xFFD14343)))),
                   if (disabled) OutlinedButton.icon(onPressed: () => _setStatus('ACTIVE'), icon: const Icon(Icons.check_circle_outline_rounded), label: Text(ar ? 'تفعيل' : 'Enable')),
@@ -320,6 +380,11 @@ class _TenantDetailPageState extends State<TenantDetailPage> {
                 for (final r in (d['payRequests'] as List).cast<Map>())
                   Card(child: ListTile(title: Text('${planLabel('${r['planCode']}')} · ${fmtMoney(r['amountMinor'] as num?)} ${r['currency']}'), subtitle: Text(fmtDate('${r['createdAt']}')), trailing: StatusPill('${r['status']}'))),
               ],
+              sectionTitle(ar ? 'تحكم المنصة' : 'Platform controls'),
+              Wrap(spacing: 8, runSpacing: 4, children: [
+                OutlinedButton.icon(onPressed: () => _rename(d), icon: const Icon(Icons.drive_file_rename_outline_rounded), label: Text(ar ? 'تعديل الاسم / العنوان' : 'Edit name / address')),
+                if (widget.perms.contains('platform.support.access')) FilledButton.tonalIcon(onPressed: _openAsSupport, icon: const Icon(Icons.support_agent_rounded), label: Text(ar ? 'فتح كدعم فني' : 'Open as support')),
+              ]),
               sectionTitle(ar ? 'النطاقات' : 'Domains'),
               for (final x in ((d['domains'] as List?) ?? const []).cast<Map>()) Text('${x['host']} ${x['primary'] == true ? '★' : ''} ${x['verified'] == true ? '✓' : '…'}', textDirection: TextDirection.ltr),
               sectionTitle(ar ? 'آخر الأحداث' : 'Recent events'),
@@ -339,4 +404,13 @@ class _TenantDetailPageState extends State<TenantDetailPage> {
       ),
     );
   }
+}
+
+/// The business's own panel, opened by the platform owner for support (the platform session acts as the business owner on that address).
+class SupportBusiness extends StatelessWidget {
+  const SupportBusiness({super.key, required this.business, required this.api});
+  final Map<String, dynamic> business;
+  final ApiClient api;
+  @override
+  Widget build(BuildContext context) => BusinessHome(business: business, session: api.session, canSwitch: false, onSwitch: () => Navigator.of(context).pop(), onSignOut: () => Navigator.of(context).pop());
 }

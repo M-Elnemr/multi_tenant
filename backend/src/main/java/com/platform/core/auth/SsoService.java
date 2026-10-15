@@ -49,6 +49,17 @@ public class SsoService {
                 """).param("u", userId).param("t", tenantId).query(Long.class).single();
         // A patient (their own account, not a staff user) may also open a clinic where they have a record.
         if (member == 0 && !accounts.hasPatientRecord(userId, tenantId)) throw BusinessException.notFound("RESOURCE_NOT_FOUND", "Not found");   // same answer for "no such place" and "not yours"
+        return newTicket(userId, tenantId);
+    }
+
+    /** Platform support access: a ticket for any existing business (the caller has already checked platform.support.access and audits it). */
+    @Transactional
+    public String createSupportTicket(UUID userId, UUID tenantId) {
+        if (jdbc.sql("SELECT count(*) FROM core.tenants WHERE id = :t").param("t", tenantId).query(Long.class).single() == 0) throw BusinessException.notFound("TENANT_NOT_FOUND", "Tenant not found");
+        return newTicket(userId, tenantId);
+    }
+
+    private String newTicket(UUID userId, UUID tenantId) {
         byte[] raw = new byte[32];
         RANDOM.nextBytes(raw);
         String ticket = Base64.getUrlEncoder().withoutPadding().encodeToString(raw);

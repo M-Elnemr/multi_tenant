@@ -23,6 +23,8 @@ public class PlatformAdminController {
     public record StatusRequest(String status, String reason) {}
     public record PlanRequest(String planCode, Integer days) {}
     public record PurgeRequest(String confirmSlug) {}
+    public record OwnerRequest(String phone, String email) {}
+    public record RenameRequest(String name, String slug) {}
     public record PayHandleRequest(String status, String adminNote, Boolean activate) {}
 
     @GetMapping("/overview")
@@ -52,6 +54,22 @@ public class PlatformAdminController {
     @DeleteMapping("/tenants/{id}")
     @PreAuthorize("hasAuthority('platform.tenant.purge')")
     public Map<String, Object> delete(@PathVariable UUID id, @RequestBody PurgeRequest r, Authentication a) { return purge.purge((UUID) a.getPrincipal(), id, r.confirmSlug()); }
+
+    @PostMapping("/tenants/{id}/owner/reset-password")
+    @PreAuthorize("hasAuthority('platform.tenant.manage')")
+    public Map<String, Object> resetOwner(@PathVariable UUID id, Authentication a) { return service.resetOwnerPassword((UUID) a.getPrincipal(), id); }
+
+    @PatchMapping("/tenants/{id}/owner")
+    @PreAuthorize("hasAuthority('platform.tenant.manage')")
+    public Map<String, Object> owner(@PathVariable UUID id, @RequestBody OwnerRequest r, Authentication a) { return service.updateOwner((UUID) a.getPrincipal(), id, r.phone(), r.email()); }
+
+    @PatchMapping("/tenants/{id}")
+    @PreAuthorize("hasAuthority('platform.tenant.manage')")
+    public Map<String, Object> rename(@PathVariable UUID id, @RequestBody RenameRequest r, Authentication a) { return service.updateTenant((UUID) a.getPrincipal(), id, r.name(), r.slug()); }
+
+    @PostMapping("/tenants/{id}/support-access")
+    @PreAuthorize("hasAuthority('platform.support.access')")
+    public Map<String, Object> support(@PathVariable UUID id, Authentication a) { return service.supportAccess((UUID) a.getPrincipal(), id); }
 
     @GetMapping("/pay-requests")
     @PreAuthorize("hasAuthority('platform.tenant.manage')")

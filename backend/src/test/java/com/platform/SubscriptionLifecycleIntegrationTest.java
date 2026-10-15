@@ -129,4 +129,54 @@ class SubscriptionLifecycleIntegrationTest extends IntegrationTestBase {
         onHost(b.host(), null, "POST", "/api/v1/auth/login", "{\"identifier\":\"" + b.phone() + "\",\"password\":\"s3cretPass!\"}").andExpect(status().isOk());
         onHost(a.host(), null, "GET", "/api/v1/clinic/public/profile", null).andExpect(status().isNotFound());
     }
+
+    @Test
+    void yearlyPlanGivesTwoMonthsFreeAndActivatesForAYear() throws Exception {
+        String admin = platformToken("PLATFORM_OWNER");
+        Tenant shop = onboard("STORE");
+        onHost(shop.host(), null, "GET", "/api/v1/billing/plans", null).andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.code=='STORE_STANDARD_YEARLY')].priceMinor").value(500000))
+                .andExpect(jsonPath("$[?(@.code=='STORE_PRO_YEARLY')].priceMinor").value(750000));
+        String req = onHost(shop.host(), shop.access(), "POST", "/api/v1/billing/pay-requests", "{\"planCode\":\"STORE_PRO_YEARLY\",\"phone\":\"" + shop.phone() + "\"}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.amountMinor").value(750000)).andReturn().getResponse().getContentAsString();
+        onHost("platform.test", admin, "POST", "/api/v1/platform/pay-requests/" + JsonPath.read(req, "$.id"), "{\"status\":\"PAID\"}").andExpect(status().isOk());
+        long days = jdbc.sql("SELECT extract(day FROM (current_period_end - now()))::bigint FROM billing.tenant_subscriptions WHERE tenant_id = :t").param("t", idOf(shop)).query(Long.class).single();
+        assertThat(days).isBetween(363L, 365L);
+        // yearly Professional keeps the custom domain, like the monthly one
+        onHost(shop.host(), shop.access(), "POST", "/api/v1/tenant/domains", "{\"host\":\"www.yr-" + uniq() + ".com\"}").andExpect(status().isCreated());
+    }
+
+    @Test
+    void platformOwnerHasFullControlOverABusiness() throws Exception {
+        String owner = platformToken("PLATFORM_OWNER");
+        String admin = platformToken("PLATFORM_ADMIN");
+        Tenant clinic = onboard("CLINIC");
+        String id = idOf(clinic).toString();
+
+        // reset the owner's password with a one-time PIN, used once on the sign-in "forgot password" step
+        String pin = JsonPath.read(onHost("platform.test", admin, "POST", "/api/v1/platform/tenants/" + id + "/owner/reset-password", null).andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), "$.pin");
+        onHost(clinic.host(), null, "POST", "/api/v1/auth/reset-password", "{\"identifier\":\"" + clinic.phone() + "\",\"pin\":\"" + pin + "\",\"newPassword\":\"BrandNewPass9\"}").andExpect(status().isOk());
+        onHost(clinic.host(), null, "POST", "/api/v1/auth/reset-password", "{\"identifier\":\"" + clinic.phone() + "\",\"pin\":\"" + pin + "\",\"newPassword\":\"AnotherPass9\"}").andExpect(status().isBadRequest());
+
+        // fix the owner's contact; a number that belongs to someone else is refused
+        String newPhone = nextPhone();
+        onHost("platform.test", admin, "PATCH", "/api/v1/platform/tenants/" + id + "/owner", "{\"phone\":\"" + newPhone + "\",\"email\":\"owner" + uniq() + "@example.com\"}").andExpect(status().isOk()).andExpect(jsonPath("$.owner.phone").value(newPhone));
+        Tenant other = onboard("STORE");
+        onHost("platform.test", admin, "PATCH", "/api/v1/platform/tenants/" + id + "/owner", "{\"phone\":\"" + other.phone() + "\"}").andExpect(status().isConflict());
+
+        // rename: the new address works, the old one stops
+        String newSlug = "renamed" + uniq().substring(0, 6);
+        onHost("platform.test", admin, "PATCH", "/api/v1/platform/tenants/" + id, "{\"name\":\"Clinic Renamed\",\"slug\":\"" + newSlug + "\"}").andExpect(status().isOk()).andExpect(jsonPath("$.name").value("Clinic Renamed")).andExpect(jsonPath("$.slug").value(newSlug));
+        String newHost = clinic.host().replace(clinic.slug(), newSlug);
+        onHost(newHost, null, "GET", "/api/v1/clinic/public/profile", null).andExpect(status().isOk());
+        onHost(clinic.host(), null, "GET", "/api/v1/clinic/public/profile", null).andExpect(status().isNotFound());
+
+        // support access: only the platform owner can open it, and it is audited; an ordinary admin cannot
+        onHost("platform.test", admin, "POST", "/api/v1/platform/tenants/" + id + "/support-access", null).andExpect(status().isForbidden());
+        String support = onHost("platform.test", owner, "POST", "/api/v1/platform/tenants/" + id + "/support-access", null).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat((String) JsonPath.read(support, "$.ticket")).hasSizeGreaterThan(20);
+        onHost(newHost, owner, "GET", "/api/v1/clinic/patients", null).andExpect(status().isOk());      // acts as the owner on that business
+        onHost(newHost, admin, "GET", "/api/v1/clinic/patients", null).andExpect(status().isForbidden());
+        assertThat(jdbc.sql("SELECT count(*) FROM audit.audit_logs WHERE action = 'SUPPORT_ACCESS' AND tenant_id = :t").param("t", UUID.fromString(id)).query(Long.class).single()).isEqualTo(1);
+    }
 }

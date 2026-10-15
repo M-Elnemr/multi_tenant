@@ -9,6 +9,7 @@ import { useT } from "@/components/i18n-provider";
 import { Alert, Button, ErrorText, Field, Input } from "@/components/ui";
 import { Icon } from "@/components/icons";
 import { LogoMark } from "@/components/brand";
+import { AppBenefits } from "@/components/app-benefits";
 
 type Type = "STORE" | "CLINIC";
 
@@ -131,7 +132,8 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
     <div className="mx-auto max-w-xl animate-fade-up px-4 py-12">
       <button onClick={() => { setType(null); setCats([]); setOtherCat(""); }} className="mb-4 inline-flex items-center gap-1 text-sm text-slate-500 transition hover:text-brand"><Icon name="arrow" className="h-4 w-4 rotate-180 rtl:rotate-0" />{t("common.back")}</button>
       <h1 className="mb-1 text-2xl font-bold">{type === "STORE" ? t("register.storeTitle") : t("register.clinicTitle")}</h1>
-      <p className="mb-6 text-sm text-slate-500">{t("register.freeTrial")}</p>
+      <p className="mb-4 text-sm text-slate-500">{t("register.freeTrial")}</p>
+      <div className="mb-6"><AppBenefits kind={type} compact /></div>
       <form onSubmit={(e) => { e.preventDefault(); if (valid) void create.run(); }} className="space-y-5 rounded-3xl border border-slate-200/80 bg-white p-6 shadow-lift sm:p-8">
         <Field label={type === "STORE" ? t("register.storeName") : t("register.clinicName")}>
           <Input value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} />

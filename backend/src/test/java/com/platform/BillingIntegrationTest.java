@@ -31,8 +31,9 @@ class BillingIntegrationTest extends IntegrationTestBase {
         onHost(t.host(), t.access(), "GET", "/api/v1/billing/subscription", null)
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("TRIALING")).andExpect(jsonPath("$.planCode").value("STORE_FREE"));
         onHost(t.host(), null, "GET", "/api/v1/billing/plans", null)
-                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(3)).andExpect(jsonPath("$[0].tenantType").value("STORE"))
-                .andExpect(jsonPath("$[0].priceMinor").value(0)).andExpect(jsonPath("$[1].priceMinor").value(50000)).andExpect(jsonPath("$[2].priceMinor").value(75000));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(5)).andExpect(jsonPath("$[0].tenantType").value("STORE"))
+                .andExpect(jsonPath("$[0].priceMinor").value(0)).andExpect(jsonPath("$[1].priceMinor").value(50000)).andExpect(jsonPath("$[2].priceMinor").value(500000))   // Standard yearly = 10 months
+                .andExpect(jsonPath("$[3].priceMinor").value(75000)).andExpect(jsonPath("$[4].priceMinor").value(750000));
         // custom domains are part of the trial (Pro features)
         onHost(t.host(), t.access(), "POST", "/api/v1/tenant/domains", "{\"host\":\"www.trial-" + uniq() + ".com\"}").andExpect(status().isCreated());
     }

@@ -333,6 +333,7 @@ class CustomersScreen extends StatelessWidget {
       searchHint: ar ? 'اسم العميل أو الهاتف' : 'Customer name or phone',
       emptyText: ar ? 'لا يوجد عملاء' : 'No customers',
       itemBuilder: (c, u, reload) => Card(child: ListTile(
+        onTap: () => Navigator.of(c).push(MaterialPageRoute(builder: (_) => CustomerDetail(ctx: ctx, customer: u))),
         leading: CircleAvatar(child: Text(('${u['name']}'.isEmpty ? '?' : '${u['name']}'[0]).toUpperCase())),
         title: Text('${u['name']}', style: const TextStyle(fontWeight: FontWeight.w800)),
         subtitle: Text('${u['phone'] ?? ''}\n${u['ordersCount']} ${ar ? 'طلب' : 'orders'} · ${s.money(u['totalSpentMinor'] as num?, ctx.currency)}', textDirection: TextDirection.ltr, textAlign: TextAlign.start),
@@ -343,3 +344,51 @@ class CustomersScreen extends StatelessWidget {
   }
 }
 
+/// One client of the shop: contact details, spending, their orders, and one-tap call / WhatsApp.
+class CustomerDetail extends StatelessWidget {
+  const CustomerDetail({super.key, required this.ctx, required this.customer});
+  final Ctx ctx;
+  final Map<String, dynamic> customer;
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    final ar = s.ar;
+    final c = customer;
+    final phone = c['phone'] as String?;
+    final addr = c['address'] is Map ? (c['address'] as Map) : const {};
+    final address = [addr['addressLine1'], addr['district'], addr['city']].where((e) => e != null && '$e'.isNotEmpty).join('، ');
+    return Scaffold(
+      appBar: AppBar(title: Text('${c['name']}')),
+      body: ListView(padding: const EdgeInsets.all(16), children: [
+        Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          kv(ar ? 'الهاتف' : 'Phone', phone ?? '', ltr: true),
+          if ((c['email'] ?? '').toString().isNotEmpty) kv(ar ? 'البريد' : 'Email', '${c['email']}', ltr: true),
+          if (address.isNotEmpty) kv(ar ? 'العنوان' : 'Address', address),
+          kv(ar ? 'رقم العميل' : 'Customer no.', '${c['customerNumber'] ?? ''}', ltr: true),
+          kv(ar ? 'عميل منذ' : 'Customer since', fmtDate(c['createdAt'] as String?, time: false)),
+          kv(ar ? 'الطلبات' : 'Orders', '${c['ordersCount']}'),
+          kv(ar ? 'إجمالي المشتريات' : 'Total spent', s.money(c['totalSpentMinor'] as num?, ctx.currency)),
+          if (phone != null && phone.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 10), child: Row(children: [
+            Expanded(child: FilledButton.icon(onPressed: () => dial(phone), icon: const Icon(Icons.call_rounded), label: Text(ar ? 'اتصال' : 'Call'))),
+            const SizedBox(width: 10),
+            Expanded(child: FilledButton.icon(style: FilledButton.styleFrom(backgroundColor: const Color(0xFF1E9E5A)), onPressed: () => whatsapp(phone, ar ? 'مرحبًا ${c['name']}' : 'Hello ${c['name']}'), icon: const Icon(Icons.chat_rounded), label: const Text('WhatsApp'))),
+          ])),
+        ]))),
+        sectionTitle(ar ? 'طلبات العميل' : 'Orders'),
+        Async<List<dynamic>>(
+          load: () async => await ctx.api.get('store/customers/${c['id']}/orders') as List<dynamic>,
+          builder: (context, orders, reload) => Column(children: [
+            if (orders.isEmpty) emptyState(ar ? 'لا توجد طلبات' : 'No orders'),
+            for (final o in orders.cast<Map<String, dynamic>>())
+              Card(child: ListTile(
+                title: Text('#${o['orderNumber']}', style: const TextStyle(fontWeight: FontWeight.w800)),
+                subtitle: Text(fmtDate(o['createdAt'] as String?)),
+                trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [Text(s.money(o['totalMinor'] as num?, ctx.currency), style: const TextStyle(fontWeight: FontWeight.w800)), StatusPill('${o['status']}')]),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => OrderDetail(ctx: ctx, id: '${o['id']}'))),
+              )),
+          ]),
+        ),
+      ]),
+    );
+  }
+}

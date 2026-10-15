@@ -61,12 +61,16 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         for (String p : rbac.platformPermissionCodes(userId)) auths.add(new SimpleGrantedAuthority(p));
         TenantContext.Current t = TenantContext.get();
         if (t != null) {
-            memberships.findByUserIdAndTenantId(userId, t.id())
-                    .filter(m -> m.getStatus() == Membership.Status.ACTIVE)
-                    .ifPresent(m -> {
-                        for (String p : rbac.permissionCodes(m.getId())) auths.add(new SimpleGrantedAuthority(p));
-                        for (String r : rbac.roleCodes(m.getId())) auths.add(new SimpleGrantedAuthority("ROLE_" + r));
-                    });
+            var member = memberships.findByUserIdAndTenantId(userId, t.id()).filter(m -> m.getStatus() == Membership.Status.ACTIVE);
+            if (member.isPresent()) {
+                var m = member.get();
+                for (String p : rbac.permissionCodes(m.getId())) auths.add(new SimpleGrantedAuthority(p));
+                for (String r : rbac.roleCodes(m.getId())) auths.add(new SimpleGrantedAuthority("ROLE_" + r));
+            } else {
+                // platform support access: the platform owner acts as the business's owner
+                for (String p : rbac.supportPermissions(userId, t.type())) auths.add(new SimpleGrantedAuthority(p));
+                if (rbac.hasSupportAccess(userId)) auths.add(new SimpleGrantedAuthority("ROLE_" + rbac.supportRole(t.type())));
+            }
         }
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(userId, null, List.copyOf(auths)));

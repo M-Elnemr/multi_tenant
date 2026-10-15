@@ -10,15 +10,19 @@ import { PhoneInput } from "../inputs";
 import { Icon } from "../icons";
 import { Alert, Button, Card, ErrorText, Field, Loading, PageHeader, StatusBadge } from "../ui";
 import type { BillingStatus } from "./subscription-bar";
+import { AppBenefits } from "../app-benefits";
+import { type Cycle, CycleToggle } from "../cycle-toggle";
 
-type Plan = { code: string; name: string; priceMinor: number; currency: string; features: Record<string, boolean | number> };
+type Plan = { code: string; name: string; priceMinor: number; currency: string; interval?: string; features: Record<string, boolean | number> };
 type Req = { id: string; planCode: string; amountMinor: number; currency: string; phone: string; status: string };
 
 export const planLabel = (t: (k: string) => string, code?: string) => {
-  const kind = code?.split("_").pop();
+  const yearly = !!code?.endsWith("_YEARLY");
+  const kind = code?.replace("_YEARLY", "").split("_").pop();
   const key = kind ? `plan.${kind}` : "";
   const label = key ? t(key) : "";
-  return label && label !== key ? label : (code ?? "-");
+  const base = label && label !== key ? label : (code ?? "-");
+  return yearly ? `${base} (${t("plan.YEARLY")})` : base;
 };
 
 function Inner() {
@@ -29,6 +33,7 @@ function Inner() {
   const plans = useApi<Plan[]>("billing/plans");
   const reqs = useApi<Req[]>("billing/pay-requests");
   const [picked, setPicked] = useState<string | null>(q.get("plan"));
+  const [cycleSet, setCycleSet] = useState<Cycle | null>(null);
   const [phone, setPhone] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [saved, setSaved] = useState<Req | null>(null);
@@ -38,8 +43,11 @@ function Inner() {
   });
 
   const s = status.data;
-  const payable = (plans.data ?? []).filter((p) => p.priceMinor > 0);
-  const choice = picked && payable.some((p) => p.code === picked) ? picked : (s && payable.some((p) => p.code === s.planCode) ? s.planCode : payable[0]?.code) ?? "";
+  const paid = (plans.data ?? []).filter((p) => p.priceMinor > 0);
+  const cycle: Cycle = cycleSet ?? (((picked ?? s?.planCode) ?? "").endsWith("_YEARLY") ? "year" : "month");
+  const payable = paid.filter((p) => (p.interval === "YEAR") === (cycle === "year"));
+  const sameLevel = (code: string | null | undefined) => payable.find((p) => p.code.replace("_YEARLY", "") === (code ?? "").replace("_YEARLY", ""))?.code;
+  const choice = sameLevel(picked) ?? sameLevel(s?.planCode) ?? payable[0]?.code ?? "";
   const phoneValue = phone ?? me?.phone ?? "";
   const open = saved ?? (reqs.data ?? []).find((r) => r.status === "NEW" || r.status === "CONTACTED") ?? null;
 
@@ -56,6 +64,7 @@ function Inner() {
         </Card>
       )}
       <div className="mb-4"><Alert tone="blue">{t("pay.notice")}</Alert></div>
+      {s?.tenantType && <div className="mb-4"><AppBenefits kind={s.tenantType as "STORE" | "CLINIC"} compact /></div>}
 
       {open && !editing ? (
         <Card className="space-y-3 text-center">
@@ -68,6 +77,7 @@ function Inner() {
       ) : (
         <form onSubmit={(e) => { e.preventDefault(); void send.run(choice, phoneValue); }} className="space-y-4">
           <h2 className="font-semibold">{t("pay.choose")}</h2>
+          <CycleToggle value={cycle} onChange={(c) => { setCycleSet(c); setPicked(null); }} />
           <div className="grid gap-3 sm:grid-cols-2">
             {payable.map((p) => {
               const on = p.code === choice;
@@ -75,7 +85,8 @@ function Inner() {
               return (
                 <button type="button" key={p.code} onClick={() => setPicked(p.code)} aria-pressed={on} className={`rounded-2xl border-2 bg-white p-5 text-start transition ${on ? "border-brand shadow-brand" : "border-slate-200 hover:border-brand/50"}`}>
                   <p className="font-bold">{planLabel(t, p.code)}</p>
-                  <p className="my-1 text-2xl font-extrabold text-brand">{money(p.priceMinor, p.currency, locale)}<span className="text-sm font-normal text-slate-500"> / {t("pricing.month")}</span></p>
+                  <p className="my-1 text-2xl font-extrabold text-brand">{money(p.priceMinor, p.currency, locale)}<span className="text-sm font-normal text-slate-500"> / {p.interval === "YEAR" ? t("billing.perYear") : t("pricing.month")}</span></p>
+                  {p.interval === "YEAR" && <p className="text-xs font-semibold text-emerald-700">{t("billing.twoFree")} · {t("billing.orMonthly", { amount: money(Math.round(p.priceMinor / 12), p.currency, locale) })}</p>}
                   <p className={`text-sm ${domain ? "text-emerald-700" : "text-slate-500"}`}>{domain ? "✓ " + t("pay.withDomain") : "✕ " + t("pay.noDomain")}</p>
                 </button>
               );

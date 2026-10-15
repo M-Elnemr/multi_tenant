@@ -52,4 +52,17 @@ public class RbacService {
                 WHERE ur.user_id = :u
                 """).param("u", userId).query(String.class).list().stream().collect(Collectors.toSet());
     }
+
+    /** Support access: a platform owner acts as the owner of any business. Returns the owner role's permissions for the tenant type, or empty without the permission. */
+    public Set<String> supportPermissions(UUID userId, String tenantType) {
+        if (!platformPermissionCodes(userId).contains("platform.support.access")) return Set.of();
+        return jdbc.sql("""
+                SELECT DISTINCT p.code FROM core.roles r JOIN core.role_permissions rp ON rp.role_id = r.id JOIN core.permissions p ON p.id = rp.permission_id
+                WHERE r.code = :c AND r.tenant_id IS NULL
+                """).param("c", supportRole(tenantType)).query(String.class).list().stream().collect(Collectors.toSet());
+    }
+
+    public String supportRole(String tenantType) { return "STORE".equals(tenantType) ? "STORE_OWNER" : "CLINIC_OWNER"; }
+
+    public boolean hasSupportAccess(UUID userId) { return platformPermissionCodes(userId).contains("platform.support.access"); }
 }

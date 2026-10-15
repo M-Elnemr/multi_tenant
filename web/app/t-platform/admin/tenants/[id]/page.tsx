@@ -7,6 +7,7 @@ import { useAction, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { planLabel } from "@/components/dashboard/pay-screen";
 import { Alert, Button, Card, ErrorText, Field, Input, Loading, Modal, PageHeader, Select, StatusBadge } from "@/components/ui";
+import { PhoneInput } from "@/components/inputs";
 import { dateOnly, dateTime, money } from "@/lib/format";
 import { whatsappLink } from "@/lib/whatsapp";
 
@@ -34,11 +35,25 @@ export default function TenantDetail({ params }: { params: Promise<{ id: string 
   const [typed, setTyped] = useState("");
   const setStatus = useAction(async (status: string) => { await api(`platform/tenants/${id}/status`, { body: { status, reason } }); await reload(); });
   const changePlan = useAction(async () => { await api(`platform/tenants/${id}/plan`, { body: { planCode, days: Number(days) || 30 } }); await reload(); });
+  const [modal, setModal] = useState<"" | "pin" | "owner" | "rename">("");
+  const [pin, setPin] = useState("");
+  const [ownerPhone, setOwnerPhone] = useState("");
+  const [ownerEmail, setOwnerEmail] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newSlug, setNewSlug] = useState("");
+  const resetPw = useAction(async () => { const r = await api<{ pin: string }>(`platform/tenants/${id}/owner/reset-password`, { body: {} }); setPin(r.pin); setModal("pin"); });
+  const saveOwner = useAction(async () => { await api(`platform/tenants/${id}/owner`, { method: "PATCH", body: { phone: ownerPhone || undefined, email: ownerEmail || undefined } }); setModal(""); await reload(); });
+  const saveRename = useAction(async () => { await api(`platform/tenants/${id}`, { method: "PATCH", body: { name: newName || undefined, slug: newSlug || undefined } }); setModal(""); await reload(); });
+  const support = useAction(async () => {
+    const r = await api<{ ticket: string; host: string }>(`platform/tenants/${id}/support-access`, { body: {} });
+    const port = window.location.port ? `:${window.location.port}` : "";
+    window.location.assign(`${window.location.protocol}//${r.host}${port}/api/sso?ticket=${encodeURIComponent(r.ticket)}&next=${encodeURIComponent("/dashboard")}`);
+  });
   const purge = useAction(async () => { await api(`platform/tenants/${id}`, { method: "DELETE", body: { confirmSlug: typed } }); router.replace("/admin/tenants"); });
   if (loading && !data) return <Loading />;
   if (!data) return <ErrorText error={error} />;
   const store = data.tenantType === "STORE";
-  const plans = store ? ["STORE_STANDARD", "STORE_PRO"] : ["CLINIC_PRO"];
+  const plans = store ? ["STORE_STANDARD", "STORE_PRO", "STORE_STANDARD_YEARLY", "STORE_PRO_YEARLY"] : ["CLINIC_PRO", "CLINIC_PRO_YEARLY"];
   const chosen = planCode || data.subscription.planCode?.replace("_FREE", store ? "_STANDARD" : "_PRO") || plans[0];
   const o = data.owner;
   return (
@@ -50,6 +65,11 @@ export default function TenantDetail({ params }: { params: Promise<{ id: string 
           <p className="text-sm">{`${o.firstName ?? ""} ${o.lastName ?? ""}`.trim() || "-"}</p>
           {o.phone && <p className="mt-1 flex flex-wrap gap-3 text-sm" dir="ltr"><a className="font-semibold text-brand" href={`tel:${o.phone}`}>{o.phone}</a><a className="text-emerald-700 underline" target="_blank" rel="noopener noreferrer" href={whatsappLink(o.phone)}>{t("admin.whatsapp")}</a></p>}
           {o.email && <p className="mt-1 text-sm" dir="ltr"><a className="text-brand" href={`mailto:${o.email}`}>{o.email}</a></p>}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button variant="secondary" size="sm" loading={resetPw.loading} onClick={() => resetPw.run()}>{t("admin.resetPassword")}</Button>
+            <Button variant="secondary" size="sm" onClick={() => { setOwnerPhone(o.phone ?? ""); setOwnerEmail(o.email ?? ""); setModal("owner"); }}>{t("admin.editOwner")}</Button>
+          </div>
+          <ErrorText error={resetPw.error} />
           <p className="mt-3 text-sm text-slate-500">{t("admin.signedUp")}: {dateOnly(data.createdAt, locale)} · {t("admin.staff")}: <b>{data.staffCount}</b></p>
         </Card>
         <Card>
@@ -74,7 +94,7 @@ export default function TenantDetail({ params }: { params: Promise<{ id: string 
         <Card>
           <h2 className="mb-2 font-medium">{t("admin.changePlan")}</h2>
           <div className="grid gap-2 sm:grid-cols-2">
-            <Select value={chosen} onChange={(e) => setPlanCode(e.target.value)}>{plans.map((p) => <option key={p} value={p}>{planLabel(t, p)}</option>)}</Select>
+            <Select value={chosen} onChange={(e) => { setPlanCode(e.target.value); setDays(e.target.value.endsWith("_YEARLY") ? "365" : "30"); }}>{plans.map((p) => <option key={p} value={p}>{planLabel(t, p)}</option>)}</Select>
             <Input type="number" min={1} max={3650} value={days} onChange={(e) => setDays(e.target.value)} placeholder={t("admin.days")} dir="ltr" />
           </div>
           <ErrorText error={changePlan.error} />
@@ -85,8 +105,10 @@ export default function TenantDetail({ params }: { params: Promise<{ id: string 
           <Alert tone="blue">{t("admin.noContentAccess")}</Alert>
           <div className="mt-3 space-y-2">
             <Input placeholder={t("admin.reason")} value={reason} onChange={(e) => setReason(e.target.value)} />
-            <ErrorText error={setStatus.error} />
-            <div className="flex gap-2">
+            <ErrorText error={setStatus.error ?? support.error} />
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" onClick={() => { setNewName(data.name); setNewSlug(data.slug); setModal("rename"); }}>{t("admin.editBusiness")}</Button>
+              {can("platform.support.access") && <Button variant="secondary" loading={support.loading} onClick={() => support.run()}>{t("admin.openSupport")}</Button>}
               {data.status !== "SUSPENDED" && <Button variant="danger" loading={setStatus.loading} onClick={() => setStatus.run("SUSPENDED")}>{t("admin.disable")}</Button>}
               {data.status === "SUSPENDED" && <Button loading={setStatus.loading} onClick={() => setStatus.run("ACTIVE")}>{t("admin.enable")}</Button>}
             </div>
@@ -104,6 +126,25 @@ export default function TenantDetail({ params }: { params: Promise<{ id: string 
           </Card>
         )}
       </div>
+      <Modal open={modal === "pin"} onClose={() => setModal("")} title={t("admin.resetPassword")}>
+        <div className="space-y-3"><Alert tone="green">{t("admin.resetPin", { pin })}</Alert><p className="text-center font-mono text-3xl font-bold tracking-widest" dir="ltr">{pin}</p></div>
+      </Modal>
+      <Modal open={modal === "owner"} onClose={() => setModal("")} title={t("admin.editOwner")}>
+        <div className="space-y-3">
+          <Field label={t("admin.ownerPhone")}><PhoneInput value={ownerPhone} onValue={setOwnerPhone} /></Field>
+          <Field label={t("admin.ownerEmail")}><Input value={ownerEmail} onChange={(e) => setOwnerEmail(e.target.value)} dir="ltr" type="email" /></Field>
+          <ErrorText error={saveOwner.error} />
+          <Button className="w-full" loading={saveOwner.loading} onClick={() => saveOwner.run()}>{t("common.save")}</Button>
+        </div>
+      </Modal>
+      <Modal open={modal === "rename"} onClose={() => setModal("")} title={t("admin.editBusiness")}>
+        <div className="space-y-3">
+          <Field label={t("admin.newName")}><Input value={newName} onChange={(e) => setNewName(e.target.value)} /></Field>
+          <Field label={t("admin.newSlug")} hint={t("admin.slugWarn")}><Input value={newSlug} onChange={(e) => setNewSlug(e.target.value.toLowerCase())} dir="ltr" /></Field>
+          <ErrorText error={saveRename.error} />
+          <Button className="w-full" loading={saveRename.loading} onClick={() => saveRename.run()}>{t("common.save")}</Button>
+        </div>
+      </Modal>
       <Modal open={confirmOpen} onClose={() => setConfirmOpen(false)} title={t("admin.dangerZone")}>
         <div className="space-y-3">
           <Alert tone="red">{t("admin.dangerBody")}</Alert>
