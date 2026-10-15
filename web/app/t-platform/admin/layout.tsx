@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getT } from "@/lib/i18n-server";
 import { LogoutButton } from "@/components/logout-button";
+import { AdminBell } from "@/components/admin-bell";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const { t } = await getT();
@@ -14,7 +15,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           <Link href="/admin/taxonomy" className="text-slate-700 hover:text-brand">{t("admin.taxonomy")}</Link>
           <Link href="/admin/audit" className="text-slate-700 hover:text-brand">{t("admin.audit")}</Link>
         </nav>
-        <LogoutButton />
+        <div className="flex items-center gap-1"><AdminBell /><LogoutButton /></div>
       </div>
       {children}
     </div>

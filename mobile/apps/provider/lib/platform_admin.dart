@@ -1,12 +1,15 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:platform_core/platform_core.dart';
 
 import 'billing_ui.dart';
+import 'clinic_panel.dart' show NotificationsScreen;
 import 'common.dart';
 import 'forms.dart';
 import 'main.dart' show BusinessHome;
+import 'push.dart';
 
 /// The platform owner's area: every shop and clinic, their subscriptions and contacts, and the "Proceed to pay" requests to call back.
 class AdminHome extends StatefulWidget {
@@ -22,6 +25,42 @@ class AdminHome extends StatefulWidget {
 class _AdminHomeState extends State<AdminHome> {
   int _tab = 0;
   final _gen = <int, int>{};
+  final ValueNotifier<int> _unread = ValueNotifier(0);
+  Timer? _poll;
+
+  @override
+  void initState() {
+    super.initState();
+    _pollUnread();
+    _poll = Timer.periodic(const Duration(seconds: 30), (_) => _pollUnread());
+    // the platform owner's phone gets a push for every new pay request
+    PushService.ensure((token) async { await widget.api.post('me/devices', {'token': token, 'platform': defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android'}); }).then((_) => _onPush());   // also handles the push that launched the app
+    pushOpened.addListener(_onPush);
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    pushOpened.removeListener(_onPush);
+    super.dispose();
+  }
+
+  /// A tapped pay-request push opens the pay requests tab.
+  void _onPush() {
+    final d = pushOpened.value;
+    if (d == null || d['type'] != 'PAY_REQUEST' || !mounted) return;
+    pushOpened.value = null;
+    setState(() { _tab = 2; _gen[2] = (_gen[2] ?? 0) + 1; });
+  }
+
+  Future<void> _pollUnread() async {
+    try {
+      final r = await widget.api.get('notifications/unread-count') as Map;
+      if (mounted) _unread.value = (r['count'] as num?)?.toInt() ?? 0;
+    } catch (_) {}
+  }
+
+  Ctx get _ctx => Ctx(api: widget.api, currency: 'EGP', perms: widget.perms, host: '', type: 'PLATFORM');
 
   @override
   Widget build(BuildContext context) {
@@ -37,6 +76,17 @@ class _AdminHomeState extends State<AdminHome> {
         leading: widget.onBack == null ? null : IconButton(icon: const Icon(Icons.arrow_back_rounded), onPressed: widget.onBack),
         title: Text(ar ? 'لوحة المنصة · ${titles[_tab]}' : 'Platform · ${titles[_tab]}'),
         actions: [
+          ValueListenableBuilder<int>(
+            valueListenable: _unread,
+            builder: (context, n, _) => IconButton(
+              tooltip: ar ? 'الإشعارات' : 'Notifications',
+              icon: Badge(isLabelVisible: n > 0, label: Text(n > 99 ? '99+' : '$n'), child: const Icon(Icons.notifications_none_rounded)),
+              onPressed: () async {
+                await Navigator.of(context).push(MaterialPageRoute(builder: (_) => Scaffold(appBar: AppBar(title: Text(ar ? 'الإشعارات' : 'Notifications')), body: NotificationsScreen(ctx: _ctx))));
+                unawaited(_pollUnread());
+              },
+            ),
+          ),
           const Padding(padding: EdgeInsets.symmetric(horizontal: 4), child: LanguageChip()),
           if (widget.onBack == null) IconButton(tooltip: ar ? 'تسجيل الخروج' : 'Sign out', icon: const Icon(Icons.logout_rounded), onPressed: widget.onSignOut),
         ],

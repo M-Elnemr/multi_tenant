@@ -179,4 +179,21 @@ class SubscriptionLifecycleIntegrationTest extends IntegrationTestBase {
         onHost(newHost, admin, "GET", "/api/v1/clinic/patients", null).andExpect(status().isForbidden());
         assertThat(jdbc.sql("SELECT count(*) FROM audit.audit_logs WHERE action = 'SUPPORT_ACCESS' AND tenant_id = :t").param("t", UUID.fromString(id)).query(Long.class).single()).isEqualTo(1);
     }
+
+    @Test
+    void platformOwnerIsNotifiedOfEveryPayRequestInAppAndOnThePhone() throws Exception {
+        String admin = platformToken("PLATFORM_OWNER");
+        String phoneToken = "admin-phone-" + uniq();
+        onHost("platform.test", admin, "POST", "/api/v1/me/devices", "{\"token\":\"" + phoneToken + "\",\"platform\":\"android\"}").andExpect(status().is2xxSuccessful());
+        long before = ((Number) JsonPath.read(onHost("platform.test", admin, "GET", "/api/v1/notifications/unread-count", null).andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), "$.count")).longValue();
+
+        Tenant shop = onboard("STORE");
+        onHost(shop.host(), shop.access(), "POST", "/api/v1/billing/pay-requests", "{\"planCode\":\"STORE_STANDARD\",\"phone\":\"" + shop.phone() + "\"}").andExpect(status().isOk());
+
+        long after = ((Number) JsonPath.read(onHost("platform.test", admin, "GET", "/api/v1/notifications/unread-count", null).andReturn().getResponse().getContentAsString(), "$.count")).longValue();
+        assertThat(after).isEqualTo(before + 1);
+        onHost("platform.test", admin, "GET", "/api/v1/notifications?pageSize=5", null).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].notificationType").value("PAY_REQUEST")).andExpect(jsonPath("$.data[0].payload.tenantId").value(idOf(shop).toString()));
+        assertThat(jdbc.sql("SELECT count(*) FROM notifications.outbox WHERE channel = 'PUSH' AND to_address = :t AND payload ->> 'type' = 'PAY_REQUEST'").param("t", phoneToken).query(Long.class).single()).isEqualTo(1);
+    }
 }
