@@ -26,9 +26,14 @@ public class TenantDirectory {
             @Override public long expireAfterCreate(String k, Optional<TenantContext.Current> v, long now) { return (v.isPresent() ? KNOWN : UNKNOWN).toNanos(); }
             @Override public long expireAfterUpdate(String k, Optional<TenantContext.Current> v, long now, long cur) { return cur; }
             @Override public long expireAfterRead(String k, Optional<TenantContext.Current> v, long now, long cur) { return cur; }
-        }).build(host -> domains.findByHost(host).filter(TenantDomain::isVerified).flatMap(d -> tenants.findById(d.getTenantId()).filter(t -> d.getKind() != TenantDomain.Kind.CUSTOM
-                        || t.getStatus() == TenantStatus.SUSPENDED || entitlements.hasFeature(t.getId(), "custom_domain")))   // a plan without custom domains serves the platform address only
-                .map(t -> new TenantContext.Current(t.getId(), t.getSlug(), t.getTenantType().name(), t.getStatus().name(), host)));
+        }).build(host -> {
+            // exact row first; otherwise the other spelling (www.x <-> x) of a verified custom domain
+            Optional<TenantDomain> row = domains.findByHost(host).filter(TenantDomain::isVerified)
+                    .or(() -> DomainService.counterpart(host).flatMap(domains::findByHost).filter(o -> o.isVerified() && o.getKind() == TenantDomain.Kind.CUSTOM));
+            return row.flatMap(d -> tenants.findById(d.getTenantId()).filter(t -> d.getKind() != TenantDomain.Kind.CUSTOM
+                            || t.getStatus() == TenantStatus.SUSPENDED || entitlements.hasFeature(t.getId(), "custom_domain")))   // a plan without custom domains serves the platform address only
+                    .map(t -> new TenantContext.Current(t.getId(), t.getSlug(), t.getTenantType().name(), t.getStatus().name(), host));
+        });
     }
 
     public Optional<TenantContext.Current> resolve(String host) { return cache.get(host); }

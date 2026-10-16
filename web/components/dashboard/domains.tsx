@@ -8,7 +8,7 @@ import { useT } from "../i18n-provider";
 import { Alert, Badge, Button, Card, ErrorText, Field, Input, Loading, PageHeader } from "../ui";
 import type { ApiError } from "@/lib/client";
 
-type Domain = { id: string; host: string; kind: "SUBDOMAIN" | "CUSTOM"; primary: boolean; verified: boolean; sslStatus?: string; dnsInstructions: { type: string; name: string; value: string }[] };
+type Domain = { id: string; host: string; kind: "SUBDOMAIN" | "CUSTOM"; primary: boolean; verified: boolean; sslStatus?: string; alias?: string | null; dnsInstructions: { type: string; name: string; value: string }[] };
 
 /** Own domain in three steps: add it, create two DNS records, click verify. Certificates are issued automatically. */
 export default function DomainsPage() {
@@ -31,6 +31,7 @@ export default function DomainsPage() {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <p className="font-mono text-sm font-medium" dir="ltr">{d.host}</p>
+                {d.alias && <p className="mt-0.5 text-xs text-slate-500">{t("domains.alsoWorks", { host: d.alias })}</p>}
                 <div className="mt-1 flex flex-wrap gap-1.5">
                   {d.primary && <Badge tone="blue">{t("domains.primary")}</Badge>}
                   <Badge tone={d.verified ? "green" : "amber"}>{d.verified ? t("domains.verified") : t("domains.pending")}</Badge>
@@ -48,7 +49,7 @@ export default function DomainsPage() {
                 <p className="font-medium">{t("domains.dnsTitle")}</p>
                 <div className="overflow-x-auto" dir="ltr">
                   <table className="w-full text-start font-mono text-xs"><tbody>
-                    {d.dnsInstructions.map((r) => (<tr key={r.type}><td className="pe-3 font-bold">{r.type}</td><td className="pe-3">{r.name}</td><td className="break-all">{r.value}</td></tr>))}
+                    {d.dnsInstructions.map((r) => (<tr key={r.type + r.name}><td className="pe-3 font-bold">{r.type}</td><td className="pe-3">{r.name}</td><td className="break-all">{r.value}</td></tr>))}
                   </tbody></table>
                 </div>
                 <p className="text-xs text-slate-500">{t("domains.dnsHelp")}</p>

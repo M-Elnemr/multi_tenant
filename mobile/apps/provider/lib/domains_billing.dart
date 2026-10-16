@@ -64,6 +64,7 @@ class DomainsScreen extends StatelessWidget {
     final dns = _maps(d['dnsInstructions']);
     return Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       SelectableText('${d['host']}', textDirection: TextDirection.ltr, style: const TextStyle(fontWeight: FontWeight.w800, fontFamily: 'monospace')),
+      if (d['alias'] != null) Padding(padding: const EdgeInsets.only(top: 2), child: Text(isAr ? 'يعمل أيضًا على ${d['alias']} تلقائيًا (أضف سجل DNS له)' : 'Also works on ${d['alias']} automatically (add its DNS record)', style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 12.5))),
       const SizedBox(height: 6),
       Wrap(spacing: 6, children: [
         if (primary) _tag(isAr ? 'الرئيسي' : 'Primary', const Color(0xFF1F6A99)),

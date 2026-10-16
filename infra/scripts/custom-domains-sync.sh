@@ -60,20 +60,26 @@ changed=0; backup=""
 snapshot() { [ -n "$backup" ] || { backup="/var/backups/nginx-confd-$(date +%Y%m%d-%H%M%S).tgz"; tar czf "$backup" -C / etc/nginx/conf.d; }; }
 declare -A wanted
 
-for host in $hosts; do
-  valid "$host" || { log "skip $host: not an acceptable domain name"; continue; }
+# example.com and www.example.com are one domain: one certificate and one nginx block for the pair, named after the root name
+declare -A seen
+for raw in $hosts; do
+  valid "$raw" || { log "skip $raw: not an acceptable domain name"; continue; }
+  host=${raw#www.}
+  [ -n "${seen[$host]:-}" ] && continue
+  seen[$host]=1
   wanted[$host]=1
   conf="$CONF_DIR/custom-$host.conf"
   if [ ! -f "/etc/letsencrypt/live/$host/fullchain.pem" ]; then
     if backed_off "$host"; then continue; fi
-    if ! points_here "$host"; then log "wait $host: its A record does not point to $SERVER_IP yet"; continue; fi
-    args=(-d "$host"); points_here "www.$host" && args+=(-d "www.$host")
+    args=(); points_here "$host" && args+=(-d "$host"); points_here "www.$host" && args+=(-d "www.$host")
+    [ ${#args[@]} -gt 0 ] || { log "wait $host: neither $host nor www.$host points to $SERVER_IP yet"; continue; }
     if [ $DRY = 1 ]; then log "would issue a certificate for ${args[*]}"; continue; fi
     if out=$(certbot certonly --webroot -w "$WEBROOT" --cert-name "$host" "${args[@]}" --non-interactive --agree-tos 2>&1); then log "certificate issued for ${args[*]}"
     else date +%s > "$STATE/$host.backoff"; log "certificate FAILED for $host (retry in 30 min): $(echo "$out" | tail -3 | tr '\n' ' ')"; continue; fi
     rm -f "$STATE/$host.backoff"
   fi
-  names="$host"; covers "$host" "www.$host" && names="$host www.$host"
+  names=""; covers "$host" "$host" && names="$host"; covers "$host" "www.$host" && names="${names:+$names }www.$host"
+  [ -n "$names" ] || { log "skip $host: its certificate covers neither name"; continue; }
   new=$(render "$host" "$names")
   if [ ! -f "$conf" ] || [ "$new" != "$(cat "$conf")" ]; then
     if [ $DRY = 1 ]; then log "would write $conf (server_name $names)"; changed=1; continue; fi

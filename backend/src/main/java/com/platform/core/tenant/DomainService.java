@@ -28,10 +28,13 @@ public class DomainService {
     private final AuditService audit;
     private final com.platform.billing.EntitlementService entitlements;
     private final TenantDirectory directory;
+    private final String edgeIp;
 
     public DomainService(TenantDomainRepository domains, TenantRepository tenants, PlatformProperties props,
                          DnsVerifier dns, AuditService audit,
-                         com.platform.billing.EntitlementService entitlements, TenantDirectory directory) {
+                         com.platform.billing.EntitlementService entitlements, TenantDirectory directory,
+                         @org.springframework.beans.factory.annotation.Value("${app.platform.edge-ip:}") String edgeIp) {
+        this.edgeIp = edgeIp == null ? "" : edgeIp.trim();
         this.entitlements = entitlements;
         this.directory = directory;
         this.domains = domains;
@@ -48,6 +51,12 @@ public class DomainService {
         if (slash >= 0) h = h.substring(0, slash);
         if (h.endsWith(".")) h = h.substring(0, h.length() - 1);
         return h;
+    }
+
+    /** The other spelling of a custom domain: www.example.com <-> example.com. Proving control of one proves control of the other, so both are served. */
+    public static java.util.Optional<String> counterpart(String host) {
+        if (host == null || host.isBlank()) return java.util.Optional.empty();
+        return java.util.Optional.of(host.startsWith("www.") ? host.substring(4) : "www." + host);
     }
 
     /** Creates the instant subdomain for a new tenant: verified and primary, no DNS work needed. */
@@ -73,6 +82,8 @@ public class DomainService {
             throw BusinessException.badRequest("DOMAIN_RESERVED", "This domain is reserved by the platform");
         }
         if (domains.findByHost(host).isPresent()) throw BusinessException.conflict("DOMAIN_TAKEN", "Domain already in use");
+        // the other spelling (www.x / x) belongs to the same owner: another business cannot take it over
+        if (counterpart(host).flatMap(domains::findByHost).filter(o -> !o.getTenantId().equals(tenantId)).isPresent()) throw BusinessException.conflict("DOMAIN_TAKEN", "Domain already in use");
         TenantDomain d = new TenantDomain();
         d.setTenantId(tenantId);
         d.setHost(host);
@@ -85,13 +96,22 @@ public class DomainService {
         return d;
     }
 
-    /** Tells the tenant which DNS records to create. */
+    /** Tells the tenant which DNS records to create: one TXT to prove the domain, and the address records for both spellings (root domain and www). */
     public List<DnsInstruction> instructions(TenantDomain d) {
         if (d.getKind() != TenantDomain.Kind.CUSTOM) return List.of();
-        return List.of(
-                new DnsInstruction("TXT", TXT_PREFIX + d.getHost(), d.getVerificationToken()),
-                new DnsInstruction("CNAME", d.getHost(), props.edgeHost()));
+        List<DnsInstruction> out = new java.util.ArrayList<>();
+        out.add(new DnsInstruction("TXT", TXT_PREFIX + d.getHost(), d.getVerificationToken()));
+        String host = d.getHost();
+        String other = counterpart(host).orElse(null);
+        boolean www = host.startsWith("www.");
+        // a root domain cannot be a CNAME: point it with an A record when the server address is known
+        out.add(www || edgeIp.isEmpty() ? new DnsInstruction("CNAME", host, props.edgeHost()) : new DnsInstruction("A", host, edgeIp));
+        if (other != null) out.add(other.startsWith("www.") || edgeIp.isEmpty() ? new DnsInstruction("CNAME", other, props.edgeHost()) : new DnsInstruction("A", other, edgeIp));
+        return out;
     }
+
+    /** The other spelling that is served together with this domain (shown in the dashboard). */
+    public String aliasOf(TenantDomain d) { return d.getKind() == TenantDomain.Kind.CUSTOM ? counterpart(d.getHost()).orElse(null) : null; }
 
     public record DnsInstruction(String type, String name, String value) {}
 
@@ -153,6 +173,7 @@ public class DomainService {
         String host = normalizeHost(rawHost);
         if (props.isPlatformHost(host) || host.equals(props.edgeHost())) return true;
         return domains.findByHost(host).filter(TenantDomain::isVerified)
+                .or(() -> counterpart(host).flatMap(domains::findByHost).filter(o -> o.isVerified() && o.getKind() == TenantDomain.Kind.CUSTOM))
                 .flatMap(d -> tenants.findById(d.getTenantId()))
                 .map(t -> t.getStatus() != TenantStatus.ARCHIVED && t.getStatus() != TenantStatus.CANCELLED)
                 .orElse(false);   // (a custom domain whose plan lost the feature stops resolving, see TenantDirectory)

@@ -65,6 +65,7 @@ public class DomainController {
         m.put("primary", d.isPrimary());
         m.put("verified", d.isVerified());
         m.put("sslStatus", d.getSslStatus());
+        m.put("alias", service.aliasOf(d));
         m.put("dnsInstructions", service.instructions(d));
         return m;
     }
