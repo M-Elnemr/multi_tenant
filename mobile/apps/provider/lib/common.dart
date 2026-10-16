@@ -23,6 +23,13 @@ Future<void> launch(String url) async {
   try { await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication); } catch (_) {}
 }
 
+/// Egyptian numbers are stored as +201xxxxxxxxx; people read and type 01xxxxxxxxx, so lists and details show that (calls and WhatsApp still use the full number).
+String localPhone(Object? p) {
+  final s = '${p ?? ''}'.trim();
+  final m = RegExp(r'^\+20(\d{10})$').firstMatch(s);
+  return m == null ? s : '0${m.group(1)}';
+}
+
 Future<void> dial(String? phone) async { if (phone != null && phone.isNotEmpty) await launch('tel:$phone'); }
 
 Future<void> whatsapp(String? phone, [String text = '']) async {
@@ -291,7 +298,7 @@ Widget kv(String k, String v, {bool ltr = false}) => Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         SizedBox(width: 118, child: Text(k, style: const TextStyle(color: Color(0xFF6B7C8D)))),
-        Expanded(child: Text(v.isEmpty ? '-' : v, textDirection: ltr ? TextDirection.ltr : null, style: const TextStyle(fontWeight: FontWeight.w700))),
+        Expanded(child: Text(v.isEmpty ? '-' : (ltr ? localPhone(v) : v), textDirection: ltr ? TextDirection.ltr : null, style: const TextStyle(fontWeight: FontWeight.w700))),
       ]),
     );
 

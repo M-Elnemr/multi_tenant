@@ -1,5 +1,6 @@
 "use client";
 
+import { localPhone } from "@/lib/phone";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useState } from "react";
@@ -75,10 +76,10 @@ export default function PatientPage({ params }: { params: Promise<{ id: string }
     <>
       <PageHeader
         title={`${d.firstName} ${d.lastName}`}
-        subtitle={[d.patientCode, d.sex === "F" ? t("patients.female") : d.sex === "M" ? t("patients.male") : "", d.ageYears === undefined ? "" : ageText(d.ageYears, d.ageMonths, locale), d.phone ?? ""].filter(Boolean).join(" · ")}
+        subtitle={[d.patientCode, d.sex === "F" ? t("patients.female") : d.sex === "M" ? t("patients.male") : "", d.ageYears === undefined ? "" : ageText(d.ageYears, d.ageMonths, locale), localPhone(d.phone)].filter(Boolean).join(" · ")}
         actions={<>
           <WhatsAppButton phone={d.phone} message={t("pq.waHello", { name: d.firstName, clinic: clinic.data?.clinicName ?? "" })} size={40} />
-          {can("patient.update") && <Button variant="secondary" onClick={() => { setForm({ name: `${d.firstName} ${d.lastName}`.trim(), phone: d.phone ?? "", ageYears: d.ageYears === undefined ? "" : String(d.ageYears), ageMonths: String(d.ageMonths ?? 0), sex: d.sex ?? "", addressText: d.addressText ?? "", bloodType: d.bloodType ?? "", notes: d.notesInternal ?? "" }); setEditOpen(true); }}>{t("patients.edit")}</Button>}
+          {can("patient.update") && <Button variant="secondary" onClick={() => { setForm({ name: `${d.firstName} ${d.lastName}`.trim(), phone: localPhone(d.phone), ageYears: d.ageYears === undefined ? "" : String(d.ageYears), ageMonths: String(d.ageMonths ?? 0), sex: d.sex ?? "", addressText: d.addressText ?? "", bloodType: d.bloodType ?? "", notes: d.notesInternal ?? "" }); setEditOpen(true); }}>{t("patients.edit")}</Button>}
           {can("appointment.manage") && <Button variant="secondary" onClick={() => { setVisitType(suggestFollowUp ? "FOLLOW_UP" : "CONSULTATION"); setQueueOpen(true); }}>{t("queue.walkIn")}</Button>}
           {portal && can("patient.update") && d.hasPortal && <Button variant="secondary" onClick={() => { setPwDone(false); setNewPw(""); setPwOpen(true); }}>{t("patients.setPassword")}</Button>}
           {can("patient.export") && clinical && <a className="inline-flex h-10 items-center rounded-lg border px-3 text-sm hover:bg-slate-50" href={`/api/bff/clinic/patients/${id}/export`}>{t("record.exportStaff")}</a>}
@@ -105,7 +106,7 @@ export default function PatientPage({ params }: { params: Promise<{ id: string }
           {([
             [t("patients.name"), `${d.firstName} ${d.lastName}`.trim()],
             [t("patients.code"), d.patientCode],
-            [t("patients.mobile"), d.phone ?? "-"],
+            [t("patients.mobile"), localPhone(d.phone) || "-"],
             [t("patients.age"), ageText(d.ageYears, d.ageMonths, locale)],
             [t("patients.sex"), d.sex === "F" ? t("patients.female") : d.sex === "M" ? t("patients.male") : "-"],
             [t("patients.blood"), d.bloodType || "-"],

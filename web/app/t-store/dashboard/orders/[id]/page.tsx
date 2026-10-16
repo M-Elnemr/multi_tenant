@@ -1,5 +1,6 @@
 "use client";
 
+import { localPhone } from "@/lib/phone";
 import { use, useState } from "react";
 import { api } from "@/lib/client";
 import { toMinor } from "@/lib/format";
@@ -73,7 +74,7 @@ export default function StoreOrder({ params }: { params: Promise<{ id: string }>
           </dl>
         </Card>
         <div className="space-y-4">
-          <Card className="text-sm"><h2 className="mb-1 font-medium">{t("orders.customer")}</h2><p>{data.customerNameSnapshot}</p><p className="flex items-center gap-2" dir="ltr"><a href={`tel:${data.customerPhoneSnapshot}`} className="text-brand">{data.customerPhoneSnapshot}</a><WhatsAppButton phone={data.customerPhoneSnapshot} message={t("orders.waHello", { name: data.customerNameSnapshot, number: data.orderNumber })} size={28} /></p>{data.shippingAddress?.addressLine1 && <p className="mt-2 text-slate-600">{[data.shippingAddress.addressLine1, data.area, data.shippingAddress.city, governorateName(data.governorateCode, locale)].filter(Boolean).join("، ")}</p>}{data.landmark && <p className="text-slate-600">📍 {data.landmark}</p>}{data.phone2 && <p dir="ltr" className="text-slate-600">☎ {data.phone2}</p>}{data.etaMinDays != null && <p className="mt-1 text-xs text-slate-500">🚚 {t("checkout.eta", { min: data.etaMinDays, max: data.etaMaxDays ?? data.etaMinDays })}</p>}{data.notes && <p className="mt-2 italic">{data.notes}</p>}</Card>
+          <Card className="text-sm"><h2 className="mb-1 font-medium">{t("orders.customer")}</h2><p>{data.customerNameSnapshot}</p><p className="flex items-center gap-2" dir="ltr"><a href={`tel:${data.customerPhoneSnapshot}`} className="text-brand">{localPhone(data.customerPhoneSnapshot)}</a><WhatsAppButton phone={data.customerPhoneSnapshot} message={t("orders.waHello", { name: data.customerNameSnapshot, number: data.orderNumber })} size={28} /></p>{data.shippingAddress?.addressLine1 && <p className="mt-2 text-slate-600">{[data.shippingAddress.addressLine1, data.area, data.shippingAddress.city, governorateName(data.governorateCode, locale)].filter(Boolean).join("، ")}</p>}{data.landmark && <p className="text-slate-600">📍 {data.landmark}</p>}{data.phone2 && <p dir="ltr" className="text-slate-600">☎ {data.phone2}</p>}{data.etaMinDays != null && <p className="mt-1 text-xs text-slate-500">🚚 {t("checkout.eta", { min: data.etaMinDays, max: data.etaMaxDays ?? data.etaMinDays })}</p>}{data.notes && <p className="mt-2 italic">{data.notes}</p>}</Card>
           <Card className="text-sm">
             <h2 className="mb-1 font-medium">{t("orders.payment")}</h2>
             <p>{t(`pay.${data.paymentMethod}`)} · {money(paid, data.currency, locale)}{refunded > 0 && <> · {t("orders.refunded")} {money(refunded, data.currency, locale)}</>}</p>

@@ -117,7 +117,7 @@ class _PatientsScreenState extends State<PatientsScreen> {
         child: ListTile(
           leading: CircleAvatar(backgroundColor: Theme.of(c).colorScheme.primary.withValues(alpha: child ? 0.08 : 0.14), child: Icon(child ? Icons.child_care_rounded : Icons.person_rounded, color: Theme.of(c).colorScheme.primary)),
           title: Text(name, style: const TextStyle(fontWeight: FontWeight.w800)),
-          subtitle: Text([p['patientCode'], age, if (child) (s.ar ? 'تابع لـ $parent' : 'child of $parent'), if (!child && (p['phone'] as String?)?.isNotEmpty == true) '\u2066${p['phone']}\u2069'].where((e) => e != null && '$e'.isNotEmpty).join(' · ')),
+          subtitle: Text([p['patientCode'], age, if (child) (s.ar ? 'تابع لـ $parent' : 'child of $parent'), if (!child && (p['phone'] as String?)?.isNotEmpty == true) '\u2066${localPhone(p['phone'])}\u2069'].where((e) => e != null && '$e'.isNotEmpty).join(' · ')),
           trailing: const Icon(Icons.chevron_right_rounded),
           onTap: () => Navigator.of(c).push(MaterialPageRoute(builder: (_) => PatientDetail(ctx: ctx, id: p['id'] as String))),
         ),

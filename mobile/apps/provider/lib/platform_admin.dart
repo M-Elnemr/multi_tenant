@@ -180,7 +180,7 @@ class _Businesses extends StatelessWidget {
             Text('${planLabel(t['planCode'] as String?)}  ·  ${ar ? 'بداية' : 'from'} ${fmtDate('${t['currentPeriodStart'] ?? t['createdAt']}', time: false)}  ·  ${ar ? 'حتى' : 'to'} ${fmtDate(t['currentPeriodEnd'] as String?, time: false)}'),
             if (left != null) Text(left <= 0 ? (ar ? 'منتهي' : 'Expired') : (ar ? 'متبقي $left يوم' : '$left days left'), style: TextStyle(fontWeight: FontWeight.w800, color: left <= 0 ? const Color(0xFFD14343) : left <= 7 ? const Color(0xFFD98200) : const Color(0xFF6B7C8D))),
             if ((t['ownerName'] ?? '').toString().trim().isNotEmpty || t['ownerPhone'] != null) Padding(padding: const EdgeInsets.only(top: 4), child: Row(children: [
-              Expanded(child: Text('${t['ownerName'] ?? ''}  ${t['ownerPhone'] ?? ''}', textDirection: TextDirection.ltr)),
+              Expanded(child: Text('${t['ownerName'] ?? ''}  ${localPhone(t['ownerPhone'])}', textDirection: TextDirection.ltr)),
               if (t['ownerPhone'] != null) ...[
                 IconButton(visualDensity: VisualDensity.compact, icon: const Icon(Icons.call_rounded, size: 20), onPressed: () => dial('${t['ownerPhone']}')),
                 IconButton(visualDensity: VisualDensity.compact, icon: const Icon(Icons.chat_rounded, size: 20, color: Color(0xFF1E9E5A)), onPressed: () => whatsapp('${t['ownerPhone']}', '${t['name']}')),
@@ -249,7 +249,7 @@ class _RequestCard extends StatelessWidget {
       Text('${ar ? 'الباقة المطلوبة' : 'Requested'}: ${planLabel('${r['planCode']}')} · ${fmtMoney(r['amountMinor'] as num?)} ${r['currency']}', style: const TextStyle(fontWeight: FontWeight.w700)),
       Text(fmtDate('${r['createdAt']}'), style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 12)),
       Row(children: [
-        Expanded(child: Text('${r['phone']}', textDirection: TextDirection.ltr, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17))),
+        Expanded(child: Text(localPhone(r['phone']), textDirection: TextDirection.ltr, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17))),
         IconButton.filledTonal(icon: const Icon(Icons.call_rounded), onPressed: () => dial('${r['phone']}')),
         const SizedBox(width: 6),
         IconButton.filledTonal(icon: const Icon(Icons.chat_rounded, color: Color(0xFF1E9E5A)), onPressed: () => whatsapp('${r['phone']}', '${r['tenantName']}')),
@@ -326,7 +326,7 @@ class _TenantDetailPageState extends State<TenantDetailPage> {
 
   Future<void> _editOwner(Map<String, dynamic> owner) async {
     final ar = AppLocale.isAr;
-    final phone = TextEditingController(text: '${owner['phone'] ?? ''}');
+    final phone = TextEditingController(text: localPhone(owner['phone']));
     final email = TextEditingController(text: '${owner['email'] ?? ''}');
     final ok = await formSheet(context, title: ar ? 'تعديل بيانات تواصل المالك' : 'Edit owner contact', body: (c, set) => [tf(phone, ar ? 'موبايل المالك' : 'Owner phone', ltr: true), tf(email, ar ? 'بريد المالك' : 'Owner email', ltr: true)],
         onSave: () async { await widget.api.patch('platform/tenants/${widget.id}/owner', {'phone': phone.text.trim().isEmpty ? null : phone.text.trim(), 'email': email.text.trim().isEmpty ? null : email.text.trim()}); });
@@ -399,7 +399,7 @@ class _TenantDetailPageState extends State<TenantDetailPage> {
               Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('${owner['firstName'] ?? ''} ${owner['lastName'] ?? ''}'.trim().isEmpty ? '-' : '${owner['firstName'] ?? ''} ${owner['lastName'] ?? ''}'.trim(), style: const TextStyle(fontWeight: FontWeight.w800)),
                 if (owner['phone'] != null) Row(children: [
-                  Expanded(child: Text('${owner['phone']}', textDirection: TextDirection.ltr, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17))),
+                  Expanded(child: Text(localPhone(owner['phone']), textDirection: TextDirection.ltr, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17))),
                   IconButton.filledTonal(icon: const Icon(Icons.call_rounded), onPressed: () => dial('${owner['phone']}')),
                   const SizedBox(width: 6),
                   IconButton.filledTonal(icon: const Icon(Icons.chat_rounded, color: Color(0xFF1E9E5A)), onPressed: () => whatsapp('${owner['phone']}', '${d['name']}')),

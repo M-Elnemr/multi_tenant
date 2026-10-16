@@ -1,5 +1,6 @@
 "use client";
 
+import { localPhone } from "@/lib/phone";
 import { useState } from "react";
 import { Page, useApi } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
@@ -39,7 +40,7 @@ export default function Customers() {
             {data?.data.map((c) => (
               <tr key={c.id} className="cursor-pointer hover:bg-slate-50" onClick={() => setOpen(c)}>
                 <Td>{c.name} {c.hasAccount && <Badge tone="blue">Google</Badge>}<div className="font-mono text-xs text-slate-500">{c.customerNumber}</div></Td>
-                <Td><span dir="ltr">{c.phone}</span></Td>
+                <Td><span dir="ltr">{localPhone(c.phone)}</span></Td>
                 <Td>{c.ordersCount}</Td>
                 <Td>{money(c.totalSpentMinor, currency, locale)}</Td>
                 <Td>{c.lastOrderAt ? dateOnly(c.lastOrderAt, locale) : "-"}</Td>
@@ -54,7 +55,7 @@ export default function Customers() {
         {open && (
           <div className="space-y-4 text-sm">
             <Card className="space-y-1">
-              <p dir="ltr" className="font-medium">{open.phone}</p>
+              <p dir="ltr" className="font-medium">{localPhone(open.phone)}</p>
               {open.email && <p dir="ltr" className="text-slate-500">{open.email}</p>}
               {open.address?.addressLine1 && <p className="text-slate-600">{open.address.addressLine1}, {open.address.city}</p>}
               <p className="text-slate-500">{t("customers.since")} {dateOnly(open.createdAt, locale)}</p>

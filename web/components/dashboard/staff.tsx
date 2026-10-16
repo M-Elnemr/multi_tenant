@@ -1,5 +1,6 @@
 "use client";
 
+import { localPhone } from "@/lib/phone";
 import { useState } from "react";
 import { api } from "@/lib/client";
 import { useAction, useApi } from "../hooks";
@@ -41,7 +42,7 @@ export default function StaffPage() {
         <Table head={[t("staff.name"), t("staff.phone"), t("staff.role"), t("admin.status"), ""]}>
           {data?.map((m) => (
             <tr key={m.userId}>
-              <Td>{m.firstName} {m.lastName}</Td><Td><span dir="ltr">{m.phone}</span></Td>
+              <Td>{m.firstName} {m.lastName}</Td><Td><span dir="ltr">{localPhone(m.phone)}</span></Td>
               <Td>{m.roles.split(",").map((r) => t(`role.${r}`)).join(", ")}</Td>
               <Td><StatusBadge status={m.userStatus === "INVITED" ? "PENDING" : "ACTIVE"} /></Td>
               <Td className="text-end">

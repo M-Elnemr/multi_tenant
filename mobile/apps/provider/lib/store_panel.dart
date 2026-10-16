@@ -336,7 +336,7 @@ class CustomersScreen extends StatelessWidget {
         onTap: () => Navigator.of(c).push(MaterialPageRoute(builder: (_) => CustomerDetail(ctx: ctx, customer: u))),
         leading: CircleAvatar(child: Text(('${u['name']}'.isEmpty ? '?' : '${u['name']}'[0]).toUpperCase())),
         title: Text('${u['name']}', style: const TextStyle(fontWeight: FontWeight.w800)),
-        subtitle: Text('${u['phone'] ?? ''}\n${u['ordersCount']} ${ar ? 'طلب' : 'orders'} · ${s.money(u['totalSpentMinor'] as num?, ctx.currency)}', textDirection: TextDirection.ltr, textAlign: TextAlign.start),
+        subtitle: Text('${localPhone(u['phone'])}\n${u['ordersCount']} ${ar ? 'طلب' : 'orders'} · ${s.money(u['totalSpentMinor'] as num?, ctx.currency)}', textDirection: TextDirection.ltr, textAlign: TextAlign.start),
         isThreeLine: true,
         trailing: Row(mainAxisSize: MainAxisSize.min, children: [IconButton(onPressed: () => dial(u['phone'] as String?), icon: const Icon(Icons.call_rounded)), IconButton(onPressed: () => whatsapp(u['phone'] as String?), icon: const Icon(Icons.chat_rounded))]),
       )),

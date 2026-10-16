@@ -1,5 +1,6 @@
 "use client";
 
+import { localPhone } from "@/lib/phone";
 import Link from "next/link";
 import { useState } from "react";
 import { api } from "@/lib/client";
@@ -68,7 +69,7 @@ export default function Patients() {
         <>
           <Table head={[t("clinic.patient"), t("patients.code"), t("patients.mobile"), t("patients.age"), ...(portal ? [t("patients.portal")] : [])]}>
             {data?.data.flatMap((p) => [
-              <tr key={p.id} className="hover:bg-slate-50"><Td><Link href={`/dashboard/patients/${p.id}`} className="font-medium text-brand">{p.firstName} {p.lastName}</Link>{portal && p.hasPortal && can("patient.create") && <button type="button" className="ms-3 text-xs text-slate-500 hover:text-brand" onClick={() => { setDepOf(p); setOpen(true); }}>+ {t("dep.add")}</button>}</Td><Td className="font-mono text-xs">{p.patientCode}</Td><Td><span className="inline-flex items-center gap-2"><span dir="ltr">{p.phone}</span><WhatsAppButton phone={p.phone} message={t("pq.waHello", { name: p.firstName, clinic: clinic.data?.clinicName ?? "" })} size={28} /></span></Td><Td>{ageText(p.ageYears, p.ageMonths, locale)}</Td>{portal && <Td>{p.hasPortal ? "✓" : "—"}</Td>}</tr>,
+              <tr key={p.id} className="hover:bg-slate-50"><Td><Link href={`/dashboard/patients/${p.id}`} className="font-medium text-brand">{p.firstName} {p.lastName}</Link>{portal && p.hasPortal && can("patient.create") && <button type="button" className="ms-3 text-xs text-slate-500 hover:text-brand" onClick={() => { setDepOf(p); setOpen(true); }}>+ {t("dep.add")}</button>}</Td><Td className="font-mono text-xs">{p.patientCode}</Td><Td><span className="inline-flex items-center gap-2"><span dir="ltr">{localPhone(p.phone)}</span><WhatsAppButton phone={localPhone(p.phone)} message={t("pq.waHello", { name: p.firstName, clinic: clinic.data?.clinicName ?? "" })} size={28} /></span></Td><Td>{ageText(p.ageYears, p.ageMonths, locale)}</Td>{portal && <Td>{p.hasPortal ? "✓" : "—"}</Td>}</tr>,
               ...(p.dependents ?? []).map((c) => <tr key={c.id} className="bg-slate-50/60 hover:bg-slate-50"><Td><Link href={`/dashboard/patients/${c.id}`} className="ms-6 text-brand">↳ {c.firstName} {c.lastName}</Link><span className="ms-2 text-xs text-slate-500">{t("dep.childOf", { name: p.firstName })}</span></Td><Td className="font-mono text-xs">{c.patientCode}</Td><Td>—</Td><Td>{ageText(c.ageYears, c.ageMonths, locale)}</Td>{portal && <Td>—</Td>}</tr>),
             ])}
           </Table>

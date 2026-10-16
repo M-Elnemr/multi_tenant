@@ -1,5 +1,6 @@
 "use client";
 
+import { localPhone } from "@/lib/phone";
 import Link from "next/link";
 import { useState } from "react";
 import { api } from "@/lib/client";
@@ -31,7 +32,7 @@ function Row({ r, onDone }: { r: Req; onDone: () => void }) {
       </div>
       <p className="text-sm">{t("admin.requestedPlan")}: <b>{planLabel(t, r.planCode)}</b> · {money(r.amountMinor, r.currency, locale)} · <span className="text-slate-500">{dateTime(r.createdAt, locale)}</span></p>
       <p className="flex flex-wrap items-center gap-3 text-sm" dir="ltr">
-        <a className="font-semibold text-brand" href={`tel:${r.phone}`}>📞 {r.phone}</a>
+        <a className="font-semibold text-brand" href={`tel:${r.phone}`}>📞 {localPhone(r.phone)}</a>
         <a className="text-emerald-700 underline" target="_blank" rel="noopener noreferrer" href={whatsappLink(r.phone, `${r.tenantName}`)}>{t("admin.whatsapp")}</a>
         {r.requesterEmail && <a className="text-slate-600" href={`mailto:${r.requesterEmail}`}>{r.requesterEmail}</a>}
       </p>

@@ -258,7 +258,7 @@ class StaffScreen extends StatelessWidget {
               FadeSlideIn(index: i, child: Card(child: ListTile(
                 leading: CircleAvatar(child: Text(('${items[i]['firstName']}'.isEmpty ? '?' : '${items[i]['firstName']}'[0]).toUpperCase())),
                 title: Text('${items[i]['firstName']} ${items[i]['lastName'] ?? ''}'.trim(), style: const TextStyle(fontWeight: FontWeight.w800)),
-                subtitle: Text('${'${items[i]['roles']}'.split(',').map((r) => roleName(r, s.ar)).join('، ')}\n${items[i]['phone'] ?? ''}', textAlign: TextAlign.start),
+                subtitle: Text('${'${items[i]['roles']}'.split(',').map((r) => roleName(r, s.ar)).join('، ')}\n${localPhone(items[i]['phone'])}', textAlign: TextAlign.start),
                 isThreeLine: true,
                 trailing: canManage && !'${items[i]['roles']}'.contains('_OWNER')
                     ? PopupMenuButton<String>(

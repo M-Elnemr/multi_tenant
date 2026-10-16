@@ -1,5 +1,6 @@
 "use client";
 
+import { localPhone } from "@/lib/phone";
 import { api } from "@/lib/client";
 import { useAction, useApi, useMe } from "../hooks";
 import { useI18n } from "../i18n-provider";
@@ -20,7 +21,7 @@ export function FlaggedPhones() {
       <ul className="divide-y text-sm">
         {flags.data.map((f) => (
           <li key={f.phone} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
-            <div><span dir="ltr" className="font-mono">{f.phone}</span> {f.blocked && <Badge tone="red">{t("flags.blocked")}</Badge>}<p className="text-xs text-slate-500">{t("flags.counts", { d: f.deliveredCount, r: f.returnedCount, c: f.cancelledCount })}</p></div>
+            <div><span dir="ltr" className="font-mono">{localPhone(f.phone)}</span> {f.blocked && <Badge tone="red">{t("flags.blocked")}</Badge>}<p className="text-xs text-slate-500">{t("flags.counts", { d: f.deliveredCount, r: f.returnedCount, c: f.cancelledCount })}</p></div>
             {can("order.update_status") && <Button size="sm" variant={f.blocked ? "secondary" : "danger"} loading={set.loading} onClick={() => set.run(f)}>{f.blocked ? t("history.unblock") : t("history.block")}</Button>}
           </li>
         ))}

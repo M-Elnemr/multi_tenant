@@ -15,7 +15,7 @@ Future<Map<String, dynamic>?> patientSheet(BuildContext c, Ctx ctx, {Map<String,
   final edit = patient != null;
   final child = guardian != null || (edit && patient['guardianName'] != null);
   final name = TextEditingController(text: edit ? '${patient['firstName'] ?? ''}'.trim() : '');
-  final phone = TextEditingController(text: edit ? '${patient['phone'] ?? ''}' : '');
+  final phone = TextEditingController(text: edit ? localPhone(patient['phone']) : '');
   final years = TextEditingController(text: edit && patient['ageYears'] != null ? '${patient['ageYears']}' : '');
   final months = TextEditingController(text: edit && patient['ageMonths'] != null ? '${patient['ageMonths']}' : '0');
   final address = TextEditingController(text: edit ? '${patient['addressText'] ?? ''}' : '');
@@ -178,7 +178,7 @@ class _BookingPageState extends State<BookingPage> {
           TextField(controller: _q, onChanged: _search, decoration: InputDecoration(prefixIcon: const Icon(Icons.search_rounded), hintText: isAr ? 'ابحث بالاسم أو الهاتف أو الكود' : 'Name, phone or code')),
           for (final p in _patients) ListTile(
             title: Text('${p['firstName']} ${p['lastName'] ?? ''}'.trim()),
-            subtitle: Text('${p['patientCode'] ?? ''} ${p['phone'] ?? ''}'.trim()),
+            subtitle: Text('${p['patientCode'] ?? ''} ${localPhone(p['phone'])}'.trim()),
             onTap: () => setState(() { _patient = p; _patients = []; }),
           ),
           if (ctx.can('patient.create')) TextButton.icon(onPressed: _newPatient, icon: const Icon(Icons.person_add_alt_1_rounded), label: Text(isAr ? 'مريض جديد' : 'New patient')),

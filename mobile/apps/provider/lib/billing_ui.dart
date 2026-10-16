@@ -175,7 +175,7 @@ class _PayBodyState extends State<PayBody> {
         String? sameLevel(String? c) { final base = (c ?? '').replaceAll('_YEARLY', ''); for (final p in plans) { if ('${p['code']}'.replaceAll('_YEARLY', '') == base) return '${p['code']}'; } return null; }
         final reqs = (data[2] as List).cast<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
         final me = Map<String, dynamic>.from(data[3] as Map);
-        if (!_phoneSet) { _phone.text = '${me['phone'] ?? ''}'; _phoneSet = true; }
+        if (!_phoneSet) { _phone.text = localPhone(me['phone']); _phoneSet = true; }
         final open = _saved ?? reqs.cast<Map<String, dynamic>?>().firstWhere((r) => r!['status'] == 'NEW' || r['status'] == 'CONTACTED', orElse: () => null);
         final choice = sameLevel(_picked ?? widget.plan) ?? sameLevel('${status['planCode']}') ?? (plans.isEmpty ? '' : '${plans.first['code']}');
         final disabled = widget.disabled || status['state'] == 'DISABLED';
@@ -209,10 +209,10 @@ class _PayBodyState extends State<PayBody> {
                 const SizedBox(height: 6),
                 Text(ar ? 'تم استلام طلبك' : 'We received your request', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
                 const SizedBox(height: 4),
-                Text(ar ? 'سيتواصل معك فريق خدمة العملاء على ${open['phone']} قريبًا جدًا لإتمام اشتراكك.' : 'Customer service will contact you on ${open['phone']} very soon to complete your subscription.', textAlign: TextAlign.center),
+                Text(ar ? 'سيتواصل معك فريق خدمة العملاء على ${localPhone(open['phone'])} قريبًا جدًا لإتمام اشتراكك.' : 'Customer service will contact you on ${localPhone(open['phone'])} very soon to complete your subscription.', textAlign: TextAlign.center),
                 const SizedBox(height: 6),
                 Text('${planLabel('${open['planCode']}')} · ${fmtMoney(open['amountMinor'] as num?)} ${open['currency'] ?? 'EGP'}', style: const TextStyle(fontWeight: FontWeight.w700)),
-                TextButton(onPressed: () => setState(() { _picked = '${open['planCode']}'; _phone.text = '${open['phone']}'; _editing = true; }), child: Text(ar ? 'تعديل طلبي' : 'Change my request')),
+                TextButton(onPressed: () => setState(() { _picked = '${open['planCode']}'; _phone.text = localPhone(open['phone']); _editing = true; }), child: Text(ar ? 'تعديل طلبي' : 'Change my request')),
               ])))
             else ...[
               sectionTitle(ar ? 'اختر باقتك' : 'Choose your plan'),

@@ -1,5 +1,6 @@
 "use client";
 
+import { localPhone } from "@/lib/phone";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
@@ -52,7 +53,7 @@ function Inner() {
                 <tr key={r.id} className="hover:bg-slate-50">
                   <Td><Link href={`/admin/tenants/${r.id}`} className="font-medium text-brand">{r.name}</Link> {r.hasPayRequest && <span title={t("admin.filter.pay")}>💬</span>}
                     <div className="text-xs text-slate-500" dir="ltr">{r.primaryHost} · {r.tenantType === "STORE" ? t("type.store") : t("type.clinic")}</div></Td>
-                  <Td>{r.ownerName}{r.ownerPhone && <div className="text-xs" dir="ltr"><a className="text-brand" href={`tel:${r.ownerPhone}`}>{r.ownerPhone}</a> · <a className="text-emerald-700" target="_blank" rel="noopener noreferrer" href={whatsappLink(r.ownerPhone)}>{t("admin.whatsapp")}</a></div>}</Td>
+                  <Td>{r.ownerName}{r.ownerPhone && <div className="text-xs" dir="ltr"><a className="text-brand" href={`tel:${r.ownerPhone}`}>{localPhone(r.ownerPhone)}</a> · <a className="text-emerald-700" target="_blank" rel="noopener noreferrer" href={whatsappLink(r.ownerPhone)}>{t("admin.whatsapp")}</a></div>}</Td>
                   <Td><StatusBadge status={r.status} />{r.subscriptionStatus && r.subscriptionStatus !== r.status && <div className="mt-1"><StatusBadge status={r.subscriptionStatus} /></div>}</Td>
                   <Td>{planLabel(t, r.planCode)}</Td>
                   <Td>{dateOnly(r.currentPeriodStart ?? r.createdAt, locale)}</Td>

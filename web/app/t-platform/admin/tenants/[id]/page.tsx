@@ -1,5 +1,6 @@
 "use client";
 
+import { localPhone } from "@/lib/phone";
 import { useRouter } from "next/navigation";
 import { use, useState } from "react";
 import { api } from "@/lib/client";
@@ -63,11 +64,11 @@ export default function TenantDetail({ params }: { params: Promise<{ id: string 
         <Card>
           <h2 className="mb-2 font-medium">{t("admin.owner")}</h2>
           <p className="text-sm">{`${o.firstName ?? ""} ${o.lastName ?? ""}`.trim() || "-"}</p>
-          {o.phone && <p className="mt-1 flex flex-wrap gap-3 text-sm" dir="ltr"><a className="font-semibold text-brand" href={`tel:${o.phone}`}>{o.phone}</a><a className="text-emerald-700 underline" target="_blank" rel="noopener noreferrer" href={whatsappLink(o.phone)}>{t("admin.whatsapp")}</a></p>}
+          {o.phone && <p className="mt-1 flex flex-wrap gap-3 text-sm" dir="ltr"><a className="font-semibold text-brand" href={`tel:${o.phone}`}>{localPhone(o.phone)}</a><a className="text-emerald-700 underline" target="_blank" rel="noopener noreferrer" href={whatsappLink(o.phone)}>{t("admin.whatsapp")}</a></p>}
           {o.email && <p className="mt-1 text-sm" dir="ltr"><a className="text-brand" href={`mailto:${o.email}`}>{o.email}</a></p>}
           <div className="mt-3 flex flex-wrap gap-2">
             <Button variant="secondary" size="sm" loading={resetPw.loading} onClick={() => resetPw.run()}>{t("admin.resetPassword")}</Button>
-            <Button variant="secondary" size="sm" onClick={() => { setOwnerPhone(o.phone ?? ""); setOwnerEmail(o.email ?? ""); setModal("owner"); }}>{t("admin.editOwner")}</Button>
+            <Button variant="secondary" size="sm" onClick={() => { setOwnerPhone(localPhone(o.phone)); setOwnerEmail(o.email ?? ""); setModal("owner"); }}>{t("admin.editOwner")}</Button>
           </div>
           <ErrorText error={resetPw.error} />
           <p className="mt-3 text-sm text-slate-500">{t("admin.signedUp")}: {dateOnly(data.createdAt, locale)} · {t("admin.staff")}: <b>{data.staffCount}</b></p>
