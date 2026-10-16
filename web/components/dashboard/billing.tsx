@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { api } from "@/lib/client";
 import { useAction, useApi } from "../hooks";
 import { useI18n } from "../i18n-provider";
@@ -8,6 +9,7 @@ import { Alert, Badge, Button, Card, ErrorText, Loading, PageHeader, StatusBadge
 import { dateOnly, money } from "@/lib/format";
 import { planLabel } from "./pay-screen";
 import { PlanBenefits } from "../plan-benefits";
+import { type Cycle, CycleToggle } from "../cycle-toggle";
 
 type Sub = { status: string; planCode: string; planName: string; priceMinor: number; currency: string; currentPeriodEnd: string; cancelAtPeriodEnd: boolean };
 type Plan = { code: string; name: string; priceMinor: number; currency: string; interval?: string; features: Record<string, boolean | number> };
@@ -18,6 +20,7 @@ export default function BillingPage() {
   const sub = useApi<Sub>("billing/subscription");
   const plans = useApi<Plan[]>("billing/plans");
   const invoices = useApi<Invoice[]>("billing/invoices");
+  const [cycle, setCycle] = useState<Cycle>("month");
   const cancel = useAction(async () => { await api("billing/subscription/cancel", { body: {} }); await sub.reload(); });
 
   if (sub.loading && !sub.data) return <Loading />;
@@ -42,12 +45,13 @@ export default function BillingPage() {
           {s.status === "PAST_DUE" && <div className="mt-4"><Alert tone="amber">{t("billing.pastDue")}</Alert></div>}
         </Card>
       )}
-      <h2 className="mb-3 font-medium">{t("billing.plans")}</h2>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><h2 className="font-medium">{t("billing.plans")}</h2><CycleToggle value={cycle} onChange={setCycle} /></div>
       <div className="mb-8 grid gap-4 md:grid-cols-2">
-        {plans.data?.filter((p) => p.priceMinor > 0 && p.interval !== "YEAR").map((p) => (
+        {plans.data?.filter((p) => p.priceMinor > 0 && (p.interval === "YEAR") === (cycle === "year")).map((p) => (
           <Card key={p.code}>
             <p className="font-semibold">{planLabel(t, p.code)}</p>
-            <p className="my-2 text-2xl font-bold">{money(p.priceMinor, p.currency, locale)}<span className="text-sm font-normal text-slate-500"> / {t("pricing.month")}</span></p>
+            <p className="my-2 text-2xl font-bold">{money(p.priceMinor, p.currency, locale)}<span className="text-sm font-normal text-slate-500"> / {p.interval === "YEAR" ? t("billing.perYear") : t("pricing.month")}</span></p>
+            {p.interval === "YEAR" && <p className="-mt-1 mb-2 text-sm font-semibold text-emerald-700">{t("billing.twoFree")} · {t("billing.orMonthly", { amount: money(Math.round(p.priceMinor / 12), p.currency, locale) })}</p>}
             <div className="mb-4"><PlanBenefits type={p.code.startsWith("STORE") ? "STORE" : "CLINIC"} domain={p.features.custom_domain !== false && "custom_domain" in p.features} /></div>
             <Link href={`/dashboard/billing/pay?plan=${p.code}`} className={`block rounded-xl py-2.5 text-center text-sm font-semibold transition active:scale-[.97] ${s?.planCode === p.code && s.status === "ACTIVE" ? "bg-slate-100 text-slate-700" : "bg-brand-gradient text-white shadow-brand hover:brightness-110"}`}>
               {s?.planCode === p.code && s.status === "ACTIVE" ? t("billing.current") : t("billing.choose")}
