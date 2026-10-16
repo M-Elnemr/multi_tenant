@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { AppBenefits } from "@/components/app-benefits";
+import { PlanBenefits } from "@/components/plan-benefits";
 import { type Cycle, CycleToggle } from "@/components/cycle-toggle";
 import { planLabel } from "@/components/dashboard/pay-screen";
 import { useI18n } from "@/components/i18n-provider";
@@ -10,9 +11,6 @@ import { Icon } from "@/components/icons";
 import { money } from "@/lib/format";
 
 export type Plan = { code: string; name: string; tenantType: "STORE" | "CLINIC"; priceMinor: number; currency: string; interval?: string; features: Record<string, boolean | number> };
-
-// whatsapp_notifications is deliberately not listed: WhatsApp is a manual button, not an automatic service
-const SHOWN = ["max_products", "max_branches", "max_staff", "max_monthly_orders", "max_monthly_appointments", "custom_domain", "coupons", "reviews", "advanced_reports", "patient_portal"];
 
 export function PricingPlans({ plans }: { plans: Plan[] }) {
   const { t, locale } = useI18n();
@@ -39,18 +37,7 @@ export function PricingPlans({ plans }: { plans: Plan[] }) {
                       {!free && <span className="text-slate-500"> / {p.interval === "YEAR" ? t("billing.perYear") : t("pricing.month")}</span>}
                     </p>
                     <p className="mb-4 mt-1 min-h-5 text-sm font-semibold text-emerald-700">{saving > 0 ? `${t("billing.twoFree")} · ${t("billing.save", { amount: money(saving, p.currency, locale) })}` : ""}</p>
-                    <ul className="mb-6 flex-1 space-y-1.5 text-sm text-slate-700">
-                      {SHOWN.filter((k) => k in p.features).map((k) => {
-                        const v = p.features[k];
-                        const off = v === false;
-                        return (
-                          <li key={k} className={`flex items-center gap-2 ${off ? "text-slate-400 line-through" : ""}`}>
-                            <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${off ? "bg-slate-100 text-slate-400" : "bg-emerald-50 text-emerald-600"}`}>{off ? "✕" : <Icon name="check" className="h-3 w-3" />}</span>
-                            {t(`feature.${k}`)}{typeof v === "number" ? `: ${v}` : v === true && k.startsWith("max_") ? `: ${t("pricing.unlimited")}` : ""}
-                          </li>
-                        );
-                      })}
-                    </ul>
+                    <div className="mb-6 flex-1"><PlanBenefits type={type} domain={p.features.custom_domain !== false && "custom_domain" in p.features} /></div>
                     <Link href={`/register?type=${type}`} className="block rounded-xl bg-brand-gradient py-3 text-center text-sm font-semibold text-white shadow-brand transition hover:-translate-y-px hover:brightness-110 active:scale-[.97]">{t("pricing.trial")}</Link>
                   </div>
                 );

@@ -7,7 +7,8 @@ import { api } from "@/lib/client";
 import { Page, useAction, useApi } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { planLabel } from "@/components/dashboard/pay-screen";
-import { Button, Card, Empty, ErrorText, Input, Loading, PageHeader, Pager, Tabs, StatusBadge } from "@/components/ui";
+import { Avatar, Button, Empty, ErrorText, Input, Loading, PageHeader, Pager, Tabs, StatusBadge } from "@/components/ui";
+import { Icon } from "@/components/icons";
 import { dateTime, money } from "@/lib/format";
 import { whatsappLink } from "@/lib/whatsapp";
 
@@ -22,21 +23,25 @@ function Row({ r, onDone }: { r: Req; onDone: () => void }) {
   const act = useAction(async (status: string) => { await api(`platform/pay-requests/${r.id}`, { body: { status, adminNote: note || undefined, activate: true } }); onDone(); });
   const open = r.status === "NEW" || r.status === "CONTACTED";
   return (
-    <Card className="space-y-2">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <Link href={`/admin/tenants/${r.tenantId}`} className="text-lg font-bold text-brand">{r.tenantName}</Link>
-          <p className="text-xs text-slate-500" dir="ltr">{r.primaryHost} · {r.tenantType === "STORE" ? t("type.store") : t("type.clinic")}</p>
-        </div>
+    <div className={`space-y-3 rounded-2xl bg-white p-5 shadow-card ${r.status === "NEW" ? "ring-2 ring-amber-300/70" : ""}`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <Link href={`/admin/tenants/${r.tenantId}`} className="flex min-w-0 items-center gap-3">
+          <Avatar name={r.tenantName} className="h-11 w-11 text-base" />
+          <div className="min-w-0"><p className="truncate text-lg font-bold text-ink">{r.tenantName}</p><p className="truncate text-xs text-slate-500" dir="ltr">{r.primaryHost} · {r.tenantType === "STORE" ? t("type.store") : t("type.clinic")}</p></div>
+        </Link>
         <div className="flex items-center gap-2"><StatusBadge status={r.tenantStatus} /><StatusBadge status={r.status} /></div>
       </div>
-      <p className="text-sm">{t("admin.requestedPlan")}: <b>{planLabel(t, r.planCode)}</b> · {money(r.amountMinor, r.currency, locale)} · <span className="text-slate-500">{dateTime(r.createdAt, locale)}</span></p>
-      <p className="flex flex-wrap items-center gap-3 text-sm" dir="ltr">
-        <a className="font-semibold text-brand" href={`tel:${r.phone}`}>📞 {localPhone(r.phone)}</a>
-        <a className="text-emerald-700 underline" target="_blank" rel="noopener noreferrer" href={whatsappLink(r.phone, `${r.tenantName}`)}>{t("admin.whatsapp")}</a>
-        {r.requesterEmail && <a className="text-slate-600" href={`mailto:${r.requesterEmail}`}>{r.requesterEmail}</a>}
-      </p>
-      {r.note && <p className="text-sm text-slate-600">“{r.note}”</p>}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">{t("admin.requestedPlan")}</p><p className="font-bold">{planLabel(t, r.planCode)}</p><p className="text-sm text-slate-600">{money(r.amountMinor, r.currency, locale)} · <span className="text-xs text-slate-400">{dateTime(r.createdAt, locale)}</span></p></div>
+        <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3">
+          <div className="min-w-0"><p className="text-xs text-slate-500">{t("admin.contact")}</p><a className="text-lg font-extrabold text-brand" dir="ltr" href={`tel:${r.phone}`}>{localPhone(r.phone)}</a></div>
+          <div className="flex shrink-0 gap-2">
+            <a href={`tel:${r.phone}`} aria-label={t("admin.call")} className="flex h-10 w-10 items-center justify-center rounded-full bg-brand text-white"><Icon name="phone" className="h-5 w-5" /></a>
+            <a href={whatsappLink(r.phone, r.tenantName)} target="_blank" rel="noopener noreferrer" aria-label={t("admin.whatsapp")} className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500 text-white"><Icon name="chat" className="h-5 w-5" /></a>
+          </div>
+        </div>
+      </div>
+      {r.note && <p className="rounded-lg bg-sky-50 p-3 text-sm text-sky-900">“{r.note}”</p>}
       {open && (
         <div className="space-y-2 border-t border-slate-100 pt-3">
           <Input placeholder={t("admin.note")} value={note} onChange={(e) => setNote(e.target.value)} />
@@ -49,7 +54,7 @@ function Row({ r, onDone }: { r: Req; onDone: () => void }) {
         </div>
       )}
       {!open && r.adminNote && <p className="text-xs text-slate-500">{t("admin.note")}: {r.adminNote}</p>}
-    </Card>
+    </div>
   );
 }
 

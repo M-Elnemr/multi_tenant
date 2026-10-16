@@ -8,7 +8,7 @@ import 'billing_ui.dart';
 import 'clinic_panel.dart' show NotificationsScreen;
 import 'common.dart';
 import 'forms.dart';
-import 'main.dart' show BusinessHome;
+import 'main.dart' show BusinessHome, BusinessLogo;
 import 'push.dart';
 
 /// The platform owner's area: every shop and clinic, their subscriptions and contacts, and the "Proceed to pay" requests to call back.
@@ -119,34 +119,85 @@ class _Overview extends StatelessWidget {
     return Async<Map<String, dynamic>>(
       load: () async => Map<String, dynamic>.from(await api.get('platform/overview') as Map),
       builder: (context, d, reload) {
-        Widget stat(String label, Object? value, IconData icon, Color color, {int? tab}) => Expanded(
-              child: Card(child: InkWell(
-                borderRadius: BorderRadius.circular(16),
-                onTap: tab == null ? null : () => goTo(tab),
-                child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Icon(icon, color: color),
-                  const SizedBox(height: 8),
-                  Text('$value', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 24)),
-                  Text(label, style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 12.5)),
-                ])),
-              )),
-            );
         final mrr = ((d['monthlyRecurringRevenueMinor'] as num?) ?? 0) / 100;
+        final byType = (d['tenantsByTypeAndStatus'] as Map?) ?? const {};
+        int sum(Object? m) => ((m as Map?) ?? const {}).values.fold<int>(0, (a, b) => a + ((b as num?)?.toInt() ?? 0));
+        Widget hero(String value, String label) => Expanded(child: Column(children: [Text(value, style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900)), const SizedBox(height: 2), Text(label, textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 12))]));
+        Widget tile(String label, Object? value, IconData icon, Color color, {int? tab}) => Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(5),
+                child: PressScale(
+                  onTap: tab == null ? null : () => goTo(tab),
+                  child: Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: const [BoxShadow(color: Color(0x14102B46), blurRadius: 16, offset: Offset(0, 6))]),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Container(width: 38, height: 38, decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)), child: Icon(icon, color: color, size: 21)),
+                      const SizedBox(height: 10),
+                      Text('$value', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 26, height: 1)),
+                      const SizedBox(height: 3),
+                      Text(label, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 12.5)),
+                    ]),
+                  ),
+                ),
+              ),
+            );
+        final attention = <Widget>[
+          if (((d['newPayRequests'] as num?) ?? 0) > 0) _attn(Icons.payments_rounded, ar ? '${d['newPayRequests']} طلب دفع جديد يحتاج اتصالًا' : '${d['newPayRequests']} new pay requests to call back', const Color(0xFFD98200), () => goTo(2)),
+          if (((d['expiringIn7Days'] as num?) ?? 0) > 0) _attn(Icons.hourglass_bottom_rounded, ar ? '${d['expiringIn7Days']} اشتراك ينتهي خلال 7 أيام' : '${d['expiringIn7Days']} subscriptions end within 7 days', const Color(0xFF1F6A99), () => goTo(1)),
+          if (((d['waitingForRenew'] as num?) ?? 0) > 0) _attn(Icons.update_rounded, ar ? '${d['waitingForRenew']} نشاط بانتظار التجديد' : '${d['waitingForRenew']} waiting for renew', const Color(0xFFD14343), () => goTo(1)),
+          if (((d['disabled'] as num?) ?? 0) > 0) _attn(Icons.block_rounded, ar ? '${d['disabled']} نشاط متوقف' : '${d['disabled']} disabled', const Color(0xFF6B7C8D), () => goTo(1)),
+        ];
         return RefreshIndicator(
           onRefresh: reload,
           child: ListView(padding: const EdgeInsets.all(12), children: [
-            Row(children: [stat(ar ? 'طلبات دفع جديدة' : 'New pay requests', d['newPayRequests'], Icons.payments_rounded, const Color(0xFFD98200), tab: 2), stat(ar ? 'ينتهي خلال 7 أيام' : 'Ending in 7 days', d['expiringIn7Days'], Icons.hourglass_bottom_rounded, const Color(0xFFD98200), tab: 1)]),
-            Row(children: [stat(ar ? 'بانتظار التجديد' : 'Waiting for renew', d['waitingForRenew'], Icons.update_rounded, const Color(0xFFD14343), tab: 1), stat(ar ? 'متوقف' : 'Disabled', d['disabled'], Icons.block_rounded, const Color(0xFFD14343), tab: 1)]),
-            Row(children: [stat(ar ? 'إجمالي الأنشطة' : 'Businesses', d['totalTenants'], Icons.storefront_rounded, const Color(0xFF1F6A99), tab: 1), stat(ar ? 'جديد هذا الأسبوع' : 'New this week', d['newTenantsLast7Days'], Icons.fiber_new_rounded, const Color(0xFF1E9E5A), tab: 1)]),
-            Row(children: [stat(ar ? 'الإيراد الشهري' : 'Monthly revenue', mrr.toStringAsFixed(0), Icons.account_balance_wallet_rounded, const Color(0xFF1E9E5A)), stat(ar ? 'المستخدمون' : 'Users', d['totalUsers'], Icons.people_rounded, const Color(0xFF6B7C8D))]),
-            sectionTitle(ar ? 'الاشتراكات' : 'Subscriptions'),
+            FadeSlideIn(child: Container(
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
+              decoration: BoxDecoration(borderRadius: BorderRadius.circular(26), gradient: LinearGradient(begin: AlignmentDirectional.topStart, end: AlignmentDirectional.bottomEnd, colors: [kBrandBlue, Color.lerp(kBrandBlue, kBrandGreen, 0.65)!, kBrandGreen]), boxShadow: [BoxShadow(color: kBrandBlue.withValues(alpha: 0.28), blurRadius: 22, offset: const Offset(0, 10))]),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(ar ? 'أهلًا بعودتك' : 'Welcome back', style: TextStyle(color: Colors.white.withValues(alpha: 0.88), fontWeight: FontWeight.w600)),
+                const SizedBox(height: 2),
+                Text(ar ? 'لوحة المنصة' : 'Platform console', style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 16),
+                Row(children: [hero('${d['totalTenants']}', ar ? 'الأنشطة' : 'Businesses'), hero('${sum(byType['STORE'])}', ar ? 'المتاجر' : 'Shops'), hero('${sum(byType['CLINIC'])}', ar ? 'العيادات' : 'Clinics'), hero(mrr.toStringAsFixed(0), ar ? 'جنيه / شهر' : 'EGP / month')]),
+              ]),
+            )),
+            const SizedBox(height: 10),
+            Row(children: [tile(ar ? 'طلبات دفع جديدة' : 'New pay requests', d['newPayRequests'], Icons.payments_rounded, const Color(0xFFD98200), tab: 2), tile(ar ? 'ينتهي خلال 7 أيام' : 'Ending in 7 days', d['expiringIn7Days'], Icons.hourglass_bottom_rounded, const Color(0xFF1F6A99), tab: 1)]),
+            Row(children: [tile(ar ? 'بانتظار التجديد' : 'Waiting for renew', d['waitingForRenew'], Icons.update_rounded, const Color(0xFFD14343), tab: 1), tile(ar ? 'متوقف' : 'Disabled', d['disabled'], Icons.block_rounded, const Color(0xFF6B7C8D), tab: 1)]),
+            Row(children: [tile(ar ? 'جديد هذا الأسبوع' : 'New this week', d['newTenantsLast7Days'], Icons.fiber_new_rounded, const Color(0xFF1E9E5A)), tile(ar ? 'المستخدمون' : 'Users', d['totalUsers'], Icons.people_rounded, const Color(0xFF1F6A99))]),
+            sectionTitle(ar ? 'يحتاج انتباهك' : 'Needs your attention'),
+            if (attention.isEmpty) Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: const Color(0xFFE6F6EC), borderRadius: BorderRadius.circular(16)), child: Row(children: [const Icon(Icons.check_circle_rounded, color: Color(0xFF1E9E5A)), const SizedBox(width: 10), Expanded(child: Text(ar ? 'لا شيء يحتاج انتباهك الآن.' : 'Nothing needs your attention right now.', style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF14663A))))])) else ...attention,
+            sectionTitle(ar ? 'الاشتراكات حسب الباقة' : 'Subscriptions by plan'),
             for (final p in ((d['activeSubscriptionsByPlan'] as List?) ?? const []).cast<Map>())
-              Card(child: ListTile(title: Text(planLabel('${p['plan']}')), subtitle: StatusPill('${p['status']}'.replaceAll('TRIALING', 'TRIALING')), trailing: Text('${p['c']}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18)))),
+              Padding(padding: const EdgeInsets.only(bottom: 8), child: Row(children: [
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(planLabel('${p['plan']}'), style: const TextStyle(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 4),
+                  ClipRRect(borderRadius: BorderRadius.circular(8), child: LinearProgressIndicator(minHeight: 8, value: ((p['c'] as num?) ?? 0) / (((d['totalTenants'] as num?) ?? 1) == 0 ? 1 : (d['totalTenants'] as num)), backgroundColor: const Color(0xFFE9EEF4), color: '${p['status']}' == 'ACTIVE' ? const Color(0xFF1E9E5A) : const Color(0xFF1F6A99))),
+                ])),
+                const SizedBox(width: 10),
+                StatusPill('${p['status']}'),
+                const SizedBox(width: 8),
+                Text('${p['c']}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
+              ])),
           ]),
         );
       },
     );
   }
+
+  Widget _attn(IconData icon, String text, Color color, VoidCallback onTap) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: PressScale(
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(16)),
+            child: Row(children: [Icon(icon, color: color), const SizedBox(width: 12), Expanded(child: Text(text, style: TextStyle(fontWeight: FontWeight.w800, color: color))), Icon(Icons.chevron_right_rounded, color: color)]),
+          ),
+        ),
+      );
 }
 
 // ---------------------------------------------------------------- businesses
@@ -166,28 +217,54 @@ class _Businesses extends StatelessWidget {
       filters: [('', ar ? 'الكل' : 'All'), ('expiring', ar ? 'ينتهي قريبًا' : 'Ending soon'), ('waiting', ar ? 'بانتظار التجديد' : 'Waiting for renew'), ('pay', ar ? 'طلب الدفع' : 'Asked to pay'), ('disabled', ar ? 'متوقف' : 'Disabled')],
       itemBuilder: (context, t, reload) {
         final left = _daysLeft(t['currentPeriodEnd']);
-        return Card(child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: () async { await Navigator.of(context).push(MaterialPageRoute(builder: (_) => TenantDetailPage(api: api, id: '${t['id']}', perms: perms))); await reload(); },
-          child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Expanded(child: Text('${t['name']}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16))),
-              if (t['hasPayRequest'] == true) const Padding(padding: EdgeInsets.only(right: 6, left: 6), child: Icon(Icons.payments_rounded, size: 18, color: Color(0xFFD98200))),
-              StatusPill('${t['status']}'),
-            ]),
-            Text('${_typeLabel(t['tenantType'])} · ${t['primaryHost'] ?? ''}', textDirection: TextDirection.ltr, style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 12)),
-            const SizedBox(height: 6),
-            Text('${planLabel(t['planCode'] as String?)}  ·  ${ar ? 'بداية' : 'from'} ${fmtDate('${t['currentPeriodStart'] ?? t['createdAt']}', time: false)}  ·  ${ar ? 'حتى' : 'to'} ${fmtDate(t['currentPeriodEnd'] as String?, time: false)}'),
-            if (left != null) Text(left <= 0 ? (ar ? 'منتهي' : 'Expired') : (ar ? 'متبقي $left يوم' : '$left days left'), style: TextStyle(fontWeight: FontWeight.w800, color: left <= 0 ? const Color(0xFFD14343) : left <= 7 ? const Color(0xFFD98200) : const Color(0xFF6B7C8D))),
-            if ((t['ownerName'] ?? '').toString().trim().isNotEmpty || t['ownerPhone'] != null) Padding(padding: const EdgeInsets.only(top: 4), child: Row(children: [
-              Expanded(child: Text('${t['ownerName'] ?? ''}  ${localPhone(t['ownerPhone'])}', textDirection: TextDirection.ltr)),
-              if (t['ownerPhone'] != null) ...[
-                IconButton(visualDensity: VisualDensity.compact, icon: const Icon(Icons.call_rounded, size: 20), onPressed: () => dial('${t['ownerPhone']}')),
-                IconButton(visualDensity: VisualDensity.compact, icon: const Icon(Icons.chat_rounded, size: 20, color: Color(0xFF1E9E5A)), onPressed: () => whatsapp('${t['ownerPhone']}', '${t['name']}')),
-              ],
-            ])),
-          ])),
-        ));
+        final start = DateTime.tryParse('${t['currentPeriodStart'] ?? ''}');
+        final end = DateTime.tryParse('${t['currentPeriodEnd'] ?? ''}');
+        final total = start != null && end != null ? (end.difference(start).inHours / 24).clamp(1, 4000).toDouble() : 30.0;
+        final pct = left == null ? 0.0 : (left / total).clamp(0.0, 1.0);
+        final tone = left == null ? const Color(0xFF9AA9BA) : left <= 0 ? const Color(0xFFD14343) : left <= 7 ? const Color(0xFFD98200) : const Color(0xFF1E9E5A);
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: PressScale(
+            onTap: () async { await Navigator.of(context).push(MaterialPageRoute(builder: (_) => TenantDetailPage(api: api, id: '${t['id']}', perms: perms))); await reload(); },
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: const [BoxShadow(color: Color(0x14102B46), blurRadius: 16, offset: Offset(0, 6))]),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  BusinessLogo(url: null, name: '${t['name']}', size: 46),
+                  const SizedBox(width: 12),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [Flexible(child: Text('${t['name']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16))), if (t['hasPayRequest'] == true) const Padding(padding: EdgeInsetsDirectional.only(start: 6), child: Icon(Icons.payments_rounded, size: 17, color: Color(0xFFD98200)))]),
+                    Text('${t['primaryHost'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, textDirection: TextDirection.ltr, style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 12)),
+                  ])),
+                ]),
+                const SizedBox(height: 10),
+                Wrap(spacing: 6, runSpacing: 4, children: [
+                  Container(padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4), decoration: BoxDecoration(color: const Color(0xFFEEF2F6), borderRadius: BorderRadius.circular(20)), child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(t['tenantType'] == 'STORE' ? Icons.storefront_rounded : Icons.local_hospital_rounded, size: 13, color: const Color(0xFF4A5B6C)), const SizedBox(width: 4), Text(_typeLabel(t['tenantType']), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF4A5B6C)))])),
+                  StatusPill('${t['status']}'),
+                  if ('${t['subscriptionStatus']}' != '${t['status']}' && t['subscriptionStatus'] != null && !(t['status'] == 'TRIAL' && t['subscriptionStatus'] == 'TRIALING')) StatusPill('${t['subscriptionStatus']}'),
+                ]),
+                const SizedBox(height: 12),
+                Row(children: [Expanded(child: Text(planLabel(t['planCode'] as String?), style: const TextStyle(fontWeight: FontWeight.w800))), Text(left == null ? '' : left <= 0 ? (ar ? 'منتهي' : 'Expired') : (ar ? 'متبقي $left يوم' : '$left days left'), style: TextStyle(fontWeight: FontWeight.w800, color: tone))]),
+                const SizedBox(height: 6),
+                ClipRRect(borderRadius: BorderRadius.circular(8), child: LinearProgressIndicator(minHeight: 7, value: pct, backgroundColor: const Color(0xFFE9EEF4), color: tone)),
+                const SizedBox(height: 4),
+                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(fmtDate('${t['currentPeriodStart'] ?? t['createdAt']}', time: false), style: const TextStyle(color: Color(0xFF8A99AA), fontSize: 11)), Text(fmtDate(t['currentPeriodEnd'] as String?, time: false), style: const TextStyle(color: Color(0xFF8A99AA), fontSize: 11))]),
+                if ((t['ownerName'] ?? '').toString().trim().isNotEmpty || t['ownerPhone'] != null) ...[
+                  const Divider(height: 22),
+                  Row(children: [
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('${t['ownerName'] ?? ''}'.trim().isEmpty ? '-' : '${t['ownerName']}'.trim(), style: const TextStyle(fontWeight: FontWeight.w800)), Text(localPhone(t['ownerPhone']), textDirection: TextDirection.ltr, style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 12.5))])),
+                    if (t['ownerPhone'] != null) ...[
+                      IconButton.filled(visualDensity: VisualDensity.compact, icon: const Icon(Icons.call_rounded, size: 19), onPressed: () => dial('${t['ownerPhone']}')),
+                      const SizedBox(width: 6),
+                      IconButton.filled(style: IconButton.styleFrom(backgroundColor: const Color(0xFF1E9E5A)), visualDensity: VisualDensity.compact, icon: const Icon(Icons.chat_rounded, size: 19), onPressed: () => whatsapp('${t['ownerPhone']}', '${t['name']}')),
+                    ],
+                  ]),
+                ],
+              ]),
+            ),
+          ),
+        );
       },
     );
   }
@@ -393,8 +470,20 @@ class _TenantDetailPageState extends State<TenantDetailPage> {
           return RefreshIndicator(
             onRefresh: reload,
             child: ListView(padding: const EdgeInsets.all(16), children: [
-              Row(children: [Expanded(child: Text('${d['name']}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 22))), StatusPill('${d['status']}')]),
-              Text('${_typeLabel(d['tenantType'])} · ${d['slug']}', textDirection: TextDirection.ltr, style: const TextStyle(color: Color(0xFF6B7C8D))),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(borderRadius: BorderRadius.circular(24), gradient: LinearGradient(begin: AlignmentDirectional.topStart, end: AlignmentDirectional.bottomEnd, colors: [kBrandBlue, Color.lerp(kBrandBlue, kBrandGreen, 0.65)!, kBrandGreen]), boxShadow: [BoxShadow(color: kBrandBlue.withValues(alpha: 0.25), blurRadius: 18, offset: const Offset(0, 8))]),
+                child: Row(children: [
+                  BusinessLogo(url: null, name: '${d['name']}', size: 60),
+                  const SizedBox(width: 14),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('${d['name']}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 20)),
+                    Text('${(((d['domains'] as List?) ?? const []).cast<Map>().where((x) => x['primary'] == true).map((x) => x['host']).firstOrNull) ?? d['slug']}', textDirection: TextDirection.ltr, style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 12.5)),
+                    const SizedBox(height: 6),
+                    Wrap(spacing: 6, children: [Container(decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)), child: StatusPill('${d['status']}')), Container(padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.22), borderRadius: BorderRadius.circular(20)), child: Text(_typeLabel(d['tenantType']), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12)))]),
+                  ])),
+                ]),
+              ),
               sectionTitle(ar ? 'صاحب النشاط' : 'Owner'),
               Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('${owner['firstName'] ?? ''} ${owner['lastName'] ?? ''}'.trim().isEmpty ? '-' : '${owner['firstName'] ?? ''} ${owner['lastName'] ?? ''}'.trim(), style: const TextStyle(fontWeight: FontWeight.w800)),

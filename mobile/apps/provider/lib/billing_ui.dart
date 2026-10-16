@@ -101,6 +101,19 @@ String planLabel(String? code) {
   return yearly ? '$base (${ar ? 'سنوي' : 'yearly'})' : base;
 }
 
+/// The real benefits of a plan in plain words; the last line says whether a custom domain is included.
+List<(String, bool)> planBenefits({required bool store, required bool domain}) {
+  final ar = AppLocale.isAr;
+  final list = store
+      ? (ar
+          ? ['متجرك الإلكتروني الخاص جاهز في دقائق على رابط باسمك', 'تطبيق موبايل لإدارة متجرك من أي مكان', 'إشعار فوري على موبايلك مع كل طلب جديد', 'كل عملائك بتفاصيلهم: اتصال أو واتساب بضغطة واحدة', 'منتجات بمقاسات وألوان وأسعار وصور، وإدارة سهلة', 'تابع كل طلب: تجهيز، شحن، تسليم، وتعامل مع المرتجعات', 'الدفع عند الاستلام ومناطق شحن بأسعارك أنت', 'إدارة المخزون مع تنبيه قبل أن ينفد المنتج', 'كوبونات وخصومات لزيادة مبيعاتك، وتقييمات العملاء لمنتجاتك لبناء الثقة', 'تقارير المبيعات وفريق عمل بصلاحيات مختلفة']
+          : ['Your own online shop, live in minutes on your own address', 'Mobile app to run your shop from anywhere', 'Instant phone notification on every new order', 'All your customers with their details: call or WhatsApp in one tap', 'Products with sizes, colors, prices and photos', 'Follow every order: preparing, shipped, delivered, and handle returns', 'Cash on delivery and shipping zones with your own prices', 'Stock control with a low-stock alert', 'Coupons and discounts to grow sales, and customer reviews to build trust', 'Sales reports and a team with different permissions'])
+      : (ar
+          ? ['موقع لعيادتك مع الحجز أونلاين جاهز في دقائق', 'تطبيق موبايل للدكتور والسكرتارية', 'قاعة الانتظار والدور: المريض يصله إشعار عند دوره', 'ملف كامل لكل مريض: الزيارات والروشتات وطلبات التحاليل', 'المريض يرفع نتيجة التحليل ويصلك إشعار فورًا', 'رقم مريض موحد مع QR، والأطفال مرتبطون بولي الأمر', 'إشعار فوري مع كل حجز جديد', 'يعمل مع ضعف الإنترنت ويزامن بياناتك بعد ذلك', 'فريق عملك بصلاحيات مختلفة']
+          : ['Your clinic website with online booking, live in minutes', 'Mobile app for the doctor and the receptionist', 'Waiting room and queue: patients get a notification on their turn', 'Complete patient file: visits, prescriptions and lab requests', 'Patients upload test results and you are notified at once', 'One patient ID with a QR code, children linked to a parent', 'Instant notification on every new booking', 'Keeps working with a weak connection and syncs later', 'Your team with different permissions']);
+  return [for (final b in list) (b, true), (domain ? (ar ? 'نطاق خاص باسم علامتك التجارية (مثل www.yourbrand.com)' : 'Your own domain name (like www.yourbrand.com)') : (ar ? 'بدون نطاق خاص' : 'No custom domain'), domain)];
+}
+
 /// A pushed page around [PayBody] (opened from the bar and from the billing screen).
 class PayPage extends StatelessWidget {
   const PayPage({super.key, required this.api, this.plan});

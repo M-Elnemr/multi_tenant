@@ -136,7 +136,7 @@ class _BillingScreenState extends State<BillingScreen> {
       load: _load,
       builder: (context, data, reload) {
         final sub = data[0] == null ? null : Map<String, dynamic>.from(data[0] as Map);
-        final plans = _maps(data[1]).where((p) => ((p['priceMinor'] as num?) ?? 0) > 0).toList();
+        final plans = _maps(data[1]).where((p) => ((p['priceMinor'] as num?) ?? 0) > 0 && p['interval'] != 'YEAR').toList();
         final invoices = _maps(data[2]);
         final current = sub?['planCode'];
         return RefreshIndicator(
@@ -160,7 +160,8 @@ class _BillingScreenState extends State<BillingScreen> {
               Text(planLabel('${p['code']}'), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
               Text('${fmtMoney(p['priceMinor'] as num?)} ${p['currency']} / ${isAr ? 'شهر' : 'month'}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 22)),
               const SizedBox(height: 6),
-              for (final e in ((p['features'] as Map?) ?? const {}).entries) Text('${e.value == false ? '✕' : '✓'} ${_feature(e.key, isAr)}${e.value is num ? ': ${e.value}' : ''}', style: TextStyle(color: e.value == false ? const Color(0xFFA0AAB6) : null, decoration: e.value == false ? TextDecoration.lineThrough : null)),
+              for (final b in planBenefits(store: '${p['code']}'.startsWith('STORE'), domain: ((p['features'] as Map?) ?? const {})['custom_domain'] != false && ((p['features'] as Map?) ?? const {}).containsKey('custom_domain')))
+                Padding(padding: const EdgeInsets.symmetric(vertical: 2), child: Text('${b.$2 ? '✓' : '✕'} ${b.$1}', style: TextStyle(color: b.$2 ? null : const Color(0xFFA0AAB6), decoration: b.$2 ? null : TextDecoration.lineThrough))),
               const SizedBox(height: 10),
               FilledButton(
                 onPressed: !canManage || (current == p['code'] && sub?['status'] == 'ACTIVE') ? null : () => _change(p),
@@ -180,10 +181,6 @@ class _BillingScreenState extends State<BillingScreen> {
     );
   }
 
-  String _feature(String k, bool isAr) {
-    const ar = {'custom_domain': 'نطاق خاص', 'staff_limit': 'عدد الموظفين', 'product_limit': 'عدد المنتجات', 'branch_limit': 'عدد الفروع', 'coupons': 'الكوبونات', 'reports': 'التقارير', 'online_payments': 'الدفع الإلكتروني'};
-    return isAr ? (ar[k] ?? k.replaceAll('_', ' ')) : k.replaceAll('_', ' ');
-  }
 }
 
 /// A hosted payment page shown inside the app; closing it returns to the billing screen, which reloads.

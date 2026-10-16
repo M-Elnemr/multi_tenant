@@ -20,6 +20,8 @@ public class PlatformAdminController {
         this.payRequests = payRequests;
     }
 
+    private static String blank(String s) { return s == null || s.isBlank() ? null : s; }
+
     public record StatusRequest(String status, String reason) {}
     public record PlanRequest(String planCode, Integer days) {}
     public record PurgeRequest(String confirmSlug) {}
@@ -35,7 +37,7 @@ public class PlatformAdminController {
     @PreAuthorize("hasAuthority('platform.tenant.manage')")
     public Map<String, Object> tenants(@RequestParam(required = false) String type, @RequestParam(required = false) String status, @RequestParam(required = false) String q,
                                        @RequestParam(required = false) String filter, @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize) {
-        return service.tenants(type, status, q, filter, Page.of(page, pageSize));
+        return service.tenants(blank(type), blank(status), blank(q), blank(filter), Page.of(page, pageSize));   // the website sends empty values for "no filter"
     }
 
     @GetMapping("/tenants/{id}")
@@ -74,7 +76,7 @@ public class PlatformAdminController {
     @GetMapping("/pay-requests")
     @PreAuthorize("hasAuthority('platform.tenant.manage')")
     public Map<String, Object> payRequests(@RequestParam(required = false) String status, @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize) {
-        return payRequests.adminList(status, Page.of(page, pageSize));
+        return payRequests.adminList(blank(status), Page.of(page, pageSize));
     }
 
     @PostMapping("/pay-requests/{id}")

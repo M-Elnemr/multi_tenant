@@ -196,4 +196,12 @@ class SubscriptionLifecycleIntegrationTest extends IntegrationTestBase {
                 .andExpect(jsonPath("$.data[0].notificationType").value("PAY_REQUEST")).andExpect(jsonPath("$.data[0].payload.tenantId").value(idOf(shop).toString()));
         assertThat(jdbc.sql("SELECT count(*) FROM notifications.outbox WHERE channel = 'PUSH' AND to_address = :t AND payload ->> 'type' = 'PAY_REQUEST'").param("t", phoneToken).query(Long.class).single()).isEqualTo(1);
     }
+
+    @Test
+    void emptyFilterValuesFromTheWebsiteMeanNoFilter() throws Exception {
+        String admin = platformToken("PLATFORM_OWNER");
+        onboard("CLINIC");
+        onHost("platform.test", admin, "GET", "/api/v1/platform/tenants?page=1&q=&type=&status=&filter=", null).andExpect(status().isOk()).andExpect(jsonPath("$.meta.total").value(org.hamcrest.Matchers.greaterThan(0)));
+        onHost("platform.test", admin, "GET", "/api/v1/platform/pay-requests?status=", null).andExpect(status().isOk());
+    }
 }
