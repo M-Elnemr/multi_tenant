@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
 import 'package:platform_core/platform_core.dart';
@@ -61,7 +63,6 @@ class DomainsScreen extends StatelessWidget {
 
   Widget _domainCard(BuildContext context, Map<String, dynamic> d, Future<void> Function() reload, bool isAr) {
     final verified = d['verified'] == true, primary = d['primary'] == true, custom = d['kind'] == 'CUSTOM';
-    final dns = _maps(d['dnsInstructions']);
     return Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       SelectableText('${d['host']}', textDirection: TextDirection.ltr, style: const TextStyle(fontWeight: FontWeight.w800, fontFamily: 'monospace')),
       if (d['alias'] != null) Padding(padding: const EdgeInsets.only(top: 2), child: Text(isAr ? 'يعمل أيضًا على ${d['alias']} تلقائيًا (أضف سجل DNS له)' : 'Also works on ${d['alias']} automatically (add its DNS record)', style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 12.5))),
@@ -71,23 +72,8 @@ class DomainsScreen extends StatelessWidget {
         _tag(verified ? (isAr ? 'تم التحقق' : 'Verified') : (isAr ? 'بانتظار التحقق' : 'Pending'), verified ? const Color(0xFF1E9E5A) : const Color(0xFFD98200)),
         if (!custom) _tag(isAr ? 'مجاني' : 'Free', const Color(0xFF6B7C8D)),
       ]),
-      if (!verified && dns.isNotEmpty) ...[
-        const SizedBox(height: 10),
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(color: const Color(0xFFF4F7FA), borderRadius: BorderRadius.circular(12)),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(isAr ? 'أضف هذه السجلات عند مزوّد النطاق:' : 'Add these records at your domain provider:', style: const TextStyle(fontWeight: FontWeight.w800)),
-            const SizedBox(height: 6),
-            for (final r in dns) ...[
-              Text('${r['type']}', style: const TextStyle(fontWeight: FontWeight.w900)),
-              CopyRow(isAr ? 'الاسم' : 'Name', '${r['name']}'),
-              CopyRow(isAr ? 'القيمة' : 'Value', '${r['value']}'),
-              const Divider(height: 12),
-            ],
-          ]),
-        ),
-      ],
+      if (!verified && custom) DnsSetupPanel(api: ctx.api, id: '${d['id']}', host: '${d['host']}', onVerified: reload),
+      if (verified && custom) Container(margin: const EdgeInsets.only(top: 10), padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFE6F6EC), borderRadius: BorderRadius.circular(14)), child: Row(children: [const Icon(Icons.check_circle_rounded, color: Color(0xFF1E9E5A)), const SizedBox(width: 10), Expanded(child: Text(isAr ? 'تم ربط نطاقك. شهادة الأمان (HTTPS) تُصدر تلقائيًا خلال دقائق.' : 'Your domain is connected. The HTTPS certificate is issued automatically within minutes.', style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF14663A))))])),
       const SizedBox(height: 8),
       Wrap(spacing: 8, children: [
         if (!verified) FilledButton(onPressed: () async { if (await run(context, () => ctx.api.post('tenant/domains/${d['id']}/verify', {}))) await reload(); }, child: Text(isAr ? 'تحقق' : 'Verify')),
@@ -204,4 +190,123 @@ class _PaymentPageState extends State<PaymentPage> {
         appBar: AppBar(title: Text(widget.title), actions: [IconButton(icon: const Icon(Icons.check_rounded), tooltip: S.of(context).ar ? 'تم' : 'Done', onPressed: () => Navigator.of(context).pop())]),
         body: Stack(children: [WebViewWidget(controller: _c), if (_loading) const Center(child: CircularProgressIndicator())]),
       );
+}
+
+/// Guided DNS setup of one custom domain: what each record is for, exactly what to type, and whether it is already right (checked live every 15 seconds).
+class DnsSetupPanel extends StatefulWidget {
+  const DnsSetupPanel({super.key, required this.api, required this.id, required this.host, required this.onVerified});
+  final ApiClient api;
+  final String id, host;
+  final Future<void> Function() onVerified;
+  @override
+  State<DnsSetupPanel> createState() => _DnsSetupPanelState();
+}
+
+class _DnsSetupPanelState extends State<DnsSetupPanel> {
+  List<Map<String, dynamic>> _records = const [];
+  bool _busy = false;
+  Object? _error;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _check();
+    _timer = Timer.periodic(const Duration(seconds: 15), (_) => _check());
+  }
+
+  @override
+  void dispose() { _timer?.cancel(); super.dispose(); }
+
+  Future<void> _check() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final r = Map<String, dynamic>.from(await widget.api.get('tenant/domains/${widget.id}/check') as Map);
+      if (!mounted) return;
+      setState(() { _records = _maps(r['records']); _error = null; });
+      if (r['verified'] == true) await widget.onVerified();
+    } catch (e) {
+      if (mounted) setState(() => _error = e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  String _purpose(Map<String, dynamic> r, bool ar) {
+    final name = '${r['purpose']}' == 'VERIFY' ? widget.host : '${r['name']}';
+    return switch ('${r['purpose']}') {
+      'VERIFY' => ar ? 'تثبت أن $name ملكك' : 'Proves $name is yours',
+      _ => ar ? 'توجّه $name إلى موقعك' : 'Points $name to your site',
+    };
+  }
+
+  String _hint(Map<String, dynamic> r, bool ar) {
+    final found = ((r['found'] as List?) ?? const []).join(', ');
+    return switch ('${r['hint']}') {
+      'CNAME_INSTEAD_OF_TXT' => ar ? 'هذا الاسم عليه سجل CNAME ($found). احذفه وأضف سجل TXT بدلًا منه.' : 'This name has a CNAME ($found). Delete it and add a TXT record instead.',
+      'WRONG_VALUE' => ar ? 'يوجد سجل TXT لكن قيمته مختلفة. استبدلها بالقيمة أعلاه.' : 'A TXT record exists but its value is different. Replace it with the value above.',
+      'OTHER_ADDRESS' => ar ? 'يشير إلى $found لكن يجب أن يشير إلى العنوان أعلاه. عدّل السجل القديم أو احذفه.' : 'It points to $found, but it must point to the address above. Edit or delete the old record.',
+      _ => '',
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ar = S.of(context).ar;
+    final verifyOk = _records.any((r) => r['purpose'] == 'VERIFY' && r['status'] == 'OK');
+    Widget step(int n, String text, bool on, bool done) => Expanded(child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 2),
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+          decoration: BoxDecoration(color: on ? const Color(0xFFE5F0F8) : done ? const Color(0xFFE6F6EC) : Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: on ? const Color(0xFF1F6A99) : done ? const Color(0xFF9AD5B1) : const Color(0xFFD5DEE8))),
+          child: Column(children: [CircleAvatar(radius: 11, backgroundColor: on ? const Color(0xFF1F6A99) : done ? const Color(0xFF1E9E5A) : const Color(0xFFD5DEE8), child: done ? const Icon(Icons.check, size: 14, color: Colors.white) : Text('$n', style: TextStyle(fontSize: 12, color: on ? Colors.white : const Color(0xFF6B7C8D), fontWeight: FontWeight.w800))), const SizedBox(height: 4), Text(text, textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: on ? const Color(0xFF1F6A99) : const Color(0xFF6B7C8D)))]),
+        ));
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [step(1, ar ? 'أضف نطاقك' : 'Add domain', false, true), step(2, ar ? 'أضف سجلات DNS' : 'Add DNS records', !verifyOk, verifyOk), step(3, ar ? 'نتحقق ونفعّل HTTPS' : 'We verify + HTTPS', verifyOk, false)]),
+        const SizedBox(height: 10),
+        Text(ar ? 'ادخل على موقع مزوّد النطاق (GoDaddy أو Namecheap أو Cloudflare ...) وافتح إعدادات DNS وأضف السجلات التالية. اضغط على أيقونة النسخ والصق كل قيمة كما هي.' : 'Open your domain provider (GoDaddy, Namecheap, Cloudflare...), go to DNS settings and add the records below. Tap the copy icon and paste each value exactly.', style: const TextStyle(color: Color(0xFF4A5B6C), fontSize: 13)),
+        const SizedBox(height: 8),
+        for (final r in _records)
+          Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: r['status'] == 'OK' ? const Color(0xFFF0FAF4) : r['status'] == 'WRONG' ? const Color(0xFFFDF0F0) : const Color(0xFFF7F9FB), borderRadius: BorderRadius.circular(14), border: Border.all(color: r['status'] == 'OK' ? const Color(0xFFBFE5CC) : r['status'] == 'WRONG' ? const Color(0xFFF0B7B7) : const Color(0xFFE1E8EF))),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2), decoration: BoxDecoration(color: const Color(0xFF14232B), borderRadius: BorderRadius.circular(8)), child: Text('${r['type']}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 12))),
+                const SizedBox(width: 8),
+                Expanded(child: Text(_purpose(r, ar), style: const TextStyle(fontWeight: FontWeight.w800))),
+              ]),
+              const SizedBox(height: 6),
+              Wrap(spacing: 6, children: [
+                _chip(r['status'] == 'OK' ? (ar ? '✓ موجود وصحيح' : '✓ Found, correct') : r['status'] == 'WRONG' ? (ar ? '! يحتاج تصحيح' : '! Needs a fix') : (ar ? '… لم يظهر بعد' : '… Not found yet'), r['status'] == 'OK' ? const Color(0xFF1E9E5A) : r['status'] == 'WRONG' ? const Color(0xFFD14343) : const Color(0xFFD98200)),
+                if (r['purpose'] == 'WWW') _chip(ar ? 'مُستحسن' : 'Recommended', const Color(0xFF1F6A99)),
+              ]),
+              const SizedBox(height: 4),
+              CopyRow(ar ? 'الاسم / Host' : 'Name / Host', '${r['shortName']}'),
+              CopyRow(ar ? 'القيمة' : 'Value', '${r['value']}'),
+              if (r['status'] == 'WRONG' && '${r['hint'] ?? ''}'.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text(_hint(r, ar), style: const TextStyle(color: Color(0xFFB71C1C), fontWeight: FontWeight.w700, fontSize: 12.5))),
+            ]),
+          ),
+        if (_error != null) Text(errorText(_error!), style: const TextStyle(color: Color(0xFFB71C1C))),
+        Row(children: [
+          FilledButton.tonalIcon(onPressed: _busy ? null : _check, icon: _busy ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.refresh_rounded), label: Text(ar ? 'افحص مجددًا' : 'Check again')),
+          const SizedBox(width: 8),
+          Expanded(child: Text(ar ? 'نعيد الفحص كل 15 ثانية' : 'We re-check every 15 seconds', style: const TextStyle(fontSize: 11.5, color: Color(0xFF8A99AA)))),
+        ]),
+        const SizedBox(height: 6),
+        ExpansionTile(
+          tilePadding: EdgeInsets.zero,
+          title: Text(ar ? 'أخطاء شائعة' : 'Common mistakes', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+          children: [for (final m in (ar
+              ? ['في خانة الاسم اكتب الاسم المختصر فقط (مثل _platform-verify أو @ أو www) وليس النطاق كاملًا.', 'اختر نوع السجل بدقة: TXT للإثبات، وA للنطاق الرئيسي، وCNAME لـ www.', 'النطاق الرئيسي لا يمكن أن يكون CNAME: استخدم سجل A.', 'احذف سجلات A أو CNAME القديمة التي بنفس الاسم وتشير إلى مكان آخر.', 'لا تكتب https:// في أي خانة. قد يستغرق التغيير من دقائق حتى ساعة.']
+              : ['In the Name box type only the short name (like _platform-verify, @ or www), not the whole domain.', 'Pick the exact type: TXT for the proof, A for the root domain, CNAME for www.', 'The root domain cannot be a CNAME: use an A record.', 'Delete old A or CNAME records of the same name that point elsewhere.', 'Do not type https:// anywhere. Changes can take minutes up to an hour.'])) Padding(padding: const EdgeInsets.only(bottom: 6), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text('• '), Expanded(child: Text(m, style: const TextStyle(fontSize: 13, color: Color(0xFF4A5B6C))))]))],
+        ),
+      ]),
+    );
+  }
+
+  Widget _chip(String t, Color c) => Container(padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3), decoration: BoxDecoration(color: c.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)), child: Text(t, style: TextStyle(color: c, fontWeight: FontWeight.w800, fontSize: 12)));
 }

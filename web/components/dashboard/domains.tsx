@@ -7,6 +7,7 @@ import { useAction, useApi } from "../hooks";
 import { useT } from "../i18n-provider";
 import { Alert, Badge, Button, Card, ErrorText, Field, Input, Loading, PageHeader } from "../ui";
 import type { ApiError } from "@/lib/client";
+import { SetupPanel } from "./domain-setup/setup-panel";
 
 type Domain = { id: string; host: string; kind: "SUBDOMAIN" | "CUSTOM"; primary: boolean; verified: boolean; sslStatus?: string; alias?: string | null; dnsInstructions: { type: string; name: string; value: string }[] };
 
@@ -44,15 +45,11 @@ export default function DomainsPage() {
                 {d.kind === "CUSTOM" && !d.primary && <Button size="sm" variant="ghost" onClick={() => remove.run(d.id)}>{t("common.delete")}</Button>}
               </div>
             </div>
-            {!d.verified && d.dnsInstructions.length > 0 && (
-              <div className="mt-4 space-y-2 rounded-lg bg-slate-50 p-4 text-sm">
-                <p className="font-medium">{t("domains.dnsTitle")}</p>
-                <div className="overflow-x-auto" dir="ltr">
-                  <table className="w-full text-start font-mono text-xs"><tbody>
-                    {d.dnsInstructions.map((r) => (<tr key={r.type + r.name}><td className="pe-3 font-bold">{r.type}</td><td className="pe-3">{r.name}</td><td className="break-all">{r.value}</td></tr>))}
-                  </tbody></table>
-                </div>
-                <p className="text-xs text-slate-500">{t("domains.dnsHelp")}</p>
+            {d.kind === "CUSTOM" && !d.verified && <SetupPanel id={d.id} host={d.host} onVerified={() => void reload()} />}
+            {d.kind === "CUSTOM" && d.verified && (
+              <div className="mt-4 flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-lg font-bold text-white">✓</span>
+                <div><p className="font-bold text-emerald-800">{t("domain.connected")}</p><p className="text-sm text-emerald-800/80">{t("domain.connectedBody", { host: d.host })}</p></div>
               </div>
             )}
           </Card>
@@ -61,7 +58,7 @@ export default function DomainsPage() {
       <Card className="mt-6">
         <h2 className="mb-3 font-medium">{t("domains.add")}</h2>
         <form onSubmit={(e) => { e.preventDefault(); void add.run(); }} className="space-y-3">
-          <Field label={t("domains.host")} hint={t("domains.hostHint")}><Input value={host} onChange={(e) => setHost(e.target.value)} placeholder="www.my-brand.com" dir="ltr" required /></Field>
+          <Field label={t("domains.host")} hint={t("domain.addHint")}><Input value={host} onChange={(e) => setHost(e.target.value)} placeholder="example.com" dir="ltr" required /></Field>
           {notAllowed ? <Alert tone="amber">{t("domains.upgrade")} <Link href="/dashboard/billing/pay?plan=STORE_PRO" className="font-medium underline">{t("sub.action")}</Link></Alert> : <ErrorText error={add.error} />}
           <Button type="submit" loading={add.loading}>{t("domains.addBtn")}</Button>
         </form>

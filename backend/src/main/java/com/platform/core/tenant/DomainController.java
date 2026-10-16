@@ -46,6 +46,11 @@ public class DomainController {
         return view(service.verify(TenantContext.require().id(), id));
     }
 
+    @GetMapping("/{id}/check")
+    public Map<String, Object> check(@PathVariable UUID id) {
+        return service.check(TenantContext.require().id(), id);
+    }
+
     @PostMapping("/{id}/primary")
     public Map<String, Object> primary(@PathVariable UUID id) {
         return view(service.makePrimary(TenantContext.require().id(), id));

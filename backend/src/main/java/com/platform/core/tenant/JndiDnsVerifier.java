@@ -30,4 +30,29 @@ public class JndiDnsVerifier implements DnsVerifier {
         }
         return out;
     }
+
+    @Override
+    public List<String> cnames(String name) {
+        List<String> out = new ArrayList<>();
+        try {
+            Hashtable<String, String> env = new Hashtable<>();
+            env.put("java.naming.factory.initial", "com.sun.jndi.dns.DnsContextFactory");
+            env.put("com.sun.jndi.dns.timeout.initial", "3000");
+            env.put("com.sun.jndi.dns.timeout.retries", "1");
+            Attribute a = new InitialDirContext(env).getAttributes(name, new String[] {"CNAME"}).get("CNAME");
+            if (a != null) { NamingEnumeration<?> e = a.getAll(); while (e.hasMore()) out.add(String.valueOf(e.next())); }
+        } catch (Exception ignored) { /* none */ }
+        return out;
+    }
+
+    @Override
+    public List<String> addresses(String name) {
+        try {
+            List<String> out = new ArrayList<>();
+            for (java.net.InetAddress a : java.net.InetAddress.getAllByName(name)) if (a instanceof java.net.Inet4Address) out.add(a.getHostAddress());
+            return out;
+        } catch (Exception e) {
+            return List.of();
+        }
+    }
 }

@@ -110,6 +110,56 @@ public class DomainService {
         return out;
     }
 
+    /** Live look at the DNS of one domain: which records are right, missing or wrong (the page shows it next to every record). A found TXT also verifies the domain at once. */
+    @Transactional
+    public java.util.Map<String, Object> check(UUID tenantId, UUID domainId) {
+        TenantDomain d = domains.findByIdAndTenantId(domainId, tenantId).orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Domain not found"));
+        List<java.util.Map<String, Object>> records = new java.util.ArrayList<>();
+        if (d.getKind() == TenantDomain.Kind.CUSTOM) {
+            List<String> expected = edgeIp.isEmpty() ? dns.addresses(props.edgeHost()) : List.of(edgeIp);
+            String registrable = registrable(d.getHost());
+            for (DnsInstruction i : instructions(d)) {
+                String status; List<String> found; String hint = null;
+                String purpose = "TXT".equals(i.type()) ? "VERIFY" : i.name().startsWith("www.") ? "WWW" : "ROOT";
+                if ("TXT".equals(i.type())) {
+                    found = dns.txtRecords(i.name());
+                    if (found.contains(i.value())) status = "OK";
+                    else if (!dns.cnames(i.name()).isEmpty()) { status = "WRONG"; found = dns.cnames(i.name()); hint = "CNAME_INSTEAD_OF_TXT"; }
+                    else if (!found.isEmpty()) { status = "WRONG"; hint = "WRONG_VALUE"; }
+                    else status = "MISSING";
+                } else {
+                    found = dns.addresses(i.name());
+                    if (found.isEmpty()) status = "MISSING";
+                    else if (found.stream().anyMatch(expected::contains)) status = "OK";
+                    else { status = "WRONG"; hint = "OTHER_ADDRESS"; }
+                }
+                java.util.Map<String, Object> r = new java.util.LinkedHashMap<>();
+                r.put("purpose", purpose); r.put("type", i.type()); r.put("name", i.name()); r.put("shortName", shortName(i.name(), registrable));
+                r.put("value", i.value()); r.put("status", status); r.put("found", found); r.put("hint", hint);
+                records.add(r);
+            }
+            if (!d.isVerified() && records.stream().anyMatch(r -> "VERIFY".equals(r.get("purpose")) && "OK".equals(r.get("status")))) tryVerify(d);
+        }
+        java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("verified", d.isVerified());
+        out.put("records", records);
+        return out;
+    }
+
+    /** example.com for www.example.com / shop.example.com; handles endings like co.uk and com.eg. */
+    static String registrable(String host) {
+        String[] l = host.split("\\.");
+        if (l.length >= 3 && l[l.length - 1].length() == 2 && java.util.Set.of("co", "com", "org", "net", "gov", "edu", "ac").contains(l[l.length - 2]))
+            return l[l.length - 3] + "." + l[l.length - 2] + "." + l[l.length - 1];
+        return l.length >= 2 ? l[l.length - 2] + "." + l[l.length - 1] : host;
+    }
+
+    /** What to type in the provider's "Name / Host" box: @ for the root, the part before the domain otherwise. */
+    static String shortName(String full, String registrable) {
+        if (full.equals(registrable)) return "@";
+        return full.endsWith("." + registrable) ? full.substring(0, full.length() - registrable.length() - 1) : full;
+    }
+
     /** The other spelling that is served together with this domain (shown in the dashboard). */
     public String aliasOf(TenantDomain d) { return d.getKind() == TenantDomain.Kind.CUSTOM ? counterpart(d.getHost()).orElse(null) : null; }
 
