@@ -185,9 +185,9 @@ class SubscriptionLifecycleIntegrationTest extends IntegrationTestBase {
         String admin = platformToken("PLATFORM_OWNER");
         String phoneToken = "admin-phone-" + uniq();
         onHost("platform.test", admin, "POST", "/api/v1/me/devices", "{\"token\":\"" + phoneToken + "\",\"platform\":\"android\"}").andExpect(status().is2xxSuccessful());
+        Tenant shop = onboard("STORE");   // signing up tells the operators too (TENANT_CREATED), so count from here
         long before = ((Number) JsonPath.read(onHost("platform.test", admin, "GET", "/api/v1/notifications/unread-count", null).andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), "$.count")).longValue();
 
-        Tenant shop = onboard("STORE");
         onHost(shop.host(), shop.access(), "POST", "/api/v1/billing/pay-requests", "{\"planCode\":\"STORE_STANDARD\",\"phone\":\"" + shop.phone() + "\"}").andExpect(status().isOk());
 
         long after = ((Number) JsonPath.read(onHost("platform.test", admin, "GET", "/api/v1/notifications/unread-count", null).andReturn().getResponse().getContentAsString(), "$.count")).longValue();
@@ -212,7 +212,7 @@ class SubscriptionLifecycleIntegrationTest extends IntegrationTestBase {
         UUID id = idOf(shop);
         billing.activatePlan(id, billing.planId("STORE_STANDARD"), 30);
         // 15 of the 30 days are left: the credit is half of the 500 EGP plan, so the 750 plan costs 500 more
-        jdbc.sql("UPDATE billing.tenant_subscriptions SET current_period_start = now() - interval '15 days', current_period_end = now() + interval '15 days' WHERE tenant_id = :t").param("t", id).update();
+        jdbc.sql("UPDATE billing.tenant_subscriptions SET current_period_start = now() - interval '15 days', current_period_end = now() + interval '15 days' - interval '1 hour' WHERE tenant_id = :t").param("t", id).update();
         onHost(shop.host(), shop.access(), "GET", "/api/v1/billing/upgrade-quote?planCode=STORE_PRO", null).andExpect(status().isOk())
                 .andExpect(jsonPath("$.upgrade").value(true)).andExpect(jsonPath("$.remainingDays").value(15)).andExpect(jsonPath("$.creditMinor").value(25000)).andExpect(jsonPath("$.dueNowMinor").value(50000));
 
