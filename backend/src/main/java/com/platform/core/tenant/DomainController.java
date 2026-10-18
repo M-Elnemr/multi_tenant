@@ -69,6 +69,7 @@ public class DomainController {
         m.put("kind", d.getKind());
         m.put("primary", d.isPrimary());
         m.put("verified", d.isVerified());
+        m.put("stopped", service.isStopped(d));   // the plan no longer includes custom domains
         m.put("sslStatus", d.getSslStatus());
         m.put("alias", service.aliasOf(d));
         m.put("dnsInstructions", service.instructions(d));

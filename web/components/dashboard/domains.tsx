@@ -9,7 +9,7 @@ import { Alert, Badge, Button, Card, ErrorText, Field, Input, Loading, PageHeade
 import type { ApiError } from "@/lib/client";
 import { SetupPanel } from "./domain-setup/setup-panel";
 
-type Domain = { id: string; host: string; kind: "SUBDOMAIN" | "CUSTOM"; primary: boolean; verified: boolean; sslStatus?: string; alias?: string | null; dnsInstructions: { type: string; name: string; value: string }[] };
+type Domain = { id: string; host: string; kind: "SUBDOMAIN" | "CUSTOM"; primary: boolean; stopped?: boolean; verified: boolean; sslStatus?: string; alias?: string | null; dnsInstructions: { type: string; name: string; value: string }[] };
 
 /** Own domain in three steps: add it, create two DNS records, click verify. Certificates are issued automatically. */
 export default function DomainsPage() {
@@ -35,18 +35,19 @@ export default function DomainsPage() {
                 {d.alias && <p className="mt-0.5 text-xs text-slate-500">{t("domains.alsoWorks", { host: d.alias })}</p>}
                 <div className="mt-1 flex flex-wrap gap-1.5">
                   {d.primary && <Badge tone="blue">{t("domains.primary")}</Badge>}
+                  {d.stopped && <Badge tone="red">{t("domains.stopped")}</Badge>}
                   <Badge tone={d.verified ? "green" : "amber"}>{d.verified ? t("domains.verified") : t("domains.pending")}</Badge>
                   {d.kind === "SUBDOMAIN" && <Badge>{t("domains.free")}</Badge>}
                 </div>
               </div>
               <div className="flex gap-2">
                 {!d.verified && <Button size="sm" loading={verify.loading} onClick={() => verify.run(d.id)}>{t("domains.verify")}</Button>}
-                {d.verified && !d.primary && <Button size="sm" variant="secondary" onClick={() => makePrimary.run(d.id)}>{t("domains.makePrimary")}</Button>}
+                {d.verified && !d.primary && !d.stopped && <Button size="sm" variant="secondary" onClick={() => makePrimary.run(d.id)}>{t("domains.makePrimary")}</Button>}
                 {d.kind === "CUSTOM" && !d.primary && <Button size="sm" variant="ghost" onClick={() => remove.run(d.id)}>{t("common.delete")}</Button>}
               </div>
             </div>
             {d.kind === "CUSTOM" && !d.verified && <SetupPanel id={d.id} host={d.host} onVerified={() => void reload()} />}
-            {d.kind === "CUSTOM" && d.verified && (
+            {d.kind === "CUSTOM" && d.verified && !d.stopped && (
               <div className="mt-4 flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-lg font-bold text-white">✓</span>
                 <div><p className="font-bold text-emerald-800">{t("domain.connected")}</p><p className="text-sm text-emerald-800/80">{t("domain.connectedBody", { host: d.host })}</p></div>

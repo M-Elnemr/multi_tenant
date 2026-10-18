@@ -203,6 +203,33 @@ public class DomainService {
         return domains.save(target);
     }
 
+    /** A custom domain stops working when the plan no longer includes custom domains (and the tenant is not merely suspended, which keeps it working so the owner can pay). */
+    public boolean isStopped(TenantDomain d) {
+        if (d.getKind() != TenantDomain.Kind.CUSTOM) return false;
+        return tenants.findById(d.getTenantId())
+                .map(t -> t.getStatus() != TenantStatus.SUSPENDED && !entitlements.hasFeature(t.getId(), "custom_domain")).orElse(false);
+    }
+
+    /** A stopped custom domain must not stay the default: the platform subdomain takes over until the plan includes custom domains again. */
+    @Scheduled(fixedDelayString = "PT1M", initialDelayString = "PT45S")
+    @Transactional
+    public void demoteStoppedPrimaries() {
+        boolean changed = false;
+        for (TenantDomain d : domains.findByKindAndPrimaryTrue(TenantDomain.Kind.CUSTOM)) {
+            if (!isStopped(d)) continue;
+            var sub = domains.findByTenantIdOrderByCreatedAtAsc(d.getTenantId()).stream()
+                    .filter(o -> o.getKind() == TenantDomain.Kind.SUBDOMAIN && o.isVerified()).findFirst();
+            if (sub.isEmpty()) continue;
+            d.setPrimary(false);
+            domains.saveAndFlush(d);
+            sub.get().setPrimary(true);
+            domains.saveAndFlush(sub.get());
+            audit.record(null, d.getTenantId(), "DOMAIN_PRIMARY_RESET", "tenant_domain", d.getId(), "{\"host\":\"" + d.getHost() + "\"}");
+            changed = true;
+        }
+        if (changed) directory.invalidateAll();
+    }
+
     @Transactional
     public void remove(UUID tenantId, UUID actor, UUID domainId) {
         TenantDomain d = domains.findByIdAndTenantId(domainId, tenantId)

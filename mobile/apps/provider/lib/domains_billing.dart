@@ -62,22 +62,23 @@ class DomainsScreen extends StatelessWidget {
       );
 
   Widget _domainCard(BuildContext context, Map<String, dynamic> d, Future<void> Function() reload, bool isAr) {
-    final verified = d['verified'] == true, primary = d['primary'] == true, custom = d['kind'] == 'CUSTOM';
+    final verified = d['verified'] == true, primary = d['primary'] == true, stopped = d['stopped'] == true, custom = d['kind'] == 'CUSTOM';
     return Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       SelectableText('${d['host']}', textDirection: TextDirection.ltr, style: const TextStyle(fontWeight: FontWeight.w800, fontFamily: 'monospace')),
       if (d['alias'] != null) Padding(padding: const EdgeInsets.only(top: 2), child: Text(isAr ? 'يعمل أيضًا على ${d['alias']} تلقائيًا (أضف سجل DNS له)' : 'Also works on ${d['alias']} automatically (add its DNS record)', style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 12.5))),
       const SizedBox(height: 6),
       Wrap(spacing: 6, children: [
+        if (stopped) _tag(isAr ? 'متوقف - باقتك لا تشمل نطاقًا خاصًا' : 'Stopped - your plan has no custom domain', const Color(0xFFC62828)),
         if (primary) _tag(isAr ? 'الرئيسي' : 'Primary', const Color(0xFF1F6A99)),
         _tag(verified ? (isAr ? 'تم التحقق' : 'Verified') : (isAr ? 'بانتظار التحقق' : 'Pending'), verified ? const Color(0xFF1E9E5A) : const Color(0xFFD98200)),
         if (!custom) _tag(isAr ? 'مجاني' : 'Free', const Color(0xFF6B7C8D)),
       ]),
       if (!verified && custom) DnsSetupPanel(api: ctx.api, id: '${d['id']}', host: '${d['host']}', onVerified: reload),
-      if (verified && custom) Container(margin: const EdgeInsets.only(top: 10), padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFE6F6EC), borderRadius: BorderRadius.circular(14)), child: Row(children: [const Icon(Icons.check_circle_rounded, color: Color(0xFF1E9E5A)), const SizedBox(width: 10), Expanded(child: Text(isAr ? 'تم ربط نطاقك. شهادة الأمان (HTTPS) تُصدر تلقائيًا خلال دقائق.' : 'Your domain is connected. The HTTPS certificate is issued automatically within minutes.', style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF14663A))))])),
+      if (verified && custom && !stopped) Container(margin: const EdgeInsets.only(top: 10), padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFE6F6EC), borderRadius: BorderRadius.circular(14)), child: Row(children: [const Icon(Icons.check_circle_rounded, color: Color(0xFF1E9E5A)), const SizedBox(width: 10), Expanded(child: Text(isAr ? 'تم ربط نطاقك. شهادة الأمان (HTTPS) تُصدر تلقائيًا خلال دقائق.' : 'Your domain is connected. The HTTPS certificate is issued automatically within minutes.', style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF14663A))))])),
       const SizedBox(height: 8),
       Wrap(spacing: 8, children: [
         if (!verified) FilledButton(onPressed: () async { if (await run(context, () => ctx.api.post('tenant/domains/${d['id']}/verify', {}))) await reload(); }, child: Text(isAr ? 'تحقق' : 'Verify')),
-        if (verified && !primary) OutlinedButton(onPressed: () async { if (await run(context, () => ctx.api.post('tenant/domains/${d['id']}/primary', {}))) await reload(); }, child: Text(isAr ? 'اجعله الرئيسي' : 'Make primary')),
+        if (verified && !primary && !stopped) OutlinedButton(onPressed: () async { if (await run(context, () => ctx.api.post('tenant/domains/${d['id']}/primary', {}))) await reload(); }, child: Text(isAr ? 'اجعله الرئيسي' : 'Make primary')),
         if (custom && !primary) TextButton(onPressed: () async { if (await confirm(context, isAr ? 'حذف النطاق؟' : 'Remove this domain?') && context.mounted && await run(context, () => ctx.api.delete('tenant/domains/${d['id']}'))) await reload(); }, child: Text(isAr ? 'حذف' : 'Remove')),
       ]),
     ])));

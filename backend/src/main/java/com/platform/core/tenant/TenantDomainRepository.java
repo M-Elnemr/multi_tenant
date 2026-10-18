@@ -9,5 +9,6 @@ public interface TenantDomainRepository extends JpaRepository<TenantDomain, UUID
     Optional<TenantDomain> findByHost(String host);
     List<TenantDomain> findByTenantIdOrderByCreatedAtAsc(UUID tenantId);
     List<TenantDomain> findByKindAndVerifiedFalse(TenantDomain.Kind kind);
+    List<TenantDomain> findByKindAndPrimaryTrue(TenantDomain.Kind kind);
     Optional<TenantDomain> findByIdAndTenantId(UUID id, UUID tenantId);
 }
