@@ -230,8 +230,8 @@ class _PayBodyState extends State<PayBody> {
             else ...[
               sectionTitle(ar ? 'اختر باقتك' : 'Choose your plan'),
               Wrap(spacing: 8, children: [
-                ChoiceChip(label: Text(ar ? 'شهري' : 'Monthly'), selected: cycle == 'month', showCheckmark: false, onSelected: (_) => setState(() { _cycle = 'month'; _picked = null; })),
-                ChoiceChip(label: Text(ar ? 'سنوي · شهران مجانًا' : 'Yearly · 2 months free'), selected: cycle == 'year', showCheckmark: false, onSelected: (_) => setState(() { _cycle = 'year'; _picked = null; })),
+                ChoiceChip(label: Text(ar ? 'شهري' : 'Monthly', style: TextStyle(fontWeight: FontWeight.w700, color: cycle == 'month' ? Colors.white : const Color(0xFF1F2933))), selected: cycle == 'month', showCheckmark: false, onSelected: (_) => setState(() { _cycle = 'month'; _picked = null; })),
+                ChoiceChip(label: Text(ar ? 'سنوي · شهران مجانًا' : 'Yearly · 2 months free', style: TextStyle(fontWeight: FontWeight.w700, color: cycle == 'year' ? Colors.white : const Color(0xFF1F2933))), selected: cycle == 'year', showCheckmark: false, onSelected: (_) => setState(() { _cycle = 'year'; _picked = null; })),
               ]),
               const SizedBox(height: 8),
               for (final p in plans) _PlanTile(plan: p, selected: p['code'] == choice, onTap: () => setState(() => _picked = '${p['code']}')),
