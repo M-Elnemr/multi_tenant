@@ -84,6 +84,27 @@ public class NotificationListeners {
         });
     }
 
+    /** A new shop or clinic signed up: every platform operator is told, in the app and on the phone (no tenant on the notification). */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void onTenantCreated(com.platform.core.tenant.TenantCreatedEvent e) {
+        safely("TenantCreated", () -> {
+            String name = jdbc.sql("SELECT name FROM core.tenants WHERE id = :t").param("t", e.tenantId()).query(String.class).optional().orElse("");
+            String title = e.type() == com.platform.core.tenant.TenantType.STORE ? "متجر جديد" : "عيادة جديدة";
+            String payload = "{\"type\":\"TENANT_CREATED\",\"tenantId\":\"" + e.tenantId() + "\"}";
+            List<UUID> admins = jdbc.sql("""
+                    SELECT DISTINCT pr.user_id FROM core.user_platform_roles pr JOIN core.role_permissions rp ON rp.role_id = pr.role_id
+                    JOIN core.permissions p ON p.id = rp.permission_id JOIN core.users u ON u.id = pr.user_id
+                    WHERE p.code = 'platform.tenant.manage' AND u.status = 'ACTIVE'
+                    """).query(UUID.class).list();
+            for (UUID u : admins) {
+                notifications.notify(u, null, "TENANT_CREATED", title, name, payload, false);
+                notifications.push(u, null, title, name, payload);
+            }
+            if (!admins.isEmpty()) notifications.dispatchSoon();
+        });
+    }
+
     private static String statusLabel(String s, boolean ar) {
         return switch (s) {
             case "REQUESTED" -> ar ? "تم الطلب" : "Requested";
