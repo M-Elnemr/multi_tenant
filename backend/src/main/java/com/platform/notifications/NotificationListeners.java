@@ -67,6 +67,23 @@ public class NotificationListeners {
         });
     }
 
+    /** The customer cancelled their own order: the people who handle orders are told, in the app and on the phone. */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void onOrderCancelledByCustomer(OrderEvents.OrderCancelledByCustomer e) {
+        safely("OrderCancelledByCustomer", () -> {
+            boolean ar = ar(e.tenantId());
+            String title = ar ? "العميل ألغى الطلب" : "Order cancelled by customer", body = (ar ? "العميل ألغى الطلب رقم " : "The customer cancelled order ") + e.orderNumber();
+            String payload = "{\"type\":\"ORDER_CANCELLED\",\"orderId\":\"" + e.orderId() + "\"}";
+            List<UUID> owners = staffWith(e.tenantId(), "order.update_status");
+            for (UUID staff : owners) {
+                notifications.notify(staff, e.tenantId(), "ORDER_CANCELLED", title, body, json("orderId", e.orderId()), true);
+                notifications.push(staff, e.tenantId(), title, body, payload);
+            }
+            if (!owners.isEmpty()) notifications.dispatchSoon();
+        });
+    }
+
     private static String statusLabel(String s, boolean ar) {
         return switch (s) {
             case "REQUESTED" -> ar ? "تم الطلب" : "Requested";

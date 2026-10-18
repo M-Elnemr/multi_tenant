@@ -8,4 +8,7 @@ public final class OrderEvents {
     public record OrderCreated(UUID tenantId, UUID orderId, UUID userId, String orderNumber) {}
 
     public record OrderStatusChanged(UUID tenantId, UUID orderId, UUID userId, String orderNumber, String newStatus) {}
+
+    /** The customer themselves cancelled the order (not staff, not the payment-expiry job). */
+    public record OrderCancelledByCustomer(UUID tenantId, UUID orderId, String orderNumber) {}
 }

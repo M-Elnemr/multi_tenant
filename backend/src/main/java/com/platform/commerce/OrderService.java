@@ -52,6 +52,8 @@ public class OrderService {
         if ("REFUNDED".equals(newStatus)) throw BusinessException.badRequest("INVALID_STATUS_TRANSITION", "Use the refund endpoint");
         apply(tenantId, o, newStatus, actor != null ? actor : customerUserId, reason);
         audit.record(actor, tenantId, "ORDER_STATUS_CHANGED", "order", orderId, "{\"to\":\"" + newStatus + "\"}");
+        if (customerUserId != null && "CANCELLED".equals(newStatus))
+            events.publishEvent(new OrderEvents.OrderCancelledByCustomer(tenantId, orderId, (String) o.get("order_number")));
         return get(tenantId, orderId);
     }
 
