@@ -258,6 +258,22 @@ public class BillingService {
         event(tenantId, "PLAN_UPGRADED_NOW", "{\"days\":" + days + "}");
     }
 
+    /** Platform admin sets the plan AND the final number of days left (counted from today): the days are not added to what is already there. */
+    @Transactional
+    public void setPlanWithDaysLeft(UUID tenantId, UUID planId, int daysLeft) {
+        int n = jdbc.sql("""
+                UPDATE billing.tenant_subscriptions SET plan_id = :p, status = 'ACTIVE',
+                       current_period_start = CASE WHEN status = 'ACTIVE' AND current_period_end > now() THEN current_period_start ELSE now() END,
+                       current_period_end = now() + make_interval(days => :d), cancel_at_period_end = FALSE, pending_plan_id = NULL, updated_at = now()
+                WHERE id = (SELECT id FROM billing.tenant_subscriptions WHERE tenant_id = :t ORDER BY created_at DESC LIMIT 1)
+                """).param("p", planId).param("t", tenantId).param("d", daysLeft).update();
+        if (n == 0) jdbc.sql("INSERT INTO billing.tenant_subscriptions (tenant_id, plan_id, status, current_period_end) VALUES (:t, :p, 'ACTIVE', now() + make_interval(days => :d))")
+                .param("t", tenantId).param("p", planId).param("d", daysLeft).update();
+        jdbc.sql("UPDATE core.tenants SET status = 'ACTIVE', updated_at = now() WHERE id = :t AND status IN ('TRIAL','PAST_DUE','SUSPENDED','ACTIVE')").param("t", tenantId).update();
+        directory.invalidateAll();
+        event(tenantId, "PLAN_SET", "{\"daysLeft\":" + daysLeft + "}");
+    }
+
     /** Platform admin moves a running paid business to another plan: the plan changes, the end date stays (no days are added). False when there is no running paid period to keep. */
     @Transactional
     public boolean switchPlanKeepingPeriod(UUID tenantId, UUID planId) {

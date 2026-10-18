@@ -372,11 +372,12 @@ class _TenantDetailPageState extends State<TenantDetailPage> {
     final store = d['tenantType'] == 'STORE';
     final plans = store ? ['STORE_STANDARD', 'STORE_PRO', 'STORE_STANDARD_YEARLY', 'STORE_PRO_YEARLY'] : ['CLINIC_PRO', 'CLINIC_PRO_YEARLY'];
     var plan = plans.contains((d['subscription'] as Map?)?['planCode']) ? '${(d['subscription'] as Map)['planCode']}' : plans.last;
-    final days = TextEditingController();   // empty = only change the plan and keep the end date
-    final ok = await formSheet(context, title: ar ? 'تغيير الباقة / إضافة أيام' : 'Change plan / add days', saveLabel: ar ? 'تطبيق' : 'Apply', body: (c, set) => [
+    final left = _daysLeft((d['subscription'] as Map?)?['currentPeriodEnd']);
+    final days = TextEditingController(text: left != null && left > 0 ? '$left' : (plan.endsWith('_YEARLY') ? '365' : '30'));   // the days left AFTER the change (not added)
+    final ok = await formSheet(context, title: ar ? 'تغيير الباقة / الأيام المتبقية' : 'Change plan / days left', saveLabel: ar ? 'تطبيق' : 'Apply', body: (c, set) => [
       DropdownButtonFormField<String>(initialValue: plan, items: [for (final p in plans) DropdownMenuItem(value: p, child: Text(planLabel(p)))], onChanged: (v) { set(() => plan = v ?? plan); }, decoration: InputDecoration(labelText: ar ? 'الباقة' : 'Plan')),
       const SizedBox(height: 10),
-      tf(days, ar ? 'أيام تُضاف (اتركه فارغًا لتغيير الباقة فقط مع بقاء تاريخ الانتهاء)' : 'Days to add (leave empty to only change the plan and keep the end date)', number: true, ltr: true),
+      tf(days, ar ? 'الأيام المتبقية بعد التغيير (الرقم النهائي، لا يُضاف)' : 'Days left after the change (final, not added)', number: true, ltr: true),
     ], onSave: () async {
       await widget.api.post('platform/tenants/${widget.id}/plan', {'planCode': plan, if (int.tryParse(days.text.trim()) != null) 'days': int.tryParse(days.text.trim())});
     });

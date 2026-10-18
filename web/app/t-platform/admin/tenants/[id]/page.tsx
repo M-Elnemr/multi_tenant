@@ -39,7 +39,7 @@ export default function TenantDetail({ params }: { params: Promise<{ id: string 
   const { data, error, loading, reload } = useApi<Detail>(`platform/tenants/${id}`);
   const reason = "";
   const [planCode, setPlanCode] = useState("");
-  const [days, setDays] = useState("");   // empty = only change the plan, keep the end date
+  const [days, setDays] = useState("");   // the days left after the change (final, not added); empty = keep the current end date
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [typed, setTyped] = useState("");
   const setStatus = useAction(async (status: string) => { await api(`platform/tenants/${id}/status`, { body: { status, reason } }); await reload(); });
@@ -123,8 +123,8 @@ export default function TenantDetail({ params }: { params: Promise<{ id: string 
           <div className="mt-4 border-t border-slate-100 pt-4">
             <p className="mb-2 text-sm font-semibold">{t("admin.changePlan")}</p>
             <div className="grid gap-2 sm:grid-cols-2">
-              <Select value={chosen} onChange={(e) => { setPlanCode(e.target.value); setDays(e.target.value.endsWith("_YEARLY") ? "365" : "30"); }}>{plans.map((p) => <option key={p} value={p}>{planLabel(t, p)}</option>)}</Select>
-              <Input type="number" min={1} max={3650} value={days} onChange={(e) => setDays(e.target.value)} placeholder={t("admin.days")} dir="ltr" />
+              <Select value={chosen} onChange={(e) => setPlanCode(e.target.value)}>{plans.map((p) => <option key={p} value={p}>{planLabel(t, p)}</option>)}</Select>
+              <Input type="number" min={1} max={3650} value={days} onChange={(e) => setDays(e.target.value)} placeholder={left !== null && left > 0 ? t("admin.daysKeep", { days: String(left) }) : t("admin.days")} dir="ltr" />
             </div>
             <ErrorText error={changePlan.error} />
             <Button className="mt-3" loading={changePlan.loading} onClick={() => changePlan.run()}>{t("admin.apply")}</Button>

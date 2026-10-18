@@ -124,7 +124,7 @@ public class PlatformAdminService {
         return tenant(id);
     }
 
-    /** Changes the plan and/or adds days (30 by default); the business becomes ACTIVE. */
+    /** Changes the plan and/or sets the days left (final, not added); the business becomes ACTIVE. */
     @Transactional
     public Map<String, Object> changePlan(UUID actor, UUID id, String planCode, Integer days) {
         var tenantType = jdbc.sql("SELECT tenant_type FROM core.tenants WHERE id = :i").param("i", id).query(String.class).optional()
@@ -134,8 +134,9 @@ public class PlatformAdminService {
         if (!tenantType.equals(plan.get("tenant_type"))) throw BusinessException.badRequest("PLAN_NOT_FOR_TENANT_TYPE", "This plan is not available for this account type");
         int d = days == null ? billing.planDays((UUID) plan.get("id")) : days;
         if (d < 1 || d > 3650) throw BusinessException.badRequest("VALIDATION_ERROR", "Days must be between 1 and 3650");
-        // No days given on a running paid period: only the plan changes, the end date stays (it used to add another 30 days)
-        if (days == null && billing.switchPlanKeepingPeriod(id, (UUID) plan.get("id"))) d = 0;
+        // "days" is the FINAL number of days left from today (it is not added to the current period). Without it, a running paid period keeps its end date and only the plan changes.
+        if (days != null) billing.setPlanWithDaysLeft(id, (UUID) plan.get("id"), d);
+        else if (billing.switchPlanKeepingPeriod(id, (UUID) plan.get("id"))) d = 0;
         else billing.activatePlan(id, (UUID) plan.get("id"), d);
         audit.record(actor, id, "TENANT_PLAN_CHANGED", "tenant", id, "{\"plan\":\"" + planCode + "\",\"days\":" + d + "}");
         return tenant(id);

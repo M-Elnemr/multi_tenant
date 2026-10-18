@@ -236,5 +236,10 @@ class SubscriptionLifecycleIntegrationTest extends IntegrationTestBase {
         onHost("platform.test", admin, "POST", "/api/v1/platform/tenants/" + id + "/plan", "{\"planCode\":\"STORE_PRO\"}").andExpect(status().isOk());
         long left = jdbc.sql("SELECT extract(day FROM (current_period_end - now()))::bigint FROM billing.tenant_subscriptions WHERE tenant_id = :t").param("t", id).query(Long.class).single();
         assertThat(left).isBetween(18L, 20L);
+
+        // "days" is the final number of days left, not an addition
+        onHost("platform.test", admin, "POST", "/api/v1/platform/tenants/" + id + "/plan", "{\"planCode\":\"STORE_STANDARD\",\"days\":10}").andExpect(status().isOk());
+        long ten = jdbc.sql("SELECT extract(day FROM (current_period_end - now()))::bigint FROM billing.tenant_subscriptions WHERE tenant_id = :t").param("t", id).query(Long.class).single();
+        assertThat(ten).isBetween(8L, 10L);
     }
 }
