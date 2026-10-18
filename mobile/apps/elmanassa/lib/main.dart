@@ -15,7 +15,7 @@ import 'patient_id.dart';
 import 'push.dart';
 import 'shop/shop.dart';
 
-const appVersion = '1.3.5';
+const appVersion = '1.3.6';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
