@@ -14,7 +14,8 @@ import { AppBenefits } from "../app-benefits";
 import { type Cycle, CycleToggle } from "../cycle-toggle";
 
 type Plan = { code: string; name: string; priceMinor: number; currency: string; interval?: string; features: Record<string, boolean | number> };
-type Req = { id: string; planCode: string; amountMinor: number; currency: string; phone: string; status: string };
+type Quote = { upgrade: boolean; fullMinor: number; creditMinor: number; dueNowMinor: number; remainingDays?: number; periodEnd?: string; currency: string };
+type Req = { id: string; planCode: string; amountMinor: number; timing?: string; creditMinor?: number; currency: string; phone: string; status: string };
 
 export const planLabel = (t: (k: string) => string, code?: string) => {
   const yearly = !!code?.endsWith("_YEARLY");
@@ -37,8 +38,9 @@ function Inner() {
   const [phone, setPhone] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [saved, setSaved] = useState<Req | null>(null);
+  const [timing, setTiming] = useState<"NOW" | "NEXT_PERIOD">("NOW");
   const send = useAction(async (planCode: string, phoneNo: string) => {
-    const r = await api<Req>("billing/pay-requests", { body: { planCode, phone: phoneNo } });
+    const r = await api<Req>("billing/pay-requests", { body: { planCode, phone: phoneNo, timing } });
     setSaved(r); setEditing(false); await reqs.reload();
   });
 
@@ -49,6 +51,8 @@ function Inner() {
   const sameLevel = (code: string | null | undefined) => payable.find((p) => p.code.replace("_YEARLY", "") === (code ?? "").replace("_YEARLY", ""))?.code;
   const choice = sameLevel(picked) ?? sameLevel(s?.planCode) ?? payable[0]?.code ?? "";
   const phoneValue = phone ?? me?.phone ?? "";
+  const quote = useApi<Quote>(choice ? `billing/upgrade-quote?planCode=${choice}` : null);
+  const uq = quote.data?.upgrade ? quote.data : null;
   const open = saved ?? (reqs.data ?? []).find((r) => r.status === "NEW" || r.status === "CONTACTED") ?? null;
 
   if ((status.loading && !status.data) || (plans.loading && !plans.data)) return <Loading />;
@@ -71,6 +75,7 @@ function Inner() {
           <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"><Icon name="check" className="h-6 w-6" /></span>
           <h2 className="text-lg font-bold">{t("pay.receivedTitle")}</h2>
           <p className="text-sm text-slate-600">{t("pay.receivedBody", { phone: open.phone })}</p>
+          {open.timing === "NEXT_PERIOD" && <p className="text-sm text-slate-500">{t("pay.upgradeNext")}</p>}
           <p className="flex items-center justify-center gap-2 text-sm">{planLabel(t, open.planCode)} · {money(open.amountMinor, open.currency, locale)} <StatusBadge status={open.status} /></p>
           <Button variant="secondary" onClick={() => { setPicked(open.planCode); setPhone(open.phone); setEditing(true); }}>{t("pay.update")}</Button>
         </Card>
@@ -92,6 +97,19 @@ function Inner() {
               );
             })}
           </div>
+          {uq && (
+            <div className="space-y-2">
+              <h2 className="font-semibold">{t("pay.when")}</h2>
+              {(["NOW", "NEXT_PERIOD"] as const).map((v) => (
+                <button type="button" key={v} onClick={() => setTiming(v)} aria-pressed={timing === v} className={`block w-full rounded-2xl border-2 bg-white p-4 text-start transition ${timing === v ? "border-brand shadow-brand" : "border-slate-200 hover:border-brand/50"}`}>
+                  <p className="font-bold">{v === "NOW" ? t("pay.upgradeNow") : t("pay.upgradeNext")}</p>
+                  <p className="text-sm text-slate-600">{v === "NOW"
+                    ? t("pay.upgradeNowBody", { days: String(uq.remainingDays ?? 0), credit: money(uq.creditMinor, uq.currency, locale), due: money(uq.dueNowMinor, uq.currency, locale) })
+                    : t("pay.upgradeNextBody", { date: dateOnly(uq.periodEnd, locale), price: money(uq.fullMinor, uq.currency, locale) })}</p>
+                </button>
+              ))}
+            </div>
+          )}
           <Field label={t("pay.phone")} hint={t("pay.phoneHint")}><PhoneInput value={phoneValue} onValue={setPhone} required placeholder="01012345678" /></Field>
           <ErrorText error={send.error} />
           <Button type="submit" className="w-full" loading={send.loading} disabled={!choice || phoneValue.trim().length < 8}>{t("pay.proceed")}</Button>

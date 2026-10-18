@@ -195,7 +195,7 @@ public class BillingService {
                 UPDATE billing.tenant_subscriptions SET plan_id = :p, status = 'ACTIVE',
                        current_period_start = CASE WHEN status = 'ACTIVE' AND current_period_end > now() THEN current_period_start ELSE now() END,
                        current_period_end = (CASE WHEN status = 'ACTIVE' AND current_period_end > now() THEN current_period_end ELSE now() END) + make_interval(days => :d),
-                       cancel_at_period_end = FALSE, updated_at = now()
+                       cancel_at_period_end = FALSE, pending_plan_id = NULL, updated_at = now()
                 WHERE id = (SELECT id FROM billing.tenant_subscriptions WHERE tenant_id = :t ORDER BY created_at DESC LIMIT 1)
                 """).param("p", planId).param("t", tenantId).param("d", days).update();
         if (n == 0) {
@@ -206,6 +206,75 @@ public class BillingService {
                 .param("t", tenantId).update();
         directory.invalidateAll();
         event(tenantId, "PLAN_ACTIVATED", "{\"days\":" + days + "}");
+    }
+
+    private Map<String, Object> runningPaid(UUID tenantId) {
+        return jdbc.sql("""
+                SELECT s.id, s.plan_id, p.code AS plan_code, p.price_minor, s.current_period_start, s.current_period_end
+                FROM billing.tenant_subscriptions s JOIN billing.subscription_plans p ON p.id = s.plan_id
+                WHERE s.tenant_id = :t AND s.status = 'ACTIVE' AND s.current_period_end > now() AND p.price_minor > 0
+                ORDER BY s.created_at DESC LIMIT 1
+                """).param("t", tenantId).query().listOfRows().stream().findFirst().orElse(null);
+    }
+
+    /**
+     * What moving to another plan costs. For a business in a running paid period the answer carries the two options:
+     * upgrade now (the unused days of the current plan are credited against the new price) or from the next period.
+     */
+    public Map<String, Object> upgradeQuote(UUID tenantId, String planCode) {
+        var plan = jdbc.sql("SELECT code, price_minor, currency FROM billing.subscription_plans WHERE code = :c AND is_active").param("c", planCode).query().listOfRows().stream().findFirst()
+                .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Plan not found"));
+        long full = ((Number) plan.get("price_minor")).longValue();
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("planCode", planCode);
+        out.put("fullMinor", full);
+        out.put("currency", plan.get("currency"));
+        var cur = runningPaid(tenantId);
+        if (cur == null || planCode.equals(cur.get("plan_code"))) { out.put("upgrade", false); out.put("creditMinor", 0L); out.put("dueNowMinor", full); return out; }
+        Instant start = ((java.sql.Timestamp) cur.get("current_period_start")).toInstant(), end = ((java.sql.Timestamp) cur.get("current_period_end")).toInstant();
+        long totalDays = Math.max(1, Math.round((end.toEpochMilli() - start.toEpochMilli()) / 86_400_000.0));
+        long remaining = Math.min(totalDays, Math.max(0, (long) Math.ceil((end.toEpochMilli() - System.currentTimeMillis()) / 86_400_000.0)));
+        long credit = ((Number) cur.get("price_minor")).longValue() * remaining / totalDays;
+        out.put("upgrade", true);
+        out.put("currentPlanCode", cur.get("plan_code"));
+        out.put("periodEnd", end.toString());
+        out.put("remainingDays", remaining);
+        out.put("totalDays", totalDays);
+        out.put("creditMinor", credit);
+        out.put("dueNowMinor", Math.max(0, full - credit));
+        return out;
+    }
+
+    /** Upgrade right now, paid: the new plan starts today for a full period (the unused days were credited in the price). */
+    @Transactional
+    public void restartPlan(UUID tenantId, UUID planId, int days) {
+        jdbc.sql("""
+                UPDATE billing.tenant_subscriptions SET plan_id = :p, status = 'ACTIVE', current_period_start = now(), current_period_end = now() + make_interval(days => :d),
+                       cancel_at_period_end = FALSE, pending_plan_id = NULL, updated_at = now()
+                WHERE id = (SELECT id FROM billing.tenant_subscriptions WHERE tenant_id = :t ORDER BY created_at DESC LIMIT 1)
+                """).param("p", planId).param("t", tenantId).param("d", days).update();
+        jdbc.sql("UPDATE core.tenants SET status = 'ACTIVE', updated_at = now() WHERE id = :t AND status IN ('TRIAL','PAST_DUE','SUSPENDED','ACTIVE')").param("t", tenantId).update();
+        directory.invalidateAll();
+        event(tenantId, "PLAN_UPGRADED_NOW", "{\"days\":" + days + "}");
+    }
+
+    /** Platform admin moves a running paid business to another plan: the plan changes, the end date stays (no days are added). False when there is no running paid period to keep. */
+    @Transactional
+    public boolean switchPlanKeepingPeriod(UUID tenantId, UUID planId) {
+        var cur = runningPaid(tenantId);
+        if (cur == null) return false;
+        jdbc.sql("UPDATE billing.tenant_subscriptions SET plan_id = :p, pending_plan_id = NULL, updated_at = now() WHERE id = :i").param("p", planId).param("i", cur.get("id")).update();
+        directory.invalidateAll();
+        event(tenantId, "PLAN_SWITCHED", null);
+        return true;
+    }
+
+    /** The upgrade was agreed for the next period: nothing changes now, the renewal is offered on this plan. */
+    @Transactional
+    public void schedulePlan(UUID tenantId, UUID planId) {
+        jdbc.sql("UPDATE billing.tenant_subscriptions SET pending_plan_id = :p, updated_at = now() WHERE id = (SELECT id FROM billing.tenant_subscriptions WHERE tenant_id = :t ORDER BY created_at DESC LIMIT 1)")
+                .param("p", planId).param("t", tenantId).update();
+        event(tenantId, "PLAN_UPGRADE_SCHEDULED", null);
     }
 
     /** How long one purchase of this plan lasts: 30 days for a monthly plan, 365 for a yearly one. */
@@ -225,7 +294,8 @@ public class BillingService {
     public Map<String, Object> status(UUID tenantId) {
         var tenantStatus = jdbc.sql("SELECT status FROM core.tenants WHERE id = :t").param("t", tenantId).query(String.class).single();
         var sub = jdbc.sql("""
-                SELECT s.status, s.current_period_end, s.cancel_at_period_end, p.code AS plan_code, p.name AS plan_name, p.price_minor, p.currency, p.tenant_type
+                SELECT s.status, s.current_period_end, s.cancel_at_period_end, p.code AS plan_code, p.name AS plan_name, p.price_minor, p.currency, p.tenant_type,
+                       (SELECT np.code FROM billing.subscription_plans np WHERE np.id = s.pending_plan_id) AS pending_plan_code
                 FROM billing.tenant_subscriptions s JOIN billing.subscription_plans p ON p.id = s.plan_id
                 WHERE s.tenant_id = :t ORDER BY s.created_at DESC LIMIT 1
                 """).param("t", tenantId).query().listOfRows().stream().findFirst().orElse(null);
@@ -248,6 +318,7 @@ public class BillingService {
         out.put("priceMinor", sub.get("price_minor"));
         out.put("currency", sub.get("currency"));
         out.put("periodEnd", end.toString());
+        out.put("pendingPlanCode", sub.get("pending_plan_code"));
         out.put("graceEnd", graceEnd.toString());
         out.put("daysLeft", Math.max(daysLeft, 0));
         out.put("trial", "TRIALING".equals(subStatus) || String.valueOf(sub.get("plan_code")).endsWith("_FREE"));

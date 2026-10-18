@@ -35,7 +35,7 @@ public class PayRequestService {
 
     /** One open request per business: pressing the button again returns the request already waiting. */
     @Transactional
-    public Map<String, Object> create(UUID tenantId, String tenantType, UUID userId, String planCode, String phoneRaw, String note) {
+    public Map<String, Object> create(UUID tenantId, String tenantType, UUID userId, String planCode, String phoneRaw, String note, String timingRaw) {
         var plan = jdbc.sql("SELECT code, name, tenant_type, price_minor, currency FROM billing.subscription_plans WHERE code = :c AND is_active")
                 .param("c", planCode).query().listOfRows().stream().findFirst()
                 .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Plan not found"));
@@ -48,29 +48,35 @@ public class PayRequestService {
             throw BusinessException.badRequest("PHONE_REQUIRED", "A mobile number is required so customer service can contact you");
         jdbc.sql("UPDATE core.users SET phone = :p WHERE id = :u AND (phone IS NULL OR phone = '')").param("p", phone).param("u", userId).update();
 
+        // Already on a running paid plan and moving to another: "NOW" credits the unused days, "NEXT_PERIOD" changes nothing until renewal.
+        var quote = billing.upgradeQuote(tenantId, planCode);
+        boolean upgrade = Boolean.TRUE.equals(quote.get("upgrade"));
+        String timing = upgrade && "NEXT_PERIOD".equals(timingRaw) ? "NEXT_PERIOD" : "NOW";
+        long credit = upgrade && "NOW".equals(timing) ? ((Number) quote.get("creditMinor")).longValue() : 0;
+        long amount = upgrade && "NOW".equals(timing) ? ((Number) quote.get("dueNowMinor")).longValue() : ((Number) plan.get("price_minor")).longValue();
         var open = jdbc.sql("SELECT * FROM billing.pay_requests WHERE tenant_id = :t AND status IN ('NEW','CONTACTED')").param("t", tenantId).query().listOfRows().stream().findFirst();
         if (open.isPresent()) {
             // The owner may have picked another plan or number meanwhile: keep the single open request current.
-            jdbc.sql("UPDATE billing.pay_requests SET plan_code = :c, amount_minor = :a, phone = :p, note = coalesce(:n, note) WHERE id = :i")
-                    .param("c", planCode).param("a", plan.get("price_minor")).param("p", phone).param("n", note).param("i", open.get().get("id")).update();
+            jdbc.sql("UPDATE billing.pay_requests SET plan_code = :c, amount_minor = :a, timing = :tm, credit_minor = :cr, phone = :p, note = coalesce(:n, note) WHERE id = :i")
+                    .param("c", planCode).param("a", amount).param("tm", timing).param("cr", credit).param("p", phone).param("n", note).param("i", open.get().get("id")).update();
             return get((UUID) open.get().get("id"));
         }
         UUID id = UUID.randomUUID();
-        jdbc.sql("INSERT INTO billing.pay_requests (id, tenant_id, requested_by, plan_code, amount_minor, currency, phone, note) VALUES (:i, :t, :u, :c, :a, :cur, :p, :n)")
-                .param("i", id).param("t", tenantId).param("u", userId).param("c", planCode).param("a", plan.get("price_minor"))
+        jdbc.sql("INSERT INTO billing.pay_requests (id, tenant_id, requested_by, plan_code, amount_minor, currency, phone, note, timing, credit_minor) VALUES (:i, :t, :u, :c, :a, :cur, :p, :n, :tm, :cr)")
+                .param("i", id).param("t", tenantId).param("u", userId).param("c", planCode).param("a", amount).param("tm", timing).param("cr", credit)
                 .param("cur", plan.get("currency")).param("p", phone).param("n", note).update();
-        notifyPlatform(tenantId, planCode);
+        notifyPlatform(tenantId, planCode + ("NEXT_PERIOD".equals(timing) ? " (next period)" : upgrade ? " (upgrade now)" : ""));
         audit.record(userId, tenantId, "PAY_REQUEST_CREATED", "pay_request", id, "{\"plan\":\"" + planCode + "\"}");
         return get(id);
     }
 
     public List<Map<String, Object>> forTenant(UUID tenantId) {
-        return Rows.camel(jdbc.sql("SELECT id, plan_code, amount_minor, currency, phone, status, created_at, handled_at FROM billing.pay_requests WHERE tenant_id = :t ORDER BY created_at DESC LIMIT 20")
+        return Rows.camel(jdbc.sql("SELECT id, plan_code, amount_minor, timing, credit_minor, currency, phone, status, created_at, handled_at FROM billing.pay_requests WHERE tenant_id = :t ORDER BY created_at DESC LIMIT 20")
                 .param("t", tenantId).query().listOfRows());
     }
 
     public Map<String, Object> get(UUID id) {
-        return Rows.camel(jdbc.sql("SELECT id, tenant_id, plan_code, amount_minor, currency, phone, note, status, admin_note, created_at, handled_at FROM billing.pay_requests WHERE id = :i")
+        return Rows.camel(jdbc.sql("SELECT id, tenant_id, plan_code, amount_minor, timing, credit_minor, currency, phone, note, status, admin_note, created_at, handled_at FROM billing.pay_requests WHERE id = :i")
                 .param("i", id).query().listOfRows().stream().findFirst().orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Request not found")));
     }
 
@@ -80,7 +86,7 @@ public class PayRequestService {
         String where = " WHERE (CAST(:s AS varchar) IS NULL OR r.status = CAST(:s AS varchar))";
         long total = jdbc.sql("SELECT count(*) FROM billing.pay_requests r" + where).param("s", status).query(Long.class).single();
         var rows = jdbc.sql("""
-                SELECT r.id, r.tenant_id, r.plan_code, r.amount_minor, r.currency, r.phone, r.note, r.status, r.admin_note, r.created_at, r.handled_at,
+                SELECT r.id, r.tenant_id, r.plan_code, r.amount_minor, r.timing, r.credit_minor, r.currency, r.phone, r.note, r.status, r.admin_note, r.created_at, r.handled_at,
                        t.name AS tenant_name, t.slug, t.tenant_type, t.status AS tenant_status,
                        (SELECT d.host FROM core.tenant_domains d WHERE d.tenant_id = t.id AND d.is_primary) AS primary_host,
                        u.first_name || ' ' || coalesce(u.last_name, '') AS requester_name, u.email AS requester_email
@@ -96,12 +102,20 @@ public class PayRequestService {
 
     @Transactional
     public Map<String, Object> handle(UUID actor, UUID id, String status, String adminNote, boolean activate) {
-        if (!Set.of("CONTACTED", "PAID", "REJECTED").contains(status))
-            throw BusinessException.badRequest("VALIDATION_ERROR", "Status must be CONTACTED, PAID or REJECTED");
-        var r = jdbc.sql("SELECT tenant_id, plan_code, status FROM billing.pay_requests WHERE id = :i FOR UPDATE").param("i", id).query().listOfRows().stream().findFirst()
+        if (!Set.of("CONTACTED", "PAID", "REJECTED", "SCHEDULED").contains(status))
+            throw BusinessException.badRequest("VALIDATION_ERROR", "Status must be CONTACTED, PAID, SCHEDULED or REJECTED");
+        var r = jdbc.sql("SELECT tenant_id, plan_code, status, timing, credit_minor FROM billing.pay_requests WHERE id = :i FOR UPDATE").param("i", id).query().listOfRows().stream().findFirst()
                 .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Request not found"));
         UUID tenantId = (UUID) r.get("tenant_id");
-        if ("PAID".equals(status) && activate) { UUID planId = billing.planId((String) r.get("plan_code")); billing.activatePlan(tenantId, planId, billing.planDays(planId)); }
+        boolean next = "NEXT_PERIOD".equals(r.get("timing"));
+        if ("PAID".equals(status) && next) throw BusinessException.badRequest("VALIDATION_ERROR", "This upgrade starts next period and nothing is paid now: mark it SCHEDULED");
+        if ("SCHEDULED".equals(status) && !next) throw BusinessException.badRequest("VALIDATION_ERROR", "Only a next-period upgrade can be scheduled");
+        UUID planId = billing.planId((String) r.get("plan_code"));
+        if ("SCHEDULED".equals(status)) billing.schedulePlan(tenantId, planId);
+        else if ("PAID".equals(status) && activate) {
+            if (((Number) r.get("credit_minor")).longValue() > 0) billing.restartPlan(tenantId, planId, billing.planDays(planId));   // upgrade now: a fresh period on the new plan
+            else billing.activatePlan(tenantId, planId, billing.planDays(planId));
+        }
         jdbc.sql("UPDATE billing.pay_requests SET status = :s, admin_note = coalesce(:n, admin_note), handled_by = :a, handled_at = now() WHERE id = :i")
                 .param("s", status).param("n", adminNote).param("a", actor).param("i", id).update();
         audit.record(actor, tenantId, "PAY_REQUEST_" + status, "pay_request", id, null);

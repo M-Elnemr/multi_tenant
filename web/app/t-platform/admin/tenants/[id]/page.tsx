@@ -39,11 +39,11 @@ export default function TenantDetail({ params }: { params: Promise<{ id: string 
   const { data, error, loading, reload } = useApi<Detail>(`platform/tenants/${id}`);
   const reason = "";
   const [planCode, setPlanCode] = useState("");
-  const [days, setDays] = useState("30");
+  const [days, setDays] = useState("");   // empty = only change the plan, keep the end date
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [typed, setTyped] = useState("");
   const setStatus = useAction(async (status: string) => { await api(`platform/tenants/${id}/status`, { body: { status, reason } }); await reload(); });
-  const changePlan = useAction(async () => { await api(`platform/tenants/${id}/plan`, { body: { planCode, days: Number(days) || 30 } }); await reload(); });
+  const changePlan = useAction(async () => { await api(`platform/tenants/${id}/plan`, { body: { planCode, days: Number(days) || undefined } }); await reload(); });
   const [modal, setModal] = useState<"" | "pin" | "owner" | "rename">("");
   const [pin, setPin] = useState("");
   const [ownerPhone, setOwnerPhone] = useState("");

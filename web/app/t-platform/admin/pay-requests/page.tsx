@@ -13,7 +13,7 @@ import { dateTime, money } from "@/lib/format";
 import { whatsappLink } from "@/lib/whatsapp";
 
 type Req = {
-  id: string; tenantId: string; planCode: string; amountMinor: number; currency: string; phone: string; note?: string; status: string; adminNote?: string; createdAt: string;
+  id: string; tenantId: string; planCode: string; amountMinor: number; timing?: string; creditMinor?: number; currency: string; phone: string; note?: string; status: string; adminNote?: string; createdAt: string;
   tenantName: string; slug: string; tenantType: string; tenantStatus: string; primaryHost?: string; requesterName?: string; requesterEmail?: string;
 };
 
@@ -32,7 +32,8 @@ function Row({ r, onDone }: { r: Req; onDone: () => void }) {
         <div className="flex items-center gap-2"><StatusBadge status={r.tenantStatus} /><StatusBadge status={r.status} /></div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">{t("admin.requestedPlan")}</p><p className="font-bold">{planLabel(t, r.planCode)}</p><p className="text-sm text-slate-600">{money(r.amountMinor, r.currency, locale)} · <span className="text-xs text-slate-400">{dateTime(r.createdAt, locale)}</span></p></div>
+        <div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">{t("admin.requestedPlan")}</p><p className="font-bold">{planLabel(t, r.planCode)}</p><p className="text-sm text-slate-600">{money(r.amountMinor, r.currency, locale)} · <span className="text-xs text-slate-400">{dateTime(r.createdAt, locale)}</span></p>
+          {r.timing === "NEXT_PERIOD" ? <p className="mt-1 text-xs font-semibold text-sky-700">{t("admin.nextPeriodNote")}</p> : (r.creditMinor ?? 0) > 0 && <p className="mt-1 text-xs font-semibold text-sky-700">{t("admin.upgradeNowNote", { credit: money(r.creditMinor ?? 0, r.currency, locale) })}</p>}</div>
         <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3">
           <div className="min-w-0"><p className="text-xs text-slate-500">{t("admin.contact")}</p><a className="text-lg font-extrabold text-brand" dir="ltr" href={`tel:${r.phone}`}>{localPhone(r.phone)}</a></div>
           <div className="flex shrink-0 gap-2">
@@ -48,7 +49,9 @@ function Row({ r, onDone }: { r: Req; onDone: () => void }) {
           <ErrorText error={act.error} />
           <div className="flex flex-wrap gap-2">
             {r.status === "NEW" && <Button variant="secondary" loading={act.loading} onClick={() => act.run("CONTACTED")}>{t("admin.markContacted")}</Button>}
-            <Button loading={act.loading} onClick={() => act.run("PAID")}>{t("admin.markPaid")}</Button>
+            {r.timing === "NEXT_PERIOD"
+              ? <Button loading={act.loading} onClick={() => act.run("SCHEDULED")}>{t("admin.schedule")}</Button>
+              : <Button loading={act.loading} onClick={() => act.run("PAID")}>{t("admin.markPaid")}</Button>}
             <Button variant="ghost" loading={act.loading} onClick={() => act.run("REJECTED")}>{t("admin.reject")}</Button>
           </div>
         </div>
@@ -67,7 +70,7 @@ export default function PayRequests() {
     <>
       <PageHeader title={t("admin.payRequests")} />
       <div className="mb-4"><Tabs value={status} onChange={(s) => { setStatus(s); setPage(1); }} tabs={[
-        { key: "NEW", label: t("status.NEW") }, { key: "CONTACTED", label: t("status.CONTACTED") }, { key: "PAID", label: t("status.PAID") }, { key: "REJECTED", label: t("status.REJECTED") },
+        { key: "NEW", label: t("status.NEW") }, { key: "CONTACTED", label: t("status.CONTACTED") }, { key: "PAID", label: t("status.PAID") }, { key: "SCHEDULED", label: t("status.SCHEDULED") }, { key: "REJECTED", label: t("status.REJECTED") },
       ]} /></div>
       <ErrorText error={error} />
       {loading && !data ? <Loading /> : (

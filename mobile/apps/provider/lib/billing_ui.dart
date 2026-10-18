@@ -161,10 +161,12 @@ class _PayBodyState extends State<PayBody> {
         AuthRepository(widget.api).me().catchError((_) => <String, dynamic>{}),
       ]);
 
+  String _timing = 'NOW';
+
   Future<void> _send(String planCode) async {
     setState(() => _busy = true);
     try {
-      final r = await widget.api.post('billing/pay-requests', {'planCode': planCode, 'phone': _phone.text.trim()}) as Map;
+      final r = await widget.api.post('billing/pay-requests', {'planCode': planCode, 'phone': _phone.text.trim(), 'timing': _timing}) as Map;
       if (!mounted) return;
       setState(() { _saved = Map<String, dynamic>.from(r); _editing = false; _n++; });
     } catch (e) {
@@ -225,6 +227,8 @@ class _PayBodyState extends State<PayBody> {
                 Text(ar ? 'سيتواصل معك فريق خدمة العملاء على ${localPhone(open['phone'])} قريبًا جدًا لإتمام اشتراكك.' : 'Customer service will contact you on ${localPhone(open['phone'])} very soon to complete your subscription.', textAlign: TextAlign.center),
                 const SizedBox(height: 6),
                 Text('${planLabel('${open['planCode']}')} · ${fmtMoney(open['amountMinor'] as num?)} ${open['currency'] ?? 'EGP'}', style: const TextStyle(fontWeight: FontWeight.w700)),
+                if (open['timing'] == 'NEXT_PERIOD') Text(ar ? 'الترقية تبدأ من الشهر القادم' : 'The upgrade starts next month', style: const TextStyle(color: Color(0xFF6B7C8D)))
+                else if (((open['creditMinor'] as num?) ?? 0) > 0) Text(ar ? 'بعد خصم ${fmtMoney(open['creditMinor'] as num?)} قيمة الأيام المتبقية' : 'After a ${fmtMoney(open['creditMinor'] as num?)} credit for the remaining days', style: const TextStyle(color: Color(0xFF6B7C8D))),
                 TextButton(onPressed: () => setState(() { _picked = '${open['planCode']}'; _phone.text = localPhone(open['phone']); _editing = true; }), child: Text(ar ? 'تعديل طلبي' : 'Change my request')),
               ])))
             else ...[
@@ -235,6 +239,7 @@ class _PayBodyState extends State<PayBody> {
               ]),
               const SizedBox(height: 8),
               for (final p in plans) _PlanTile(plan: p, selected: p['code'] == choice, onTap: () => setState(() => _picked = '${p['code']}')),
+              _UpgradeOptions(key: ValueKey('uq-$choice'), api: widget.api, planCode: choice, timing: _timing, onTiming: (v) => setState(() => _timing = v)),
               const SizedBox(height: 8),
               TextField(
                 controller: _phone,
@@ -287,6 +292,69 @@ class _PlanTile extends StatelessWidget {
           ]),
         ),
       ),
+    );
+  }
+}
+
+/// Already paying and moving to another plan: two options, upgrade next month (nothing changes now) or right now (the unused days are credited).
+class _UpgradeOptions extends StatefulWidget {
+  const _UpgradeOptions({super.key, required this.api, required this.planCode, required this.timing, required this.onTiming});
+  final ApiClient api;
+  final String planCode, timing;
+  final ValueChanged<String> onTiming;
+  @override
+  State<_UpgradeOptions> createState() => _UpgradeOptionsState();
+}
+
+class _UpgradeOptionsState extends State<_UpgradeOptions> {
+  late final Future<Map<String, dynamic>> _quote = widget.planCode.isEmpty ? Future.value(<String, dynamic>{}) : widget.api.get('billing/upgrade-quote?planCode=${widget.planCode}').then((r) => Map<String, dynamic>.from(r as Map)).catchError((_) => <String, dynamic>{});
+
+  @override
+  Widget build(BuildContext context) {
+    final ar = AppLocale.isAr;
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _quote,
+      builder: (context, snap) {
+        final q = snap.data;
+        if (q == null || q['upgrade'] != true) return const SizedBox.shrink();
+        final scheme = Theme.of(context).colorScheme;
+        final cur = '${q['currency'] ?? 'EGP'}';
+        Widget option(String value, String title, String body) {
+          final on = widget.timing == value;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () => widget.onTiming(value),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: on ? scheme.primary : const Color(0xFFD5DEE8), width: on ? 2.2 : 1)),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Icon(on ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded, color: on ? scheme.primary : const Color(0xFF9AA9BA)),
+                  const SizedBox(width: 10),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 2),
+                    Text(body, style: const TextStyle(color: Color(0xFF4B5B6B), fontSize: 13.5)),
+                  ])),
+                ]),
+              ),
+            ),
+          );
+        }
+        return Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            sectionTitle(ar ? 'متى تبدأ الترقية؟' : 'When should the upgrade start?'),
+            option('NOW', ar ? 'الترقية الآن' : 'Upgrade now',
+                ar ? 'نخصم قيمة الأيام المتبقية في باقتك (${q['remainingDays']} يوم = ${fmtMoney(q['creditMinor'] as num?)} $cur) من سعر الباقة الجديدة. تدفع ${fmtMoney(q['dueNowMinor'] as num?)} $cur وتبدأ 30 يومًا جديدة بالباقة الجديدة.'
+                   : 'The unused days of your plan (${q['remainingDays']} days = ${fmtMoney(q['creditMinor'] as num?)} $cur) are taken off the new price. You pay ${fmtMoney(q['dueNowMinor'] as num?)} $cur and a new 30 days start on the new plan.'),
+            option('NEXT_PERIOD', ar ? 'الترقية من الشهر القادم' : 'Upgrade next month',
+                ar ? 'باقتك الحالية تستمر كما هي حتى ${fmtDate('${q['periodEnd']}', time: false)}، وتبدأ الباقة الجديدة عند تجديد الشهر القادم (${fmtMoney(q['fullMinor'] as num?)} $cur).'
+                   : 'Your current plan stays exactly as it is until ${fmtDate('${q['periodEnd']}', time: false)}; the new plan starts when you renew next month (${fmtMoney(q['fullMinor'] as num?)} $cur).'),
+          ]),
+        );
+      },
     );
   }
 }

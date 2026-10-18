@@ -25,7 +25,7 @@ public class BillingController {
 
     public BillingController(BillingService billing, PayRequestService payRequests) { this.billing = billing; this.payRequests = payRequests; }
 
-    public record PayRequest(@NotBlank String planCode, String phone, String note) {}
+    public record PayRequest(@NotBlank String planCode, String phone, String note, String timing) {}
 
     public record ChangePlanRequest(@NotBlank String planCode, String provider) {}
 
@@ -50,8 +50,13 @@ public class BillingController {
     @PreAuthorize("hasAuthority('billing.manage')")
     public Map<String, Object> payRequest(@Valid @RequestBody PayRequest r, Authentication a) {
         var t = TenantContext.require();
-        return payRequests.create(t.id(), t.type(), (UUID) a.getPrincipal(), r.planCode(), r.phone(), r.note());
+        return payRequests.create(t.id(), t.type(), (UUID) a.getPrincipal(), r.planCode(), r.phone(), r.note(), r.timing());
     }
+
+    /** For a business already paying: what each upgrade option would cost (now with the unused days credited, or next period). */
+    @GetMapping("/upgrade-quote")
+    @PreAuthorize("hasAuthority('billing.read')")
+    public Map<String, Object> upgradeQuote(@org.springframework.web.bind.annotation.RequestParam String planCode) { return billing.upgradeQuote(TenantContext.require().id(), planCode); }
 
     @GetMapping("/pay-requests")
     @PreAuthorize("hasAuthority('billing.read')")

@@ -204,4 +204,37 @@ class SubscriptionLifecycleIntegrationTest extends IntegrationTestBase {
         onHost("platform.test", admin, "GET", "/api/v1/platform/tenants?page=1&q=&type=&status=&filter=", null).andExpect(status().isOk()).andExpect(jsonPath("$.meta.total").value(org.hamcrest.Matchers.greaterThan(0)));
         onHost("platform.test", admin, "GET", "/api/v1/platform/pay-requests?status=", null).andExpect(status().isOk());
     }
+
+    @Test
+    void upgradingAPaidPlanCreditsTheUnusedDaysOrWaitsForNextPeriod() throws Exception {
+        Tenant shop = onboard("STORE");
+        String admin = platformToken("PLATFORM_OWNER");
+        UUID id = idOf(shop);
+        billing.activatePlan(id, billing.planId("STORE_STANDARD"), 30);
+        // 15 of the 30 days are left: the credit is half of the 500 EGP plan, so the 750 plan costs 500 more
+        jdbc.sql("UPDATE billing.tenant_subscriptions SET current_period_start = now() - interval '15 days', current_period_end = now() + interval '15 days' WHERE tenant_id = :t").param("t", id).update();
+        onHost(shop.host(), shop.access(), "GET", "/api/v1/billing/upgrade-quote?planCode=STORE_PRO", null).andExpect(status().isOk())
+                .andExpect(jsonPath("$.upgrade").value(true)).andExpect(jsonPath("$.remainingDays").value(15)).andExpect(jsonPath("$.creditMinor").value(25000)).andExpect(jsonPath("$.dueNowMinor").value(50000));
+
+        // upgrade now: pays the difference; once marked paid the new plan starts today for a full period (not +30 on the old end)
+        String now = onHost(shop.host(), shop.access(), "POST", "/api/v1/billing/pay-requests", "{\"planCode\":\"STORE_PRO\",\"phone\":\"" + shop.phone() + "\",\"timing\":\"NOW\"}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.amountMinor").value(50000)).andExpect(jsonPath("$.creditMinor").value(25000)).andReturn().getResponse().getContentAsString();
+        onHost("platform.test", admin, "POST", "/api/v1/platform/pay-requests/" + JsonPath.read(now, "$.id"), "{\"status\":\"PAID\"}").andExpect(status().isOk());
+        long days = jdbc.sql("SELECT extract(day FROM (current_period_end - now()))::bigint FROM billing.tenant_subscriptions WHERE tenant_id = :t").param("t", id).query(Long.class).single();
+        assertThat(days).isBetween(28L, 30L);
+
+        // next period: nothing is paid now and the plan does not change; it can only be scheduled, never "paid"
+        jdbc.sql("UPDATE billing.tenant_subscriptions SET plan_id = (SELECT id FROM billing.subscription_plans WHERE code = 'STORE_STANDARD'), current_period_start = now() - interval '10 days', current_period_end = now() + interval '20 days' WHERE tenant_id = :t").param("t", id).update();
+        String next = onHost(shop.host(), shop.access(), "POST", "/api/v1/billing/pay-requests", "{\"planCode\":\"STORE_PRO\",\"phone\":\"" + shop.phone() + "\",\"timing\":\"NEXT_PERIOD\"}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.timing").value("NEXT_PERIOD")).andExpect(jsonPath("$.amountMinor").value(75000)).andReturn().getResponse().getContentAsString();
+        String nextId = JsonPath.read(next, "$.id");
+        onHost("platform.test", admin, "POST", "/api/v1/platform/pay-requests/" + nextId, "{\"status\":\"PAID\"}").andExpect(status().isBadRequest());
+        onHost("platform.test", admin, "POST", "/api/v1/platform/pay-requests/" + nextId, "{\"status\":\"SCHEDULED\"}").andExpect(status().isOk());
+        onHost(shop.host(), shop.access(), "GET", "/api/v1/billing/status", null).andExpect(jsonPath("$.planCode").value("STORE_STANDARD")).andExpect(jsonPath("$.pendingPlanCode").value("STORE_PRO"));
+
+        // the platform owner switching the plan of a running paid business keeps the end date
+        onHost("platform.test", admin, "POST", "/api/v1/platform/tenants/" + id + "/plan", "{\"planCode\":\"STORE_PRO\"}").andExpect(status().isOk());
+        long left = jdbc.sql("SELECT extract(day FROM (current_period_end - now()))::bigint FROM billing.tenant_subscriptions WHERE tenant_id = :t").param("t", id).query(Long.class).single();
+        assertThat(left).isBetween(18L, 20L);
+    }
 }

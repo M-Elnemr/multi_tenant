@@ -288,7 +288,7 @@ class _Requests extends StatelessWidget {
       api: api,
       path: 'platform/pay-requests',
       filterParam: 'status',
-      filters: [('', ar ? 'الكل' : 'All'), ('NEW', ar ? 'جديد' : 'New'), ('CONTACTED', ar ? 'تم التواصل' : 'Contacted'), ('PAID', ar ? 'مدفوع' : 'Paid'), ('REJECTED', ar ? 'مرفوض' : 'Rejected')],
+      filters: [('', ar ? 'الكل' : 'All'), ('NEW', ar ? 'جديد' : 'New'), ('CONTACTED', ar ? 'تم التواصل' : 'Contacted'), ('PAID', ar ? 'مدفوع' : 'Paid'), ('SCHEDULED', ar ? 'مجدول' : 'Scheduled'), ('REJECTED', ar ? 'مرفوض' : 'Rejected')],
       emptyText: ar ? 'لا توجد طلبات بعد' : 'No requests yet',
       itemBuilder: (context, r, reload) => _RequestCard(api: api, r: r, perms: perms, reload: reload),
     );
@@ -305,7 +305,7 @@ class _RequestCard extends StatelessWidget {
   Future<void> _act(BuildContext context, String status) async {
     final ar = AppLocale.isAr;
     final note = TextEditingController(text: '${r['adminNote'] ?? ''}');
-    final label = status == 'PAID' ? (ar ? 'تم الدفع: تفعيل الباقة' : 'Paid: activate the plan') : status == 'REJECTED' ? (ar ? 'رفض الطلب' : 'Reject') : (ar ? 'تم التواصل' : 'Mark contacted');
+    final label = status == 'SCHEDULED' ? (ar ? 'جدولة الترقية للشهر القادم' : 'Schedule for next month') : status == 'PAID' ? (ar ? 'تم الدفع: تفعيل الباقة' : 'Paid: activate the plan') : status == 'REJECTED' ? (ar ? 'رفض الطلب' : 'Reject') : (ar ? 'تم التواصل' : 'Mark contacted');
     final ok = await formSheet(context, title: '$label · ${r['tenantName']}', saveLabel: label, body: (c, set) => [tf(note, ar ? 'ملاحظة' : 'Note', lines: 2)], onSave: () async {
       await api.post('platform/pay-requests/${r['id']}', {'status': status, 'adminNote': note.text.trim().isEmpty ? null : note.text.trim(), 'activate': true});
     });
@@ -324,6 +324,8 @@ class _RequestCard extends StatelessWidget {
       Text('${_typeLabel(r['tenantType'])} · ${r['primaryHost'] ?? ''}', textDirection: TextDirection.ltr, style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 12)),
       const SizedBox(height: 6),
       Text('${ar ? 'الباقة المطلوبة' : 'Requested'}: ${planLabel('${r['planCode']}')} · ${fmtMoney(r['amountMinor'] as num?)} ${r['currency']}', style: const TextStyle(fontWeight: FontWeight.w700)),
+      if (r['timing'] == 'NEXT_PERIOD') Text(ar ? 'ترقية من الشهر القادم: لا دفع الآن، الباقة الحالية تستمر' : 'Upgrade from next period: nothing to pay now, the current plan continues', style: const TextStyle(color: Color(0xFF1F6A99), fontWeight: FontWeight.w700))
+      else if (((r['creditMinor'] as num?) ?? 0) > 0) Text(ar ? 'ترقية الآن: خُصم ${fmtMoney(r['creditMinor'] as num?)} قيمة الأيام المتبقية. عند الدفع تبدأ فترة جديدة.' : 'Upgrade now: ${fmtMoney(r['creditMinor'] as num?)} credited for the unused days. A fresh period starts when paid.', style: const TextStyle(color: Color(0xFF1F6A99), fontWeight: FontWeight.w700)),
       Text(fmtDate('${r['createdAt']}'), style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 12)),
       Row(children: [
         Expanded(child: Text(localPhone(r['phone']), textDirection: TextDirection.ltr, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17))),
@@ -335,7 +337,8 @@ class _RequestCard extends StatelessWidget {
       if ((r['adminNote'] ?? '').toString().isNotEmpty) Text('${ar ? 'ملاحظة' : 'Note'}: ${r['adminNote']}', style: const TextStyle(color: Color(0xFF6B7C8D))),
       if (open) Padding(padding: const EdgeInsets.only(top: 8), child: Wrap(spacing: 8, runSpacing: 6, children: [
         if (r['status'] == 'NEW') OutlinedButton(onPressed: () => _act(context, 'CONTACTED'), child: Text(ar ? 'تم التواصل' : 'Contacted')),
-        FilledButton(onPressed: () => _act(context, 'PAID'), child: Text(ar ? 'تم الدفع' : 'Paid: activate')),
+        if (r['timing'] == 'NEXT_PERIOD') FilledButton(onPressed: () => _act(context, 'SCHEDULED'), child: Text(ar ? 'جدولة للشهر القادم' : 'Schedule next month'))
+        else FilledButton(onPressed: () => _act(context, 'PAID'), child: Text(ar ? 'تم الدفع' : 'Paid: activate')),
         TextButton(onPressed: () => _act(context, 'REJECTED'), child: Text(ar ? 'رفض' : 'Reject')),
       ])),
     ])));
@@ -369,13 +372,13 @@ class _TenantDetailPageState extends State<TenantDetailPage> {
     final store = d['tenantType'] == 'STORE';
     final plans = store ? ['STORE_STANDARD', 'STORE_PRO', 'STORE_STANDARD_YEARLY', 'STORE_PRO_YEARLY'] : ['CLINIC_PRO', 'CLINIC_PRO_YEARLY'];
     var plan = plans.contains((d['subscription'] as Map?)?['planCode']) ? '${(d['subscription'] as Map)['planCode']}' : plans.last;
-    final days = TextEditingController(text: plan.endsWith('_YEARLY') ? '365' : '30');
+    final days = TextEditingController();   // empty = only change the plan and keep the end date
     final ok = await formSheet(context, title: ar ? 'تغيير الباقة / إضافة أيام' : 'Change plan / add days', saveLabel: ar ? 'تطبيق' : 'Apply', body: (c, set) => [
-      DropdownButtonFormField<String>(initialValue: plan, items: [for (final p in plans) DropdownMenuItem(value: p, child: Text(planLabel(p)))], onChanged: (v) { set(() => plan = v ?? plan); days.text = plan.endsWith('_YEARLY') ? '365' : '30'; }, decoration: InputDecoration(labelText: ar ? 'الباقة' : 'Plan')),
+      DropdownButtonFormField<String>(initialValue: plan, items: [for (final p in plans) DropdownMenuItem(value: p, child: Text(planLabel(p)))], onChanged: (v) { set(() => plan = v ?? plan); }, decoration: InputDecoration(labelText: ar ? 'الباقة' : 'Plan')),
       const SizedBox(height: 10),
-      tf(days, ar ? 'عدد الأيام' : 'Days to add', number: true, ltr: true),
+      tf(days, ar ? 'أيام تُضاف (اتركه فارغًا لتغيير الباقة فقط مع بقاء تاريخ الانتهاء)' : 'Days to add (leave empty to only change the plan and keep the end date)', number: true, ltr: true),
     ], onSave: () async {
-      await widget.api.post('platform/tenants/${widget.id}/plan', {'planCode': plan, 'days': int.tryParse(days.text.trim()) ?? 30});
+      await widget.api.post('platform/tenants/${widget.id}/plan', {'planCode': plan, if (int.tryParse(days.text.trim()) != null) 'days': int.tryParse(days.text.trim())});
     });
     if (ok) setState(() => _n++);
   }
