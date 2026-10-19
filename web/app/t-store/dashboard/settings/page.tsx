@@ -18,16 +18,18 @@ type Ship = { id: string; type: string; name: string; feeMinor: number; freeAbov
 
 export default function StoreSettings() {
   const { t, locale, currency } = useI18n();
-  const { can } = useMe();
-  const profile = useApi<Profile>(can("settings.manage") ? "store/profile" : null);
-  const methods = useApi<Pm[]>(can("shipping.manage") ? "store/payment-methods" : null);
-  const ships = useApi<Ship[]>(can("shipping.manage") ? "store/shipping-methods" : null);
-  const brand = useApi<{ logoFileId?: string }>(can("settings.manage") ? "tenant/branding" : null);
+  const { can, canWrite } = useMe();
+  const readSettings = can("settings.manage") || can("settings.read");   // read only access still sees the page, with every field disabled
+  const readShipping = can("shipping.manage") || can("shipping.read");
+  const profile = useApi<Profile>(readSettings ? "store/profile" : null);
+  const methods = useApi<Pm[]>(readShipping ? "store/payment-methods" : null);
+  const ships = useApi<Ship[]>(readShipping ? "store/shipping-methods" : null);
+  const brand = useApi<{ logoFileId?: string }>(readSettings ? "tenant/branding" : null);
   const [edited, setP] = useState<Profile | null>(null);
   const p = edited ?? profile.data;
   const [saved, setSaved] = useState(false);
   const saveProfile = useAction(async () => { await api("store/profile", { method: "PATCH", body: { storeName: p?.storeName, shortDescription: p?.shortDescription, about: p?.about, shippingPolicy: p?.shippingPolicy, returnPolicy: p?.returnPolicy, privacyPolicy: p?.privacyPolicy, termsText: p?.termsText, minOrderMinor: p?.minOrderMinor, taxId: p?.taxId, vatIncluded: p?.vatIncluded, vatPercent: p?.vatPercent, returnWindowDays: p?.returnWindowDays } }); setSaved(true); });
-  const catList = useApi<CategoryOption[]>(can("settings.manage") ? "store/business-categories" : null);
+  const catList = useApi<CategoryOption[]>(readSettings ? "store/business-categories" : null);
   const [editedCats, setCats] = useState<{ codes: string[]; other: string } | null>(null);
   const cats = editedCats ?? (profile.data ? { codes: (profile.data.categories ?? []).map((c) => c.code), other: profile.data.otherCategory ?? "" } : null);
   const saveCats = useAction(async () => {
@@ -44,6 +46,7 @@ export default function StoreSettings() {
   return (
     <>
       <PageHeader title={t("nav.settings")} actions={can("settings.manage") ? <a href="/?edit=1" className="inline-flex items-center gap-2 rounded-xl bg-brand-gradient px-4 py-2 text-sm font-semibold text-white shadow-brand transition hover:brightness-110 active:scale-95">✨ {t("site.customize")}</a> : undefined} />
+      <fieldset disabled={!canWrite("settings")} className="m-0 min-w-0 border-0 p-0">
       <div className="space-y-6">
         {profile.data && <SetupChecklist profile={profile.data} hasLogo={!!brand.data?.logoFileId} />}
         {profile.data && <section id="contact"><ContactCard key={JSON.stringify(profile.data.workingHours) + profile.data.coverFileId} profile={profile.data} reload={profile.reload} /></section>}
@@ -106,6 +109,7 @@ export default function StoreSettings() {
         {can("shipping.manage") && <ZonesCard />}
         {can("branch.manage") && <section id="branches"><BranchesCard /></section>}
       </div>
+      </fieldset>
     </>
   );
 }

@@ -308,7 +308,7 @@ class _EncounterPageState extends State<EncounterPage> {
   Widget _card(String title, List<Widget> children, {VoidCallback? onAdd, String? addLabel}) => Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Row(children: [
           Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16))),
-          if (onAdd != null) FilledButton.tonalIcon(style: FilledButton.styleFrom(minimumSize: const Size(0, 36)), onPressed: onAdd, icon: const Icon(Icons.add_rounded, size: 18), label: Text(addLabel ?? (S.of(context).ar ? 'إضافة' : 'Add'))),
+          if (onAdd != null && ctx.canWrite('exam')) FilledButton.tonalIcon(style: FilledButton.styleFrom(minimumSize: const Size(0, 36)), onPressed: onAdd, icon: const Icon(Icons.add_rounded, size: 18), label: Text(addLabel ?? (S.of(context).ar ? 'إضافة' : 'Add'))),
         ]),
         const SizedBox(height: 6),
         ...children,
@@ -328,7 +328,7 @@ class _EncounterPageState extends State<EncounterPage> {
       body: e == null
           ? (error != null ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Text(errorText(error!)), TextButton(onPressed: () { setState(() => error = null); _load(first: true); }, child: Text(S.of(context).retry))])) : const Center(child: CircularProgressIndicator()))
           : _body(context, isAr),
-      bottomNavigationBar: e == null ? null : SafeArea(child: Padding(
+      bottomNavigationBar: e == null || !ctx.canWrite('exam') ? null : SafeArea(child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
         child: Row(children: [
           Expanded(child: OutlinedButton(onPressed: _busy ? null : () async { if (await _saveVisit() && context.mounted) { toast(context, isAr ? 'تم الحفظ' : 'Saved'); await _load(); } }, child: Text(isAr ? 'حفظ مسودة' : 'Save draft'))),
@@ -379,7 +379,7 @@ class _EncounterPageState extends State<EncounterPage> {
             child: Text('${n['content']}\n${n['isPatientVisible'] == true ? (isAr ? '· ظاهرة للمريض' : '· visible to the patient') : (isAr ? '· داخلية' : '· internal')}'),
           ),
         ], onAdd: _addNote),
-        if (ctx.can('prescription.create')) ...[
+        if (ctx.canAny(['prescription.create', 'prescription.read'])) ...[
           const SizedBox(height: 12),
           _card(isAr ? 'الروشتات' : 'Prescriptions', [
             if (rx.isEmpty) Text(isAr ? 'لا يوجد' : 'None', style: const TextStyle(color: Color(0xFF8A97A5))),
@@ -399,7 +399,7 @@ class _EncounterPageState extends State<EncounterPage> {
             ),
           ], onAdd: _prescribe, addLabel: isAr ? 'روشتة' : 'New'),
         ],
-        if (ctx.can('lab_order.create')) ...[
+        if (ctx.canAny(['lab_order.create', 'lab_order.read'])) ...[
           const SizedBox(height: 12),
           _card(isAr ? 'التحاليل والأشعة' : 'Tests and radiology', [
             if (labs.isEmpty) Text(isAr ? 'لا يوجد' : 'None', style: const TextStyle(color: Color(0xFF8A97A5))),

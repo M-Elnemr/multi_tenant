@@ -84,9 +84,10 @@ class ClinicSettings extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final manage = ctx.can('settings.manage');
+    final manage = ctx.canAny(['settings.manage', 'settings.read']);
+    final ro = !ctx.canWrite('settings');   // read only access shows the values without a save button
     return _page([
-      if (manage) FormCard(
+      if (manage) FormCard(readOnly: ro, 
         ctx: ctx, titleAr: 'بيانات العيادة والحجز', titleEn: 'Clinic and booking', loadPath: 'clinic/profile', savePath: 'clinic/profile',
         fields: const [
           F(FK.text, 'clinicName', 'اسم العيادة', 'Clinic name'),
@@ -104,7 +105,7 @@ class ClinicSettings extends StatelessWidget {
         ],
       ),
       if (ctx.can('schedule.manage')) _MyDoctorCard(ctx: ctx),
-      if (manage) FormCard(
+      if (manage) FormCard(readOnly: ro, 
         ctx: ctx, titleAr: 'موقع العيادة على الإنترنت', titleEn: 'Public website', subtitleAr: 'ما يظهر للمرضى في صفحة العيادة', subtitleEn: 'What patients see on the clinic page',
         loadPath: 'clinic/profile', savePath: 'clinic/profile',
         transform: (b) => {...b, 'coverFileId': b['coverFileId'] ?? ''},
@@ -238,10 +239,11 @@ class StoreSettings extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final manage = ctx.can('settings.manage');
-    final ship = ctx.can('shipping.manage');
+    final manage = ctx.canAny(['settings.manage', 'settings.read']);
+    final ship = ctx.canAny(['shipping.manage', 'shipping.read']);
+    final ro = !ctx.canWrite('settings');   // read only access shows the values without a save button
     return _page([
-      if (manage) FormCard(
+      if (manage) FormCard(readOnly: ro, 
         ctx: ctx, titleAr: 'بيانات التواصل والمواعيد', titleEn: 'Contact and hours', loadPath: 'store/profile', savePath: 'store/profile',
         transform: (b) => {...b, 'coverFileId': b['coverFileId'] ?? ''},
         fields: const [
@@ -262,7 +264,7 @@ class StoreSettings extends StatelessWidget {
           F(FK.area, 'announcement', 'إعلان', 'Announcement'),
         ],
       ),
-      if (manage) FormCard(
+      if (manage) FormCard(readOnly: ro, 
         ctx: ctx, titleAr: 'بيانات المتجر والسياسات', titleEn: 'Store details and policies', loadPath: 'store/profile', savePath: 'store/profile',
         fields: const [
           F(FK.text, 'storeName', 'اسم المتجر', 'Store name'),
@@ -284,7 +286,7 @@ class StoreSettings extends StatelessWidget {
       if (ship) _ShippingMethods(ctx: ctx),
       if (ship) _Zones(ctx: ctx),
       if (manage) _Banners(ctx: ctx),
-      if (manage) FormCard(
+      if (manage) FormCard(readOnly: ro, 
         ctx: ctx, titleAr: 'الإعلانات والتحليلات', titleEn: 'Ads and analytics', subtitleAr: 'الصق المعرّفات من Meta وTikTok وGoogle', subtitleEn: 'Paste your Meta, TikTok and Google IDs',
         loadPath: 'store/profile', savePath: 'store/profile',
         fields: const [F(FK.ltr, 'metaPixelId', 'Meta Pixel ID', 'Meta Pixel ID'), F(FK.ltr, 'tiktokPixelId', 'TikTok Pixel ID', 'TikTok Pixel ID'), F(FK.ltr, 'gaId', 'Google Analytics ID', 'Google Analytics ID')],

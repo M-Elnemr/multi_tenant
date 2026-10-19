@@ -51,19 +51,19 @@ public class StoreAdminController {
     // ---- standard categories (shops pick from the platform list; they cannot create or edit categories) ----
 
     @GetMapping("/taxonomy/children")
-    @PreAuthorize("hasAuthority('product.create') or hasAuthority('product.update')")
+    @PreAuthorize("(hasAuthority('product.create') or hasAuthority('product.read')) or (hasAuthority('product.update') or hasAuthority('product.read'))")
     public List<Map<String, Object>> taxonomyChildren(@RequestParam(required = false) Integer parent, @RequestParam(required = false) String lang) { return taxonomy.children(parent, lang); }
 
     @GetMapping("/taxonomy/search")
-    @PreAuthorize("hasAuthority('product.create') or hasAuthority('product.update')")
+    @PreAuthorize("(hasAuthority('product.create') or hasAuthority('product.read')) or (hasAuthority('product.update') or hasAuthority('product.read'))")
     public List<Map<String, Object>> taxonomySearch(@RequestParam String q, @RequestParam(required = false) String lang) { return taxonomy.search(q, lang, 15); }
 
     @GetMapping("/taxonomy/suggested")
-    @PreAuthorize("hasAuthority('product.create') or hasAuthority('product.update')")
+    @PreAuthorize("(hasAuthority('product.create') or hasAuthority('product.read')) or (hasAuthority('product.update') or hasAuthority('product.read'))")
     public List<Map<String, Object>> taxonomySuggested(@RequestParam(required = false) String lang) { return taxonomy.suggested(StoreContext.tenantId(), lang); }
 
     @GetMapping("/taxonomy/attributes")
-    @PreAuthorize("hasAuthority('product.create') or hasAuthority('product.update')")
+    @PreAuthorize("(hasAuthority('product.create') or hasAuthority('product.read')) or (hasAuthority('product.update') or hasAuthority('product.read'))")
     public Map<String, Object> taxonomyAttributes(@RequestParam(required = false) String lang) { return taxonomy.attributes(lang); }
 
     public record CategoryRequestBody(String name, Integer parentId, String note) {}
@@ -73,7 +73,7 @@ public class StoreAdminController {
     public Map<String, Object> taxonomyRequest(@RequestBody CategoryRequestBody r) { return taxonomy.request(StoreContext.tenantId(), r.name(), r.parentId(), r.note()); }
 
     @GetMapping("/taxonomy/requests")
-    @PreAuthorize("hasAuthority('product.create') or hasAuthority('product.update')")
+    @PreAuthorize("(hasAuthority('product.create') or hasAuthority('product.read')) or (hasAuthority('product.update') or hasAuthority('product.read'))")
     public List<Map<String, Object>> taxonomyMyRequests() { return taxonomy.myRequests(StoreContext.tenantId()); }
 
     public record MediaOrder(List<UUID> ids) {}
@@ -95,7 +95,7 @@ public class StoreAdminController {
     public Map<String, Object> productExtras(@PathVariable UUID id, @RequestBody Map<String, Object> r, Authentication a) { return catalog.updateExtras(StoreContext.tenantId(), user(a), id, r); }
 
     @GetMapping("/products/export.csv")
-    @PreAuthorize("hasAuthority('product.update') or hasAuthority('product.create')")
+    @PreAuthorize("(hasAuthority('product.update') or hasAuthority('product.read')) or (hasAuthority('product.create') or hasAuthority('product.read'))")
     public org.springframework.http.ResponseEntity<String> exportProducts() {
         return org.springframework.http.ResponseEntity.ok().contentType(org.springframework.http.MediaType.parseMediaType("text/csv;charset=UTF-8")).header("Content-Disposition", "attachment; filename=\"products.csv\"").body(csv.export(StoreContext.tenantId()));
     }
@@ -107,7 +107,7 @@ public class StoreAdminController {
     public Map<String, Object> importProducts(@RequestBody ImportRequest r, Authentication a) { return csv.importCsv(StoreContext.tenantId(), user(a), r.csv(), r.branchId()); }
 
     @GetMapping("/products")
-    @PreAuthorize("hasAuthority('product.update') or hasAuthority('product.create')")
+    @PreAuthorize("(hasAuthority('product.update') or hasAuthority('product.read')) or (hasAuthority('product.create') or hasAuthority('product.read'))")
     public Map<String, Object> products(@RequestParam(required = false) String q, @RequestParam(required = false) String status,
                                         @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize) {
         return catalog.adminList(StoreContext.tenantId(), Page.of(page, pageSize), q, status);
@@ -121,7 +121,7 @@ public class StoreAdminController {
     }
 
     @GetMapping("/products/{id}")
-    @PreAuthorize("hasAuthority('product.update') or hasAuthority('product.create')")
+    @PreAuthorize("(hasAuthority('product.update') or hasAuthority('product.read')) or (hasAuthority('product.create') or hasAuthority('product.read'))")
     public Map<String, Object> product(@PathVariable UUID id) { return catalog.detail(StoreContext.tenantId(), id, false); }
 
     @PatchMapping("/products/{id}")
@@ -145,7 +145,7 @@ public class StoreAdminController {
     // ---- inventory ---------------------------------------------------------------------------------------------
 
     @GetMapping("/inventory")
-    @PreAuthorize("hasAuthority('inventory.adjust')")
+    @PreAuthorize("(hasAuthority('inventory.adjust') or hasAuthority('inventory.read'))")
     public Map<String, Object> inventory(@RequestParam(defaultValue = "false") boolean lowStock, @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize) {
         return inventory.list(StoreContext.tenantId(), Page.of(page, pageSize), lowStock);
     }
@@ -203,7 +203,7 @@ public class StoreAdminController {
     public Map<String, Object> blockPhone(@RequestBody BlockRequest r, Authentication a) { return fulfilment.blockPhone(StoreContext.tenantId(), user(a), r.phone(), r.blocked(), r.note()); }
 
     @GetMapping("/shipping-zones")
-    @PreAuthorize("hasAuthority('shipping.manage')")
+    @PreAuthorize("(hasAuthority('shipping.manage') or hasAuthority('shipping.read'))")
     public List<Map<String, Object>> zones() { return fulfilment.zones(StoreContext.tenantId(), false); }
 
     @PostMapping("/shipping-zones")
@@ -256,7 +256,7 @@ public class StoreAdminController {
     // ---- settings ---------------------------------------------------------------------------------------------------
 
     @GetMapping("/profile")
-    @PreAuthorize("hasAuthority('settings.manage')")
+    @PreAuthorize("(hasAuthority('settings.manage') or hasAuthority('settings.read'))")
     public Map<String, Object> profile() { return settings.profile(StoreContext.tenantId()); }
 
     @PatchMapping("/profile")
@@ -270,7 +270,7 @@ public class StoreAdminController {
 
     /** The category list shops pick from (same one offered at sign-up). */
     @GetMapping("/business-categories")
-    @PreAuthorize("hasAuthority('settings.manage')")
+    @PreAuthorize("(hasAuthority('settings.manage') or hasAuthority('settings.read'))")
     public List<Map<String, Object>> categoryList() { return settings.categories(); }
 
     @PutMapping("/profile/categories")
@@ -278,7 +278,7 @@ public class StoreAdminController {
     public Map<String, Object> updateCategories(@RequestBody CategoriesRequest r, Authentication a) { return settings.updateCategories(StoreContext.tenantId(), user(a), r.categories(), r.otherCategory()); }
 
     @GetMapping("/branches")
-    @PreAuthorize("hasAuthority('branch.manage') or hasAuthority('inventory.adjust')")
+    @PreAuthorize("hasAuthority('branch.manage') or (hasAuthority('inventory.adjust') or hasAuthority('inventory.read'))")
     public List<Map<String, Object>> branches() { return settings.branches(StoreContext.tenantId()); }
 
     @PostMapping("/branches")
@@ -291,7 +291,7 @@ public class StoreAdminController {
     public Map<String, Object> updateBranch(@PathVariable UUID id, @RequestBody Map<String, Object> r, Authentication a) { return settings.updateBranch(StoreContext.tenantId(), user(a), id, r); }
 
     @GetMapping("/banners")
-    @PreAuthorize("hasAuthority('settings.manage')")
+    @PreAuthorize("(hasAuthority('settings.manage') or hasAuthority('settings.read'))")
     public List<Map<String, Object>> banners() { return settings.banners(StoreContext.tenantId()); }
 
     @PostMapping("/banners")
@@ -307,7 +307,7 @@ public class StoreAdminController {
     public List<Map<String, Object>> deleteBanner(@PathVariable UUID id) { return settings.deleteBanner(StoreContext.tenantId(), id); }
 
     @GetMapping("/payment-methods")
-    @PreAuthorize("hasAuthority('shipping.manage')")
+    @PreAuthorize("(hasAuthority('shipping.manage') or hasAuthority('shipping.read'))")
     public List<Map<String, Object>> paymentMethods() { return settings.paymentMethods(StoreContext.tenantId()); }
 
     @PutMapping("/payment-methods")
@@ -317,7 +317,7 @@ public class StoreAdminController {
     }
 
     @GetMapping("/shipping-methods")
-    @PreAuthorize("hasAuthority('shipping.manage')")
+    @PreAuthorize("(hasAuthority('shipping.manage') or hasAuthority('shipping.read'))")
     public List<Map<String, Object>> shipping() { return settings.shippingMethods(StoreContext.tenantId(), false); }
 
     @PostMapping("/shipping-methods")
@@ -353,7 +353,7 @@ public class StoreAdminController {
     public Map<String, Object> deleteCoupon(@PathVariable UUID id, Authentication a) { return settings.deleteCoupon(StoreContext.tenantId(), user(a), id); }
 
     @GetMapping("/coupons")
-    @PreAuthorize("hasAuthority('coupon.manage')")
+    @PreAuthorize("(hasAuthority('coupon.manage') or hasAuthority('coupon.read'))")
     public List<Map<String, Object>> coupons() { return settings.coupons(StoreContext.tenantId()); }
 
     @PostMapping("/coupons")
@@ -362,7 +362,7 @@ public class StoreAdminController {
     public Map<String, Object> createCoupon(@RequestBody StoreSettingsService.CouponReq r, Authentication a) { return settings.createCoupon(StoreContext.tenantId(), user(a), r); }
 
     @GetMapping("/reviews")
-    @PreAuthorize("hasAuthority('review.moderate')")
+    @PreAuthorize("(hasAuthority('review.moderate') or hasAuthority('review.read'))")
     public Map<String, Object> reviews(@RequestParam(required = false) String status, @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize) {
         return settings.reviewsForModeration(StoreContext.tenantId(), Page.of(page, pageSize), status);
     }

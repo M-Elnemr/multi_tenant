@@ -51,7 +51,7 @@ public class ClinicController {
     // ---- settings -------------------------------------------------------------------------------------------------
 
     @GetMapping("/profile")
-    @PreAuthorize("hasAuthority('settings.manage') or hasAuthority('appointment.manage')")
+    @PreAuthorize("(hasAuthority('settings.manage') or hasAuthority('settings.read')) or (hasAuthority('appointment.manage') or hasAuthority('appointment.read'))")
     public Map<String, Object> profile() { return settings.profile(ClinicContext.tenantId()); }
 
     @PatchMapping("/profile")
@@ -59,7 +59,7 @@ public class ClinicController {
     public Map<String, Object> updateProfile(@RequestBody Map<String, Object> r, Authentication a) { return settings.updateProfile(ClinicContext.tenantId(), user(a), r); }
 
     @GetMapping("/branches")
-    @PreAuthorize("hasAuthority('appointment.manage') or hasAuthority('settings.manage')")
+    @PreAuthorize("(hasAuthority('appointment.manage') or hasAuthority('appointment.read')) or (hasAuthority('settings.manage') or hasAuthority('settings.read'))")
     public List<Map<String, Object>> branches() { return settings.branches(ClinicContext.tenantId(), false); }
 
     @PostMapping("/branches")
@@ -78,11 +78,11 @@ public class ClinicController {
     }
 
     @GetMapping("/doctors")
-    @PreAuthorize("hasAuthority('appointment.manage') or hasAuthority('settings.manage')")
+    @PreAuthorize("(hasAuthority('appointment.manage') or hasAuthority('appointment.read')) or (hasAuthority('settings.manage') or hasAuthority('settings.read'))")
     public List<Map<String, Object>> doctors() { return settings.doctors(ClinicContext.tenantId()); }
 
     @GetMapping("/doctors/me")
-    @PreAuthorize("hasAuthority('schedule.manage')")
+    @PreAuthorize("(hasAuthority('schedule.manage') or hasAuthority('schedule.read'))")
     public Map<String, Object> me(Authentication a) { return settings.myDoctor(ClinicContext.tenantId(), user(a)); }
 
     @PatchMapping("/doctors/me")
@@ -94,7 +94,7 @@ public class ClinicController {
     public List<Map<String, Object>> specialties() { return settings.specialties(); }
 
     @GetMapping("/services")
-    @PreAuthorize("hasAuthority('appointment.manage') or hasAuthority('schedule.manage')")
+    @PreAuthorize("(hasAuthority('appointment.manage') or hasAuthority('appointment.read')) or (hasAuthority('schedule.manage') or hasAuthority('schedule.read'))")
     public List<Map<String, Object>> services() { return settings.services(ClinicContext.tenantId(), false); }
 
     @PostMapping("/services")
@@ -110,7 +110,7 @@ public class ClinicController {
     }
 
     @GetMapping("/schedules")
-    @PreAuthorize("hasAuthority('appointment.manage') or hasAuthority('schedule.manage')")
+    @PreAuthorize("(hasAuthority('appointment.manage') or hasAuthority('appointment.read')) or (hasAuthority('schedule.manage') or hasAuthority('schedule.read'))")
     public List<Map<String, Object>> schedules(@RequestParam(required = false) UUID doctorId) { return settings.schedules(ClinicContext.tenantId(), doctorId); }
 
     @PostMapping("/schedules")
@@ -132,7 +132,7 @@ public class ClinicController {
     }
 
     @GetMapping("/dashboard")
-    @PreAuthorize("hasAuthority('appointment.manage')")
+    @PreAuthorize("(hasAuthority('appointment.manage') or hasAuthority('appointment.read'))")
     public Map<String, Object> dashboard() { return clinical.dashboard(ClinicContext.tenantId()); }
 
     // ---- patients ---------------------------------------------------------------------------------------------------
@@ -176,7 +176,7 @@ public class ClinicController {
     }
 
     @GetMapping("/patients/{id}/timeline")
-    @PreAuthorize("hasAuthority('patient.read') and (hasAuthority('medical_note.create') or hasAuthority('lab_order.create') or hasAuthority('prescription.create'))")
+    @PreAuthorize("hasAuthority('patient.read') and ((hasAuthority('medical_note.create') or hasAuthority('medical_note.read')) or (hasAuthority('lab_order.create') or hasAuthority('lab_order.read')) or (hasAuthority('prescription.create') or hasAuthority('prescription.read')))")
     public Map<String, Object> timeline(@PathVariable UUID id, Authentication a) { return clinical.staffTimeline(ClinicContext.tenantId(), user(a), id); }
 
     /** Full chart as a ZIP (record JSON, prescription PDFs, uploaded files). Audited and rate limited. */
@@ -188,7 +188,7 @@ public class ClinicController {
     }
 
     @GetMapping("/prescriptions/{id}/pdf")
-    @PreAuthorize("hasAuthority('prescription.create') or (hasAuthority('patient.read') and hasAuthority('medical_note.create'))")
+    @PreAuthorize("(hasAuthority('prescription.create') or hasAuthority('prescription.read')) or (hasAuthority('patient.read') and (hasAuthority('medical_note.create') or hasAuthority('medical_note.read')))")
     public org.springframework.http.ResponseEntity<byte[]> prescriptionPdf(@PathVariable UUID id, @RequestParam(defaultValue = "false") boolean inline, Authentication a) {
         return attachment(pdfs.render(ClinicContext.tenantId(), id, false), "application/pdf", "prescription.pdf", inline);
     }
@@ -210,7 +210,7 @@ public class ClinicController {
     // ---- appointments -----------------------------------------------------------------------------------------------
 
     @GetMapping("/appointments")
-    @PreAuthorize("hasAuthority('appointment.manage')")
+    @PreAuthorize("(hasAuthority('appointment.manage') or hasAuthority('appointment.read'))")
     public Map<String, Object> appointments(@RequestParam(required = false) LocalDate from, @RequestParam(required = false) LocalDate to, @RequestParam(required = false) UUID doctorId,
                                             @RequestParam(required = false) String status, @RequestParam(required = false) UUID patientId,
                                             @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize) {
@@ -218,7 +218,7 @@ public class ClinicController {
     }
 
     @GetMapping("/appointments/slots")
-    @PreAuthorize("hasAuthority('appointment.manage')")
+    @PreAuthorize("(hasAuthority('appointment.manage') or hasAuthority('appointment.read'))")
     public List<java.time.Instant> staffSlots(@RequestParam UUID doctorId, @RequestParam UUID branchId, @RequestParam UUID serviceId, @RequestParam LocalDate date) {
         return slots.slots(ClinicContext.tenantId(), doctorId, branchId, serviceId, date, false);
     }
@@ -229,7 +229,7 @@ public class ClinicController {
     public Map<String, Object> book(@RequestBody AppointmentService.BookReq r, Authentication a) { return appointments.book(ClinicContext.tenantId(), user(a), null, r); }
 
     @GetMapping("/queue")
-    @PreAuthorize("hasAuthority('appointment.manage')")
+    @PreAuthorize("(hasAuthority('appointment.manage') or hasAuthority('appointment.read'))")
     public Map<String, Object> queue(@RequestParam(required = false) UUID doctorId) { return appointments.queue(ClinicContext.tenantId(), doctorId); }
 
     public record ReorderReq(List<UUID> ids) {}
@@ -275,7 +275,7 @@ public class ClinicController {
     public Map<String, Object> createEncounter(@RequestBody ClinicalService.EncounterReq r, Authentication a) { return clinical.createEncounter(ClinicContext.tenantId(), user(a), r); }
 
     @GetMapping("/encounters/{id}")
-    @PreAuthorize("hasAuthority('patient.read') and hasAuthority('medical_note.create')")
+    @PreAuthorize("hasAuthority('patient.read') and (hasAuthority('medical_note.create') or hasAuthority('medical_note.read'))")
     public Map<String, Object> encounter(@PathVariable UUID id, Authentication a) { return clinical.encounter(ClinicContext.tenantId(), user(a), id); }
 
     @PatchMapping("/encounters/{id}")

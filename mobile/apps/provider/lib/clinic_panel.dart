@@ -172,7 +172,7 @@ class _PatientDetailState extends State<PatientDetail> {
         load: () async {
           final p = await ctx.api.get('clinic/patients/${widget.id}') as Map<String, dynamic>;
           Map<String, dynamic>? tl;
-          if (ctx.canAny(['medical_note.create', 'prescription.create', 'lab_order.create'])) {
+          if (ctx.canAny(['medical_note.create', 'prescription.create', 'lab_order.create', 'medical_note.read', 'prescription.read', 'lab_order.read'])) {
             try { tl = await ctx.api.get('clinic/patients/${widget.id}/timeline') as Map<String, dynamic>; } catch (_) {}
           }
           return {'p': p, 'tl': tl};

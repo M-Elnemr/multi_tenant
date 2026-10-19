@@ -46,7 +46,7 @@ export function useAction<A extends unknown[], R>(fn: (...args: A) => Promise<R>
   return { run, loading, error, setError };
 }
 
-export type Me = { id: string; firstName: string; lastName: string; phone?: string; email?: string; roles: string[]; permissions: string[]; mustChangePassword?: boolean };
+export type Me = { id: string; firstName: string; lastName: string; phone?: string; email?: string; roles: string[]; permissions: string[]; mustChangePassword?: boolean; screens?: Record<string, "READ" | "WRITE"> };
 
 export function useMe() {
   const [state, setState] = useState<{ me: Me | null; ready: boolean }>({ me: null, ready: false });
@@ -61,5 +61,12 @@ export function useMe() {
     window.addEventListener("auth:changed", load);
     return () => { alive = false; window.removeEventListener("auth:changed", load); };
   }, []);
-  return { me: state.me, ready: state.ready, can: (p: string) => !!state.me?.permissions.includes(p) };
+  const screens = state.me?.screens ?? {};
+  return {
+    me: state.me, ready: state.ready, can: (p: string) => !!state.me?.permissions.includes(p),
+    /** Can the person open this dashboard screen (or any of these)? Hidden screens are absent from `screens`. */
+    canSee: (s: string | string[]) => (Array.isArray(s) ? s : [s]).some((k) => !!screens[k]),
+    /** Can the person change data on this screen (or any of these)? False for read-only access. */
+    canWrite: (s: string | string[]) => (Array.isArray(s) ? s : [s]).some((k) => screens[k] === "WRITE"),
+  };
 }

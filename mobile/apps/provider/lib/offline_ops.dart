@@ -218,7 +218,7 @@ Future<void> warmUp(Ctx ctx, {bool force = false}) async {
   if (await off.isOffline() || off.pending.value > 0 || off.syncing.value) return;
   _lastWarm = DateTime.now();
   try {
-    if (ctx.can('appointment.manage')) await ctx.api.get('clinic/queue');
+    if (ctx.canAny(['appointment.manage', 'appointment.read'])) await ctx.api.get('clinic/queue');
     for (final p in ['clinic/doctors', 'clinic/branches', 'clinic/services']) { try { await ctx.api.get(p); } catch (_) {} }
     if (!ctx.can('patient.read')) return;
     final all = <Map<String, dynamic>>[];
@@ -233,7 +233,7 @@ Future<void> warmUp(Ctx ctx, {bool force = false}) async {
     final q = await ctx.api.peek('clinic/queue');
     if (q is Map) { for (final k in ['inProgress', 'waiting', 'reserved']) { for (final e in _l(q[k])) { if (e['patientId'] != null) ids.add('${e['patientId']}'); } } }
     for (final p in all.take(150)) { ids.add('${p['id']}'); for (final k in _l(p['dependents'])) { ids.add('${k['id']}'); } }
-    final clinical = ctx.canAny(['medical_note.create', 'prescription.create', 'lab_order.create']);
+    final clinical = ctx.canAny(['medical_note.create', 'prescription.create', 'lab_order.create', 'medical_note.read', 'prescription.read', 'lab_order.read']);
     final list = ids.toList();
     for (var i = 0; i < list.length; i += 4) {
       await Future.wait([

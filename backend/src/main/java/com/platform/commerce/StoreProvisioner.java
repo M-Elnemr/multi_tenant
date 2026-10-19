@@ -29,7 +29,7 @@ public class StoreProvisioner implements TenantProvisioner {
         return StoreSettingsService.listCategories(jdbc);
     }
 
-    /** Sign-up needs the shop's product categories (or "other" with a typed name). */
+    /** Sign-up may include the shop's product categories (or "other" with a typed name); both are optional. */
     @Override
     public void provision(Tenant t, UUID ownerUserId, ProvisionOptions options) {
         doProvision(t, ownerUserId, options.validated("what your shop sells"));
@@ -37,7 +37,7 @@ public class StoreProvisioner implements TenantProvisioner {
 
     private void doProvision(Tenant t, UUID ownerUserId, ProvisionOptions o) {
         jdbc.sql("INSERT INTO commerce.store_profiles (tenant_id, store_name) VALUES (:t, :n)").param("t", t.getId()).param("n", t.getName()).update();
-        if (o != null) StoreSettingsService.setCategories(jdbc, t.getId(), o.categories(), o.otherCategory());
+        if (o != null && !o.categories().isEmpty()) StoreSettingsService.setCategories(jdbc, t.getId(), o.categories(), o.otherCategory());
         jdbc.sql("INSERT INTO commerce.branches (tenant_id, name, code) VALUES (:t, 'Main', 'MAIN')").param("t", t.getId()).update();
         jdbc.sql("INSERT INTO commerce.payment_method_settings (tenant_id, method, enabled) VALUES (:t,'CASH_ON_DELIVERY',TRUE),(:t,'CARD',FALSE)")
                 .param("t", t.getId()).update();

@@ -36,7 +36,7 @@ public class BrandingController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAuthority('settings.manage')")
+    @PreAuthorize("(hasAuthority('settings.manage') or hasAuthority('settings.read'))")
     public Map<String, Object> get() { return load(TenantContext.require().id()); }
 
     @PatchMapping

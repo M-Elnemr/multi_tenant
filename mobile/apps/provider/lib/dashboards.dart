@@ -125,7 +125,7 @@ class ClinicDashboard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
-    if (!perms.contains('appointment.manage')) return _empty(s.empty);
+    if (!perms.contains('appointment.manage') && !perms.contains('appointment.read')) return _empty(s.empty);
     final blue = Theme.of(context).colorScheme.primary;
     return Async<Map<String, dynamic>>(
       load: () async => {...(await api.get('clinic/dashboard') as Map<String, dynamic>), 'queue': await api.get('clinic/queue')},

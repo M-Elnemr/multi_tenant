@@ -13,10 +13,10 @@ public record ProvisionOptions(List<String> categories, String otherCategory) {
 
     public static ProvisionOptions none() { return new ProvisionOptions(List.of(), null); }
 
-    /** Distinct codes, at least one, at most five; "other" needs the typed name. Throws a 400 otherwise. */
+    /** Distinct codes (none is fine at sign-up), at most five; "other" needs the typed name. Throws a 400 otherwise. */
     public ProvisionOptions validated(String what) {
         List<String> codes = categories == null ? List.of() : List.copyOf(new LinkedHashSet<>(categories.stream().filter(c -> c != null && !c.isBlank()).map(c -> c.trim().toLowerCase()).toList()));
-        if (codes.isEmpty()) throw BusinessException.badRequest("CATEGORY_REQUIRED", "Please choose " + what);
+        if (codes.isEmpty()) return none();   // optional at sign-up: the owner picks it later in settings
         if (codes.size() > 5) throw BusinessException.badRequest("TOO_MANY_CATEGORIES", "Choose up to 5");
         String other = otherCategory == null ? null : otherCategory.trim();
         if (codes.contains(OTHER)) {

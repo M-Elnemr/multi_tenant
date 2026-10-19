@@ -1,3 +1,4 @@
+import { VisitTracker } from "@/components/visit-tracker";
 import Link from "next/link";
 import { PoweredBy } from "@/components/brand";
 import { ClinicAccountLink } from "@/components/clinic-bits";
@@ -49,6 +50,7 @@ export default async function ClinicSiteLayout({ children }: { children: React.R
           </div>
         </div>
       </ScrollHeader>
+      <VisitTracker />
       <main className="flex-1 pb-24 md:pb-0">{children}</main>
       <footer className="mt-20 border-t border-[var(--c-line)] bg-white">
         <div className="c-container grid gap-8 py-10 md:grid-cols-3">

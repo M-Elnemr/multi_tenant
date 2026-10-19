@@ -6,7 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 /// What every control-panel screen needs: the business's API, its currency and the user's permissions.
 class Ctx {
-  const Ctx({required this.api, required this.currency, required this.perms, required this.host, required this.type});
+  const Ctx({required this.api, required this.currency, required this.perms, required this.host, required this.type, this.screens = const {}});
   final ApiClient api;
   final String currency;
   final List<String> perms;
@@ -14,6 +14,13 @@ class Ctx {
   final String type; // STORE | CLINIC
   bool can(String p) => perms.contains(p);
   bool canAny(List<String> ps) => ps.any(perms.contains);
+
+  /// Screens the owner allowed for this person: `screen -> READ | WRITE` (hidden screens are absent).
+  final Map<String, String> screens;
+  bool canSee(Object screen) => (screen is List ? screen.cast<String>() : [screen as String]).any(screens.containsKey);
+
+  /// False for read only access: the screen shows its data but offers no way to change it.
+  bool canWrite(Object screen) => (screen is List ? screen.cast<String>() : [screen as String]).any((k) => screens[k] == 'WRITE');
 }
 
 /// Lets screens deep in the panel open full pages without passing a context around.

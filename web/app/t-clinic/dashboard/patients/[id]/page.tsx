@@ -26,7 +26,7 @@ export default function PatientPage({ params }: { params: Promise<{ id: string }
   const router = useRouter();
   const { can } = useMe();
   const portal = usePatientPortal();
-  const clinical = can("medical_note.create") || can("prescription.create") || can("lab_order.create");
+  const clinical = can("medical_note.create") || can("prescription.create") || can("lab_order.create") || can("medical_note.read") || can("prescription.read") || can("lab_order.read");
   const p = useApi<Patient>(`clinic/patients/${id}`);
   const clinic = useApi<{ clinicName?: string }>("clinic/public/profile");
   const [editOpen, setEditOpen] = useState(false);

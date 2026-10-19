@@ -23,7 +23,9 @@ public class StaffController {
 
     public StaffController(StaffService staff) { this.staff = staff; }
 
-    public record InviteRequest(@NotBlank String firstName, String lastName, @NotBlank String phone, String email, @NotBlank String role) {}
+    public record InviteRequest(@NotBlank String firstName, String lastName, @NotBlank String phone, String email, String role, Map<String, String> access) {}
+
+    public record AccessRequest(Map<String, String> access) {}
 
     @org.springframework.web.bind.annotation.GetMapping
     public java.util.List<Map<String, Object>> list() { return staff.list(TenantContext.require().id()); }
@@ -36,7 +38,19 @@ public class StaffController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public StaffService.Invited invite(@Valid @RequestBody InviteRequest r, Authentication a) {
-        return staff.invite((UUID) a.getPrincipal(), r.firstName(), r.lastName(), r.phone(), r.email(), r.role());
+        return staff.invite((UUID) a.getPrincipal(), r.firstName(), r.lastName(), r.phone(), r.email(), r.role(), r.access());
+    }
+
+    @org.springframework.web.bind.annotation.PutMapping("/{userId}/access")
+    public Map<String, String> setAccess(@PathVariable UUID userId, @RequestBody AccessRequest r, Authentication a) {
+        return staff.setAccess((UUID) a.getPrincipal(), userId, r.access());
+    }
+
+    /** The screens an owner can allow for this business, and whether each can be written (reports are read only). */
+    @org.springframework.web.bind.annotation.GetMapping("/screens")
+    public java.util.List<Map<String, Object>> screens() {
+        return com.platform.core.rbac.ScreenCatalog.screens(TenantContext.require().type()).stream()
+                .map(s -> Map.<String, Object>of("key", s.key(), "writable", !s.write().isEmpty())).toList();
     }
 
     @PostMapping("/{userId}/activation-pin")

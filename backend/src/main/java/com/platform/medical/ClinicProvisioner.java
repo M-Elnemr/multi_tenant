@@ -31,7 +31,7 @@ public class ClinicProvisioner implements TenantProvisioner {
         return ClinicSettingsService.listSpecialties(jdbc);
     }
 
-    /** Sign-up needs the doctor's specialty (or "other" with a typed name); it is stored on the owner's doctor profile. */
+    /** Sign-up may include the doctor's specialty (or "other" with a typed name); it is stored on the owner's doctor profile. */
     @Override
     public void provision(Tenant t, UUID ownerUserId, ProvisionOptions options) {
         doProvision(t, ownerUserId, options.validated("your specialty"));
@@ -44,7 +44,7 @@ public class ClinicProvisioner implements TenantProvisioner {
                 INSERT INTO medical.appointment_services (tenant_id, name, duration_minutes, visit_type) VALUES (:t, 'Consultation', 30, 'CONSULTATION'), (:t, 'Follow-up', 15, 'FOLLOW_UP')
                 """).param("t", t.getId()).update();
         UUID doctor = createDoctor(t.getId(), ownerUserId);
-        if (o != null) ClinicSettingsService.setSpecialties(jdbc, doctor, o.categories(), o.otherCategory());
+        if (o != null && !o.categories().isEmpty()) ClinicSettingsService.setSpecialties(jdbc, doctor, o.categories(), o.otherCategory());
         // Sunday-Thursday 10:00-16:00 (ISO weekdays 7,1,2,3,4); the doctor edits this in the dashboard.
         for (int weekday : new int[] {7, 1, 2, 3, 4})
             jdbc.sql("INSERT INTO medical.doctor_schedules (tenant_id, doctor_id, branch_id, weekday, start_local_time, end_local_time, slot_duration_minutes) VALUES (:t, :d, :b, :w, '10:00', '16:00', 30)")

@@ -39,9 +39,9 @@ class CategoryRegistrationIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void clinicMustChooseASpecialtyOrOther() throws Exception {
-        register("CLINIC", "").andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("CATEGORY_REQUIRED"));
-        register("CLINIC", ",\"categories\":[]").andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("CATEGORY_REQUIRED"));
+    void clinicSpecialtyIsOptionalButValidatedWhenGiven() throws Exception {
+        register("CLINIC", "").andExpect(status().isCreated());   // optional at sign-up
+        register("CLINIC", ",\"categories\":[]").andExpect(status().isCreated());
         register("CLINIC", ",\"categories\":[\"not_a_specialty\"]").andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("UNKNOWN_SPECIALTY"));
         register("CLINIC", ",\"categories\":[\"other\"]").andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("OTHER_CATEGORY_REQUIRED"));
         register("CLINIC", ",\"categories\":[\"pediatrics\",\"neonatology\",\"nephrology\",\"urology\",\"ent\",\"chest\"]").andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("TOO_MANY_CATEGORIES"));
@@ -77,8 +77,8 @@ class CategoryRegistrationIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void shopMustChooseACategoryOrOtherAndCanChangeItLater() throws Exception {
-        register("STORE", "").andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("CATEGORY_REQUIRED"));
+    void shopCategoryIsOptionalAndCanBeSetLater() throws Exception {
+        register("STORE", "").andExpect(status().isCreated());   // optional at sign-up
         register("STORE", ",\"categories\":[\"pediatrics\"]").andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("UNKNOWN_CATEGORY"));   // a clinic specialty is not a shop category
         register("STORE", ",\"categories\":[\"other\"]").andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("OTHER_CATEGORY_REQUIRED"));
 

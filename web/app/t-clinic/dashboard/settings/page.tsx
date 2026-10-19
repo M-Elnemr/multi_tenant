@@ -21,11 +21,12 @@ type Branch = { id: string; name: string; code: string; city?: string };
 
 export default function ClinicSettings() {
   const t = useT();
-  const { can } = useMe();
-  const profile = useApi<Profile>(can("settings.manage") ? "clinic/profile" : null);
-  const mineApi = useApi<Doctor>(can("schedule.manage") ? "clinic/doctors/me" : null);
+  const { can, canWrite } = useMe();
+  const readSettings = can("settings.manage") || can("settings.read");   // read only access still sees the page, with every field disabled
+  const profile = useApi<Profile>(readSettings ? "clinic/profile" : null);
+  const mineApi = useApi<Doctor>(can("schedule.manage") || can("schedule.read") ? "clinic/doctors/me" : null);
   const specialties = useApi<Specialty[]>("clinic/specialties");
-  const branches = useApi<Branch[]>(can("settings.manage") ? "clinic/branches" : null);
+  const branches = useApi<Branch[]>(readSettings ? "clinic/branches" : null);
   const [edited, setP] = useState<Profile | null>(null);
   const p = edited ?? profile.data;
   const [saved, setSaved] = useState(false);
@@ -58,6 +59,7 @@ export default function ClinicSettings() {
       <PageHeader title={t("nav.settings")} actions={can("settings.manage") ? <a href="/?edit=1" className="inline-flex items-center gap-2 rounded-xl bg-brand-gradient px-4 py-2 text-sm font-semibold text-white shadow-brand transition hover:brightness-110 active:scale-95">✨ {t("site.customize")}</a> : undefined} />
       <div className="space-y-6">
         {p && (
+          <fieldset disabled={!canWrite("settings")} className="m-0 min-w-0 border-0 p-0">
           <Card className="space-y-4">
             <h2 className="font-medium">{t("clinicSettings.profile")}</h2>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -74,8 +76,10 @@ export default function ClinicSettings() {
             {saved && <Alert tone="green">{t("common.saved")}</Alert>}
             <Button loading={save.loading} onClick={() => { setSaved(false); void save.run(); }}>{t("common.save")}</Button>
           </Card>
+          </fieldset>
         )}
         {dp && (
+          <fieldset disabled={!canWrite("schedule")} className="m-0 min-w-0 border-0 p-0">
           <Card className="space-y-4">
             <h2 className="font-medium">{t("clinicSettings.myProfile")}</h2>
             <Field label={t("clinicSettings.displayName")}><Input value={dp.displayName} onChange={(e) => setDp({ ...dp, displayName: e.target.value })} /></Field>
@@ -89,6 +93,7 @@ export default function ClinicSettings() {
             <ErrorText error={saveDoctor.error} />
             <Button loading={saveDoctor.loading} disabled={!categoriesValid(dp.codes, dp.other)} onClick={() => { setSaved(false); void saveDoctor.run(); }}>{t("common.save")}</Button>
           </Card>
+          </fieldset>
         )}
         {can("settings.manage") && <WebsiteCard />}
         {can("settings.manage") && <DoctorsWebsiteCard />}

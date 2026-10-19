@@ -3,10 +3,12 @@ package com.platform.core.user;
 import com.platform.audit.AuditService;
 import com.platform.core.auth.ActivationService;
 import com.platform.core.rbac.RbacService;
+import com.platform.core.rbac.ScreenCatalog;
 import com.platform.core.tenant.TenantType;
 import com.platform.shared.BusinessException;
 import com.platform.shared.PhoneNormalizer;
 import com.platform.shared.TenantContext;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -49,10 +51,15 @@ public class StaffService {
     }
 
     @Transactional
-    public Invited invite(UUID actor, String firstName, String lastName, String phoneRaw, String email, String role) {
+    public Invited invite(UUID actor, String firstName, String lastName, String phoneRaw, String email, String role, Map<String, String> access) {
         TenantContext.Current t = TenantContext.require();
-        if (!ASSIGNABLE.getOrDefault(t.type(), Set.of()).contains(role))
-            throw BusinessException.badRequest("ROLE_NOT_ASSIGNABLE", "This role cannot be assigned here");
+        boolean custom = access != null && !access.isEmpty();
+        if (custom) {
+            access = validAccess(t.type(), access);
+            role = "STORE".equals(t.type()) ? "STORE_STAFF" : "CLINIC_STAFF";
+        } else if (role == null || !ASSIGNABLE.getOrDefault(t.type(), Set.of()).contains(role)) {
+            throw BusinessException.badRequest("ROLE_NOT_ASSIGNABLE", "Choose a role or the screens this employee can open");
+        }
         String phone = PhoneNormalizer.normalize(phoneRaw);
         long staffCount = jdbc.sql("""
                 SELECT count(DISTINCT m.id) FROM core.user_tenant_memberships m
@@ -80,23 +87,60 @@ public class StaffService {
             throw BusinessException.conflict("PHONE_PENDING_ELSEWHERE", "This phone number has a pending account elsewhere");
         }
         Membership m = memberships.findByUserIdAndTenantId(u.getId(), t.id()).orElseGet(Membership::new);
-        return finish(actor, t, u, m, role, needsActivation);
+        return finish(actor, t, u, m, role, custom ? access : null, needsActivation);
     }
 
-    private Invited finish(UUID actor, TenantContext.Current t, User u, Membership m, String role, boolean needsActivation) {
+    private Invited finish(UUID actor, TenantContext.Current t, User u, Membership m, String role, Map<String, String> access, boolean needsActivation) {
         m.setUserId(u.getId());
         m.setTenantId(t.id());
         m.setStatus(Membership.Status.ACTIVE);
         m = memberships.saveAndFlush(m);
         rbac.assignTenantRole(m.getId(), role);
+        if (access != null) rbac.setScreenAccess(m.getId(), access);
         events.publishEvent(new StaffInvitedEvent(t.id(), u.getId(), role));
         String pin = needsActivation ? activation.issue(u.getId(), t.id(), actor) : null;
-        audit.record(actor, t.id(), "STAFF_INVITED", "user", u.getId(), "{\"role\":\"" + role + "\"}");
+        audit.record(actor, t.id(), "STAFF_INVITED", "user", u.getId(), "{\"role\":\"" + role + "\"" + (access == null ? "" : ",\"access\":" + json(access)) + "}");
         return new Invited(u.getId(), m.getId(), pin, needsActivation);
     }
 
+    /** Screen keys and levels are validated against the catalogue, so plain quoting is safe. */
+    private static String json(Map<String, String> m) {
+        return m.entrySet().stream().map(e -> "\"" + e.getKey() + "\":\"" + e.getValue() + "\"").collect(java.util.stream.Collectors.joining(",", "{", "}"));
+    }
+
+    /** Only known screens and READ/WRITE levels; a hidden screen is simply left out. */
+    private Map<String, String> validAccess(String tenantType, Map<String, String> access) {
+        Map<String, String> out = new LinkedHashMap<>();
+        access.forEach((screen, level) -> {
+            if ("HIDDEN".equals(level) || level == null) return;
+            if (!ScreenCatalog.isScreen(tenantType, screen)) throw BusinessException.badRequest("UNKNOWN_SCREEN", "Unknown screen " + screen);
+            if (!"READ".equals(level) && !"WRITE".equals(level)) throw BusinessException.badRequest("BAD_ACCESS_LEVEL", "Access must be READ or WRITE");
+            out.put(screen, level);
+        });
+        return out;
+    }
+
+    /** Changes which screens an employee can open. Owners and yourself cannot be edited, and role-based employees are moved to hand-picked access. */
+    @Transactional
+    public Map<String, String> setAccess(UUID actor, UUID userId, Map<String, String> access) {
+        TenantContext.Current t = TenantContext.require();
+        if (actor.equals(userId)) throw BusinessException.badRequest("CANNOT_EDIT_SELF", "You cannot change your own access");
+        Membership m = memberships.findByUserIdAndTenantId(userId, t.id()).filter(x -> x.getStatus() != Membership.Status.REMOVED)
+                .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Member not found"));
+        java.util.List<String> roles = rbac.roleCodes(m.getId());
+        if (roles.stream().anyMatch(r -> r.endsWith("_OWNER"))) throw BusinessException.forbidden("CANNOT_EDIT_OWNER", "The owner always has full access");
+        Map<String, String> clean = validAccess(t.type(), access == null ? Map.of() : access);
+        // move off the fixed roles so the chosen screens are exactly what the employee gets
+        jdbc.sql("DELETE FROM core.membership_roles WHERE membership_id = :m AND role_id IN (SELECT id FROM core.roles WHERE code NOT IN ('CUSTOMER','PATIENT','GUARDIAN') AND tenant_id IS NULL)").param("m", m.getId()).update();
+        rbac.assignTenantRole(m.getId(), "STORE".equals(t.type()) ? "STORE_STAFF" : "CLINIC_STAFF");
+        rbac.setScreenAccess(m.getId(), clean);
+        audit.record(actor, t.id(), "STAFF_ACCESS_CHANGED", "user", userId, "{\"access\":" + json(clean) + "}");
+        return clean;
+    }
+
     public java.util.List<java.util.Map<String, Object>> list(UUID tenantId) {
-        return com.platform.shared.Rows.camel(jdbc.sql("""
+        String tenantType = TenantContext.require().type();
+        java.util.List<java.util.Map<String, Object>> rows = com.platform.shared.Rows.camel(jdbc.sql("""
                 SELECT u.id AS user_id, u.first_name, u.last_name, u.phone, u.email, u.status AS user_status, m.status AS membership_status, m.created_at,
                        (SELECT string_agg(r.code, ',' ORDER BY r.code) FROM core.membership_roles mr JOIN core.roles r ON r.id = mr.role_id WHERE mr.membership_id = m.id) AS roles
                 FROM core.user_tenant_memberships m JOIN core.users u ON u.id = m.user_id
@@ -104,6 +148,14 @@ public class StaffService {
                     SELECT 1 FROM core.membership_roles mr JOIN core.roles r ON r.id = mr.role_id WHERE mr.membership_id = m.id AND r.code NOT IN ('CUSTOMER','PATIENT','GUARDIAN'))
                 ORDER BY m.created_at
                 """).param("t", tenantId).query().listOfRows());
+        return rows.stream().map(r -> {
+            Map<String, Object> o = new LinkedHashMap<>(r);
+            UUID membershipId = jdbc.sql("SELECT id FROM core.user_tenant_memberships WHERE user_id = :u AND tenant_id = :t")
+                    .param("u", r.get("userId")).param("t", tenantId).query(UUID.class).single();
+            o.put("access", rbac.screenAccess(membershipId));   // chosen by hand (empty for role-based members)
+            o.put("screens", ScreenCatalog.levels(tenantType, rbac.permissionCodes(membershipId)));   // what they can actually open
+            return (java.util.Map<String, Object>) o;
+        }).toList();
     }
 
     /** Removes someone from staff. Owners and yourself cannot be removed here; their other relationships (customer/patient) are untouched. */

@@ -9,7 +9,7 @@ List<Map<String, dynamic>> _maps(dynamic v) => ((v as List?) ?? const []).map((e
 const roleLabels = {
   'STORE_OWNER': 'صاحب المتجر|Store owner', 'STORE_ADMIN': 'مدير المتجر|Store admin', 'STORE_MANAGER': 'مشرف المتجر|Store manager', 'INVENTORY_MANAGER': 'مسؤول المخزون|Inventory manager',
   'ORDER_MANAGER': 'مسؤول الطلبات|Order manager', 'CUSTOMER_SUPPORT': 'خدمة العملاء|Customer support', 'REPORT_VIEWER': 'مطّلع على التقارير|Report viewer', 'CLINIC_OWNER': 'صاحب العيادة|Clinic owner',
-  'DOCTOR': 'طبيب|Doctor', 'CLINIC_ADMIN': 'مدير العيادة|Clinic admin', 'RECEPTIONIST': 'موظف استقبال|Receptionist', 'NURSE': 'ممرض/ة|Nurse', 'LAB_COORDINATOR': 'منسق معمل|Lab coordinator', 'ACCOUNTANT': 'محاسب|Accountant',
+  'DOCTOR': 'طبيب|Doctor', 'CLINIC_ADMIN': 'مدير العيادة|Clinic admin', 'RECEPTIONIST': 'موظف استقبال|Receptionist', 'NURSE': 'ممرض/ة|Nurse', 'LAB_COORDINATOR': 'منسق معمل|Lab coordinator', 'STORE_STAFF': 'موظف متجر|Store employee', 'CLINIC_STAFF': 'موظف عيادة|Clinic employee', 'ACCOUNTANT': 'محاسب|Accountant',
 };
 String roleName(String r, bool isAr) => (roleLabels[r] ?? '$r|$r').split('|')[isAr ? 0 : 1];
 
@@ -199,9 +199,51 @@ class StaffScreen extends StatelessWidget {
   const StaffScreen({super.key, required this.ctx});
   final Ctx ctx;
 
-  List<String> get _roles => ctx.type == 'STORE'
-      ? const ['STORE_ADMIN', 'STORE_MANAGER', 'INVENTORY_MANAGER', 'ORDER_MANAGER', 'CUSTOMER_SUPPORT', 'REPORT_VIEWER']
-      : const ['DOCTOR', 'CLINIC_ADMIN', 'RECEPTIONIST', 'NURSE', 'LAB_COORDINATOR', 'ACCOUNTANT', 'REPORT_VIEWER'];
+  static const _screenNames = {
+    'orders': 'الطلبات والمرتجعات|Orders & returns', 'customers': 'العملاء|Customers', 'products': 'المنتجات|Products', 'inventory': 'المخزون|Inventory',
+    'coupons': 'الكوبونات|Coupons', 'reviews': 'التقييمات|Reviews', 'reports': 'التقارير|Reports', 'settings': 'الإعدادات|Settings', 'domains': 'النطاقات|Domains',
+    'billing': 'الفواتير|Billing', 'appointments': 'المواعيد وقائمة الانتظار|Appointments & queue', 'patients': 'المرضى|Patients',
+    'exam': 'الكشوفات والروشتات والتحاليل|Visits, prescriptions & labs', 'schedule': 'الجدول والخدمات|Schedule & services',
+  };
+  static String _screenName(String k, bool isAr) => (_screenNames[k] ?? '$k|$k').split('|')[isAr ? 0 : 1];
+  static String _levelName(String l, bool isAr) => switch (l) { 'READ' => isAr ? 'قراءة فقط' : 'Read only', 'WRITE' => isAr ? 'قراءة وكتابة' : 'Read & write', _ => isAr ? 'مخفية' : 'Hidden' };
+
+  /// One row per screen: hidden / read only / read & write. `access` is edited in place; screens that cannot be written (reports) offer only the first two.
+  List<Widget> _accessPicker(List<Map<String, dynamic>> screens, Map<String, String> access, bool isAr, StateSetter set) => [
+        Text(isAr ? 'اختر لكل شاشة: مخفية أو للقراءة فقط أو قراءة وكتابة.' : 'For each screen choose: hidden, read only, or read and write.'),
+        const SizedBox(height: 8),
+        Wrap(spacing: 8, children: [
+          for (final l in const ['HIDDEN', 'READ', 'WRITE'])
+            ActionChip(
+              label: Text(l == 'HIDDEN' ? (isAr ? 'إخفاء الكل' : 'Hide all') : l == 'READ' ? (isAr ? 'الكل قراءة فقط' : 'All read only') : (isAr ? 'الكل قراءة وكتابة' : 'All read & write')),
+              onPressed: () => set(() { for (final sc in screens) { access['${sc['key']}'] = l == 'WRITE' && sc['writable'] != true ? 'READ' : l; } }),
+            ),
+        ]),
+        for (final sc in screens) ...[
+          const SizedBox(height: 10),
+          Text(_screenName('${sc['key']}', isAr), style: const TextStyle(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 4),
+          SegmentedButton<String>(
+            showSelectedIcon: false,
+            segments: [for (final l in const ['HIDDEN', 'READ', 'WRITE']) if (l != 'WRITE' || sc['writable'] == true) ButtonSegment(value: l, label: Text(_levelName(l, isAr), style: const TextStyle(fontSize: 12)))],
+            selected: {access['${sc['key']}'] ?? 'HIDDEN'},
+            onSelectionChanged: (v) => set(() => access['${sc['key']}'] = v.first),
+          ),
+        ],
+      ];
+
+  Future<List<Map<String, dynamic>>> _catalogue() async => _maps(await ctx.api.get('tenant/members/screens'));
+
+  Future<void> _editAccess(BuildContext c, Map<String, dynamic> m, Future<void> Function() reload) async {
+    final isAr = S.of(c).ar;
+    final screens = await _catalogue();
+    final access = <String, String>{for (final e in ((m['screens'] as Map?) ?? const {}).entries) '${e.key}': '${e.value}'};
+    if (!c.mounted) return;
+    final ok = await formSheet(c, title: '${isAr ? 'تعديل الصلاحيات' : 'Edit access'}: ${m['firstName']}',
+        body: (x, set) => _accessPicker(screens, access, isAr, set),
+        onSave: () async { await ctx.api.put('tenant/members/${m['userId']}/access', {'access': access}); });
+    if (ok) await reload();
+  }
 
   Future<void> _showPin(BuildContext c, String name, String pin) {
     final isAr = S.of(c).ar;
@@ -222,23 +264,33 @@ class StaffScreen extends StatelessWidget {
   Future<void> _invite(BuildContext c, Future<void> Function() reload) async {
     final isAr = S.of(c).ar;
     final first = TextEditingController(), phone = TextEditingController(), email = TextEditingController();
-    var role = _roles.first;
+    final screens = await _catalogue();
+    final access = <String, String>{};
+    if (!c.mounted) return;
     String? pin;
-    final ok = await formSheet(c, title: isAr ? 'إضافة موظف' : 'Add staff', canSave: () => first.text.trim().isNotEmpty && phone.text.trim().length >= 10,
+    final ok = await formSheet(c, title: isAr ? 'إضافة موظف' : 'Add staff', canSave: () => first.text.trim().isNotEmpty && phone.text.trim().length >= 10 && access.values.any((l) => l != 'HIDDEN'),
         body: (x, set) => [
               tf(first, isAr ? 'الاسم' : 'Name', onChanged: (_) => set(() {})),
               tf(phone, isAr ? 'رقم الموبايل' : 'Mobile number', ltr: true, number: true, onChanged: (_) => set(() {})),
               tf(email, isAr ? 'البريد (اختياري)' : 'Email (optional)', ltr: true),
-              DropdownButtonFormField<String>(initialValue: role, decoration: InputDecoration(labelText: isAr ? 'الدور' : 'Role'), items: [for (final r in _roles) DropdownMenuItem(value: r, child: Text(roleName(r, isAr)))], onChanged: (v) => set(() => role = v ?? role)),
+              const SizedBox(height: 12),
+              ..._accessPicker(screens, access, isAr, set),
             ],
         onSave: () async {
-          final r = await ctx.api.post('tenant/members', {'firstName': first.text.trim(), 'lastName': '', 'phone': phone.text.trim(), if (email.text.trim().isNotEmpty) 'email': email.text.trim(), 'role': role}) as Map<String, dynamic>;
+          final r = await ctx.api.post('tenant/members', {'firstName': first.text.trim(), 'lastName': '', 'phone': phone.text.trim(), if (email.text.trim().isNotEmpty) 'email': email.text.trim(), 'access': access}) as Map<String, dynamic>;
           pin = r['activationPin'] as String?;
         });
     if (ok) {
       await reload();
       if (pin != null && c.mounted) await _showPin(c, first.text.trim(), pin!);
     }
+  }
+
+  String _summary(Map<String, dynamic> m, bool isAr) {
+    if ('${m['roles']}'.contains('_OWNER')) return isAr ? 'صلاحية كاملة' : 'Full access';
+    final sc = ((m['screens'] as Map?) ?? const {});
+    if (sc.isEmpty) return isAr ? 'لا توجد شاشات' : 'No screens';
+    return sc.entries.map((e) => '${_screenName('${e.key}', isAr)} (${_levelName('${e.value}', isAr)})').join('، ');
   }
 
   @override
@@ -258,12 +310,13 @@ class StaffScreen extends StatelessWidget {
               FadeSlideIn(index: i, child: Card(child: ListTile(
                 leading: CircleAvatar(child: Text(('${items[i]['firstName']}'.isEmpty ? '?' : '${items[i]['firstName']}'[0]).toUpperCase())),
                 title: Text('${items[i]['firstName']} ${items[i]['lastName'] ?? ''}'.trim(), style: const TextStyle(fontWeight: FontWeight.w800)),
-                subtitle: Text('${'${items[i]['roles']}'.split(',').map((r) => roleName(r, s.ar)).join('، ')}\n${localPhone(items[i]['phone'])}', textAlign: TextAlign.start),
+                subtitle: Text('${_summary(items[i], s.ar)}\n${localPhone(items[i]['phone'])}', textAlign: TextAlign.start),
                 isThreeLine: true,
                 trailing: canManage && !'${items[i]['roles']}'.contains('_OWNER')
                     ? PopupMenuButton<String>(
                         onSelected: (v) async {
                           final m = items[i];
+                          if (v == 'access') await _editAccess(context, m, reload);
                           if (v == 'pin') {
                             String? pin;
                             if (await run(context, () async { final r = await ctx.api.post('tenant/members/${m['userId']}/activation-pin', {}) as Map<String, dynamic>; pin = r['activationPin'] as String?; }) && pin != null && context.mounted) {
@@ -272,7 +325,7 @@ class StaffScreen extends StatelessWidget {
                           }
                           if (v == 'delete' && context.mounted && await confirm(context, s.ar ? 'إزالة الموظف؟' : 'Remove this staff member?') && context.mounted && await run(context, () => ctx.api.delete('tenant/members/${m['userId']}'))) await reload();
                         },
-                        itemBuilder: (_) => [PopupMenuItem(value: 'pin', child: Text(s.ar ? 'رمز تفعيل جديد' : 'New activation PIN')), PopupMenuItem(value: 'delete', child: Text(s.ar ? 'إزالة' : 'Remove'))],
+                        itemBuilder: (_) => [PopupMenuItem(value: 'access', child: Text(s.ar ? 'تعديل الصلاحيات' : 'Edit access')), PopupMenuItem(value: 'pin', child: Text(s.ar ? 'رمز تفعيل جديد' : 'New activation PIN')), PopupMenuItem(value: 'delete', child: Text(s.ar ? 'إزالة' : 'Remove'))],
                       )
                     : StatusPill('${items[i]['userStatus']}'),
               ))),

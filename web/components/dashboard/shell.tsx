@@ -13,8 +13,8 @@ import { Avatar, Loading } from "../ui";
 import { fileUrl } from "@/lib/media";
 import { SubscriptionBar, useBillingStatus } from "./subscription-bar";
 
-/** `group` is an i18n key (navgrp.*) for the section heading the item sits under; consecutive items with the same group share one heading. */
-export type NavItem = { href: string; label: string; perm?: string | string[]; icon?: string; group?: string };
+/** `screen` is the access screen (hidden / read / write per employee) that opens the item; `perm` is for items outside that list (staff). `group` is an i18n key (navgrp.*) for the section heading the item sits under; consecutive items with the same group share one heading. */
+export type NavItem = { href: string; label: string; perm?: string | string[]; screen?: string | string[]; icon?: string; group?: string };
 
 function NavIcon({ icon, className }: { icon?: string; className?: string }) {
   return hasIcon(icon) ? <Icon name={icon} className={className ?? "h-[19px] w-[19px]"} /> : <span aria-hidden>{icon ?? "•"}</span>;
@@ -37,7 +37,7 @@ export function DashboardShell({ nav, children }: { nav: NavItem[]; children: Re
   const { t, siteName, locale } = useI18n();
   const path = usePathname();
   const router = useRouter();
-  const { me, ready, can } = useMe();
+  const { me, ready, can, canSee } = useMe();
   const unread = useApi<{ count: number }>("notifications/unread-count");
   const billing = useBillingStatus(ready && !!me);
   const reduce = useReducedMotion();
@@ -61,7 +61,11 @@ export function DashboardShell({ nav, children }: { nav: NavItem[]; children: Re
   useEffect(() => { if (disabled && canPay && !onPay) router.replace("/dashboard/billing/pay"); }, [disabled, canPay, onPay, router]);
   if (!ready || !me || customerOnly) return <div className="p-6"><Loading /></div>;
 
-  const allowed = nav.filter((n) => (!disabled || n.href.startsWith("/dashboard/billing")) && (!n.perm || (Array.isArray(n.perm) ? n.perm.some(can) : can(n.perm))));
+  const open_ = (n: NavItem) => (!n.screen || canSee(n.screen)) && (!n.perm || (Array.isArray(n.perm) ? n.perm.some(can) : can(n.perm)));
+  const allowed = nav.filter((n) => (!disabled || n.href.startsWith("/dashboard/billing")) && open_(n));
+  // Typing the address of a screen the owner hid shows "no access" (the backend refuses the data regardless).
+  const here = [...nav].sort((a, b) => b.href.length - a.href.length).find((n) => (n.href === "/dashboard" ? path === n.href : path === n.href || path.startsWith(n.href + "/")));
+  const blocked = !!here && !open_(here);
   const isActive = (n: NavItem) => (n.href === "/dashboard" ? path === n.href : path.startsWith(n.href));
   const current = allowed.find(isActive);
   const count = unread.data?.count ?? 0;
@@ -139,7 +143,7 @@ export function DashboardShell({ nav, children }: { nav: NavItem[]; children: Re
           <p className="text-sm text-slate-500">{hour < 12 ? t("dash.morning") : t("dash.hello")}, <b className="font-semibold text-ink">{me.firstName}</b></p>
           <div className="flex items-center gap-1">{langLink}{bell("")}</div>
         </header>
-        <motion.main key={path} initial={reduce ? false : { opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }} className="min-w-0 flex-1 p-4 pb-24 sm:p-6 lg:p-8 lg:pb-8 print:p-0">{disabled && !canPay ? <div className="mx-auto max-w-md rounded-2xl border border-red-200 bg-red-50 p-6 text-center"><h1 className="text-lg font-bold text-red-800">{t("sub.disabledTitle")}</h1><p className="mt-2 text-sm text-red-700">{t("sub.ownerOnly")}</p></div> : children}</motion.main>
+        <motion.main key={path} initial={reduce ? false : { opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }} className="min-w-0 flex-1 p-4 pb-24 sm:p-6 lg:p-8 lg:pb-8 print:p-0">{disabled && !canPay ? <div className="mx-auto max-w-md rounded-2xl border border-red-200 bg-red-50 p-6 text-center"><h1 className="text-lg font-bold text-red-800">{t("sub.disabledTitle")}</h1><p className="mt-2 text-sm text-red-700">{t("sub.ownerOnly")}</p></div> : blocked ? <div className="mx-auto max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-center"><h1 className="text-lg font-bold text-ink">{t("dash.noAccess")}</h1><p className="mt-2 text-sm text-slate-600">{t("dash.noAccessHint")}</p></div> : children}</motion.main>
       </div>
 
       {/* phone quick bar */}

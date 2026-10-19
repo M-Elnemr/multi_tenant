@@ -257,7 +257,8 @@ public class AuthService {
                 roles = List.of(rbac.supportRole(t.type()));
             }
         }
-        return new TokenResponse.UserSummary(u.getId(), u.getFirstName(), u.getLastName(), u.getPhone(), u.getEmail(), roles, List.copyOf(perms));
+        java.util.Map<String, String> screens = t == null ? java.util.Map.of() : com.platform.core.rbac.ScreenCatalog.levels(t.type(), perms);
+        return new TokenResponse.UserSummary(u.getId(), u.getFirstName(), u.getLastName(), u.getPhone(), u.getEmail(), roles, List.copyOf(perms), false, screens);
     }
 
     static String sha256(String s) {

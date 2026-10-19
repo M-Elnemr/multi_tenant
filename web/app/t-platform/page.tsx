@@ -29,11 +29,33 @@ export default async function Landing() {
               </Link>
             </div>
             <p className="mt-4 flex animate-fade-up items-center justify-center gap-2 text-sm text-slate-500 [animation-delay:300ms] lg:justify-start"><Icon name="check" className="h-4 w-4 text-emerald-600" />{t("landing.noCard")}</p>
+            <ul className="mt-4 flex animate-fade-up flex-wrap justify-center gap-2 text-xs font-medium text-slate-600 [animation-delay:350ms] lg:justify-start">
+              {(["landing.chip1", "landing.chip2", "landing.chip3"] as const).map((k) => <li key={k} className="rounded-full border border-slate-200 bg-white px-3 py-1">{t(k)}</li>)}
+            </ul>
           </div>
-          <div className="relative mx-auto w-64 animate-scale-in sm:w-80 lg:w-full lg:max-w-sm">
-            <div className="absolute inset-6 rounded-full bg-brand-gradient opacity-20 blur-2xl" />
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/brand/logo.png" alt="" className="relative w-full animate-float drop-shadow-[0_24px_40px_rgb(31_106_153/0.35)]" />
+          <div className="relative mx-auto w-64 animate-scale-in sm:w-72 lg:w-full lg:max-w-xs">
+            <div className="absolute inset-6 rounded-full bg-brand-gradient opacity-25 blur-2xl" />
+            {/* A mock of what the owner gets: a shop page and a booking card, drawn in markup so it is sharp and costs no image download. */}
+            <div className="relative rounded-[2.2rem] border-[6px] border-slate-800 bg-white p-3 shadow-lift">
+              <div className="mx-auto mb-3 h-1.5 w-16 rounded-full bg-slate-200" />
+              <div className="bg-brand-gradient rounded-2xl p-4 text-white">
+                <p className="text-xs opacity-80">yourshop.com</p>
+                <p className="mt-1 text-lg font-bold">{t("landing.mockShop")}</p>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                {[0, 1, 2, 3].map((i) => (
+                  <div key={i} className="rounded-xl border border-slate-100 p-2">
+                    <div className="h-14 rounded-lg bg-brand-soft" />
+                    <div className="mt-2 h-2 w-4/5 rounded bg-slate-200" />
+                    <div className="mt-1 h-2 w-2/5 rounded bg-brand/40" />
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 flex items-center gap-2 rounded-xl bg-emerald-50 p-3 text-emerald-800">
+                <Icon name="check" className="h-5 w-5 shrink-0" />
+                <p className="text-xs font-semibold">{t("landing.mockOrder")}</p>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -75,6 +97,9 @@ export default async function Landing() {
           </div>
         </div>
       </section>
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 p-3 backdrop-blur sm:hidden">
+        <Link href="/register" className="bg-brand-gradient block rounded-2xl px-6 py-3 text-center font-semibold text-white shadow-brand active:scale-[.98]">{t("landing.stickyCta")}</Link>
+      </div>
     </>
   );
 }

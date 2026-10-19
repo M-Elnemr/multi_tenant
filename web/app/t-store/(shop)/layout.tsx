@@ -1,3 +1,4 @@
+import { VisitTracker } from "@/components/visit-tracker";
 import "./shop.css";
 import { ShopFooter } from "@/components/shop/footer";
 import { ShopHeader } from "@/components/shop/header";
@@ -28,6 +29,7 @@ export default async function ShopLayout({ children }: { children: React.ReactNo
   return (
     <div className="shop flex min-h-screen flex-col">
       <ShopHeader name={storeName} logoUrl={logoUrl} announcement={p.announcement} closedMessage={p.closedMessage} isOpen={p.isOpen !== false} categories={categories} />
+      <VisitTracker />
       <main className="flex-1 pb-24 md:pb-0">{children}</main>
       <ShopFooter p={p} name={storeName} logoUrl={logoUrl} branches={branches} t={t} poweredLabel={t("brand.powered")} poweredName={t("brand.name")} />
       <WhatsAppFloat phone={p.whatsapp} storeName={storeName} label={t("shop.chatWithUs")} />

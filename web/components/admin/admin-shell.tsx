@@ -31,6 +31,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     { href: "/admin/pay-requests", label: "admin.payRequests", icon: "wallet", badge: overview.data?.newPayRequests },
     { href: "/admin/notifications", label: "nav.notifications", icon: "bell", badge: unread.data?.count },
     { href: "/admin/taxonomy", label: "admin.taxonomy", icon: "tag" },
+    { href: "/admin/visitors", label: "admin.visitors", icon: "users" },
     { href: "/admin/audit", label: "admin.audit", icon: "shield" },
   ];
   const active = (i: Item) => (i.href === "/admin" ? path === "/admin" : path.startsWith(i.href));

@@ -22,7 +22,6 @@ import org.springframework.web.bind.annotation.RestController;
 /** Tenant self-service domains: add -> set DNS records -> verify -> make primary. The tenant comes from the Host. */
 @RestController
 @RequestMapping("/api/v1/tenant/domains")
-@PreAuthorize("hasAuthority('domain.manage')")
 public class DomainController {
     private final DomainService service;
 
@@ -31,32 +30,38 @@ public class DomainController {
     public record AddDomainRequest(@NotBlank String host) {}
 
     @GetMapping
+    @PreAuthorize("hasAuthority('domain.manage') or hasAuthority('domain.read')")
     public List<Map<String, Object>> list() {
         return service.list(TenantContext.require().id()).stream().map(this::view).toList();
     }
 
     @PostMapping
+    @PreAuthorize("hasAuthority('domain.manage')")
     @ResponseStatus(HttpStatus.CREATED)
     public Map<String, Object> add(@Valid @RequestBody AddDomainRequest r, Authentication a) {
         return view(service.addCustomDomain(TenantContext.require().id(), (UUID) a.getPrincipal(), r.host()));
     }
 
     @PostMapping("/{id}/verify")
+    @PreAuthorize("hasAuthority('domain.manage')")
     public Map<String, Object> verify(@PathVariable UUID id) {
         return view(service.verify(TenantContext.require().id(), id));
     }
 
     @GetMapping("/{id}/check")
+    @PreAuthorize("hasAuthority('domain.manage') or hasAuthority('domain.read')")
     public Map<String, Object> check(@PathVariable UUID id) {
         return service.check(TenantContext.require().id(), id);
     }
 
     @PostMapping("/{id}/primary")
+    @PreAuthorize("hasAuthority('domain.manage')")
     public Map<String, Object> primary(@PathVariable UUID id) {
         return view(service.makePrimary(TenantContext.require().id(), id));
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('domain.manage')")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void remove(@PathVariable UUID id, Authentication a) {
         service.remove(TenantContext.require().id(), (UUID) a.getPrincipal(), id);

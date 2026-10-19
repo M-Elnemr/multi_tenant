@@ -40,7 +40,7 @@ function readDraft(key: string): { summary?: string; complaint?: string; note?: 
 function ConsultationForm({ id, e, reload }: { id: string; e: Encounter; reload: () => Promise<void> }) {
   const { t, locale, timezone } = useI18n();
   const router = useRouter();
-  const { can } = useMe();
+  const { can, canWrite } = useMe();
   const patientId = e.patientId;
   const patient = useApi<{ firstName: string; lastName: string; patientCode: string; ageYears?: number; ageMonths?: number; sex?: string }>(patientId ? `clinic/patients/${patientId}` : null);
   const history = useApi<StaffTimeline>(patientId ? `clinic/patients/${patientId}/timeline` : null);
@@ -125,7 +125,7 @@ function ConsultationForm({ id, e, reload }: { id: string; e: Encounter; reload:
       {tab === "history" ? (
         history.loading && !history.data ? <Loading /> : history.data && <TimelineView tl={history.data} />
       ) : (
-        <div className="grid gap-5 lg:grid-cols-2">
+        <fieldset disabled={!canWrite("exam")} className="m-0 grid min-w-0 gap-5 border-0 p-0 lg:grid-cols-2">
           <div className="space-y-5">
             <Card className="space-y-3">
               <Field label={t("consult.complaint")}><Textarea rows={2} value={complaint} onChange={(x) => setComplaint(x.target.value)} /></Field>
@@ -156,7 +156,7 @@ function ConsultationForm({ id, e, reload }: { id: string; e: Encounter; reload:
             </Card>
           </div>
           <div className="space-y-5">
-            {can("prescription.create") && (
+            {(can("prescription.create") || can("prescription.read")) && (
               <Card className="space-y-3">
                 <h3 className="font-medium">{t("portal.prescriptions")}</h3>
                 {e.prescriptions.map((p) => (
@@ -205,7 +205,7 @@ function ConsultationForm({ id, e, reload }: { id: string; e: Encounter; reload:
                 </div>
               </Card>
             )}
-            {can("lab_order.create") && (
+            {(can("lab_order.create") || can("lab_order.read")) && (
               <Card className="space-y-3">
                 <h3 className="font-medium">{t("portal.labs")}</h3>
                 <ul className="space-y-2 text-sm">{e.labOrders.map((l) => <li key={l.id} className="space-y-1.5"><div className="flex items-center justify-between"><span>{l.kind === "RADIOLOGY" ? "🩻" : "🧪"} {l.testName} {l.priority === "URGENT" && <Badge tone="red">{t("consult.urgent")}</Badge>}</span><StatusBadge status={l.status === "ORDERED" ? "REQUESTED" : l.status} /></div><LabResults lab={l} canReview={can("lab_result.review")} onChanged={() => void refresh()} /></li>)}</ul>
@@ -218,7 +218,7 @@ function ConsultationForm({ id, e, reload }: { id: string; e: Encounter; reload:
               </Card>
             )}
           </div>
-        </div>
+        </fieldset>
       )}
     </>
   );

@@ -1,3 +1,4 @@
+import { VisitTracker } from "@/components/visit-tracker";
 import Link from "next/link";
 import { Logo, LogoMark } from "@/components/brand";
 import { PlatformAccountLinks, PlatformFooterLinks } from "@/components/platform-bits";
@@ -18,7 +19,8 @@ export default async function PlatformLayout({ children }: { children: React.Rea
           </nav>
         </div>
       </header>
-      <main className="flex-1">{children}</main>
+      <VisitTracker />
+      <main className="flex-1 pb-16 sm:pb-0">{children}</main>
       <footer className="border-t border-slate-200/70 bg-white">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 py-8 sm:flex-row">
           <div className="flex items-center gap-3"><LogoMark className="h-9 w-9" /><span className="font-bold text-ink">{t("brand.name")}</span></div>

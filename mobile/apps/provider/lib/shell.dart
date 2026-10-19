@@ -15,43 +15,44 @@ import 'store_panel.dart';
 
 /// One section of the control panel. Mirrors the website's menu: the same sections, hidden without the same permission.
 class PanelSection {
-  const PanelSection(this.ar, this.en, this.icon, {this.perm, required this.build});
+  const PanelSection(this.ar, this.en, this.icon, {this.perm, this.screen, required this.build});
   final String ar, en;
   final IconData icon;
-  final dynamic perm; // String or List<String>; null = everyone
+  final dynamic perm; // String or List<String>; for sections outside the access screens (staff)
+  final dynamic screen; // access screen key (String or List<String>) the owner shows / hides per employee
   final Widget Function(Ctx) build;
   String title(bool isAr) => isAr ? ar : en;
-  bool allowed(Ctx c) => perm == null || (perm is List ? c.canAny((perm as List).cast<String>()) : c.can(perm as String));
+  bool allowed(Ctx c) => (screen == null || c.canSee(screen as Object)) && (perm == null || (perm is List ? c.canAny((perm as List).cast<String>()) : c.can(perm as String)));
 }
 
 List<PanelSection> clinicSections() => [
-      PanelSection('نظرة عامة', 'Overview', Icons.dashboard_rounded, perm: 'appointment.manage', build: (c) => ClinicDashboard(api: c.api, perms: c.perms)),
-      PanelSection('قاعة الانتظار', 'Waiting room', Icons.groups_rounded, perm: 'appointment.manage', build: (c) => QueueScreen(ctx: c)),
-      PanelSection('المواعيد', 'Appointments', Icons.calendar_month_rounded, perm: 'appointment.manage', build: (c) => AppointmentsScreen(ctx: c)),
-      PanelSection('المرضى', 'Patients', Icons.people_alt_rounded, perm: 'patient.read', build: (c) => PatientsScreen(ctx: c)),
-      PanelSection('الكشف الحالي', 'Current exam', Icons.medical_services_rounded, perm: 'medical_note.create', build: (c) => CurrentExam(ctx: c)),
-      PanelSection('مواعيد العمل', 'Schedule', Icons.schedule_rounded, perm: 'schedule.manage', build: (c) => ScheduleScreen(ctx: c)),
-      PanelSection('الخدمات', 'Services', Icons.checklist_rounded, perm: ['schedule.manage', 'appointment.manage'], build: (c) => ServicesScreen(ctx: c)),
-      PanelSection('الإعدادات', 'Settings', Icons.settings_rounded, perm: ['settings.manage', 'schedule.manage'], build: (c) => ClinicSettings(ctx: c)),
-      PanelSection('النطاقات', 'Domains', Icons.language_rounded, perm: 'domain.manage', build: (c) => DomainsScreen(ctx: c)),
+      PanelSection('نظرة عامة', 'Overview', Icons.dashboard_rounded, screen: 'appointments', build: (c) => ClinicDashboard(api: c.api, perms: c.perms)),
+      PanelSection('قاعة الانتظار', 'Waiting room', Icons.groups_rounded, screen: 'appointments', build: (c) => QueueScreen(ctx: c)),
+      PanelSection('المواعيد', 'Appointments', Icons.calendar_month_rounded, screen: 'appointments', build: (c) => AppointmentsScreen(ctx: c)),
+      PanelSection('المرضى', 'Patients', Icons.people_alt_rounded, screen: 'patients', build: (c) => PatientsScreen(ctx: c)),
+      PanelSection('الكشف الحالي', 'Current exam', Icons.medical_services_rounded, screen: 'exam', build: (c) => CurrentExam(ctx: c)),
+      PanelSection('مواعيد العمل', 'Schedule', Icons.schedule_rounded, screen: 'schedule', build: (c) => ScheduleScreen(ctx: c)),
+      PanelSection('الخدمات', 'Services', Icons.checklist_rounded, screen: ['schedule', 'appointments'], build: (c) => ServicesScreen(ctx: c)),
+      PanelSection('الإعدادات', 'Settings', Icons.settings_rounded, screen: ['settings', 'schedule'], build: (c) => ClinicSettings(ctx: c)),
+      PanelSection('النطاقات', 'Domains', Icons.language_rounded, screen: 'domains', build: (c) => DomainsScreen(ctx: c)),
       PanelSection('الموظفون', 'Staff', Icons.badge_rounded, perm: 'staff.manage', build: (c) => StaffScreen(ctx: c)),
-      PanelSection('الفواتير والاشتراك', 'Billing', Icons.credit_card_rounded, perm: 'billing.read', build: (c) => BillingScreen(ctx: c)),
+      PanelSection('الفواتير والاشتراك', 'Billing', Icons.credit_card_rounded, screen: 'billing', build: (c) => BillingScreen(ctx: c)),
       PanelSection('الإشعارات', 'Notifications', Icons.notifications_rounded, build: (c) => NotificationsScreen(ctx: c)),
     ];
 
 List<PanelSection> storeSections() => [
       PanelSection('نظرة عامة', 'Overview', Icons.dashboard_rounded, build: (c) => StoreDashboard(api: c.api, currency: c.currency, perms: c.perms)),
-      PanelSection('الطلبات', 'Orders', Icons.local_shipping_rounded, perm: 'order.read', build: (c) => OrdersScreen(ctx: c)),
-      PanelSection('المنتجات', 'Products', Icons.shopping_bag_rounded, perm: ['product.update', 'product.create'], build: (c) => ProductsScreen(ctx: c)),
-      PanelSection('المخزون', 'Inventory', Icons.inventory_2_rounded, perm: 'inventory.adjust', build: (c) => InventoryScreen(ctx: c)),
-      PanelSection('المرتجعات', 'Returns', Icons.assignment_return_rounded, perm: 'order.read', build: (c) => ReturnsScreen(ctx: c)),
-      PanelSection('العملاء', 'Customers', Icons.people_alt_rounded, perm: 'customer.read', build: (c) => CustomersScreen(ctx: c)),
-      PanelSection('الكوبونات', 'Coupons', Icons.local_offer_rounded, perm: 'coupon.manage', build: (c) => CouponsScreen(ctx: c)),
-      PanelSection('التقييمات', 'Reviews', Icons.star_rounded, perm: 'review.moderate', build: (c) => ReviewsScreen(ctx: c)),
-      PanelSection('الإعدادات', 'Settings', Icons.settings_rounded, perm: ['settings.manage', 'shipping.manage'], build: (c) => StoreSettings(ctx: c)),
-      PanelSection('النطاقات', 'Domains', Icons.language_rounded, perm: 'domain.manage', build: (c) => DomainsScreen(ctx: c)),
+      PanelSection('الطلبات', 'Orders', Icons.local_shipping_rounded, screen: 'orders', build: (c) => OrdersScreen(ctx: c)),
+      PanelSection('المنتجات', 'Products', Icons.shopping_bag_rounded, screen: 'products', build: (c) => ProductsScreen(ctx: c)),
+      PanelSection('المخزون', 'Inventory', Icons.inventory_2_rounded, screen: 'inventory', build: (c) => InventoryScreen(ctx: c)),
+      PanelSection('المرتجعات', 'Returns', Icons.assignment_return_rounded, screen: 'orders', build: (c) => ReturnsScreen(ctx: c)),
+      PanelSection('العملاء', 'Customers', Icons.people_alt_rounded, screen: 'customers', build: (c) => CustomersScreen(ctx: c)),
+      PanelSection('الكوبونات', 'Coupons', Icons.local_offer_rounded, screen: 'coupons', build: (c) => CouponsScreen(ctx: c)),
+      PanelSection('التقييمات', 'Reviews', Icons.star_rounded, screen: 'reviews', build: (c) => ReviewsScreen(ctx: c)),
+      PanelSection('الإعدادات', 'Settings', Icons.settings_rounded, screen: 'settings', build: (c) => StoreSettings(ctx: c)),
+      PanelSection('النطاقات', 'Domains', Icons.language_rounded, screen: 'domains', build: (c) => DomainsScreen(ctx: c)),
       PanelSection('الموظفون', 'Staff', Icons.badge_rounded, perm: 'staff.manage', build: (c) => StaffScreen(ctx: c)),
-      PanelSection('الفواتير والاشتراك', 'Billing', Icons.credit_card_rounded, perm: 'billing.read', build: (c) => BillingScreen(ctx: c)),
+      PanelSection('الفواتير والاشتراك', 'Billing', Icons.credit_card_rounded, screen: 'billing', build: (c) => BillingScreen(ctx: c)),
       PanelSection('الإشعارات', 'Notifications', Icons.notifications_rounded, build: (c) => NotificationsScreen(ctx: c)),
     ];
 

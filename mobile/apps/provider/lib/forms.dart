@@ -126,7 +126,7 @@ Map<String, dynamic> defaultHours() => {for (final d in _days) d: {'open': '10:0
 
 /// Edits one set of fields. Loads [loadPath] (or uses [initial]), saves the field values to [savePath].
 class FormCard extends StatefulWidget {
-  const FormCard({super.key, required this.ctx, required this.titleAr, required this.titleEn, required this.fields, this.loadPath, this.initial, required this.savePath, this.method = 'PATCH', this.transform, this.onSaved, this.subtitleAr, this.subtitleEn, this.pick});
+  const FormCard({super.key, required this.ctx, required this.titleAr, required this.titleEn, required this.fields, this.loadPath, this.initial, required this.savePath, this.readOnly = false, this.method = 'PATCH', this.transform, this.onSaved, this.subtitleAr, this.subtitleEn, this.pick});
   final Ctx ctx;
   final String titleAr, titleEn;
   final String? subtitleAr, subtitleEn;
@@ -134,6 +134,7 @@ class FormCard extends StatefulWidget {
   final String? loadPath;
   final Map<String, dynamic>? initial;
   final String savePath, method;
+  final bool readOnly; // read only access: shows the values, offers no way to change them
   final Map<String, dynamic> Function(Map<String, dynamic> body)? transform;
   final VoidCallback? onSaved;
   final Map<String, dynamic> Function(Map<String, dynamic> loaded)? pick; // adapt the loaded JSON to the field keys
@@ -201,9 +202,9 @@ class _FormCardState extends State<FormCard> {
         if (m == null && error == null) const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator())),
         if (error != null) Column(children: [Text(errorText(error!)), TextButton(onPressed: () { setState(() => error = null); _load(); }, child: Text(S.of(context).retry))]),
         if (m != null) ...[
-          for (final f in widget.fields) _field(context, f, isAr),
-          const SizedBox(height: 6),
-          FilledButton(onPressed: busy ? null : _save, child: busy ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : Text(isAr ? 'حفظ' : 'Save')),
+          IgnorePointer(ignoring: widget.readOnly, child: Opacity(opacity: widget.readOnly ? 0.65 : 1, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [for (final f in widget.fields) _field(context, f, isAr)]))),
+          if (!widget.readOnly) const SizedBox(height: 6),
+          if (!widget.readOnly) FilledButton(onPressed: busy ? null : _save, child: busy ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : Text(isAr ? 'حفظ' : 'Save')),
         ],
       ]),
     ));

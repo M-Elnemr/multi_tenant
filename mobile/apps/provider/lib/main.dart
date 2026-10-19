@@ -419,7 +419,7 @@ class _BusinessHomeState extends State<BusinessHome> with WidgetsBindingObserver
       await ListCache.write(key, r);
       return r;
     }
-    if (cached != null) {
+    if (cached != null && cached.containsKey('screens')) {   // a copy from before per-screen access has no screens: ask again
       unawaited(fresh().then((_) {}, onError: (_) {}));
       return cached;
     }
@@ -473,7 +473,8 @@ class _BusinessHomeState extends State<BusinessHome> with WidgetsBindingObserver
             }
             final perms = (snap.data!['permissions'] as List).cast<String>();
             final currency = (b['currency'] as String?) ?? 'EGP';
-            final ctx = _ctx ??= Ctx(api: _api, currency: currency, perms: perms, host: b['host'] as String, type: b['type'] as String);
+            final screens = ((snap.data!['screens'] as Map?) ?? const {}).map((k, v) => MapEntry('$k', '$v'));
+            final ctx = _ctx ??= Ctx(api: _api, currency: currency, perms: perms, host: b['host'] as String, type: b['type'] as String, screens: screens);
             if (_disabled) {
               return ctx.can('billing.manage')
                   ? PayBody(api: _api, disabled: true)

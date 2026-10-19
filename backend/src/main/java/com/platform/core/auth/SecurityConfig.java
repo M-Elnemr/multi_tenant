@@ -55,7 +55,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/v1/shop/cart/quote", "/api/v1/shop/checkout", "/api/v1/shop/track", "/api/v1/shop/track/return", "/api/v1/shop/webhooks/*").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/clinic/public/**", "/api/v1/files/*/content").permitAll()
                 .requestMatchers(HttpMethod.PUT, "/api/v1/files/*/content").permitAll()
-                .requestMatchers(HttpMethod.POST, "/api/v1/clinic/webhooks/*").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/clinic/webhooks/*", "/api/v1/analytics/collect").permitAll()
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .anyRequest().authenticated())
             .exceptionHandling(e -> e
