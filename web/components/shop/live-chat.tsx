@@ -33,6 +33,8 @@ export function ChatPanel({ send, load, onReset, onTeach, greeting, className = 
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const end = useRef<HTMLDivElement>(null);
+  const queue = useRef<string[]>([]);   // messages typed while the assistant is still answering are sent one after another
+  const running = useRef(false);
 
   useEffect(() => {
     let live = true;
@@ -41,18 +43,30 @@ export function ChatPanel({ send, load, onReset, onTeach, greeting, className = 
   }, [load]);
   useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [msgs, busy]);
 
+  const drain = async () => {
+    if (running.current) return;
+    running.current = true;
+    setBusy(true);
+    while (queue.current.length > 0) {
+      const v = queue.current.shift() as string;
+      try {
+        const r = await send(v);
+        setMsgs((m) => [...m, { role: "assistant", content: r.reply, products: r.products, order: r.order }]);
+      } catch (e) {
+        setMsgs((m) => [...m, { role: "assistant", content: (e as Error).message || t("chat.error") }]);
+      }
+    }
+    running.current = false;
+    setBusy(false);
+  };
+
   const go = async (value: string) => {
     const v = value.trim();
-    if (!v || busy) return;
+    if (!v) return;
     setText("");
     setMsgs((m) => [...m, { role: "user", content: v }]);
-    setBusy(true);
-    try {
-      const r = await send(v);
-      setMsgs((m) => [...m, { role: "assistant", content: r.reply, products: r.products, order: r.order }]);
-    } catch (e) {
-      setMsgs((m) => [...m, { role: "assistant", content: (e as Error).message || t("chat.error") }]);
-    } finally { setBusy(false); }
+    queue.current.push(v);
+    void drain();
   };
 
   const quick = [t("chat.q1"), t("chat.q2"), t("chat.q3")];
@@ -98,7 +112,7 @@ export function ChatPanel({ send, load, onReset, onTeach, greeting, className = 
       <form onSubmit={(e) => { e.preventDefault(); void go(text); }} className="flex items-center gap-2 border-t border-[var(--s-line,#e2e8f0)] bg-white p-2">
         <input value={text} onChange={(e) => setText(e.target.value)} maxLength={1000} placeholder={t("chat.placeholder")} aria-label={t("chat.placeholder")}
           className="min-w-0 flex-1 rounded-full border border-[var(--s-line,#e2e8f0)] bg-white px-4 py-2.5 text-sm outline-none focus:border-[var(--brand)]" />
-        <button type="submit" disabled={busy || !text.trim()} aria-label={t("chat.send")} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white disabled:opacity-50" style={{ background: "var(--brand)" }}>
+        <button type="submit" disabled={!text.trim()} aria-label={t("chat.send")} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white disabled:opacity-50" style={{ background: "var(--brand)" }}>
           <Icon name="arrow" className="h-4 w-4 rtl:rotate-180" />
         </button>
         {onReset && <button type="button" onClick={() => void onReset().then(() => setMsgs([]))} className="shrink-0 rounded-full px-2 text-xs text-slate-500 underline">{t("chat.reset")}</button>}

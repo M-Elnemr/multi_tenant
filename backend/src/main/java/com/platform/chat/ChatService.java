@@ -179,7 +179,7 @@ public class ChatService {
                 turns.add(Turn.tool(results));
             }
         } catch (AiProvider.AiUnavailableException e) {
-            log.warn("AI unavailable: {}", e.getMessage());
+            log.warn("AI unavailable: {} ({})", e.getMessage(), e.getCause() == null ? "no cause" : e.getCause().toString());
             answer = "عذرًا، المساعد غير متاح الآن، حاول بعد قليل. / Sorry, the assistant is unavailable right now. Please try again shortly.";
         }
         if (answer == null || answer.isBlank()) answer = "عذرًا، لم أفهم. هل تعيد صياغة طلبك؟ / Sorry, I did not get that. Could you rephrase?";

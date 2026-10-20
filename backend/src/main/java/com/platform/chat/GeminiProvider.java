@@ -26,7 +26,7 @@ public class GeminiProvider implements AiProvider {
     private final String model;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build();
 
-    public GeminiProvider(@Value("${app.ai.gemini.api-key:}") String key, @Value("${app.ai.gemini.model:gemini-flash-latest}") String model) {
+    public GeminiProvider(@Value("${app.ai.gemini.api-key:}") String key, @Value("${app.ai.gemini.model:gemini-flash-lite-latest}") String model) {
         this.key = key == null || key.isBlank() ? null : key.trim();
         this.model = model;
     }
@@ -70,9 +70,14 @@ public class GeminiProvider implements AiProvider {
             body.putObject("generationConfig").put("temperature", 0.5).put("maxOutputTokens", 900);
 
             HttpRequest req = HttpRequest.newBuilder(URI.create("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent"))
-                    .timeout(Duration.ofSeconds(40)).header("Content-Type", "application/json").header("x-goog-api-key", key)
+                    .timeout(Duration.ofSeconds(30)).header("Content-Type", "application/json").header("x-goog-api-key", key)
                     .POST(HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(body))).build();
-            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> res;
+            try {
+                res = http.send(req, HttpResponse.BodyHandlers.ofString());
+            } catch (java.io.IOException first) {   // a slow or dropped connection: one more try
+                res = http.send(req, HttpResponse.BodyHandlers.ofString());
+            }
             if (res.statusCode() == 429) throw new AiUnavailableException("The AI assistant is busy, please try again in a moment");
             if (res.statusCode() != 200) throw new AiUnavailableException("The AI assistant could not answer (" + res.statusCode() + ")");
             JsonNode parts = JSON.readTree(res.body()).path("candidates").path(0).path("content").path("parts");
