@@ -167,7 +167,7 @@ class MetaChannelsIntegrationTest extends IntegrationTestBase {
         String done = say.apply("تمام");
         String orderNo = JsonPath.read(done, "$.order.orderNumber");
         assertThat(JsonPath.<String>read(done, "$.order.whatsappUrl")).startsWith("https://wa.me/201099998888?text=").contains(java.net.URLEncoder.encode("تأكيد طلب #" + orderNo, StandardCharsets.UTF_8));
-        assertThat(JsonPath.<String>read(done, "$.reply")).contains("wa.me/201099998888");
+        assertThat(JsonPath.<String>read(done, "$.reply")).contains("wa.me/201099998888").contains("لو حابب يا فندم تأكد الأوردر على الواتساب اضغط هنا").contains("٢٤ ساعة");
 
         // someone else's WhatsApp cannot confirm it, and gets no details
         FakeMetaGraph.reset();

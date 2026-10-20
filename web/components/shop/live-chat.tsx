@@ -105,6 +105,7 @@ export function ChatPanel({ send, load, onReset, onTeach, greeting, className = 
               <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
                 <p className="font-bold">✓ {t("chat.orderPlaced")} #{m.order.orderNumber}{m.order.test ? ` (${t("chat.testOrder")})` : ""}</p>
                 <p className="mt-0.5">{t("chat.total")}: {money(m.order.totalMinor, m.order.currency, locale)}</p>
+                {!m.order.test && !m.order.whatsappConfirmed && <p className="mt-1.5 leading-relaxed">{m.order.whatsappUrl ? t("chat.cardWa") : t("chat.cardCs")}</p>}
                 <div className="mt-2 flex flex-wrap gap-2">
                   {m.order.trackPath && !m.order.test && <Link href={m.order.trackPath} className="rounded-full bg-white px-3 py-1 font-semibold">{t("chat.track")}</Link>}
                   {m.order.whatsappUrl && <a href={m.order.whatsappUrl} target="_blank" rel="noopener noreferrer" className="rounded-full bg-[#25D366] px-3 py-1 font-semibold text-white">{t("chat.confirmWhatsApp")}</a>}

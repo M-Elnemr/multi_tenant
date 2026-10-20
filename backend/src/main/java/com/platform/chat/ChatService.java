@@ -237,14 +237,22 @@ public class ChatService {
         boolean test = order != null && Boolean.TRUE.equals(order.get("test"));
         String no = order == null ? "" : String.valueOf(order.get("orderNumber"));
         String total = order == null ? "" : order.get("currency") == null ? String.valueOf(major(order.get("totalMinor"))) : money(order.get("totalMinor"), order.get("currency"));
+        boolean viaWa = order != null && Boolean.TRUE.equals(order.get("whatsappConfirmed"));
+        String url = order == null ? null : (String) order.get("whatsappUrl");
         if (arabic) {
-            return (test ? "(تجربة: لم يُحفظ طلب حقيقي)\n" : "") + "تم تأكيد طلبك بنجاح ✅\nرقم الأوردر: " + no + "\nالإجمالي: " + total + "\nطريقة الدفع: " + (card ? "بطاقة" : "كاش عند الاستلام")
-                    + (card ? "\nكمل الدفع من الرابط عشان نجهز طلبك." : order != null && Boolean.TRUE.equals(order.get("whatsappConfirmed")) ? "\nطلبك متأكد على واتساب كمان ✅" : "\nهيتواصل معاك فريق المتجر لتأكيد الشحن 🚚")
-                    + (order != null && order.get("whatsappUrl") != null ? "\n\nاضغط لتأكيد الطلب على واتساب (مجاني): " + order.get("whatsappUrl") : "") + "\nشكراً لثقتك فينا 🌸";
+            return (test ? "(تجربة: لم يُحفظ طلب حقيقي)\n" : "") + "تمام تم تأكيد الأوردر ✅\nرقم الأوردر: " + no + "\nالإجمالي: " + total + "\nطريقة الدفع: " + (card ? "بطاقة" : "كاش عند الاستلام")
+                    + (card ? "\nكمل الدفع من الرابط عشان نجهز الأوردر." : "")
+                    + (viaWa ? "\nوالأوردر متأكد على واتساب كمان ✅"
+                    : url != null ? "\n\nلو حابب يا فندم تأكد الأوردر على الواتساب اضغط هنا: " + url + "\nأو خدمة العملاء هيتواصلوا معاك في خلال ٢٤ ساعة علشان يأكدوا الأوردر"
+                    : "\n\nخدمة العملاء هيتواصلوا معاك في خلال ٢٤ ساعة علشان يأكدوا الأوردر")
+                    + "\nشكراً لثقتك فينا 🌸";
         }
         return (test ? "(Test: no real order was saved)\n" : "") + "Your order is confirmed ✅\nOrder number: " + no + "\nTotal: " + total + "\nPayment: " + (card ? "card" : "cash on delivery")
-                + (card ? "\nPlease complete the payment with the link so we can prepare it." : order != null && Boolean.TRUE.equals(order.get("whatsappConfirmed")) ? "\nAlso confirmed on WhatsApp ✅" : "\nThe shop will contact you to arrange delivery 🚚")
-                + (order != null && order.get("whatsappUrl") != null ? "\n\nTap to confirm the order on WhatsApp (free): " + order.get("whatsappUrl") : "") + "\nThank you!";
+                + (card ? "\nPlease complete the payment with the link so we can prepare it." : "")
+                + (viaWa ? "\nAlso confirmed on WhatsApp ✅"
+                : url != null ? "\n\nIf you like, confirm the order on WhatsApp by tapping here: " + url + "\nor customer service will contact you within 24 hours to confirm it"
+                : "\n\nCustomer service will contact you within 24 hours to confirm the order")
+                + "\nThank you!";
     }
 
     private static String failedText(boolean arabic, String reason) {
@@ -267,7 +275,7 @@ public class ChatService {
                 - Only sell what the tools return. Never invent products, prices, stock, discounts, delivery times or policies. If you do not know, say so. Prices from tools are in the shop currency (major units).
                 - Search first (search_products), then look at details (get_product) to get variant ids, sizes, colors and stock. Suggest 1-3 relevant products, mention a useful alternative or an add-on item when it fits, and help the customer decide. Do not push items that are out of stock.
                 - To close a sale collect: items (variant and quantity), the customer's name, mobile phone, governorate, full address, and ask which payment method they prefer. Ask only for what is missing, one or two questions at a time.
-                - If SHOP FACTS says WhatsApp confirmation is available: after the address, in a message of its own, ask "Do you have WhatsApp? We can re-confirm your order there for free (no spam). Which number?" and WAIT for their answer before prepare_order (the tool refuses otherwise). If they agree pass whatsappNumber and whatsappConsent=true to prepare_order; if they decline pass whatsappConsent=false. Never invent a number.
+                - If SHOP FACTS says WhatsApp confirmation is available: when you collect the customer's details, also ask for a phone number that has WhatsApp, in Arabic and with exactly this wording: "رقم تليفون يكون متاح عليه واتساب لتأكيد الطلب من خدمة العملاء" (use English only if the customer writes English). WAIT for their answer before prepare_order (the tool refuses otherwise). If they give a number pass whatsappNumber and whatsappConsent=true to prepare_order; if they say they have no WhatsApp or decline pass whatsappConsent=false. Never invent a number.
                 - Then call prepare_order and show the customer the summary (items, prices, discount, delivery fee, total, payment method, address) and ask them to confirm. Only after the customer answers "yes/confirm" in a LATER message, call place_order (a plain yes is also handled for you automatically). Never call place_order in the same turn as prepare_order. NEVER say or imply that an order is placed or confirmed unless place_order returned an order number; if the customer changes anything, call prepare_order again and show the new summary once.
                 - After place_order succeeds, thank them, give the order number and say the shop will contact them. If the payment is by card, give the payment link from the result.
                 - Negotiation: you may offer a discount only when the customer asks or hesitates on price, start low and go up in small steps, and never above the maximum allowed discount. Pass it as discountPercent to prepare_order. If the tool refuses a discount, politely say it is the best price.
@@ -443,7 +451,7 @@ public class ChatService {
                       AND EXISTS (SELECT 1 FROM chat.messages r WHERE r.conversation_id = :c AND r.role = 'user' AND r.id > q.id AND r.id <= :u))
                     """).param("c", ctx.conversationId()).param("u", ctx.userMsgId()).query(Boolean.class).single();
             if (!asked || !(a.get("whatsappConsent") instanceof Boolean))
-                return obj("error", "First ask the customer, in a message of its own: do you have WhatsApp? We can re-confirm your order there for free, which number? Wait for their answer, then call prepare_order again with whatsappConsent=true and whatsappNumber, or whatsappConsent=false if they decline.");
+                return obj("error", "First ask the customer, in Arabic and with exactly these words: رقم تليفون يكون متاح عليه واتساب لتأكيد الطلب من خدمة العملاء. Wait for their answer, then call prepare_order again with whatsappConsent=true and whatsappNumber, or whatsappConsent=false if they say they have no WhatsApp.");
         }
         if (Boolean.TRUE.equals(a.get("whatsappConsent"))) {
             String raw = text(a, "whatsappNumber");
