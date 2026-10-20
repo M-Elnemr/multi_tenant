@@ -28,18 +28,30 @@
   --brand-2: #3d9a63;
   --font-family: var(--font-cairo), system-ui, -apple-system, "Segoe UI", Tahoma, "Noto Naskh Arabic", "Noto Sans Arabic", Arial, sans-serif;
   --page-bg: #f4f7fb;
+  /* Phone chrome: every bottom-fixed element derives its offset from these so they never overlap (see .float-b). */
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --tabbar-h: 3.75rem;
+  --buybar-h: 4.5rem;
 }
 
 html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
 body {
+  background: var(--page-bg);
+  color: #0f2133;
+  font-family: var(--font-family);
+  text-rendering: optimizeLegibility;
+}
+/* The tinted backdrop is a fixed layer, not background-attachment:fixed (janky/ignored on iOS Safari). */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
   background:
     radial-gradient(60rem 30rem at 100% -10%, color-mix(in srgb, var(--brand) 7%, transparent), transparent 60%),
     radial-gradient(50rem 28rem at -10% 0%, color-mix(in srgb, var(--brand-2) 6%, transparent), transparent 60%),
     var(--page-bg);
-  background-attachment: fixed;
-  color: #0f2133;
-  font-family: var(--font-family);
-  text-rendering: optimizeLegibility;
 }
 ::selection { background: color-mix(in srgb, var(--brand) 25%, white); }
 :focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 6px; }
@@ -84,6 +96,37 @@ img { -webkit-user-drag: none; }
 .dot-grid { background-image: radial-gradient(color-mix(in srgb, var(--brand) 18%, transparent) 1px, transparent 1px); background-size: 18px 18px; }
 .hover-lift { transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s ease, border-color 0.25s ease; }
 .hover-lift:hover { transform: translateY(-3px); box-shadow: var(--shadow-lift); }
+
+/* Mobile chrome helpers */
+.pb-safe { padding-bottom: var(--safe-b); }
+.min-h-dvh-safe { min-height: 100dvh; }
+.sheet-scroll { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+/* Floating buttons: sit above the phone tab bar (and the product buy bar when one is on the page). */
+.float-b { bottom: calc(var(--tabbar-h) + var(--safe-b) + 1rem); }
+@media (min-width: 768px) { .float-b { bottom: 1.5rem; } }
+@media (max-width: 767px) { body:has([data-buybar]) .float-b { bottom: calc(var(--tabbar-h) + var(--safe-b) + var(--buybar-h) + 1rem); } }
+/* Scroll clearance under fixed bottom bars */
+.pb-chrome { padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 1.5rem); }
+@media (min-width: 768px) { .pb-chrome { padding-bottom: 0; } }
+@media (max-width: 767px) { body:has([data-buybar]) .pb-chrome { padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + var(--buybar-h) + 1.5rem); } }
+
+/* iOS Safari zooms the page when a focused field is under 16px. */
+@media (max-width: 639px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]), select, textarea { font-size: 16px !important; }
+}
+/* Table → stacked cards on phones (labels come from Table in components/ui.tsx) */
+@media (max-width: 639px) {
+  .table-cards thead { display: none; }
+  .table-cards, .table-cards tbody, .table-cards tr { display: block; width: 100%; }
+  .table-cards tr { padding: 0.65rem 1rem; }
+  .table-cards td { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.3rem 0; text-align: end; }
+  .table-cards td::before { content: attr(data-label); flex-shrink: 0; font-size: 0.75rem; font-weight: 600; color: #64748b; text-align: start; }
+  .table-cards td[data-label=""]::before { display: none; }
+  .table-cards td[data-label=""] { justify-content: flex-end; }
+}
+@media (max-width: 767px) { body:has(.shop) .edit-bar { bottom: calc(var(--tabbar-h) + var(--safe-b) + 0.5rem); } }
+/* 44px touch targets for coarse pointers on buttons that opt in */
+@media (pointer: coarse) { .tap-44 { min-width: 44px; min-height: 44px; } }
 
 [dir="rtl"] .flip-rtl { transform: scaleX(-1); }
 

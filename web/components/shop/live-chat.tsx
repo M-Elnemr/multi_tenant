@@ -159,20 +159,20 @@ export function LiveChat() {
   return (
     <>
       {open && (
-        <section role="dialog" aria-label={t("chat.title")} className="fixed inset-x-3 bottom-20 z-40 flex h-[min(34rem,calc(100vh-7rem))] flex-col overflow-hidden rounded-3xl border border-[var(--s-line,#e2e8f0)] bg-white shadow-2xl sm:inset-x-auto sm:start-4 sm:w-96 md:bottom-6">
+        <section role="dialog" aria-label={t("chat.title")} className="fixed inset-x-3 bottom-[calc(var(--tabbar-h)+var(--safe-b)+0.75rem)] z-40 flex h-[min(34rem,calc(100dvh-var(--tabbar-h)-var(--safe-b)-1.5rem))] flex-col overflow-hidden rounded-3xl border border-[var(--s-line,#e2e8f0)] bg-white shadow-2xl sm:inset-x-auto sm:start-4 sm:w-96 md:bottom-6">
           <header className="flex items-center justify-between gap-3 px-4 py-3 text-white" style={{ background: "var(--brand)" }}>
             <div className="flex items-center gap-2.5">
               <span className="relative flex h-9 w-9 items-center justify-center rounded-full bg-white/20"><Icon name="chat" className="h-5 w-5" /><OnlineDot className="absolute -bottom-0.5 -end-0.5 border-2 border-white" /></span>
               <div><p className="text-sm font-bold leading-tight">{t("chat.title")}</p><p className="text-xs opacity-90">{t("chat.online")}</p></div>
             </div>
-            <button type="button" onClick={() => setOpen(false)} aria-label={t("common.close")} className="rounded-full p-1.5 hover:bg-white/20">✕</button>
+            <button type="button" onClick={() => setOpen(false)} aria-label={t("common.close")} className="grid h-11 w-11 place-items-center rounded-full hover:bg-white/20">✕</button>
           </header>
           {conv && <ChatPanel className="flex-1" greeting={cfg.greeting || t("chat.greeting")} load={loadFn} send={(text) => api<Reply>("shop/chat", { body: { conversationId: conv, message: text } })} />}
         </section>
       )}
       {!open && (
         <button type="button" onClick={() => { if (!conv) setConv(conversationId()); setOpen(true); }} aria-label={t("chat.title")}
-          className="fixed bottom-20 start-4 z-30 flex items-center gap-2.5 rounded-full py-3 pe-5 ps-4 text-white shadow-[0_12px_30px_-8px_rgb(0_0_0/0.45)] transition hover:-translate-y-1 md:bottom-6" style={{ background: "var(--brand)" }}>
+          className="float-b fixed start-4 z-30 flex items-center gap-2.5 rounded-full py-3 pe-5 ps-4 text-white shadow-[0_12px_30px_-8px_rgb(0_0_0/0.45)] transition hover:-translate-y-1" style={{ background: "var(--brand)" }}>
           <span className="relative"><Icon name="chat" className="h-6 w-6" /><OnlineDot className="absolute -end-1 -top-1 border-2 border-[var(--brand)]" /></span>
           <span className="hidden text-sm font-bold sm:inline">{t("chat.title")}</span>
         </button>

@@ -6,7 +6,7 @@ export default async function UnknownHost({ searchParams }: { searchParams?: Pro
   const { t } = await getT();
   const disabled = (await searchParams)?.reason === "disabled";
   return (
-    <main className="mx-auto flex min-h-screen max-w-md animate-fade-up flex-col items-center justify-center gap-3 p-6 text-center">
+    <main className="mx-auto flex min-h-dvh max-w-md animate-fade-up flex-col items-center justify-center gap-3 p-6 text-center">
       <LogoMark className="mb-2 h-24 w-24 animate-float" />
       <h1 className="text-2xl font-bold">{disabled ? t("disabled.title") : t("unknown.title")}</h1>
       <p className="text-slate-600">{disabled ? t("disabled.body") : t("unknown.body")}</p>

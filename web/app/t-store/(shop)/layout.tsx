@@ -28,10 +28,10 @@ export default async function ShopLayout({ children }: { children: React.ReactNo
   const logoId = p.branding?.logoFileId ?? (info.kind === "TENANT" ? (info.branding as { logo_file_id?: string }).logo_file_id : undefined);
   const logoUrl = logoId ? `/api/bff/files/${logoId}/content?variant=thumb` : null;
   return (
-    <div className="shop flex min-h-screen flex-col">
+    <div className="shop flex min-h-dvh flex-col">
       <ShopHeader name={storeName} logoUrl={logoUrl} announcement={p.announcement} closedMessage={p.closedMessage} isOpen={p.isOpen !== false} categories={categories} />
       <VisitTracker />
-      <main className="flex-1 pb-24 md:pb-0">{children}</main>
+      <main className="flex-1 pb-chrome">{children}</main>
       <ShopFooter p={p} name={storeName} logoUrl={logoUrl} branches={branches} t={t} poweredLabel={t("brand.powered")} poweredName={t("brand.name")} />
       <WhatsAppFloat phone={p.whatsapp} storeName={storeName} label={t("shop.chatWithUs")} />
       <LiveChat />

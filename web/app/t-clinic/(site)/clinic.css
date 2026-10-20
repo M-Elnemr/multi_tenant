@@ -98,7 +98,7 @@ html { scroll-behavior: smooth; }
 
 /* ---- premium polish ---- */
 .clinic { background: radial-gradient(60rem 28rem at 100% 0%, color-mix(in srgb, var(--brand) 6%, transparent), transparent 70%), radial-gradient(50rem 26rem at 0% 60%, color-mix(in srgb, var(--brand-2, var(--brand)) 5%, transparent), transparent 70%), var(--c-bg); }
-.clinic .c-hero { min-height: min(42rem, 82vh); display: flex; flex-direction: column; justify-content: center; }
+.clinic .c-hero { min-height: min(42rem, 82dvh); display: flex; flex-direction: column; justify-content: center; }
 .clinic .c-hero::after { content: ""; position: absolute; inset-inline: 0; bottom: 0; height: 7rem; background: linear-gradient(to top, var(--c-bg), transparent); pointer-events: none; opacity: .0; }
 .clinic .c-title { position: relative; display: inline-block; }
 .clinic .c-title::after { content: ""; display: block; width: 3.2rem; height: .28rem; margin: .65rem auto 0; border-radius: 99px; background: linear-gradient(90deg, var(--brand), var(--brand-2, var(--brand))); }

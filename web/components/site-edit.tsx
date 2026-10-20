@@ -57,7 +57,7 @@ export function EditBar({ kind, order = [], hiddenKeys = [] }: { kind: Kind; ord
   if (!allowed) return null;
   return (
     <>
-      <div className="fixed inset-x-3 bottom-3 z-40 mx-auto flex max-w-2xl items-center justify-between gap-2 rounded-full bg-slate-900/95 px-4 py-2.5 text-white shadow-2xl backdrop-blur">
+      <div className="edit-bar fixed inset-x-3 bottom-[calc(var(--safe-b)+0.75rem)] z-40 mx-auto flex max-w-2xl items-center justify-between gap-2 rounded-full bg-slate-900/95 px-4 py-2.5 text-white shadow-2xl backdrop-blur">
         <span className="hidden items-center gap-2 text-sm font-bold sm:flex"><span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />{t("site.editing")}</span>
         <span className="flex flex-1 items-center justify-end gap-1.5 sm:flex-none">
           <button onClick={() => open("sections")} className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3.5 py-2 text-xs font-bold hover:bg-white/25"><Icon name="menu" className="h-4 w-4" />{t("se.sections")}</button>

@@ -101,7 +101,7 @@ export function DashboardShell({ nav, children }: { nav: NavItem[]; children: Re
   const quick = allowed.slice(0, 4);
 
   return (
-    <div className="min-h-screen lg:flex print:block">
+    <div className="min-h-dvh lg:flex print:block">
       {/* phone top bar */}
       <header className="glass sticky top-0 z-30 flex items-center justify-between border-b border-slate-200/70 px-3 py-2.5 print:hidden lg:hidden">
         <button onClick={() => setOpen(true)} aria-label="Menu" className="rounded-xl p-2 text-slate-700 transition hover:bg-brand-soft active:scale-95"><Icon name="menu" className="h-6 w-6" /></button>

@@ -97,7 +97,7 @@ export default async function Landing() {
           </div>
         </div>
       </section>
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 p-3 backdrop-blur sm:hidden">
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 p-3 pb-[calc(0.75rem+var(--safe-b))] backdrop-blur sm:hidden">
         <Link href="/register" className="bg-brand-gradient block rounded-2xl px-6 py-3 text-center font-semibold text-white shadow-brand active:scale-[.98]">{t("landing.stickyCta")}</Link>
       </div>
     </>

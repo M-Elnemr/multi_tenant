@@ -5,7 +5,7 @@ import { getT } from "@/lib/i18n-server";
 export default async function NotFound() {
   const { t } = await getT();
   return (
-    <main className="mx-auto flex min-h-[70vh] max-w-md animate-fade-up flex-col items-center justify-center gap-4 p-6 text-center">
+    <main className="mx-auto flex min-h-[70dvh] max-w-md animate-fade-up flex-col items-center justify-center gap-4 p-6 text-center">
       <LogoMark className="h-24 w-24 animate-float" />
       <h1 className="text-gradient text-6xl font-extrabold">404</h1>
       <p className="text-slate-600">{t("common.notFound")}</p>

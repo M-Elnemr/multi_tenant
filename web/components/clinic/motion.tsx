@@ -92,7 +92,7 @@ export function Gallery({ ids }: { ids: { thumb: string; full: string }[] }) {
       <AnimatePresence>
         {open !== null && (
           <motion.div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setOpen(null)} role="dialog" aria-modal="true">
-            <motion.img key={open} src={ids[open].full} alt="" className="max-h-[88vh] max-w-full rounded-2xl object-contain shadow-2xl" initial={reduce ? false : { opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.3, ease: EASE }} onClick={(e) => e.stopPropagation()} />
+            <motion.img key={open} src={ids[open].full} alt="" className="max-h-[88dvh] max-w-full rounded-2xl object-contain shadow-2xl" initial={reduce ? false : { opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.3, ease: EASE }} onClick={(e) => e.stopPropagation()} />
             <button type="button" aria-label="Close" onClick={() => setOpen(null)} className="absolute end-4 top-4 rounded-full bg-white/15 p-3 text-white backdrop-blur transition hover:bg-white/25">✕</button>
             {ids.length > 1 && (<>
               <button type="button" aria-label="Previous" onClick={(e) => { e.stopPropagation(); setOpen((open - 1 + ids.length) % ids.length); }} className="absolute start-4 top-1/2 -translate-y-1/2 rounded-full bg-white/15 p-3 text-white backdrop-blur transition hover:bg-white/25 rtl:rotate-180">‹</button>

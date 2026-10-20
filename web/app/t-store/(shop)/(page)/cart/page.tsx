@@ -35,18 +35,18 @@ export default function Cart() {
                 {l.variantLabel && <p className="text-sm text-[var(--s-mute)]">{l.variantLabel}</p>}
                 <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-2">
                   <div className="flex items-center rounded-full border border-[var(--s-line)] bg-white">
-                    <button className="h-9 w-9 text-lg hover:text-[var(--brand)]" onClick={() => setQuantity(l.variantId, l.quantity - 1)} aria-label="-">−</button>
+                    <button className="h-11 w-11 text-lg hover:text-[var(--brand)] md:h-9 md:w-9" onClick={() => setQuantity(l.variantId, l.quantity - 1)} aria-label="-">−</button>
                     <span className="w-7 text-center text-sm font-extrabold">{l.quantity}</span>
-                    <button className="h-9 w-9 text-lg hover:text-[var(--brand)]" onClick={() => setQuantity(l.variantId, l.quantity + 1)} aria-label="+">+</button>
+                    <button className="h-11 w-11 text-lg hover:text-[var(--brand)] md:h-9 md:w-9" onClick={() => setQuantity(l.variantId, l.quantity + 1)} aria-label="+">+</button>
                   </div>
                   <p className="text-lg font-extrabold" style={{ color: "var(--brand)" }}>{money(l.unitPriceMinor * l.quantity, currency, locale)}</p>
                 </div>
               </div>
-              <button className="self-start text-[var(--s-mute)] transition hover:text-[#e5484d]" onClick={() => removeLine(l.variantId)} aria-label={t("common.delete")}>✕</button>
+              <button className="-m-2 grid h-11 w-11 shrink-0 place-items-center self-start text-[var(--s-mute)] transition hover:text-[#e5484d]" onClick={() => removeLine(l.variantId)} aria-label={t("common.delete")}>✕</button>
             </li>
           ))}
         </ul>
-        <aside className="s-card sticky top-28 space-y-4 p-6">
+        <aside className="s-card space-y-4 p-6 lg:sticky lg:top-28">
           <h2 className="text-lg font-extrabold">{t("checkout.summary")}</h2>
           <div className="flex justify-between text-sm"><span className="text-[var(--s-mute)]">{t("checkout.subtotal")}</span><b>{money(total, currency, locale)}</b></div>
           <p className="rounded-2xl bg-[var(--s-soft)] p-3 text-xs text-[var(--s-mute)]">🚚 {t("cart.shippingNote")}</p>

@@ -164,7 +164,7 @@ export function FilterSheet(props: PanelProps) {
       {open && (
         <div className="fixed inset-0 z-50" role="dialog" aria-modal>
           <div className="absolute inset-0 animate-fade-in bg-black/40" onClick={() => setOpen(false)} />
-          <div className="animate-sheet-up absolute inset-x-0 bottom-0 max-h-[88vh] overflow-y-auto rounded-t-[28px] bg-[var(--s-bg)] p-5 pb-8">
+          <div className="animate-sheet-up absolute inset-x-0 bottom-0 max-h-[88dvh] sheet-scroll overflow-y-auto rounded-t-[28px] bg-[var(--s-bg)] p-5 pb-[calc(2rem+var(--safe-b))]">
             <div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-extrabold">{t("filter.title")}</h2><button onClick={() => setOpen(false)} aria-label={t("common.close")} className="grid h-10 w-10 place-items-center rounded-full hover:bg-[var(--s-soft)]"><Icon name="close" /></button></div>
             <Panel {...props} />
             <button onClick={() => setOpen(false)} className="s-btn mt-6 w-full">{t("filter.show")}</button>

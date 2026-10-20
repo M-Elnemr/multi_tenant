@@ -72,12 +72,12 @@ export function ProductBuy({ product, whatsapp, storeName, isOpen, returnDays }:
         <div className="space-y-6">
           <div>
             {product.brand && <p className="s-eyebrow">{product.brand}</p>}
-            <h1 className="mt-1 text-3xl font-extrabold leading-tight sm:text-4xl">{product.name}</h1>
+            <h1 className="mt-1 text-[clamp(1.5rem,6vw,2.25rem)] font-extrabold leading-tight">{product.name}</h1>
             {product.reviews.count > 0 && <p className="mt-2 text-sm font-bold text-amber-600">{"★".repeat(Math.round(product.reviews.average))}<span className="text-slate-300">{"★".repeat(5 - Math.round(product.reviews.average))}</span> <span className="font-normal text-[var(--s-mute)]">{product.reviews.average} · {product.reviews.count} {t("shop.reviews")}</span></p>}
             {product.shortDescription && <p className="mt-3 text-[var(--s-mute)]">{product.shortDescription}</p>}
           </div>
           <div className="flex flex-wrap items-baseline gap-3">
-            <span className="text-4xl font-extrabold" style={{ color: "var(--brand)" }}>{variant ? money(variant.priceMinor, product.currency, locale) : "-"}</span>
+            <span className="text-[clamp(1.75rem,8vw,2.5rem)] font-extrabold" style={{ color: "var(--brand)" }}>{variant ? money(variant.priceMinor, product.currency, locale) : "-"}</span>
             {discount > 0 && variant?.compareAtPriceMinor && <><span className="text-xl text-[var(--s-mute)] line-through">{money(variant.compareAtPriceMinor, product.currency, locale)}</span><span className="rounded-full bg-red-50 px-2.5 py-0.5 text-sm font-extrabold text-[#e5484d]">{t("shop.save", { p: discount })}</span></>}
           </div>
           {product.options.map((o) => (
@@ -127,8 +127,8 @@ export function ProductBuy({ product, whatsapp, storeName, isOpen, returnDays }:
         </div>
       </section>
 
-      <div className="fixed inset-x-0 bottom-[3.9rem] z-30 border-t border-[var(--s-line)] bg-white/95 p-3 backdrop-blur-xl md:hidden">
-        <div className="flex items-center gap-3">
+      <div data-buybar className="fixed inset-x-0 bottom-[calc(var(--tabbar-h)+var(--safe-b))] z-30 flex h-[var(--buybar-h)] items-center border-t border-[var(--s-line)] bg-white/95 px-3 backdrop-blur-xl md:hidden">
+        <div className="flex w-full items-center gap-3">
           <div className="min-w-0 flex-1"><p className="truncate text-xs text-[var(--s-mute)]">{product.name}</p><p className="font-extrabold" style={{ color: "var(--brand)" }}>{variant ? money(variant.priceMinor, product.currency, locale) : "-"}</p></div>
           <button onClick={() => add()} disabled={!inStock || !isOpen} className="s-btn !px-7">{inStock ? t("shop.addToCart") : t("shop.outOfStock")}</button>
         </div>

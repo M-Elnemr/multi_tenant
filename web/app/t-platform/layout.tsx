@@ -8,7 +8,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
   const { t, locale } = await getT();
   const lang = <a href={`/api/lang?l=${locale === "ar" ? "en" : "ar"}`} className="rounded-lg px-2 py-1 text-sm font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-900">{locale === "ar" ? "EN" : "عربي"}</a>;
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex min-h-dvh flex-col">
       <header className="glass sticky top-0 z-40 border-b border-slate-200/70">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-2.5">
           <Logo name={t("brand.name")} className="h-10 w-10" textClass="text-xl font-extrabold" />

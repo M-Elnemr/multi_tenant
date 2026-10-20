@@ -19,13 +19,13 @@ export function MobileBar() {
     { href: "/account", icon: "heart", label: t("nav.account") },
   ];
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--s-line)] bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden" aria-label="Primary">
-      <ul className="grid grid-cols-5">
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--s-line)] bg-white/95 pb-[var(--safe-b)] backdrop-blur-xl md:hidden" aria-label="Primary">
+      <ul className="grid h-[var(--tabbar-h)] grid-cols-5">
         {items.map((i) => {
           const active = i.href === "/" ? path === "/" : path.startsWith(i.href.split("?")[0]) && !i.href.includes("?");
           return (
-            <li key={i.href}>
-              <Link href={i.href} className={`relative flex flex-col items-center gap-0.5 py-2 text-[10.5px] font-bold transition ${active ? "" : "text-[var(--s-mute)]"}`} style={active ? { color: "var(--brand)" } : undefined}>
+            <li key={i.href} className="h-full">
+              <Link href={i.href} className={`relative flex h-full flex-col items-center justify-center gap-0.5 text-[11px] font-bold transition ${active ? "" : "text-[var(--s-mute)]"}`} style={active ? { color: "var(--brand)" } : undefined}>
                 <Icon name={i.icon} className="h-[22px] w-[22px]" />
                 {i.label}
                 {i.badge ? <span className="absolute end-[22%] top-1 grid h-4 min-w-4 place-items-center rounded-full px-1 text-[10px] font-extrabold text-white" style={{ background: "var(--brand)" }}>{i.badge}</span> : null}

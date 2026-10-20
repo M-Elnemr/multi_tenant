@@ -11,7 +11,7 @@ import { readableBrand } from "@/lib/color";
 
 const cairo = Cairo({ subsets: ["arabic", "latin"], variable: "--font-cairo", display: "swap" });
 
-export const viewport: Viewport = { themeColor: "#1f6a99", width: "device-width", initialScale: 1 };
+export const viewport: Viewport = { themeColor: "#1f6a99", width: "device-width", initialScale: 1, viewportFit: "cover", interactiveWidget: "resizes-content" };
 
 export async function generateMetadata(): Promise<Metadata> {
   const host = await currentHost();
@@ -51,7 +51,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   }
   return (
     <html lang={locale} dir={dir(locale)} style={style} className={cairo.variable}>
-      <body className="min-h-screen antialiased">
+      <body className="min-h-dvh antialiased">
         <I18nProvider locale={locale} currency={info.kind === "TENANT" ? info.currency : "EGP"} timezone={info.kind === "TENANT" ? info.timezone : "Africa/Cairo"} tenantType={info.kind === "TENANT" ? info.type : null} siteName={info.kind === "TENANT" ? info.name : ""}>
           {children}
         </I18nProvider>

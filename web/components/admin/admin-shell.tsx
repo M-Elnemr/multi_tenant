@@ -42,7 +42,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
   const link = (i: Item, quick = false) => (
     <Link key={i.href} href={i.href} onClick={() => setOpen(false)} className={quick
-      ? `relative flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-xl py-1.5 text-[11px] font-semibold transition active:scale-95 ${active(i) ? "text-brand" : "text-slate-500"}`
+      ? `relative flex min-w-0 flex-1 flex-col items-center gap-0.5 min-h-12 justify-center rounded-xl py-1.5 text-[11px] font-semibold transition active:scale-95 ${active(i) ? "text-brand" : "text-slate-500"}`
       : `group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${active(i) ? "bg-brand-gradient text-white shadow-brand" : "text-slate-600 hover:bg-brand-soft hover:text-brand-dark"}`}>
       <span className="relative"><Icon name={i.icon} className={quick ? "h-5 w-5" : "h-[19px] w-[19px]"} />
         {quick && !!i.badge && <span className="absolute -end-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">{i.badge}</span>}
@@ -99,7 +99,9 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           <div className="mx-auto max-w-6xl">{children}</div>
         </main>
         {/* phone bottom bar */}
-        <nav className="glass flex justify-around border-t border-slate-200/70 px-1 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-1.5 lg:hidden">{items.slice(0, 4).map((i) => link(i, true))}</nav>
+        <nav className="glass flex justify-around border-t border-slate-200/70 px-1 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-1.5 lg:hidden">{items.slice(0, 4).map((i) => link(i, true))}
+          {items.length > 4 && <button onClick={() => setOpen(true)} className="relative flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-xl py-1.5 text-[11px] font-semibold text-slate-500 transition active:scale-95"><Icon name="menu" className="h-5 w-5" /><span className="truncate">{t("common.more")}</span></button>}
+        </nav>
       </div>
     </div>
   );

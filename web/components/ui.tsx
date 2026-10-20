@@ -18,7 +18,7 @@ export function Button({ variant = "primary", size = "md", loading, className, c
     <button
       {...rest}
       disabled={disabled || loading}
-      className={cx("inline-flex select-none items-center justify-center gap-2 rounded-xl font-semibold transition duration-200 active:scale-[.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none disabled:hover:translate-y-0", size === "sm" ? "px-3 py-1.5 text-sm" : "px-5 py-2.5 text-sm", styles, className)}
+      className={cx("inline-flex select-none items-center justify-center gap-2 rounded-xl font-semibold transition duration-200 active:scale-[.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none disabled:hover:translate-y-0", size === "sm" ? "px-3 py-1.5 text-sm pointer-coarse:min-h-11" : "px-5 py-2.5 text-sm pointer-coarse:min-h-11", styles, className)}
     >
       {loading && <Spinner />}
       {children}
@@ -241,10 +241,18 @@ export function Loading() {
   );
 }
 
+/** Below `sm` the rows turn into stacked cards; each cell is labelled with its column header (data-label, set from the <th> text). */
 export function Table({ head, children }: { head: ReactNode[]; children: ReactNode }) {
+  const ref = useRef<HTMLTableElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const labels = Array.from(el.tHead?.rows[0]?.cells ?? []).map((c) => c.textContent?.trim() ?? "");
+    el.querySelectorAll("tbody > tr").forEach((tr) => Array.from((tr as HTMLTableRowElement).cells).forEach((td, i) => td.setAttribute("data-label", labels[i] ?? "")));
+  });
   return (
     <div className="animate-fade-up overflow-x-auto rounded-2xl bg-white shadow-card">
-      <table className="w-full text-start text-sm">
+      <table ref={ref} className="table-cards w-full text-start text-sm">
         <thead className="border-b border-slate-100 bg-slate-50/70 text-[11px] uppercase tracking-wider text-slate-500">
           <tr>{head.map((h, i) => <th key={i} className="whitespace-nowrap px-4 py-3.5 text-start font-semibold">{h}</th>)}</tr>
         </thead>
@@ -268,10 +276,10 @@ export function Modal({ open, onClose, title, children, wide }: { open: boolean;
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex animate-fade-in items-end justify-center bg-slate-900/45 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={onClose} role="dialog" aria-modal="true" aria-label={title}>
-      <div className={cx("max-h-[90vh] w-full animate-slide-up overflow-y-auto rounded-t-3xl bg-white p-6 shadow-2xl sm:animate-scale-in sm:rounded-3xl", wide ? "sm:max-w-3xl" : "sm:max-w-lg")} onClick={(e) => e.stopPropagation()}>
+      <div className={cx("max-h-[90dvh] sheet-scroll w-full animate-slide-up overflow-y-auto rounded-t-3xl bg-white p-6 pb-[calc(1.5rem+var(--safe-b))] shadow-2xl sm:pb-6 sm:animate-scale-in sm:rounded-3xl", wide ? "sm:max-w-3xl" : "sm:max-w-lg")} onClick={(e) => e.stopPropagation()}>
         <div className="mb-5 flex items-center justify-between">
           <h2 className="text-lg font-bold text-ink">{title}</h2>
-          <button onClick={onClose} className="rounded-full p-1.5 text-slate-500 transition hover:rotate-90 hover:bg-slate-100" aria-label="Close"><Icon name="close" className="h-5 w-5" /></button>
+          <button onClick={onClose} className="grid h-11 w-11 place-items-center rounded-full text-slate-500 transition hover:rotate-90 hover:bg-slate-100" aria-label="Close"><Icon name="close" className="h-5 w-5" /></button>
         </div>
         {children}
       </div>

@@ -31,7 +31,7 @@ export default async function ClinicSiteLayout({ children }: { children: React.R
   ].filter(Boolean) as { href: string; label: string }[] : [];
   const phone = p ? mainPhone(p) : "";
   return (
-    <div className="clinic flex min-h-screen flex-col">
+    <div className="clinic flex min-h-dvh flex-col">
       {p && <Announcement p={p} t={t} />}
       <ScrollProgress />
       <ScrollHeader>
