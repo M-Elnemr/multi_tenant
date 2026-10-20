@@ -109,12 +109,10 @@ class MetaChannelsIntegrationTest extends IntegrationTestBase {
         assertThat(FakeMetaGraph.SENT.get(0).path()).isEqualTo(pnid + "/messages");
         assertThat(FakeMetaGraph.SENT.get(0).body().toString()).contains("messaging_product=whatsapp").contains("201011112222");
 
-        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("place_order", Map.of()));
-        FakeAiProvider.SCRIPT.add(turns -> Turn.model("Order placed, thank you!"));
         String m2 = wa.apply("yes");
         webhook(m2, sign(m2)).andExpect(status().isOk());
         String last = FakeMetaGraph.SENT.get(FakeMetaGraph.SENT.size() - 1).body().toString();
-        assertThat(last).contains("Order placed").contains("https://" + t.host() + "/track?n=");
+        assertThat(last).contains("confirmed").contains("https://" + t.host() + "/track?n=");
         String list = body(onHost(t.host(), t.access(), "GET", "/api/v1/store/orders", null));
         assertThat((Integer) JsonPath.read(list, "$.meta.total")).isEqualTo(1);
         assertThat(JsonPath.<String>read(list, "$.data[0].source")).isEqualTo("AI_CHAT");

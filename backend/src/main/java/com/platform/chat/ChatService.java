@@ -169,6 +169,15 @@ public class ChatService {
         String system = systemPrompt(tenantId, clientId);
         List<ToolDef> tools = tools();
         String answer = null;
+        // A plain "yes / تمام / ok" to the summary places the order right here: the model is never trusted to remember to do it, or to say it was done.
+        if (isConfirmation(text) && jdbc.sql("SELECT pending IS NOT NULL FROM chat.conversations WHERE id = :c").param("c", conv).query(Boolean.class).single()) {
+            Map<String, Object> placed = runTool(ctx, new ToolCall("place_order", Map.of()));
+            boolean arabic = text.codePoints().anyMatch(cp -> cp >= 0x0600 && cp <= 0x06FF) || ARABIC_HINT.matcher(lastAssistant(conv)).find();
+            answer = placed.get("error") != null ? failedText(arabic, String.valueOf(placed.get("error"))) : confirmedText(arabic, orderBox[0], placed);
+            jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x)").param("c", conv).param("x", answer).update();
+            jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();
+            return new Reply(conv, answer, orderBox[0], ctx.products());
+        }
         try {
             for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
                 Turn t = ai.next(system, turns, tools);
@@ -188,6 +197,54 @@ public class ChatService {
         return new Reply(conv, answer, orderBox[0], ctx.products());
     }
 
+    // ---- confirmation ----------------------------------------------------------------------------------------
+
+    private static final Pattern ARABIC_HINT = Pattern.compile("[\\u0600-\\u06FF]");
+    private static final java.util.Set<String> YES = java.util.Set.of("تمام", "نعم", "ايوه", "ايوا", "ايوة", "اه", "اها", "اكيد", "موافق", "موافقه", "ماشي", "تاكيد", "اكد", "اكده", "اوكي", "اوك", "اوكيه",
+            "يلا", "خلاص", "تم", "حاضر", "طيب", "اتمم", "كمل", "كملي", "اعتمد", "اعتمده", "صح", "بالظبط", "ok", "okay", "yes", "yep", "yeah", "yup", "confirm", "confirmed", "sure", "y", "k", "deal", "agreed", "go", "proceed");
+    private static final java.util.Set<String> FILLER = java.util.Set.of("يا", "فندم", "حضرتك", "حضرتي", "بيه", "باشا", "استاذ", "اخي", "من", "فضلك", "لو", "سمحت", "شكرا", "جدا", "اوي", "خالص", "كده", "كدا", "وانا", "انا", "الطلب", "الاوردر", "الاورد", "ده", "دا", "اه", "please", "thanks", "thank", "you", "it", "that", "is", "the", "order", "so");
+
+    /** Is the whole message just an agreement ("تمام", "ايوه يا فندم", "yes please", "ok ✅")? Anything with a change or a question in it is not. */
+    public static boolean isConfirmation(String raw) {
+        if (raw == null || raw.length() > 60) return false;
+        String n = raw.replaceAll("[\\u064B-\\u065F\\u0670\\u0640]", "").toLowerCase(java.util.Locale.ROOT).replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا').replace('ى', 'ي').replace('ة', 'ه')
+                .replaceAll("[^\\p{L}\\p{N}\\s]", " ").trim();
+        if (n.isEmpty()) return false;
+        boolean yes = false;
+        for (String w : n.split("\\s+")) {
+            if (YES.contains(w)) yes = true;
+            else if (!FILLER.contains(w)) return false;
+        }
+        return yes;
+    }
+
+    private String lastAssistant(UUID conv) {
+        return jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'assistant' ORDER BY id DESC LIMIT 1").param("c", conv).query(String.class).optional().orElse("");
+    }
+
+    private static String money(Object minor, Object currency) {
+        double v = major(minor);
+        String num = v == Math.rint(v) ? String.valueOf((long) v) : String.format(java.util.Locale.ROOT, "%.2f", v);
+        return num + " " + ("EGP".equals(currency) ? "جنيه" : currency);
+    }
+
+    private static String confirmedText(boolean arabic, Map<String, Object> order, Map<String, Object> toolResult) {
+        boolean card = order != null && "CARD".equals(order.get("paymentMethod"));
+        boolean test = order != null && Boolean.TRUE.equals(order.get("test"));
+        String no = order == null ? "" : String.valueOf(order.get("orderNumber"));
+        String total = order == null ? "" : order.get("currency") == null ? String.valueOf(major(order.get("totalMinor"))) : money(order.get("totalMinor"), order.get("currency"));
+        if (arabic) {
+            return (test ? "(تجربة: لم يُحفظ طلب حقيقي)\n" : "") + "تم تأكيد طلبك بنجاح ✅\nرقم الأوردر: " + no + "\nالإجمالي: " + total + "\nطريقة الدفع: " + (card ? "بطاقة" : "كاش عند الاستلام")
+                    + (card ? "\nكمل الدفع من الرابط عشان نجهز طلبك." : "\nهيتواصل معاك فريق المتجر لتأكيد الشحن 🚚") + "\nشكراً لثقتك فينا 🌸";
+        }
+        return (test ? "(Test: no real order was saved)\n" : "") + "Your order is confirmed ✅\nOrder number: " + no + "\nTotal: " + total + "\nPayment: " + (card ? "card" : "cash on delivery")
+                + (card ? "\nPlease complete the payment with the link so we can prepare it." : "\nThe shop will contact you to arrange delivery 🚚") + "\nThank you!";
+    }
+
+    private static String failedText(boolean arabic, String reason) {
+        return arabic ? "عذرًا، مقدرتش أكمل الأوردر دلوقتي: " + reason + "\nتحب نعدّل حاجة في الطلب ونحاول تاني؟" : "Sorry, I could not complete the order: " + reason + "\nWould you like to change something and try again?";
+    }
+
     // ---- prompt ----------------------------------------------------------------------------------------------
 
     private String systemPrompt(UUID tenantId, UUID clientId) {
@@ -204,7 +261,7 @@ public class ChatService {
                 - Only sell what the tools return. Never invent products, prices, stock, discounts, delivery times or policies. If you do not know, say so. Prices from tools are in the shop currency (major units).
                 - Search first (search_products), then look at details (get_product) to get variant ids, sizes, colors and stock. Suggest 1-3 relevant products, mention a useful alternative or an add-on item when it fits, and help the customer decide. Do not push items that are out of stock.
                 - To close a sale collect: items (variant and quantity), the customer's name, mobile phone, governorate, full address, and ask which payment method they prefer. Ask only for what is missing, one or two questions at a time.
-                - Then call prepare_order and show the customer the summary (items, prices, discount, delivery fee, total, payment method, address) and ask them to confirm. Only after the customer answers "yes/confirm" in a LATER message, call place_order. Never call place_order in the same turn as prepare_order.
+                - Then call prepare_order and show the customer the summary (items, prices, discount, delivery fee, total, payment method, address) and ask them to confirm. Only after the customer answers "yes/confirm" in a LATER message, call place_order (a plain yes is also handled for you automatically). Never call place_order in the same turn as prepare_order. NEVER say or imply that an order is placed or confirmed unless place_order returned an order number; if the customer changes anything, call prepare_order again and show the new summary once.
                 - After place_order succeeds, thank them, give the order number and say the shop will contact them. If the payment is by card, give the payment link from the result.
                 - Negotiation: you may offer a discount only when the customer asks or hesitates on price, start low and go up in small steps, and never above the maximum allowed discount. Pass it as discountPercent to prepare_order. If the tool refuses a discount, politely say it is the best price.
                 - If the customer asks for something outside shopping from this shop, politely steer back. Never ask for card numbers or passwords.

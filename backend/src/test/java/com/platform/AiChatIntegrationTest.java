@@ -76,10 +76,9 @@ class AiChatIntegrationTest extends IntegrationTestBase {
 
         // the customer says yes in a later message: the order is created, tagged, with the discount, and the customer record keeps the address
         FakeAiProvider.RESULTS.clear();
-        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("place_order", Map.of()));
-        FakeAiProvider.SCRIPT.add(turns -> Turn.model("Done! Your order is placed."));
-        String reply = send(t, conv, "yes confirm");
+        String reply = send(t, conv, "تمام حضرتك");   // a plain agreement places the order in code; the model is not involved
         assertThat(JsonPath.<String>read(reply, "$.order.orderNumber")).isNotBlank();
+        assertThat(JsonPath.<String>read(reply, "$.reply")).contains("تم تأكيد طلبك").contains(JsonPath.<String>read(reply, "$.order.orderNumber"));
         assertThat(orders(t)).isEqualTo(1);
         String list = body(onHost(t.host(), t.access(), "GET", "/api/v1/store/orders", null));
         assertThat(JsonPath.<String>read(list, "$.data[0].source")).isEqualTo("AI_CHAT");
@@ -95,6 +94,14 @@ class AiChatIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void onlyAPlainAgreementCountsAsConfirmation() {
+        for (String yes : List.of("تمام", "تمام حضرتك", "ايوه يا فندم", "أيوه", "نعم", "yes", "Yes please", "ok ✅", "اكيد", "موافق", "تمام جدا"))
+            assertThat(com.platform.chat.ChatService.isConfirmation(yes)).as(yes).isTrue();
+        for (String no : List.of("تمام بس غير العنوان", "لا", "فيه الوان ومقاسات ؟", "ok but make it two", "بكام الشحن", "yes and add a pillow", "", "هاي"))
+            assertThat(com.platform.chat.ChatService.isConfirmation(no)).as(no).isFalse();
+    }
+
+    @Test
     void signedInClientOrdersAndTheAddressIsSaved() throws Exception {
         Tenant t = onboard("STORE");
         String variant = mug(t);
@@ -104,8 +111,6 @@ class AiChatIntegrationTest extends IntegrationTestBase {
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("Confirm?"));
         send(t, client, conv, "one mug");
         assertThat(FakeAiProvider.lastSystem).contains("SIGNED IN");
-        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("place_order", Map.of()));
-        FakeAiProvider.SCRIPT.add(turns -> Turn.model("Done"));
         send(t, client, conv, "yes");
         assertThat(orders(t)).isEqualTo(1);
         onHost(t.host(), client, "GET", "/api/v1/shop/orders", null).andExpect(status().isOk()).andExpect(jsonPath("$.meta.total").value(1));
@@ -120,8 +125,6 @@ class AiChatIntegrationTest extends IntegrationTestBase {
         FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepare(variant, 0, "CASH_ON_DELIVERY")));
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("Confirm?"));
         onHost(t.host(), t.access(), "POST", "/api/v1/store/ai/test", "{\"message\":\"one mug please\"}").andExpect(status().isOk()).andExpect(jsonPath("$.reply").value("Confirm?"));
-        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("place_order", Map.of()));
-        FakeAiProvider.SCRIPT.add(turns -> Turn.model("Done"));
         onHost(t.host(), t.access(), "POST", "/api/v1/store/ai/test", "{\"message\":\"yes\"}").andExpect(status().isOk()).andExpect(jsonPath("$.order.test").value(true));
         assertThat(orders(t)).isZero();
         onHost(t.host(), t.access(), "GET", "/api/v1/store/ai/test", null).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(4));
