@@ -81,9 +81,9 @@ public class MetaChannelService {
             Map<String, Object> info = graph.get(ext + ("WHATSAPP".equals(p) ? "?fields=verified_name,display_phone_number" : "?fields=id,name,username"), token);
             name = String.valueOf(info.getOrDefault("verified_name", info.getOrDefault("name", info.getOrDefault("username", ext))));
             if ("WHATSAPP".equals(p) && info.get("display_phone_number") != null) name += " " + info.get("display_phone_number");
-            String subscribeTo = "INSTAGRAM".equals(p) ? (pageId == null || pageId.isBlank() ? null : pageId.trim()) : "FACEBOOK".equals(p) ? ext : null;
+            String subscribeTo = "FACEBOOK".equals(p) ? ext : (pageId == null || pageId.isBlank() ? null : pageId.trim());   // Instagram: its linked page; WhatsApp: its business account
             if (subscribeTo != null) {
-                try { graph.post(subscribeTo + "/subscribed_apps", token, Map.of("subscribed_fields", "messages")); } catch (MetaGraph.MetaException e) { log.warn("Could not subscribe {} to webhooks: {}", subscribeTo, e.getMessage()); }
+                try { graph.post(subscribeTo + "/subscribed_apps", token, "WHATSAPP".equals(p) ? Map.of() : Map.of("subscribed_fields", "messages")); } catch (MetaGraph.MetaException e) { log.warn("Could not subscribe {} to webhooks: {}", subscribeTo, e.getMessage()); }
             }
         } catch (MetaGraph.MetaException e) {
             throw BusinessException.badRequest("META_REJECTED", "Meta did not accept these details: " + e.getMessage());

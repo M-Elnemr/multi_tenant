@@ -5,7 +5,7 @@ import { useApi } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Alert, PageHeader } from "@/components/ui";
 
-type MetaInfo = { configured: boolean; webhookUrl?: string; verifyToken?: string };
+type MetaInfo = { configured: boolean; loginReady?: boolean; redirectUri?: string; webhookUrl?: string; verifyToken?: string };
 
 export default function AdminAi() {
   const { t } = useI18n();
@@ -23,6 +23,8 @@ export default function AdminAi() {
             <dl className="space-y-2">
               <div><dt className="text-xs text-slate-500">{t("admin.metaWebhook")}</dt><dd className="select-all break-all rounded bg-slate-50 p-2 font-mono text-xs" dir="ltr">{meta.data.webhookUrl}</dd></div>
               <div><dt className="text-xs text-slate-500">{t("admin.metaVerify")}</dt><dd className="select-all break-all rounded bg-slate-50 p-2 font-mono text-xs" dir="ltr">{meta.data.verifyToken}</dd></div>
+              <div><dt className="text-xs text-slate-500">{t("admin.metaRedirect")}</dt><dd className="select-all break-all rounded bg-slate-50 p-2 font-mono text-xs" dir="ltr">{meta.data.redirectUri}</dd></div>
+              {!meta.data.loginReady && <Alert tone="amber">{t("admin.metaNoAppId")}</Alert>}
               <p className="text-xs text-slate-500">{t("admin.metaSteps")}</p>
             </dl>
           )}

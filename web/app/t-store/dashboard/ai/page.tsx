@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { Suspense, useCallback, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/client";
 import { ChatPanel } from "@/components/shop/live-chat";
 import { AiChannels } from "@/components/dashboard/ai-channels";
@@ -12,11 +13,18 @@ import { Alert, Button, ErrorText, Field, Input, PageHeader, Select } from "@/co
 type Settings = { enabled: boolean; tone: string; maxDiscountPct: number; greeting: string | null };
 type Tab = "test" | "lessons" | "channels" | "settings";
 
-export default function AiAssistant() {
+export default function AiAssistantPage() {
+  return <Suspense><AiAssistant /></Suspense>;
+}
+
+function AiAssistant() {
   const { t } = useI18n();
+  const params = useSearchParams();
+  const pendingId = params.get("connect");
+  const metaError = params.get("metaError");
   const me = useMe();
   const write = me.canWrite("ai");
-  const [tab, setTab] = useState<Tab>(write ? "test" : "lessons");
+  const [tab, setTab] = useState<Tab>(pendingId || metaError ? "channels" : write ? "test" : "lessons");
   const [teach, setTeach] = useState<{ question: string; answer: string; n: number } | null>(null);
 
   const send = useCallback((message: string) => api<{ conversationId: string; reply: string }>("store/ai/test", { body: { message } }), []);
@@ -45,7 +53,7 @@ export default function AiAssistant() {
         </div>
       )}
       {tab === "lessons" && <div className="max-w-2xl"><AiLessons key={teach?.n ?? 0} base="store/ai/lessons" title={t("ai.teachTitle")} canWrite={write} prefill={teach} /><p className="mt-4 text-xs text-slate-500">{t("ai.platformLessons")}</p></div>}
-      {tab === "channels" && <AiChannels write={write} />}
+      {tab === "channels" && <AiChannels write={write} pendingId={pendingId} metaError={metaError} />}
       {tab === "settings" && <SettingsForm write={write} />}
     </>
   );

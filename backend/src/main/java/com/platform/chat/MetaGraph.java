@@ -4,7 +4,7 @@ import java.util.Map;
 
 /** Meta's Graph API. A thin seam so tests never touch the network. */
 public interface MetaGraph {
-    /** GET {path}; returns the parsed JSON object, or throws {@link MetaException}. */
+    /** GET {path} (token null for the login code exchange, which authenticates with the app secret in the query); returns the parsed JSON object, or throws {@link MetaException}. */
     Map<String, Object> get(String path, String token);
 
     /** POST {path} with a JSON body. */

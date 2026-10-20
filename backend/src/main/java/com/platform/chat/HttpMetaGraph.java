@@ -21,12 +21,12 @@ public class HttpMetaGraph implements MetaGraph {
         this.base = url + "/" + version + "/";
     }
 
-    @Override public Map<String, Object> get(String path, String token) { return call(HttpRequest.newBuilder(URI.create(base + path)).GET(), token); }
+    @Override public Map<String, Object> get(String path, String token) { return call(HttpRequest.newBuilder(URI.create(base + encode(path))).GET(), token); }
 
     @Override
     public Map<String, Object> post(String path, String token, Map<String, Object> body) {
         try {
-            return call(HttpRequest.newBuilder(URI.create(base + path)).header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(body))), token);
+            return call(HttpRequest.newBuilder(URI.create(base + encode(path))).header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(body))), token);
         } catch (MetaException e) {
             throw e;
         } catch (Exception e) {
@@ -34,9 +34,13 @@ public class HttpMetaGraph implements MetaGraph {
         }
     }
 
+    /** Field expansions such as {@code instagram_business_account{id,username}} contain characters a URI does not allow. */
+    private static String encode(String path) { return path.replace("{", "%7B").replace("}", "%7D").replace(" ", "%20"); }
+
     private Map<String, Object> call(HttpRequest.Builder b, String token) {
         try {
-            HttpResponse<String> res = http.send(b.timeout(Duration.ofSeconds(15)).header("Authorization", "Bearer " + token).build(), HttpResponse.BodyHandlers.ofString());
+            if (token != null) b.header("Authorization", "Bearer " + token);
+            HttpResponse<String> res = http.send(b.timeout(Duration.ofSeconds(15)).build(), HttpResponse.BodyHandlers.ofString());
             Map<String, Object> out = res.body() == null || res.body().isBlank() ? Map.of() : JSON.readValue(res.body(), new TypeReference<Map<String, Object>>() {});
             if (res.statusCode() / 100 != 2) {
                 Object err = out.get("error");

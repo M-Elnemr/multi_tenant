@@ -24,8 +24,14 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1")
 public class MetaController {
     private final MetaChannelService meta;
+    private final MetaOAuthService oauth;
 
-    public MetaController(MetaChannelService meta) { this.meta = meta; }
+    public MetaController(MetaChannelService meta, MetaOAuthService oauth) {
+        this.meta = meta;
+        this.oauth = oauth;
+    }
+
+    public record ChooseRequest(List<String> keys) {}
 
     public record ConnectRequest(String platform, String externalId, String accessToken, String pageId) {}
 
@@ -45,6 +51,28 @@ public class MetaController {
         meta.handle(raw);
         return ResponseEntity.ok().build();
     }
+
+    /** Facebook sends the browser back here after the owner logs in; we then send it on to the shop's dashboard. */
+    @GetMapping("/chat/meta/callback")
+    public ResponseEntity<Void> callback(@RequestParam(required = false) String code, @RequestParam(required = false) String state) {
+        return ResponseEntity.status(HttpStatus.FOUND).header("Location", oauth.callback(code, state)).build();
+    }
+
+    @PostMapping("/store/ai/meta/start")
+    @PreAuthorize("hasAuthority('ai.manage')")
+    public Map<String, Object> start(Authentication a) { return Map.of("url", oauth.startUrl(StoreContext.tenantId(), (UUID) a.getPrincipal())); }
+
+    @GetMapping("/store/ai/meta/available")
+    @PreAuthorize("hasAuthority('ai.read') or hasAuthority('ai.manage')")
+    public Map<String, Object> available() { return Map.of("available", oauth.available()); }
+
+    @GetMapping("/store/ai/meta/pending/{id}")
+    @PreAuthorize("hasAuthority('ai.manage')")
+    public List<Map<String, Object>> pending(@PathVariable UUID id, Authentication a) { return oauth.pending(StoreContext.tenantId(), (UUID) a.getPrincipal(), id); }
+
+    @PostMapping("/store/ai/meta/pending/{id}/connect")
+    @PreAuthorize("hasAuthority('ai.manage')")
+    public List<Map<String, Object>> choose(@PathVariable UUID id, @RequestBody ChooseRequest r, Authentication a) { return oauth.connectChosen(StoreContext.tenantId(), (UUID) a.getPrincipal(), id, r.keys()); }
 
     @GetMapping("/store/ai/channels")
     @PreAuthorize("hasAuthority('ai.read') or hasAuthority('ai.manage')")
@@ -67,6 +95,6 @@ public class MetaController {
     @PreAuthorize("hasAuthority('platform.chat.teach')")
     public Map<String, Object> info(@org.springframework.beans.factory.annotation.Value("${app.platform.root-domain}") String root) {
         if (!meta.configured()) return Map.of("configured", false);
-        return Map.of("configured", true, "webhookUrl", "https://" + root + "/api/v1/chat/meta/webhook", "verifyToken", meta.verifyToken());
+        return Map.of("configured", true, "loginReady", oauth.available(), "redirectUri", oauth.redirectUri(), "webhookUrl", "https://" + root + "/api/v1/chat/meta/webhook", "verifyToken", meta.verifyToken());
     }
 }
