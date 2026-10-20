@@ -30,6 +30,7 @@ public final class ScreenCatalog {
                     new Screen("inventory", List.of("inventory.read"), List.of("inventory.adjust", "branch.manage")),
                     new Screen("coupons", List.of("coupon.read"), List.of("coupon.manage")),
                     new Screen("reviews", List.of("review.read"), List.of("review.moderate")),
+                    new Screen("ai", List.of("ai.read"), List.of("ai.manage")),
                     REPORTS,
                     new Screen("settings", List.of("settings.read", "shipping.read"), List.of("settings.manage", "shipping.manage")),
                     DOMAINS, BILLING),

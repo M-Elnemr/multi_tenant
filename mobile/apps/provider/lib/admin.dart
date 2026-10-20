@@ -201,7 +201,7 @@ class StaffScreen extends StatelessWidget {
 
   static const _screenNames = {
     'orders': 'الطلبات والمرتجعات|Orders & returns', 'customers': 'العملاء|Customers', 'products': 'المنتجات|Products', 'inventory': 'المخزون|Inventory',
-    'coupons': 'الكوبونات|Coupons', 'reviews': 'التقييمات|Reviews', 'reports': 'التقارير|Reports', 'settings': 'الإعدادات|Settings', 'domains': 'النطاقات|Domains',
+    'coupons': 'الكوبونات|Coupons', 'ai': 'المساعد الذكي|AI assistant', 'reviews': 'التقييمات|Reviews', 'reports': 'التقارير|Reports', 'settings': 'الإعدادات|Settings', 'domains': 'النطاقات|Domains',
     'billing': 'الفواتير|Billing', 'appointments': 'المواعيد وقائمة الانتظار|Appointments & queue', 'patients': 'المرضى|Patients',
     'exam': 'الكشوفات والروشتات والتحاليل|Visits, prescriptions & labs', 'schedule': 'الجدول والخدمات|Schedule & services',
   };

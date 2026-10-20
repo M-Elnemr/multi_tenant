@@ -66,7 +66,11 @@ public class CheckoutService {
     }
 
     @Transactional
-    public Map<String, Object> placeOrder(UUID tenantId, UUID userId, CheckoutReq r, String key) {
+    public Map<String, Object> placeOrder(UUID tenantId, UUID userId, CheckoutReq r, String key) { return placeOrder(tenantId, userId, r, key, 0, "WEB"); }
+
+    /** {@code extraDiscountMinor} is a discount the AI assistant negotiated within the shop's limit; it is not accepted from any client request. */
+    @Transactional
+    public Map<String, Object> placeOrder(UUID tenantId, UUID userId, CheckoutReq r, String key, long extraDiscountMinor, String source) {
         if (key != null && !key.isBlank()) {
             Map<String, Object> prior = existingByKey(tenantId, key);
             if (prior != null) return prior;
@@ -79,6 +83,10 @@ public class CheckoutService {
         if (phoneFlags.isBlocked(tenantId, phoneNorm)) throw new BusinessException(HttpStatus.FORBIDDEN, "ORDER_NOT_ALLOWED", "We cannot take this order online. Please contact the shop.");
         UUID customerId = customers.ensureCustomer(tenantId, userId, new StoreCustomerService.Contact(r.address().recipientName(), phoneNorm, null, addressJson(r.address())));
         Quote q = quote(tenantId, customerId, r, true);
+        if (extraDiscountMinor > 0) {
+            long extra = Math.min(extraDiscountMinor, q.subtotal() - q.discount());
+            q = new Quote(q.lines(), q.currency(), q.subtotal(), q.discount() + extra, q.shipping(), Math.max(0, q.total() - extra), q.couponId(), q.couponCode(), q.codFee(), q.etaMin(), q.etaMax());
+        }
         UUID orderId = UUID.randomUUID();
 
         // Reserve stock. Variants are processed in id order so concurrent checkouts lock rows in the same order.
@@ -95,9 +103,9 @@ public class CheckoutService {
                 INSERT INTO commerce.orders (id, tenant_id, order_number, customer_id, user_id, status, payment_status, payment_method, shipping_method_id, coupon_code,
                     currency, subtotal_minor, discount_minor, shipping_minor, total_minor, customer_name_snapshot, customer_phone_snapshot,
                     shipping_address_snapshot, notes, idempotency_key, reservation_expires_at,
-                    governorate_code, area, landmark, phone2, cod_fee_minor, eta_min_days, eta_max_days)
+                    governorate_code, area, landmark, phone2, cod_fee_minor, eta_min_days, eta_max_days, source)
                 VALUES (:id, :t, :n, :c, :u, :st, 'UNPAID', :pm, :sm, :cc, :cur, :sub, :disc, :ship, :total, :cn, :cp, CAST(:addr AS jsonb), :notes, :key, :exp,
-                    :gov, :area, :lm, :ph2, :codfee, :emin, :emax)
+                    :gov, :area, :lm, :ph2, :codfee, :emin, :emax, :src)
                 """).param("id", orderId).param("t", tenantId).param("n", number).param("c", customerId).param("u", userId)
                 .param("st", card ? "PENDING" : "REQUESTED").param("pm", r.paymentMethod()).param("sm", r.shippingMethodId()).param("cc", q.couponCode())
                 .param("cur", q.currency()).param("sub", q.subtotal()).param("disc", q.discount()).param("ship", q.shipping()).param("total", q.total())
@@ -105,7 +113,7 @@ public class CheckoutService {
                 .param("key", key == null || key.isBlank() ? null : key)
                 .param("exp", card ? java.sql.Timestamp.from(Instant.now().plus(30, ChronoUnit.MINUTES)) : null)
                 .param("gov", nz(r.address().governorateCode()).toUpperCase()).param("area", nz(r.address().area())).param("lm", nz(r.address().landmark())).param("ph2", nz(r.address().phone2()))
-                .param("codfee", q.codFee()).param("emin", q.etaMin()).param("emax", q.etaMax()).update();
+                .param("codfee", q.codFee()).param("emin", q.etaMin()).param("emax", q.etaMax()).param("src", source == null ? "WEB" : source).update();
 
         for (QuoteLine l : q.lines())
             jdbc.sql("""

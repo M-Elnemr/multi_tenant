@@ -8,7 +8,7 @@ import { Badge, ErrorText, Input, Loading, PageHeader, Pager, Select, StatusBadg
 import { dateTime, money } from "@/lib/format";
 import { GOVERNORATES, governorateName } from "@/lib/governorates";
 
-type Order = { id: string; orderNumber: string; status: string; paymentStatus: string; paymentMethod: string; totalMinor: number; currency: string; customerNameSnapshot: string; customerPhoneSnapshot: string; governorateCode?: string; confirmedAt?: string | null; courierName?: string; createdAt: string };
+type Order = { id: string; orderNumber: string; source?: string; status: string; paymentStatus: string; paymentMethod: string; totalMinor: number; currency: string; customerNameSnapshot: string; customerPhoneSnapshot: string; governorateCode?: string; confirmedAt?: string | null; courierName?: string; createdAt: string };
 const STATUSES = ["REQUESTED", "PREPARING", "SHIPPED", "ARRIVED", "RETURNED", "CANCELLED"];
 
 export default function StoreOrders() {
@@ -46,7 +46,7 @@ export default function StoreOrders() {
           <Table head={[t("orders.number"), t("orders.customer"), t("checkout.governorate"), t("admin.status"), t("orders.payment"), t("checkout.total"), t("admin.created")]}>
             {data?.data.map((o) => (
               <tr key={o.id} className="hover:bg-slate-50">
-                <Td><Link href={`/dashboard/orders/${o.id}`} className="font-mono text-brand">{o.orderNumber}</Link></Td>
+                <Td><Link href={`/dashboard/orders/${o.id}`} className="font-mono text-brand">{o.orderNumber}</Link>{o.source === "AI_CHAT" && <span className="ms-2 rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-semibold text-violet-700">🤖 {t("ai.sourceTag")}</span>}</Td>
                 <Td>{o.customerNameSnapshot}<div dir="ltr" className="text-xs text-slate-500">{o.customerPhoneSnapshot}</div></Td>
                 <Td>{governorateName(o.governorateCode, locale) || "—"}</Td>
                 <Td><StatusBadge status={o.status} />{o.status === "REQUESTED" && !o.confirmedAt && <div className="mt-1"><Badge tone="amber">📞 {t("confirm.unconfirmed")}</Badge></div>}</Td>

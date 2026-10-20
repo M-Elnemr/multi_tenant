@@ -4,6 +4,7 @@ import { ShopFooter } from "@/components/shop/footer";
 import { ShopHeader } from "@/components/shop/header";
 import { MobileBar } from "@/components/shop/mobile-bar";
 import type { ShopBranch, ShopCategory, ShopProfile } from "@/components/shop/types";
+import { LiveChat } from "@/components/shop/live-chat";
 import { MarketingTags } from "@/components/shop/tracking";
 import { WhatsAppFloat } from "@/components/shop/whatsapp-float";
 import { backendJson, currentHost } from "@/lib/backend";
@@ -33,6 +34,7 @@ export default async function ShopLayout({ children }: { children: React.ReactNo
       <main className="flex-1 pb-24 md:pb-0">{children}</main>
       <ShopFooter p={p} name={storeName} logoUrl={logoUrl} branches={branches} t={t} poweredLabel={t("brand.powered")} poweredName={t("brand.name")} />
       <WhatsAppFloat phone={p.whatsapp} storeName={storeName} label={t("shop.chatWithUs")} />
+      <LiveChat />
       <MobileBar />
       <MarketingTags metaPixelId={p.metaPixelId} tiktokPixelId={p.tiktokPixelId} gaId={p.gaId} />
     </div>
