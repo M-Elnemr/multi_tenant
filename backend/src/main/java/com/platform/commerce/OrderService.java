@@ -178,7 +178,7 @@ public class OrderService {
         boolean unc = Boolean.TRUE.equals(unconfirmed);
         String g = governorate == null || governorate.isBlank() ? null : governorate.toUpperCase();
         long total = jdbc.sql("SELECT count(*) FROM commerce.orders WHERE " + where).param("t", tenantId).param("s", status).param("u", userId).param("unc", unc).param("g", g).param("q", like).query(Long.class).single();
-        var rows = jdbc.sql("SELECT id, order_number, source, status, payment_status, fulfillment_status, payment_method, currency, total_minor, customer_name_snapshot, customer_phone_snapshot, governorate_code, "
+        var rows = jdbc.sql("SELECT id, order_number, source, whatsapp_confirmed_at, status, payment_status, fulfillment_status, payment_method, currency, total_minor, customer_name_snapshot, customer_phone_snapshot, governorate_code, "
                         + "confirmed_at, courier_name, tracking_number, created_at FROM commerce.orders WHERE " + where + " ORDER BY created_at DESC LIMIT :lim OFFSET :off")
                 .param("t", tenantId).param("s", status).param("u", userId).param("unc", unc).param("g", g).param("q", like).param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows();
         return page.wrap(Rows.camel(rows), total);
@@ -191,7 +191,7 @@ public class OrderService {
 
     public Map<String, Object> get(UUID tenantId, UUID orderId) {
         var o = jdbc.sql("""
-                SELECT id, order_number, source, status, payment_status, fulfillment_status, payment_method, coupon_code, currency, subtotal_minor, discount_minor,
+                SELECT id, order_number, source, whatsapp_number, whatsapp_confirmed_at, status, payment_status, fulfillment_status, payment_method, coupon_code, currency, subtotal_minor, discount_minor,
                        shipping_minor, tax_minor, cod_fee_minor, total_minor, customer_name_snapshot, customer_phone_snapshot, shipping_address_snapshot::text AS shipping_address,
                        governorate_code, area, landmark, phone2, eta_min_days, eta_max_days, confirmed_at, courier_name, tracking_number, tracking_url, shipped_at, delivered_at,
                        notes, created_at, updated_at, user_id

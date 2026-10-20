@@ -43,7 +43,7 @@ public class ChatService {
 
     public record Reply(UUID conversationId, String text, Map<String, Object> order, List<Map<String, Object>> products) {}
 
-    private record Ctx(UUID tenantId, UUID conversationId, String channel, UUID clientId, long userMsgId, List<Map<String, Object>> products, Map<String, Object>[] order) {}
+    private record Ctx(UUID tenantId, UUID conversationId, String channel, String externalId, UUID clientId, long userMsgId, List<Map<String, Object>> products, Map<String, Object>[] order) {}
 
     private final JdbcClient jdbc;
     private final AiProvider ai;
@@ -130,6 +130,10 @@ public class ChatService {
 
     // ---- conversations ---------------------------------------------------------------------------------------
 
+    UUID conversationId(UUID tenantId, String channel, String externalId, UUID clientId) { return conversation(tenantId, channel, externalId, clientId); }
+
+    void savePending(UUID conv, String json) { jdbc.sql("UPDATE chat.conversations SET pending = CAST(:p AS jsonb) WHERE id = :c").param("p", json).param("c", conv).update(); }
+
     private UUID conversation(UUID tenantId, String channel, String externalId, UUID clientId) {
         UUID id = jdbc.sql("""
                 INSERT INTO chat.conversations (tenant_id, channel, external_id, client_id) VALUES (:t, :c, :e, :u)
@@ -165,12 +169,12 @@ public class ChatService {
             turns.add("user".equals(m.get("role")) ? Turn.user((String) m.get("content")) : Turn.model((String) m.get("content")));
 
         @SuppressWarnings("unchecked") Map<String, Object>[] orderBox = new Map[1];
-        Ctx ctx = new Ctx(tenantId, conv, channel, clientId, userMsgId, new ArrayList<>(), orderBox);
+        Ctx ctx = new Ctx(tenantId, conv, channel, externalId, clientId, userMsgId, new ArrayList<>(), orderBox);
         String system = systemPrompt(tenantId, clientId);
         List<ToolDef> tools = tools();
         String answer = null;
         // A plain "yes / تمام / ok" to the summary places the order right here: the model is never trusted to remember to do it, or to say it was done.
-        if (isConfirmation(text) && jdbc.sql("SELECT pending IS NOT NULL FROM chat.conversations WHERE id = :c").param("c", conv).query(Boolean.class).single()) {
+        if (isConfirmation(text) && jdbc.sql("SELECT pending -> 'items' IS NOT NULL FROM chat.conversations WHERE id = :c").param("c", conv).query(Boolean.class).single()) {
             Map<String, Object> placed = runTool(ctx, new ToolCall("place_order", Map.of()));
             boolean arabic = text.codePoints().anyMatch(cp -> cp >= 0x0600 && cp <= 0x06FF) || ARABIC_HINT.matcher(lastAssistant(conv)).find();
             answer = placed.get("error") != null ? failedText(arabic, String.valueOf(placed.get("error"))) : confirmedText(arabic, orderBox[0], placed);
@@ -235,10 +239,12 @@ public class ChatService {
         String total = order == null ? "" : order.get("currency") == null ? String.valueOf(major(order.get("totalMinor"))) : money(order.get("totalMinor"), order.get("currency"));
         if (arabic) {
             return (test ? "(تجربة: لم يُحفظ طلب حقيقي)\n" : "") + "تم تأكيد طلبك بنجاح ✅\nرقم الأوردر: " + no + "\nالإجمالي: " + total + "\nطريقة الدفع: " + (card ? "بطاقة" : "كاش عند الاستلام")
-                    + (card ? "\nكمل الدفع من الرابط عشان نجهز طلبك." : "\nهيتواصل معاك فريق المتجر لتأكيد الشحن 🚚") + "\nشكراً لثقتك فينا 🌸";
+                    + (card ? "\nكمل الدفع من الرابط عشان نجهز طلبك." : order != null && Boolean.TRUE.equals(order.get("whatsappConfirmed")) ? "\nطلبك متأكد على واتساب كمان ✅" : "\nهيتواصل معاك فريق المتجر لتأكيد الشحن 🚚")
+                    + (order != null && order.get("whatsappUrl") != null ? "\n\nاضغط لتأكيد الطلب على واتساب (مجاني): " + order.get("whatsappUrl") : "") + "\nشكراً لثقتك فينا 🌸";
         }
         return (test ? "(Test: no real order was saved)\n" : "") + "Your order is confirmed ✅\nOrder number: " + no + "\nTotal: " + total + "\nPayment: " + (card ? "card" : "cash on delivery")
-                + (card ? "\nPlease complete the payment with the link so we can prepare it." : "\nThe shop will contact you to arrange delivery 🚚") + "\nThank you!";
+                + (card ? "\nPlease complete the payment with the link so we can prepare it." : order != null && Boolean.TRUE.equals(order.get("whatsappConfirmed")) ? "\nAlso confirmed on WhatsApp ✅" : "\nThe shop will contact you to arrange delivery 🚚")
+                + (order != null && order.get("whatsappUrl") != null ? "\n\nTap to confirm the order on WhatsApp (free): " + order.get("whatsappUrl") : "") + "\nThank you!";
     }
 
     private static String failedText(boolean arabic, String reason) {
@@ -261,6 +267,7 @@ public class ChatService {
                 - Only sell what the tools return. Never invent products, prices, stock, discounts, delivery times or policies. If you do not know, say so. Prices from tools are in the shop currency (major units).
                 - Search first (search_products), then look at details (get_product) to get variant ids, sizes, colors and stock. Suggest 1-3 relevant products, mention a useful alternative or an add-on item when it fits, and help the customer decide. Do not push items that are out of stock.
                 - To close a sale collect: items (variant and quantity), the customer's name, mobile phone, governorate, full address, and ask which payment method they prefer. Ask only for what is missing, one or two questions at a time.
+                - If SHOP FACTS says WhatsApp confirmation is available: after the address ask "Do you have WhatsApp? We can re-confirm your order there for free (no spam). Which number?". If they agree pass whatsappNumber and whatsappConsent=true to prepare_order; if they decline pass whatsappConsent=false. Never invent a number.
                 - Then call prepare_order and show the customer the summary (items, prices, discount, delivery fee, total, payment method, address) and ask them to confirm. Only after the customer answers "yes/confirm" in a LATER message, call place_order (a plain yes is also handled for you automatically). Never call place_order in the same turn as prepare_order. NEVER say or imply that an order is placed or confirmed unless place_order returned an order number; if the customer changes anything, call prepare_order again and show the new summary once.
                 - After place_order succeeds, thank them, give the order number and say the shop will contact them. If the payment is by card, give the payment link from the result.
                 - Negotiation: you may offer a discount only when the customer asks or hesitates on price, start low and go up in small steps, and never above the maximum allowed discount. Pass it as discountPercent to prepare_order. If the tool refuses a discount, politely say it is the best price.
@@ -301,6 +308,7 @@ public class ChatService {
                 .append(sm.get("feeMinor") instanceof Number f && f.longValue() > 0 && !"ZONES".equals(sm.get("type")) ? ", fee " + major(f.longValue()) : "").append("\n");
         for (var z : fulfilment.zones(tenantId, true)) b.append("- Delivery zone \"").append(z.get("name")).append("\": governorates ").append(z.get("governorateCodes")).append(", fee ").append(major(((Number) z.get("feeMinor")).longValue()))
                 .append(", ETA ").append(z.get("etaMinDays")).append("-").append(z.get("etaMaxDays")).append(" days").append(z.get("codFeeMinor") instanceof Number c && c.longValue() > 0 ? ", cash-on-delivery fee " + major(c.longValue()) : "").append("\n");
+        if (shopWhatsapp(tenantId) != null) b.append("- WhatsApp confirmation is available (free): ask the customer for the WhatsApp number as described in the rules.\n");
         b.append("- Governorate codes: ");
         GOVERNORATES.forEach((k, v) -> b.append(k).append("=").append(v).append("; "));
         b.append("\n");
@@ -341,7 +349,9 @@ public class ChatService {
                                 "governorateCode", str("Governorate code from the SHOP FACTS list (omit for pickup)"),
                                 "addressLine1", str("Street, building, floor, apartment"), "area", str("City or district"), "landmark", str("Nearby landmark, optional"),
                                 "paymentMethod", str("CASH_ON_DELIVERY or CARD"), "discountPercent", num("Discount you agreed with the customer, 0 if none"),
-                                "pickup", obj("type", "BOOLEAN", "description", "true if the customer collects from the shop"), "notes", str("Notes for the shop, optional")),
+                                "pickup", obj("type", "BOOLEAN", "description", "true if the customer collects from the shop"), "notes", str("Notes for the shop, optional"),
+                                "whatsappNumber", str("The customer's WhatsApp number, only if they agreed to a WhatsApp re-confirmation"),
+                                "whatsappConsent", obj("type", "BOOLEAN", "description", "true if the customer agreed to re-confirm the order on WhatsApp, false if they declined")),
                                 "required", List.of("items", "customerName", "phone", "paymentMethod"))),
                 new ToolDef("place_order", "Create the real order from the summary the customer has just confirmed. Call only after the customer replied to the prepare_order summary.",
                         obj("type", "OBJECT", "properties", obj()))
@@ -425,6 +435,15 @@ public class ChatService {
         if (!List.of("CASH_ON_DELIVERY", "CARD").contains(pm)) return obj("error", "Payment method must be CASH_ON_DELIVERY or CARD");
         if ("CARD".equals(pm) && !policy.cardEnabled()) return obj("error", "Card payment is not available; only cash on delivery. Tell the customer that.");
 
+        String waNumber = null;
+        if (shopWhatsapp(tenantId) != null && !(a.get("whatsappConsent") instanceof Boolean))
+            return obj("error", "Ask the customer for their WhatsApp number to re-confirm the order there for free, then pass whatsappNumber and whatsappConsent=true (or whatsappConsent=false if they decline).");
+        if (Boolean.TRUE.equals(a.get("whatsappConsent"))) {
+            String raw = text(a, "whatsappNumber");
+            if (raw == null || !MOBILE.matcher(raw.replace(" ", "")).matches()) return obj("error", "Ask for a valid WhatsApp mobile number (like 01012345678)");
+            waNumber = PhoneNormalizer.normalize(raw.replace(" ", ""));
+        }
+
         UUID shippingId = pickShipping(tenantId, pickup);
         if (shippingId == null) return obj("error", pickup ? "This shop does not offer pickup" : "This shop has no delivery method set up");
         String area = text(a, "area") == null ? GOVERNORATES.getOrDefault(gov, "") : text(a, "area");
@@ -443,20 +462,20 @@ public class ChatService {
 
         Map<String, Object> pending = obj("items", items.stream().map(i -> obj("variantId", i.variantId().toString(), "quantity", i.quantity())).toList(), "shippingMethodId", shippingId.toString(),
                 "name", name, "phone", phone.replace(" ", ""), "pickup", pickup, "governorate", pickup ? "" : gov, "line1", line1, "area", area, "landmark", text(a, "landmark"),
-                "paymentMethod", pm, "extraDiscountMinor", extra, "discountPct", pct, "notes", text(a, "notes"), "totalMinor", total, "currency", quote.get("currency"), "userMsgId", ctx.userMsgId());
+                "paymentMethod", pm, "extraDiscountMinor", extra, "discountPct", pct, "notes", text(a, "notes"), "totalMinor", total, "currency", quote.get("currency"), "whatsapp", waNumber, "userMsgId", ctx.userMsgId());
         jdbc.sql("UPDATE chat.conversations SET pending = CAST(:p AS jsonb) WHERE id = :c").param("p", json(pending)).param("c", ctx.conversationId()).update();
 
         List<Map<String, Object>> lines = new ArrayList<>();
         for (var ln : (List<Map<String, Object>>) quote.get("lines")) lines.add(obj("product", ln.get("productName"), "quantity", ln.get("quantity"), "unitPrice", major(ln.get("unitPriceMinor"))));
         return obj("summary", obj("items", lines, "subtotal", major(subtotal), "discount", major(((Number) quote.get("discountMinor")).longValue() + extra), "delivery", major(quote.get("shippingMinor")),
                 "cashOnDeliveryFee", major(quote.get("codFeeMinor")), "total", major(total), "currency", quote.get("currency"), "deliveryDays", quote.get("etaMinDays") == null ? null : quote.get("etaMinDays") + "-" + quote.get("etaMaxDays"),
-                "paymentMethod", pm, "deliverTo", pickup ? "Pickup from the shop" : line1 + ", " + area, "customer", name + " " + phone),
+                "paymentMethod", pm, "deliverTo", pickup ? "Pickup from the shop" : line1 + ", " + area, "customer", name + " " + phone, "whatsappConfirmation", waNumber == null ? "no" : waNumber),
                 "next", "Show this summary to the customer and ask them to confirm. Do not call place_order until they reply.");
     }
 
     private Map<String, Object> placeOrder(Ctx ctx) {
         var row = jdbc.sql("SELECT pending FROM chat.conversations WHERE id = :c").param("c", ctx.conversationId()).query().listOfRows().stream().findFirst().orElse(Map.of());
-        if (row.get("pending") == null) return obj("error", "There is no order summary to confirm. Call prepare_order first.");
+        if (row.get("pending") == null || !row.get("pending").toString().contains("\"items\"")) return obj("error", "There is no order summary to confirm. Call prepare_order first.");
         Map<String, Object> p;
         try { p = JSON.readValue(row.get("pending").toString(), new TypeReference<LinkedHashMap<String, Object>>() {}); } catch (Exception e) { return obj("error", "Please prepare the order again"); }
         if (((Number) p.get("userMsgId")).longValue() >= ctx.userMsgId()) return obj("error", "The customer has not confirmed yet. Show the summary and wait for their reply.");
@@ -481,10 +500,21 @@ public class ChatService {
         }
         jdbc.sql("UPDATE chat.conversations SET pending = NULL, last_order = :o WHERE id = :c").param("o", String.valueOf(res.get("orderNumber"))).param("c", ctx.conversationId()).update();
         if (ctx.clientId() != null && !pickup) rememberAddress(ctx.clientId(), addr);
+        String waNumber = (String) p.get("whatsapp");
+        boolean viaWhatsApp = "WHATSAPP".equals(ctx.channel());
+        if (viaWhatsApp) waNumber = "+" + ctx.externalId().replaceAll("\\D", "");   // they are already talking to us on WhatsApp: that is the number, and their "yes" was the confirmation
+        if (waNumber != null) {
+            jdbc.sql("UPDATE commerce.orders SET whatsapp_number = :w, whatsapp_opt_in_at = now()" + (viaWhatsApp ? ", confirmed_at = coalesce(confirmed_at, now()), whatsapp_confirmed_at = now()" : "") + " WHERE id = :o")
+                    .param("w", waNumber).param("o", res.get("orderId")).update();
+            jdbc.sql("UPDATE commerce.customers SET whatsapp_number = :w, whatsapp_opt_in_at = now() WHERE tenant_id = :t AND phone = :p").param("w", waNumber).param("t", ctx.tenantId()).param("p", PhoneNormalizer.normalize((String) p.get("phone"))).update();
+        }
+        String shopWa = waNumber == null || viaWhatsApp ? null : shopWhatsapp(ctx.tenantId());
         audit.record(null, ctx.tenantId(), "AI_ORDER_PLACED", "order", (UUID) res.get("orderId"), "{\"channel\":\"" + ctx.channel() + "\"}");
         String track = "/track?n=" + res.get("orderNumber") + "&p=" + p.get("phone");
         Map<String, Object> o = obj("orderNumber", res.get("orderNumber"), "totalMinor", res.get("totalMinor"), "currency", res.get("currency"), "paymentMethod", p.get("paymentMethod"), "trackPath", track);
         if (res.get("checkoutUrl") != null) o.put("paymentPath", res.get("checkoutUrl"));
+        if (shopWa != null) o.put("whatsappUrl", "https://wa.me/" + shopWa + "?text=" + java.net.URLEncoder.encode("تأكيد طلب #" + res.get("orderNumber"), java.nio.charset.StandardCharsets.UTF_8));
+        if (viaWhatsApp) o.put("whatsappConfirmed", true);
         ctx.order()[0] = o;
         return obj("orderNumber", res.get("orderNumber"), "total", major(res.get("totalMinor")), "trackingLink", track, "paymentLink", res.get("checkoutUrl"),
                 "message", res.get("checkoutUrl") == null ? "Order placed. The shop will contact the customer to confirm." : "Order created and waiting for card payment: give the customer the paymentLink to complete it.");
@@ -497,6 +527,14 @@ public class ChatService {
         } catch (RuntimeException e) {
             log.debug("Could not save the chat address", e);
         }
+    }
+
+    /** The shop's WhatsApp number in international digits (a connected WhatsApp channel first, else the number on the shop profile), or null. */
+    String shopWhatsapp(UUID tenantId) {
+        String n = jdbc.sql("SELECT phone FROM chat.channels WHERE tenant_id = :t AND platform = 'WHATSAPP' AND status = 'ACTIVE' AND phone IS NOT NULL ORDER BY created_at LIMIT 1").param("t", tenantId).query(String.class).optional().orElse(null);
+        if (n == null) n = jdbc.sql("SELECT whatsapp FROM commerce.store_profiles WHERE tenant_id = :t").param("t", tenantId).query(String.class).optional().orElse(null);
+        if (n == null || n.isBlank()) return null;
+        try { return PhoneNormalizer.normalize(n.replaceAll("[^0-9+]", "")).replace("+", ""); } catch (BusinessException e) { return null; }
     }
 
     private UUID pickShipping(UUID tenantId, boolean pickup) {

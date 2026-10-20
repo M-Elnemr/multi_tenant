@@ -42,11 +42,12 @@ public class MetaChannelService {
     private final ChatService chat;
     private final LoginThrottle throttle;
     private final AuditService audit;
+    private final WhatsAppConfirmService waConfirm;
     private final String appSecret;
     private final String verifyToken;
     private final ExecutorService pool;
 
-    public MetaChannelService(JdbcClient jdbc, MetaGraph graph, TokenCrypto crypto, ChatService chat, LoginThrottle throttle, AuditService audit,
+    public MetaChannelService(JdbcClient jdbc, MetaGraph graph, TokenCrypto crypto, ChatService chat, LoginThrottle throttle, AuditService audit, WhatsAppConfirmService waConfirm,
                               @Value("${app.meta.app-secret:}") String appSecret, @Value("${app.meta.verify-token:}") String verifyToken, @Value("${app.meta.async:true}") boolean async) {
         this.jdbc = jdbc;
         this.graph = graph;
@@ -54,6 +55,7 @@ public class MetaChannelService {
         this.chat = chat;
         this.throttle = throttle;
         this.audit = audit;
+        this.waConfirm = waConfirm;
         this.appSecret = appSecret == null || appSecret.isBlank() ? null : appSecret.trim();
         this.verifyToken = verifyToken == null || verifyToken.isBlank() ? null : verifyToken.trim();
         this.pool = async ? Executors.newFixedThreadPool(4) : null;
@@ -77,10 +79,11 @@ public class MetaChannelService {
         if (!ext.matches("\\d{5,40}")) throw BusinessException.badRequest("VALIDATION_ERROR", "The id must be the number from Meta");
         if (token.length() < 20 || token.length() > 1000) throw BusinessException.badRequest("VALIDATION_ERROR", "The access token looks wrong");
         String name;
+        String phone = null;
         try {
             Map<String, Object> info = graph.get(ext + ("WHATSAPP".equals(p) ? "?fields=verified_name,display_phone_number" : "?fields=id,name,username"), token);
             name = String.valueOf(info.getOrDefault("verified_name", info.getOrDefault("name", info.getOrDefault("username", ext))));
-            if ("WHATSAPP".equals(p) && info.get("display_phone_number") != null) name += " " + info.get("display_phone_number");
+            if ("WHATSAPP".equals(p) && info.get("display_phone_number") != null) { phone = String.valueOf(info.get("display_phone_number")); name += " " + phone; }
             String subscribeTo = "FACEBOOK".equals(p) ? ext : (pageId == null || pageId.isBlank() ? null : pageId.trim());   // Instagram: its linked page; WhatsApp: its business account
             if (subscribeTo != null) {
                 try { graph.post(subscribeTo + "/subscribed_apps", token, "WHATSAPP".equals(p) ? Map.of() : Map.of("subscribed_fields", "messages")); } catch (MetaGraph.MetaException e) { log.warn("Could not subscribe {} to webhooks: {}", subscribeTo, e.getMessage()); }
@@ -91,9 +94,9 @@ public class MetaChannelService {
         var owner = jdbc.sql("SELECT tenant_id FROM chat.channels WHERE platform = :p AND external_id = :e").param("p", p).param("e", ext).query(UUID.class).optional();
         if (owner.isPresent() && !owner.get().equals(tenantId)) throw BusinessException.conflict("CHANNEL_TAKEN", "This account is already connected to another shop");
         UUID id = jdbc.sql("""
-                INSERT INTO chat.channels (tenant_id, platform, external_id, name, token_enc) VALUES (:t, :p, :e, :n, :k)
-                ON CONFLICT (platform, external_id) DO UPDATE SET name = :n, token_enc = :k, status = 'ACTIVE' RETURNING id
-                """).param("t", tenantId).param("p", p).param("e", ext).param("n", name).param("k", crypto.encrypt(token)).query(UUID.class).single();
+                INSERT INTO chat.channels (tenant_id, platform, external_id, name, token_enc, phone) VALUES (:t, :p, :e, :n, :k, :ph)
+                ON CONFLICT (platform, external_id) DO UPDATE SET name = :n, token_enc = :k, phone = coalesce(:ph, chat.channels.phone), status = 'ACTIVE' RETURNING id
+                """).param("t", tenantId).param("p", p).param("e", ext).param("n", name).param("k", crypto.encrypt(token)).param("ph", phone).query(UUID.class).single();
         audit.record(actor, tenantId, "AI_CHANNEL_CONNECTED", "ai_channel", id, "{\"platform\":\"" + p + "\"}");
         return channels(tenantId).stream().filter(c -> id.equals(c.get("id"))).findFirst().orElseThrow();
     }
@@ -164,9 +167,14 @@ public class MetaChannelService {
         } else {
             try {
                 throttle.check("chat-meta|" + platform + "|" + sender, 40, Duration.ofMinutes(10));
-                var reply = chat.reply(tenantId, platform, sender, null, text.length() > 1000 ? text.substring(0, 1000) : text);
-                answer = reply.text();
-                if (reply.order() != null && !Boolean.TRUE.equals(reply.order().get("test"))) answer += orderLinks(tenantId, reply.order());
+                var special = "WHATSAPP".equals(platform) ? waConfirm.handle(tenantId, sender, text) : java.util.Optional.<String>empty();
+                if (special.isPresent()) {
+                    answer = special.get();
+                } else {
+                    var reply = chat.reply(tenantId, platform, sender, null, text.length() > 1000 ? text.substring(0, 1000) : text);
+                    answer = reply.text();
+                    if (reply.order() != null && !Boolean.TRUE.equals(reply.order().get("test"))) answer += orderLinks(tenantId, reply.order());
+                }
             } catch (BusinessException e) {
                 log.debug("Meta message ignored: {}", e.getMessage());
                 return;

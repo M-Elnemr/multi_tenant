@@ -9,7 +9,7 @@ import { useI18n } from "@/components/i18n-provider";
 import { Icon } from "@/components/icons";
 
 type Product = { name: string; slug: string; priceMinor: number; currency: string; imageUrl?: string; imageMediaBase?: string; imageMediaExt?: string };
-type Order = { orderNumber: string; totalMinor: number; currency: string; trackPath?: string; paymentPath?: string; test?: boolean };
+type Order = { orderNumber: string; totalMinor: number; currency: string; trackPath?: string; paymentPath?: string; whatsappUrl?: string; whatsappConfirmed?: boolean; test?: boolean };
 type Msg = { role: "user" | "assistant"; content: string; products?: Product[]; order?: Order | null };
 type Reply = { conversationId: string; reply: string; order?: Order | null; products?: Product[] };
 
@@ -100,6 +100,8 @@ export function ChatPanel({ send, load, onReset, onTeach, greeting, className = 
                 <p className="mt-0.5">{t("chat.total")}: {money(m.order.totalMinor, m.order.currency, locale)}</p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {m.order.trackPath && !m.order.test && <Link href={m.order.trackPath} className="rounded-full bg-white px-3 py-1 font-semibold">{t("chat.track")}</Link>}
+                  {m.order.whatsappUrl && <a href={m.order.whatsappUrl} target="_blank" rel="noopener noreferrer" className="rounded-full bg-[#25D366] px-3 py-1 font-semibold text-white">{t("chat.confirmWhatsApp")}</a>}
+                  {m.order.whatsappConfirmed && <span className="rounded-full bg-white px-3 py-1 font-semibold">✓ {t("chat.confirmedWhatsApp")}</span>}
                   {m.order.paymentPath && <a href={m.order.paymentPath} className="rounded-full bg-emerald-600 px-3 py-1 font-semibold text-white">{t("chat.pay")}</a>}
                 </div>
               </div>
