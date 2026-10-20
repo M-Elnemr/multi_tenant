@@ -195,4 +195,59 @@ class MetaChannelsIntegrationTest extends IntegrationTestBase {
         webhook(again, sign(again)).andExpect(status().isOk());
         assertThat(FakeMetaGraph.SENT.get(0).body().toString()).contains("already confirmed");
     }
+
+    @Test
+    void theButtonAndTheConfirmationWorkEvenWhenTheCustomerDeclinedToGiveAWhatsAppNumber() throws Exception {
+        Tenant t = onboard("STORE");
+        onHost(t.host(), t.access(), "PATCH", "/api/v1/store/profile", "{\"whatsapp\":\"01099998888\"}").andExpect(status().isOk());
+        String branch = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
+        String variant = JsonPath.read(body(onHost(t.host(), t.access(), "POST", "/api/v1/store/products",
+                "{\"taxonomySlug\":\"cookware\",\"name\":\"Mug %s\",\"variants\":[{\"sku\":\"M-%s\",\"priceMinor\":10000,\"optionValues\":{},\"stock\":[{\"branchId\":\"%s\",\"quantity\":9}]}]}".formatted(uniq(), uniq(), branch)).andExpect(status().isCreated())), "$.variants[0].id");
+        String pnid = pageId();
+        connect(t, "WHATSAPP", pnid);
+        FakeMetaGraph.reset();
+        String conv = java.util.UUID.randomUUID().toString();
+        java.util.function.Function<String, String> say = text -> {
+            try { return body(onHost(t.host(), null, "POST", "/api/v1/shop/chat", "{\"conversationId\":\"%s\",\"message\":\"%s\"}".formatted(conv, text)).andExpect(status().isOk())); } catch (Exception e) { throw new RuntimeException(e); }
+        };
+        java.util.function.Function<Object[], Map<String, Object>> prep = args -> {
+            var m = new java.util.HashMap<String, Object>(Map.of("items", List.of(Map.of("variantId", variant, "quantity", 1)), "customerName", "Hana Said", "phone", "01011112222", "governorateCode", "CAI",
+                    "addressLine1", "7 Nile St, apt 3", "area", "Maadi", "paymentMethod", "CASH_ON_DELIVERY"));
+            if (args.length > 0) { m.put("whatsappConsent", args[0]); if (args.length > 1) m.put("whatsappNumber", args[1]); }
+            return m;
+        };
+
+        // trying to skip the question (consent=false without ever asking) is refused
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prep.apply(new Object[] {false})));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("Do you have WhatsApp? We can re-confirm there for free."));
+        say.apply("one mug");
+        assertThat(FakeAiProvider.RESULTS.get(0).result().get("error").toString()).contains("First ask");
+
+        // an invented number is refused too
+        FakeAiProvider.RESULTS.clear();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prep.apply(new Object[] {true, "01055554444"})));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("Which number?"));
+        say.apply("yes");
+        assertThat(FakeAiProvider.RESULTS.get(0).result().get("error").toString()).contains("not given by the customer");
+
+        // the customer declines: the order is placed and the button is still offered
+        FakeAiProvider.RESULTS.clear();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prep.apply(new Object[] {false})));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("Confirm?"));
+        say.apply("no thanks, no whatsapp");
+        String done = say.apply("تمام");
+        String orderNo = JsonPath.read(done, "$.order.orderNumber");
+        assertThat(JsonPath.<String>read(done, "$.order.whatsappUrl")).startsWith("https://wa.me/201099998888?text=");
+
+        // writing from the phone the order was placed with works, and confirms the order
+        java.util.function.BiFunction<String, String, String> wa = (from, text) -> "{\"object\":\"whatsapp_business_account\",\"entry\":[{\"id\":\"1\",\"changes\":[{\"field\":\"messages\",\"value\":{\"metadata\":{\"phone_number_id\":\"%s\"},\"messages\":[{\"from\":\"%s\",\"id\":\"wamid.%s\",\"type\":\"text\",\"text\":{\"body\":\"%s\"}}]}}]}]}".formatted(pnid, from, uniq(), text);
+        FakeMetaGraph.reset();
+        String ask = wa.apply("201011112222", "تأكيد طلب #" + orderNo);
+        webhook(ask, sign(ask)).andExpect(status().isOk());
+        assertThat(FakeMetaGraph.SENT.get(0).body().toString()).contains(orderNo).contains("Mug");
+        String yes = wa.apply("201011112222", "تمام");
+        webhook(yes, sign(yes)).andExpect(status().isOk());
+        String orderId = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/orders", null)), "$.data[0].id");
+        onHost(t.host(), t.access(), "GET", "/api/v1/store/orders/" + orderId, null).andExpect(jsonPath("$.confirmedAt").exists()).andExpect(jsonPath("$.whatsappConfirmedAt").exists());
+    }
 }

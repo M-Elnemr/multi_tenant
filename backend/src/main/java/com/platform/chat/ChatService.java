@@ -267,7 +267,7 @@ public class ChatService {
                 - Only sell what the tools return. Never invent products, prices, stock, discounts, delivery times or policies. If you do not know, say so. Prices from tools are in the shop currency (major units).
                 - Search first (search_products), then look at details (get_product) to get variant ids, sizes, colors and stock. Suggest 1-3 relevant products, mention a useful alternative or an add-on item when it fits, and help the customer decide. Do not push items that are out of stock.
                 - To close a sale collect: items (variant and quantity), the customer's name, mobile phone, governorate, full address, and ask which payment method they prefer. Ask only for what is missing, one or two questions at a time.
-                - If SHOP FACTS says WhatsApp confirmation is available: after the address ask "Do you have WhatsApp? We can re-confirm your order there for free (no spam). Which number?". If they agree pass whatsappNumber and whatsappConsent=true to prepare_order; if they decline pass whatsappConsent=false. Never invent a number.
+                - If SHOP FACTS says WhatsApp confirmation is available: after the address, in a message of its own, ask "Do you have WhatsApp? We can re-confirm your order there for free (no spam). Which number?" and WAIT for their answer before prepare_order (the tool refuses otherwise). If they agree pass whatsappNumber and whatsappConsent=true to prepare_order; if they decline pass whatsappConsent=false. Never invent a number.
                 - Then call prepare_order and show the customer the summary (items, prices, discount, delivery fee, total, payment method, address) and ask them to confirm. Only after the customer answers "yes/confirm" in a LATER message, call place_order (a plain yes is also handled for you automatically). Never call place_order in the same turn as prepare_order. NEVER say or imply that an order is placed or confirmed unless place_order returned an order number; if the customer changes anything, call prepare_order again and show the new summary once.
                 - After place_order succeeds, thank them, give the order number and say the shop will contact them. If the payment is by card, give the payment link from the result.
                 - Negotiation: you may offer a discount only when the customer asks or hesitates on price, start low and go up in small steps, and never above the maximum allowed discount. Pass it as discountPercent to prepare_order. If the tool refuses a discount, politely say it is the best price.
@@ -436,12 +436,26 @@ public class ChatService {
         if ("CARD".equals(pm) && !policy.cardEnabled()) return obj("error", "Card payment is not available; only cash on delivery. Tell the customer that.");
 
         String waNumber = null;
-        if (shopWhatsapp(tenantId) != null && !(a.get("whatsappConsent") instanceof Boolean))
-            return obj("error", "Ask the customer for their WhatsApp number to re-confirm the order there for free, then pass whatsappNumber and whatsappConsent=true (or whatsappConsent=false if they decline).");
+        if (shopWhatsapp(tenantId) != null) {
+            // The model must really ask in a message and the customer must answer in a later one: it cannot just tick "no" to get past this step.
+            boolean asked = jdbc.sql("""
+                    SELECT EXISTS (SELECT 1 FROM chat.messages q WHERE q.conversation_id = :c AND q.role = 'assistant' AND (q.content ILIKE '%واتساب%' OR q.content ILIKE '%whatsapp%' OR q.content ILIKE '%واتس%')
+                      AND EXISTS (SELECT 1 FROM chat.messages r WHERE r.conversation_id = :c AND r.role = 'user' AND r.id > q.id AND r.id <= :u))
+                    """).param("c", ctx.conversationId()).param("u", ctx.userMsgId()).query(Boolean.class).single();
+            if (!asked || !(a.get("whatsappConsent") instanceof Boolean))
+                return obj("error", "First ask the customer, in a message of its own: do you have WhatsApp? We can re-confirm your order there for free, which number? Wait for their answer, then call prepare_order again with whatsappConsent=true and whatsappNumber, or whatsappConsent=false if they decline.");
+        }
         if (Boolean.TRUE.equals(a.get("whatsappConsent"))) {
             String raw = text(a, "whatsappNumber");
             if (raw == null || !MOBILE.matcher(raw.replace(" ", "")).matches()) return obj("error", "Ask for a valid WhatsApp mobile number (like 01012345678)");
             waNumber = PhoneNormalizer.normalize(raw.replace(" ", ""));
+            String last9 = waNumber.replaceAll("\\D", "");
+            last9 = last9.substring(last9.length() - 9);
+            boolean said = jdbc.sql("SELECT EXISTS (SELECT 1 FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u AND right(regexp_replace(content, '\\D', '', 'g'), 9) LIKE '%' || :d || '%')")
+                    .param("c", ctx.conversationId()).param("u", ctx.userMsgId()).param("d", last9).query(Boolean.class).single()
+                    || jdbc.sql("SELECT EXISTS (SELECT 1 FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u AND regexp_replace(content, '\\D', '', 'g') LIKE '%' || :d || '%')")
+                    .param("c", ctx.conversationId()).param("u", ctx.userMsgId()).param("d", last9).query(Boolean.class).single();
+            if (!said) return obj("error", "That WhatsApp number was not given by the customer. Ask them for it and use exactly what they wrote.");
         }
 
         UUID shippingId = pickShipping(tenantId, pickup);
@@ -508,7 +522,7 @@ public class ChatService {
                     .param("w", waNumber).param("o", res.get("orderId")).update();
             jdbc.sql("UPDATE commerce.customers SET whatsapp_number = :w, whatsapp_opt_in_at = now() WHERE tenant_id = :t AND phone = :p").param("w", waNumber).param("t", ctx.tenantId()).param("p", PhoneNormalizer.normalize((String) p.get("phone"))).update();
         }
-        String shopWa = waNumber == null || viaWhatsApp ? null : shopWhatsapp(ctx.tenantId());
+        String shopWa = viaWhatsApp || "TEST".equals(ctx.channel()) ? null : shopWhatsapp(ctx.tenantId());   // every customer gets the button; it works from their order phone or the number they gave
         audit.record(null, ctx.tenantId(), "AI_ORDER_PLACED", "order", (UUID) res.get("orderId"), "{\"channel\":\"" + ctx.channel() + "\"}");
         String track = "/track?n=" + res.get("orderNumber") + "&p=" + p.get("phone");
         Map<String, Object> o = obj("orderNumber", res.get("orderNumber"), "totalMinor", res.get("totalMinor"), "currency", res.get("currency"), "paymentMethod", p.get("paymentMethod"), "trackPath", track);
