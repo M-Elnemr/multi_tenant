@@ -46,6 +46,7 @@ public class MetaChannelService {
     private final String appSecret;
     private final String verifyToken;
     private final ExecutorService pool;
+    private final java.util.concurrent.ScheduledExecutorService holder = Executors.newSingleThreadScheduledExecutor();
 
     public MetaChannelService(JdbcClient jdbc, MetaGraph graph, TokenCrypto crypto, ChatService chat, LoginThrottle throttle, AuditService audit, WhatsAppConfirmService waConfirm,
                               @Value("${app.meta.app-secret:}") String appSecret, @Value("${app.meta.verify-token:}") String verifyToken, @Value("${app.meta.async:true}") boolean async) {
@@ -195,9 +196,18 @@ public class MetaChannelService {
                 } else if (!aiOn) {
                     return;   // order confirmations above keep working when the assistant is off; free chat does not
                 } else {
-                    var reply = chat.reply(tenantId, platform, sender, null, text.length() > 1000 ? text.substring(0, 1000) : text);
-                    answer = reply.text();
-                    if (reply.order() != null && !Boolean.TRUE.equals(reply.order().get("test"))) answer += orderLinks(tenantId, reply.order());
+                    // A search or a long answer can take a while: after a few seconds tell the customer we are still on it.
+                    boolean arabic = text.codePoints().anyMatch(cp -> cp >= 0x0600 && cp <= 0x06FF);
+                    var hold = holder.schedule(() -> {
+                        try { send(platform, accountId, sender, token, arabic ? "لحظات معايا... 🌸" : "One moment, I am checking for you... 🌸"); } catch (RuntimeException ignored) { /* best effort */ }
+                    }, 5, java.util.concurrent.TimeUnit.SECONDS);
+                    try {
+                        var reply = chat.reply(tenantId, platform, sender, null, text.length() > 1000 ? text.substring(0, 1000) : text);
+                        answer = reply.text();
+                        if (reply.order() != null && !Boolean.TRUE.equals(reply.order().get("test"))) answer += orderLinks(tenantId, reply.order());
+                    } finally {
+                        hold.cancel(false);
+                    }
                 }
             } catch (BusinessException e) {
                 log.debug("Meta message ignored: {}", e.getMessage());

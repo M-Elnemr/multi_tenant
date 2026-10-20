@@ -33,6 +33,7 @@ export function ChatPanel({ send, load, onReset, onTeach, greeting, className = 
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const end = useRef<HTMLDivElement>(null);
+  const [slow, setSlow] = useState(false);
   const queue = useRef<string[]>([]);   // messages typed while the assistant is still answering are sent one after another
   const running = useRef(false);
 
@@ -41,7 +42,13 @@ export function ChatPanel({ send, load, onReset, onTeach, greeting, className = 
     load().then((h) => { if (live) setMsgs(h); }).catch(() => undefined);
     return () => { live = false; };
   }, [load]);
-  useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [msgs, busy]);
+  useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [msgs, busy, slow]);
+  // A search or a long answer can take a few seconds: after three seconds say so, so the customer knows we are still on it.
+  useEffect(() => {
+    if (!busy) return;
+    const h = setTimeout(() => setSlow(true), 3000);
+    return () => { clearTimeout(h); setSlow(false); };
+  }, [busy]);
 
   const drain = async () => {
     if (running.current) return;
@@ -108,6 +115,7 @@ export function ChatPanel({ send, load, onReset, onTeach, greeting, className = 
             )}
           </div>
         ))}
+        {busy && slow && <Bubble role="assistant">{t("chat.wait")}</Bubble>}
         {busy && <Bubble role="assistant"><span className="inline-flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:120ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:240ms]" /></span></Bubble>}
         <div ref={end} />
       </div>
