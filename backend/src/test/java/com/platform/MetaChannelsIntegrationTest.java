@@ -183,7 +183,7 @@ class MetaChannelsIntegrationTest extends IntegrationTestBase {
         String ask = wa.apply("201077776666", "تأكيد طلب #" + orderNo);
         webhook(ask, sign(ask)).andExpect(status().isOk());
         assertThat(FakeMetaGraph.SENT.get(0).path()).isEqualTo(pnid + "/messages");
-        assertThat(FakeMetaGraph.SENT.get(0).body().toString()).contains(orderNo).contains("Mug").contains("100").contains("Maadi");
+        assertThat(FakeMetaGraph.SENT.get(0).body().toString()).contains(orderNo).contains("Mug").contains("150").contains("Maadi");
         onHost(t.host(), t.access(), "GET", "/api/v1/store/orders/" + orderId, null).andExpect(jsonPath("$.confirmedAt").doesNotExist());
         String yes = wa.apply("201077776666", "تمام");
         webhook(yes, sign(yes)).andExpect(status().isOk());
