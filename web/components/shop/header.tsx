@@ -14,14 +14,14 @@ const FOR_LINKS = [{ key: "MEN", value: "MEN" }, { key: "WOMEN", value: "WOMEN" 
 
 function Logo({ name, logoUrl, size = "h-10 w-10" }: { name: string; logoUrl: string | null; size?: string }) {
   return (
-    <span className="flex items-center gap-3">
+    <span className="flex min-w-0 items-center gap-2.5 sm:gap-3">
       {logoUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={logoUrl} alt={name} className={`${size} rounded-2xl bg-white object-contain shadow-sm ring-1 ring-black/5`} />
+        <img src={logoUrl} alt={name} className={`${size} shrink-0 rounded-2xl bg-white object-contain shadow-sm ring-1 ring-black/5`} />
       ) : (
-        <span className={`${size} grid place-items-center rounded-2xl bg-brand-gradient text-lg font-extrabold text-white shadow-sm`}>{name.trim().charAt(0).toUpperCase()}</span>
+        <span className={`${size} grid shrink-0 place-items-center rounded-2xl bg-brand-gradient text-lg font-extrabold text-white shadow-sm`}>{name.trim().charAt(0).toUpperCase()}</span>
       )}
-      <span className="text-lg font-extrabold leading-tight tracking-tight sm:text-xl">{name}</span>
+      <span className="truncate text-base font-extrabold leading-tight tracking-tight sm:text-xl">{name}</span>
     </span>
   );
 }
@@ -97,11 +97,11 @@ export function ShopHeader({ name, logoUrl, announcement, closedMessage, isOpen,
       {!isOpen && <div className="bg-[var(--s-ink)] px-4 py-2 text-center text-sm font-semibold text-white">🌙 {closedMessage || t("shop.closedNow")}</div>}
       {announcement && isOpen && <div className="bg-brand-gradient px-4 py-2 text-center text-sm font-bold text-white">{announcement}</div>}
       <header className="sticky top-0 z-40 border-b border-[var(--s-line)] bg-[var(--s-bg)]/90 backdrop-blur-xl">
-        <div className="s-container flex items-center gap-3 py-3">
+        <div className="s-container flex items-center gap-2 py-3 sm:gap-3">
           <button onClick={() => setDrawer(true)} aria-label={t("shop.menu")} className="grid h-11 w-11 place-items-center rounded-full transition hover:bg-[var(--s-soft)] lg:hidden"><Icon name="menu" className="h-6 w-6" /></button>
-          <Link href="/" className="min-w-0 shrink-0"><Logo name={name} logoUrl={logoUrl} /></Link>
+          <Link href="/" className="min-w-0 flex-1 md:flex-none"><Logo name={name} logoUrl={logoUrl} /></Link>
           <SearchBox className="mx-2 hidden flex-1 md:block lg:mx-6" />
-          <div className="ms-auto flex items-center gap-0.5">
+          <div className="ms-auto flex shrink-0 items-center gap-0.5">
             <a href={`/api/lang?l=${locale === "ar" ? "en" : "ar"}`} className="hidden h-11 items-center rounded-full px-3 text-sm font-bold text-[var(--s-mute)] transition hover:bg-[var(--s-soft)] sm:flex">{locale === "ar" ? "EN" : "عربي"}</a>
             <AccountButton />
             <CartButton />
