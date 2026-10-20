@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class WhatsAppConfirmService {
     private static final ObjectMapper JSON = new ObjectMapper();
+    private static final Pattern STOP = Pattern.compile("^(ايقاف|وقف|الغاء الاشتراك|الغاء|stop|unsubscribe|cancel)$", Pattern.CASE_INSENSITIVE);
     private static final Pattern ASK = Pattern.compile("^(?:تاكيد|confirm)\\s*(?:طلب|الطلب|الاوردر|order)?\\s*#?\\s*([a-z0-9][a-z0-9-]{2,40})$", Pattern.CASE_INSENSITIVE);
 
     private final JdbcClient jdbc;
@@ -42,6 +43,8 @@ public class WhatsAppConfirmService {
     public Optional<String> handle(UUID tenantId, String sender, String text) {
         String n = text.replaceAll("[\\u064B-\\u065F\\u0670\\u0640]", "").replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا').replace('ة', 'ه').trim();
         boolean arabic = text.codePoints().anyMatch(cp -> cp >= 0x0600 && cp <= 0x06FF);
+        if (STOP.matcher(n).matches()) return Optional.of(optOut(tenantId, sender, arabic));
+        if (n.toUpperCase().startsWith("CONFIRM:")) return Optional.of(confirmNow(tenantId, sender, n.substring(8).trim(), true));   // the customer tapped the Confirm button
         Matcher m = ASK.matcher(n);
         if (m.matches()) return Optional.of(ask(tenantId, sender, m.group(1), arabic));
         UUID conv = chat.conversationId(tenantId, "WHATSAPP", sender, null);
@@ -55,6 +58,47 @@ public class WhatsAppConfirmService {
             return Optional.empty();
         }
     }
+
+    /** The customer wrote "stop": no more WhatsApp messages about their open orders. */
+    private String optOut(UUID tenantId, String sender, boolean arabic) {
+        String last9 = digits(sender);
+        last9 = last9.substring(Math.max(0, last9.length() - 9));
+        jdbc.sql("UPDATE commerce.orders SET whatsapp_opt_in_at = NULL WHERE tenant_id = :t AND whatsapp_confirmed_at IS NULL AND right(regexp_replace(coalesce(whatsapp_number, ''), '\\D', '', 'g'), 9) = :d").param("t", tenantId).param("d", last9).update();
+        jdbc.sql("UPDATE commerce.customers SET whatsapp_opt_in_at = NULL WHERE tenant_id = :t AND right(regexp_replace(coalesce(whatsapp_number, ''), '\\D', '', 'g'), 9) = :d").param("t", tenantId).param("d", last9).update();
+        return arabic ? "تم إيقاف رسائل واتساب من هذا المتجر. شكراً لك 🌸" : "WhatsApp messages from this shop are switched off. Thank you.";
+    }
+
+    /** The customer tapped Confirm (or we are sure they agree): confirm the order now and say so, with the order summary. */
+    String confirmNow(UUID tenantId, String sender, String orderNumber, boolean arabic) {
+        var o = jdbc.sql("SELECT id, status, whatsapp_number, whatsapp_confirmed_at, order_number FROM commerce.orders WHERE tenant_id = :t AND upper(order_number) = upper(:n)")
+                .param("t", tenantId).param("n", orderNumber).query().listOfRows().stream().findFirst().orElse(null);
+        if (o == null || !samePhone((String) o.get("whatsapp_number"), sender))
+            return arabic ? "لم أجد طلبًا بهذا الرقم مرتبطًا برقم واتساب هذا." : "I could not find that order for this WhatsApp number.";
+        if (o.get("whatsapp_confirmed_at") != null) return arabic ? "طلبك رقم " + o.get("order_number") + " متأكد بالفعل ✅ شكراً لك." : "Order " + o.get("order_number") + " is already confirmed ✅ Thank you.";
+        if (!java.util.List.of("REQUESTED", "PREPARING").contains(o.get("status"))) return arabic ? "هذا الطلب لا يمكن تأكيده الآن." : "This order can no longer be confirmed.";
+        UUID id = (UUID) o.get("id");
+        String summary = describe(id, arabic);
+        jdbc.sql("UPDATE commerce.orders SET confirmed_at = coalesce(confirmed_at, now()), whatsapp_confirmed_at = now(), updated_at = now() WHERE id = :o AND tenant_id = :t").param("o", id).param("t", tenantId).update();
+        audit.record(null, tenantId, "ORDER_CONFIRMED_WHATSAPP", "order", id, null);
+        return (arabic ? "تم تأكيد طلبك رقم " + o.get("order_number") + " ✅\n" : "Order " + o.get("order_number") + " is confirmed ✅\n") + summary
+                + (arabic ? "\nهنجهزه ونتواصل معاك للتسليم. شكراً لثقتك 🌸" : "\nWe will prepare it and contact you for delivery. Thank you!");
+    }
+
+    /** Items, total and address of an order as plain text. */
+    private String describe(UUID orderId, boolean arabic) {
+        var o = jdbc.sql("SELECT total_minor, currency, area, shipping_address_snapshot::text AS addr FROM commerce.orders WHERE id = :o").param("o", orderId).query().listOfRows().get(0);
+        StringBuilder items = new StringBuilder();
+        for (var it : jdbc.sql("SELECT product_name_snapshot, variant_name_snapshot, quantity FROM commerce.order_items WHERE order_id = :o").param("o", orderId).query().listOfRows())
+            items.append("• ").append(it.get("product_name_snapshot")).append(it.get("variant_name_snapshot") == null ? "" : " (" + it.get("variant_name_snapshot") + ")").append(" × ").append(it.get("quantity")).append("\n");
+        String address = String.valueOf(o.get("area") == null ? "" : o.get("area"));
+        try { JsonNode a = JSON.readTree((String) o.get("addr")); address = (a.path("addressLine1").asText("") + " " + address).trim(); } catch (Exception ignored) { /* the area alone is enough */ }
+        double total = ((Number) o.get("total_minor")).longValue() / 100.0;
+        String tot = (total == Math.rint(total) ? String.valueOf((long) total) : String.format(java.util.Locale.ROOT, "%.2f", total)) + " " + ("EGP".equals(o.get("currency")) ? (arabic ? "جنيه" : "EGP") : o.get("currency"));
+        return items + (arabic ? "الإجمالي: " + tot + "\nالعنوان: " + address : "Total: " + tot + "\nAddress: " + address);
+    }
+
+    /** The "please confirm" message used by the automatic follow-up when the customer's WhatsApp window is open (a normal, free message). */
+    public Optional<String> askText(UUID tenantId, String sender, String orderNumber) { return Optional.of(ask(tenantId, sender, orderNumber, true)); }
 
     private String ask(UUID tenantId, String sender, String orderNumber, boolean arabic) {
         var o = jdbc.sql("SELECT id, status, whatsapp_number, whatsapp_confirmed_at, customer_name_snapshot, total_minor, currency, area, shipping_address_snapshot::text AS addr, eta_min_days, eta_max_days, order_number "

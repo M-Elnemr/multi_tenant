@@ -33,6 +33,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     { href: "/admin/taxonomy", label: "admin.taxonomy", icon: "tag" },
     { href: "/admin/visitors", label: "admin.visitors", icon: "users" },
     { href: "/admin/ai", label: "admin.ai", icon: "sparkles" },
+    { href: "/admin/wallet", label: "wa.adminTitle", icon: "wallet" },
     { href: "/admin/audit", label: "admin.audit", icon: "shield" },
   ];
   const active = (i: Item) => (i.href === "/admin" ? path === "/admin" : path.startsWith(i.href));

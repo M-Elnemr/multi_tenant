@@ -79,6 +79,7 @@ export function AiChannels({ write, pendingId, metaError }: { write: boolean; pe
             <Select value={f.platform} onChange={(e) => setF({ ...f, platform: e.target.value })}>{["FACEBOOK", "INSTAGRAM", "WHATSAPP"].map((p) => <option key={p} value={p}>{t(`ai.platform.${p}`)}</option>)}</Select>
           </Field>
           <Field label={idLabel}><Input dir="ltr" inputMode="numeric" value={f.externalId} onChange={(e) => setF({ ...f, externalId: e.target.value.replace(/\D/g, "") })} required /></Field>
+          {f.platform === "WHATSAPP" && <Field label={t("ai.wabaId")} hint={t("ai.wabaHint")}><Input dir="ltr" inputMode="numeric" value={f.pageId} onChange={(e) => setF({ ...f, pageId: e.target.value.replace(/\D/g, "") })} /></Field>}
           {f.platform === "INSTAGRAM" && <Field label={t("ai.pageIdFor")} hint={t("ai.pageIdHint")}><Input dir="ltr" inputMode="numeric" value={f.pageId} onChange={(e) => setF({ ...f, pageId: e.target.value.replace(/\D/g, "") })} /></Field>}
           <Field label={t("ai.accessToken")} hint={t("ai.accessTokenHint")}><Input dir="ltr" type="password" autoComplete="off" value={f.accessToken} onChange={(e) => setF({ ...f, accessToken: e.target.value })} required /></Field>
           <ErrorText error={connect.error ?? remove.error} />

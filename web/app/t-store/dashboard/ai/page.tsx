@@ -5,13 +5,14 @@ import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/client";
 import { ChatPanel } from "@/components/shop/live-chat";
 import { AiChannels } from "@/components/dashboard/ai-channels";
+import { AiWhatsApp } from "@/components/dashboard/ai-whatsapp";
 import { AiLessons } from "@/components/dashboard/ai-lessons";
 import { useAction, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Alert, Button, ErrorText, Field, Input, PageHeader, Select } from "@/components/ui";
 
 type Settings = { enabled: boolean; tone: string; maxDiscountPct: number; greeting: string | null };
-type Tab = "test" | "lessons" | "channels" | "settings";
+type Tab = "test" | "lessons" | "channels" | "whatsapp" | "settings";
 
 export default function AiAssistantPage() {
   return <Suspense><AiAssistant /></Suspense>;
@@ -35,7 +36,7 @@ function AiAssistant() {
     <>
       <PageHeader title={t("ai.title")} subtitle={t("ai.subtitle")} />
       <div className="mb-4 flex gap-2 border-b">
-        {([["test", "ai.tabTest"], ["lessons", "ai.tabLessons"], ["channels", "ai.tabChannels"], ["settings", "ai.tabSettings"]] as const).filter(([k]) => k !== "test" || write).map(([k, label]) => (
+        {([["test", "ai.tabTest"], ["lessons", "ai.tabLessons"], ["channels", "ai.tabChannels"], ["whatsapp", "wa.tab"], ["settings", "ai.tabSettings"]] as const).filter(([k]) => k !== "test" || write).map(([k, label]) => (
           <button key={k} type="button" onClick={() => setTab(k)} className={`-mb-px border-b-2 px-4 py-2 text-sm font-semibold ${tab === k ? "border-brand text-brand" : "border-transparent text-slate-500"}`}>{t(label)}</button>
         ))}
       </div>
@@ -54,6 +55,7 @@ function AiAssistant() {
       )}
       {tab === "lessons" && <div className="max-w-2xl"><AiLessons key={teach?.n ?? 0} base="store/ai/lessons" title={t("ai.teachTitle")} canWrite={write} prefill={teach} /><p className="mt-4 text-xs text-slate-500">{t("ai.platformLessons")}</p></div>}
       {tab === "channels" && <AiChannels write={write} pendingId={pendingId} metaError={metaError} />}
+      {tab === "whatsapp" && <AiWhatsApp write={write} />}
       {tab === "settings" && <SettingsForm write={write} />}
     </>
   );
