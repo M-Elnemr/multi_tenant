@@ -43,9 +43,11 @@ public class MetaOAuthService {
     private final String appSecret;
     private final String rootDomain;
     private final String graphVersion;
+    private final String configId;   // "Facebook Login for Business" apps choose permissions in a configuration instead of a scope list
 
     public MetaOAuthService(JdbcClient jdbc, MetaGraph graph, TokenCrypto crypto, MetaChannelService channels, @Value("${app.meta.app-id:}") String appId,
-                            @Value("${app.meta.app-secret:}") String appSecret, @Value("${app.platform.root-domain}") String rootDomain, @Value("${app.meta.graph-version:v21.0}") String graphVersion) {
+                            @Value("${app.meta.app-secret:}") String appSecret, @Value("${app.platform.root-domain}") String rootDomain, @Value("${app.meta.graph-version:v21.0}") String graphVersion,
+                            @Value("${app.meta.login-config-id:}") String loginConfigId) {
         this.jdbc = jdbc;
         this.graph = graph;
         this.crypto = crypto;
@@ -54,6 +56,7 @@ public class MetaOAuthService {
         this.appSecret = appSecret == null || appSecret.isBlank() ? null : appSecret.trim();
         this.rootDomain = rootDomain;
         this.graphVersion = graphVersion;
+        this.configId = loginConfigId == null || loginConfigId.isBlank() ? null : loginConfigId.trim();
     }
 
     public boolean available() { return appId != null && appSecret != null; }
@@ -66,7 +69,7 @@ public class MetaOAuthService {
         if (!available()) throw BusinessException.badRequest("META_NOT_CONFIGURED", "Connecting with Facebook is not set up on the server yet");
         String state = sign(tenantId + "." + userId + "." + (Instant.now().getEpochSecond() + 900));
         return "https://www.facebook.com/" + graphVersion + "/dialog/oauth?client_id=" + enc(appId) + "&redirect_uri=" + enc(redirectUri()) + "&state=" + enc(state)
-                + "&scope=" + enc(SCOPES) + "&response_type=code";
+                + (configId != null ? "&config_id=" + enc(configId) + "&override_default_response_type=true" : "&scope=" + enc(SCOPES)) + "&response_type=code";
     }
 
     // ---- step 2: Facebook sent the owner back with a code ----------------------------------------------------
