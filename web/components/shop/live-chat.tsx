@@ -86,7 +86,7 @@ export function ChatPanel({ send, load, onReset, onTeach, greeting, className = 
             {m.products && m.products.length > 0 && (
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {m.products.slice(0, 6).map((p) => (
-                  <Link key={p.slug} href={`/p/${p.slug}`} className="w-32 shrink-0 overflow-hidden rounded-xl border border-[var(--s-line,#e2e8f0)] bg-white">
+                  <Link key={p.slug} href={`/products/${p.slug}`} className="w-32 shrink-0 overflow-hidden rounded-xl border border-[var(--s-line,#e2e8f0)] bg-white">
                     {(p.imageUrl || p.imageMediaBase) && /* eslint-disable-next-line @next/next/no-img-element */ <img src={mediaUrl({ url: p.imageUrl, mediaBase: p.imageMediaBase, mediaExt: p.imageMediaExt }, "thumb") ?? ""} alt="" className="h-24 w-full bg-[var(--s-soft,#f1f5f9)] object-cover" />}
                     <p className="line-clamp-2 px-2 pt-1 text-xs font-semibold">{p.name}</p>
                     <p className="px-2 pb-2 text-xs font-bold" style={{ color: "var(--brand)" }}>{money(p.priceMinor, p.currency, locale)}</p>
