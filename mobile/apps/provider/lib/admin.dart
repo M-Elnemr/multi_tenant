@@ -317,6 +317,7 @@ class StaffScreen extends StatelessWidget {
                         onSelected: (v) async {
                           final m = items[i];
                           if (v == 'access') await _editAccess(context, m, reload);
+                          if (!context.mounted) return;
                           if (v == 'pin') {
                             String? pin;
                             if (await run(context, () async { final r = await ctx.api.post('tenant/members/${m['userId']}/activation-pin', {}) as Map<String, dynamic>; pin = r['activationPin'] as String?; }) && pin != null && context.mounted) {
