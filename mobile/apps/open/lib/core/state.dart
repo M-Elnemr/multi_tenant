@@ -14,8 +14,8 @@ class AppState extends ChangeNotifier {
 
   final List<CartLine> cart = [];
   final List<WishItem> wishlist = [];
-  final Map<String, String> coupons = {}; // shop id -> code
-  final List<Map<String, dynamic>> groups = []; // guest purchases: {groupId, phone, at}
+  String coupon = ''; // the code applied in the cart (a cart has one shop, so one coupon)
+  final List<Map<String, dynamic>> orders = []; // orders placed on this phone: {shop, shopName, number, phone, at}
   Map<String, dynamic>? account;
   SharedPreferences? _p;
 
@@ -40,10 +40,9 @@ class AppState extends ChangeNotifier {
 
     cart.addAll(read('cart', CartLine.fromJson));
     wishlist.addAll(read('wish', WishItem.fromJson));
-    groups.addAll(read('groups', (m) => m));
+    orders.addAll(read('orders', (m) => m));
     try {
-      final c = _p!.getString('coupons');
-      if (c != null) coupons.addAll(Map<String, String>.from(jsonDecode(c) as Map));
+      coupon = _p!.getString('coupon') ?? '';
       OpenApi.token = _p!.getString('token');
       final a = _p!.getString('account');
       if (a != null) account = Map<String, dynamic>.from(jsonDecode(a) as Map);
@@ -58,8 +57,8 @@ class AppState extends ChangeNotifier {
     if (p == null) return;
     p.setString('cart', jsonEncode(cart.map((e) => e.toJson()).toList()));
     p.setString('wish', jsonEncode(wishlist.map((e) => e.toJson()).toList()));
-    p.setString('groups', jsonEncode(groups));
-    p.setString('coupons', jsonEncode(coupons));
+    p.setString('orders', jsonEncode(orders));
+    p.setString('coupon', coupon);
     if (OpenApi.token == null) {
       p.remove('token');
       p.remove('account');
@@ -75,7 +74,9 @@ class AppState extends ChangeNotifier {
   }
 
   // ---- cart ----
-  void addToCart(CartLine line) {
+  /// A cart holds products of ONE shop (delivery and cash collection are per shop). Returns the other shop's name when the cart belongs to a different shop; nothing is added then.
+  String? addToCart(CartLine line) {
+    if (cart.isNotEmpty && cart.first.shopId != line.shopId) return cart.first.shopName;
     final i = cart.indexWhere((l) => l.variantId == line.variantId);
     if (i >= 0) {
       cart[i].quantity = (cart[i].quantity + line.quantity).clamp(1, 99);
@@ -83,6 +84,16 @@ class AppState extends ChangeNotifier {
     } else {
       cart.add(line);
     }
+    _changed();
+    return null;
+  }
+
+  /// The shopper chose to drop the other shop's cart and start a new one with this product.
+  void replaceCart(CartLine line) {
+    cart
+      ..clear()
+      ..add(line);
+    coupon = '';
     _changed();
   }
 
@@ -95,27 +106,18 @@ class AppState extends ChangeNotifier {
 
   void removeLine(String variantId) {
     cart.removeWhere((l) => l.variantId == variantId);
-    _changed();
-  }
-
-  void removeShop(String shopId) {
-    cart.removeWhere((l) => l.shopId == shopId);
-    coupons.remove(shopId);
+    if (cart.isEmpty) coupon = '';
     _changed();
   }
 
   void clearCart() {
     cart.clear();
-    coupons.clear();
+    coupon = '';
     _changed();
   }
 
-  void setCoupon(String shopId, String? code) {
-    if (code == null || code.isEmpty) {
-      coupons.remove(shopId);
-    } else {
-      coupons[shopId] = code;
-    }
+  void setCoupon(String code) {
+    coupon = code;
     _changed();
   }
 
@@ -169,10 +171,10 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  void rememberGroup(String groupId, String phone) {
-    groups.removeWhere((g) => g['groupId'] == groupId);
-    groups.insert(0, {'groupId': groupId, 'phone': phone, 'at': DateTime.now().millisecondsSinceEpoch});
-    if (groups.length > 30) groups.removeLast();
+  void rememberOrder(String shop, String shopName, String number, String phone) {
+    orders.removeWhere((o) => o['shop'] == shop && o['number'] == number);
+    orders.insert(0, {'shop': shop, 'shopName': shopName, 'number': number, 'phone': phone, 'at': DateTime.now().millisecondsSinceEpoch});
+    if (orders.length > 30) orders.removeLast();
     _changed();
   }
 }

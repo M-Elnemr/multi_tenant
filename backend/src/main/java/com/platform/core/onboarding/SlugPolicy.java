@@ -10,7 +10,7 @@ public final class SlugPolicy {
     private static final Set<String> RESERVED = Set.of(
             "www", "app", "api", "admin", "platform", "edge", "mail", "smtp", "ftp", "static", "assets", "cdn", "support",
             "help", "docs", "status", "blog", "dashboard", "login", "register", "signup", "pricing", "stores", "doctors",
-            "clinics", "internal", "localhost", "root", "system", "billing", "pay", "payments", "auth", "oauth", "cname", "open", "marketplace");
+            "clinics", "internal", "localhost", "root", "system", "billing", "pay", "payments", "auth", "oauth", "cname");
 
     private SlugPolicy() {}
 

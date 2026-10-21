@@ -54,17 +54,22 @@ function store<T>(key: string, event: string, empty: T) {
 const EMPTY_LINES: OpenCartLine[] = [];
 const cart = store<OpenCartLine[]>("ocart:v1", "ocart:changed", EMPTY_LINES);
 
-export function addToCart(line: OpenCartLine) {
-  const lines = [...cart.read()];
+/** A cart holds products of ONE shop (delivery and cash collection are per shop). Returns the other shop's name when the cart belongs to a different shop; nothing is added then. */
+export function addToCart(line: OpenCartLine): { conflict: string } | null {
+  const cur = cart.read();
+  if (cur.length > 0 && cur[0].shopId !== line.shopId) return { conflict: cur[0].shopName };
+  const lines = [...cur];
   const i = lines.findIndex((l) => l.variantId === line.variantId);
   if (i >= 0) lines[i] = { ...lines[i], quantity: Math.min(lines[i].quantity + line.quantity, 99), unitPriceMinor: line.unitPriceMinor };
   else lines.push(line);
   cart.write(lines);
+  return null;
 }
+/** The shopper chose to drop the other shop's cart and start a new one with this product. */
+export function replaceCart(line: OpenCartLine) { cart.write([line]); saveCoupon(""); }
 export function setQuantity(variantId: string, quantity: number) { cart.write(cart.read().map((l) => (l.variantId === variantId ? { ...l, quantity: Math.max(1, Math.min(quantity, 99)) } : l))); }
 export function removeLine(variantId: string) { cart.write(cart.read().filter((l) => l.variantId !== variantId)); }
-export function removeShop(shopId: string) { cart.write(cart.read().filter((l) => l.shopId !== shopId)); }
-export function clearCart() { cart.write(EMPTY_LINES); }
+export function clearCart() { cart.write(EMPTY_LINES); saveCoupon(""); }
 /** Prices shown from the cart are display-only: the server prices every order again at checkout. */
 export function useOpenCart(): OpenCartLine[] { return useSyncExternalStore(cart.subscribe, cart.read, () => EMPTY_LINES); }
 
@@ -80,17 +85,17 @@ export function toggleWish(item: WishItem) {
 }
 export function useWishlist(): WishItem[] { return useSyncExternalStore(wish.subscribe, wish.read, () => EMPTY_WISH); }
 
-// ---- guest purchases remembered on this device (so a guest can follow an order without an account) -----------------------
+// ---- orders placed on this device (so a guest can follow an order without an account) -----------------------------------------
 
-export type KnownGroup = { groupId: string; phone: string; at: number };
-const EMPTY_GROUPS: KnownGroup[] = [];
-const groups = store<KnownGroup[]>("ogroups:v1", "ogroups:changed", EMPTY_GROUPS);
-export function rememberGroup(g: KnownGroup) { groups.write([g, ...groups.read().filter((x) => x.groupId !== g.groupId)].slice(0, 30)); }
-export function useKnownGroups(): KnownGroup[] { return useSyncExternalStore(groups.subscribe, groups.read, () => EMPTY_GROUPS); }
+export type KnownOrder = { shop: string; shopName: string; number: string; phone: string; at: number };
+const EMPTY_ORDERS: KnownOrder[] = [];
+const orders = store<KnownOrder[]>("oorders:v1", "oorders:changed", EMPTY_ORDERS);
+export function rememberOrder(o: KnownOrder) { orders.write([o, ...orders.read().filter((x) => !(x.shop === o.shop && x.number === o.number))].slice(0, 30)); }
+export function useKnownOrders(): KnownOrder[] { return useSyncExternalStore(orders.subscribe, orders.read, () => EMPTY_ORDERS); }
 
 // ---- who is signed in ----------------------------------------------------------------------------------------------------
 
-export type OpenMe = { id: string; name: string; phone: string };
+export type OpenMe = { id: string; name: string; phone?: string | null; email?: string | null };
 
 /** undefined while loading, null when signed out. */
 export function useOpenMe(): OpenMe | null | undefined {
@@ -116,22 +121,15 @@ export function errMsg(t: Translate, e: unknown): string {
   return tr && tr !== key ? tr : err.message || t("error.generic");
 }
 
-const COUPONS = "ocoupons:v1";
-/** Coupon codes the shopper applied in the cart, per shop id, carried to checkout. */
-export function loadCoupons(): Record<string, string> {
-  try { return JSON.parse(localStorage.getItem(COUPONS) ?? "{}") as Record<string, string>; } catch { return {}; }
-}
-export function saveCoupons(c: Record<string, string>) {
-  try { localStorage.setItem(COUPONS, JSON.stringify(c)); } catch { /* private mode */ }
-}
+const COUPON = "ocoupon:v1";
+/** The coupon code applied in the cart, carried to checkout (a cart has one shop, so one coupon). */
+export function loadCoupon(): string { try { return localStorage.getItem(COUPON) ?? ""; } catch { return ""; } }
+export function saveCoupon(code: string) { try { if (code) localStorage.setItem(COUPON, code); else localStorage.removeItem(COUPON); } catch { /* private mode */ } }
 
-export type QuotePart = {
-  shopId: string; shopSlug: string | null; shopName: string | null; host: string | null;
-  shippingMethod?: { id: string; name: string; type: string };
-  quote?: { currency: string; subtotalMinor: number; discountMinor: number; shippingMinor: number; codFeeMinor: number; etaMinDays: number | null; etaMaxDays: number | null; totalMinor: number; lines: { variantId: string; productName: string; unitPriceMinor: number; quantity: number }[] };
-  error?: { code: string; message: string };
+export type CartQuote = {
+  shop: { id: string; slug: string; name: string; host: string | null }; currency: string; subtotalMinor: number; discountMinor: number; shippingMinor: number; codFeeMinor: number;
+  etaMinDays: number | null; etaMaxDays: number | null; totalMinor: number; shippingKnown: boolean; lines: { variantId: string; productName: string; unitPriceMinor: number; quantity: number }[];
 };
-export type CartQuote = { shops: QuotePart[]; currency: string | null; subtotalMinor: number; discountMinor: number; shippingMinor: number; codFeeMinor: number; totalMinor: number; shippingKnown: boolean; hasErrors: boolean };
 
 /** crypto.randomUUID needs a secure context (https or localhost); fall back to getRandomValues elsewhere. */
 export function uuid(): string {

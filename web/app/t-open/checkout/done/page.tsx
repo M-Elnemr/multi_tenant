@@ -1,17 +1,14 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { OrderGroupView, type Group } from "@/components/open/order-group";
-import { BackendError } from "@/lib/backend";
+import { GuestOrder } from "@/components/open/guest-order";
 import { getT } from "@/lib/i18n-server";
-import { openJson } from "@/lib/open";
 
 export const dynamic = "force-dynamic";
 export async function generateMetadata(): Promise<Metadata> { const { t } = await getT(); return { title: t("open.done.title") }; }
 
-export default async function DonePage({ searchParams }: { searchParams: Promise<{ g?: string; p?: string }> }) {
+export default async function DonePage({ searchParams }: { searchParams: Promise<{ shop?: string; n?: string }> }) {
   const { t } = await getT();
-  const { g, p } = await searchParams;
-  const group = g ? await openJson<Group>(`/orders/${encodeURIComponent(g)}${p ? `?phone=${encodeURIComponent(p)}` : ""}`).catch((e) => { if (e instanceof BackendError) return null; throw e; }) : null;
+  const { shop, n } = await searchParams;
   return (
     <div className="o-container max-w-3xl pt-8 md:pt-14">
       <div className="o-card o-reveal overflow-hidden text-center">
@@ -21,9 +18,9 @@ export default async function DonePage({ searchParams }: { searchParams: Promise
           <p className="mx-auto mt-2 max-w-md text-white/90">{t("open.done.sub")}</p>
         </div>
         <div className="p-5 text-start md:p-8">
-          {group ? <OrderGroupView group={group} compact /> : <p className="o-mute text-center">{t("open.done.notFound")}</p>}
+          {shop && n && <GuestOrder shop={shop} number={n} compact />}
           <div className="mt-6 flex flex-wrap justify-center gap-3">
-            {g && <Link href={`/orders/${g}${p ? `?phone=${encodeURIComponent(p)}` : ""}`} className="o-btn o-btn-dark">{t("open.done.track")}</Link>}
+            {shop && n && <Link href={`/orders/${encodeURIComponent(shop)}/${encodeURIComponent(n)}`} className="o-btn o-btn-dark">{t("open.done.track")}</Link>}
             <Link href="/" className="o-btn o-btn-ghost">{t("open.cart.startShopping")}</Link>
           </div>
         </div>

@@ -71,15 +71,6 @@ public class CheckoutService {
     /** {@code extraDiscountMinor} is a discount the AI assistant negotiated within the shop's limit; it is not accepted from any client request. */
     @Transactional
     public Map<String, Object> placeOrder(UUID tenantId, UUID userId, CheckoutReq r, String key, long extraDiscountMinor, String source) {
-        return placeOrder(tenantId, userId, r, key, extraDiscountMinor, source, null);
-    }
-
-    /**
-     * {@code openGroupId} marks an order placed through the Open Store marketplace: it is otherwise an ordinary shop order, and the shop's current
-     * commission rate is recorded on it (rate and amount in minor units of the discounted subtotal) for later reporting.
-     */
-    @Transactional
-    public Map<String, Object> placeOrder(UUID tenantId, UUID userId, CheckoutReq r, String key, long extraDiscountMinor, String source, UUID openGroupId) {
         if (key != null && !key.isBlank()) {
             Map<String, Object> prior = existingByKey(tenantId, key);
             if (prior != null) return prior;
@@ -103,12 +94,6 @@ public class CheckoutService {
         for (QuoteLine l : q.lines().stream().sorted(Comparator.comparing(QuoteLine::variantId)).toList())
             branchByVariant.put(l.variantId(), inventory.reserve(tenantId, l.variantId(), l.quantity(), orderId));
 
-        Integer commissionBps = null;
-        Long commissionMinor = null;
-        if (openGroupId != null) {
-            commissionBps = jdbc.sql("SELECT open_commission_bps FROM commerce.store_profiles WHERE tenant_id = :t").param("t", tenantId).query(Integer.class).optional().orElse(1000);
-            commissionMinor = Math.max(0, q.subtotal() - q.discount()) * commissionBps / 10000;
-        }
         boolean card = "CARD".equals(r.paymentMethod());
         String number = nextOrderNumber(tenantId);
         String name = r.address().recipientName().trim();
@@ -118,10 +103,9 @@ public class CheckoutService {
                 INSERT INTO commerce.orders (id, tenant_id, order_number, customer_id, user_id, status, payment_status, payment_method, shipping_method_id, coupon_code,
                     currency, subtotal_minor, discount_minor, shipping_minor, total_minor, customer_name_snapshot, customer_phone_snapshot,
                     shipping_address_snapshot, notes, idempotency_key, reservation_expires_at,
-                    governorate_code, area, landmark, phone2, cod_fee_minor, eta_min_days, eta_max_days, source,
-                    open_group_id, commission_bps, commission_minor)
+                    governorate_code, area, landmark, phone2, cod_fee_minor, eta_min_days, eta_max_days, source)
                 VALUES (:id, :t, :n, :c, :u, :st, 'UNPAID', :pm, :sm, :cc, :cur, :sub, :disc, :ship, :total, :cn, :cp, CAST(:addr AS jsonb), :notes, :key, :exp,
-                    :gov, :area, :lm, :ph2, :codfee, :emin, :emax, :src, :og, :cbps, :cmin)
+                    :gov, :area, :lm, :ph2, :codfee, :emin, :emax, :src)
                 """).param("id", orderId).param("t", tenantId).param("n", number).param("c", customerId).param("u", userId)
                 .param("st", card ? "PENDING" : "REQUESTED").param("pm", r.paymentMethod()).param("sm", r.shippingMethodId()).param("cc", q.couponCode())
                 .param("cur", q.currency()).param("sub", q.subtotal()).param("disc", q.discount()).param("ship", q.shipping()).param("total", q.total())
@@ -129,8 +113,7 @@ public class CheckoutService {
                 .param("key", key == null || key.isBlank() ? null : key)
                 .param("exp", card ? java.sql.Timestamp.from(Instant.now().plus(30, ChronoUnit.MINUTES)) : null)
                 .param("gov", nz(r.address().governorateCode()).toUpperCase()).param("area", nz(r.address().area())).param("lm", nz(r.address().landmark())).param("ph2", nz(r.address().phone2()))
-                .param("codfee", q.codFee()).param("emin", q.etaMin()).param("emax", q.etaMax()).param("src", source == null ? "WEB" : source)
-                .param("og", openGroupId).param("cbps", commissionBps).param("cmin", commissionMinor).update();
+                .param("codfee", q.codFee()).param("emin", q.etaMin()).param("emax", q.etaMax()).param("src", source == null ? "WEB" : source).update();
 
         for (QuoteLine l : q.lines())
             jdbc.sql("""

@@ -6,19 +6,12 @@ import org.springframework.http.HttpStatus;
 public class BusinessException extends RuntimeException {
     private final String code;
     private final HttpStatus status;
-    private final Object details;
 
-    public BusinessException(HttpStatus status, String code, String message) { this(status, code, message, null); }
-
-    /** {@code details} is extra structured data returned with the error (for example which cart lines failed). */
-    public BusinessException(HttpStatus status, String code, String message, Object details) {
+    public BusinessException(HttpStatus status, String code, String message) {
         super(message);
         this.code = code;
         this.status = status;
-        this.details = details;
     }
-
-    public Object getDetails() { return details; }
 
     public String getCode() { return code; }
     public HttpStatus getStatus() { return status; }

@@ -135,19 +135,24 @@ public class AccountAuthService {
     public TokenResponse clientGoogle(String credential, TenantContext.Current tenant, String ip, String ua) {
         requireOpen(tenant);
         if (tenant != null && !"STORE".equals(tenant.type())) throw BusinessException.notFound("TENANT_NOT_FOUND", "Not available here");   // a shop client signs in on a shop, or once on the platform host for every shop
+        UUID id = clientAccountFromGoogle(credential, ip);
+        return issue("CLIENT", id, ip, ua);
+    }
+
+    /** Verifies a Google credential and returns the shop-client account behind it (created on first sign-in). Shared by the shops and the Open Store. */
+    @Transactional
+    public UUID clientAccountFromGoogle(String credential, String ip) {
         throttle.check("google|" + ip, 20, Duration.ofMinutes(5));
         GoogleIdTokenVerifier.GoogleIdentity g = google.verify(credential);
         var found = jdbc.sql("SELECT id, status FROM commerce.client_accounts WHERE google_sub = :s").param("s", g.sub()).query().listOfRows().stream().findFirst();
-        UUID id;
         if (found.isPresent()) {
             if (!"ACTIVE".equals(found.get().get("status"))) throw BusinessException.forbidden("ACCOUNT_DISABLED", "Account is not active");
-            id = (UUID) found.get().get("id");
+            UUID id = (UUID) found.get().get("id");
             jdbc.sql("UPDATE commerce.client_accounts SET last_login_at = now(), email = coalesce(:e, email) WHERE id = :i").param("e", g.email()).param("i", id).update();
-        } else {
-            id = jdbc.sql("INSERT INTO commerce.client_accounts (google_sub, email, name, last_login_at) VALUES (:s, :e, :n, now()) RETURNING id")
-                    .param("s", g.sub()).param("e", g.email()).param("n", g.name() == null ? "" : g.name()).query(UUID.class).single();
+            return id;
         }
-        return issue("CLIENT", id, ip, ua);
+        return jdbc.sql("INSERT INTO commerce.client_accounts (google_sub, email, name, last_login_at) VALUES (:s, :e, :n, now()) RETURNING id")
+                .param("s", g.sub()).param("e", g.email()).param("n", g.name() == null ? "" : g.name()).query(UUID.class).single();
     }
 
     // ---- shared ------------------------------------------------------------------------------------------------

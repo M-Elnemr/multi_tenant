@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { money } from "@/lib/format";
-import { addToCart } from "@/lib/open-client";
+import { addToCart, replaceCart, type OpenCartLine } from "@/lib/open-client";
 import type { OpenShopRef } from "@/lib/open-types";
 import { Icon } from "../icons";
 import { useI18n } from "../i18n-provider";
@@ -29,6 +29,7 @@ export function OpenBuyBox({ p }: { p: OpenDetail }) {
   });
   const [qty, setQty] = useState(1);
   const [added, setAdded] = useState(false);
+  const [pending, setPending] = useState<{ line: OpenCartLine; go: boolean; other: string } | null>(null);
   const combo = p.options.map((o) => `${o.name}=${choice[o.name]}`).join("|");
   const variant = useMemo(() => p.variants.find((v) => v.comboKey === combo), [p.variants, combo]);
   const available = variant?.available ?? 0;
@@ -46,12 +47,18 @@ export function OpenBuyBox({ p }: { p: OpenDetail }) {
     return !match || match.available <= 0;
   };
 
-  const add = (go: boolean) => {
-    if (!variant || !canBuy) return;
-    addToCart({ variantId: variant.id, productId: p.id, shopId: p.shopId, shopSlug: p.shop.slug, shopName: p.shop.name, slug: p.slug, name: p.name, variantLabel: label, unitPriceMinor: variant.priceMinor, currency: p.currency, quantity: qty, image: p.images[0]?.thumb ?? null });
+  const finish = (go: boolean) => {
     if (go) { router.push("/cart"); return; }
     setAdded(true);
     setTimeout(() => setAdded(false), 2200);
+  };
+
+  const add = (go: boolean) => {
+    if (!variant || !canBuy) return;
+    const line: OpenCartLine = { variantId: variant.id, productId: p.id, shopId: p.shopId, shopSlug: p.shop.slug, shopName: p.shop.name, slug: p.slug, name: p.name, variantLabel: label, unitPriceMinor: variant.priceMinor, currency: p.currency, quantity: qty, image: p.images[0]?.thumb ?? null };
+    const clash = addToCart(line);
+    if (clash) { setPending({ line, go, other: clash.conflict }); return; }   // the cart belongs to another shop: ask first
+    finish(go);
   };
 
   return (
@@ -107,6 +114,17 @@ export function OpenBuyBox({ p }: { p: OpenDetail }) {
         </button>
         <button type="button" disabled={!canBuy} onClick={() => add(true)} className="o-btn flex-1 !min-h-12">{t("open.buyNow")}</button>
       </div>
+      {pending && (
+        <div role="alertdialog" aria-label={t("open.cart.otherShopTitle")} className="o-pop mt-3 rounded-2xl border border-[#fedf89] bg-[#fffaeb] p-4 text-sm">
+          <p className="font-extrabold">{t("open.cart.otherShopTitle")}</p>
+          <p className="mt-1 text-[var(--o-mute)]">{t("open.cart.otherShopBody", { other: pending.other, shop: p.shop.name })}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" className="o-btn o-btn-sm" onClick={() => { replaceCart(pending.line); const go = pending.go; setPending(null); finish(go); }}>{t("open.cart.startNew")}</button>
+            <button type="button" className="o-btn o-btn-ghost o-btn-sm" onClick={() => setPending(null)}>{t("open.cart.keepCurrent")}</button>
+            <button type="button" className="o-link ms-auto self-center" onClick={() => router.push("/cart")}>{t("open.viewCart")}</button>
+          </div>
+        </div>
+      )}
       {added && (
         <p className="o-pop mt-3 flex items-center justify-between rounded-2xl bg-[#e8f8f0] px-4 py-2.5 text-sm font-bold text-[#067647]">
           {t("open.addedToCart")}<Link href="/cart" className="underline">{t("open.viewCart")}</Link>

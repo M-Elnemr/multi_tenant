@@ -40,7 +40,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Map<String, dynamic>? _quote;
   bool _busy = false;
   String _error = '';
-  List<Map<String, dynamic>> _problems = [];
   String _key = _uuid();
 
   @override
@@ -94,30 +93,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   Future<void> _submit() async {
     if (!(_form.currentState?.validate() ?? false) || _busy || AppState.I.cart.isEmpty) return;
-    setState(() { _busy = true; _error = ''; _problems = []; });
+    setState(() { _busy = true; _error = ''; });
     try {
       final body = {...cartRequest(address: _addr), if (_notes.text.trim().isNotEmpty) 'notes': _notes.text.trim()};
       final res = Map<String, dynamic>.from(await OpenApi.post('checkout', body, _key) as Map);
-      AppState.I.rememberGroup(s(res['groupId']), _phone.text.trim());
-      final failed = list(res['failed']).map((f) => s(f['shopId'])).toSet();
-      // shops whose order was placed leave the cart; a shop that failed at the last moment stays so the shopper can retry it
-      if (failed.isEmpty) {
-        AppState.I.clearCart();
-      } else {
-        for (final l in [...AppState.I.cart]) {
-          if (!failed.contains(l.shopId)) AppState.I.removeLine(l.variantId);
-        }
-      }
+      final shop = Map<String, dynamic>.from(res['shop'] as Map);
+      AppState.I.rememberOrder(s(shop['slug']), s(shop['name']), s(res['orderNumber']), _phone.text.trim());
+      AppState.I.clearCart();
+      if (AppState.I.signedIn) AppState.I.refreshAccount();   // the phone typed here is now on the account
       try {
         (await SharedPreferences.getInstance()).remove('ocheck');
       } catch (_) {/* ignore */}
       if (!mounted) return;
-      Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => OrderDoneScreen(groupId: s(res['groupId']), phone: _phone.text.trim())), (r) => r.isFirst);
+      Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => OrderDoneScreen(shop: s(shop['slug']), number: s(res['orderNumber']))), (r) => r.isFirst);
     } on ApiException catch (e) {
-      setState(() {
-        _error = e.text;
-        if (e.code == 'CART_HAS_PROBLEMS' && e.fields is Map) _problems = list((e.fields as Map)['shops']);
-      });
+      setState(() => _error = e.text);
       _key = _uuid(); // a failed attempt must not be replayed as the same request
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -133,8 +123,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Widget build(BuildContext context) {
     final currency = _quote?['currency'] as String? ?? (AppState.I.cart.isEmpty ? 'EGP' : AppState.I.cart.first.currency);
     final shippingKnown = _quote?['shippingKnown'] == true;
-    final hasErrors = _quote?['hasErrors'] == true;
-    String? req(String? v, [int min = 2]) => (v ?? '').trim().length < min ? tr('error.VALIDATION_ERROR') : null;
+        String? req(String? v, [int min = 2]) => (v ?? '').trim().length < min ? tr('error.VALIDATION_ERROR') : null;
     return Scaffold(
       appBar: AppBar(title: Text(tr('open.checkout.title'))),
       body: Form(
@@ -146,6 +135,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             TextFormField(controller: _name, textInputAction: TextInputAction.next, autofillHints: const [AutofillHints.name], decoration: InputDecoration(labelText: tr('open.checkout.name')), validator: req),
             const SizedBox(height: 12),
             TextFormField(controller: _phone, keyboardType: TextInputType.phone, textDirection: TextDirection.ltr, textInputAction: TextInputAction.next, autofillHints: const [AutofillHints.telephoneNumber], decoration: InputDecoration(labelText: tr('open.checkout.phone'), hintText: '01xxxxxxxxx'), validator: (v) => _phoneRe.hasMatch((v ?? '').replaceAll(RegExp(r'[\s-]'), '')) ? null : tr('error.INVALID_PHONE')),
+            if (AppState.I.signedIn && s(AppState.I.account?['phone']).isEmpty) Padding(padding: const EdgeInsets.only(top: 6), child: Text(tr('open.checkout.phoneSaved'), style: const TextStyle(color: kMute, fontSize: 12))),
             const SizedBox(height: 12),
             TextFormField(controller: _phone2, keyboardType: TextInputType.phone, textDirection: TextDirection.ltr, decoration: InputDecoration(labelText: tr('open.checkout.phone2'), hintText: '01xxxxxxxxx'), validator: (v) => (v ?? '').trim().isEmpty || _phoneRe.hasMatch(v!.replaceAll(RegExp(r'[\s-]'), '')) ? null : tr('error.INVALID_PHONE')),
           ])),
@@ -175,42 +165,29 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           Card2(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(tr('open.cart.summary'), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
             const SizedBox(height: 12),
-            for (final p in list(_quote?['shops']))
+            if (_quote != null)
               Container(
                 margin: const EdgeInsets.only(bottom: 10),
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(color: kSoft, borderRadius: BorderRadius.circular(16)),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(children: [const Icon(Icons.storefront_rounded, size: 16), const SizedBox(width: 6), Expanded(child: Text(s(p['shopName']), style: const TextStyle(fontWeight: FontWeight.w900)))]),
-                  if (p['error'] != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text(ApiException(400, s((p['error'] as Map)['code']), s((p['error'] as Map)['message'])).text, style: const TextStyle(color: kRed, fontWeight: FontWeight.w800)))
-                  else if (p['quote'] != null) ...() {
-                    final q = Map<String, dynamic>.from(p['quote'] as Map);
-                    return [
-                      const SizedBox(height: 6),
-                      for (final l in list(q['lines'])) _kv('${s(l['productName'])} × ${l['quantity']}', money(n(l['unitPriceMinor']) * n(l['quantity']), currency), muted: true),
-                      if (n(q['discountMinor']) > 0) _kv(tr('open.cart.discount'), '−${money(q['discountMinor'], currency)}', green: true),
-                      _kv('${tr('open.cart.shipping')}${q['etaMinDays'] != null ? ' (${tr('open.eta', {'min': q['etaMinDays'], 'max': q['etaMaxDays'] ?? q['etaMinDays']})})' : ''}', shippingKnown ? (n(q['shippingMinor']) == 0 ? tr('open.freeShipping') : money(q['shippingMinor'], currency)) : '—'),
-                      if (n(q['codFeeMinor']) > 0) _kv(tr('open.checkout.codFee'), money(q['codFeeMinor'], currency)),
-                    ];
-                  }(),
+                  Row(children: [const Icon(Icons.storefront_rounded, size: 16), const SizedBox(width: 6), Expanded(child: Text(s((_quote!['shop'] as Map)['name']), style: const TextStyle(fontWeight: FontWeight.w900)))]),
+                  const SizedBox(height: 6),
+                  for (final l in list(_quote!['lines'])) _kv('${s(l['productName'])} × ${l['quantity']}', money(n(l['unitPriceMinor']) * n(l['quantity']), currency), muted: true),
+                  if (n(_quote!['discountMinor']) > 0) _kv(tr('open.cart.discount'), '−${money(_quote!['discountMinor'], currency)}', green: true),
+                  _kv('${tr('open.cart.shipping')}${_quote!['etaMinDays'] != null ? ' (${tr('open.eta', {'min': _quote!['etaMinDays'], 'max': _quote!['etaMaxDays'] ?? _quote!['etaMinDays']})})' : ''}', shippingKnown ? (n(_quote!['shippingMinor']) == 0 ? tr('open.freeShipping') : money(_quote!['shippingMinor'], currency)) : '—'),
+                  if (n(_quote!['codFeeMinor']) > 0) _kv(tr('open.checkout.codFee'), money(_quote!['codFeeMinor'], currency)),
                 ]),
               ),
             const Divider(height: 22),
             Row(children: [Expanded(child: Text(tr('open.checkout.total'), style: const TextStyle(fontWeight: FontWeight.w900))), Text(_quote == null ? '—' : money(_quote!['totalMinor'], currency), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 24))]),
             if (!shippingKnown) Text(tr('open.checkout.pickGovernorate'), style: const TextStyle(color: kMute, fontSize: 12)),
           ])),
-          if (_error.isNotEmpty || _problems.isNotEmpty)
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(top: 12),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(color: const Color(0xFFFEF3F2), borderRadius: BorderRadius.circular(14)),
-              child: _problems.isNotEmpty ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [for (final p in _problems) Text('${s(p['shopName'])}: ${ApiException(400, s(p['code']), s(p['message'])).text}', style: const TextStyle(color: Color(0xFFB42318), fontWeight: FontWeight.w800))]) : Text(_error, style: const TextStyle(color: Color(0xFFB42318), fontWeight: FontWeight.w800)),
-            ),
+          if (_error.isNotEmpty) Container(width: double.infinity, margin: const EdgeInsets.only(top: 12), padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: const Color(0xFFFEF3F2), borderRadius: BorderRadius.circular(14)), child: Text(_error, style: const TextStyle(color: Color(0xFFB42318), fontWeight: FontWeight.w800))),
           const SizedBox(height: 16),
-          GradientButton(label: tr('open.checkout.place'), busy: _busy, onPressed: hasErrors ? null : _submit),
+          GradientButton(label: tr('open.checkout.place'), busy: _busy, onPressed: _submit),
           const SizedBox(height: 10),
-          Center(child: Text(tr('open.checkout.splitNote'), textAlign: TextAlign.center, style: const TextStyle(color: kMute, fontSize: 12))),
+          Center(child: Text(tr('open.checkout.shopNote', {'shop': AppState.I.cart.isEmpty ? '' : AppState.I.cart.first.shopName}), textAlign: TextAlign.center, style: const TextStyle(color: kMute, fontSize: 12))),
         ]),
       ),
     );

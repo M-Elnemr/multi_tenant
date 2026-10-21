@@ -1,6 +1,5 @@
 package com.platform.open;
 
-import com.platform.commerce.ShopperService;
 import com.platform.core.auth.LoginThrottle;
 import com.platform.shared.ClientInfo;
 import com.platform.shared.Page;
@@ -19,23 +18,20 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/v1/open")
 public class OpenController {
-    public record RegisterRequest(String name, String phone, String password) {}
-    public record LoginRequest(String phone, String password) {}
-    public record ProfileRequest(String name) {}
-    public record PasswordRequest(String currentPassword, String newPassword) {}
+    public record GoogleRequest(String credential) {}
+    public record ProfileRequest(String name, String phone) {}
     public record ReviewRequest(UUID productId, int rating, String text) {}
+    public record TrackRequest(String shop, String orderNumber, String phone) {}
 
     private final OpenCatalogService catalog;
     private final OpenAccountService accounts;
     private final OpenCheckoutService checkout;
-    private final ShopperService shopper;
     private final LoginThrottle throttle;
 
-    public OpenController(OpenCatalogService catalog, OpenAccountService accounts, OpenCheckoutService checkout, ShopperService shopper, LoginThrottle throttle) {
+    public OpenController(OpenCatalogService catalog, OpenAccountService accounts, OpenCheckoutService checkout, LoginThrottle throttle) {
         this.catalog = catalog;
         this.accounts = accounts;
         this.checkout = checkout;
-        this.shopper = shopper;
         this.throttle = throttle;
     }
 
@@ -90,11 +86,11 @@ public class OpenController {
         return checkout.place(account, r, key);
     }
 
-    /** A guest opens a purchase with its id and the phone used; a signed-in shopper just needs the id. */
-    @GetMapping("/orders/{groupId}")
-    public Map<String, Object> track(@PathVariable UUID groupId, @RequestParam(required = false) String phone, @RequestHeader(value = "X-Open-Token", required = false) String token, HttpServletRequest req) {
-        throttle.check("open-track|" + ClientInfo.ip(req), 60, Duration.ofMinutes(10));
-        return checkout.track(groupId, accounts.accountOf(token), phone);
+    /** A guest follows an order with the shop, the order number and the phone it was placed with. */
+    @PostMapping("/orders/track")
+    public Map<String, Object> track(@RequestBody TrackRequest r, HttpServletRequest req) {
+        throttle.check("open-track|" + ClientInfo.ip(req), 30, Duration.ofMinutes(10));
+        return checkout.track(r.shop(), r.orderNumber(), r.phone());
     }
 
     @GetMapping("/orders")
@@ -102,21 +98,23 @@ public class OpenController {
         return checkout.history(accounts.require(token), Page.of(page, pageSize));
     }
 
+    @GetMapping("/orders/{id}")
+    public Map<String, Object> order(@PathVariable UUID id, @RequestHeader(value = "X-Open-Token", required = false) String token) { return checkout.order(accounts.require(token), id); }
+
     @PostMapping("/reviews")
     @ResponseStatus(HttpStatus.CREATED)
     public Map<String, Object> review(@RequestBody ReviewRequest r, @RequestHeader(value = "X-Open-Token", required = false) String token) {
-        checkout.review(accounts.require(token), r.productId(), r.rating(), r.text(), shopper);
+        checkout.review(accounts.require(token), r.productId(), r.rating(), r.text());
         return Map.of("status", "PENDING");
     }
 
-    // ---- account ---------------------------------------------------------------------------------------------------------------
+    // ---- account (the shops' Google clients) ----------------------------------------------------------------------------------
 
-    @PostMapping("/auth/register")
-    @ResponseStatus(HttpStatus.CREATED)
-    public Map<String, Object> register(@RequestBody RegisterRequest r, HttpServletRequest req) { return accounts.register(r.name(), r.phone(), r.password(), ClientInfo.ip(req)); }
+    @GetMapping("/auth/config")
+    public Map<String, Object> authConfig() { return accounts.config(); }
 
-    @PostMapping("/auth/login")
-    public Map<String, Object> login(@RequestBody LoginRequest r, HttpServletRequest req) { return accounts.login(r.phone(), r.password(), ClientInfo.ip(req)); }
+    @PostMapping("/auth/google")
+    public Map<String, Object> google(@RequestBody GoogleRequest r, HttpServletRequest req) { return accounts.googleLogin(r.credential(), ClientInfo.ip(req)); }
 
     @PostMapping("/auth/logout")
     public Map<String, Object> logout(@RequestHeader(value = "X-Open-Token", required = false) String token) {
@@ -128,13 +126,7 @@ public class OpenController {
     public Map<String, Object> me(@RequestHeader(value = "X-Open-Token", required = false) String token) { return accounts.profile(accounts.require(token)); }
 
     @PutMapping("/me")
-    public Map<String, Object> updateMe(@RequestBody ProfileRequest r, @RequestHeader(value = "X-Open-Token", required = false) String token) { return accounts.update(accounts.require(token), r.name()); }
-
-    @PostMapping("/me/password")
-    public Map<String, Object> password(@RequestBody PasswordRequest r, @RequestHeader(value = "X-Open-Token", required = false) String token) {
-        accounts.changePassword(accounts.require(token), r.currentPassword(), r.newPassword());
-        return Map.of("ok", true);
-    }
+    public Map<String, Object> updateMe(@RequestBody ProfileRequest r, @RequestHeader(value = "X-Open-Token", required = false) String token) { return accounts.update(accounts.require(token), r.name(), r.phone()); }
 
     @DeleteMapping("/me")
     public Map<String, Object> deleteMe(@RequestHeader(value = "X-Open-Token", required = false) String token) {

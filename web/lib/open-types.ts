@@ -35,3 +35,10 @@ export function num(v: number | string | null | undefined): number { return v ==
 
 /** Route params arrive percent-encoded (Arabic slugs); decode once so they can be encoded again exactly once when calling the API. */
 export function dec(s: string): string { try { return decodeURIComponent(s); } catch { return s; } }
+
+export type OrderItem = { orderId: string; productId: string; productSlug?: string; name: string; variantName?: string | null; quantity: number; unitPriceMinor: number; lineTotalMinor: number; image?: string | null };
+export type OpenOrder = {
+  id: string; shopId: string; shopSlug: string; shopName: string; shopHost?: string; supportPhone?: string | null; orderNumber: string; status: string; paymentStatus: string; currency: string;
+  subtotalMinor: number; discountMinor: number; shippingMinor: number; codFeeMinor: number; totalMinor: number; couponCode?: string | null;
+  courierName?: string | null; trackingNumber?: string | null; trackingUrl?: string | null; etaMinDays?: number | null; etaMaxDays?: number | null; createdAt: string; deliveredAt?: string | null; items: OrderItem[];
+};

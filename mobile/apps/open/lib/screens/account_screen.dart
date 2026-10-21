@@ -17,6 +17,39 @@ import 'wishlist_screen.dart';
 class AccountScreen extends StatelessWidget {
   const AccountScreen({super.key});
 
+  Future<void> _editProfile(BuildContext context) async {
+    final a = AppState.I.account ?? const {};
+    final name = TextEditingController(text: s(a['name'])), phone = TextEditingController(text: s(a['phone']).replaceFirst('+20', '0'));
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (c) => Padding(
+        padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + MediaQuery.of(c).viewInsets.bottom),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(tr('open.account.profile'), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
+          const SizedBox(height: 14),
+          TextField(controller: name, decoration: InputDecoration(labelText: tr('open.checkout.name'))),
+          const SizedBox(height: 12),
+          TextField(controller: phone, keyboardType: TextInputType.phone, textDirection: TextDirection.ltr, decoration: InputDecoration(labelText: tr('open.checkout.phone'), hintText: '01xxxxxxxxx', helperText: tr('open.account.phoneHint'))),
+          const SizedBox(height: 16),
+          GradientButton(label: tr('common.save'), onPressed: () async {
+            try {
+              final res = Map<String, dynamic>.from(await OpenApi.put('me', {'name': name.text.trim(), if (phone.text.trim().isNotEmpty) 'phone': phone.text.trim()}) as Map);
+              AppState.I.account = res;
+              AppState.I.refresh();
+              if (c.mounted) Navigator.pop(c, true);
+            } on ApiException catch (e) {
+              if (c.mounted) toast(c, e.text);
+            }
+          }),
+        ]),
+      ),
+    );
+    name.dispose();
+    phone.dispose();
+    if (ok == true && context.mounted) toast(context, tr('open.account.saved'));
+  }
+
   @override
   Widget build(BuildContext context) => ListenableBuilder(
         listenable: AppState.I,
@@ -31,7 +64,7 @@ class AccountScreen extends StatelessWidget {
                 Card2(margin: const EdgeInsets.only(bottom: 14), child: Row(children: [
                   Container(width: 62, height: 62, decoration: const BoxDecoration(gradient: kAccentGradient, shape: BoxShape.circle), alignment: Alignment.center, child: Text(s(a['name']).isEmpty ? '?' : s(a['name']).substring(0, 1), style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w900))),
                   const SizedBox(width: 14),
-                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(s(a['name']), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18)), Text(s(a['phone']).replaceFirst('+20', '0'), textDirection: TextDirection.ltr, style: const TextStyle(color: kMute))])),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(s(a['name']), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18)), Text(s(a['phone']).isEmpty ? tr('open.account.noPhone') : s(a['phone']).replaceFirst('+20', '0'), textDirection: TextDirection.ltr, style: const TextStyle(color: kMute, fontSize: 13))])),
                 ]))
               else
                 Container(
@@ -46,12 +79,11 @@ class AccountScreen extends StatelessWidget {
                     Text(tr('open.orders.signInHint'), style: const TextStyle(color: Colors.white70, height: 1.4)),
                     const SizedBox(height: 14),
                     Row(children: [
-                      Expanded(child: GradientButton(label: tr('open.signIn'), compact: true, onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AuthScreen())))),
-                      const SizedBox(width: 10),
-                      Expanded(child: GradientButton(label: tr('open.auth.register'), compact: true, dark: true, onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AuthScreen(register: true))))),
+                      Expanded(child: GradientButton(label: tr('login.google'), compact: true, onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AuthScreen())))),
                     ]),
                   ]),
                 ),
+              if (signedIn) tile(Icons.edit_outlined, tr('open.account.profile'), tr('open.account.phoneHint'), () => _editProfile(context)),
               tile(Icons.inventory_2_outlined, tr('open.myOrders'), tr('open.account.ordersSub'), () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const OrdersScreen()))),
               tile(Icons.favorite_border_rounded, tr('open.wishlist'), tr('open.account.wishlistSub'), () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const WishlistScreen()))),
               tile(Icons.storefront_outlined, tr('open.allShops'), tr('open.account.shopsSub'), () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ShopsScreen()))),

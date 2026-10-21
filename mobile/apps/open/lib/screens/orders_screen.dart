@@ -20,22 +20,19 @@ String _when(Object? iso) {
   return d == null ? '' : DateFormat.yMMMd(AppLocale.isAr ? 'ar_EG' : 'en_GB').add_jm().format(d);
 }
 
-Future<Map<String, dynamic>> fetchGroup(String id, {String? phone}) async => Map<String, dynamic>.from(await OpenApi.get('orders/$id', query: {'phone': phone}) as Map);
+/// A signed-in shopper's own order.
+Future<Map<String, dynamic>> fetchOrder(String id) async => Map<String, dynamic>.from(await OpenApi.get('orders/$id') as Map);
 
-/// One purchase: a card per shop with its own order number, status timeline, items and the shop's contact.
-class OrderGroupView extends StatelessWidget {
-  const OrderGroupView({super.key, required this.group, this.compact = false, this.canReview = false});
-  final Map<String, dynamic> group;
+/// Anyone follows an order with the shop, the number and the phone it was placed with (the phone is looked up on this device).
+Future<Map<String, dynamic>> trackOrder(String shop, String number, String phone) async => Map<String, dynamic>.from(await OpenApi.post('orders/track', {'shop': shop, 'orderNumber': number, 'phone': phone}) as Map);
+
+/// One order: the shop, its number, a status timeline, the items, totals and the shop's contact.
+class OrderView extends StatelessWidget {
+  const OrderView({super.key, required this.order, this.compact = false, this.canReview = false});
+  final Map<String, dynamic> order;
   final bool compact, canReview;
-
   @override
-  Widget build(BuildContext context) {
-    final orders = list(group['orders']);
-    return Column(children: [
-      for (final o in orders) _OrderCard(o, compact: compact, canReview: canReview),
-      if (orders.length > 1) Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: kNavy, borderRadius: BorderRadius.circular(18)), child: Row(children: [Expanded(child: Text(tr('open.groupTotal'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800))), Text(money(group['totalMinor'], s(orders.first['currency'])), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 19))])),
-    ]);
-  }
+  Widget build(BuildContext context) => _OrderCard(order, compact: compact, canReview: canReview);
 }
 
 class _OrderCard extends StatelessWidget {
@@ -165,9 +162,66 @@ class _ReviewLink extends StatelessWidget {
       );
 }
 
+/// Loads one order by shop + number using the phone saved on this device; asks for the phone when it is not known.
+class GuestOrder extends StatefulWidget {
+  const GuestOrder({super.key, required this.shop, required this.number, this.compact = false});
+  final String shop, number;
+  final bool compact;
+  @override
+  State<GuestOrder> createState() => _GuestOrderState();
+}
+
+class _GuestOrderState extends State<GuestOrder> {
+  Map<String, dynamic>? _order;
+  final _phone = TextEditingController();
+  String _error = '';
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final known = AppState.I.orders.where((o) => o['shop'] == widget.shop && o['number'] == widget.number);
+    if (known.isNotEmpty) _load(s(known.first['phone']));
+  }
+
+  @override
+  void dispose() {
+    _phone.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load(String phone) async {
+    setState(() { _busy = true; _error = ''; });
+    try {
+      final o = await trackOrder(widget.shop, widget.number, phone);
+      AppState.I.rememberOrder(widget.shop, s(o['shopName']), widget.number, phone);
+      if (mounted) setState(() => _order = o);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.status == 404 ? tr('open.order.wrongPhone') : e.text);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_order != null) return OrderView(order: _order!, compact: widget.compact, canReview: AppState.I.signedIn);
+    final known = AppState.I.orders.any((o) => o['shop'] == widget.shop && o['number'] == widget.number);
+    if (_busy || (known && _error.isEmpty)) return const Shimmer(height: 220, radius: 22);
+    return Card2(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(tr('open.order.enterPhone'), style: const TextStyle(fontWeight: FontWeight.w900)),
+      const SizedBox(height: 10),
+      TextField(controller: _phone, keyboardType: TextInputType.phone, textDirection: TextDirection.ltr, decoration: const InputDecoration(hintText: '01xxxxxxxxx')),
+      if (_error.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: Text(_error, style: const TextStyle(color: kRed, fontWeight: FontWeight.w800))),
+      const SizedBox(height: 12),
+      GradientButton(label: tr('open.done.track'), compact: true, onPressed: () { if (_phone.text.trim().isNotEmpty) _load(_phone.text.trim()); }),
+    ]));
+  }
+}
+
 class OrderDoneScreen extends StatelessWidget {
-  const OrderDoneScreen({super.key, required this.groupId, required this.phone});
-  final String groupId, phone;
+  const OrderDoneScreen({super.key, required this.shop, required this.number});
+  final String shop, number;
   @override
   Widget build(BuildContext context) => Scaffold(
         body: ListView(padding: EdgeInsets.zero, children: [
@@ -182,16 +236,9 @@ class OrderDoneScreen extends StatelessWidget {
               Text(tr('open.done.sub'), textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70, height: 1.5)),
             ]),
           ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Loader<Map<String, dynamic>>(
-              load: () => fetchGroup(groupId, phone: phone),
-              skeleton: const Padding(padding: EdgeInsets.only(top: 8), child: Shimmer(height: 220, radius: 22)),
-              builder: (context, g, _) => OrderGroupView(group: g, compact: true),
-            ),
-          ),
+          Padding(padding: const EdgeInsets.all(16), child: GuestOrder(shop: shop, number: number, compact: true)),
           Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Row(children: [
-            Expanded(child: GradientButton(label: tr('open.done.track'), dark: true, onPressed: () => Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => OrderDetailScreen(groupId: groupId, phone: phone))))),
+            Expanded(child: GradientButton(label: tr('open.done.track'), dark: true, onPressed: () => Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => OrderDetailScreen(shop: shop, number: number))))),
             const SizedBox(width: 10),
             Expanded(child: GradientButton(label: tr('open.cart.startShopping'), onPressed: () { Navigator.of(context).popUntil((r) => r.isFirst); Shell.goTo(context, 0); })),
           ])),
@@ -200,30 +247,24 @@ class OrderDoneScreen extends StatelessWidget {
       );
 }
 
+/// An order opened from the list: by id for a signed-in shopper, by shop + number for one placed on this phone.
 class OrderDetailScreen extends StatelessWidget {
-  const OrderDetailScreen({super.key, required this.groupId, this.phone});
-  final String groupId;
-  final String? phone;
+  const OrderDetailScreen({super.key, this.id, this.shop, this.number});
+  final String? id, shop, number;
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(title: Text(tr('open.orderDetails'))),
-        body: Loader<Map<String, dynamic>>(
-          load: () => fetchGroup(groupId, phone: phone),
-          skeleton: const Padding(padding: EdgeInsets.all(16), child: Shimmer(height: 260, radius: 22)),
-          builder: (context, g, reload) => RefreshIndicator(
-            color: kAccent,
-            onRefresh: reload,
-            child: ListView(padding: const EdgeInsets.fromLTRB(16, 0, 16, 28), children: [
-              Padding(padding: const EdgeInsets.only(bottom: 12), child: Text('${s(g['name'])} · ${s(g['phone'])}', textDirection: TextDirection.ltr, style: const TextStyle(color: kMute))),
-              OrderGroupView(group: g, canReview: AppState.I.signedIn),
-              if (!AppState.I.signedIn && list(g['orders']).any((o) => o['status'] == 'ARRIVED')) Text(tr('open.review.signInHint'), style: const TextStyle(color: kMute)),
-            ]),
-          ),
-        ),
+        body: id != null
+            ? Loader<Map<String, dynamic>>(
+                load: () => fetchOrder(id!),
+                skeleton: const Padding(padding: EdgeInsets.all(16), child: Shimmer(height: 260, radius: 22)),
+                builder: (context, o, reload) => RefreshIndicator(color: kAccent, onRefresh: reload, child: ListView(padding: const EdgeInsets.fromLTRB(16, 0, 16, 28), children: [OrderView(order: o, canReview: true)])),
+              )
+            : ListView(padding: const EdgeInsets.fromLTRB(16, 0, 16, 28), children: [GuestOrder(shop: shop!, number: number!)]),
       );
 }
 
-/// Orders: the signed-in shopper's purchases, or (when signed out) the ones placed on this phone.
+/// Orders: the signed-in shopper's orders across shops, or (when signed out) the ones placed on this phone.
 class OrdersScreen extends StatelessWidget {
   const OrdersScreen({super.key});
   @override
@@ -239,40 +280,44 @@ class OrdersScreen extends StatelessWidget {
         load: () async => Map<String, dynamic>.from(await OpenApi.get('orders', query: {'pageSize': '40'}) as Map),
         skeleton: ListView(padding: const EdgeInsets.all(16), children: List.generate(3, (_) => const Padding(padding: EdgeInsets.only(bottom: 12), child: Shimmer(height: 110, radius: 20)))),
         builder: (context, res, reload) {
-          final groups = list(res['data']);
-          if (groups.isEmpty) return EmptyState(emoji: '📦', title: tr('open.orders.none'), action: GradientButton(label: tr('open.cart.startShopping'), compact: true, onPressed: () { Navigator.of(context).popUntil((r) => r.isFirst); Shell.goTo(context, 0); }));
-          return RefreshIndicator(color: kAccent, onRefresh: reload, child: ListView.separated(padding: const EdgeInsets.fromLTRB(16, 0, 16, 24), itemCount: groups.length, separatorBuilder: (_, __) => const SizedBox(height: 12), itemBuilder: (_, i) => _GroupTile(groups[i], () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => OrderDetailScreen(groupId: s(groups[i]['groupId'])))))));
+          final orders = list(res['data']);
+          if (orders.isEmpty) return EmptyState(emoji: '📦', title: tr('open.orders.none'), action: GradientButton(label: tr('open.cart.startShopping'), compact: true, onPressed: () { Navigator.of(context).popUntil((r) => r.isFirst); Shell.goTo(context, 0); }));
+          return RefreshIndicator(color: kAccent, onRefresh: reload, child: ListView.separated(padding: const EdgeInsets.fromLTRB(16, 0, 16, 24), itemCount: orders.length, separatorBuilder: (_, __) => const SizedBox(height: 12), itemBuilder: (_, i) => _OrderTile(orders[i], () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => OrderDetailScreen(id: s(orders[i]['id'])))))));
         },
       );
 
   Widget _guest(BuildContext context) => ListView(padding: const EdgeInsets.fromLTRB(16, 0, 16, 24), children: [
         Card2(child: Row(children: [Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(tr('open.orders.signInTitle'), style: const TextStyle(fontWeight: FontWeight.w900)), const SizedBox(height: 2), Text(tr('open.orders.signInHint'), style: const TextStyle(color: kMute, fontSize: 12.5))])), const SizedBox(width: 10), GradientButton(label: tr('open.signIn'), compact: true, onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AuthScreen())))])),
-        if (AppState.I.groups.isNotEmpty) ...[
+        if (AppState.I.orders.isNotEmpty) ...[
           Padding(padding: const EdgeInsets.fromLTRB(2, 20, 2, 8), child: Text(tr('open.orders.onThisDevice'), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17))),
-          for (final g in AppState.I.groups)
-            Card2(margin: const EdgeInsets.only(bottom: 10), onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => OrderDetailScreen(groupId: s(g['groupId']), phone: s(g['phone'])))), child: Row(children: [Expanded(child: Text(_when(DateTime.fromMillisecondsSinceEpoch(n(g['at']).toInt()).toIso8601String()), style: const TextStyle(fontWeight: FontWeight.w800))), Text(tr('open.done.track'), style: const TextStyle(color: kAccent, fontWeight: FontWeight.w900))])),
+          for (final o in AppState.I.orders)
+            Card2(margin: const EdgeInsets.only(bottom: 10), onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => OrderDetailScreen(shop: s(o['shop']), number: s(o['number'])))), child: Row(children: [Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(s(o['shopName']), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900)), Text('${s(o['number'])} · ${_when(DateTime.fromMillisecondsSinceEpoch(n(o['at']).toInt()).toIso8601String())}', textDirection: TextDirection.ltr, style: const TextStyle(color: kMute, fontSize: 11.5))])), Text(tr('open.done.track'), style: const TextStyle(color: kAccent, fontWeight: FontWeight.w900))])),
         ] else
           Padding(padding: const EdgeInsets.only(top: 40), child: EmptyState(emoji: '📦', title: tr('open.orders.none'))),
       ]);
 }
 
-class _GroupTile extends StatelessWidget {
-  const _GroupTile(this.g, this.onTap);
-  final Map<String, dynamic> g;
+class _OrderTile extends StatelessWidget {
+  const _OrderTile(this.o, this.onTap);
+  final Map<String, dynamic> o;
   final VoidCallback onTap;
   @override
   Widget build(BuildContext context) {
-    final orders = list(g['orders']);
+    final items = list(o['items']);
     return Card2(
       onTap: onTap,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [Expanded(child: Text(_when(g['createdAt']), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13))), Text(money(g['totalMinor'], orders.isEmpty ? 'EGP' : s(orders.first['currency'])), style: const TextStyle(fontWeight: FontWeight.w900))]),
+        Row(children: [
+          Expanded(child: Text(s(o['shopName']), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900))),
+          Container(padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3), decoration: BoxDecoration(color: kSoft, borderRadius: BorderRadius.circular(99)), child: Text(tr('open.status.${s(o['status'])}'), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900))),
+        ]),
+        Text('${s(o['orderNumber'])} · ${_when(o['createdAt'])}', textDirection: TextDirection.ltr, style: const TextStyle(color: kMute, fontSize: 11.5)),
         const SizedBox(height: 10),
-        for (final o in orders)
-          Padding(padding: const EdgeInsets.only(bottom: 6), child: Row(children: [
-            Expanded(child: Text.rich(TextSpan(text: s(o['shopName']), style: const TextStyle(fontWeight: FontWeight.w800), children: [TextSpan(text: '  ${s(o['orderNumber'])}', style: const TextStyle(color: kMute, fontSize: 11.5, fontWeight: FontWeight.w500))]), maxLines: 1, overflow: TextOverflow.ellipsis)),
-            Container(padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3), decoration: BoxDecoration(color: kSoft, borderRadius: BorderRadius.circular(99)), child: Text(tr('open.status.${s(o['status'])}'), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900))),
-          ])),
+        Row(children: [
+          for (final i in items.take(4)) Padding(padding: const EdgeInsetsDirectional.only(end: 6), child: SizedBox(width: 38, height: 38, child: Img(i['image'] as String?, radius: 9))),
+          const Spacer(),
+          Text(money(o['totalMinor'], s(o['currency'])), style: const TextStyle(fontWeight: FontWeight.w900)),
+        ]),
       ]),
     );
   }

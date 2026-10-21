@@ -82,10 +82,7 @@ class _ProductScreenState extends State<ProductScreen> {
     return CartLine(variantId: s(v['id']), productId: s(d['id']), shopId: s(d['shopId']), shopSlug: s(Map.from(d['shop'] as Map)['slug']), shopName: s(Map.from(d['shop'] as Map)['name']), slug: s(d['slug']), name: s(d['name']), variantLabel: _label, unitPriceMinor: n(v['priceMinor']).toInt(), currency: s(d['currency']), quantity: _qty, image: images.isEmpty ? null : s(images.first['thumb']));
   }
 
-  void _add({bool buy = false}) {
-    final l = _line();
-    if (l == null) return;
-    AppState.I.addToCart(l);
+  void _done(bool buy) {
     if (buy) {
       Navigator.of(context).popUntil((r) => r.isFirst);
       Shell.goTo(context, 3);
@@ -93,6 +90,26 @@ class _ProductScreenState extends State<ProductScreen> {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(SnackBar(content: Text(tr('open.addedToCart')), action: SnackBarAction(label: tr('open.viewCart'), textColor: kGold, onPressed: () { Navigator.of(context).popUntil((r) => r.isFirst); Shell.goTo(context, 3); })));
+    }
+  }
+
+  Future<void> _add({bool buy = false}) async {
+    final l = _line();
+    if (l == null) return;
+    final other = AppState.I.addToCart(l);
+    if (other == null) return _done(buy);
+    // the cart belongs to another shop: ask first (a cart holds one shop's products)
+    final replace = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text(tr('open.cart.otherShopTitle'), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
+        content: Text(tr('open.cart.otherShopBody', {'shop': l.shopName, 'other': other}), style: const TextStyle(height: 1.5)),
+        actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: Text(tr('open.cart.keepCurrent'))), TextButton(onPressed: () => Navigator.pop(c, true), child: Text(tr('open.cart.startNew'), style: const TextStyle(color: kAccent, fontWeight: FontWeight.w900)))],
+      ),
+    );
+    if (replace == true) {
+      AppState.I.replaceCart(l);
+      if (mounted) _done(buy);
     }
   }
 

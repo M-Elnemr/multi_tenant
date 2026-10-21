@@ -60,19 +60,6 @@ public class ShopperService {
         }
     }
 
-    /** A review written for a customer record whose purchase the caller has already verified (the marketplace checks it against its own orders). */
-    @Transactional
-    public void addReview(UUID tenantId, UUID customerId, UUID productId, int rating, String text) {
-        ent.requireFeature(tenantId, "reviews");
-        if (rating < 1 || rating > 5) throw BusinessException.badRequest("VALIDATION_ERROR", "Rating must be 1-5");
-        try {
-            jdbc.sql("INSERT INTO commerce.reviews (tenant_id, product_id, customer_id, rating, review_text) VALUES (:t, :p, :c, :r, :x)")
-                    .param("t", tenantId).param("p", productId).param("c", customerId).param("r", rating).param("x", text).update();
-        } catch (DuplicateKeyException e) {
-            throw BusinessException.conflict("REVIEW_EXISTS", "You already reviewed this product");
-        }
-    }
-
     public Map<String, Object> profile(UUID clientId) {
         return Rows.camel(jdbc.sql("SELECT id, name, phone, email FROM commerce.client_accounts WHERE id = :u").param("u", clientId).query().listOfRows().stream().findFirst()
                 .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Account not found")));
