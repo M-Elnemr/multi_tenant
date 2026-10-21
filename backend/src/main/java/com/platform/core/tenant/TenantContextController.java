@@ -32,7 +32,8 @@ public class TenantContextController {
             return m;
         }
         String host = resolver.requestHost(req);
-        return Map.of("kind", props.isPlatformHost(host) ? "PLATFORM" : "UNKNOWN", "rootDomain", props.rootDomain());
+        String kind = props.isPlatformHost(host) ? "PLATFORM" : props.isOpenHost(host) ? "OPEN" : "UNKNOWN";
+        return Map.of("kind", kind, "rootDomain", props.rootDomain());
     }
 
     /** Public: lets the web/mobile client theme itself for the tenant behind this host. */

@@ -19,7 +19,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BusinessException.class)
     ResponseEntity<Map<String, Object>> business(BusinessException e) {
-        return body(e.getStatus(), e.getCode(), e.getMessage(), null);
+        return body(e.getStatus(), e.getCode(), e.getMessage(), e.getDetails());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

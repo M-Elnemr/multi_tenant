@@ -293,11 +293,21 @@ public class NotificationListeners {
     private static final java.util.Set<String> Set_PATIENT_VISIBLE = java.util.Set.of("CONFIRMED", "CANCELLED", "REJECTED");
 
     List<UUID> staffWith(UUID tenantId, String permission) {
-        return jdbc.sql("""
+        java.util.LinkedHashSet<UUID> out = new java.util.LinkedHashSet<>(jdbc.sql("""
                 SELECT DISTINCT m.user_id FROM core.user_tenant_memberships m JOIN core.membership_roles mr ON mr.membership_id = m.id
                 JOIN core.role_permissions rp ON rp.role_id = mr.role_id JOIN core.permissions p ON p.id = rp.permission_id
                 WHERE m.tenant_id = :t AND m.status = 'ACTIVE' AND p.code = :p
-                """).param("t", tenantId).param("p", permission).query(UUID.class).list();
+                """).param("t", tenantId).param("p", permission).query(UUID.class).list());
+        // employees given individual screens (instead of a role) hold the permissions those screens grant
+        String type = jdbc.sql("SELECT tenant_type FROM core.tenants WHERE id = :t").param("t", tenantId).query(String.class).optional().orElse("");
+        Map<UUID, Map<String, String>> byUser = new java.util.LinkedHashMap<>();
+        jdbc.sql("""
+                SELECT m.user_id, a.screen, a.level FROM core.user_tenant_memberships m JOIN core.membership_screen_access a ON a.membership_id = m.id
+                WHERE m.tenant_id = :t AND m.status = 'ACTIVE'
+                """).param("t", tenantId).query().listOfRows()
+                .forEach(r -> byUser.computeIfAbsent((UUID) r.get("user_id"), k -> new java.util.HashMap<>()).put((String) r.get("screen"), (String) r.get("level")));
+        byUser.forEach((user, access) -> { if (com.platform.core.rbac.ScreenCatalog.permissions(type, access).contains(permission)) out.add(user); });
+        return new java.util.ArrayList<>(out);
     }
 
     /** First name when the patient is a dependent (a child managed by a parent), otherwise null. */

@@ -4,6 +4,7 @@ export type Branding = { primary_color?: string; secondary_color?: string; font_
 
 export type HostInfo =
   | { kind: "PLATFORM"; rootDomain: string }
+  | { kind: "OPEN"; rootDomain: string }   // the Open Store marketplace (open.<root-domain>)
   | { kind: "UNKNOWN" }
   | {
       kind: "TENANT";

@@ -18,6 +18,11 @@ public record PlatformProperties(
                 || (extraHosts != null && extraHosts.stream().anyMatch(e -> e.trim().equalsIgnoreCase(h)));
     }
 
+    /** The marketplace (Open Store) lives at open.<root-domain>; it is not a tenant, so it gets no tenant context. */
+    public boolean isOpenHost(String host) {
+        return host != null && host.equalsIgnoreCase("open." + rootDomain);
+    }
+
     public String subdomainHost(String slug) {
         return slug + "." + rootDomain;
     }

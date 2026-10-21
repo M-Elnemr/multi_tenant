@@ -5,9 +5,9 @@ import { SESSION_COOKIE } from "@/lib/session";
 /**
  * Host-based routing: one deployment serves the platform site, every store and every clinic.
  * The visitor's host decides which internal route group renders (URLs stay clean):
- *   platform host -> /t-platform/*,  store host -> /t-store/*,  clinic host -> /t-clinic/*
+ *   platform host -> /t-platform/*,  store host -> /t-store/*,  clinic host -> /t-clinic/*,  open.<root> -> /t-open/* (the marketplace)
  */
-const INTERNAL = /^\/t-(platform|store|clinic|unknown)(\/|$)/;
+const INTERNAL = /^\/t-(platform|store|clinic|open|unknown)(\/|$)/;
 const PRIVATE_PREFIXES = ["/dashboard", "/account", "/portal", "/admin", "/orders"];   // /checkout is open: guests can order without an account
 
 export async function proxy(request: NextRequest) {
@@ -29,7 +29,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(login);
   }
 
-  const prefix = info.kind === "PLATFORM" ? "/t-platform" : info.type === "STORE" ? "/t-store" : "/t-clinic";
+  const prefix = info.kind === "PLATFORM" ? "/t-platform" : info.kind === "OPEN" ? "/t-open" : info.type === "STORE" ? "/t-store" : "/t-clinic";
   const url = request.nextUrl.clone();
   url.pathname = pathname === "/" ? prefix : prefix + pathname;
   return NextResponse.rewrite(url);

@@ -30,7 +30,7 @@ public class TenantResolutionFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         try {
             String host = requestHost(req);
-            if (host != null && !props.isPlatformHost(host)) {
+            if (host != null && !props.isPlatformHost(host) && !props.isOpenHost(host)) {
                 directory.resolve(host).ifPresent(TenantContext::set);
                 TenantContext.Current c = TenantContext.get();
                 if (c != null && "SUSPENDED".equals(c.status()) && !allowedWhileDisabled(req)) {

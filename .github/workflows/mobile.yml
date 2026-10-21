@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        project: [packages/platform_core, apps/provider, apps/elmanassa]
+        project: [packages/platform_core, apps/provider, apps/elmanassa, apps/open]
     defaults:
       run:
         working-directory: mobile/${{ matrix.project }}
@@ -26,4 +26,4 @@ jobs:
       - run: flutter pub get
       - run: flutter analyze
       - run: flutter test
-        if: matrix.project == 'packages/platform_core'
+        if: matrix.project == 'packages/platform_core' || matrix.project == 'apps/open'
