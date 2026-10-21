@@ -15,10 +15,10 @@ class _MemorySession extends Session {
   @override
   Future<bool> get loggedIn async => token != null;
   @override
-  Future<bool> refresh(ApiClient api) async {
+  Future<RefreshResult> refresh(ApiClient api) async {
     refreshed = true;
     token = 'new';
-    return true;
+    return RefreshResult.ok;
   }
 }
 
