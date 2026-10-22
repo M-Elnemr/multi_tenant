@@ -33,7 +33,6 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
   const base = slugify(name);
   const auto = (base.length >= 3 ? base : `${type === "CLINIC" ? "clinic" : "shop"}-${rand}`) + (suffix ? `-${suffix}` : "");
   const slug = manualSlug ?? auto;
-  const [editAddr, setEditAddr] = useState(false);
   const [check, setCheck] = useState<{ slug: string; state: "ok" | "taken" | "invalid" }>({ slug: "", state: "ok" });
   const [owner, setOwner] = useState({ name: "", phone: "", password: "" });
   const [showPw, setShowPw] = useState(false);
@@ -167,25 +166,18 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
             <button type="button" onClick={() => setShowPw(!showPw)} className="absolute end-3 top-1/2 -translate-y-1/2 text-xs font-medium text-brand">{showPw ? t("register.hidePw") : t("register.showPw")}</button>
           </div>
         </Field>
-        <div className="rounded-xl bg-slate-50 p-3 text-sm" dir="ltr">
-          {!editAddr ? (
-            <div className="flex items-center justify-between gap-2">
-              <span className="min-w-0 truncate font-mono text-slate-700">{slug}.{rootDomain}</span>
-              <button type="button" onClick={() => { setEditAddr(true); setManualSlug(slug); }} className="shrink-0 text-xs font-medium text-brand">{t("register.editAddress")}</button>
+        <Field label={t("register.address")} hint={t("register.addressHint")}>
+          <div dir="ltr">
+            <div className="flex items-center gap-2">
+              <Input value={slug} onChange={(e) => setManualSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))} required minLength={3} maxLength={40} autoCapitalize="none" autoCorrect="off" spellCheck={false} className="text-end" />
+              <span className="whitespace-nowrap text-slate-500">.{rootDomain}</span>
             </div>
-          ) : (
-            <div>
-              <div className="flex items-center gap-2">
-                <Input value={slug} onChange={(e) => setManualSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))} required minLength={3} maxLength={40} className="text-end" />
-                <span className="whitespace-nowrap text-slate-500">.{rootDomain}</span>
-              </div>
-              {avail === "checking" && <p className="mt-1 text-xs text-slate-500">{t("register.checking")}</p>}
-              {avail === "ok" && <p className="mt-1 text-xs text-emerald-600">✓ {t("register.available")}</p>}
-              {avail === "taken" && <p className="mt-1 text-xs text-red-600">{t("register.taken")}</p>}
-              {avail === "invalid" && <p className="mt-1 text-xs text-red-600">{t("register.invalidSlug")}</p>}
-            </div>
-          )}
-        </div>
+            {avail === "checking" && <p className="mt-1 text-xs text-slate-500">{t("register.checking")}</p>}
+            {avail === "ok" && <p className="mt-1 text-xs text-emerald-600">✓ {t("register.available")}</p>}
+            {avail === "taken" && <p className="mt-1 text-xs text-red-600">{t("register.taken")}</p>}
+            {avail === "invalid" && <p className="mt-1 text-xs text-red-600">{t("register.invalidSlug")}</p>}
+          </div>
+        </Field>
         <details className="rounded-xl border border-slate-200 p-3">
           <summary className="cursor-pointer text-sm font-medium text-slate-600">{type === "STORE" ? t("register.category") : t("register.specialty")} <span className="text-slate-400">({t("register.optional")})</span></summary>
           <div className="mt-3">

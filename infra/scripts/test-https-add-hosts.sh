@@ -11,7 +11,8 @@ fi
 current=$(openssl x509 -in "/etc/letsencrypt/live/$root/cert.pem" -noout -ext subjectAltName 2>/dev/null | tr -d ' ' | tr ',' '\n' | sed -n 's/^\(DNS:\)\?DNS://p;s/^DNS://p' | sort -u | tr '\n' ' ')
 args=(-d "$root"); for d in $current; do args+=(-d "$d"); done
 new=0; for h in "${hosts[@]}"; do case " $current " in *" $h "*) ;; *) args+=(-d "$h"); new=1;; esac; done
-[ "$new" = 1 ] || { echo "nothing to add (certificate already covers: $current)"; exit 0; }
+[ "$new" = 1 ] || { "$(dirname "$0")/test-https-render.sh" "$root" || true; echo "nothing to add (certificate already covers: $current)"; exit 0; }
 certbot certonly --webroot -w /var/www/certbot --cert-name "$root" --expand "${args[@]}" --non-interactive --agree-tos
 nginx -t && nginx -s reload
+"$(dirname "$0")/test-https-render.sh" "$root" || true
 echo "certificate now covers: $(certbot certificates --cert-name "$root" | sed -n 's/^ *Domains: //p')"
