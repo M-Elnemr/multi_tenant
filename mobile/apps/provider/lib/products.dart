@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:platform_core/platform_core.dart';
 
 import 'common.dart';
+import 'channels.dart';
 import 'forms.dart';
 
 List<Map<String, dynamic>> _maps(dynamic v) => ((v as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
@@ -407,6 +408,9 @@ class _ProductFormPageState extends State<ProductFormPage> {
     final variants = _maps(d['variants']);
     final media = _maps(d['media']);
     return [
+      if (ctx.canSee('integrations')) Padding(padding: const EdgeInsets.only(bottom: 10), child: OutlinedButton.icon(
+        onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => PublishScreen(ctx: ctx, productId: widget.id!))),
+        icon: const Icon(Icons.hub_rounded), label: Text(isAr ? 'النشر على المنصات (أمازون، نون، شوبيفاي...)' : 'Publish to platforms (Amazon, noon, Shopify...)'))),
       Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Text(isAr ? 'الأسعار والمخزون' : 'Prices and stock', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
         for (final v in variants) Padding(padding: const EdgeInsets.only(top: 10), child: Row(children: [

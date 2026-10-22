@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:platform_core/platform_core.dart';
 
+import 'channels.dart';
 import 'common.dart';
 import 'forms.dart';
 import 'products.dart';
@@ -88,6 +89,12 @@ class OrderDetail extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(child: OutlinedButton.icon(onPressed: () => whatsapp(phone, ar ? 'مرحباً ${o['customerNameSnapshot']}، بخصوص طلبك ${o['orderNumber']}' : 'Hello ${o['customerNameSnapshot']}, about your order ${o['orderNumber']}'), icon: const Icon(Icons.chat_rounded), label: const Text('WhatsApp'))),
             ]),
+            if (ctx.can('order.update_status') && ctx.canSee('shipping') && ['REQUESTED', 'PREPARING'].contains(o['status']))
+              Padding(padding: const EdgeInsets.only(top: 8), child: FilledButton.tonalIcon(
+                icon: const Icon(Icons.local_shipping_rounded),
+                label: Text(ar ? 'اشحن مع شركة شحن' : 'Ship with a carrier'),
+                onPressed: () async { if (await shipSheet(context, ctx, orderId: id)) await reload(); },
+              )),
             if (ctx.can('order.update_status') && ['PREPARING', 'SHIPPED', 'ARRIVED'].contains(o['status']))
               Padding(padding: const EdgeInsets.only(top: 8), child: OutlinedButton.icon(
                 icon: const Icon(Icons.local_shipping_outlined),

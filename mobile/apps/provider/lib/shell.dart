@@ -11,6 +11,7 @@ import 'offline_ops.dart';
 import 'products.dart';
 import 'queue.dart';
 import 'settings.dart';
+import 'channels.dart';
 import 'store_panel.dart';
 
 /// One section of the control panel. Mirrors the website's menu: the same sections, hidden without the same permission.
@@ -43,12 +44,15 @@ List<PanelSection> clinicSections() => [
 List<PanelSection> storeSections() => [
       PanelSection('نظرة عامة', 'Overview', Icons.dashboard_rounded, build: (c) => StoreDashboard(api: c.api, currency: c.currency, perms: c.perms)),
       PanelSection('الطلبات', 'Orders', Icons.local_shipping_rounded, screen: 'orders', build: (c) => OrdersScreen(ctx: c)),
+      PanelSection('قنوات البيع', 'Sales channels', Icons.hub_rounded, screen: 'integrations', build: (c) => ChannelsScreen(ctx: c)),
+      PanelSection('الشحن', 'Shipping', Icons.local_shipping_outlined, screen: 'shipping', build: (c) => ShippingScreen(ctx: c)),
       PanelSection('المنتجات', 'Products', Icons.shopping_bag_rounded, screen: 'products', build: (c) => ProductsScreen(ctx: c)),
       PanelSection('المخزون', 'Inventory', Icons.inventory_2_rounded, screen: 'inventory', build: (c) => InventoryScreen(ctx: c)),
       PanelSection('المرتجعات', 'Returns', Icons.assignment_return_rounded, screen: 'orders', build: (c) => ReturnsScreen(ctx: c)),
       PanelSection('العملاء', 'Customers', Icons.people_alt_rounded, screen: 'customers', build: (c) => CustomersScreen(ctx: c)),
       PanelSection('الكوبونات', 'Coupons', Icons.local_offer_rounded, screen: 'coupons', build: (c) => CouponsScreen(ctx: c)),
       PanelSection('التقييمات', 'Reviews', Icons.star_rounded, screen: 'reviews', build: (c) => ReviewsScreen(ctx: c)),
+      PanelSection('التسويق', 'Marketing', Icons.campaign_rounded, screen: 'marketing', build: (c) => MarketingScreen(ctx: c)),
       PanelSection('الإعدادات', 'Settings', Icons.settings_rounded, screen: 'settings', build: (c) => StoreSettings(ctx: c)),
       PanelSection('النطاقات', 'Domains', Icons.language_rounded, screen: 'domains', build: (c) => DomainsScreen(ctx: c)),
       PanelSection('الموظفون', 'Staff', Icons.badge_rounded, perm: 'staff.manage', build: (c) => StaffScreen(ctx: c)),

@@ -31,7 +31,7 @@ import org.springframework.stereotype.Service;
 public class MetaOAuthService {
     private static final Logger log = LoggerFactory.getLogger(MetaOAuthService.class);
     private static final ObjectMapper JSON = new ObjectMapper();
-    private static final String SCOPES = "pages_show_list,pages_messaging,pages_manage_metadata,pages_read_engagement,instagram_basic,instagram_manage_messages,business_management,whatsapp_business_management,whatsapp_business_messaging";
+    private static final String SCOPES = "pages_show_list,pages_messaging,pages_manage_metadata,pages_read_engagement,instagram_basic,instagram_manage_messages,business_management,whatsapp_business_management,whatsapp_business_messaging,pages_manage_posts,instagram_content_publish,ads_management,ads_read";
 
     public record Item(String kind, String id, String name, String token, String linkedId, String detail) {}
 
@@ -39,19 +39,21 @@ public class MetaOAuthService {
     private final MetaGraph graph;
     private final TokenCrypto crypto;
     private final MetaChannelService channels;
+    private final com.platform.marketing.AdsService ads;
     private final String appId;
     private final String appSecret;
     private final String rootDomain;
     private final String graphVersion;
     private final String configId;   // "Facebook Login for Business" apps choose permissions in a configuration instead of a scope list
 
-    public MetaOAuthService(JdbcClient jdbc, MetaGraph graph, TokenCrypto crypto, MetaChannelService channels, @Value("${app.meta.app-id:}") String appId,
+    public MetaOAuthService(JdbcClient jdbc, MetaGraph graph, TokenCrypto crypto, MetaChannelService channels, com.platform.marketing.AdsService ads, @Value("${app.meta.app-id:}") String appId,
                             @Value("${app.meta.app-secret:}") String appSecret, @Value("${app.platform.root-domain}") String rootDomain, @Value("${app.meta.graph-version:v21.0}") String graphVersion,
                             @Value("${app.meta.login-config-id:}") String loginConfigId) {
         this.jdbc = jdbc;
         this.graph = graph;
         this.crypto = crypto;
         this.channels = channels;
+        this.ads = ads;
         this.appId = appId == null || appId.isBlank() ? null : appId.trim();
         this.appSecret = appSecret == null || appSecret.isBlank() ? null : appSecret.trim();
         this.rootDomain = rootDomain;
@@ -130,6 +132,16 @@ public class MetaOAuthService {
         } catch (MetaGraph.MetaException e) {
             log.debug("No WhatsApp accounts found: {}", e.getMessage());   // the login worked; this account just has none we can see
         }
+        try {   // ad accounts the person can run ads on (needs the ads permissions; a login without them simply has none to offer)
+            Map<String, Object> accts = graph.get("me/adaccounts?fields=id,name,currency,account_status&limit=50", userToken);
+            for (Object a : (List<Object>) accts.getOrDefault("data", List.of())) {
+                Map<String, Object> ac = (Map<String, Object>) a;
+                if (!"1".equals(String.valueOf(ac.get("account_status")))) continue;   // only active accounts can run ads
+                out.add(new Item("ADACCOUNT", String.valueOf(ac.get("id")), String.valueOf(ac.getOrDefault("name", ac.get("id"))), userToken, String.valueOf(ac.getOrDefault("currency", "EGP")), String.valueOf(ac.getOrDefault("currency", ""))));
+            }
+        } catch (MetaGraph.MetaException e) {
+            log.debug("No ad accounts found: {}", e.getMessage());
+        }
         return out;
     }
 
@@ -154,7 +166,7 @@ public class MetaOAuthService {
         List<Map<String, Object>> done = new ArrayList<>();
         for (Item i : items) {
             if (keys == null || !keys.contains(i.kind() + ":" + i.id())) continue;
-            done.add(channels.connect(tenantId, userId, i.kind(), i.id(), i.token(), i.linkedId()));
+            done.add("ADACCOUNT".equals(i.kind()) ? ads.connectAccount(tenantId, userId, i.id(), i.name(), i.token(), i.linkedId()) : channels.connect(tenantId, userId, i.kind(), i.id(), i.token(), i.linkedId()));
         }
         if (done.isEmpty()) throw BusinessException.badRequest("VALIDATION_ERROR", "Choose at least one");
         jdbc.sql("DELETE FROM chat.oauth_pending WHERE id = :i").param("i", id).update();

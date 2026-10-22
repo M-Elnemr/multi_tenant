@@ -8,6 +8,7 @@ import { useAction, useApi } from "@/components/hooks";
 import { useT } from "@/components/i18n-provider";
 import { ImageUploader } from "@/components/uploader";
 import { Button, Card, ErrorText, Field, Input, PageHeader, Select, Textarea } from "@/components/ui";
+import { PublishToNew, publishNew, usePublishAccounts, type DraftRow, type PublishState } from "@/components/dashboard/publish-to";
 import { OptionBuilder, toRequest, type OptionDraft } from "@/components/dashboard/option-builder";
 import { TaxonomyPicker, type TaxonomyNode } from "@/components/dashboard/taxonomy-picker";
 
@@ -27,6 +28,8 @@ export default function NewProduct() {
   const [options, setOptions] = useState<OptionDraft[]>([]);
   const [rows, setRows] = useState<Record<string, Row>>({});
   const [images, setImages] = useState<string[]>([]);
+  const [publish, setPublish] = useState<PublishState>({});
+  const channels = usePublishAccounts();
 
   const parsed = useMemo(() => options.map(toRequest).filter((o) => o.name && o.values.length), [options]);
   const matrix = useMemo(() => combos(parsed), [parsed]);
@@ -34,10 +37,16 @@ export default function NewProduct() {
   const branchId = f.branchId || branches.data?.[0]?.id || "";
   const row = (c: Record<string, string>): Row => rows[key(c)] ?? { sku: "", price: "", stock: "0" };
 
+  const draftRows: DraftRow[] = matrix.map((c) => { const r = row(c); return { key: key(c), label: Object.values(c).join(" / "), sku: r.sku, price: r.price, stock: r.stock }; });
   const save = useAction(async () => {
     const variants = matrix.map((c) => { const r = row(c); return { sku: r.sku.trim(), priceMinor: toMinor(r.price), optionValues: c, stock: [{ branchId, quantity: Number(r.stock) || 0 }] }; });
-    const p = await api<{ id: string }>("store/products", { body: { name: f.name, description: f.description, taxonomyId: picked?.id, audience: f.audience || undefined, condition: f.condition, brand: f.brand || undefined, status: f.status, options: parsed, variants, media: images.map((fileId) => ({ fileId })) } });
-    router.replace(`/dashboard/products/${p.id}`);
+    const p = await api<{ id: string; variants: { id: string; sku: string }[] }>("store/products", { body: { name: f.name, description: f.description, taxonomyId: picked?.id, audience: f.audience || undefined, condition: f.condition, brand: f.brand || undefined, status: f.status, options: parsed, variants, media: images.map((fileId) => ({ fileId })) } });
+    let failed = false;
+    try {
+      const res = await publishNew(p.id, p.variants ?? [], draftRows, publish, channels.accounts);
+      failed = res.some((r) => !r.ok);
+    } catch { failed = true; }   // the product is saved either way; the product page shows where it is published
+    router.replace(`/dashboard/products/${p.id}${failed ? "?publish=failed" : ""}`);
   });
 
   return (
@@ -90,6 +99,7 @@ export default function NewProduct() {
               })}</tbody></table>
           </div>
         </Card>
+        {draftRows.length > 0 && <PublishToNew rows={draftRows} value={publish} onChange={setPublish} />}
         <ErrorText error={save.error} />
         <Button type="submit" loading={save.loading} disabled={!branchId || (f.status === "ACTIVE" && !picked)}>{t("common.save")}</Button>
       </form>

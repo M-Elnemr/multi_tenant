@@ -7,6 +7,7 @@ import { toMinor } from "@/lib/format";
 import { useAction, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Button, Card, ErrorText, Field, Input, Loading, Modal, PageHeader, StatusBadge } from "@/components/ui";
+import { ShipModal } from "@/components/dashboard/shipping/ship-modal";
 import { WhatsAppButton } from "@/components/whatsapp-button";
 import { ConfirmCard, TrackingCard } from "@/components/dashboard/order-actions";
 import { governorateName } from "@/lib/governorates";
@@ -37,6 +38,7 @@ export default function StoreOrder({ params }: { params: Promise<{ id: string }>
   const shop = useApi<{ storeName: string }>(can("settings.manage") ? "store/profile" : null);
   const blockPhone = useAction(async (blocked: boolean) => { await api("store/phone-flags", { body: { phone: data?.customerPhoneSnapshot, blocked } }); await reload(); });
   const [refundOpen, setRefundOpen] = useState(false);
+  const [shipOpen, setShipOpen] = useState(false);
   const [amount, setAmount] = useState("");
   const move = useAction(async (status: string) => { await api(`store/orders/${id}/status`, { body: { status } }); await reload(); });
   const refund = useAction(async () => { await api(`store/orders/${id}/refund`, { body: { amountMinor: toMinor(amount) } }); setRefundOpen(false); await reload(); });
@@ -58,7 +60,7 @@ export default function StoreOrder({ params }: { params: Promise<{ id: string }>
       )}
       {can("order.update_status") && <div className="mb-4 space-y-4"><ConfirmCard o={data} reload={reload} storeName={shop.data?.storeName ?? ""} />{["PREPARING", "SHIPPED", "ARRIVED"].includes(data.status) && <TrackingCard key={`${data.courierName}${data.trackingNumber}`} o={data} reload={reload} />}</div>}
       {can("order.update_status") && (NEXT[data.status] ?? []).length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-2">{NEXT[data.status].map((s) => <Button key={s} variant={s === "CANCELLED" ? "danger" : "primary"} size="sm" loading={move.loading} onClick={() => move.run(s)}>{t(`orders.to.${s}`)}</Button>)}</div>
+        <div className="mb-4 flex flex-wrap gap-2">{["REQUESTED", "PREPARING"].includes(data.status) && <Button size="sm" variant="secondary" onClick={() => setShipOpen(true)}>🚚 {t("ship.shipWith")}</Button>}{NEXT[data.status].map((s) => <Button key={s} variant={s === "CANCELLED" ? "danger" : "primary"} size="sm" loading={move.loading} onClick={() => move.run(s)}>{t(`orders.to.${s}`)}</Button>)}</div>
       )}
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
@@ -83,6 +85,7 @@ export default function StoreOrder({ params }: { params: Promise<{ id: string }>
           <Card><h2 className="mb-2 text-sm font-medium">{t("orders.timeline")}</h2><ol className="space-y-1.5 text-sm">{data.history.map((h, i) => <li key={i}><StatusBadge status={h.newStatus} /> <span className="text-xs text-slate-500">{dateTime(h.createdAt, locale)}</span></li>)}</ol></Card>
         </div>
       </div>
+      {shipOpen && <ShipModal orderId={id} onClose={() => setShipOpen(false)} onDone={() => { setShipOpen(false); void reload(); }} />}
       <Modal open={refundOpen} onClose={() => setRefundOpen(false)} title={t("orders.refund")}>
         <div className="space-y-3">
           <Field label={t("billing.amount")}><Input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" dir="ltr" /></Field>

@@ -71,10 +71,10 @@ class MetaLoginIntegrationTest extends IntegrationTestBase {
 
     @Test
     void facebookLoginForBusinessAppsSendAConfigurationIdInsteadOfPermissions() {
-        var withConfig = new com.platform.chat.MetaOAuthService(null, null, null, null, "app1", "secret", "platform.test", "v21.0", "98765");
+        var withConfig = new com.platform.chat.MetaOAuthService(null, null, null, null, null, "app1", "secret", "platform.test", "v21.0", "98765");
         String url = withConfig.startUrl(java.util.UUID.randomUUID(), java.util.UUID.randomUUID());
         assertThat(url).contains("config_id=98765").contains("override_default_response_type=true").doesNotContain("scope=");
-        var plain = new com.platform.chat.MetaOAuthService(null, null, null, null, "app1", "secret", "platform.test", "v21.0", "");
+        var plain = new com.platform.chat.MetaOAuthService(null, null, null, null, null, "app1", "secret", "platform.test", "v21.0", "");
         assertThat(plain.startUrl(java.util.UUID.randomUUID(), java.util.UUID.randomUUID())).contains("scope=").doesNotContain("config_id");
     }
 }

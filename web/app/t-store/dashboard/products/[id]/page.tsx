@@ -5,8 +5,9 @@ import { api } from "@/lib/client";
 import { fromMinor, toMinor } from "@/lib/format";
 import { useAction, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
-import { Button, Card, ErrorText, Field, Input, Loading, PageHeader, Select, StatusBadge, Textarea } from "@/components/ui";
-import { useRouter } from "next/navigation";
+import { Alert, Button, Card, ErrorText, Field, Input, Loading, PageHeader, Select, StatusBadge, Textarea } from "@/components/ui";
+import { useRouter, useSearchParams } from "next/navigation";
+import { PublishToExisting } from "@/components/dashboard/publish-to";
 import { ProductExtras, type Extras } from "@/components/dashboard/product-extras";
 import { ProductImages, type ProductMedia } from "@/components/dashboard/product-images";
 import { TaxonomyPicker, type TaxonomyNode } from "@/components/dashboard/taxonomy-picker";
@@ -21,6 +22,7 @@ export default function EditProduct({ params }: { params: Promise<{ id: string }
   const { id } = use(params);
   const { t, locale } = useI18n();
   const router = useRouter();
+  const publishFailed = useSearchParams().get("publish") === "failed";
   const { can } = useMe();
   const { data, loading, error, reload } = useApi<Detail>(`store/products/${id}`);
   const [picked, setPicked] = useState<TaxonomyNode | null>(null);
@@ -68,6 +70,12 @@ export default function EditProduct({ params }: { params: Promise<{ id: string }
         <ErrorText error={save.error ?? archive.error} />
         <div className="flex gap-3"><Button type="submit" loading={save.loading}>{t("common.save")}</Button>{can("product.delete") && <Button type="button" variant="danger" loading={archive.loading} onClick={() => archive.run()}>{t("products.archive")}</Button>}</div>
       </form>
+      {can("integration.read") && data.status !== "ARCHIVED" && (
+        <div className="mt-5 space-y-3">
+          {publishFailed && <Alert tone="amber">{t("pub.someFailed")}</Alert>}
+          <PublishToExisting productId={id} />
+        </div>
+      )}
     </>
   );
 }

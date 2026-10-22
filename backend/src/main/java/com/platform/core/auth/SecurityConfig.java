@@ -53,6 +53,7 @@ public class SecurityConfig {
                         "/actuator/health/**", "/actuator/prometheus", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/shop/profile", "/api/v1/shop/categories", "/api/v1/shop/products", "/api/v1/shop/products/*", "/api/v1/shop/products/*/related", "/api/v1/shop/products/facets", "/api/v1/shop/search/suggest", "/api/v1/shop/home", "/api/v1/shop/branches", "/api/v1/shop/chat/config", "/api/v1/shop/chat/history").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/shop/cart/quote", "/api/v1/shop/checkout", "/api/v1/shop/track", "/api/v1/shop/track/return", "/api/v1/shop/webhooks/*", "/api/v1/shop/chat").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/integrations/oauth/*/callback").permitAll()   // platforms send the owner back here; the signed state says who
                 .requestMatchers("/api/v1/open/**").permitAll()   // the marketplace API; its account routes check their own X-Open-Token
                 .requestMatchers("/api/v1/chat/meta/webhook", "/api/v1/chat/meta/callback").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/clinic/public/**", "/api/v1/files/*/content").permitAll()
