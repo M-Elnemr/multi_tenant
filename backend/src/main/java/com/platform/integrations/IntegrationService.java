@@ -115,6 +115,8 @@ public class IntegrationService {
             case "NOON" -> "https://partners.noon.com";
             case "SALLA" -> "https://s.salla.sa";
             case "YOUCAN" -> "https://seller-area.youcan.shop";
+            case "ZID" -> "https://web.zid.sa";
+            case "AYMAKAN" -> "https://dashboard.aymakan.com.sa";
             case "ARAMEX" -> "https://www.aramex.com";
             case "BOSTA" -> "https://business.bosta.co";
             case "MYLERZ" -> "https://mylerz.net";

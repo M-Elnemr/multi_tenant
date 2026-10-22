@@ -16,7 +16,7 @@ export type CatalogField = { key: string; labelEn: string; labelAr: string; secr
 export type CatalogItem = { id: string; name: string; kind: string; countries: Country[]; status: "READY" | "BETA" | "SOON"; can: string[]; fields: CatalogField[]; oauth: boolean; helpEn: string; helpAr: string; docsUrl: string };
 
 const COLORS: Record<string, string> = {
-  AMAZON: "bg-[#232f3e] text-[#ff9900]", NOON: "bg-[#feee00] text-black", SHOPIFY: "bg-[#95bf47] text-white", WOOCOMMERCE: "bg-[#7f54b3] text-white", SALLA: "bg-[#004d5a] text-[#bbf3e8]", YOUCAN: "bg-[#1e66f5] text-white",
+  AMAZON: "bg-[#232f3e] text-[#ff9900]", NOON: "bg-[#feee00] text-black", SHOPIFY: "bg-[#95bf47] text-white", WOOCOMMERCE: "bg-[#7f54b3] text-white", SALLA: "bg-[#004d5a] text-[#bbf3e8]", YOUCAN: "bg-[#1e66f5] text-white", ZID: "bg-[#5b2d90] text-white", AYMAKAN: "bg-[#f26b21] text-white",
   ARAMEX: "bg-[#e1251b] text-white", BOSTA: "bg-[#e30613] text-white", MYLERZ: "bg-[#0e2a47] text-white", SMSA: "bg-[#6d2077] text-white", NAQEL: "bg-[#00a859] text-white", JT: "bg-[#d71920] text-white", SPL: "bg-[#007a3d] text-white",
   EMIRATES_POST: "bg-[#c8102e] text-white", TURBO: "bg-[#ff6a00] text-white", SHIPA: "bg-[#2b2d42] text-white", QUIQUP: "bg-[#00b5ad] text-white", ZAJIL: "bg-[#1d3557] text-white", META_ADS: "bg-[#0866ff] text-white",
 };

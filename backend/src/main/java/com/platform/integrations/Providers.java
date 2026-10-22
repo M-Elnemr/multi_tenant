@@ -67,6 +67,12 @@ public final class Providers {
                 "Log in with YouCan to authorize elmanassa, or paste an access token from your YouCan Partner app.",
                 "سجّل الدخول بيوكان لمنح الصلاحية، أو الصق رمز وصول من تطبيقك في حساب الشركاء.", "https://developer.youcan.shop"));
 
+        add(new Def("ZID", "Zid", STORE_PLATFORM, List.of("SA", "AE"),
+                List.of(Field.secret("authorization", "Authorization token", "رمز التفويض (Authorization)"), Field.secret("managerToken", "Manager token (X-Manager-Token)", "رمز المدير (X-Manager-Token)"), Field.text("storeId", "Store ID (optional)", "معرّف المتجر (اختياري)", "")),
+                false, "BETA", List.of("PRODUCTS", "PUSH", "CREATE", "ORDERS", "ACTIONS"),
+                "Create an app in the Zid Partner dashboard, authorize it on your store and paste the two tokens the authorization returns.",
+                "أنشئ تطبيقاً في لوحة شركاء زد، فعّله على متجرك والصق الرمزين اللذين تعطيهما عملية التفويض.", "https://docs.zid.sa"));
+
         add(new Def("ARAMEX", "Aramex", CARRIER, ALL,
                 List.of(Field.text("userName", "Username (email)", "اسم المستخدم (البريد)", ""), Field.secret("password", "Password", "كلمة المرور"), Field.text("accountNumber", "Account number", "رقم الحساب", ""),
                         Field.text("accountPin", "Account PIN", "رقم PIN للحساب", ""), Field.text("accountEntity", "Account entity", "كيان الحساب (مثل CAI / RUH / DXB)", "CAI"), Field.text("accountCountryCode", "Account country code", "رمز دولة الحساب", "EG"),
@@ -82,8 +88,12 @@ public final class Providers {
                 List.of(Field.text("username", "Username", "اسم المستخدم", ""), Field.secret("password", "Password", "كلمة المرور"), Field.text("warehouseName", "Pickup warehouse name", "اسم مخزن الاستلام", "")),
                 false, "BETA", List.of("CREATE"),
                 "Use the credentials Mylerz gave you for API access.", "استخدم بيانات الدخول التي أعطتك إياها مايلرز للربط البرمجي.", ""));
+        add(new Def("AYMAKAN", "Aymakan", CARRIER, List.of("SA", "AE"),
+                List.of(Field.secret("apiKey", "API key (security code)", "مفتاح API (الكود الأمني)"), Field.text("sandbox", "Use Aymakan test servers - type yes (optional)", "استخدام خوادم التجربة - اكتب yes (اختياري)", "")),
+                false, "BETA", List.of("CREATE", "TRACKING", "LABEL"),
+                "In your Aymakan account: Technical > AyMakan API, copy the security code.", "من حسابك في أيمكان: Technical ← AyMakan API، انسخ الكود الأمني.", "https://developer.aymakan.com.sa"));
         for (String[] c : new String[][] {{"NAQEL", "Naqel", "SA,AE"}, {"SMSA", "SMSA Express", "SA"}, {"JT", "J&T Express", "EG,SA,AE"}, {"SPL", "Saudi Post (SPL)", "SA"}, {"EMIRATES_POST", "Emirates Post", "AE"},
-                {"TURBO", "Turbo", "EG"}, {"SHIPA", "Shipa Delivery", "AE"}, {"QUIQUP", "Quiqup", "AE"}, {"ZAJIL", "Zajil", "SA"}})
+                {"TURBO", "Turbo", "EG"}, {"SHIPA", "Shipa Delivery", "AE"}, {"QUIQUP", "Quiqup", "AE"}, {"ZAJIL", "Zajil", "SA"}, {"SALASA", "Salasa", "SA"}, {"THABIT", "Thabit Logistics", "SA"}, {"OTO", "OTO (multi-carrier)", "SA,AE"}, {"FETCHR", "Fetchr", "SA,AE"}})
             add(new Def(c[0], c[1], CARRIER, List.of(c[2].split(",")), List.of(), false, "SOON", List.of(), "Coming soon.", "قريباً.", ""));
 
         add(new Def("META_ADS", "Meta Ads", ADS, ALL, List.of(), true, "READY", List.of("CAMPAIGNS"),

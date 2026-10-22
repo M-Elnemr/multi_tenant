@@ -18,7 +18,7 @@ String _stage(String st, bool ar) => ar ? (_stageAr[st] ?? st) : st[0] + st.subs
 Future<void> openWeb(Ctx ctx, String path) => launch('https://${ctx.host}$path');
 
 Widget _mark(String provider, String name, {double size = 40}) {
-  const colors = {'AMAZON': Color(0xFF232F3E), 'NOON': Color(0xFFFEEE00), 'SHOPIFY': Color(0xFF95BF47), 'WOOCOMMERCE': Color(0xFF7F54B3), 'SALLA': Color(0xFF004D5A), 'YOUCAN': Color(0xFF1E66F5), 'ARAMEX': Color(0xFFE1251B), 'BOSTA': Color(0xFFE30613), 'MYLERZ': Color(0xFF0E2A47)};
+  const colors = {'AMAZON': Color(0xFF232F3E), 'NOON': Color(0xFFFEEE00), 'SHOPIFY': Color(0xFF95BF47), 'WOOCOMMERCE': Color(0xFF7F54B3), 'SALLA': Color(0xFF004D5A), 'YOUCAN': Color(0xFF1E66F5), 'ARAMEX': Color(0xFFE1251B), 'BOSTA': Color(0xFFE30613), 'ZID': Color(0xFF5B2D90), 'AYMAKAN': Color(0xFFF26B21), 'MYLERZ': Color(0xFF0E2A47)};
   final bg = colors[provider] ?? const Color(0xFF475569);
   final fg = bg.computeLuminance() > 0.6 ? Colors.black : Colors.white;
   final t = name.replaceAll(RegExp(r'[^A-Za-z0-9]'), '');

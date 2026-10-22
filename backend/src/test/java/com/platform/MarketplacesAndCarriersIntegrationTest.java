@@ -296,4 +296,42 @@ class MarketplacesAndCarriersIntegrationTest extends IntegrationTestBase {
         assertThat(FakeHttpGateway.calls("POST", "/wc/v3/orders/801/notes").get(0).body()).contains("BO-7788");
         onHost(s.t().host(), s.t().access(), "GET", "/api/v1/store/integrations/orders/" + orderId, null).andExpect(jsonPath("$.trackingNumber").value("BO-7788")).andExpect(jsonPath("$.shipments.length()").value(1));
     }
+
+    @Test
+    void aShopOrderIsShippedWithAymakanAndTrackedToDelivered() throws Exception {
+        Shop s = shop();
+        FakeHttpGateway.when("GET", "/v2/cities", 401, "{\"error\":true,\"response\":\"Invalid Credentials\"}");
+        onHost(s.t().host(), s.t().access(), "POST", "/api/v1/store/shipping/carriers", json(Map.of("provider", "AYMAKAN", "country", "SA", "credentials", Map.of("apiKey", "bad")))).andExpect(status().isUnprocessableEntity());
+        FakeHttpGateway.reset();
+        FakeHttpGateway.when("GET", "/v2/cities", 200, "{\"success\":true,\"data\":{\"cities\":[]}}");
+        String acc = JsonPath.read(ok(onHost(s.t().host(), s.t().access(), "POST", "/api/v1/store/shipping/carriers", json(Map.of("provider", "AYMAKAN", "country", "SA", "credentials", Map.of("apiKey", "aym-key-" + uniq(), "sandbox", "yes")))).andExpect(status().isCreated())), "$.id");
+        String order = placeOrder(s, "01012345678");
+        jdbc.sql("UPDATE commerce.branches SET phone = '+966500000001', address_line1 = '5 King Rd', city = 'Riyadh' WHERE tenant_id = (SELECT id FROM core.tenants WHERE slug = :s)").param("s", s.t().slug()).update();
+        FakeHttpGateway.when("POST", "/v2/shipping/create", 200, "{\"success\":true,\"shipping\":{\"tracking_number\":\"AY123\",\"pdf_label\":\"https://aymakan.test/label.pdf\"}}");
+        String res = ok(onHost(s.t().host(), s.t().access(), "POST", "/api/v1/store/shipping/shipments", "{\"orderId\":\"%s\",\"accountId\":\"%s\",\"weightKg\":1,\"pieces\":1}".formatted(order, acc))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.trackingNumber").value("AY123")).andExpect(jsonPath("$.labelUrl").value("https://aymakan.test/label.pdf")));
+        var create = FakeHttpGateway.calls("POST", "/v2/shipping/create").get(0);
+        assertThat(create.url()).startsWith("https://dev-api.aymakan.com.sa");
+        assertThat(create.headers().get("Authorization")).startsWith("aym-key-");
+        assertThat(create.body()).contains("\"is_cod\":1").contains("\"cod_amount\":230.0").contains("\"delivery_name\":\"Mona\"").contains("\"collection_city\":\"Riyadh\"");
+        FakeHttpGateway.when("GET", "/v2/shipping/track/AY123", 200, "{\"success\":true,\"data\":{\"shipments\":[{\"status\":\"Delivered\",\"tracking_info\":[{\"description\":\"Shipment delivered\",\"created_at\":\"2026-10-22 10:00:00\"}]}]}}");
+        onHost(s.t().host(), s.t().access(), "POST", "/api/v1/store/shipping/shipments/" + JsonPath.read(res, "$.id") + "/refresh", "{}").andExpect(jsonPath("$.status").value("DELIVERED"));
+        onHost(s.t().host(), s.t().access(), "GET", "/api/v1/store/orders/" + order, null).andExpect(jsonPath("$.status").value("ARRIVED"));
+    }
+
+    @Test
+    void zidProductsAndOrdersAreReadAndPriceIsPushed() throws Exception {
+        Shop s = shop();
+        FakeHttpGateway.when("GET", "/managers/account/profile", 200, "{\"user\":{\"id\":7,\"store\":{\"id\":\"st-1\",\"title\":\"Zid Shop\",\"currency\":\"SAR\"}}}");
+        FakeHttpGateway.when("GET", "/v1/products/", 200, "{\"next\":null,\"results\":[{\"id\":\"p1\",\"sku\":\"" + s.sku() + "\",\"name\":\"Tee\",\"price\":200,\"sale_price\":null,\"quantity\":4,\"is_published\":true,\"images\":[],\"variants\":[]}]}");
+        FakeHttpGateway.when("GET", "/managers/store/orders", 200, "{\"orders\":[{\"id\":55,\"code\":\"Z-55\",\"order_status\":\"new\",\"order_total\":\"150.00\",\"currency_code\":\"SAR\",\"created_at\":\"2026-10-21T09:00:00Z\","
+                + "\"customer\":{\"name\":\"Ali\",\"mobile\":\"0501112222\"},\"shipping\":{\"address\":{\"street\":\"King Rd\",\"city\":{\"name\":\"Riyadh\"}}},\"products\":[{\"sku\":\"" + s.sku() + "\",\"name\":\"Tee\",\"quantity\":1,\"price\":\"150.00\",\"total\":\"150.00\"}]}],\"total_order_count\":1}");
+        String acc = JsonPath.read(ok(onHost(s.t().host(), s.t().access(), "POST", "/api/v1/store/integrations/accounts", json(Map.of("provider", "ZID", "country", "SA", "credentials", Map.of("authorization", "auth-tok", "managerToken", "mgr-tok"))))
+                .andExpect(status().isCreated())), "$.id");
+        drain();
+        var call = FakeHttpGateway.calls("GET", "/v1/products/").get(0);
+        assertThat(call.headers().get("Authorization")).isEqualTo("Bearer auth-tok");
+        assertThat(call.headers().get("X-Manager-Token")).isEqualTo("mgr-tok");
+        onHost(s.t().host(), s.t().access(), "GET", "/api/v1/store/integrations/orders?accountId=" + acc, null).andExpect(jsonPath("$.meta.total").value(1)).andExpect(jsonPath("$.data[0].customerName").value("Ali")).andExpect(jsonPath("$.data[0].totalMinor").value(15000));
+    }
 }
