@@ -50,11 +50,13 @@ ThemeData themeFor(TenantInfo? t, {Color? seed}) {
     chipTheme: ChipThemeData(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       backgroundColor: Colors.white,
-      selectedColor: scheme.primary,
+      selectedColor: scheme.primary.withValues(alpha: 0.16),
       disabledColor: const Color(0xFFE9EEF4),
       side: const BorderSide(color: Color(0xFFB9C7D6)),
-      checkmarkColor: Colors.white,
-      labelStyle: WidgetStateTextStyle.resolveWith((states) => TextStyle(fontFamily: kFont, fontWeight: FontWeight.w700, color: states.contains(WidgetState.selected) ? Colors.white : const Color(0xFF14232B))),
+      checkmarkColor: scheme.primary,
+      // one fixed dark label for every state: the state-resolved style made the unselected labels vanish on some chips (white on white)
+      labelStyle: const TextStyle(fontFamily: kFont, fontWeight: FontWeight.w700, color: Color(0xFF14232B)),
+      secondaryLabelStyle: const TextStyle(fontFamily: kFont, fontWeight: FontWeight.w800, color: Color(0xFF14232B)),
     ),
     segmentedButtonTheme: SegmentedButtonThemeData(style: SegmentedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: const Color(0xFF14232B), selectedBackgroundColor: scheme.primary, selectedForegroundColor: Colors.white, side: const BorderSide(color: Color(0xFFB9C7D6)), textStyle: const TextStyle(fontFamily: kFont, fontWeight: FontWeight.w700))),
     // the components that build their own text style: set the app font on them explicitly (tabs, menus, dropdowns, text buttons, toggles)

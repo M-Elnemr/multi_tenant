@@ -300,10 +300,10 @@ class MarketplacesAndCarriersIntegrationTest extends IntegrationTestBase {
     @Test
     void aShopOrderIsShippedWithAymakanAndTrackedToDelivered() throws Exception {
         Shop s = shop();
-        FakeHttpGateway.when("GET", "/v2/cities", 401, "{\"error\":true,\"response\":\"Invalid Credentials\"}");
+        FakeHttpGateway.when("GET", "/v2/shipping/track/AY0000000000", 401, "{\"error\":true,\"message\":\"Invalid Credentials\"}");
         onHost(s.t().host(), s.t().access(), "POST", "/api/v1/store/shipping/carriers", json(Map.of("provider", "AYMAKAN", "country", "SA", "credentials", Map.of("apiKey", "bad")))).andExpect(status().isUnprocessableEntity());
         FakeHttpGateway.reset();
-        FakeHttpGateway.when("GET", "/v2/cities", 200, "{\"success\":true,\"data\":{\"cities\":[]}}");
+        FakeHttpGateway.when("GET", "/v2/shipping/track/AY0000000000", 422, "{\"error\":true,\"message\":\"No shipments found\"}");
         String acc = JsonPath.read(ok(onHost(s.t().host(), s.t().access(), "POST", "/api/v1/store/shipping/carriers", json(Map.of("provider", "AYMAKAN", "country", "SA", "credentials", Map.of("apiKey", "aym-key-" + uniq(), "sandbox", "yes")))).andExpect(status().isCreated())), "$.id");
         String order = placeOrder(s, "01012345678");
         jdbc.sql("UPDATE commerce.branches SET phone = '+966500000001', address_line1 = '5 King Rd', city = 'Riyadh' WHERE tenant_id = (SELECT id FROM core.tenants WHERE slug = :s)").param("s", s.t().slug()).update();

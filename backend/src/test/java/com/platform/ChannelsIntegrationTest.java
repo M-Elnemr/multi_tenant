@@ -66,7 +66,7 @@ class ChannelsIntegrationTest extends IntegrationTestBase {
         Shop s = shop();
         FakeHttpGateway.when("GET", "/shop.json", 401, "{\"errors\":\"[API] Invalid API key or access token\"}");
         onHost(s.t().host(), s.t().access(), "POST", "/api/v1/store/integrations/accounts", "{\"provider\":\"SHOPIFY\",\"country\":\"EG\",\"credentials\":{\"shopDomain\":\"x.myshopify.com\",\"accessToken\":\"bad\"}}")
-                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.code").value("CONNECTION_FAILED"));
+                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.code").value("CONNECTION_DENIED"));
         onHost(s.t().host(), s.t().access(), "POST", "/api/v1/store/integrations/accounts", "{\"provider\":\"SHOPIFY\",\"country\":\"EG\",\"credentials\":{\"shopDomain\":\"evil.example.com\",\"accessToken\":\"abc\"}}")
                 .andExpect(status().isUnprocessableEntity());   // only {shop}.myshopify.com
         onHost(s.t().host(), s.t().access(), "POST", "/api/v1/store/integrations/accounts", "{\"provider\":\"WOOCOMMERCE\",\"country\":\"EG\",\"credentials\":{\"siteUrl\":\"https://localhost\",\"consumerKey\":\"ck\",\"consumerSecret\":\"cs\"}}")

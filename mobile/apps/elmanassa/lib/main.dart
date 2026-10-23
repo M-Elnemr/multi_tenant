@@ -370,7 +370,7 @@ class _ClinicScreenState extends State<ClinicScreen> {
   }
 }
 
-String _when(String iso) => DateFormat.yMMMd().add_jm().format(DateTime.parse(iso).toLocal());
+String _when(String iso) => DateFormat.yMMMd(AppLocale.isAr ? 'ar' : 'en').add_jm().format(DateTime.parse(iso).toLocal());
 
 Future<void> _dial(String phone) async => launchUrl(Uri(scheme: 'tel', path: phone));
 

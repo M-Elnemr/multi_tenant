@@ -315,7 +315,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
       itemBuilder: (c, r, reload) {
         final low = (r['available'] as num) <= (r['lowStockThreshold'] as num);
         return Card(child: ListTile(
-          title: Text('${r['productName']}${(r['comboKey'] as String?)?.isNotEmpty == true ? ' · ${r['comboKey']}' : ''}', style: const TextStyle(fontWeight: FontWeight.w800)),
+          title: Text('${r['productName']}${(r['comboKey'] as String?)?.isNotEmpty == true ? ' · ${comboLabel(r['comboKey'])}' : ''}', style: const TextStyle(fontWeight: FontWeight.w800)),
           subtitle: Text('${r['sku']} · ${r['branchName']}\n${ar ? 'متاح' : 'Available'}: ${r['available']}  (${ar ? 'محجوز' : 'reserved'} ${r['quantityReserved']})'),
           isThreeLine: true,
           trailing: Row(mainAxisSize: MainAxisSize.min, children: [if (low) const Icon(Icons.warning_amber_rounded, color: Color(0xFFD98200)), if (widget.ctx.can('inventory.adjust')) IconButton(onPressed: () => _adjust(r, reload), icon: const Icon(Icons.edit_rounded))]),

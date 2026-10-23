@@ -135,18 +135,28 @@ class StatusPill extends StatelessWidget {
   static const _ar = {
     'PENDING': 'قيد الانتظار', 'PENDING_CONFIRMATION': 'بانتظار التأكيد', 'REQUESTED': 'جديد', 'CONFIRMED': 'مؤكد', 'CHECKED_IN': 'حضر', 'IN_PROGRESS': 'قيد الكشف', 'COMPLETED': 'مكتمل',
     'CANCELLED': 'ملغي', 'NO_SHOW': 'لم يحضر', 'REJECTED': 'مرفوض', 'PREPARING': 'قيد التجهيز', 'SHIPPED': 'تم الشحن', 'ARRIVED': 'تم التسليم', 'RETURNED': 'مرتجع', 'DELIVERED': 'تم التسليم',
-    'ORDERED': 'مطلوب', 'PATIENT_UPLOADED': 'رفع المريض نتيجة', 'UNDER_REVIEW': 'قيد المراجعة', 'DONE': 'تم', 'REVIEWED': 'تمت المراجعة', 'PAID': 'مدفوع', 'UNPAID': 'غير مدفوع', 'APPROVED': 'مقبول', 'PUBLISHED': 'منشور', 'HIDDEN': 'مخفي', 'ACTIVE': 'نشط', 'DRAFT': 'مسودة', 'REFUNDED': 'مسترد', 'INVITED': 'مدعو', 'TRIAL': 'تجربة', 'TRIALING': 'تجربة مجانية', 'PAST_DUE': 'بانتظار التجديد', 'SUSPENDED': 'متوقف', 'EXPIRED': 'منتهي', 'NEW': 'جديد', 'CONTACTED': 'تم التواصل',
+    'ORDERED': 'مطلوب', 'PATIENT_UPLOADED': 'رفع المريض نتيجة', 'UNDER_REVIEW': 'قيد المراجعة', 'DONE': 'تم', 'REVIEWED': 'تمت المراجعة', 'PAID': 'مدفوع', 'UNPAID': 'غير مدفوع', 'APPROVED': 'مقبول', 'PUBLISHED': 'منشور', 'HIDDEN': 'مخفي', 'ACTIVE': 'نشط', 'DRAFT': 'مسودة', 'REFUNDED': 'مسترد', 'INVITED': 'مدعو', 'TRIAL': 'تجربة', 'TRIALING': 'تجربة مجانية', 'PAST_DUE': 'بانتظار التجديد', 'SUSPENDED': 'متوقف', 'EXPIRED': 'منتهي', 'NEW': 'جديد', 'CONTACTED': 'تم التواصل', 'CREATED': 'تم إنشاء الشحنة', 'PICKED_UP': 'تم الاستلام من المتجر', 'IN_TRANSIT': 'في الطريق', 'OUT_FOR_DELIVERY': 'خرج للتسليم', 'EXCEPTION': 'مشكلة في التسليم', 'PROCESSING': 'قيد التجهيز',
   };
   @override
   Widget build(BuildContext context) {
     final c = toneFor(status);
-    final label = AppLocale.isAr ? (_ar[status] ?? status) : status.replaceAll('_', ' ').toLowerCase();
+    final label = statusLabel(status);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(color: c.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
       child: Text(label, style: TextStyle(color: c, fontWeight: FontWeight.w800, fontSize: 12)),
     );
   }
+}
+
+/// The words for an order / appointment / request status in the app's language (Arabic names for the known ones).
+String statusLabel(String status) => AppLocale.isAr ? (StatusPill._ar[status] ?? status) : status.replaceAll('_', ' ').toLowerCase();
+
+/// "اللون=أزرق|المقاس=M" (how a variant is stored) as "أزرق / M".
+String comboLabel(Object? key) {
+  final k = '${key ?? ''}';
+  if (k.isEmpty) return '';
+  return k.split('|').map((p) => p.contains('=') ? p.substring(p.indexOf('=') + 1) : p).join(' / ');
 }
 
 Widget emptyState(String text, {IconData icon = Icons.inbox_outlined}) => Padding(padding: const EdgeInsets.all(40), child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 44, color: const Color(0xFF9AA9BA)), const SizedBox(height: 10), Text(text, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF6B7C8D)))])));
@@ -252,7 +262,6 @@ class PagedListState extends State<PagedList> {
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
-    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       backgroundColor: Colors.transparent,
       floatingActionButton: widget.fab,
@@ -273,7 +282,7 @@ class PagedListState extends State<PagedList> {
               for (final f in widget.filters!)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: ChoiceChip(label: Text(f.$2), selected: _filter == f.$1, selectedColor: scheme.primary, backgroundColor: Colors.white, side: const BorderSide(color: Color(0xFFB9C7D6)), labelStyle: TextStyle(color: _filter == f.$1 ? Colors.white : const Color(0xFF14232B), fontWeight: FontWeight.w700), showCheckmark: false, onSelected: (_) { setState(() => _filter = f.$1); reload(); }),
+                  child: ChoiceChip(label: Text(f.$2), selected: _filter == f.$1, showCheckmark: false, onSelected: (_) { setState(() => _filter = f.$1); reload(); }),
                 ),
             ]),
           ),

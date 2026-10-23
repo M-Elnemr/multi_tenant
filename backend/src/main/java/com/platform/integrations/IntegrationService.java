@@ -62,7 +62,7 @@ public class IntegrationService {
             m.put("countries", d.countries());
             m.put("status", d.status());
             m.put("can", d.can());
-            m.put("fields", d.fields().stream().map((f) -> Map.of("key", f.key(), "labelEn", f.labelEn(), "labelAr", f.labelAr(), "secret", f.secret(), "placeholder", f.placeholder(), "multiline", f.multiline(), "optional", isOptional(f))).toList());
+            m.put("fields", d.fields().stream().map((f) -> Map.of("key", f.key(), "labelEn", noOptional(f.labelEn()), "labelAr", noOptional(f.labelAr()), "secret", f.secret(), "placeholder", f.placeholder(), "multiline", f.multiline(), "optional", isOptional(f))).toList());
             m.put("oauth", d.oauth() && oauthReady(d.id()));
             m.put("helpEn", d.helpEn());
             m.put("helpAr", d.helpAr());
@@ -73,6 +73,9 @@ public class IntegrationService {
     }
 
     private boolean oauthReady(String provider) { return "META_ADS".equals(provider) || oauth.of(provider).ok(); }
+
+    /** The screens add "(optional)" themselves from the optional flag: it must not be in the label too. */
+    private static String noOptional(String label) { return label.replaceAll("\\s*\\((optional|اختياري)\\)", "").trim(); }
 
     private static boolean isOptional(Providers.Field f) { return f.labelEn().toLowerCase().contains("optional"); }
 
@@ -116,7 +119,7 @@ public class IntegrationService {
             case "SALLA" -> "https://s.salla.sa";
             case "YOUCAN" -> "https://seller-area.youcan.shop";
             case "ZID" -> "https://web.zid.sa";
-            case "AYMAKAN" -> "https://dashboard.aymakan.com.sa";
+            case "AYMAKAN" -> "https://aymakan.com";
             case "ARAMEX" -> "https://www.aramex.com";
             case "BOSTA" -> "https://business.bosta.co";
             case "MYLERZ" -> "https://mylerz.net";
@@ -125,6 +128,17 @@ public class IntegrationService {
     }
 
     // ---- connecting --------------------------------------------------------------------------------------------
+
+    /** What the owner should do, by what the other company answered (its own words stay in the message for support). */
+    static BusinessException connectionError(HttpGateway.ApiException e) {
+        String code = switch (e.status) {
+            case 401, 403 -> "CONNECTION_DENIED";
+            case 404 -> "CONNECTION_NOT_FOUND";
+            case 408, 429, 500, 502, 503, 504, 0 -> "CONNECTION_UNAVAILABLE";
+            default -> "CONNECTION_FAILED";
+        };
+        return new BusinessException(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY, code, e.getMessage());
+    }
 
     public record ConnectReq(String provider, String country, String label, Map<String, String> credentials) {}
 
@@ -156,14 +170,14 @@ public class IntegrationService {
         if (existing >= MAX_ACCOUNTS) throw BusinessException.badRequest("PLAN_LIMIT_REACHED", "Too many connected accounts");
         Ext.AccountInfo info;
         if (d.kind().equals(Providers.CARRIER)) {   // a carrier is checked with its own credentials test; its account has no product or order feed
-            try { carrier(d.id()).validate(ctx(tenantId, null, cred, country)); } catch (HttpGateway.ApiException e) { throw new BusinessException(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY, "CONNECTION_FAILED", e.getMessage()); }
+            try { carrier(d.id()).validate(ctx(tenantId, null, cred, country)); } catch (HttpGateway.ApiException e) { throw connectionError(e); }
         }
         if (d.kind().equals(Providers.CARRIER) || d.kind().equals(Providers.ADS)) info = new Ext.AccountInfo(cred.getOrDefault("adAccountId", cred.getOrDefault("accountNumber", cred.getOrDefault("username", cred.getOrDefault("userName", d.id().toLowerCase())))), d.name(), Providers.currencyOf(country), null);
         else {
             try {
                 info = adapter(d.id()).connect(new ChannelAdapter.Ctx(cred, country, http, d.id() + ":" + tenantId, (x) -> {}));
             } catch (HttpGateway.ApiException e) {
-                throw new BusinessException(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY, "CONNECTION_FAILED", e.getMessage());
+                throw connectionError(e);
             }
             if (info.updatedCredentials() != null) cred.putAll(info.updatedCredentials());
         }
@@ -193,7 +207,7 @@ public class IntegrationService {
         Map<String, String> cred = crypto.decrypt((String) row.get("credentials_enc"));
         if (changes != null) for (Providers.Field f : d.fields()) { String v = changes.get(f.key()); if (v != null && !v.isBlank()) cred.put(f.key(), v.trim()); }
         if (!d.kind().equals(Providers.CARRIER) && !d.kind().equals(Providers.ADS)) {
-            try { adapter(d.id()).connect(ctx(tenantId, id, cred, (String) row.get("country"))); } catch (HttpGateway.ApiException e) { throw new BusinessException(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY, "CONNECTION_FAILED", e.getMessage()); }
+            try { adapter(d.id()).connect(ctx(tenantId, id, cred, (String) row.get("country"))); } catch (HttpGateway.ApiException e) { throw connectionError(e); }
         }
         jdbc.sql("UPDATE integrations.accounts SET credentials_enc = :c, label = coalesce(nullif(btrim(:l), ''), label), status = 'ACTIVE', last_error = NULL, updated_at = now() WHERE id = :i AND tenant_id = :t")
                 .param("c", crypto.encrypt(cred)).param("l", label).param("i", id).param("t", tenantId).update();

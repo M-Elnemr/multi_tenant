@@ -65,6 +65,9 @@ NEW = {
  'UPLOAD_FAILED': ('The upload did not finish. Try again.', 'لم يكتمل رفع الملف. حاول مرة أخرى.'),
  # companies and platforms
  'CONNECTION_FAILED': ('Could not connect. The company said: {detail}', 'تعذّر الربط. رد الشركة: {detail}'),
+ 'CONNECTION_DENIED': ('The company did not accept these details. Copy them again carefully and check they belong to the right account.', 'لم تقبل الشركة هذه البيانات. انسخها مرة أخرى بعناية وتأكد أنها لنفس الحساب.'),
+ 'CONNECTION_NOT_FOUND': ('We could not find your account at this address. Check the address and try again.', 'لم نجد حسابك على هذا العنوان. راجع العنوان وحاول مرة أخرى.'),
+ 'CONNECTION_UNAVAILABLE': ('The company\'s service is not answering right now. Try again in a few minutes.', 'خدمة الشركة لا تستجيب الآن. حاول مرة أخرى بعد دقائق.'),
  'CARRIER_REJECTED': ('The shipping company refused the shipment: {detail}', 'رفضت شركة الشحن الشحنة: {detail}'),
  'CHANNEL_REJECTED': ('The platform refused the request: {detail}', 'رفضت المنصة الطلب: {detail}'),
  # generic, by kind of failure

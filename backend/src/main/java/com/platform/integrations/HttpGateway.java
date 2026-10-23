@@ -70,6 +70,7 @@ public interface HttpGateway {
             if (!t.isBlank()) return "HTTP " + r.status() + ": " + (t.length() > 300 ? t.substring(0, 300) : t);
         }
         String b = r.body() == null ? "" : r.body().strip();
+        if (b.startsWith("<")) b = "";   // a web page, not an answer: the status says enough
         return "HTTP " + r.status() + (b.isEmpty() ? "" : ": " + (b.length() > 200 ? b.substring(0, 200) : b));
     }
 }

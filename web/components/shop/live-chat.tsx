@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "@/lib/client";
+import { api, newKey } from "@/lib/client";
 import { errorMessage } from "@/lib/error-text";
 import { money } from "@/lib/format";
 import { mediaUrl } from "@/lib/media";
@@ -19,9 +19,9 @@ const KEY = "chatConv";
 function conversationId(): string {
   try {
     let id = localStorage.getItem(KEY);
-    if (!id) { id = crypto.randomUUID(); localStorage.setItem(KEY, id); }
+    if (!id) { id = newKey(); localStorage.setItem(KEY, id); }
     return id;
-  } catch { return crypto.randomUUID(); }
+  } catch { return newKey(); }
 }
 
 /** The conversation, shared by the storefront button and the owner's test screen (same look, different endpoint). */

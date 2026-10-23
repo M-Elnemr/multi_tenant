@@ -238,7 +238,7 @@ class ChannelOrderDetail extends StatelessWidget {
             const SizedBox(height: 8),
             Text(ar ? 'المنتجات' : 'Items', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
             for (final it in _maps(o['items'])) Card(child: ListTile(dense: true, title: Text('${it['title'] ?? it['sku']}'), subtitle: Text('${it['sku'] ?? ''}'), trailing: Text('× ${it['quantity'] ?? 1}  ${s.money((it['totalMinor'] as num?) ?? 0, cur)}'))),
-            for (final sh in _maps(o['shipments'])) Card(child: ListTile(dense: true, leading: const Icon(Icons.local_shipping_outlined), title: Text('${sh['carrier']} · ${sh['trackingNumber']}', textDirection: TextDirection.ltr), subtitle: Text('${sh['lastEvent'] ?? sh['status']}'), trailing: sh['labelUrl'] != null ? IconButton(icon: const Icon(Icons.print_outlined), onPressed: () => launch('${sh['labelUrl']}')) : null)),
+            for (final sh in _maps(o['shipments'])) Card(child: ListTile(dense: true, leading: const Icon(Icons.local_shipping_outlined), title: Text('${sh['carrier']} · ${sh['trackingNumber']}', textDirection: TextDirection.ltr), subtitle: Text('${sh['lastEvent'] ?? statusLabel('${sh['status']}')}'), trailing: sh['labelUrl'] != null ? IconButton(icon: const Icon(Icons.print_outlined), onPressed: () => launch('${sh['labelUrl']}')) : null)),
             if (o['adminUrl'] == null) const SizedBox.shrink(),
             if (canAct) ...[
               const SizedBox(height: 8),
@@ -617,7 +617,7 @@ class _PublishScreenState extends State<PublishScreen> {
                   final l = listings.where((x) => x['variantId'] == v['id']).cast<Map<String, dynamic>?>().firstWhere((_) => true, orElse: () => null);
                   final key = '$id|${v['id']}';
                   return Padding(padding: const EdgeInsets.only(top: 8), child: Row(children: [
-                    Expanded(flex: 3, child: Text('${(v['comboKey'] ?? '').toString().isEmpty ? v['sku'] : v['comboKey']}', maxLines: 1, overflow: TextOverflow.ellipsis)),
+                    Expanded(flex: 3, child: Text('${(v['comboKey'] ?? '').toString().isEmpty ? v['sku'] : comboLabel(v['comboKey'])}', maxLines: 1, overflow: TextOverflow.ellipsis)),
                     const SizedBox(width: 8),
                     Expanded(flex: 3, child: TextField(controller: _c(_price, key, fmtMoney((l?['priceMinor'] ?? v['priceMinor']) as num?)), keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: InputDecoration(labelText: '${ar ? 'السعر' : 'Price'} (${a['currency']})', isDense: true))),
                     const SizedBox(width: 8),

@@ -97,7 +97,7 @@ class StoreDashboard extends StatelessWidget {
               FadeSlideIn(index: i, child: Card(child: ListTile(
                 leading: CircleAvatar(backgroundColor: blue.withValues(alpha: 0.1), child: Icon(Icons.receipt_long_rounded, color: blue, size: 20)),
                 title: Text(orders[i]['orderNumber'] as String, style: const TextStyle(fontWeight: FontWeight.w800)),
-                subtitle: Text('${orders[i]['customerNameSnapshot']} · ${orders[i]['status']}'),
+                subtitle: Text('${orders[i]['customerNameSnapshot']} · ${statusLabel('${orders[i]['status']}')}'),
                 trailing: Text(s.money(orders[i]['totalMinor'] as num, currency), style: const TextStyle(fontWeight: FontWeight.w800)),
               ))),
             if (orders.isEmpty) _empty(s.empty),
@@ -159,7 +159,7 @@ class ClinicDashboard extends StatelessWidget {
               FadeSlideIn(index: i, child: Card(
                 child: ListTile(
                   title: Text('${today[i]['patientName']}', style: const TextStyle(fontWeight: FontWeight.w800)),
-                  subtitle: Text('${today[i]['serviceName']} · ${today[i]['status']}'),
+                  subtitle: Text('${today[i]['serviceName']} · ${statusLabel('${today[i]['status']}')}'),
                   trailing: switch (today[i]['status']) {
                     'PENDING_CONFIRMATION' => FilledButton.tonal(style: FilledButton.styleFrom(minimumSize: const Size(0, 38)), onPressed: () => _act(context, today[i]['id'] as String, 'confirm', reload), child: Text(s.ar ? 'تأكيد' : 'Confirm')),
                     'CONFIRMED' => FilledButton.tonal(style: FilledButton.styleFrom(minimumSize: const Size(0, 38)), onPressed: () => _act(context, today[i]['id'] as String, 'check-in', reload), child: Text(s.ar ? 'حضر' : 'Check in')),

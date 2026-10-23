@@ -42,10 +42,10 @@ public class AymakanAdapter implements CarrierAdapter {
 
     @Override
     public void validate(Ctx c) {
-        // the cities list is the lightest authenticated call; only a refused key counts as wrong credentials
-        HttpGateway.Res r = c.http().send(Req.get(base(c) + "/cities", Map.of("Authorization", c.need("apiKey"), "Accept", "application/json"), c.rateKey()));
+        // /cities is public, so it proves nothing about the key. Tracking a number that cannot exist answers 401 for a wrong key and 422 ("No shipments found") for a right one.
+        HttpGateway.Res r = c.http().send(Req.get(base(c) + "/shipping/track/AY0000000000", Map.of("Authorization", c.need("apiKey"), "Accept", "application/json"), c.rateKey()));
         if (r.status() == 401) throw new HttpGateway.ApiException(401, "Aymakan did not accept this API key");
-        if (r.status() >= 500) throw new HttpGateway.ApiException(r.status(), "Aymakan: " + HttpGateway.describe(r));
+        if (r.status() >= 500 || r.status() == 0) throw new HttpGateway.ApiException(r.status(), "Aymakan: " + HttpGateway.describe(r));
     }
 
     @Override

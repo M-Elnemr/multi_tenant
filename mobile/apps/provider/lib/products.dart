@@ -447,7 +447,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
         Text(isAr ? 'الأسعار والمخزون' : 'Prices and stock', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
         for (final v in variants) Padding(padding: const EdgeInsets.only(top: 10), child: Row(children: [
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('${v['comboKey'] ?? ''}'.replaceAll('|', ' / ').replaceAll('=', ': ').isEmpty ? '-' : '${v['comboKey']}'.replaceAll('|', ' / ').replaceAll('=', ': '), style: const TextStyle(fontWeight: FontWeight.w700)),
+            Text(comboLabel(v['comboKey']).isEmpty ? '-' : comboLabel(v['comboKey']), style: const TextStyle(fontWeight: FontWeight.w700)),
             Text('${v['sku']} · ${isAr ? 'المخزون' : 'stock'}: ${v['available']}', style: const TextStyle(fontSize: 12, color: Color(0xFF6B7C8D))),
           ])),
           SizedBox(width: 110, child: TextField(controller: _prices['${v['id']}'], keyboardType: const TextInputType.numberWithOptions(decimal: true), textDirection: TextDirection.ltr, decoration: InputDecoration(labelText: ctx.currency))),

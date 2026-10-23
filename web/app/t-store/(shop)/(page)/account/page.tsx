@@ -39,8 +39,8 @@ function ProfileCard() {
 export default function Account() {
   const t = useT();
   const { me, ready } = useMe();
-  const addrs = useApi<Addr[]>("shop/addresses");
-  const wish = useApi<Wish[]>("shop/wishlist");
+  const addrs = useApi<Addr[]>(me ? "shop/addresses" : null);
+  const wish = useApi<Wish[]>(me ? "shop/wishlist" : null);
   const [f, setF] = useState({ title: "", recipientName: "", phone: "", addressLine1: "", city: "" });
   const add = useAction(async () => {
     await api("shop/addresses", { body: { title: f.title || undefined, makeDefault: (addrs.data?.length ?? 0) === 0, address: { recipientName: f.recipientName, phone: f.phone, addressLine1: f.addressLine1, city: f.city } } });

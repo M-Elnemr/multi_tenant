@@ -1165,6 +1165,9 @@ const en: Record<string, string> = {
 
   // errors (backend business codes)
   "error.generic": "Something went wrong. Please try again.",
+  "error.CONNECTION_DENIED": "The company did not accept these details. Copy them again carefully and check they belong to the right account.",
+  "error.CONNECTION_NOT_FOUND": "We could not find your account at this address. Check the address and try again.",
+  "error.CONNECTION_UNAVAILABLE": "The company's service is not answering right now. Try again in a few minutes.",
   "error.ACCOUNT_DISABLED": "This account is not active.",
   "error.AI_NOT_AVAILABLE": "AI images are not set up yet.",
   "error.ALREADY_HANDLED": "This request was already handled.",
@@ -3601,6 +3604,9 @@ const ar: Record<string, string> = {
   "status.PAUSED": "متوقف مؤقتًا",
 
   "error.generic": "حدث خطأ ما. حاول مرة أخرى.",
+  "error.CONNECTION_DENIED": "لم تقبل الشركة هذه البيانات. انسخها مرة أخرى بعناية وتأكد أنها لنفس الحساب.",
+  "error.CONNECTION_NOT_FOUND": "لم نجد حسابك على هذا العنوان. راجع العنوان وحاول مرة أخرى.",
+  "error.CONNECTION_UNAVAILABLE": "خدمة الشركة لا تستجيب الآن. حاول مرة أخرى بعد دقائق.",
   "error.ACCOUNT_DISABLED": "هذا الحساب غير مفعّل. تواصل مع صاحب النشاط.",
   "error.AI_NOT_AVAILABLE": "ميزة الصور بالذكاء الاصطناعي غير مفعّلة بعد.",
   "error.ALREADY_HANDLED": "تمت معالجة هذا الطلب من قبل.",

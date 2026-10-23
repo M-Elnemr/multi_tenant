@@ -2,24 +2,33 @@ import type { Locale } from "./i18n";
 
 const intl = (locale: Locale) => (locale === "ar" ? "ar-EG" : "en-GB");
 
+/**
+ * Different browsers ship different Unicode data: Android Chrome leaves out the invisible direction mark Node puts before an Arabic amount, and newer
+ * engines use a narrow no-break space before "PM". The server and the phone must print the SAME text or React reports a hydration mismatch, so the invisible
+ * marks are removed and every kind of no-break space is one plain no-break space.
+ */
+export function stable(text: string): string {
+  return text.replace(/[\u200e\u200f\u061c]/g, "").replace(/[\u202f\u00a0]/g, "\u00a0");
+}
+
 /** Money is stored as integer minor units (piastres): 19999 -> 199.99 */
 export function money(minor: number | null | undefined, currency: string, locale: Locale): string {
   if (minor === null || minor === undefined) return "-";
-  return new Intl.NumberFormat(intl(locale), { style: "currency", currency, minimumFractionDigits: 2 }).format(minor / 100);
+  return stable(new Intl.NumberFormat(intl(locale), { style: "currency", currency, minimumFractionDigits: 2 }).format(minor / 100));
 }
 
 export function dateTime(iso: string | null | undefined, locale: Locale, timeZone = "Africa/Cairo"): string {
   if (!iso) return "-";
-  return new Intl.DateTimeFormat(intl(locale), { dateStyle: "medium", timeStyle: "short", timeZone }).format(new Date(iso));
+  return stable(new Intl.DateTimeFormat(intl(locale), { dateStyle: "medium", timeStyle: "short", timeZone }).format(new Date(iso)));
 }
 
 export function dateOnly(iso: string | null | undefined, locale: Locale, timeZone = "Africa/Cairo"): string {
   if (!iso) return "-";
-  return new Intl.DateTimeFormat(intl(locale), { dateStyle: "medium", timeZone }).format(new Date(iso));
+  return stable(new Intl.DateTimeFormat(intl(locale), { dateStyle: "medium", timeZone }).format(new Date(iso)));
 }
 
 export function timeOnly(iso: string, locale: Locale, timeZone = "Africa/Cairo"): string {
-  return new Intl.DateTimeFormat(intl(locale), { hour: "2-digit", minute: "2-digit", timeZone }).format(new Date(iso));
+  return stable(new Intl.DateTimeFormat(intl(locale), { hour: "2-digit", minute: "2-digit", timeZone }).format(new Date(iso)));
 }
 
 /** Calendar day (yyyy-mm-dd) of an instant in the clinic's timezone. */

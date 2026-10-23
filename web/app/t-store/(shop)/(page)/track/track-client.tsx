@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/client";
-import { money } from "@/lib/format";
+import { money, stable } from "@/lib/format";
 import { governorateName } from "@/lib/governorates";
 import { useAction } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
@@ -35,7 +35,7 @@ export function TrackClient({ initialNumber, initialPhone }: { initialNumber: st
 
   const idx = order ? STEPS.indexOf(order.status) : -1;
   const closed = order && ["CANCELLED", "RETURNED", "REFUNDED"].includes(order.status);
-  const when = (iso: string) => new Date(iso).toLocaleString(locale === "ar" ? "ar-EG" : "en-GB", { dateStyle: "medium", timeStyle: "short" });
+  const when = (iso: string) => stable(new Date(iso).toLocaleString(locale === "ar" ? "ar-EG" : "en-GB", { dateStyle: "medium", timeStyle: "short" }));
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div><p className="s-eyebrow">{t("shop.trackOrder")}</p><h1 className="mt-1 text-3xl font-extrabold">{t("track.title")}</h1><p className="mt-1 text-[var(--s-mute)]">{t("track.subtitle")}</p></div>
