@@ -208,7 +208,7 @@ export function AreaChart({ points, height = 160, format }: { points: { label: s
   const area = `${line} L${x(points.length - 1)},${H} L${x(0)},${H} Z`;
   const act = hover ?? points.length - 1;
   return (
-    <div className="relative">
+    <div className="relative overflow-x-clip">
       <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" style={{ height }} preserveAspectRatio="none" onMouseLeave={() => setHover(null)}>
         <defs><linearGradient id={id} x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="var(--brand)" stopOpacity="0.32" /><stop offset="100%" stopColor="var(--brand)" stopOpacity="0" /></linearGradient></defs>
         {[0.25, 0.5, 0.75].map((g) => <line key={g} x1="0" x2={W} y1={H * g} y2={H * g} stroke="#e8eef5" strokeDasharray="4 6" />)}
@@ -217,7 +217,8 @@ export function AreaChart({ points, height = 160, format }: { points: { label: s
         {points.map((p, i) => <rect key={i} x={x(i) - (W / points.length) / 2} y={0} width={W / points.length} height={H} fill="transparent" onMouseEnter={() => setHover(i)} />)}
         <line x1={x(act)} x2={x(act)} y1={0} y2={H} stroke="var(--brand)" strokeOpacity="0.25" vectorEffect="non-scaling-stroke" />
       </svg>
-      <div className="pointer-events-none absolute top-0 rounded-lg bg-ink px-2.5 py-1 text-xs font-semibold text-white shadow-lift" style={{ insetInlineStart: `${(x(act) / W) * 100}%`, transform: "translateX(-50%)" }}>
+      {/* centred on its point in the middle, flush with the chart's own edge at either end: a label that hangs outside the chart made the whole page wider than a phone */}
+      <div className="pointer-events-none absolute top-0 max-w-full whitespace-nowrap rounded-lg bg-ink px-2.5 py-1 text-xs font-semibold text-white shadow-lift ltr:-translate-x-[var(--p)] rtl:translate-x-[var(--p)]" style={{ insetInlineStart: `${(x(act) / W) * 100}%`, ["--p" as string]: `${(x(act) / W) * 100}%` }}>
         {points[act].label}: {format ? format(points[act].value) : points[act].value}
       </div>
     </div>
