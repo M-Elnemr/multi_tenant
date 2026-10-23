@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/client";
+import { errorMessage } from "@/lib/error-text";
 import { money } from "@/lib/format";
 import { mediaUrl } from "@/lib/media";
 import { useI18n } from "@/components/i18n-provider";
@@ -60,7 +61,7 @@ export function ChatPanel({ send, load, onReset, onTeach, greeting, className = 
         const r = await send(v);
         setMsgs((m) => [...m, { role: "assistant", content: r.reply, products: r.products, order: r.order }]);
       } catch (e) {
-        setMsgs((m) => [...m, { role: "assistant", content: (e as Error).message || t("chat.error") }]);
+        setMsgs((m) => [...m, { role: "assistant", content: errorMessage(t, locale, e) }]);
       }
     }
     running.current = false;

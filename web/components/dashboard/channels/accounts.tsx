@@ -65,7 +65,7 @@ export function AccountsView({ accounts, canManage, onChanged, onPick }: { accou
   const sync = useAction(async (id: string) => { await api(`store/integrations/accounts/${id}/sync`, { body: { what: "all" } }); setMsg({ tone: "green", text: t("ch.sync.queued") }); onChanged(); });
   const test = useAction(async (id: string) => {
     const r = await api<{ ok: boolean; message?: string }>(`store/integrations/accounts/${id}/test`, { body: {} });
-    setMsg({ tone: r.ok ? "green" : "red", text: r.ok ? t("ch.test.ok") : r.message ?? t("ch.test.fail") }); onChanged();
+    setMsg({ tone: r.ok ? "green" : "red", text: r.ok ? t("ch.test.ok") : r.message ? `${t("ch.test.fail")}: ${r.message}` : t("ch.test.fail") }); onChanged();
   });
   const remove = useAction(async (id: string) => { await api(`store/integrations/accounts/${id}`, { method: "DELETE" }); setConfirm(null); onChanged(); });
   if (accounts.length === 0) return <Empty>{t("ch.none")} <Link href="/dashboard/channels/connect" className="font-semibold text-brand hover:underline">{t("ch.connectFirst")}</Link></Empty>;

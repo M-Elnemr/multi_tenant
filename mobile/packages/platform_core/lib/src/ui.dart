@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import 'api_client.dart';
 import 'cache.dart';
+import 'error_messages.g.dart';
 import 'locale.dart';
 import 'strings.dart';
 import 'theme.dart';
@@ -197,32 +198,52 @@ class _PasswordFieldState extends State<PasswordField> {
       );
 }
 
-/// Human message for any error: known API codes are explained in the current language, network problems are named as such.
+/// Standard validation sentences from the server, in the app's language.
+String _rule(String text, bool ar) {
+  String pick(String k, [Map<String, String> v = const {}]) { var t = (kRuleTexts[k] ?? kRuleTexts['invalid']!)[ar ? 0 : 1]; v.forEach((a, b) => t = t.replaceAll('{$a}', b)); return t; }
+  if (RegExp(r'must not be (blank|null|empty)', caseSensitive: false).hasMatch(text)) return pick('required');
+  var m = RegExp(r'size must be between (\d+) and (\d+)', caseSensitive: false).firstMatch(text);
+  if (m != null) return pick('length', {'a': m[1]!, 'b': m[2]!});
+  if (RegExp('well-formed email', caseSensitive: false).hasMatch(text)) return pick('email');
+  m = RegExp(r'greater than or equal to (\d+)', caseSensitive: false).firstMatch(text);
+  if (m != null) return pick('min', {'a': m[1]!});
+  m = RegExp(r'less than or equal to (\d+)', caseSensitive: false).firstMatch(text);
+  if (m != null) return pick('max', {'a': m[1]!});
+  if (RegExp('must match', caseSensitive: false).hasMatch(text)) return pick('format');
+  return pick('invalid');
+}
+
+/// One clear sentence for any failure, in the app's language: a known code gets its translated sentence (numbers and the other company's own words are filled in);
+/// an unknown code in Arabic gets a sentence for the kind of failure, never the English server text.
 String errorText(Object e) {
   final ar = AppLocale.isAr;
-  if (e is ApiException) {
-    final m = <String, List<String>>{
-      'NETWORK': ['تعذّر الاتصال بالخادم. تحقق من الإنترنت وأعد المحاولة', 'Could not reach the server. Check your internet and try again'],
-      'INVALID_CREDENTIALS': ['رقم الهاتف/البريد أو كلمة المرور غير صحيحة', 'Wrong phone/email or password'],
-      'ACTIVATION_REQUIRED': ['أول دخول: أدخل الكود المؤقت الذي حصلت عليه', 'First sign-in: enter the one-time code you were given'],
-      'WRONG_APP_STAFF': ['هذا حساب نشاط تجاري. استخدم تطبيق Elmanassa Business', 'This is a business account. Use the Elmanassa Business app'],
-      'WRONG_APP_PATIENT': ['هذا حساب مريض. استخدم تطبيق طبيب', 'This is a patient account. Use the Tabib app'],
-      'NOT_A_MEMBER': ['هذا الحساب ليس له صلاحية هنا', 'This account has no access here'],
-      'ACCOUNT_DISABLED': ['هذا الحساب غير مفعّل', 'This account is not active'],
-      'TOO_MANY_ATTEMPTS': ['محاولات كثيرة، انتظر قليلاً ثم أعد المحاولة', 'Too many attempts, wait a moment and try again'],
-      'ACTIVATION_INVALID': ['الكود غير صحيح أو منتهي', 'The code is wrong or expired'],
-      'TENANT_DISABLED': ['هذا النشاط متوقف حاليًا', 'This business is currently disabled'],
-      'TENANT_SUSPENDED': ['هذا النشاط متوقف حاليًا', 'This business is currently disabled'],
-      'PHONE_REQUIRED': ['رقم الموبايل مطلوب ليتواصل معك فريق خدمة العملاء', 'A mobile number is required so customer service can contact you'],
-      'FEATURE_NOT_AVAILABLE': ['باقتك الحالية لا تشمل هذه الميزة. ارفع باقتك من شاشة الدفع', 'Your plan does not include this feature. Upgrade from the pay screen'],
-      'CONFIRMATION_MISMATCH': ['الاسم الذي كتبته غير مطابق', 'The name you typed does not match'],
-      'WEAK_PASSWORD': ['كلمة المرور قصيرة (8 أحرف على الأقل)', 'Password too short (8 characters minimum)'],
-    }[e.code];
-    if (m != null) return ar ? m[0] : m[1];
-    return e.message;
+  String known(String code, {Map<String, dynamic> vars = const {}}) {
+    final m = kErrorMessages[code];
+    if (m == null) return '';
+    var t = m[ar ? 0 : 1];
+    vars.forEach((k, v) => t = t.replaceAll('{$k}', '$v'));
+    return t;
   }
-  if (e is SocketException || e.toString().contains('SocketException') || e.toString().contains('ClientException')) return ar ? 'لا يوجد اتصال بالإنترنت' : 'No internet connection';
-  return e.toString();
+  if (e is ApiException) {
+    final text = known(e.code, vars: {...e.params, 'detail': e.message});
+    if (text.isNotEmpty) return _withFields(text, e, ar);
+    if (!ar && e.message.isNotEmpty && !e.code.startsWith('HTTP_') && e.code != 'ERROR') return _withFields(e.message, e, ar);
+    final byStatus = known('HTTP_${e.status}');
+    if (byStatus.isNotEmpty) return _withFields(byStatus, e, ar);
+    return known(e.status >= 500 ? 'SERVER_ERROR' : 'NETWORK').isEmpty ? e.message : _withFields(known(e.status >= 500 ? 'SERVER_ERROR' : 'NETWORK'), e, ar);
+  }
+  final s = e.toString();
+  if (e is SocketException || s.contains('SocketException') || s.contains('ClientException') || s.contains('HandshakeException') || s.contains('TimeoutException')) return known('NETWORK');
+  return ar ? 'حدث خطأ غير متوقع. حاول مرة أخرى.' : 'Something went wrong. Please try again.';
+}
+
+String _withFields(String text, ApiException e, bool ar) {
+  if (e.fields.isEmpty) return text;
+  final lines = e.fields.entries.map((f) {
+    final label = kFieldNames[f.key.split('.').last];
+    return '${label == null ? '' : '${label[ar ? 0 : 1]}: '}${_rule('${f.value}', ar)}';
+  });
+  return '$text\n${lines.join('\n')}';
 }
 
 /// Loads a future and shows skeletons / error+retry / content (fades in).

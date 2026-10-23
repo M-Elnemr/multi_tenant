@@ -2,8 +2,9 @@
 
 import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import { ApiError } from "@/lib/client";
+import { errorMessage, fieldLines } from "@/lib/error-text";
 import { Icon, type IconName } from "./icons";
-import { useT } from "./i18n-provider";
+import { useI18n, useT } from "./i18n-provider";
 
 const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
 
@@ -89,15 +90,13 @@ export function Alert({ tone = "red", children }: { tone?: "red" | "green" | "am
   return <div role="alert" className={cx("animate-fade-up rounded-xl border border-s-4 px-4 py-3 text-sm", tones[tone])}>{children}</div>;
 }
 
-/** Maps a backend business error code to a translated message (`error.<CODE>`), falling back to the server text. */
+/** One clear sentence for a failed call, in the visitor's language (see lib/error-text.ts); a rejected form lists what to fix. */
 export function ErrorText({ error }: { error: unknown }) {
-  const t = useT();
+  const { t, locale } = useI18n();
   if (!error) return null;
   const e = error as ApiError;
-  const key = e.code ? `error.${e.code}` : "";
-  const translated = key ? t(key) : "";
-  const msg = translated && translated !== key ? translated : e.message || t("error.generic");
-  return <Alert>{msg}{e.fields && <ul className="mt-1 list-disc ps-5">{Object.entries(e.fields).map(([k, v]) => <li key={k}>{k}: {v}</li>)}</ul>}</Alert>;
+  const lines = fieldLines(t, e.fields);
+  return <Alert>{errorMessage(t, locale, error)}{lines.length > 0 && <ul className="mt-1 list-disc ps-5">{lines.map((l, i) => <li key={i}>{l}</li>)}</ul>}</Alert>;
 }
 
 export function PageHeader({ title, subtitle, actions, badge }: { title: string; subtitle?: string; actions?: ReactNode; badge?: ReactNode }) {

@@ -44,7 +44,7 @@ public class ImageProcessor {
             gate.acquire();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw BusinessException.badRequest("FILE_NOT_ALLOWED", "Upload interrupted");
+            throw BusinessException.badRequest("UPLOAD_FAILED", "Upload interrupted");
         }
         try {
             BufferedImage src = decode(raw, declaredType);
@@ -72,7 +72,7 @@ public class ImageProcessor {
                 if (!(jpeg && "image/jpeg".equals(declaredType)) && !(fmt.equals("png") && "image/png".equals(declaredType))) throw notAnImage();
                 reader.setInput(in, true, true);
                 long w = reader.getWidth(0), h = reader.getHeight(0);
-                if (w < 1 || h < 1 || w * h > MAX_PIXELS) throw BusinessException.badRequest("FILE_NOT_ALLOWED", "Image is too large (max 25 megapixels)");
+                if (w < 1 || h < 1 || w * h > MAX_PIXELS) throw BusinessException.badRequest("IMAGE_TOO_BIG", "Image is too large (max 25 megapixels)");
                 BufferedImage img = reader.read(0);
                 if (img == null) throw notAnImage();
                 return img;
@@ -86,7 +86,7 @@ public class ImageProcessor {
         }
     }
 
-    private static BusinessException notAnImage() { return BusinessException.badRequest("FILE_NOT_ALLOWED", "File content does not match its type"); }
+    private static BusinessException notAnImage() { return BusinessException.badRequest("FILE_CORRUPT", "File content does not match its type"); }
 
     private static int orientation(byte[] raw) {
         try {
@@ -152,7 +152,7 @@ public class ImageProcessor {
             }
             return new Variant(name, bos.toByteArray(), img.getWidth(), img.getHeight(), png ? "png" : "jpg", png ? "image/png" : "image/jpeg");
         } catch (Exception e) {
-            throw BusinessException.badRequest("FILE_NOT_ALLOWED", "Could not process this image");
+            throw BusinessException.badRequest("FILE_CORRUPT", "Could not process this image");
         }
     }
 }

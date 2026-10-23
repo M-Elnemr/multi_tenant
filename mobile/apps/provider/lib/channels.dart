@@ -520,7 +520,7 @@ class PostEditor extends StatelessWidget {
             ]),
             for (final plat in ['FACEBOOK', 'INSTAGRAM']) CheckboxListTile(contentPadding: EdgeInsets.zero, value: channels.contains(plat), onChanged: locked ? null : (v) async { if (await run(context, () => ctx.api.patch('store/marketing/posts/$id', {'channels': v! ? [...channels, plat] : channels.where((c) => c != plat).toList()}))) await reload(); }, title: Text(plat == 'FACEBOOK' ? (ar ? 'صفحة فيسبوك' : 'Facebook page') : 'Instagram')),
             if (channels.contains('INSTAGRAM') && image == null) Text(ar ? 'إنستجرام يحتاج صورة.' : 'Instagram needs a picture.', style: const TextStyle(color: Color(0xFFD98200))),
-            for (final r in _maps(p['results']).where((r) => r['channel'] != '-' || r['ok'] != true)) Padding(padding: const EdgeInsets.only(top: 6), child: Text('${r['channel']}: ${r['ok'] == true ? (ar ? 'تم النشر' : 'posted') : r['error']}', style: TextStyle(color: r['ok'] == true ? const Color(0xFF1E9E5A) : const Color(0xFFD14343)))),
+            for (final r in _maps(p['results']).where((r) => r['channel'] != '-' || r['ok'] != true)) Padding(padding: const EdgeInsets.only(top: 6), child: Text('${r['channel']}: ${r['ok'] == true ? (ar ? 'تم النشر' : 'posted') : '${ar ? 'تعذّر' : 'failed'} - ${r['error']}'}', style: TextStyle(color: r['ok'] == true ? const Color(0xFF1E9E5A) : const Color(0xFFD14343)))),
             const SizedBox(height: 14),
             if (!locked && ctx.canWrite('marketing')) Row(children: [
               Expanded(child: FilledButton.icon(onPressed: channels.isEmpty ? null : () async { if (await run(context, () async { await saveCaption(); await ctx.api.post('store/marketing/posts/$id/publish', {}); })) await reload(); }, icon: const Icon(Icons.send_rounded), label: Text(ar ? 'انشر الآن' : 'Post now'))),
@@ -637,7 +637,7 @@ class _PublishScreenState extends State<PublishScreen> {
                 setState(() => _busy = true);
                 try {
                   final res = _maps(await ctx.api.post('store/integrations/publish', {'productId': widget.productId, 'targets': targets}));
-                  _messages = [for (final r in res) '${accounts.firstWhere((a) => a['id'] == r['accountId'], orElse: () => {'name': r['provider']})['name']}: ${r['ok'] == true ? (ar ? 'تم' : 'done') : r['error']}'];
+                  _messages = [for (final r in res) '${accounts.firstWhere((a) => a['id'] == r['accountId'], orElse: () => {'name': r['provider']})['name']}: ${r['ok'] == true ? (ar ? 'تم' : 'done') : '${ar ? 'تعذّر' : 'failed'} - ${r['error']}'}'];
                   _price.clear(); _qty.clear(); _on.clear();
                   await reload();
                 } catch (e) { if (context.mounted) toast(context, errorText(e), isError: true); }

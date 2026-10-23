@@ -49,7 +49,7 @@ export function PhotoField({ label, hint, value, onChange }: { label: string; hi
           <img src={thumbUrl(value)} alt="" className="h-24 w-40 rounded-xl object-cover shadow-sm ring-1 ring-slate-200" />
         ) : <div className="flex h-24 w-40 items-center justify-center rounded-xl bg-slate-100 text-xs text-slate-400">{t("se.noPhoto")}</div>}
         <div className="flex flex-col items-start gap-2">
-          <ImageUploader category="PRODUCT_IMAGE" label={value ? t("se.replacePhoto") : t("identity.coverUpload")} onUploaded={(id) => onChange(id)} />
+          <ImageUploader category="PRODUCT_IMAGE" aspect={16 / 9} label={value ? t("se.replacePhoto") : t("identity.coverUpload")} onUploaded={(id) => onChange(id)} />
           {value && <Button size="sm" variant="ghost" onClick={() => onChange(null)}>{t("common.remove")}</Button>}
         </div>
       </div>

@@ -17,9 +17,12 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 public class GlobalExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
+    @SuppressWarnings("unchecked")
     @ExceptionHandler(BusinessException.class)
     ResponseEntity<Map<String, Object>> business(BusinessException e) {
-        return body(e.getStatus(), e.getCode(), e.getMessage(), null);
+        var r = body(e.getStatus(), e.getCode(), e.getMessage(), null);
+        if (!e.getParams().isEmpty()) ((Map<String, Object>) r.getBody()).put("params", e.getParams());
+        return r;
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

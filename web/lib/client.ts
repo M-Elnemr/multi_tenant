@@ -6,6 +6,7 @@ export class ApiError extends Error {
     public code: string,
     message: string,
     public fields?: Record<string, string>,
+    public params?: Record<string, unknown>,
   ) {
     super(message);
   }
@@ -16,11 +17,16 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
   const headers: Record<string, string> = {};
   if (init.body !== undefined) headers["Content-Type"] = "application/json";
   if (init.idempotencyKey) headers["Idempotency-Key"] = init.idempotencyKey;
-  const res = await fetch(`/api/bff/${path.replace(/^\//, "")}`, {
-    method: init.method ?? (init.body !== undefined ? "POST" : "GET"),
-    headers,
-    body: init.body === undefined ? undefined : JSON.stringify(init.body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`/api/bff/${path.replace(/^\//, "")}`, {
+      method: init.method ?? (init.body !== undefined ? "POST" : "GET"),
+      headers,
+      body: init.body === undefined ? undefined : JSON.stringify(init.body),
+    });
+  } catch {
+    throw new ApiError(0, "NETWORK", "No connection to the server");   // offline, or the server is not reachable
+  }
   const text = await res.text();
   let data: unknown = null;
   try {
@@ -29,11 +35,11 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
     data = null;
   }
   if (!res.ok) {
-    const d = (data ?? {}) as { code?: string; message?: string; fields?: Record<string, string> };
+    const d = (data ?? {}) as { code?: string; message?: string; fields?: Record<string, string>; params?: Record<string, unknown> };
     if (res.status === 401 && typeof window !== "undefined" && !path.startsWith("auth/")) {
       window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname)}`);
     }
-    throw new ApiError(res.status, d.code ?? "ERROR", d.message ?? res.statusText, d.fields);
+    throw new ApiError(res.status, d.code ?? `HTTP_${res.status}`, d.message ?? res.statusText, d.fields, d.params);
   }
   if (/^\/?(auth\/(login|activate|reset-password|logout|client\/google|change-password)|shop\/me)/.test(path) && typeof window !== "undefined") {
     window.dispatchEvent(new Event("auth:changed"));   // header/account widgets re-read who is logged in

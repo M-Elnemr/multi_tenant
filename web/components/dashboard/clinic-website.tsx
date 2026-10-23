@@ -64,7 +64,7 @@ export function WebsiteCard() {
         <div className="flex flex-wrap items-center gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           {p.coverFileId && <img src={thumb(p.coverFileId)} alt="" className="h-16 w-28 rounded-lg object-cover" />}
-          <ImageUploader category="PRODUCT_IMAGE" label={t("identity.coverUpload")} onUploaded={(id) => set({ coverFileId: id })} />
+          <ImageUploader category="PRODUCT_IMAGE" aspect={16 / 9} label={t("identity.coverUpload")} onUploaded={(id) => set({ coverFileId: id })} />
           {p.coverFileId && <Button size="sm" variant="ghost" onClick={() => set({ coverFileId: null })}>{t("common.remove")}</Button>}
         </div>
         <p className="text-xs text-slate-500">{t("identity.coverHint")}</p>

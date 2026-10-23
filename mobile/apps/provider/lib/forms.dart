@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:platform_core/platform_core.dart';
 
 import 'common.dart';
+import 'crop.dart';
 
 /// Small declarative form kit so every settings page is a list of fields instead of hand-written widgets.
 enum FK { text, area, ltr, number, money, toggle, image, csv, hours, color, choice, faqs, pairs, gallery, chips }
@@ -25,7 +26,7 @@ int toMinor(String s) => ((double.tryParse(s.trim().replaceAll(',', '.')) ?? 0) 
 String fileUrl(Ctx c, String id, {String variant = 'thumb'}) => 'https://${c.host}/api/v1/files/$id/content?variant=$variant';
 
 /// Picks a photo, uploads it through presign + PUT and returns the file id (null when cancelled).
-Future<String?> pickAndUpload(BuildContext context, ApiClient api, String category, {String visibility = 'PUBLIC'}) async {
+Future<String?> pickAndUpload(BuildContext context, ApiClient api, String category, {String visibility = 'PUBLIC', double aspect = 1}) async {
   final isAr = S.of(context).ar;
   final source = await showModalBottomSheet<ImageSource>(
     context: context,
@@ -38,8 +39,17 @@ Future<String?> pickAndUpload(BuildContext context, ApiClient api, String catego
   if (source == null) return null;
   final f = await ImagePicker().pickImage(source: source, maxWidth: 2200, imageQuality: 85);
   if (f == null) return null;
-  final bytes = await f.readAsBytes();
-  final type = f.path.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+  var bytes = await f.readAsBytes();
+  // pictures are cut to the wanted shape first (the owner can also keep the whole picture)
+  final isDoc = category != 'PRODUCT_IMAGE' && category != 'LOGO' && category != 'AVATAR';
+  if (!isDoc) {
+    if (!context.mounted) return null;
+    final cut = await cropPicture(context, bytes, aspect: aspect);
+    if (cut == null) return null;
+    bytes = cut;
+  }
+  if (bytes.length > 5 * 1024 * 1024) throw ApiException(400, 'FILE_TOO_LARGE', 'File too large', params: const {'max': 5});
+  final type = (bytes.length > 8 && bytes[0] == 0x89 && bytes[1] == 0x50) ? 'image/png' : 'image/jpeg';
   final p = await api.post('files/presign', {'filename': f.name, 'contentType': type, 'size': bytes.length, 'category': category, 'visibility': visibility}) as Map<String, dynamic>;
   await api.putFile(p['uploadUrl'] as String, bytes, type);
   return p['fileId'] as String;
@@ -280,7 +290,7 @@ class _FormCardState extends State<FormCard> {
           if (id != null && id.isNotEmpty) const SizedBox(width: 10),
           Expanded(child: OutlinedButton.icon(icon: const Icon(Icons.add_photo_alternate_outlined), label: Text(label), onPressed: () async {
             String? nid;
-            final ok = await run(context, () async { nid = await pickAndUpload(context, widget.ctx.api, f.category); });
+            final ok = await run(context, () async { nid = await pickAndUpload(context, widget.ctx.api, f.category, aspect: RegExp('cover|banner', caseSensitive: false).hasMatch(f.key) ? 16 / 9 : 1); });
             if (ok && nid != null) setState(() => m![f.key] = nid);
           })),
           if (id != null && id.isNotEmpty) IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => setState(() => m![f.key] = null)),

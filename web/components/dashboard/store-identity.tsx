@@ -62,7 +62,7 @@ export function ContactCard({ profile, reload }: { profile: StoreProfile; reload
             // eslint-disable-next-line @next/next/no-img-element
             <img src={`/api/bff/files/${p.coverFileId}/content?variant=thumb`} alt="" className="h-16 w-28 rounded-lg object-cover" />
           )}
-          <ImageUploader category="PRODUCT_IMAGE" label={t("identity.coverUpload")} onUploaded={(id) => setP({ ...p, coverFileId: id })} />
+          <ImageUploader category="PRODUCT_IMAGE" aspect={16 / 9} label={t("identity.coverUpload")} onUploaded={(id) => setP({ ...p, coverFileId: id })} />
           {p.coverFileId && <Button size="sm" variant="ghost" onClick={() => setP({ ...p, coverFileId: "" })}>{t("common.remove")}</Button>}
         </div>
         <p className="text-xs text-slate-500">{t("identity.coverHint")}</p>

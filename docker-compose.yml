@@ -107,14 +107,13 @@ services:
   # S3-compatible object storage. MinIO's community project stopped publishing prebuilt binaries/images in 2025: set MINIO_IMAGE to an image you
   # build or trust, or point the S3_* variables at any other S3-compatible store (Garage, Cloudflare R2, AWS S3) and drop these two services.
   minio:
-    image: ${MINIO_IMAGE:-quay.io/minio/minio:latest}
+    image: ${MINIO_IMAGE:-bitnamilegacy/minio:latest}   # MinIO no longer publishes images; this is a frozen community copy (any S3-compatible store works, see above)
     restart: unless-stopped
-    command: ["server", "/data"]
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY in .env}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?set S3_SECRET_KEY in .env}
     volumes:
-      - minio_data:/data
+      - minio_data:/bitnami/minio/data
     expose:
       - "9000"
     healthcheck:
@@ -124,7 +123,7 @@ services:
       retries: 10
 
   minio-init:
-    image: ${MC_IMAGE:-quay.io/minio/mc:latest}
+    image: ${MC_IMAGE:-bitnamilegacy/minio-client:latest}
     depends_on:
       minio:
         condition: service_healthy

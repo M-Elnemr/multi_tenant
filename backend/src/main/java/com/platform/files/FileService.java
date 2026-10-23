@@ -65,9 +65,9 @@ public class FileService {
     public Map<String, Object> presign(UUID tenantId, UUID userId, String filename, String contentType, long size, String category, String visibility) {
         boolean imageOnly = Set.of("PRODUCT_IMAGE", "LOGO", "AVATAR").contains(category);
         if (!Set.of("PRODUCT_IMAGE", "LOGO", "AVATAR", "LAB_RESULT", "MEDICAL_DOCUMENT", "PRESCRIPTION").contains(category)) throw BusinessException.badRequest("FILE_NOT_ALLOWED", "Unknown category");
-        if (contentType == null || !(imageOnly ? IMAGE_TYPES : DOC_TYPES).contains(contentType.toLowerCase())) throw BusinessException.badRequest("FILE_NOT_ALLOWED", "This file type is not allowed");
+        if (contentType == null || !(imageOnly ? IMAGE_TYPES : DOC_TYPES).contains(contentType.toLowerCase())) throw BusinessException.badRequest("FILE_TYPE_NOT_ALLOWED", "This file type is not allowed").with("types", imageOnly ? "JPG, PNG" : "JPG, PNG, PDF");
         long max = imageOnly ? IMAGE_MAX : DOC_MAX;
-        if (size <= 0 || size > max) throw BusinessException.badRequest("FILE_NOT_ALLOWED", "File too large (max " + (max / 1024 / 1024) + " MB)");
+        if (size <= 0 || size > max) throw BusinessException.badRequest("FILE_TOO_LARGE", "File too large (max " + (max / 1024 / 1024) + " MB)").with("max", max / 1024 / 1024);
         String vis = visibility == null ? defaultVisibility(category) : visibility;
         if (!Set.of("PRIVATE", "TENANT_INTERNAL", "CUSTOMER_VISIBLE", "PATIENT_VISIBLE", "PUBLIC").contains(vis)) throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid visibility");
         if (MEDICAL.contains(category) && !Set.of("PRIVATE", "TENANT_INTERNAL", "PATIENT_VISIBLE").contains(vis)) throw BusinessException.badRequest("FILE_NOT_ALLOWED", "Medical files can never be public");
@@ -92,9 +92,9 @@ public class FileService {
         if (!"PENDING".equals(f.get("status"))) throw BusinessException.conflict("UPLOAD_EXPIRED", "This upload was already completed");
         String declaredType = (String) f.get("content_type");
         long declared = ((Number) f.get("declared_size")).longValue();
-        if (contentType == null || !contentType.toLowerCase().startsWith(declaredType)) throw BusinessException.badRequest("FILE_NOT_ALLOWED", "Content type differs from the declared one");
-        if (data.length == 0 || data.length > declared) throw BusinessException.badRequest("FILE_NOT_ALLOWED", "File size differs from the declared size");
-        if (!magicMatches(declaredType, data)) throw BusinessException.badRequest("FILE_NOT_ALLOWED", "File content does not match its type");
+        if (contentType == null || !contentType.toLowerCase().startsWith(declaredType)) throw BusinessException.badRequest("FILE_TYPE_NOT_ALLOWED", "Content type differs from the declared one").with("types", "JPG, PNG");
+        if (data.length == 0 || data.length > declared) throw BusinessException.badRequest("FILE_CORRUPT", "File size differs from the declared size");
+        if (!magicMatches(declaredType, data)) throw BusinessException.badRequest("FILE_CORRUPT", "File content does not match its type");
         requireStorageRoom(tenantId, data.length);
         // a virus/malware scan hook would run here before the file becomes READY
         String category = (String) f.get("category");

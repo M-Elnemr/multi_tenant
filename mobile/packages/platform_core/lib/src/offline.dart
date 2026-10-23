@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
 import 'api_client.dart';
+import 'ui.dart' show errorText;
 
 /// A change made while there was no internet, waiting to be sent.
 class OfflineOp {
@@ -194,7 +195,7 @@ class OfflineStore {
           markOnline();
         } on ApiException catch (e) {
           if (e.code == 'NETWORK') { markOffline(); break; }
-          await (await _open()).update('outbox', {'state': 'failed', 'error': e.message}, where: 'id = ?', whereArgs: [op.id]);
+          await (await _open()).update('outbox', {'state': 'failed', 'error': errorText(e)}, where: 'id = ?', whereArgs: [op.id]);
         }
         await refreshCounts();
       }

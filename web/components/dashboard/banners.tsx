@@ -37,7 +37,7 @@ export function BannersCard() {
             // eslint-disable-next-line @next/next/no-img-element
             <img src={`/api/bff/files/${draft.imageFileId}/content?variant=thumb`} alt="" className="h-14 w-24 rounded-lg object-cover" />
           )}
-          <ImageUploader category="PRODUCT_IMAGE" label={t("banners.upload")} onUploaded={(id) => setDraft({ ...draft, imageFileId: id })} />
+          <ImageUploader category="PRODUCT_IMAGE" aspect={16 / 9} label={t("banners.upload")} onUploaded={(id) => setDraft({ ...draft, imageFileId: id })} />
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
           <Field label={t("banners.headline")}><Input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} maxLength={120} /></Field>

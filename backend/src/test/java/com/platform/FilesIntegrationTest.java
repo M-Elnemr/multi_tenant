@@ -57,7 +57,7 @@ class FilesIntegrationTest extends IntegrationTestBase {
         // nothing is served until the upload completes
         getFile(store.host(), null, id).andExpect(status().isNotFound());
         // wrong magic bytes / wrong content type / forged signature are rejected
-        putFile(store, url, "image/png", PDF).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("FILE_NOT_ALLOWED"));
+        putFile(store, url, "image/png", PDF).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("FILE_CORRUPT"));
         putFile(store, url, "application/pdf", PNG).andExpect(status().isBadRequest());
         putFile(store, url.replaceAll("sig=.*", "sig=deadbeef"), "image/png", PNG).andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("UPLOAD_EXPIRED"));
         putFile(store, url, "image/png", PNG).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("READY"));
@@ -160,5 +160,16 @@ class FilesIntegrationTest extends IntegrationTestBase {
         org.springframework.jdbc.core.simple.JdbcClient jdbc = ctx.getBean(org.springframework.jdbc.core.simple.JdbcClient.class);
         jdbc.sql("UPDATE billing.usage_counters SET value = :v WHERE metric = 'storage_bytes' AND tenant_id = (SELECT id FROM core.tenants WHERE slug = :s)").param("v", 10240L * 1024 * 1024 - 10).param("s", store.slug()).update();
         presign(store, store.access(), "c.png", "image/png", PNG.length, "PRODUCT_IMAGE", null, 403);
+    }
+
+    @Test
+    void uploadRefusalsNameTheReasonAndCarryTheLimit() throws Exception {
+        Tenant store = onboard("STORE");
+        String tooBig = presign(store, store.access(), "big.png", "image/png", 6L * 1024 * 1024, "LOGO", null, 400);
+        assertThat((String) JsonPath.read(tooBig, "$.code")).isEqualTo("FILE_TOO_LARGE");
+        assertThat((Integer) JsonPath.read(tooBig, "$.params.max")).isEqualTo(5);
+        String wrongType = presign(store, store.access(), "x.gif", "image/gif", 100, "LOGO", null, 400);
+        assertThat((String) JsonPath.read(wrongType, "$.code")).isEqualTo("FILE_TYPE_NOT_ALLOWED");
+        assertThat((String) JsonPath.read(wrongType, "$.params.types")).contains("PNG");
     }
 }

@@ -10,13 +10,19 @@ import 'auth.dart';
 import 'offline.dart';
 
 class ApiException implements Exception {
-  ApiException(this.status, this.code, this.message);
+  ApiException(this.status, this.code, this.message, {this.params = const {}, this.fields = const {}});
   final int status;
   final String code;
   final String message;
+  /// Numbers the message needs ("max 5 MB"), sent by the server next to the code.
+  final Map<String, dynamic> params;
+  /// Per-field complaints of a rejected form: field name -> the server's sentence.
+  final Map<String, dynamic> fields;
   @override
   String toString() => message;
 }
+
+Map<String, dynamic> _map(Object? v) => v is Map ? v.map((k, x) => MapEntry('$k', x)) : const {};
 
 /// Talks to the platform API. The tenant (store/clinic) is chosen purely by the host in [baseUrl]
 /// (e.g. https://fashion.example.com), exactly like the website: the server never trusts a tenant id from the client.
@@ -100,7 +106,7 @@ class ApiClient {
     if (res.statusCode == 401 && await _refreshOnce() == RefreshResult.ok) {
       res = await _sendWithRetry('GET', path, null, null, null, await session.accessToken());
     }
-    if (res.statusCode >= 400) throw ApiException(res.statusCode, 'ERROR', res.reasonPhrase ?? 'Download failed');
+    if (res.statusCode >= 400) throw ApiException(res.statusCode, 'HTTP_${res.statusCode}', res.reasonPhrase ?? 'Download failed');
     return res.bodyBytes;
   }
 
@@ -130,7 +136,7 @@ class ApiClient {
     if (res.statusCode >= 400) {
       Map m = const {};
       try { m = jsonDecode(utf8.decode(res.bodyBytes)) as Map; } catch (_) {}
-      throw ApiException(res.statusCode, (m['code'] ?? 'ERROR').toString(), (m['message'] ?? 'Upload failed').toString());
+      throw ApiException(res.statusCode, (m['code'] ?? 'HTTP_${res.statusCode}').toString(), (m['message'] ?? 'Upload failed').toString(), params: _map(m['params']), fields: _map(m['fields']));
     }
   }
 
@@ -193,7 +199,7 @@ class ApiClient {
     if (res.statusCode >= 400) {
       final m = data is Map ? data : const {};
       if (m['code'] == 'TENANT_DISABLED') tenantDisabled.value++;
-      throw ApiException(res.statusCode, (m['code'] ?? 'ERROR').toString(), (m['message'] ?? res.reasonPhrase ?? 'Error').toString());
+      throw ApiException(res.statusCode, (m['code'] ?? 'HTTP_${res.statusCode}').toString(), (m['message'] ?? res.reasonPhrase ?? 'Error').toString(), params: _map(m['params']), fields: _map(m['fields']));
     }
     return data;
   }
