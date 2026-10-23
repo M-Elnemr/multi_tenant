@@ -1,5 +1,9 @@
 import { VisitTracker } from "@/components/visit-tracker";
 import "./shop.css";
+import "./templates.css";
+import { templateFontVars } from "@/components/shop/templates/fonts";
+import { isTemplate } from "@/components/shop/templates/ids";
+import { TemplateBridge } from "@/components/shop/templates/template-bridge";
 import { ShopFooter } from "@/components/shop/footer";
 import { ShopHeader } from "@/components/shop/header";
 import { MobileBar } from "@/components/shop/mobile-bar";
@@ -28,7 +32,8 @@ export default async function ShopLayout({ children }: { children: React.ReactNo
   const logoId = p.branding?.logoFileId ?? (info.kind === "TENANT" ? (info.branding as { logo_file_id?: string }).logo_file_id : undefined);
   const logoUrl = logoId ? `/api/bff/files/${logoId}/content?variant=thumb` : null;
   return (
-    <div className="shop flex min-h-dvh flex-col">
+    <div className={`shop flex min-h-dvh flex-col ${templateFontVars}`} data-template={isTemplate(p.template) ? p.template : "original"}>
+      <TemplateBridge />
       <ShopHeader name={storeName} logoUrl={logoUrl} announcement={p.announcement} closedMessage={p.closedMessage} isOpen={p.isOpen !== false} categories={categories} />
       <VisitTracker />
       <main className="flex-1 pb-chrome">{children}</main>

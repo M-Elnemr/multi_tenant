@@ -19,7 +19,7 @@ export function MobileBar() {
     { href: "/account", icon: "heart", label: t("nav.account") },
   ];
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--s-line)] bg-white/95 pb-[var(--safe-b)] backdrop-blur-xl md:hidden" aria-label="Primary">
+    <nav className="s-mobilebar fixed inset-x-0 bottom-0 z-40 border-t border-[var(--s-line)] bg-white/95 pb-[var(--safe-b)] backdrop-blur-xl md:hidden" aria-label="Primary">
       <ul className="grid h-[var(--tabbar-h)] grid-cols-5">
         {items.map((i) => {
           const active = i.href === "/" ? path === "/" : path.startsWith(i.href.split("?")[0]) && !i.href.includes("?");

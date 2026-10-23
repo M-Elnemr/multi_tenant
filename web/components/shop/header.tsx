@@ -21,7 +21,7 @@ function Logo({ name, logoUrl, size = "h-10 w-10" }: { name: string; logoUrl: st
       ) : (
         <span className={`${size} grid shrink-0 place-items-center rounded-2xl bg-brand-gradient text-lg font-extrabold text-white shadow-sm`}>{name.trim().charAt(0).toUpperCase()}</span>
       )}
-      <span className="truncate text-base font-extrabold leading-tight tracking-tight sm:text-xl">{name}</span>
+      <span className="s-brand-name truncate text-base font-extrabold leading-tight tracking-tight sm:text-xl">{name}</span>
     </span>
   );
 }
@@ -96,19 +96,19 @@ export function ShopHeader({ name, logoUrl, announcement, closedMessage, isOpen,
     <>
       {!isOpen && <div className="bg-[var(--s-ink)] px-4 py-2 text-center text-sm font-semibold text-white">🌙 {closedMessage || t("shop.closedNow")}</div>}
       {announcement && isOpen && <div className="bg-brand-gradient px-4 py-2 text-center text-sm font-bold text-white">{announcement}</div>}
-      <header className="sticky top-0 z-40 border-b border-[var(--s-line)] bg-[var(--s-bg)]/90 backdrop-blur-xl">
-        <div className="s-container flex items-center gap-2 py-3 sm:gap-3">
+      <header className="s-header sticky top-0 z-40 border-b border-[var(--s-line)] bg-[var(--s-bg)]/90 backdrop-blur-xl">
+        <div className="s-container s-header-row flex items-center gap-2 py-3 sm:gap-3">
           <button onClick={() => setDrawer(true)} aria-label={t("shop.menu")} className="grid h-11 w-11 place-items-center rounded-full transition hover:bg-[var(--s-soft)] lg:hidden"><Icon name="menu" className="h-6 w-6" /></button>
-          <Link href="/" className="min-w-0 flex-1 md:flex-none"><Logo name={name} logoUrl={logoUrl} /></Link>
-          <SearchBox className="mx-2 hidden flex-1 md:block lg:mx-6" />
+          <Link href="/" className="s-brand min-w-0 flex-1 md:flex-none"><Logo name={name} logoUrl={logoUrl} /></Link>
+          <SearchBox className="s-search mx-2 hidden flex-1 md:block lg:mx-6" />
           <div className="ms-auto flex shrink-0 items-center gap-0.5">
             <a href={`/api/lang?l=${locale === "ar" ? "en" : "ar"}`} className="hidden h-11 items-center rounded-full px-3 text-sm font-bold text-[var(--s-mute)] transition hover:bg-[var(--s-soft)] sm:flex">{locale === "ar" ? "EN" : "عربي"}</a>
             <AccountButton />
             <CartButton />
           </div>
         </div>
-        <div className="s-container pb-3 md:hidden"><SearchBox /></div>
-        <nav className="hidden border-t border-[var(--s-line)] lg:block">
+        <div className="s-container pb-3 md:hidden"><SearchBox className="s-search-m" /></div>
+        <nav className="s-nav hidden border-t border-[var(--s-line)] lg:block">
           <div className="s-container flex items-center gap-1 py-1.5">
             <Link href="/products" className="rounded-full px-4 py-2 text-sm font-extrabold" style={{ color: "var(--brand)" }}>{t("shop.allProducts")}</Link>
             {FOR_LINKS.map((f) => <Link key={f.key} href={`/products?audience=${f.value}`} className="rounded-full bg-[var(--s-soft)] px-3.5 py-1.5 text-sm font-extrabold transition hover:text-[var(--brand)]">{t(`audience.${f.key}`)}</Link>)}

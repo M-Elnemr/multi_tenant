@@ -14,7 +14,7 @@ export function BannerCarousel({ slides, cta }: { slides: Slide[]; cta: string }
     return () => clearInterval(id);
   }, [slides.length]);
   return (
-    <div className="relative overflow-hidden rounded-[28px] shadow-[var(--s-shadow-lg)]">
+    <div className="s-hero relative overflow-hidden rounded-[28px] shadow-[var(--s-shadow-lg)]">
       <div className="relative aspect-[16/9] sm:aspect-[21/8]">
         {slides.map((s, idx) => (
           <div key={s.id} className={`absolute inset-0 transition-opacity duration-700 ${idx === i ? "opacity-100" : "pointer-events-none opacity-0"}`} aria-hidden={idx !== i}>

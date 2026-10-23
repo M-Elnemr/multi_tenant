@@ -55,7 +55,7 @@ export async function Listing({ params, category }: { params: ListingParams; cat
           {res.data.length === 0 ? (
             <div className="s-card grid place-items-center gap-3 p-14 text-center"><span className="text-5xl">🔍</span><p className="text-lg font-extrabold">{t("shop.noResults")}</p><p className="text-sm text-[var(--s-mute)]">{t("shop.noResultsHint")}</p><Link href="/products" className="s-btn s-btn-sm mt-2">{t("shop.allProducts")}</Link></div>
           ) : (
-            <div className="stagger grid grid-cols-2 gap-3 sm:gap-5 md:grid-cols-3">{res.data.map((p, i) => <div key={p.id} style={{ "--i": i } as React.CSSProperties}><ShopProductCard p={p} locale={locale} labels={labels} /></div>)}</div>
+            <div className="s-grid stagger grid grid-cols-2 gap-3 sm:gap-5 md:grid-cols-3">{res.data.map((p, i) => <div key={p.id} style={{ "--i": i } as React.CSSProperties}><ShopProductCard p={p} locale={locale} labels={labels} /></div>)}</div>
           )}
           {pages > 1 && (
             <div className="mt-10 flex items-center justify-center gap-3 text-sm font-bold">

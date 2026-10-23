@@ -5,6 +5,7 @@ import { useState } from "react";
 import { api } from "@/lib/client";
 import { toMinor, money } from "@/lib/format";
 import BrandingCard from "@/components/dashboard/branding";
+import TemplatePicker from "@/components/dashboard/template-picker";
 import { ZonesCard } from "@/components/dashboard/zones";
 import { BannersCard } from "@/components/dashboard/banners";
 import { BranchesCard, ContactCard, MarketingCard, SetupChecklist, type StoreProfile } from "@/components/dashboard/store-identity";
@@ -80,6 +81,7 @@ export default function StoreSettings() {
           </Card>
         )}
         {can("settings.manage") && <section id="branding"><BrandingCard /></section>}
+        {can("settings.manage") && <section id="templates"><TemplatePicker /></section>}
         {methods.data && (
           <Card className="space-y-3">
             <h2 className="font-medium">{t("settings.paymentMethods")}</h2>

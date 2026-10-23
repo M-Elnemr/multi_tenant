@@ -70,7 +70,7 @@ export function ProductBuy({ product, whatsapp, storeName, isOpen, returnDays }:
 
   return (
     <>
-      <div className="grid gap-8 lg:grid-cols-[1.05fr_1fr] lg:gap-14">
+      <div className="s-pdp grid gap-8 lg:grid-cols-[1.05fr_1fr] lg:gap-14">
         <Gallery key={shown.map((m) => m.url).join("|")} media={shown} name={product.name} badge={badge ? <span className={`s-badge ${BADGE_CLASS[badge] ?? ""} !text-sm`}>{discount > 0 && badge === "SALE" ? `-${discount}%` : t(`badge.${badge}`)}</span> : null} />
         <div className="space-y-6">
           <div>

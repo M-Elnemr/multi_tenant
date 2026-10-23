@@ -16,8 +16,8 @@ type Home = { featured: ShopProduct[]; newest: ShopProduct[]; offers: ShopProduc
 
 function Section({ title, eyebrow, href, more, children }: { title: string; eyebrow?: string; href?: string; more?: string; children: React.ReactNode }) {
   return (
-    <section className="s-container mt-14 sm:mt-20">
-      <div className="mb-6 flex items-end justify-between gap-4">
+    <section className="s-container s-sec mt-14 sm:mt-20">
+      <div className="s-sec-head mb-6 flex items-end justify-between gap-4">
         <div>{eyebrow && <p className="s-eyebrow mb-1">{eyebrow}</p>}<h2 className="s-section-title">{title}</h2></div>
         {href && more && <Link href={href} className="shrink-0 text-sm font-extrabold" style={{ color: "var(--brand)" }}>{more} →</Link>}
       </div>
@@ -29,7 +29,7 @@ function Section({ title, eyebrow, href, more, children }: { title: string; eyeb
 function Grid({ items, locale, labels }: { items: ShopProduct[]; locale: "ar" | "en"; labels: React.ComponentProps<typeof ShopProductCard>["labels"] }) {
   // show complete rows only (4 across on desktop, 2 on phones) so a lone product never sits by itself on the last row
   const shown = items.length >= 4 ? items.slice(0, Math.min(items.length, 8) - (Math.min(items.length, 8) % 4)) : items;
-  return <div className="stagger grid grid-cols-2 gap-3 sm:gap-5 md:grid-cols-3 lg:grid-cols-4">{shown.map((p, i) => <div key={p.id} style={{ "--i": i } as React.CSSProperties}><ShopProductCard p={p} locale={locale} labels={labels} /></div>)}</div>;
+  return <div className="s-grid s-grid-home stagger grid grid-cols-2 gap-3 sm:gap-5 md:grid-cols-3 lg:grid-cols-4">{shown.map((p, i) => <div key={p.id} style={{ "--i": i } as React.CSSProperties}><ShopProductCard p={p} locale={locale} labels={labels} /></div>)}</div>;
 }
 
 export default async function StoreHome({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
@@ -57,13 +57,13 @@ export default async function StoreHome({ searchParams }: { searchParams?: Promi
     banners: <>
       <section className="s-container pt-5 sm:pt-8">
         {slides.length > 0 ? <BannerCarousel slides={slides} cta={t("shop.browse")} /> : (
-          <div className="s-hero-shine relative overflow-hidden rounded-[28px] shadow-[var(--s-shadow-lg)]">
+          <div className="s-hero s-hero-shine relative overflow-hidden rounded-[28px] shadow-[var(--s-shadow-lg)]">
             {p?.coverFileId ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={fileUrl(p.coverFileId, "original")} alt="" className="absolute inset-0 h-full w-full object-cover" />
             ) : <div className="bg-brand-gradient absolute inset-0" />}
             <div className="absolute inset-0 s-overlay-side" />
-            <div className="relative flex min-h-[22rem] flex-col justify-end gap-4 p-7 text-white sm:min-h-[27rem] sm:justify-center sm:p-14">
+            <div className="s-hero-body relative flex min-h-[22rem] flex-col justify-end gap-4 p-7 text-white sm:min-h-[27rem] sm:justify-center sm:p-14">
               <p className="s-eyebrow !text-white/80">{t("shop.welcomeTo")}</p>
               <h1 className="max-w-2xl text-4xl font-extrabold leading-[1.1] drop-shadow sm:text-6xl">{p?.storeName}</h1>
               {(p?.shortDescription || p?.about) && <p className="max-w-xl text-base opacity-95 sm:text-xl">{p.shortDescription || p.about}</p>}
@@ -78,9 +78,9 @@ export default async function StoreHome({ searchParams }: { searchParams?: Promi
 </>,
     trust: <>
       <section className="s-container mt-6">
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="s-trust grid grid-cols-2 gap-3 lg:grid-cols-4">
           {trustShown.map((x) => (
-            <div key={x.title} className="flex items-center gap-3 rounded-2xl border border-[var(--s-line)] bg-white p-3.5 sm:p-4">
+            <div key={x.title} className="s-trust-item flex items-center gap-3 rounded-2xl border border-[var(--s-line)] bg-white p-3.5 sm:p-4">
               <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[var(--s-soft)] text-xl">{x.icon}</span>
               <div className="min-w-0"><p className="truncate text-sm font-extrabold">{x.title}</p><p className="line-clamp-2 text-xs text-[var(--s-mute)]">{x.text}</p></div>
             </div>
@@ -91,7 +91,7 @@ export default async function StoreHome({ searchParams }: { searchParams?: Promi
     categories: <>
       {tops.length > 0 && (
         <Section title={t("shop.categories")} eyebrow={t("shop.shopBy")}>
-          <div className="s-scroll-x">
+          <div className="s-scroll-x s-cats">
             {tops.map((c) => (
               <Link key={c.id} href={`/c/${c.slug}`} className="s-lift group w-36 sm:w-44">
                 <div className="relative grid aspect-square place-items-center overflow-hidden rounded-[26px] border border-[var(--s-line)] bg-[var(--s-soft)] transition duration-500 group-hover:bg-white">
@@ -123,7 +123,7 @@ export default async function StoreHome({ searchParams }: { searchParams?: Promi
     whatsapp: <>
       {p?.whatsapp && (
         <section className="s-container mt-16 sm:mt-24">
-          <div className="relative overflow-hidden rounded-[28px] bg-[#15120f] p-8 text-white sm:p-12">
+          <div className="s-cta relative overflow-hidden rounded-[28px] bg-[#15120f] p-8 text-white sm:p-12">
             <div className="pointer-events-none absolute -end-10 -top-10 h-56 w-56 rounded-full opacity-30 blur-2xl" style={{ background: "var(--brand)" }} />
             <div className="relative flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-center">
               <div><h2 className="text-2xl font-extrabold sm:text-3xl">{t("shop.helpTitle")}</h2><p className="mt-2 max-w-md text-[#c9c1b6]">{t("shop.helpText")}</p></div>

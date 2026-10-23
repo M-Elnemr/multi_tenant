@@ -32,6 +32,7 @@ export type ShopProfile = {
   metaPixelId?: string; tiktokPixelId?: string; gaId?: string;
   siteLayout?: { order?: string[]; hidden?: string[] } | null; trustTiles?: { title: string; text: string }[];
   branding?: { logoFileId?: string | null; primaryColor?: string; secondaryColor?: string };
+  template?: string;
 };
 
 export type ShopBranch = {

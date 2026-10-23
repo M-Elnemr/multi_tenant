@@ -35,7 +35,7 @@ public class StoreSettingsService {
     public Map<String, Object> profile(UUID tenantId) {
         Map<String, Object> p = new java.util.LinkedHashMap<>(Rows.camel(jdbc.sql("SELECT store_name, short_description, about, support_phone, support_email, address_text, shipping_policy, return_policy, privacy_policy, terms_text, other_category, "
                 + "whatsapp, extra_phones::text AS extra_phones, facebook_url, instagram_url, tiktok_url, website_url, maps_url, working_hours::text AS working_hours, "
-                + "is_open, closed_message, min_order_minor, tax_id, vat_included, vat_percent, cover_file_id, announcement, return_window_days, meta_pixel_id, tiktok_pixel_id, ga_id, site_layout::text AS site_layout, trust_tiles::text AS trust_tiles "
+                + "is_open, closed_message, min_order_minor, tax_id, vat_included, vat_percent, cover_file_id, announcement, return_window_days, meta_pixel_id, tiktok_pixel_id, ga_id, site_layout::text AS site_layout, trust_tiles::text AS trust_tiles, template "
                 + "FROM commerce.store_profiles WHERE tenant_id = :t")
                 .param("t", tenantId).query().singleRow()));
         p.put("extraPhones", Rows.jsonList(p.get("extraPhones")));
@@ -82,6 +82,8 @@ public class StoreSettingsService {
             Map.entry("instagramUrl", "instagram_url"), Map.entry("tiktokUrl", "tiktok_url"), Map.entry("websiteUrl", "website_url"),
             Map.entry("mapsUrl", "maps_url"), Map.entry("closedMessage", "closed_message"), Map.entry("taxId", "tax_id"), Map.entry("announcement", "announcement"),
             Map.entry("metaPixelId", "meta_pixel_id"), Map.entry("tiktokPixelId", "tiktok_pixel_id"), Map.entry("gaId", "ga_id"));
+    /** The ready-made looks of the shop website (see V42). */
+    public static final java.util.Set<String> TEMPLATES = java.util.Set.of("original", "atelier", "souq", "midnight", "bloom", "oud");
     private static final Map<String, String> PROFILE_BOOL = Map.of("isOpen", "is_open", "vatIncluded", "vat_included");
     private static final Map<String, String> PROFILE_NUM = Map.of("minOrderMinor", "min_order_minor", "vatPercent", "vat_percent", "returnWindowDays", "return_window_days");
 
@@ -104,6 +106,10 @@ public class StoreSettingsService {
             if (v.doubleValue() < 0 || v.doubleValue() > 1_000_000_000) throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid " + e.getKey());
             set.append(e.getValue()).append(" = :").append(e.getKey()).append(", ");
             q.put(e.getKey(), e.getKey().equals("vatPercent") ? (Object) java.math.BigDecimal.valueOf(v.doubleValue()) : (Object) v.longValue());
+        }
+        if (f.get("template") instanceof String tpl) {
+            if (!TEMPLATES.contains(tpl)) throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown template");
+            set.append("template = :template, "); q.put("template", tpl);
         }
         var json = new com.fasterxml.jackson.databind.ObjectMapper();
         try {

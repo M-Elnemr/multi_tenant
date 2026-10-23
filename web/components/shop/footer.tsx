@@ -10,7 +10,7 @@ export function ShopFooter({ p, name, logoUrl, branches, t, poweredLabel, powere
 }) {
   const phones = [p.supportPhone, ...(p.extraPhones ?? [])].filter(Boolean) as string[];
   return (
-    <footer className="mt-24 bg-[#15120f] text-[#e9e3da]">
+    <footer className="s-footer mt-24 bg-[#15120f] text-[#e9e3da]">
       <div className="s-container grid gap-10 py-14 sm:grid-cols-2 lg:grid-cols-4">
         <div className="space-y-4">
           <div className="flex items-center gap-3">

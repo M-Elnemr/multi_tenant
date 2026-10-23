@@ -15,8 +15,8 @@ export function ShopProductCard({ p, locale, labels }: { p: ShopProduct; locale:
   const discount = p.discountPct ? Math.round(Number(p.discountPct)) : 0;
   const badge = p.badge || (discount > 0 ? "SALE" : "");
   return (
-    <Link href={`/products/${p.slug}`} className="s-lift group block h-full overflow-hidden rounded-[22px] border border-[var(--s-line)] bg-white">
-      <div className="relative aspect-[4/5] overflow-hidden bg-[var(--s-soft)]">
+    <Link href={`/products/${p.slug}`} className="s-lift s-pcard group block h-full overflow-hidden rounded-[22px] border border-[var(--s-line)] bg-white">
+      <div className="s-pcard-img relative aspect-[4/5] overflow-hidden bg-[var(--s-soft)]">
         {p.imageUrl || p.imageMediaBase ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={mediaUrl({ url: p.imageUrl, mediaBase: p.imageMediaBase, mediaExt: p.imageMediaExt }, "medium") ?? ""} alt={p.name} width={480} height={600} decoding="async" loading="lazy" className={`h-full w-full object-cover transition duration-700 ease-out group-hover:scale-[1.07] ${p.inStock ? "" : "opacity-60 grayscale"}`} />
@@ -28,12 +28,12 @@ export function ShopProductCard({ p, locale, labels }: { p: ShopProduct; locale:
         </div>
         {!p.inStock && <span className="absolute inset-x-3 bottom-3 rounded-full bg-[var(--s-ink)]/85 py-1.5 text-center text-xs font-bold text-white backdrop-blur">{labels.outOfStock}</span>}
       </div>
-      <div className="space-y-1 p-4">
+      <div className="s-pcard-body space-y-1 p-4">
         {p.brand && <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--s-mute)]">{p.brand}</p>}
         <p className="line-clamp-2 min-h-[2.6rem] text-[15px] font-bold leading-snug">{p.name}</p>
         {p.rating ? <p className="text-xs font-semibold text-amber-600">★ {p.rating} <span className="font-normal text-[var(--s-mute)]">({p.ratingCount})</span></p> : null}
         <p className="flex items-baseline gap-2 pt-0.5">
-          <span className="text-lg font-extrabold" style={{ color: "var(--brand)" }}>{money(p.minPriceMinor, p.currency, locale)}</span>
+          <span className="s-price text-lg font-extrabold" style={{ color: "var(--brand)" }}>{money(p.minPriceMinor, p.currency, locale)}</span>
           {p.compareAtMinor ? <span className="text-sm text-[var(--s-mute)] line-through">{money(p.compareAtMinor, p.currency, locale)}</span> : null}
         </p>
       </div>
