@@ -35,9 +35,9 @@ function AiAssistant() {
   return (
     <>
       <PageHeader title={t("ai.title")} subtitle={t("ai.subtitle")} />
-      <div className="mb-4 flex gap-2 border-b">
+      <div className="mb-4 flex gap-1 overflow-x-auto border-b [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {([["test", "ai.tabTest"], ["lessons", "ai.tabLessons"], ["channels", "ai.tabChannels"], ["whatsapp", "wa.tab"], ["settings", "ai.tabSettings"]] as const).filter(([k]) => k !== "test" || write).map(([k, label]) => (
-          <button key={k} type="button" onClick={() => setTab(k)} className={`-mb-px border-b-2 px-4 py-2 text-sm font-semibold ${tab === k ? "border-brand text-brand" : "border-transparent text-slate-500"}`}>{t(label)}</button>
+          <button key={k} type="button" onClick={() => setTab(k)} className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-4 py-2 text-sm font-semibold ${tab === k ? "border-brand text-brand" : "border-transparent text-slate-500"}`}>{t(label)}</button>
         ))}
       </div>
       {tab === "test" && (

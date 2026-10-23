@@ -78,8 +78,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* phone drawer */}
-      <div onClick={() => setOpen(false)} className={`fixed inset-0 z-10 bg-slate-900/40 backdrop-blur-sm transition-opacity lg:hidden ${open ? "opacity-100" : "pointer-events-none opacity-0"}`} aria-hidden />
-      <aside className={`sidebar-bg fixed inset-y-0 start-0 z-20 flex w-72 flex-col p-4 shadow-2xl transition-transform duration-300 lg:hidden ${open ? "translate-x-0" : "ltr:-translate-x-full rtl:translate-x-full"}`}>
+      <div onClick={() => setOpen(false)} className={`absolute inset-0 z-10 bg-slate-900/40 backdrop-blur-sm transition-opacity lg:hidden ${open ? "opacity-100" : "pointer-events-none opacity-0"}`} aria-hidden />
+      <aside className={`sidebar-bg absolute inset-y-0 start-0 z-20 flex w-72 flex-col p-4 shadow-2xl transition-transform duration-300 lg:hidden ${open ? "translate-x-0" : "ltr:-translate-x-full rtl:translate-x-full"}`}>
         <div className="mb-5 flex items-center justify-between">{brand}<button onClick={() => setOpen(false)} aria-label="Close" className="rounded-xl p-2 text-slate-500 hover:bg-slate-100"><Icon name="close" /></button></div>
         <nav className="flex-1 space-y-1 overflow-y-auto">{items.map((i) => link(i))}</nav>
         {account}

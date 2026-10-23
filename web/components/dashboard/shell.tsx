@@ -109,9 +109,11 @@ export function DashboardShell({ nav, children }: { nav: NavItem[]; children: Re
         {bell("")}
       </header>
 
-      <div onClick={() => setOpen(false)} className={`fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm transition-opacity duration-300 lg:hidden ${open ? "opacity-100" : "pointer-events-none opacity-0"}`} aria-hidden />
+      {/* the phone menu lives in a screen-sized clipping box: a closed drawer parked outside the screen must never make the page wider than the phone (it pushed the bottom bar's last tab off-screen) */}
+      <div className={`fixed inset-0 z-40 overflow-hidden lg:contents ${open ? "" : "pointer-events-none"}`}>
+      <div onClick={() => setOpen(false)} className={`absolute inset-0 z-40 bg-slate-900/40 backdrop-blur-sm transition-opacity duration-300 lg:hidden ${open ? "opacity-100" : "pointer-events-none opacity-0"}`} aria-hidden />
 
-      <aside className={`sidebar-bg fixed inset-y-0 start-0 z-50 flex w-72 flex-col border-e border-slate-200/70 p-4 shadow-2xl transition-[transform,width] duration-300 ease-out print:hidden lg:sticky lg:top-0 lg:z-20 lg:h-screen lg:shrink-0 lg:translate-x-0! lg:shadow-none ${mini ? "lg:w-[4.75rem] lg:px-3" : "lg:w-64"} ${open ? "translate-x-0" : "ltr:-translate-x-full rtl:translate-x-full"}`}>
+      <aside className={`sidebar-bg absolute inset-y-0 start-0 z-50 flex w-72 flex-col border-e border-slate-200/70 p-4 shadow-2xl transition-[transform,width] duration-300 ease-out print:hidden lg:sticky lg:top-0 lg:z-20 lg:h-screen lg:shrink-0 lg:translate-x-0! lg:shadow-none ${mini ? "lg:w-[4.75rem] lg:px-3" : "lg:w-64"} ${open ? "translate-x-0" : "ltr:-translate-x-full rtl:translate-x-full"}`}>
         <div className={`mb-4 flex items-center justify-between gap-2 ${mini ? "lg:flex-col" : ""}`}>
           <Link href="/" className="flex min-w-0 items-center gap-3">
             <TenantMark />
@@ -135,6 +137,7 @@ export function DashboardShell({ nav, children }: { nav: NavItem[]; children: Re
           <div className={mini ? "lg:hidden" : ""}><PoweredBy label={t("brand.powered")} name={t("brand.name")} /></div>
         </div>
       </aside>
+      </div>
 
       <div className="flex min-w-0 flex-1 flex-col">
         {can("billing.manage") && <SubscriptionBar status={billing.data} />}
