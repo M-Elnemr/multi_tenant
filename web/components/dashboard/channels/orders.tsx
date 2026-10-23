@@ -16,6 +16,9 @@ type Detail = OrderRow & {
   actions: { key: string; label: string; needsTracking: boolean }[]; shipments: { id: string; trackingNumber: string; status: string; labelUrl?: string; lastEvent?: string; carrier: string }[];
 };
 
+/** The platform sends English action names; show them in the shopper-facing language when we have the translation. */
+const actionLabel = (t: (k: string) => string, a: { key: string; label: string }) => { const k = `ch.act.${a.key}`; const v = t(k); return v === k ? a.label : v; };
+
 /** One order of a connected platform with everything the platform told us and the actions it allows. */
 function OrderDetail({ id, onClose, onChanged }: { id: string; onClose: () => void; onChanged: () => void }) {
   const { t, locale } = useI18n();
@@ -84,7 +87,7 @@ function OrderDetail({ id, onClose, onChanged }: { id: string; onClose: () => vo
                 </div>
               )}
               <div className="flex flex-wrap gap-2">
-                {data.actions.map((a) => <Button key={a.key} variant={/cancel/i.test(a.key) ? "danger" : "secondary"} size="sm" loading={act.loading} disabled={a.needsTracking && !tracking.trackingNumber.trim()} onClick={() => void act.run(a.key, a.needsTracking)}>{a.label}</Button>)}
+                {data.actions.map((a) => <Button key={a.key} variant={/cancel/i.test(a.key) ? "danger" : "secondary"} size="sm" loading={act.loading} disabled={a.needsTracking && !tracking.trackingNumber.trim()} onClick={() => void act.run(a.key, a.needsTracking)}>{actionLabel(t, a)}</Button>)}
                 {["NEW", "PROCESSING"].includes(data.stage) && <Button size="sm" onClick={() => setShipping(true)}>{t("ship.shipWith")}</Button>}
               </div>
               <ErrorText error={act.error} />

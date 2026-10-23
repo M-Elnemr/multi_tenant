@@ -39,6 +39,11 @@ ThemeData openTheme() {
     ),
     snackBarTheme: SnackBarThemeData(behavior: SnackBarBehavior.floating, backgroundColor: kNavy, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)), contentTextStyle: const TextStyle(fontFamily: kFont, color: Colors.white, fontWeight: FontWeight.w600)),
     bottomSheetTheme: const BottomSheetThemeData(backgroundColor: Colors.white, surfaceTintColor: Colors.transparent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26)))),
+    tabBarTheme: const TabBarThemeData(labelStyle: TextStyle(fontFamily: kFont, fontWeight: FontWeight.w800, fontSize: 14), unselectedLabelStyle: TextStyle(fontFamily: kFont, fontWeight: FontWeight.w600, fontSize: 14)),
+    popupMenuTheme: const PopupMenuThemeData(textStyle: TextStyle(fontFamily: kFont, fontWeight: FontWeight.w600, fontSize: 14, color: kInk)),
+    dropdownMenuTheme: const DropdownMenuThemeData(textStyle: TextStyle(fontFamily: kFont, fontWeight: FontWeight.w600)),
+    textButtonTheme: TextButtonThemeData(style: TextButton.styleFrom(textStyle: const TextStyle(fontFamily: kFont, fontWeight: FontWeight.w700))),
+    segmentedButtonTheme: SegmentedButtonThemeData(style: SegmentedButton.styleFrom(textStyle: const TextStyle(fontFamily: kFont, fontWeight: FontWeight.w700))),
     dividerTheme: const DividerThemeData(color: kLine, thickness: 1, space: 1),
   );
 }

@@ -14,6 +14,14 @@ const _flags = {'EG': '🇪🇬', 'SA': '🇸🇦', 'AE': '🇦🇪'};
 const _stageAr = {'NEW': 'جديد', 'PROCESSING': 'قيد التجهيز', 'SHIPPED': 'تم الشحن', 'DELIVERED': 'تم التسليم', 'CANCELLED': 'ملغي', 'RETURNED': 'مرتجع'};
 const _cur = {'EG': 'EGP', 'SA': 'SAR', 'AE': 'AED'};
 
+const _actionAr = {
+  'cancel': 'إلغاء الطلب', 'canceled': 'إلغاء الطلب', 'cancelled': 'إلغاء الطلب', 'complete': 'تحديد كمكتمل', 'delivered': 'تحديد كمُسلَّم', 'delivering': 'تحديد كمشحون', 'fulfill': 'تحديد كمشحون',
+  'in_progress': 'قبول الطلب (قيد التنفيذ)', 'indelivery': 'تحديد كمشحون', 'preparing': 'بدء التجهيز', 'processing': 'قبول الطلب (قيد التجهيز)', 'ship': 'تأكيد الشحن',
+};
+
+/// The platform sends English action names: shown in Arabic when the app is Arabic.
+String _actionLabel(Map<String, dynamic> a, bool ar) => ar ? (_actionAr['${a['key']}'] ?? '${a['label']}') : '${a['label']}';
+
 String _stage(String st, bool ar) => ar ? (_stageAr[st] ?? st) : st[0] + st.substring(1).toLowerCase();
 
 /// The coloured badge of a platform / carrier.
@@ -241,7 +249,7 @@ class ChannelOrderDetail extends StatelessWidget {
                     final tracking = TextEditingController(), carrier = TextEditingController();
                     var params = <String, String>{};
                     if (a['needsTracking'] == true) {
-                      final ok = await formSheet(context, title: '${a['label']}', canSave: () => tracking.text.trim().isNotEmpty, body: (x, set) => [tf(tracking, ar ? 'رقم الشحنة' : 'Tracking number', ltr: true, onChanged: (_) => set(() {})), tf(carrier, ar ? 'شركة الشحن' : 'Carrier')], onSave: () async {
+                      final ok = await formSheet(context, title: _actionLabel(a, ar), canSave: () => tracking.text.trim().isNotEmpty, body: (x, set) => [tf(tracking, ar ? 'رقم الشحنة' : 'Tracking number', ltr: true, onChanged: (_) => set(() {})), tf(carrier, ar ? 'شركة الشحن' : 'Carrier')], onSave: () async {
                         params = {'trackingNumber': tracking.text.trim(), 'carrier': carrier.text.trim()};
                         await ctx.api.post('store/integrations/orders/$id/actions', {'action': a['key'], 'params': params});
                       });
@@ -250,7 +258,7 @@ class ChannelOrderDetail extends StatelessWidget {
                       await reload();
                     }
                   },
-                  child: Text('${a['label']}'),
+                  child: Text(_actionLabel(a, ar)),
                 ),
                 if (['NEW', 'PROCESSING'].contains(o['stage']))
                   FilledButton.icon(

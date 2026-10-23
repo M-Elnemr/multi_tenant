@@ -56,6 +56,13 @@ ThemeData themeFor(TenantInfo? t, {Color? seed}) {
       checkmarkColor: Colors.white,
       labelStyle: WidgetStateTextStyle.resolveWith((states) => TextStyle(fontFamily: kFont, fontWeight: FontWeight.w700, color: states.contains(WidgetState.selected) ? Colors.white : const Color(0xFF14232B))),
     ),
-    segmentedButtonTheme: SegmentedButtonThemeData(style: SegmentedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: const Color(0xFF14232B), selectedBackgroundColor: scheme.primary, selectedForegroundColor: Colors.white, side: const BorderSide(color: Color(0xFFB9C7D6)))),
+    segmentedButtonTheme: SegmentedButtonThemeData(style: SegmentedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: const Color(0xFF14232B), selectedBackgroundColor: scheme.primary, selectedForegroundColor: Colors.white, side: const BorderSide(color: Color(0xFFB9C7D6)), textStyle: const TextStyle(fontFamily: kFont, fontWeight: FontWeight.w700))),
+    // the components that build their own text style: set the app font on them explicitly (tabs, menus, dropdowns, text buttons, toggles)
+    tabBarTheme: const TabBarThemeData(labelStyle: TextStyle(fontFamily: kFont, fontWeight: FontWeight.w800, fontSize: 14), unselectedLabelStyle: TextStyle(fontFamily: kFont, fontWeight: FontWeight.w600, fontSize: 14)),
+    popupMenuTheme: const PopupMenuThemeData(textStyle: TextStyle(fontFamily: kFont, fontWeight: FontWeight.w600, fontSize: 14, color: Color(0xFF14232B))),
+    dropdownMenuTheme: const DropdownMenuThemeData(textStyle: TextStyle(fontFamily: kFont, fontWeight: FontWeight.w600)),
+    textButtonTheme: TextButtonThemeData(style: TextButton.styleFrom(textStyle: const TextStyle(fontFamily: kFont, fontWeight: FontWeight.w700))),
+    toggleButtonsTheme: const ToggleButtonsThemeData(textStyle: TextStyle(fontFamily: kFont, fontWeight: FontWeight.w700)),
+
   );
 }
