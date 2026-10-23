@@ -147,6 +147,8 @@ class _ProductFormPageState extends State<ProductFormPage> {
   String _status = 'ACTIVE', _condition = 'NEW', _audience = '';
   String? _branchId;
   final _images = <String>[]; // create mode only
+  final _imageColor = <String, String>{};   // picture id -> the option value (colour) it is for; missing = all colours
+  String _newColor = '';   // edit mode: the colour the next uploaded picture is for
   final _opts = <_Opt>[];
   final _rows = <String, Map<String, TextEditingController>>{};
   final _prices = <String, TextEditingController>{};
@@ -206,7 +208,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
         }
         final res = await ctx.api.post('store/products', {
           'name': _name.text.trim(), 'description': _desc.text.trim(), if (_picked != null) 'taxonomyId': _picked!['id'], if (_audience.isNotEmpty) 'audience': _audience,
-          'condition': _condition, if (_brand.text.trim().isNotEmpty) 'brand': _brand.text.trim(), 'status': _status, 'options': parsed, 'variants': variants, 'media': [for (final id in _images) {'fileId': id}],
+          'condition': _condition, if (_brand.text.trim().isNotEmpty) 'brand': _brand.text.trim(), 'status': _status, 'options': parsed, 'variants': variants, 'media': [for (final id in _images) {'fileId': id, if (_colorValues(parsed).contains(_imageColor[id])) 'optionValue': _imageColor[id]}],
         }) as Map<String, dynamic>;
         if (mounted) {
           toast(context, isAr ? 'تم إنشاء المنتج' : 'Product created');
@@ -290,6 +292,24 @@ class _ProductFormPageState extends State<ProductFormPage> {
     );
   }
 
+  /// The values a picture can be for: the colour option when the product has one, else the first option.
+  List<String> _colorValues(List<Map<String, dynamic>> parsed) {
+    if (parsed.isEmpty) return const [];
+    final o = parsed.firstWhere((x) => RegExp('color|colour|لون', caseSensitive: false).hasMatch('${x['name']}'), orElse: () => parsed.first);
+    return ((o['values'] as List?) ?? const []).cast<String>();
+  }
+
+  /// A small "which colour is this picture for" menu; the empty value means every colour.
+  Widget _colorPicker(bool isAr, List<(String, String)> values, String current, ValueChanged<String> onChanged) => DropdownButton<String>(
+        value: values.any((v) => v.$1 == current) ? current : '',
+        isExpanded: true,
+        isDense: true,
+        underline: const SizedBox.shrink(),
+        style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
+        items: [DropdownMenuItem(value: '', child: Text(isAr ? 'كل الألوان' : 'All colours', overflow: TextOverflow.ellipsis)), for (final v in values) DropdownMenuItem(value: v.$1, child: Text(v.$2, overflow: TextOverflow.ellipsis))],
+        onChanged: (v) => onChanged(v ?? ''),
+      );
+
   // --- create: images, options, variants
   List<Widget> _createExtras(BuildContext context, bool isAr) {
     final parsed = _opts.map((o) => o.toRequest()).where((o) => (o['name'] as String).isNotEmpty && (o['values'] as List).isNotEmpty).toList();
@@ -300,10 +320,13 @@ class _ProductFormPageState extends State<ProductFormPage> {
         Text(isAr ? 'الصور' : 'Pictures', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
         const SizedBox(height: 8),
         Wrap(spacing: 8, runSpacing: 8, children: [
-          for (final id in _images) Stack(children: [
-            ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.network(fileUrl(ctx, id), width: 76, height: 76, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const SizedBox(width: 76, height: 76))),
-            PositionedDirectional(top: 0, end: 0, child: InkWell(onTap: () => setState(() => _images.remove(id)), child: const CircleAvatar(radius: 11, backgroundColor: Colors.black54, child: Icon(Icons.close, size: 14, color: Colors.white)))),
-          ]),
+          for (final id in _images) SizedBox(width: 84, child: Column(children: [
+            Stack(children: [
+              ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.network(fileUrl(ctx, id), width: 84, height: 76, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const SizedBox(width: 84, height: 76))),
+              PositionedDirectional(top: 0, end: 0, child: InkWell(onTap: () => setState(() { _images.remove(id); _imageColor.remove(id); }), child: const CircleAvatar(radius: 11, backgroundColor: Colors.black54, child: Icon(Icons.close, size: 14, color: Colors.white)))),
+            ]),
+            if (_colorValues(parsed).isNotEmpty) _colorPicker(isAr, _colorValues(parsed).map((v) => (v, v)).toList(), _imageColor[id] ?? '', (v) => setState(() => _imageColor[id] = v)),
+          ])),
           if (_images.length < 10) InkWell(
             onTap: () async { String? id; if (await run(context, () async { id = await pickAndUpload(context, ctx.api, 'PRODUCT_IMAGE'); }) && id != null) setState(() => _images.add(id!)); },
             child: Container(width: 76, height: 76, decoration: BoxDecoration(border: Border.all(color: Theme.of(context).dividerColor), borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.add_photo_alternate_outlined)),
@@ -402,6 +425,15 @@ class _ProductFormPageState extends State<ProductFormPage> {
     );
   }
 
+  /// (stored value, label in the app's language) for the colour option of the open product
+  List<(String, String)> _editColors(Map<String, dynamic> d, bool isAr) {
+    final opts = _maps(d['options']);
+    if (opts.isEmpty) return const [];
+    final o = opts.firstWhere((x) => x['attribute'] == 'COLOR', orElse: () => opts.first);
+    final meta = _maps(o['valueMeta']);
+    return [for (final v in ((o['values'] as List?) ?? const []).cast<String>()) (v, '${meta.where((m) => m['value'] == v).map((m) => isAr ? m['nameAr'] : m['nameEn']).firstOrNull ?? v}')];
+  }
+
   // --- edit: variants prices, images, extras
   List<Widget> _editExtras(BuildContext context, bool isAr) {
     final d = _detail!;
@@ -425,6 +457,14 @@ class _ProductFormPageState extends State<ProductFormPage> {
       const SizedBox(height: 12),
       Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('${isAr ? 'الصور' : 'Pictures'} (${media.length}/10)', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+        if (_editColors(d, isAr).isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(isAr ? 'اختر لونًا تحت كل صورة لتظهر للعميل عند اختياره هذا اللون.' : 'Pick a colour under a picture so shoppers see it when they choose that colour.', style: const TextStyle(fontSize: 12, color: Color(0xFF6B7C8D))),
+          Row(children: [
+            Text(isAr ? 'الصورة الجديدة للون: ' : 'New picture is for: ', style: const TextStyle(fontSize: 13)),
+            Expanded(child: _colorPicker(isAr, _editColors(d, isAr), _newColor, (v) => setState(() => _newColor = v))),
+          ]),
+        ],
         const SizedBox(height: 8),
         Wrap(spacing: 10, runSpacing: 10, children: [
           for (var i = 0; i < media.length; i++) SizedBox(width: 92, child: Column(children: [
@@ -432,6 +472,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
               ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.network(_mediaUrl(ctx, media[i]) ?? '', width: 92, height: 92, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const SizedBox(width: 92, height: 92, child: Icon(Icons.image_not_supported_outlined)))),
               if (i == 0) PositionedDirectional(top: 4, start: 4, child: Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: const Color(0xFF1E9E5A), borderRadius: BorderRadius.circular(8)), child: Text(isAr ? 'رئيسية' : 'Main', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)))),
             ]),
+            if (_editColors(d, isAr).isNotEmpty) _colorPicker(isAr, _editColors(d, isAr), '${media[i]['optionValue'] ?? ''}', (v) async { if (await run(context, () => ctx.api.put('store/products/${widget.id}/media/${media[i]['id']}/color', {'value': v}))) await _reloadDetail(); }),
             Row(mainAxisAlignment: MainAxisAlignment.center, children: [
               if (i > 0) IconButton(visualDensity: VisualDensity.compact, icon: const Icon(Icons.star_rounded, size: 20), onPressed: () async { if (await run(context, () => ctx.api.put('store/products/${widget.id}/media/order', {'ids': [media[i]['id']]}))) await _reloadDetail(); }),
               IconButton(visualDensity: VisualDensity.compact, icon: const Icon(Icons.delete_outline, size: 20), onPressed: () async { if (await run(context, () => ctx.api.delete('store/products/${widget.id}/media/${media[i]['id']}'))) await _reloadDetail(); }),
@@ -440,7 +481,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
           if (media.length < 10) InkWell(
             onTap: () async {
               String? id;
-              final ok = await run(context, () async { id = await pickAndUpload(context, ctx.api, 'PRODUCT_IMAGE'); if (id != null) await ctx.api.post('store/products/${widget.id}/media', {'fileId': id}); });
+              final ok = await run(context, () async { id = await pickAndUpload(context, ctx.api, 'PRODUCT_IMAGE'); if (id != null) await ctx.api.post('store/products/${widget.id}/media', {'fileId': id, if (_newColor.isNotEmpty) 'optionValue': _newColor}); });
               if (ok && id != null) await _reloadDetail();
             },
             child: Container(width: 92, height: 92, decoration: BoxDecoration(border: Border.all(color: Theme.of(context).dividerColor), borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.add_photo_alternate_outlined)),

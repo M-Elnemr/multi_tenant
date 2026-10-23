@@ -3,6 +3,15 @@ import 'package:platform_core/platform_core.dart' show AppLocale;
 
 num n(Object? v) => v is num ? v : (v is String ? (num.tryParse(v) ?? 0) : 0);
 String s(Object? v) => v == null ? '' : '$v';
+/// A picture tagged with an option value (usually a colour) shows when that value is chosen; untagged pictures belong to every colour.
+List<Map<String, dynamic>> picturesFor(List<Map<String, dynamic>> items, Iterable<String> chosen) {
+  final c = chosen.toSet();
+  final mine = items.where((m) => m['optionValue'] != null && c.contains(m['optionValue'])).toList();
+  final general = items.where((m) => m['optionValue'] == null).toList();
+  if (mine.isNotEmpty) return [...mine, ...general];
+  return general.isNotEmpty ? general : items;   // nothing for this colour and nothing general: better the others than an empty page
+}
+
 List<Map<String, dynamic>> list(Object? v) => v is List ? v.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList() : <Map<String, dynamic>>[];
 
 /// Money is integer minor units (piastres): 19999 -> 199.99

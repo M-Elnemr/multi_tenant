@@ -1,5 +1,6 @@
 "use client";
 
+import { shipName } from "@/lib/ship-name";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -113,7 +114,7 @@ export default function Checkout() {
                 {methods.map((m) => (
                   <label key={m.id} className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-4 transition ${m.id === shippingId ? "border-[var(--brand)] bg-[var(--s-soft)]" : "border-[var(--s-line)] hover:border-[var(--brand)]/50"}`}>
                     <input type="radio" name="ship" checked={m.id === shippingId} onChange={() => setShippingId(m.id)} className="accent-[var(--brand)]" />
-                    <span className="flex-1 font-bold">{m.name}</span>
+                    <span className="flex-1 font-bold">{shipName(t, m)}</span>
                     <span className="text-sm font-bold text-[var(--s-mute)]">{m.type === "PICKUP" ? t("ship.PICKUP") : m.type === "ZONES" ? t("checkout.byGovernorate") : money(m.feeMinor, currency, locale)}</span>
                   </label>
                 ))}

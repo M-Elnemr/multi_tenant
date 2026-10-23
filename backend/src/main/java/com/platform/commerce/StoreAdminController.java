@@ -86,6 +86,12 @@ public class StoreAdminController {
     @PreAuthorize("hasAuthority('product.update')")
     public Map<String, Object> removeMedia(@PathVariable UUID id, @PathVariable UUID mediaId, Authentication a) { return catalog.removeMedia(StoreContext.tenantId(), user(a), id, mediaId); }
 
+    public record MediaColor(String value) {}
+
+    @PutMapping("/products/{id}/media/{mediaId}/color")
+    @PreAuthorize("hasAuthority('product.update')")
+    public Map<String, Object> mediaColor(@PathVariable UUID id, @PathVariable UUID mediaId, @RequestBody MediaColor r, Authentication a) { return catalog.setMediaColor(StoreContext.tenantId(), user(a), id, mediaId, r.value()); }
+
     @PutMapping("/products/{id}/media/order")
     @PreAuthorize("hasAuthority('product.update')")
     public Map<String, Object> reorderMedia(@PathVariable UUID id, @RequestBody MediaOrder r, Authentication a) { return catalog.reorderMedia(StoreContext.tenantId(), user(a), id, r.ids()); }

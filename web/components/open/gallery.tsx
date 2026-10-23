@@ -1,13 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { createContext, useContext, useMemo, useState } from "react";
+import { picturesFor } from "@/lib/color-media";
 import { Icon } from "../icons";
 import { useI18n } from "../i18n-provider";
 
-type Img = { id?: string; thumb: string; medium: string; original: string; alt?: string | null };
+type Img = { id?: string; thumb: string; medium: string; original: string; alt?: string | null; optionValue?: string | null };
+
+/** The values the shopper picked in the buy box (colour, size…): the gallery follows them. */
+const Chosen = createContext<{ chosen: string[]; set: (v: string[]) => void }>({ chosen: [], set: () => {} });
+export function OpenChosenProvider({ children }: { children: React.ReactNode }) {
+  const [chosen, set] = useState<string[]>([]);
+  const v = useMemo(() => ({ chosen, set }), [chosen]);
+  return <Chosen.Provider value={v}>{children}</Chosen.Provider>;
+}
+export const useOpenChosen = () => useContext(Chosen);
 
 /** Product pictures: a big image with thumbnails on desktop, a swipeable strip on phones, and a full-screen viewer on tap. */
-export function OpenGallery({ images, name, badge }: { images: Img[]; name: string; badge?: React.ReactNode }) {
+export function OpenGallery({ images: all, name, badge }: { images: Img[]; name: string; badge?: React.ReactNode }) {
+  const { chosen } = useOpenChosen();
+  const images = useMemo(() => picturesFor(all, chosen), [all, chosen]);
+  return <GalleryView key={images.map((m) => m.thumb).join("|")} images={images} name={name} badge={badge} />;
+}
+
+function GalleryView({ images, name, badge }: { images: Img[]; name: string; badge?: React.ReactNode }) {
   const { t } = useI18n();
   const [i, setI] = useState(0);
   const [zoom, setZoom] = useState(false);

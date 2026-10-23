@@ -38,7 +38,7 @@ class _ProductPageState extends State<ProductPage> {
           final price = (v['priceMinor'] as num).toInt();
           final compare = (v['compareAtPriceMinor'] as num?)?.toInt();
           final discount = compare != null && compare > price ? ((compare - price) * 100 / compare).round() : 0;
-          final media = ((p['media'] as List?) ?? []).cast<Map<String, dynamic>>();
+          final media = picturesFor(((p['media'] as List?) ?? []).cast<Map<String, dynamic>>(), choice.values);
           final specs = ((p['specs'] as List?) ?? []).cast<Map<String, dynamic>>();
           String disp(Map<String, dynamic> o, String v) {
             for (final m in ((o['valueMeta'] as List?) ?? []).cast<Map<String, dynamic>>()) { if (m['value'] == v) return (s.ar ? m['nameAr'] : m['nameEn']) as String; }
@@ -47,7 +47,7 @@ class _ProductPageState extends State<ProductPage> {
           final label = options.map((o) => disp(o, choice[o['name']] as String)).join(' / ');
           return ListView(children: [
             SizedBox(height: 360, child: media.isEmpty ? Container(color: cs.surfaceContainerHighest, child: const Icon(Icons.shopping_bag_outlined, size: 64)) : Stack(children: [
-              PageView(controller: pager, children: [for (final m in media) Image.network(imageUrl(c.base, m) ?? '', fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: cs.surfaceContainerHighest))]),
+              PageView(key: ValueKey(media.map((m) => '${m['url']}').join('|')), controller: pager, children: [for (final m in media) Image.network(imageUrl(c.base, m) ?? '', fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: cs.surfaceContainerHighest))]),
               if (discount > 0) PositionedDirectional(start: 12, top: 12, child: pill(context, '-$discount%', bg: const Color(0xFFE5484D))),
             ])),
             Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

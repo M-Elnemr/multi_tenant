@@ -323,6 +323,7 @@ public class OpenCatalogService {
             Map<String, Object> im = new LinkedHashMap<>();
             im.put("id", m.get("id"));
             im.put("alt", m.get("altText"));
+            im.put("optionValue", m.get("optionValue"));
             im.put("thumb", urls.image(host, base, ext, url, "thumb"));
             im.put("medium", urls.image(host, base, ext, url, "medium"));
             im.put("original", urls.image(host, base, ext, url, "original"));

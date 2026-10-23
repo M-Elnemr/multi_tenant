@@ -159,7 +159,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
         const SizedBox(height: 10),
         if (methods.length > 1) Padding(padding: const EdgeInsets.only(bottom: 12), child: DropdownButtonFormField<String>(
           initialValue: shippingId, decoration: const InputDecoration(border: OutlineInputBorder()),
-          items: [for (final m in methods) DropdownMenuItem(value: m['id'] as String, child: Text(m['name'] as String))],
+          items: [for (final m in methods) DropdownMenuItem(value: m['id'] as String, child: Text(shipName(m, s.ar)))],
           onChanged: (v) { setState(() => shippingId = v); _quoteSoon(); },
         )),
         if (!pickup) ...[

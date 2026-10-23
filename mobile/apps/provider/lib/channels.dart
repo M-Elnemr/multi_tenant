@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:platform_core/platform_core.dart';
 
 import 'common.dart';
+import 'campaign.dart';
+import 'connect.dart';
 import 'forms.dart';
 
-// Sales channels (Amazon, noon, Shopify, WooCommerce, Salla, YouCan), shipping and AI marketing. Connecting an account needs keys or a platform login,
-// so it opens the web dashboard; everything after that (orders, insights, shipping, posts) works here.
+// Sales channels (Amazon, noon, Shopify, WooCommerce, Salla, YouCan, Zid), shipping and AI marketing. Connecting is in connect.dart; the "Log in with ..." flows
+// open the company's own login in the browser and the lists reload when the app comes back.
 
 List<Map<String, dynamic>> _maps(Object? v) => ((v as List?) ?? const []).cast<Map<String, dynamic>>();
 const _flags = {'EG': '🇪🇬', 'SA': '🇸🇦', 'AE': '🇦🇪'};
@@ -14,8 +16,8 @@ const _cur = {'EG': 'EGP', 'SA': 'SAR', 'AE': 'AED'};
 
 String _stage(String st, bool ar) => ar ? (_stageAr[st] ?? st) : st[0] + st.substring(1).toLowerCase();
 
-/// Opens a page of the web dashboard (connect a platform / carrier).
-Future<void> openWeb(Ctx ctx, String path) => launch('https://${ctx.host}$path');
+/// The coloured badge of a platform / carrier.
+Widget providerMark(String provider, String name, {double size = 40}) => _mark(provider, name, size: size);
 
 Widget _mark(String provider, String name, {double size = 40}) {
   const colors = {'AMAZON': Color(0xFF232F3E), 'NOON': Color(0xFFFEEE00), 'SHOPIFY': Color(0xFF95BF47), 'WOOCOMMERCE': Color(0xFF7F54B3), 'SALLA': Color(0xFF004D5A), 'YOUCAN': Color(0xFF1E66F5), 'ARAMEX': Color(0xFFE1251B), 'BOSTA': Color(0xFFE30613), 'ZID': Color(0xFF5B2D90), 'AYMAKAN': Color(0xFFF26B21), 'MYLERZ': Color(0xFF0E2A47)};
@@ -42,13 +44,14 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
   Widget build(BuildContext context) {
     final ar = S.of(context).ar;
     final ctx = widget.ctx;
-    return Async<List<Map<String, dynamic>>>(
+    return ResumeReload(onResume: () => setState(() => _gen++), child: Async<List<Map<String, dynamic>>>(
+      key: ValueKey('acc$_gen'),
       load: () async => _maps(await ctx.api.get('store/integrations/accounts')).where((a) => a['kind'] == 'MARKETPLACE' || a['kind'] == 'STORE_PLATFORM').toList(),
       builder: (context, accounts, reload) {
         if (accounts.isEmpty) {
           return ListView(padding: const EdgeInsets.all(24), children: [
             emptyState(ar ? 'لم تربط أي منصة بعد. اربط أمازون أو نون أو شوبيفاي أو ووكومرس أو سلة أو يوكان لترى طلباتها ومنتجاتها وإحصائياتها هنا.' : 'No platform connected yet. Connect Amazon, noon, Shopify, WooCommerce, Salla or YouCan to see its orders, products and insights here.', icon: Icons.hub_outlined),
-            FilledButton.icon(onPressed: () => openWeb(ctx, '/dashboard/channels/connect'), icon: const Icon(Icons.add_link_rounded), label: Text(ar ? 'اربط منصة' : 'Connect a platform')),
+            FilledButton.icon(onPressed: () async { if (await openConnect(context, ctx, carrier: false) && mounted) setState(() => _gen++); }, icon: const Icon(Icons.add_link_rounded), label: Text(ar ? 'اربط منصة' : 'Connect a platform')),
           ]);
         }
         final picked = accounts.any((a) => a['id'] == _account) ? _account : null;
@@ -68,7 +71,7 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
           ])),
         ]));
       },
-    );
+    ));
   }
 }
 
@@ -297,7 +300,7 @@ class _Platforms extends StatelessWidget {
           }, child: Text(ar ? 'فصل' : 'Disconnect', style: const TextStyle(color: Color(0xFFD14343)))),
         ]),
       ]))),
-      if (canManage) OutlinedButton.icon(onPressed: () => openWeb(ctx, '/dashboard/channels/connect'), icon: const Icon(Icons.add_link_rounded), label: Text(ar ? 'اربط منصة أخرى (من الموقع)' : 'Connect another platform (on the web)')),
+      if (canManage) OutlinedButton.icon(onPressed: () async { if (await openConnect(context, ctx, carrier: false)) onChanged(); }, icon: const Icon(Icons.add_link_rounded), label: Text(ar ? 'اربط منصة أخرى' : 'Connect another platform')),
     ]);
   }
 }
@@ -311,8 +314,8 @@ Future<bool> shipSheet(BuildContext context, Ctx ctx, {String? orderId, String? 
   try { carriers = _maps(await ctx.api.get('store/shipping/carriers')).where((c) => c['status'] != 'PAUSED').toList(); } catch (e) { if (context.mounted) toast(context, errorText(e), isError: true); return false; }
   if (!context.mounted) return false;
   if (carriers.isEmpty) {
-    toast(context, ar ? 'اربط شركة شحن أولاً من الموقع' : 'Connect a shipping company first (on the web)');
-    await openWeb(ctx, '/dashboard/shipping');
+    toast(context, ar ? 'اربط شركة شحن أولاً' : 'Connect a shipping company first');
+    await openConnect(context, ctx, carrier: true);
     return false;
   }
   carriers.sort((a, b) => (b['country'] == country ? 1 : 0) - (a['country'] == country ? 1 : 0));
@@ -345,7 +348,7 @@ class ShippingScreen extends StatelessWidget {
       path: 'store/shipping/shipments',
       searchHint: ar ? 'رقم الشحنة أو الطلب' : 'Tracking or order number',
       emptyText: ar ? 'لا توجد شحنات بعد. اشحن طلباً من صفحة الطلب.' : 'No shipments yet. Ship an order from its page.',
-      header: ctx.canWrite('shipping') ? Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 4), child: OutlinedButton.icon(onPressed: () => openWeb(ctx, '/dashboard/shipping'), icon: const Icon(Icons.add_link_rounded), label: Text(ar ? 'شركات الشحن المربوطة (من الموقع)' : 'Connect shipping companies (on the web)'))) : null,
+      header: Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 4), child: OutlinedButton.icon(onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => CarriersScreen(ctx: ctx))), icon: const Icon(Icons.local_shipping_outlined), label: Text(ar ? 'شركات الشحن المربوطة' : 'My shipping companies'))),
       itemBuilder: (c, sh, reload) => Card(child: ListTile(
         leading: _mark('${sh['provider']}', '${sh['carrier']}', size: 38),
         title: Row(children: [Expanded(child: Text('${sh['trackingNumber']}', textDirection: TextDirection.ltr, textAlign: TextAlign.start, style: const TextStyle(fontWeight: FontWeight.w900))), StatusPill(_shipPill('${sh['status']}'))]),
@@ -372,19 +375,37 @@ class ShippingScreen extends StatelessWidget {
 
 // ------------------------------------------------------------------ Marketing
 
-class MarketingScreen extends StatelessWidget {
+class MarketingScreen extends StatefulWidget {
   const MarketingScreen({super.key, required this.ctx});
   final Ctx ctx;
   @override
+  State<MarketingScreen> createState() => _MarketingScreenState();
+}
+
+/// Starts the Facebook login (Meta needs its own page in the browser, then the page / Instagram picker) and tells the owner how to finish.
+Future<void> connectMeta(BuildContext context, Ctx ctx) async {
+  final ar = S.of(context).ar;
+  Map<String, dynamic>? r;
+  if (await run(context, () async { r = await ctx.api.post('store/ai/meta/start', {}) as Map<String, dynamic>; }) && r != null) {
+    await launch('${r!['url']}');
+    if (context.mounted) toast(context, ar ? 'أكمل الربط واختر الصفحة في المتصفح ثم ارجع هنا' : 'Finish the login and pick your page in the browser, then come back here');
+  }
+}
+
+class _MarketingScreenState extends State<MarketingScreen> {
+  int _gen = 0;
+  @override
   Widget build(BuildContext context) {
     final ar = S.of(context).ar;
-    return Async<Map<String, dynamic>>(
+    final ctx = widget.ctx;
+    return ResumeReload(onResume: () => setState(() => _gen++), child: Async<Map<String, dynamic>>(
+      key: ValueKey('mk$_gen'),
       load: () async => await ctx.api.get('store/marketing/overview') as Map<String, dynamic>,
       builder: (context, ov, reload) {
         if (_maps(ov['channels']).isEmpty) {
           return ListView(padding: const EdgeInsets.all(24), children: [
-            emptyState(ar ? 'اربط صفحة فيسبوك وحساب إنستجرام أولاً من الموقع (قنوات الذكاء الاصطناعي) لتنشر منشوراتك وإعلاناتك.' : 'Connect your Facebook page and Instagram account first on the web (AI channels) to publish posts and ads.', icon: Icons.campaign_outlined),
-            FilledButton(onPressed: () => openWeb(ctx, '/dashboard/marketing'), child: Text(ar ? 'افتح التسويق على الموقع' : 'Open Marketing on the web')),
+            emptyState(ar ? 'اربط صفحة فيسبوك وحساب إنستجرام لتنشر منشوراتك وإعلاناتك.' : 'Connect your Facebook page and Instagram account to publish posts and ads.', icon: Icons.campaign_outlined),
+            if (ctx.canWrite('marketing')) FilledButton.icon(onPressed: () => connectMeta(context, ctx), icon: const Icon(Icons.facebook_rounded), label: Text(ar ? 'اربط فيسبوك وإنستجرام' : 'Connect Facebook and Instagram')),
           ]);
         }
         return DefaultTabController(length: 2, child: Column(children: [
@@ -392,7 +413,7 @@ class MarketingScreen extends StatelessWidget {
           Expanded(child: TabBarView(children: [_Posts(ctx: ctx, ov: ov), _Campaigns(ctx: ctx, ov: ov)])),
         ]));
       },
-    );
+    ));
   }
 }
 
@@ -515,14 +536,14 @@ class _Campaigns extends StatelessWidget {
     final ar = s.ar;
     if (_maps(ov['adAccounts']).isEmpty) {
       return ListView(padding: const EdgeInsets.all(24), children: [
-        emptyState(ar ? 'اختر حساب إعلانات من الموقع لإنشاء الحملات.' : 'Choose an ad account on the web to create campaigns.', icon: Icons.ads_click_rounded),
-        FilledButton(onPressed: () => openWeb(ctx, '/dashboard/marketing'), child: Text(ar ? 'افتح التسويق على الموقع' : 'Open Marketing on the web')),
+        emptyState(ar ? 'لا يوجد حساب إعلانات. أعد ربط فيسبوك واسمح بإدارة الإعلانات لتنشئ الحملات.' : 'No ad account found. Connect Facebook again and allow ad management to create campaigns.', icon: Icons.ads_click_rounded),
+        if (ctx.canWrite('marketing')) FilledButton.icon(onPressed: () => connectMeta(context, ctx), icon: const Icon(Icons.facebook_rounded), label: Text(ar ? 'اربط فيسبوك' : 'Connect Facebook')),
       ]);
     }
     return Async<List<Map<String, dynamic>>>(
       load: () async => _maps(await ctx.api.get('store/marketing/campaigns')),
       builder: (context, list, reload) => RefreshIndicator(onRefresh: reload, child: ListView(padding: const EdgeInsets.all(16), children: [
-        OutlinedButton.icon(onPressed: () => openWeb(ctx, '/dashboard/marketing'), icon: const Icon(Icons.add_rounded), label: Text(ar ? 'حملة جديدة باقتراحات الذكاء الاصطناعي (من الموقع)' : 'New campaign with AI suggestions (on the web)')),
+        if (ctx.canWrite('marketing')) FilledButton.icon(onPressed: () async { if (await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => NewCampaignScreen(ctx: ctx, overview: ov))) == true) await reload(); }, icon: const Icon(Icons.add_rounded), label: Text(ar ? 'حملة جديدة باقتراحات الذكاء الاصطناعي' : 'New campaign with AI suggestions')),
         if (list.isEmpty) emptyState(ar ? 'لا توجد حملات بعد' : 'No campaigns yet'),
         for (final c in list) Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [Expanded(child: Text('${c['name']}', style: const TextStyle(fontWeight: FontWeight.w900))), StatusPill(switch ('${c['status']}') { 'ACTIVE' => 'ACTIVE', 'FAILED' => 'CANCELLED', 'ENDED' => 'DONE', _ => 'DRAFT' })]),
@@ -569,7 +590,7 @@ class _PublishScreenState extends State<PublishScreen> {
         builder: (context, plan, reload) {
           final variants = _maps(plan['variants']);
           final accounts = _maps(plan['accounts']);
-          if (accounts.isEmpty) return ListView(padding: const EdgeInsets.all(24), children: [emptyState(ar ? 'اربط سوقاً أو منصة متاجر لتبيع المنتج هناك أيضاً.' : 'Connect a marketplace or store platform to sell this product there too.'), FilledButton(onPressed: () => openWeb(ctx, '/dashboard/channels/connect'), child: Text(ar ? 'اربط منصة' : 'Connect a platform'))]);
+          if (accounts.isEmpty) return ListView(padding: const EdgeInsets.all(24), children: [emptyState(ar ? 'اربط سوقاً أو منصة متاجر لتبيع المنتج هناك أيضاً.' : 'Connect a marketplace or store platform to sell this product there too.'), FilledButton(onPressed: () async { if (await openConnect(context, ctx, carrier: false)) reload(); }, child: Text(ar ? 'اربط منصة' : 'Connect a platform'))]);
           return ListView(padding: const EdgeInsets.all(16), children: [
             Text(ar ? 'لكل منصة سعرها وكميتها الخاصة.' : 'Each platform has its own price and quantity.', style: const TextStyle(color: Color(0xFF6B7C8D))),
             for (final a in accounts) Builder(builder: (_) {

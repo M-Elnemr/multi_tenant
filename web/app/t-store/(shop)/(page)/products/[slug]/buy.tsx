@@ -6,6 +6,7 @@ import { api } from "@/lib/client";
 import { addToCart } from "@/lib/cart";
 import { money } from "@/lib/format";
 import { mediaUrl } from "@/lib/media";
+import { picturesFor } from "@/lib/color-media";
 import { whatsappLink } from "@/lib/whatsapp";
 import { useAction, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
@@ -17,7 +18,7 @@ export type ProductDetail = {
   sizeGuide?: string; tags?: string[]; specs?: { k: string; v: string }[];
   options: { name: string; values: string[]; attribute?: string; labelAr?: string; labelEn?: string; valueMeta?: { value: string; nameAr: string; nameEn: string; hex: string }[] }[];
   variants: { id: string; sku: string; priceMinor: number; compareAtPriceMinor?: number; comboKey: string; available: number }[];
-  media: { url: string; altText?: string; mediaBase?: string | null; mediaExt?: string | null }[];
+  media: { url: string; altText?: string; mediaBase?: string | null; mediaExt?: string | null; optionValue?: string | null }[];
   reviews: { average: number; count: number; reviews: { rating: number; reviewText?: string; firstName: string }[] };
 };
 
@@ -41,6 +42,8 @@ export function ProductBuy({ product, whatsapp, storeName, isOpen, returnDays }:
   const optLabel = (o: ProductDetail["options"][number]) => (locale === "ar" ? o.labelAr : o.labelEn) ?? o.name;
   const valLabel = (o: ProductDetail["options"][number], v: string) => { const m = o.valueMeta?.find((x) => x.value === v); return m ? (locale === "ar" ? m.nameAr : m.nameEn) : v; };
   const label = product.options.map((o) => valLabel(o, choice[o.name])).join(" / ");
+  // the pictures of the chosen colour first
+  const shown = useMemo(() => picturesFor(product.media, Object.values(choice)), [product.media, choice]);
 
   const wish = useAction(async () => {
     if (!me) { router.push(`/login?next=${encodeURIComponent(`/products/${product.slug}`)}`); return; }
@@ -49,7 +52,7 @@ export function ProductBuy({ product, whatsapp, storeName, isOpen, returnDays }:
 
   const add = (go?: boolean) => {
     if (!variant || !isOpen) return;
-    addToCart({ variantId: variant.id, productId: product.id, slug: product.slug, name: product.name, variantLabel: label, unitPriceMinor: variant.priceMinor, quantity: qty, imageUrl: mediaUrl(product.media[0], "thumb") });
+    addToCart({ variantId: variant.id, productId: product.id, slug: product.slug, name: product.name, variantLabel: label, unitPriceMinor: variant.priceMinor, quantity: qty, imageUrl: mediaUrl(shown[0], "thumb") });
     if (go) { router.push("/checkout"); return; }
     setAdded(true);
     setTimeout(() => setAdded(false), 2500);
@@ -68,7 +71,7 @@ export function ProductBuy({ product, whatsapp, storeName, isOpen, returnDays }:
   return (
     <>
       <div className="grid gap-8 lg:grid-cols-[1.05fr_1fr] lg:gap-14">
-        <Gallery media={product.media} name={product.name} badge={badge ? <span className={`s-badge ${BADGE_CLASS[badge] ?? ""} !text-sm`}>{discount > 0 && badge === "SALE" ? `-${discount}%` : t(`badge.${badge}`)}</span> : null} />
+        <Gallery key={shown.map((m) => m.url).join("|")} media={shown} name={product.name} badge={badge ? <span className={`s-badge ${BADGE_CLASS[badge] ?? ""} !text-sm`}>{discount > 0 && badge === "SALE" ? `-${discount}%` : t(`badge.${badge}`)}</span> : null} />
         <div className="space-y-6">
           <div>
             {product.brand && <p className="s-eyebrow">{product.brand}</p>}

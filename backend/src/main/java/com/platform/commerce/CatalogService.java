@@ -29,7 +29,8 @@ public class CatalogService {
     public record StockReq(UUID branchId, int quantity) {}
     public record VariantReq(String sku, long priceMinor, Long compareAtPriceMinor, String barcode, Integer weightGrams,
                              Map<String, String> optionValues, List<StockReq> stock) {}
-    public record MediaReq(String url, UUID fileId, String altText) {}
+    /** {@code optionValue}: the value (usually a colour) this picture shows; omitted = a general picture. */
+    public record MediaReq(String url, UUID fileId, String altText, String optionValue) {}
     /** The category is always one of the platform's standard categories: send taxonomyId (or its slug). audience = MEN/WOMEN/BOYS/GIRLS/BABY/ALL. */
     public record ProductReq(String name, String description, String shortDescription, Integer taxonomyId, String taxonomySlug, String brand,
                              String audience, String condition, String status, List<OptionReq> options, List<VariantReq> variants, List<MediaReq> media) {}
@@ -133,7 +134,16 @@ public class CatalogService {
         }
         if (r.media() != null) {
             int mi = 0;
-            for (MediaReq m : r.media()) insertMedia(tenantId, productId, m, mi++);
+            // the shop typed the colour as it wrote it; the product stores the standard name, same position
+            Map<String, String> standard = new LinkedHashMap<>();
+            List<OptionReq> typed = r.options() == null ? List.of() : r.options();
+            for (int i = 0; i < Math.min(typed.size(), options.size()); i++)
+                for (int j = 0; j < Math.min(typed.get(i).values().size(), options.get(i).values().size()); j++)
+                    standard.putIfAbsent(typed.get(i).values().get(j).trim(), options.get(i).values().get(j));
+            for (MediaReq m : r.media()) {
+                String v = m.optionValue() == null ? null : standard.getOrDefault(m.optionValue().trim(), m.optionValue());
+                insertMedia(tenantId, productId, new MediaReq(m.url(), m.fileId(), m.altText(), v), mi++);
+            }
         }
         audit.record(actor, tenantId, "PRODUCT_CREATED", "product", productId, null);
         return detail(tenantId, productId, false);
@@ -147,8 +157,30 @@ public class CatalogService {
         }
         if (url == null) throw BusinessException.badRequest("VALIDATION_ERROR", "Media needs a fileId or url");
         var loc = m.fileId() == null ? java.util.Map.<String, String>of() : files.publicLocation(tenantId, m.fileId());
-        jdbc.sql("INSERT INTO commerce.product_media (tenant_id, product_id, file_id, url, sort_order, alt_text, media_base, media_ext) VALUES (:t, :p, :f, :u, :o, :a, :mb, :me)")
-                .param("t", tenantId).param("p", productId).param("f", m.fileId()).param("u", url).param("o", order).param("a", m.altText()).param("mb", loc.get("base")).param("me", loc.get("ext")).update();
+        UUID valueId = optionValueId(productId, m.optionValue());
+        jdbc.sql("INSERT INTO commerce.product_media (tenant_id, product_id, file_id, url, sort_order, alt_text, media_base, media_ext, option_value_id) VALUES (:t, :p, :f, :u, :o, :a, :mb, :me, :ov)")
+                .param("t", tenantId).param("p", productId).param("f", m.fileId()).param("u", url).param("o", order).param("a", m.altText()).param("mb", loc.get("base")).param("me", loc.get("ext")).param("ov", valueId).update();
+    }
+
+    /** The product's option value with this text (a colour value wins when two options share a word); null for none, 400 for one the product does not have. */
+    private UUID optionValueId(UUID productId, String value) {
+        if (value == null || value.isBlank()) return null;
+        return jdbc.sql("""
+                SELECT ov.id FROM commerce.product_option_values ov JOIN commerce.product_options o ON o.id = ov.option_id
+                WHERE o.product_id = :p AND ov.value = :v ORDER BY (o.attribute_code = 'COLOR') DESC LIMIT 1
+                """).param("p", productId).param("v", value.trim()).query(UUID.class).optional()
+                .orElseThrow(() -> BusinessException.badRequest("UNKNOWN_OPTION_VALUE", "This product has no option value \"" + value + "\""));
+    }
+
+    /** Shows a picture for one colour (or, with a blank value, for all colours). */
+    @Transactional
+    public Map<String, Object> setMediaColor(UUID tenantId, UUID actor, UUID productId, UUID mediaId, String value) {
+        requireOwned("commerce.products", productId, tenantId);
+        UUID valueId = optionValueId(productId, value);
+        if (jdbc.sql("UPDATE commerce.product_media SET option_value_id = :v WHERE id = :m AND product_id = :p AND tenant_id = :t").param("v", valueId).param("m", mediaId).param("p", productId).param("t", tenantId).update() == 0)
+            throw BusinessException.notFound("MEDIA_NOT_FOUND", "Picture not found");
+        audit.record(actor, tenantId, "PRODUCT_UPDATED", "product", productId, null);
+        return detail(tenantId, productId, false);
     }
 
     /** Pictures can be added, removed and re-ordered after a product exists (the first one is the main picture). */
@@ -428,7 +460,10 @@ public class CatalogService {
                      JOIN commerce.branches b ON b.id = i.branch_id AND b.is_active WHERE i.variant_id = v.id) AS available
                 FROM commerce.product_variants v WHERE v.product_id = :p AND v.tenant_id = :t AND (NOT :po OR v.status = 'ACTIVE') ORDER BY v.created_at
                 """).param("p", id).param("t", tenantId).param("po", publicOnly).query().listOfRows()));
-        out.put("media", Rows.camel(jdbc.sql("SELECT id, url, alt_text, sort_order, media_base, media_ext FROM commerce.product_media WHERE product_id = :p ORDER BY sort_order")
+        out.put("media", Rows.camel(jdbc.sql("""
+                SELECT m.id, m.url, m.alt_text, m.sort_order, m.media_base, m.media_ext, ov.value AS option_value
+                FROM commerce.product_media m LEFT JOIN commerce.product_option_values ov ON ov.id = m.option_value_id WHERE m.product_id = :p ORDER BY m.sort_order
+                """)
                 .param("p", id).query().listOfRows()));
         return out;
     }

@@ -78,7 +78,7 @@ class _ProductScreenState extends State<ProductScreen> {
   CartLine? _line() {
     final d = _d, v = _variant;
     if (d == null || v == null) return null;
-    final images = list(d['images']);
+    final images = picturesFor(list(d['images']), _choice.values);
     return CartLine(variantId: s(v['id']), productId: s(d['id']), shopId: s(d['shopId']), shopSlug: s(Map.from(d['shop'] as Map)['slug']), shopName: s(Map.from(d['shop'] as Map)['name']), slug: s(d['slug']), name: s(d['name']), variantLabel: _label, unitPriceMinor: n(v['priceMinor']).toInt(), currency: s(d['currency']), quantity: _qty, image: images.isEmpty ? null : s(images.first['thumb']));
   }
 
@@ -135,7 +135,7 @@ class _ProductScreenState extends State<ProductScreen> {
       );
     }
     final shop = Map<String, dynamic>.from(d['shop'] as Map);
-    final images = list(d['images']);
+    final images = picturesFor(list(d['images']), _choice.values);
     final v = _variant;
     final avail = v == null ? 0 : n(v['available']).toInt();
     final open = shop['isOpen'] != false;
@@ -164,7 +164,7 @@ class _ProductScreenState extends State<ProductScreen> {
             background: Stack(fit: StackFit.expand, children: [
               images.isEmpty
                   ? Container(color: kSoft, alignment: Alignment.center, child: const Text('🛍️', style: TextStyle(fontSize: 80)))
-                  : PageView.builder(itemCount: images.length, onPageChanged: (i) => setState(() => _img = i), itemBuilder: (_, i) => i == 0 && widget.preview != null ? Hero(tag: 'p-${widget.preview!.id}', child: Img(s(images[i]['medium']), fit: BoxFit.contain)) : Img(s(images[i]['medium']), fit: BoxFit.contain)),
+                  : PageView.builder(key: ValueKey(images.map((m) => s(m['thumb'])).join('|')), itemCount: images.length, onPageChanged: (i) => setState(() => _img = i), itemBuilder: (_, i) => i == 0 && widget.preview != null ? Hero(tag: 'p-${widget.preview!.id}', child: Img(s(images[i]['medium']), fit: BoxFit.contain)) : Img(s(images[i]['medium']), fit: BoxFit.contain)),
               if (images.length > 1) Positioned(bottom: 12, left: 0, right: 0, child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [for (var i = 0; i < images.length; i++) AnimatedContainer(duration: const Duration(milliseconds: 200), margin: const EdgeInsets.symmetric(horizontal: 3), width: i == _img ? 20 : 6, height: 6, decoration: BoxDecoration(color: i == _img ? kAccent : Colors.black26, borderRadius: BorderRadius.circular(9)))])),
             ]),
           ),
@@ -200,7 +200,7 @@ class _ProductScreenState extends State<ProductScreen> {
                       final hex = meta.isEmpty ? '' : s(meta.first['hex']);
                       final on = _choice[s(o['name'])] == val;
                       final out = _soldOut(o, val);
-                      void pick() => setState(() => _choice[s(o['name'])] = val);
+                      void pick() => setState(() { _choice[s(o['name'])] = val; _img = 0; });
                       return hex.isNotEmpty
                           ? GestureDetector(onTap: pick, child: Opacity(opacity: out ? .4 : 1, child: Container(width: 42, height: 42, decoration: BoxDecoration(shape: BoxShape.circle, color: Color(int.parse('FF${hex.replaceAll('#', '')}', radix: 16)), border: Border.all(color: on ? kAccent : kLine, width: on ? 3 : 1.5)), child: on ? const Icon(Icons.check_rounded, color: Colors.white, size: 20) : null)))
                           : GestureDetector(onTap: pick, child: Opacity(opacity: out ? .45 : 1, child: Container(padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11), decoration: BoxDecoration(color: on ? kNavy : Colors.white, borderRadius: BorderRadius.circular(99), border: Border.all(color: on ? kNavy : kLine)), child: Text(_valLabel(o, val), style: TextStyle(fontWeight: FontWeight.w800, color: on ? Colors.white : kInk, decoration: out ? TextDecoration.lineThrough : null)))));

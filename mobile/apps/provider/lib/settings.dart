@@ -332,6 +332,14 @@ class _PaymentMethods extends StatelessWidget {
       );
 }
 
+/// The two methods every new shop starts with are saved in English: shown in the app's language. A name the owner typed stays as typed.
+String _shipName(Map<String, dynamic> m, bool ar) {
+  final n = '${m['name']}'.trim().toLowerCase();
+  if (m['type'] == 'PICKUP' && n == 'store pickup') return ar ? 'استلام من المتجر' : 'Store pickup';
+  if (m['type'] == 'FIXED' && n == 'standard delivery') return ar ? 'توصيل عادي' : 'Standard delivery';
+  return '${m['name']}';
+}
+
 class _ShippingMethods extends StatelessWidget {
   const _ShippingMethods({required this.ctx});
   final Ctx ctx;
@@ -361,7 +369,7 @@ class _ShippingMethods extends StatelessWidget {
         },
         row: (c, m, reload) => SwitchListTile(
           contentPadding: EdgeInsets.zero,
-          title: Text('${m['name']}', style: const TextStyle(fontWeight: FontWeight.w800)),
+          title: Text(_shipName(m, S.of(c).ar), style: const TextStyle(fontWeight: FontWeight.w800)),
           subtitle: Text('${m['type']} · ${fmtMoney(m['feeMinor'] as num?)} ${ctx.currency}'),
           value: m['isActive'] == true,
           onChanged: (v) async { if (await run(c, () => ctx.api.put('store/shipping-methods/${m['id']}/active', {'active': v}))) await reload(); },

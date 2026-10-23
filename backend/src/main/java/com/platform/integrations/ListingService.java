@@ -327,7 +327,7 @@ public class ListingService {
                 }
                 String image = (String) g.get(0).get("image_url");
                 var p = catalog.createProduct(tenantId, actor, new CatalogService.ProductReq(title, "", null, null, null, null, "", "NEW", "DRAFT", multi ? List.of(new CatalogService.OptionReq("Option", values)) : List.of(), variants,
-                        image == null ? List.of() : List.of(new CatalogService.MediaReq(image, null, null))));
+                        image == null ? List.of() : List.of(new CatalogService.MediaReq(image, null, null, null))));
                 UUID productId = (UUID) p.get("id");
                 @SuppressWarnings("unchecked") List<Map<String, Object>> created2 = (List<Map<String, Object>>) p.get("variants");
                 for (var l : g) {

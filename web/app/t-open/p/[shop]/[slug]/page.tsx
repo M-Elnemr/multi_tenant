@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { OpenBuyBox, type OpenDetail } from "@/components/open/buy-box";
-import { OpenGallery } from "@/components/open/gallery";
+import { OpenChosenProvider, OpenGallery } from "@/components/open/gallery";
 import { WishButton } from "@/components/open/product-card";
 import { ProductRail } from "@/components/open/sections";
 import { Icon } from "@/components/icons";
@@ -58,6 +58,7 @@ export default async function OpenProductPage({ params }: { params: Promise<{ sh
         {p.taxonomy.map((c) => <span key={c.slug} className="flex items-center gap-1.5"><span>/</span><Link href={`/c/${c.slug}`} className="hover:text-[var(--o-accent)]">{nm(c)}</Link></span>)}
       </nav>
 
+      <OpenChosenProvider>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-10">
         <OpenGallery images={p.images} name={p.name} badge={p.badge === "NEW" ? <span className="o-badge o-badge-new">{t("open.badge.NEW")}</span> : null} />
 
@@ -92,6 +93,7 @@ export default async function OpenProductPage({ params }: { params: Promise<{ sh
           </Link>
         </div>
       </div>
+      </OpenChosenProvider>
 
       <section className="o-card mt-8 p-5 md:p-8">
         <h2 className="o-title">{t("open.details")}</h2>

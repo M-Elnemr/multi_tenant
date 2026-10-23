@@ -16,6 +16,23 @@ const governorates = <(String, String, String)>[
   ('NSN', 'شمال سيناء', 'North Sinai'), ('SSN', 'جنوب سيناء', 'South Sinai'),
 ];
 
+/// A picture tagged with an option value (usually a colour) shows when that value is chosen; untagged pictures belong to every colour.
+List<Map<String, dynamic>> picturesFor(List<Map<String, dynamic>> items, Iterable<String> chosen) {
+  final c = chosen.toSet();
+  final mine = items.where((m) => m['optionValue'] != null && c.contains(m['optionValue'])).toList();
+  final general = items.where((m) => m['optionValue'] == null).toList();
+  if (mine.isNotEmpty) return [...mine, ...general];
+  return general.isNotEmpty ? general : items;   // nothing for this colour and nothing general: better the others than an empty page
+}
+
+/// Every new shop gets "Store pickup" and "Standard delivery" saved in English: shown in the shopper's language. A name the owner typed stays as typed.
+String shipName(Map<String, dynamic> m, bool ar) {
+  final n = '${m['name']}'.trim().toLowerCase();
+  if (m['type'] == 'PICKUP' && n == 'store pickup') return ar ? 'استلام من المتجر' : 'Store pickup';
+  if (m['type'] == 'FIXED' && n == 'standard delivery') return ar ? 'توصيل عادي' : 'Standard delivery';
+  return '${m['name']}';
+}
+
 String govName(String? code, bool ar) {
   for (final g in governorates) { if (g.$1 == code) return ar ? g.$2 : g.$3; }
   return '';

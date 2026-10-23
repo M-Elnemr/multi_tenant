@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { picturesFor } from "@/lib/color-media";
+import { useOpenChosen } from "./gallery";
 import { money } from "@/lib/format";
 import { addToCart, replaceCart, type OpenCartLine } from "@/lib/open-client";
 import type { OpenShopRef } from "@/lib/open-types";
@@ -13,7 +15,7 @@ export type OpenDetail = {
   id: string; shopId: string; name: string; slug: string; currency: string; badge?: string | null;
   options: { name: string; values: string[]; attribute?: string; labelAr?: string; labelEn?: string; valueMeta?: { value: string; nameAr: string; nameEn: string; hex: string }[] }[];
   variants: { id: string; sku: string; priceMinor: number; compareAtPriceMinor?: number | null; comboKey: string; available: number }[];
-  images: { thumb: string; medium: string; original: string }[];
+  images: { thumb: string; medium: string; original: string; optionValue?: string | null }[];
   shop: OpenShopRef & { isOpen?: boolean; closedMessage?: string };
 };
 
@@ -40,6 +42,10 @@ export function OpenBuyBox({ p }: { p: OpenDetail }) {
   const optLabel = (o: OpenDetail["options"][number]) => (locale === "ar" ? o.labelAr : o.labelEn) ?? o.name;
   const valLabel = (o: OpenDetail["options"][number], v: string) => { const m = o.valueMeta?.find((x) => x.value === v); return m ? (locale === "ar" ? m.nameAr : m.nameEn) : v; };
   const label = p.options.map((o) => valLabel(o, choice[o.name])).join(" / ");
+  // the gallery next to this box shows the pictures of the chosen colour
+  const { set: setChosen } = useOpenChosen();
+  const chosenKey = Object.values(choice).join("\u0001");
+  useEffect(() => { setChosen(chosenKey ? chosenKey.split("\u0001") : []); }, [chosenKey, setChosen]);
   // a value is "sold out" when no variant that has it (with the other current choices) has stock
   const soldOut = (o: OpenDetail["options"][number], v: string) => {
     const key = p.options.map((x) => `${x.name}=${x.name === o.name ? v : choice[x.name]}`).join("|");
@@ -55,7 +61,7 @@ export function OpenBuyBox({ p }: { p: OpenDetail }) {
 
   const add = (go: boolean) => {
     if (!variant || !canBuy) return;
-    const line: OpenCartLine = { variantId: variant.id, productId: p.id, shopId: p.shopId, shopSlug: p.shop.slug, shopName: p.shop.name, slug: p.slug, name: p.name, variantLabel: label, unitPriceMinor: variant.priceMinor, currency: p.currency, quantity: qty, image: p.images[0]?.thumb ?? null };
+    const line: OpenCartLine = { variantId: variant.id, productId: p.id, shopId: p.shopId, shopSlug: p.shop.slug, shopName: p.shop.name, slug: p.slug, name: p.name, variantLabel: label, unitPriceMinor: variant.priceMinor, currency: p.currency, quantity: qty, image: picturesFor(p.images, Object.values(choice))[0]?.thumb ?? null };
     const clash = addToCart(line);
     if (clash) { setPending({ line, go, other: clash.conflict }); return; }   // the cart belongs to another shop: ask first
     finish(go);

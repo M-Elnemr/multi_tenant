@@ -9,13 +9,14 @@ import { Alert, Button, Card, ErrorText, Field, Input, Loading, PageHeader, Sele
 import { useRouter, useSearchParams } from "next/navigation";
 import { PublishToExisting } from "@/components/dashboard/publish-to";
 import { ProductExtras, type Extras } from "@/components/dashboard/product-extras";
-import { ProductImages, type ProductMedia } from "@/components/dashboard/product-images";
+import { ProductImages, type ColorOption, type ProductMedia } from "@/components/dashboard/product-images";
 import { TaxonomyPicker, type TaxonomyNode } from "@/components/dashboard/taxonomy-picker";
 
 type Detail = {
   id: string; name: string; description: string; brand?: string; status: string; audience?: string; itemCondition?: string; taxonomy?: { id: number; slug: string; nameAr: string; nameEn: string; level: number }[]; badge?: string; tags?: string[]; specs?: { k: string; v: string }[]; sizeGuide?: string; isFeatured?: boolean;
   variants: { id: string; sku: string; priceMinor: number; comboKey: string; status: string; available: number }[];
   media: ProductMedia[];
+  options?: ColorOption[];
 };
 
 export default function EditProduct({ params }: { params: Promise<{ id: string }> }) {
@@ -65,7 +66,7 @@ export default function EditProduct({ params }: { params: Promise<{ id: string }
           ))}</tbody></table>
           <p className="mt-2 text-xs text-slate-500">{t("products.stockHint")}</p>
         </Card>
-        <ProductImages id={id} media={data.media} onChanged={reload} />
+        <ProductImages id={id} media={data.media} options={data.options} onChanged={reload} />
         <ProductExtras key={data.id + (data.badge ?? "")} id={id} initial={data as Extras} onSaved={reload} />
         <ErrorText error={save.error ?? archive.error} />
         <div className="flex gap-3"><Button type="submit" loading={save.loading}>{t("common.save")}</Button>{can("product.delete") && <Button type="button" variant="danger" loading={archive.loading} onClick={() => archive.run()}>{t("products.archive")}</Button>}</div>

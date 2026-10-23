@@ -1,5 +1,6 @@
 "use client";
 
+import { shipName } from "@/lib/ship-name";
 import { useState } from "react";
 import { api } from "@/lib/client";
 import { toMinor, money } from "@/lib/format";
@@ -92,7 +93,7 @@ export default function StoreSettings() {
           <Card className="space-y-3">
             <h2 className="font-medium">{t("settings.shipping")}</h2>
             <Table head={[t("products.name"), t("settings.type"), t("settings.fee"), ""]}>
-              {ships.data.map((x) => <tr key={x.id}><Td>{x.name}</Td><Td>{t(`ship.${x.type}`)}</Td><Td>{money(x.feeMinor, currency, locale)}{x.freeAboveMinor ? ` (${t("ship.freeAboveShort")} ${money(x.freeAboveMinor, currency, locale)})` : ""}</Td><Td className="text-end"><Button size="sm" variant="ghost" onClick={() => toggleShip.run(x)}>{x.isActive ? t("common.hide") : t("common.show")}</Button></Td></tr>)}
+              {ships.data.map((x) => <tr key={x.id}><Td>{shipName(t, x)}</Td><Td>{t(`ship.${x.type}`)}</Td><Td>{money(x.feeMinor, currency, locale)}{x.freeAboveMinor ? ` (${t("ship.freeAboveShort")} ${money(x.freeAboveMinor, currency, locale)})` : ""}</Td><Td className="text-end"><Button size="sm" variant="ghost" onClick={() => toggleShip.run(x)}>{x.isActive ? t("common.hide") : t("common.show")}</Button></Td></tr>)}
             </Table>
             <form onSubmit={(e) => { e.preventDefault(); void addShip.run(); }} className="grid gap-3 sm:grid-cols-5">
               <Select value={s.type} onChange={(e) => setS({ ...s, type: e.target.value })}>{["PICKUP", "FIXED", "FREE_ABOVE"].map((x) => <option key={x} value={x}>{t(`ship.${x}`)}</option>)}</Select>

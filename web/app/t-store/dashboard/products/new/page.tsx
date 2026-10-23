@@ -27,12 +27,14 @@ export default function NewProduct() {
   const [picked, setPicked] = useState<TaxonomyNode | null>(null);
   const [options, setOptions] = useState<OptionDraft[]>([]);
   const [rows, setRows] = useState<Record<string, Row>>({});
-  const [images, setImages] = useState<string[]>([]);
+  const [images, setImages] = useState<{ id: string; color: string }[]>([]);   // color: the option value this picture is for ("" = all)
   const [publish, setPublish] = useState<PublishState>({});
   const channels = usePublishAccounts();
 
   const parsed = useMemo(() => options.map(toRequest).filter((o) => o.name && o.values.length), [options]);
   const matrix = useMemo(() => combos(parsed), [parsed]);
+  // the values a picture can be for: the colour option when there is one, else the first option
+  const colorChoices = useMemo(() => (parsed.find((o) => /color|colour|لون/i.test(o.name)) ?? parsed[0])?.values ?? [], [parsed]);
   const key = (c: Record<string, string>) => parsed.map((o) => c[o.name]).join("|");
   const branchId = f.branchId || branches.data?.[0]?.id || "";
   const row = (c: Record<string, string>): Row => rows[key(c)] ?? { sku: "", price: "", stock: "0" };
@@ -40,7 +42,7 @@ export default function NewProduct() {
   const draftRows: DraftRow[] = matrix.map((c) => { const r = row(c); return { key: key(c), label: Object.values(c).join(" / "), sku: r.sku, price: r.price, stock: r.stock }; });
   const save = useAction(async () => {
     const variants = matrix.map((c) => { const r = row(c); return { sku: r.sku.trim(), priceMinor: toMinor(r.price), optionValues: c, stock: [{ branchId, quantity: Number(r.stock) || 0 }] }; });
-    const p = await api<{ id: string; variants: { id: string; sku: string }[] }>("store/products", { body: { name: f.name, description: f.description, taxonomyId: picked?.id, audience: f.audience || undefined, condition: f.condition, brand: f.brand || undefined, status: f.status, options: parsed, variants, media: images.map((fileId) => ({ fileId })) } });
+    const p = await api<{ id: string; variants: { id: string; sku: string }[] }>("store/products", { body: { name: f.name, description: f.description, taxonomyId: picked?.id, audience: f.audience || undefined, condition: f.condition, brand: f.brand || undefined, status: f.status, options: parsed, variants, media: images.map((im) => ({ fileId: im.id, optionValue: colorChoices.includes(im.color) ? im.color : undefined })) } });
     let failed = false;
     try {
       const res = await publishNew(p.id, p.variants ?? [], draftRows, publish, channels.accounts);
@@ -66,11 +68,19 @@ export default function NewProduct() {
           <div>
             <p className="mb-2 text-sm font-medium">{t("products.images")}</p>
             <div className="flex flex-wrap items-center gap-3">
-              {images.map((id) => (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img key={id} src={`/api/bff/files/${id}/content?variant=thumb`} alt="" className="h-16 w-16 rounded-lg object-cover" />
+              {images.map((im) => (
+                <div key={im.id} className="w-24 space-y-1">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={`/api/bff/files/${im.id}/content?variant=thumb`} alt="" className="h-16 w-16 rounded-lg object-cover" />
+                  {colorChoices.length > 0 && (
+                    <Select value={im.color} onChange={(e) => setImages((x) => x.map((y) => (y.id === im.id ? { ...y, color: e.target.value } : y)))} aria-label={t("images.forColor")} className="!px-1.5 !py-1 !text-xs">
+                      <option value="">{t("images.allColors")}</option>
+                      {colorChoices.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </Select>
+                  )}
+                </div>
               ))}
-              <ImageUploader category="PRODUCT_IMAGE" onUploaded={(id) => setImages((x) => [...x, id])} />
+              <ImageUploader category="PRODUCT_IMAGE" onUploaded={(id) => setImages((x) => [...x, { id, color: "" }])} />
             </div>
           </div>
         </Card>
