@@ -12,10 +12,11 @@ import 'clinic_panel.dart';
 import 'offline_ops.dart';
 import 'platform_admin.dart';
 import 'push.dart';
+import 'register.dart';
 import 'shell.dart';
 import 'store_panel.dart';
 
-const appVersion = '1.3.16';
+const appVersion = '1.3.17';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -120,6 +121,16 @@ class _RootState extends State<Root> {
         title: 'Elmanassa Business',
         subtitle: s.ar ? 'أدر عيادتك أو متجرك من هاتفك' : 'Run your clinic or shop from your phone',
         onLoggedIn: (u) => _load(),
+        footer: Column(children: [
+          Row(children: [const Expanded(child: Divider()), Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Text(s.ar ? 'ليس لديك حساب؟' : 'New here?', style: const TextStyle(color: Color(0xFF6B7A8C)))), const Expanded(child: Divider())]),
+          const SizedBox(height: 10),
+          SizedBox(width: double.infinity, child: OutlinedButton.icon(
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => RegisterScreen(api: _api, onRegistered: _load))),
+            icon: const Icon(Icons.add_business_rounded),
+            label: Text(s.ar ? 'أنشئ متجرك أو عيادتك' : 'Create your shop or clinic'),
+            style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(50)),
+          )),
+        ]),
       );
     } else if (_error != null) {
       body = Scaffold(key: const ValueKey('err'), body: Center(child: Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [
