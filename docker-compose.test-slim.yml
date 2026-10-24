@@ -21,6 +21,9 @@ services:
       APP_MARKETING_VIDEO_DIR: /app/uploads/reels
       DB_POOL_SIZE: "6"
       DB_POOL_MIN_IDLE: "1"
+      EVOLUTION_BASE_URL: ${EVOLUTION_BASE_URL:-}
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-}
+      EVOLUTION_WEBHOOK_SECRET: ${EVOLUTION_WEBHOOK_SECRET:-}
       JAVA_TOOL_OPTIONS: ${BACKEND_JAVA_OPTS:--Xmx320m -Xss512k -XX:+UseSerialGC -XX:MaxMetaspaceSize=160m}
     volumes:
       - uploads:/app/uploads
@@ -49,6 +52,43 @@ services:
     mem_limit: 48m
     oom_score_adj: 900
     cpus: 0.1
+
+  # Optional unofficial WhatsApp mode (Evolution API, Baileys). Reachable only from the backend inside this network (no published port). Uses its own database "evolution" in the same
+  # Postgres, local cache (no Redis). Start with: docker compose ... up -d evolution. Create the database once: CREATE DATABASE evolution;
+  evolution:
+    image: evoapicloud/evolution-api:v2.3.7
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SERVER_TYPE: http
+      SERVER_PORT: "8080"
+      SERVER_URL: http://evolution:8080
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:?set EVOLUTION_API_KEY in .env}
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://${DB_USERNAME:-platform}:${DB_PASSWORD}@db:5432/evolution
+      DATABASE_CONNECTION_CLIENT_NAME: evolution
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "false"
+      DATABASE_SAVE_MESSAGE_UPDATE: "false"
+      DATABASE_SAVE_DATA_CONTACTS: "false"
+      DATABASE_SAVE_DATA_CHATS: "false"
+      DATABASE_SAVE_DATA_LABELS: "false"
+      DATABASE_SAVE_DATA_HISTORIC: "false"
+      CACHE_REDIS_ENABLED: "false"
+      CACHE_LOCAL_ENABLED: "true"
+      WEBHOOK_GLOBAL_ENABLED: "false"
+      CONFIG_SESSION_PHONE_CLIENT: Elmanassa
+      CONFIG_SESSION_PHONE_NAME: Chrome
+      TELEMETRY: "false"
+      TELEMETRY_ENABLED: "false"
+      LOG_LEVEL: ERROR,WARN
+      DEL_INSTANCE: "false"
+      NODE_OPTIONS: --max-old-space-size=300
+    mem_limit: 420m
+    oom_score_adj: 900
+    cpus: 0.4
 
   # Not started in this profile (docker compose only starts services whose profiles are active).
   redis:

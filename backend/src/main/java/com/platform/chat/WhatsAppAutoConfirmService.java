@@ -31,6 +31,7 @@ public class WhatsAppAutoConfirmService {
     public static final String REMINDER_TEMPLATE = "order_reminder_ar";
     private static final int MAX_ATTEMPTS = 3;
 
+    private final EvolutionService evolution;
     private final JdbcClient jdbc;
     private final MetaGraph graph;
     private final MetaChannelService channels;
@@ -40,7 +41,8 @@ public class WhatsAppAutoConfirmService {
     private final long priceMinor;
 
     public WhatsAppAutoConfirmService(JdbcClient jdbc, MetaGraph graph, MetaChannelService channels, WhatsAppConfirmService confirm, WalletService wallet, AuditService audit,
-                                      @Value("${app.whatsapp.message-price-minor:100}") long priceMinor) {
+                                      @Value("${app.whatsapp.message-price-minor:100}") long priceMinor, EvolutionService evolution) {
+        this.evolution = evolution;
         this.jdbc = jdbc;
         this.graph = graph;
         this.channels = channels;
@@ -218,6 +220,13 @@ public class WhatsAppAutoConfirmService {
     private boolean attempt(String kind, Map<String, Object> row, Instant now) {
         UUID tenantId = (UUID) row.get("tenant_id"), orderId = (UUID) row.get("id");
         String orderNo = (String) row.get("order_number"), to = ((String) row.get("whatsapp_number")).replaceAll("\\D", "");
+        if (evolution.connected(tenantId)) {   // the shop's own linked number: a normal free message, no template and no charge
+            String text = confirm.askText(tenantId, to, orderNo).orElse(null);
+            if (text == null) return false;
+            boolean ok = evolution.sendFree(tenantId, to, text);
+            record(tenantId, orderId, kind, ok ? "FREE_TEXT" : "FAILED", 0, null, ok ? null : "Unofficial WhatsApp send failed", now, ok);
+            return ok;
+        }
         var ch = channels.whatsappChannel(tenantId);
         if (ch == null) return false;
         String brand = row.get("brand_name") != null ? (String) row.get("brand_name")

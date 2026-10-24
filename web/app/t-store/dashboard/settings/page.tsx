@@ -9,6 +9,7 @@ import TemplatePicker from "@/components/dashboard/template-picker";
 import WaReportCard from "@/components/dashboard/wa-report";
 import CodGuardCard from "@/components/dashboard/cod-guard";
 import MarketCard from "@/components/dashboard/market-card";
+import EvolutionCard from "@/components/dashboard/evolution-card";
 import { ZonesCard } from "@/components/dashboard/zones";
 import { BannersCard } from "@/components/dashboard/banners";
 import { BranchesCard, ContactCard, MarketingCard, SetupChecklist, type StoreProfile } from "@/components/dashboard/store-identity";
@@ -21,9 +22,9 @@ type Profile = StoreProfile & { categories?: { code: string }[]; otherCategory?:
 type Pm = { method: string; enabled: boolean };
 type Ship = { id: string; type: string; name: string; feeMinor: number; freeAboveMinor?: number; isActive: boolean };
 
-type Tab = "profile" | "look" | "sales" | "marketing" | "branches";
+type Tab = "profile" | "look" | "sales" | "marketing" | "whatsapp" | "branches";
 /** Old links such as /dashboard/settings#cod-guard land on the tab that holds that card. */
-const ANCHOR_TAB: Record<string, Tab> = { profile: "profile", contact: "profile", look: "look", branding: "look", templates: "look", sales: "sales", shipping: "sales", "cod-guard": "sales", market: "sales", marketing: "marketing", "whatsapp-report": "marketing", branches: "branches" };
+const ANCHOR_TAB: Record<string, Tab> = { profile: "profile", contact: "profile", look: "look", branding: "look", templates: "look", sales: "sales", shipping: "sales", "cod-guard": "sales", market: "sales", marketing: "marketing", "whatsapp-report": "marketing", "whatsapp-own": "whatsapp", branches: "branches" };
 
 export default function StoreSettings() {
   const { t, locale, currency } = useI18n();
@@ -65,7 +66,7 @@ export default function StoreSettings() {
       <fieldset disabled={!canWrite("settings")} className="m-0 min-w-0 border-0 p-0">
       <div className="space-y-6">
         {profile.data && <SetupChecklist profile={profile.data} hasLogo={!!brand.data?.logoFileId} />}
-        <Tabs<Tab> tabs={[{ key: "profile", label: t("settings.tab.profile") }, { key: "look", label: t("settings.tab.look") }, { key: "sales", label: t("settings.tab.sales") }, { key: "marketing", label: t("settings.tab.marketing") }, ...(can("branch.manage") ? [{ key: "branches" as Tab, label: t("settings.tab.branches") }] : [])]} value={tab} onChange={setTab} />
+        <Tabs<Tab> tabs={[{ key: "profile", label: t("settings.tab.profile") }, { key: "look", label: t("settings.tab.look") }, { key: "sales", label: t("settings.tab.sales") }, { key: "marketing", label: t("settings.tab.marketing") }, ...(can("ai.read") || can("ai.manage") ? [{ key: "whatsapp" as Tab, label: t("settings.tab.whatsapp") }] : []), ...(can("branch.manage") ? [{ key: "branches" as Tab, label: t("settings.tab.branches") }] : [])]} value={tab} onChange={setTab} />
         {show("profile") && profile.data && <section id="contact"><ContactCard key={JSON.stringify(profile.data.workingHours) + profile.data.coverFileId} profile={profile.data} reload={profile.reload} /></section>}
         {show("profile") && p && (
           <Card className="space-y-4">
@@ -128,6 +129,7 @@ export default function StoreSettings() {
         {show("look") && can("settings.manage") && <BannersCard />}
         {show("marketing") && profile.data && can("settings.manage") && <MarketingCard profile={profile.data} reload={profile.reload} />}
         {show("sales") && can("shipping.manage") && <ZonesCard />}
+        {show("whatsapp") && (can("ai.read") || can("ai.manage")) && <section id="whatsapp-own"><EvolutionCard write={can("ai.manage")} /></section>}
         {show("branches") && can("branch.manage") && <section id="branches"><BranchesCard /></section>}
       </div>
       </fieldset>

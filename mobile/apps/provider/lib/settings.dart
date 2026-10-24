@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:platform_core/platform_core.dart';
 
+import 'ai_assistant.dart';
 import 'common.dart';
 import 'forms.dart';
 import 'retail.dart';
@@ -249,7 +250,7 @@ class _StoreSettingsState extends State<StoreSettings> {
   Widget build(BuildContext context) {
     final ctx = widget.ctx;
     final ar = S.of(context).ar;
-    final tabs = {'profile': ar ? 'بيانات المتجر' : 'Store details', 'look': ar ? 'الشكل والهوية' : 'Look and branding', 'sales': ar ? 'البيع والتوصيل' : 'Sales and delivery', 'marketing': ar ? 'التسويق' : 'Marketing', if (ctx.can('branch.manage')) 'branches': ar ? 'الفروع' : 'Branches'};
+    final tabs = {'profile': ar ? 'بيانات المتجر' : 'Store details', 'look': ar ? 'الشكل والهوية' : 'Look and branding', 'sales': ar ? 'البيع والتوصيل' : 'Sales and delivery', 'marketing': ar ? 'التسويق' : 'Marketing', if (ctx.canAny(['ai.read', 'ai.manage'])) 'whatsapp': ar ? 'واتساب (رقمك)' : 'WhatsApp (your number)', if (ctx.can('branch.manage')) 'branches': ar ? 'الفروع' : 'Branches'};
     final manage = ctx.canAny(['settings.manage', 'settings.read']);
     final ship = ctx.canAny(['shipping.manage', 'shipping.read']);
     final ro = !ctx.canWrite('settings');   // read only access shows the values without a save button
@@ -309,6 +310,7 @@ class _StoreSettingsState extends State<StoreSettings> {
         loadPath: 'store/profile', savePath: 'store/profile',
         fields: const [F(FK.ltr, 'metaPixelId', 'Meta Pixel ID', 'Meta Pixel ID'), F(FK.ltr, 'tiktokPixelId', 'TikTok Pixel ID', 'TikTok Pixel ID'), F(FK.ltr, 'gaId', 'Google Analytics ID', 'Google Analytics ID')],
       ),
+      if (_tab == 'whatsapp' && ctx.canAny(['ai.read', 'ai.manage'])) EvolutionCard(ctx: ctx),
       if (_tab == 'branches' && ctx.can('branch.manage')) _StoreBranches(ctx: ctx),
     ])),
     ]);

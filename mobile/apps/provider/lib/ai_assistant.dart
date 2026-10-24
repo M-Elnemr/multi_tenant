@@ -1,4 +1,7 @@
 // ignore_for_file: use_build_context_synchronously
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:platform_core/platform_core.dart';
 
@@ -86,5 +89,117 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         ]));
       },
     ));
+  }
+}
+
+/// Optional unofficial mode: the shop's own WhatsApp number linked by QR code. Off by default; the owner must read and accept the warning first.
+class EvolutionCard extends StatefulWidget {
+  const EvolutionCard({super.key, required this.ctx});
+  final Ctx ctx;
+  @override
+  State<EvolutionCard> createState() => _EvolutionCardState();
+}
+
+class _EvolutionCardState extends State<EvolutionCard> {
+  Map<String, dynamic>? _info, _qr;
+  bool _accepted = false, _loading = true;
+  final _number = TextEditingController();
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    _timer = Timer.periodic(const Duration(seconds: 6), (_) { if (mounted && _info?['enabled'] == true && _info?['status'] != 'CONNECTED') _poll(); });
+  }
+
+  @override
+  void dispose() { _timer?.cancel(); _number.dispose(); super.dispose(); }
+
+  Future<void> _load() async {
+    try { final r = await widget.ctx.api.get('store/ai/evolution') as Map<String, dynamic>; if (mounted) setState(() { _info = r; _loading = false; }); } catch (_) { if (mounted) setState(() => _loading = false); }
+  }
+
+  Future<void> _poll() async {
+    try {
+      final q = await widget.ctx.api.get('store/ai/evolution/qr') as Map<String, dynamic>;
+      if (mounted) setState(() { _qr = q; _info = {...?_info, 'status': q['status'], 'phone': q['phone']}; });
+    } catch (_) { /* the next tick tries again */ }
+  }
+
+  Future<void> _enable() async {
+    Map<String, dynamic>? r;
+    if (await run(context, () async { r = await widget.ctx.api.post('store/ai/evolution/enable', {'acceptedRisk': true}) as Map<String, dynamic>; }) && mounted) {
+      setState(() { _qr = r; _info = {...?_info, 'enabled': true, 'status': r!['status']}; });
+    }
+  }
+
+  Future<void> _disable() async {
+    final ar = S.of(context).ar;
+    final sure = await showDialog<bool>(context: context, builder: (d) => AlertDialog(
+      content: Text(ar ? 'توقف الميزة وتفصل التليفون؟' : 'Turn it off and unlink the phone?'),
+      actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: Text(ar ? 'إلغاء' : 'Cancel')), FilledButton(onPressed: () => Navigator.pop(d, true), child: Text(ar ? 'أوقف' : 'Turn off'))]));
+    if (sure != true) return;
+    if (await run(context, () async { await widget.ctx.api.post('store/ai/evolution/disable', {}); }) && mounted) setState(() { _qr = null; _accepted = false; _info = {...?_info, 'enabled': false, 'status': 'DISCONNECTED', 'phone': null}; });
+  }
+
+  Future<void> _test() async {
+    final ar = S.of(context).ar;
+    if (await run(context, () async { await widget.ctx.api.post('store/ai/evolution/test', {'number': _number.text.trim()}); }) && mounted) toast(context, ar ? 'اتبعتت الرسالة التجريبية' : 'The test message was sent');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ar = S.of(context).ar;
+    final write = widget.ctx.canWrite('ai');
+    if (_loading) return const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()));
+    final i = _info;
+    if (i == null || i['available'] != true) return Card(child: Padding(padding: const EdgeInsets.all(16), child: Text(ar ? 'الميزة دي مش متاحة على السيرفر ده لسه.' : 'This feature is not available on this server yet.')));
+    final enabled = i['enabled'] == true, connected = enabled && i['status'] == 'CONNECTED';
+    final qr = _qr?['qr'] as String?;
+    return Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Row(children: [
+        Expanded(child: Text(ar ? 'واتساب برقمك الخاص (غير رسمي)' : 'WhatsApp with your own number (unofficial)', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16))),
+        if (enabled) Chip(visualDensity: VisualDensity.compact, label: Text(connected ? (ar ? 'مربوط' : 'Linked') : (ar ? 'في انتظار التليفون' : 'Waiting for the phone')), backgroundColor: connected ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7)),
+      ]),
+      const SizedBox(height: 8),
+      Text(ar ? 'اربط رقم واتساب بتاعك بمسح كود QR. بعدها البائع الذكي بيرد على العملاء على الرقم ده، وتأكيدات الطلبات وتذكيرات السلة بتتبعت كرسائل عادية من غير تكلفة للرسالة ومن غير نافذة الـ٢٤ ساعة.' : 'Link your own WhatsApp number by scanning a QR code. Then the AI seller answers customers on that number, and order confirmations and cart reminders go out as normal messages with no per-message charge and no 24-hour window.', style: const TextStyle(color: Color(0xFF475569))),
+      const SizedBox(height: 10),
+      Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFFFF4DD), borderRadius: BorderRadius.circular(12)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('⚠️ ${ar ? 'اقرأ ده قبل ما تشغّلها' : 'Read this before you turn it on'}', style: const TextStyle(fontWeight: FontWeight.w900)),
+        const SizedBox(height: 4),
+        for (final w in ar
+            ? ['ده مش واجهة واتساب للأعمال الرسمية. بيشتغل زي واتساب ويب، وشروط واتساب مبتسمحش بالأتمتة بالشكل ده.', 'واتساب ممكن يقيّد الرقم أو يحظره نهائيًا. لو حصل كده هتخسر الرقم ومحادثاته وإحنا مش هنقدر نرجّعه.', 'استخدم رقم مخصص مش خط العملاء الأساسي. خلي الرسائل قليلة وشخصية ومتبعتش رسائل مزعجة.', 'تقدر توقفها في أي وقت من هنا. وهي متوقفة لكل المتاجر لحد ما صاحب المتجر يشغّلها.']
+            : ['This is NOT the official WhatsApp Business API. It works like WhatsApp Web, which WhatsApp’s terms do not allow for automation.', 'WhatsApp can restrict or permanently ban the number. If that happens you lose the number and its chats, and we cannot recover it.', 'Use a dedicated number, not your main customer line. Keep messages few and personal, and never send spam.', 'You can switch it off at any time here. It is off for every shop until its owner turns it on.'])
+          Padding(padding: const EdgeInsets.only(top: 3), child: Text('• $w', style: const TextStyle(fontSize: 13))),
+      ])),
+      if (!enabled && write) ...[
+        CheckboxListTile(contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading, value: _accepted, onChanged: (v) => setState(() => _accepted = v ?? false), title: Text(ar ? 'فاهم المخاطرة، وموافق إن رقم واتساب بتاعي ممكن يتحظر.' : 'I understand the risk, and I accept that my WhatsApp number may be banned.', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14))),
+        FilledButton(onPressed: _accepted ? _enable : null, child: Text(ar ? 'شغّل واربط تليفوني' : 'Turn on and link my phone')),
+      ],
+      if (enabled && !connected) ...[
+        const SizedBox(height: 12),
+        Text(ar ? '١. على التليفون افتح واتساب > الإعدادات > الأجهزة المرتبطة.\n٢. اضغط «ربط جهاز» وامسح الكود.\n٣. سيب التليفون متصل بالإنترنت. الصفحة بتتحدث لوحدها.' : '1. On the phone open WhatsApp > Settings > Linked devices.\n2. Press “Link a device” and scan the code.\n3. Keep the phone online. This page updates by itself.'),
+        const SizedBox(height: 10),
+        if (qr != null && qr.contains(',')) Center(child: Container(color: Colors.white, padding: const EdgeInsets.all(8), child: Image.memory(base64Decode(qr.split(',').last), width: 220, height: 220, gaplessPlayback: true)))
+        else Center(child: Text(ar ? 'بنجهز كود QR…' : 'Preparing the QR code…')),
+        if (_qr?['pairingCode'] != null) Padding(padding: const EdgeInsets.only(top: 8), child: Center(child: SelectableText('${ar ? 'أو اربط بالكود ده' : 'Or link with this code'}: ${_qr!['pairingCode']}', textDirection: TextDirection.ltr))),
+      ],
+      if (connected) ...[
+        const SizedBox(height: 12),
+        Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFDCFCE7), borderRadius: BorderRadius.circular(12)), child: Text('${ar ? 'تليفونك مربوط.' : 'Your phone is linked.'}${i['phone'] != null ? '  +${i['phone']}' : ''}', style: const TextStyle(fontWeight: FontWeight.w800))),
+        const SizedBox(height: 6),
+        Text(ar ? 'رسائل العملاء على الرقم ده بيرد عليها البائع الذكي. وتأكيدات الطلبات وتذكيرات السلة بتتبعت منه.' : 'Customer messages to this number are answered by the AI seller. Order confirmations and cart reminders are sent from it.'),
+        if (write) ...[
+          const SizedBox(height: 10),
+          Row(children: [
+            Expanded(child: TextField(controller: _number, keyboardType: TextInputType.phone, textDirection: TextDirection.ltr, onChanged: (_) => setState(() {}), decoration: InputDecoration(labelText: ar ? 'ابعت رسالة تجريبية إلى (مع كود الدولة)' : 'Send a test message to (with country code)', hintText: '201012345678', isDense: true))),
+            const SizedBox(width: 8),
+            FilledButton.tonal(onPressed: _number.text.replaceAll(RegExp(r'\D'), '').length < 8 ? null : _test, child: Text(ar ? 'ابعت' : 'Send')),
+          ]),
+        ],
+      ],
+      if (enabled && write) Padding(padding: const EdgeInsets.only(top: 14), child: OutlinedButton.icon(onPressed: _disable, style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFB91C1C)), icon: const Icon(Icons.link_off_rounded), label: Text(ar ? 'أوقف وافصل الربط' : 'Turn off and unlink'))),
+    ])));
   }
 }

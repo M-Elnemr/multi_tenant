@@ -37,6 +37,7 @@ public class CartRecoveryService {
     private static final ObjectMapper JSON = new ObjectMapper();
     public static final String TEMPLATE = "cart_reminder_ar";
 
+    private final com.platform.chat.EvolutionService evolution;
     private final JdbcClient jdbc;
     private final MetaChannelService channels;
     private final MetaGraph graph;
@@ -47,7 +48,8 @@ public class CartRecoveryService {
     private final boolean scheduler;
 
     public CartRecoveryService(JdbcClient jdbc, MetaChannelService channels, MetaGraph graph, WalletService wallet, OpenUrls urls, AuditService audit,
-                               @Value("${app.whatsapp.marketing-price-minor:300}") long priceMinor, @Value("${app.integrations.scheduler.enabled:true}") boolean scheduler) {
+                               @Value("${app.whatsapp.marketing-price-minor:300}") long priceMinor, @Value("${app.integrations.scheduler.enabled:true}") boolean scheduler, com.platform.chat.EvolutionService evolution) {
+        this.evolution = evolution;
         this.jdbc = jdbc;
         this.channels = channels;
         this.graph = graph;
@@ -233,6 +235,13 @@ public class CartRecoveryService {
         String phone = ((String) c.get("phone")).replaceAll("\\D", "");
         String name = (String) c.get("name");
         var settings = settings(tenantId);
+        if (evolution.connected(tenantId)) {   // the shop's own linked number: a normal free message, no window, no template, no charge
+            String url = urls.baseUrl(urls.hosts(List.of(tenantId)).get(tenantId)) + "/cart";
+            String cp = (String) settings.get("couponCode");
+            String who = name == null || name.isBlank() ? "" : name.trim().split("\\s+")[0];
+            String text = "أهلاً " + who + " 👋 سلتك لسه مستنياك. تحب أكمّل معاك الطلب؟ " + url + (cp == null ? "" : "\nاستخدم كود الخصم " + cp);
+            return finish(cartId, evolution.sendFree(tenantId, phone, text) ? "SENT_FREE" : "FAILED");
+        }
         if (ch == null) return finish(cartId, "NO_CHANNEL");
         boolean windowOpen = jdbc.sql("SELECT count(*) FROM chat.wa_windows WHERE tenant_id = :t AND number = :n AND last_inbound_at > :since").param("t", tenantId).param("n", phone)
                 .param("since", Timestamp.from(now.minus(Duration.ofHours(24)))).query(Long.class).single() > 0;
