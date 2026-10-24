@@ -90,12 +90,47 @@ public class AuthController {
         return accounts.clientGoogle(r.credential(), com.platform.shared.TenantContext.get(), ClientInfo.ip(req), req.getHeader("User-Agent"));
     }
 
+    public record ClientRegisterRequest(String name, String phone, String password) {}
+    public record ClientVerifyRequest(String phone, String code) {}
+    public record ClientLoginRequest(String phone, String password) {}
+    public record ClientForgotRequest(String phone) {}
+    public record ClientResetRequest(String phone, String code, String newPassword) {}
+
+    /** Shop clients: sign up with a phone and password. A code is sent on WhatsApp; the account exists only after it is entered. */
+    @PostMapping("/client/register")
+    public Map<String, Object> clientRegister(@RequestBody ClientRegisterRequest r, HttpServletRequest req) {
+        accounts.clientRegister(r.name(), r.phone(), r.password(), ClientInfo.ip(req));
+        return Map.of("sent", true, "expiresInMinutes", 10);
+    }
+
+    @PostMapping("/client/register/verify")
+    public TokenResponse clientRegisterVerify(@RequestBody ClientVerifyRequest r, HttpServletRequest req) {
+        return accounts.clientRegisterVerify(r.phone(), r.code(), com.platform.shared.TenantContext.get(), ClientInfo.ip(req), req.getHeader("User-Agent"));
+    }
+
+    @PostMapping("/client/login")
+    public TokenResponse clientLogin(@RequestBody ClientLoginRequest r, HttpServletRequest req) {
+        return accounts.clientPhoneLogin(r.phone(), r.password(), com.platform.shared.TenantContext.get(), ClientInfo.ip(req), req.getHeader("User-Agent"));
+    }
+
+    @PostMapping("/client/password/forgot")
+    public Map<String, Object> clientForgot(@RequestBody ClientForgotRequest r, HttpServletRequest req) {
+        accounts.clientForgot(r.phone(), ClientInfo.ip(req));
+        return Map.of("sent", true, "expiresInMinutes", 10);
+    }
+
+    @PostMapping("/client/password/reset")
+    public TokenResponse clientReset(@RequestBody ClientResetRequest r, HttpServletRequest req) {
+        return accounts.clientReset(r.phone(), r.code(), r.newPassword(), com.platform.shared.TenantContext.get(), ClientInfo.ip(req), req.getHeader("User-Agent"));
+    }
+
     /** Public: lets the storefront know whether to show the Google button (the client id is public by design). */
     @GetMapping("/client/config")
     public Map<String, Object> clientConfig() {
         String id = accounts.googleClientId();
         // signInHost: the one address registered with Google. Shops send their visitors there to sign in (Google cannot list every shop subdomain).
-        return id == null ? Map.of("googleEnabled", false) : Map.of("googleEnabled", true, "googleClientId", id, "signInHost", props.rootDomain());
+        boolean codes = accounts.codesAvailable();   // registering with a phone needs the platform's WhatsApp number to send the code
+        return id == null ? Map.of("googleEnabled", false, "phoneRegisterEnabled", codes) : Map.of("googleEnabled", true, "googleClientId", id, "signInHost", props.rootDomain(), "phoneRegisterEnabled", codes);
     }
 
     @GetMapping("/me")

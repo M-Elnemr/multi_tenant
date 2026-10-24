@@ -56,10 +56,12 @@ public class ChatService {
     private final PaymentPolicy policy;
     private final AuditService audit;
     private final SellerTools seller;
+    private final AccountNotice accountNotice;
     private final com.platform.commerce.GenderService genders;
 
     public ChatService(JdbcClient jdbc, AiProvider ai, CatalogService catalog, StoreSearchService search, CheckoutService checkout, StoreSettingsService settings,
-                       StoreFulfillmentService fulfilment, ShopperService shopper, PaymentPolicy policy, AuditService audit, SellerTools seller, com.platform.commerce.GenderService genders) {
+                       StoreFulfillmentService fulfilment, ShopperService shopper, PaymentPolicy policy, AuditService audit, SellerTools seller, com.platform.commerce.GenderService genders, @org.springframework.context.annotation.Lazy AccountNotice accountNotice) {
+        this.accountNotice = accountNotice;
         this.genders = genders;
         this.jdbc = jdbc;
         this.ai = ai;
@@ -298,6 +300,7 @@ public class ChatService {
         String memo = seller.memory(tenantId, channel, externalId);
         if (!memo.isBlank()) p.append("\nWHAT YOU REMEMBER ABOUT THIS CUSTOMER (use it naturally, do not recite it):\n").append(memo).append("\n");
         p.append(genderRule(tenantId, channel, externalId, clientId));
+        if ("WHATSAPP".equals(channel) && externalId != null) p.append("\nTHE CUSTOMER IS CHATTING WITH YOU ON WHATSAPP from the number +").append(externalId.replaceAll("\\D", "")).append(". NEVER ask for a phone number and NEVER ask about WhatsApp confirmation: this number is used for both and is filled in for you, and the customer's \"yes\" to the order summary is the confirmation. In your single message with the missing details ask only for the name, the full address (governorate included) and the payment method.\n");
         if (clientId != null) p.append(clientFacts(clientId));
         else p.append("The customer is a guest (not signed in): collect their name, phone and address from the chat; they will be saved as a customer of this shop.\n");
         var global = lessons(null);
@@ -464,7 +467,8 @@ public class ChatService {
             items.add(new CheckoutService.Item(vid, q));
         }
         String name = text(a, "customerName");
-        String phone = text(a, "phone");
+        boolean onWa = "WHATSAPP".equals(ctx.channel()) && ctx.externalId() != null && ctx.externalId().replaceAll("\\D", "").length() >= 8;
+        String phone = onWa ? "+" + ctx.externalId().replaceAll("\\D", "") : text(a, "phone");   // chatting on WhatsApp: that is their number, we never ask for one
         if (name == null || name.length() < 2) return obj("error", "Ask for the customer's name");
         if (phone == null || !MOBILE.matcher(phone.replace(" ", "")).matches()) return obj("error", "Ask for a valid mobile number (like 01012345678)");
         boolean pickup = Boolean.TRUE.equals(a.get("pickup"));
@@ -476,8 +480,8 @@ public class ChatService {
         if (!List.of("CASH_ON_DELIVERY", "CARD").contains(pm)) return obj("error", "Payment method must be CASH_ON_DELIVERY or CARD");
         if ("CARD".equals(pm) && !policy.cardEnabled()) return obj("error", "Card payment is not available; only cash on delivery. Tell the customer that.");
 
-        String waNumber = null;
-        if (shopWhatsapp(tenantId) != null) {
+        String waNumber = onWa ? phone : null;   // on WhatsApp the same number is used for the confirmation, and the customer's "yes" is the confirmation
+        if (!onWa && shopWhatsapp(tenantId) != null) {
             // The model must really ask in a message and the customer must answer in a later one: it cannot just tick "no" to get past this step.
             boolean asked = jdbc.sql("""
                     SELECT EXISTS (SELECT 1 FROM chat.messages q WHERE q.conversation_id = :c AND q.role = 'assistant' AND (q.content ILIKE '%واتساب%' OR q.content ILIKE '%whatsapp%' OR q.content ILIKE '%واتس%')
@@ -486,7 +490,7 @@ public class ChatService {
             if (!asked || !(a.get("whatsappConsent") instanceof Boolean))
                 return obj("error", "First ask the customer for the number «رقم تليفون عليه واتساب» (in the same single message as the name and address) and wait for their answer, then call prepare_order again with whatsappConsent=true and whatsappNumber, or whatsappConsent=false if they say they have no WhatsApp.");
         }
-        if (Boolean.TRUE.equals(a.get("whatsappConsent"))) {
+        if (!onWa && Boolean.TRUE.equals(a.get("whatsappConsent"))) {
             String raw = text(a, "whatsappNumber");
             if (raw == null || !MOBILE.matcher(raw.replace(" ", "")).matches()) return obj("error", "Ask for a valid WhatsApp mobile number (like 01012345678)");
             waNumber = PhoneNormalizer.normalize(raw.replace(" ", ""));
@@ -571,7 +575,10 @@ public class ChatService {
         Map<String, Object> o = obj("orderNumber", res.get("orderNumber"), "totalMinor", res.get("totalMinor"), "currency", res.get("currency"), "paymentMethod", p.get("paymentMethod"), "trackPath", track);
         if (res.get("checkoutUrl") != null) o.put("paymentPath", res.get("checkoutUrl"));
         if (shopWa != null) o.put("whatsappUrl", "https://wa.me/" + shopWa + "?text=" + java.net.URLEncoder.encode("تأكيد طلب #" + res.get("orderNumber"), java.nio.charset.StandardCharsets.UTF_8));
-        if (viaWhatsApp) o.put("whatsappConfirmed", true);
+        if (viaWhatsApp) {
+            o.put("whatsappConfirmed", true);
+            try { o.put("accountNotice", accountNotice.forOrder(ctx.tenantId(), (UUID) res.get("orderId"), true)); } catch (RuntimeException e) { log.debug("Account notice skipped", e); }   // confirmed on WhatsApp: the account is made now
+        }
         ctx.order()[0] = o;
         return obj("orderNumber", res.get("orderNumber"), "total", major(res.get("totalMinor")), "trackingLink", track, "paymentLink", res.get("checkoutUrl"),
                 "message", res.get("checkoutUrl") == null ? "Order placed. The shop will contact the customer to confirm." : "Order created and waiting for card payment: give the customer the paymentLink to complete it.");

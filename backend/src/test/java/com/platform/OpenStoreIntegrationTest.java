@@ -120,6 +120,7 @@ class OpenStoreIntegrationTest extends IntegrationTestBase {
 
     @Test
     void shopClientsSignInWithGoogleOrderAndReviewAcrossShops() throws Exception {
+        jdbc.sql("UPDATE commerce.client_accounts SET phone = NULL WHERE phone = '+201012345678'").update();   // a phone belongs to one account: free it from earlier runs
         Shop a = shop("Acct Tee " + uniq(), 20000), b = shop("Acct Hoodie " + uniq(), 50000);
         String sub = "g" + uniq();
         String token = openToken(sub);

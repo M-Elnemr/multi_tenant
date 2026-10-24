@@ -84,6 +84,8 @@ class _OrdersPageState extends State<OrdersPage> {
               Text(s.ar ? 'سجّل الدخول بجوجل لمتابعة كل طلباتك. يمكنك الطلب دون حساب.' : 'Sign in with Google to see all your orders. You can order without an account.', textAlign: TextAlign.center, style: TextStyle(color: cs.onSurfaceVariant)),
               const SizedBox(height: 12),
               GoogleSignInButton(api: api, onSignedIn: () => setState(() => refresh++)),
+              const SizedBox(height: 18),
+              PhoneSignIn(api: api, onSignedIn: () => setState(() => refresh++)),
             ]);
           }
           return Async<Map<String, dynamic>>(
@@ -92,6 +94,7 @@ class _OrdersPageState extends State<OrdersPage> {
               final orders = (data['data'] as List).cast<Map<String, dynamic>>();
               return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 _GenderPicker(api: api),
+                _PasswordCard(api: api),
                 if (orders.isEmpty) Center(child: Padding(padding: const EdgeInsets.all(12), child: Text(s.empty))) else Text(s.ar ? 'طلباتي' : 'My orders', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
                 for (final o in orders) Card(child: ListTile(
                   title: Text(o['orderNumber'] as String, style: const TextStyle(fontWeight: FontWeight.w800), textDirection: TextDirection.ltr, textAlign: TextAlign.start),
@@ -289,6 +292,143 @@ class _GenderPickerState extends State<_GenderPicker> {
         const SizedBox(width: 8),
         Expanded(child: ChoiceChip(label: Center(child: Text(ar ? 'أنثى' : 'Female')), selected: _gender == 'FEMALE', onSelected: (_) => _set('FEMALE'))),
       ]),
+    ])));
+  }
+}
+
+/// Phone and password: sign in, sign up (a code arrives on WhatsApp first, so only the owner of the number can create the account) and "forgot password".
+/// Customers who ordered through WhatsApp were already sent their number and a temporary password there.
+class PhoneSignIn extends StatefulWidget {
+  const PhoneSignIn({super.key, required this.api, required this.onSignedIn});
+  final ApiClient api;
+  final VoidCallback onSignedIn;
+  @override
+  State<PhoneSignIn> createState() => _PhoneSignInState();
+}
+
+class _PhoneSignInState extends State<PhoneSignIn> {
+  final _name = TextEditingController(), _phone = TextEditingController(), _password = TextEditingController(), _code = TextEditingController();
+  String _mode = 'login'; // login | register | forgot
+  bool _sent = false, _busy = false, _codes = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.api.get('auth/client/config').then((r) { if (mounted) setState(() => _codes = (r as Map)['phoneRegisterEnabled'] == true); }).catchError((_) {});
+  }
+
+  @override
+  void dispose() { for (final c in [_name, _phone, _password, _code]) { c.dispose(); } super.dispose(); }
+
+  Future<void> _run(Future<void> Function() f) async {
+    setState(() { _busy = true; _error = null; });
+    try { await f(); } catch (e) { if (mounted) setState(() => _error = errorText(e)); } finally { if (mounted) setState(() => _busy = false); }
+  }
+
+  Future<void> _signedIn(dynamic r) async { await widget.api.session.save(r as Map<String, dynamic>); widget.onSignedIn(); }
+
+  void _go(String m) => setState(() { _mode = m; _sent = false; _code.clear(); _password.clear(); _error = null; });
+
+  @override
+  Widget build(BuildContext context) {
+    final ar = S.of(context).ar;
+    final cs = Theme.of(context).colorScheme;
+    InputDecoration dec(String l, {String? hint}) => InputDecoration(labelText: l, hintText: hint, border: const OutlineInputBorder(), isDense: true);
+    return Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        ChoiceChip(label: Text(ar ? 'الدخول بالتليفون' : 'Sign in with phone'), selected: _mode == 'login', onSelected: (_) => _go('login')),
+        if (_codes) ...[const SizedBox(width: 8), ChoiceChip(label: Text(ar ? 'حساب جديد' : 'New account'), selected: _mode == 'register', onSelected: (_) => _go('register'))],
+      ]),
+      const SizedBox(height: 8),
+      Text(_mode == 'login' ? (ar ? 'رقم تليفونك وكلمة المرور. لو طلبت على واتساب، بعتنالك الاتنين هناك.' : 'Your phone and password. If you ordered on WhatsApp, we sent you both there.')
+          : _mode == 'register' ? (ar ? 'هنبعتلك كود على واتساب عشان نتأكد إن الرقم بتاعك.' : 'We send a code on WhatsApp to make sure the number is yours.') : (ar ? 'هنبعتلك كود على واتساب عشان تختار كلمة مرور جديدة.' : 'We send a code on WhatsApp so you can choose a new password.'),
+          textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+      const SizedBox(height: 10),
+      if (_mode == 'register' && !_sent) ...[TextField(controller: _name, decoration: dec(ar ? 'الاسم' : 'Name')), const SizedBox(height: 8)],
+      if (!_sent) ...[
+        TextField(controller: _phone, keyboardType: TextInputType.phone, textDirection: TextDirection.ltr, decoration: dec(ar ? 'رقم الموبايل' : 'Mobile number')),
+        const SizedBox(height: 8),
+      ],
+      if ((_mode == 'login' || _mode == 'register') && !_sent) ...[TextField(controller: _password, obscureText: true, decoration: dec(ar ? 'كلمة المرور (٨ حروف على الأقل)' : 'Password (8+ characters)')), const SizedBox(height: 8)],
+      if (_sent) ...[
+        Text(ar ? 'بعتنا كود من ٦ أرقام على واتساب بتاعك. شغال ١٠ دقايق.' : 'We sent a 6-digit code to your WhatsApp. It works for 10 minutes.', style: const TextStyle(color: Color(0xFF15803D), fontWeight: FontWeight.w700)),
+        const SizedBox(height: 8),
+        TextField(controller: _code, keyboardType: TextInputType.number, maxLength: 6, textDirection: TextDirection.ltr, decoration: dec(ar ? 'الكود' : 'The code')),
+        if (_mode == 'forgot') ...[const SizedBox(height: 8), TextField(controller: _password, obscureText: true, decoration: dec(ar ? 'كلمة المرور الجديدة (٨ حروف على الأقل)' : 'New password (8+ characters)'))],
+      ],
+      if (_error != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(_error!, style: TextStyle(color: cs.error))),
+      const SizedBox(height: 10),
+      FilledButton(
+        onPressed: _busy ? null : () => _run(() async {
+          if (_mode == 'login') {
+            await _signedIn(await widget.api.post('auth/client/login', {'phone': _phone.text.trim(), 'password': _password.text}));
+          } else if (!_sent) {
+            if (_mode == 'register') { await widget.api.post('auth/client/register', {'name': _name.text.trim(), 'phone': _phone.text.trim(), 'password': _password.text}); } else { await widget.api.post('auth/client/password/forgot', {'phone': _phone.text.trim()}); }
+            if (mounted) setState(() => _sent = true);
+          } else if (_mode == 'register') {
+            await _signedIn(await widget.api.post('auth/client/register/verify', {'phone': _phone.text.trim(), 'code': _code.text.trim()}));
+          } else {
+            await _signedIn(await widget.api.post('auth/client/password/reset', {'phone': _phone.text.trim(), 'code': _code.text.trim(), 'newPassword': _password.text}));
+          }
+        }),
+        child: Text(_mode == 'login' ? (ar ? 'دخول' : 'Sign in') : !_sent ? (ar ? 'ابعتلي الكود على واتساب' : 'Send me the code on WhatsApp') : _mode == 'register' ? (ar ? 'اعمل حسابي' : 'Create my account') : (ar ? 'احفظ كلمة المرور' : 'Save the password')),
+      ),
+      if (_mode == 'login' && _codes) TextButton(onPressed: () => _go('forgot'), child: Text(ar ? 'نسيت كلمة المرور؟' : 'Forgot password?')),
+      if (_mode == 'forgot' || _sent) TextButton(onPressed: () => _sent ? setState(() { _sent = false; _code.clear(); }) : _go('login'), child: Text(_sent ? (ar ? 'غيّر الرقم أو ابعت كود جديد' : 'Change the number or send a new code') : (ar ? 'رجوع' : 'Back'))),
+    ])));
+  }
+}
+
+/// Change the password: the temporary one sent on WhatsApp, or a first one for an account that signed up with Google.
+class _PasswordCard extends StatefulWidget {
+  const _PasswordCard({required this.api});
+  final ApiClient api;
+  @override
+  State<_PasswordCard> createState() => _PasswordCardState();
+}
+
+class _PasswordCardState extends State<_PasswordCard> {
+  final _current = TextEditingController(), _next = TextEditingController();
+  Map<String, dynamic>? _me;
+  String? _error;
+  bool _busy = false, _saved = false;
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  @override
+  void dispose() { _current.dispose(); _next.dispose(); super.dispose(); }
+
+  Future<void> _load() async {
+    try { final r = await widget.api.get('shop/me') as Map<String, dynamic>; if (mounted) setState(() => _me = r); } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ar = S.of(context).ar;
+    final me = _me;
+    if (me == null) return const SizedBox.shrink();
+    final must = me['mustChangePassword'] == true, has = me['hasPassword'] == true;
+    return Card(shape: must ? RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFFFCD34D), width: 2)) : null, child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Text(ar ? 'كلمة المرور' : 'Password', style: const TextStyle(fontWeight: FontWeight.w900)),
+      if (must) Padding(padding: const EdgeInsets.only(top: 4), child: Text(ar ? 'إنت بتستخدم كلمة المرور المؤقتة اللي بعتناها. اختار كلمة مرور خاصة بيك.' : 'You are using the temporary password we sent you. Please choose your own.', style: const TextStyle(color: Color(0xFF92400E), fontSize: 13))),
+      if (has) ...[const SizedBox(height: 8), TextField(controller: _current, obscureText: true, decoration: InputDecoration(labelText: ar ? 'كلمة المرور الحالية' : 'Current password', isDense: true, border: const OutlineInputBorder()))],
+      const SizedBox(height: 8),
+      TextField(controller: _next, obscureText: true, decoration: InputDecoration(labelText: ar ? 'كلمة المرور الجديدة (٨ حروف على الأقل)' : 'New password (8+ characters)', isDense: true, border: const OutlineInputBorder())),
+      if (_error != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error))),
+      if (_saved) Padding(padding: const EdgeInsets.only(top: 6), child: Text(ar ? 'تم الحفظ' : 'Saved', style: const TextStyle(color: Color(0xFF15803D)))),
+      const SizedBox(height: 8),
+      FilledButton(onPressed: _busy ? null : () async {
+        setState(() { _busy = true; _error = null; _saved = false; });
+        try {
+          final r = await widget.api.put('shop/me/password', {if (has) 'current': _current.text, 'newPassword': _next.text}) as Map<String, dynamic>;
+          await widget.api.session.save(r);
+          _current.clear(); _next.clear();
+          await _load();
+          if (mounted) setState(() => _saved = true);
+        } catch (e) { if (mounted) setState(() => _error = errorText(e)); } finally { if (mounted) setState(() => _busy = false); }
+      }, child: Text(ar ? 'حفظ' : 'Save')),
     ])));
   }
 }

@@ -40,6 +40,27 @@ function ProfileCard() {
   );
 }
 
+/** Change the password: the temporary one sent on WhatsApp, or set a first one for an account that signed up with Google. */
+function PasswordCard() {
+  const t = useT();
+  const me = useApi<{ mustChangePassword?: boolean; hasPassword?: boolean }>("shop/me");
+  const [f, setF] = useState({ current: "", next: "" });
+  const [saved, setSaved] = useState(false);
+  const save = useAction(async () => { await api("shop/me/password", { method: "PUT", body: { current: f.current || undefined, newPassword: f.next } }); setF({ current: "", next: "" }); setSaved(true); await me.reload(); });
+  if (!me.data) return null;
+  return (
+    <Card className={`mb-6 space-y-3 ${me.data.mustChangePassword ? "ring-2 ring-amber-300" : ""}`}>
+      <h2 className="font-medium">{t("account.password")}</h2>
+      {me.data.mustChangePassword && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{t("account.mustChange")}</p>}
+      <form onSubmit={(e) => { e.preventDefault(); setSaved(false); void save.run(); }} className="grid gap-3 sm:grid-cols-2">
+        {me.data.hasPassword && <Field label={t("account.currentPassword")}><Input type="password" autoComplete="current-password" value={f.current} onChange={(e) => setF({ ...f, current: e.target.value })} required /></Field>}
+        <Field label={t("account.newPassword")} hint={t("psi.passwordHint")}><Input type="password" autoComplete="new-password" minLength={8} value={f.next} onChange={(e) => setF({ ...f, next: e.target.value })} required /></Field>
+        <div className="sm:col-span-2"><ErrorText error={save.error} />{saved && <p className="text-sm text-emerald-700">{t("account.saved")}</p>}<Button type="submit" size="sm" loading={save.loading}>{t("common.save")}</Button></div>
+      </form>
+    </Card>
+  );
+}
+
 type Loyalty = { enabled: boolean; earnPercent: number; minRedeem: number; points: number; lifetimePoints: number };
 
 /** Points earned on delivered orders; turned into a one-time coupon on request. Only shown when the shop uses points. */
@@ -85,6 +106,7 @@ export default function Account() {
     <>
       <PageHeader title={t("account.title")} subtitle={me ? `${me.firstName} ${me.phone ? "· " + me.phone : ""}` : ""} actions={<><Link href="/orders" className="rounded-lg border bg-white px-3 py-2 text-sm">{t("orders.mine")}</Link><LogoutButton /></>} />
       <ProfileCard />
+      <PasswordCard />
       <LoyaltyCard />
       <div className="grid gap-6 md:grid-cols-2">
         <Card>

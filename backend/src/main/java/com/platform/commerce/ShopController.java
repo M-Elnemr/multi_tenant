@@ -39,8 +39,11 @@ public class ShopController {
     private final TranslationService translations;
     private final BlogService blog;
 
+    private final com.platform.core.auth.AccountAuthService accounts;
+
     public ShopController(CatalogService catalog, StoreSearchService search, TaxonomyService taxonomy, StoreFulfillmentService fulfilment, StoreSettingsService settings, com.platform.core.auth.LoginThrottle throttle, CheckoutService checkout,
-                          OrderService orders, ShopperService shopper, List<PaymentProvider> providers, WebhookEventStore webhooks, TranslationService translations, BlogService blog) {
+                          OrderService orders, ShopperService shopper, List<PaymentProvider> providers, WebhookEventStore webhooks, TranslationService translations, BlogService blog, com.platform.core.auth.AccountAuthService accounts) {
+        this.accounts = accounts;
         this.catalog = catalog;
         this.translations = translations;
         this.blog = blog;
@@ -225,6 +228,15 @@ public class ShopController {
     @PutMapping("/me")
     @PreAuthorize("hasRole('CUSTOMER')")
     public Map<String, Object> updateMe(@RequestBody ProfileRequest r, Authentication a) { return shopper.updateProfile((UUID) a.getPrincipal(), r.name(), r.phone(), r.gender()); }
+
+    public record PasswordRequest(String current, String newPassword) {}
+
+    /** The customer changes their password (the temporary one they were sent, or one they never had because they signed up with Google). */
+    @PutMapping("/me/password")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public com.platform.core.auth.TokenResponse changePassword(@RequestBody PasswordRequest r, Authentication a, jakarta.servlet.http.HttpServletRequest req) {
+        return accounts.changeClientPassword((UUID) a.getPrincipal(), r.current(), r.newPassword(), com.platform.shared.ClientInfo.ip(req), req.getHeader("User-Agent"));
+    }
 
     /** Deletes the signed-in client's account (login, contact details, addresses, wishlist, devices). Orders stay with the shops. */
     @DeleteMapping("/me")

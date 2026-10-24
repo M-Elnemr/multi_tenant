@@ -44,13 +44,14 @@ public class MetaChannelService {
     private final AuditService audit;
     private final WhatsAppConfirmService waConfirm;
     private final WaReportService waReport;
+    private final com.platform.commerce.GenderService genders;
     private final ProductShare share;
     private final String appSecret;
     private final String verifyToken;
     private final ExecutorService pool;
     private final java.util.concurrent.ScheduledExecutorService holder = Executors.newSingleThreadScheduledExecutor();
 
-    public MetaChannelService(JdbcClient jdbc, MetaGraph graph, TokenCrypto crypto, ChatService chat, LoginThrottle throttle, AuditService audit, WhatsAppConfirmService waConfirm, WaReportService waReport, ProductShare share,
+    public MetaChannelService(JdbcClient jdbc, MetaGraph graph, TokenCrypto crypto, ChatService chat, LoginThrottle throttle, AuditService audit, WhatsAppConfirmService waConfirm, WaReportService waReport, ProductShare share, com.platform.commerce.GenderService genders,
                               @Value("${app.meta.app-secret:}") String appSecret, @Value("${app.meta.verify-token:}") String verifyToken, @Value("${app.meta.async:true}") boolean async) {
         this.jdbc = jdbc;
         this.graph = graph;
@@ -61,6 +62,7 @@ public class MetaChannelService {
         this.waConfirm = waConfirm;
         this.waReport = waReport;
         this.share = share;
+        this.genders = genders;
         this.appSecret = appSecret == null || appSecret.isBlank() ? null : appSecret.trim();
         this.verifyToken = verifyToken == null || verifyToken.isBlank() ? null : verifyToken.trim();
         this.pool = async ? Executors.newFixedThreadPool(4) : null;
@@ -271,6 +273,7 @@ public class MetaChannelService {
                         var reply = chat.reply(tenantId, platform, sender, null, text.length() > 1000 ? text.substring(0, 1000) : text);
                         answer = reply.text();
                         cards = share.pick(tenantId, answer, reply.products());
+                        if (reply.order() != null && reply.order().get("accountNotice") instanceof String n && !n.isBlank()) answer += "\n\n" + n;
                         if (reply.order() != null && !Boolean.TRUE.equals(reply.order().get("test"))) answer += orderLinks(tenantId, reply.order());
                     } finally {
                         hold.cancel(false);
@@ -282,7 +285,7 @@ public class MetaChannelService {
             }
         }
         try {
-            for (String part : chunks(com.platform.shared.Gender.MALE.apply(answer), "INSTAGRAM".equals(platform) ? 900 : "WHATSAPP".equals(platform) ? 3500 : 1900)) send(platform, accountId, sender, token, part);
+            for (String part : chunks("WHATSAPP".equals(platform) ? genders.forPhone(tenantId, sender).apply(answer) : com.platform.shared.Gender.MALE.apply(answer), "INSTAGRAM".equals(platform) ? 900 : "WHATSAPP".equals(platform) ? 3500 : 1900)) send(platform, accountId, sender, token, part);
         } catch (MetaGraph.MetaException e) {
             log.warn("Could not send the {} reply: {}", platform, e.getMessage());
         }

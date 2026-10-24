@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -34,8 +35,10 @@ public class AccountAuthService {
     private final JwtProperties jwtProps;
     private final LoginThrottle throttle;
     private final GoogleIdTokenVerifier google;
+    private final PhoneOtpService otp;
 
-    public AccountAuthService(JdbcClient jdbc, PasswordEncoder encoder, JwtService jwt, JwtProperties jwtProps, LoginThrottle throttle, GoogleIdTokenVerifier google) {
+    public AccountAuthService(JdbcClient jdbc, PasswordEncoder encoder, JwtService jwt, JwtProperties jwtProps, LoginThrottle throttle, GoogleIdTokenVerifier google, PhoneOtpService otp) {
+        this.otp = otp;
         this.jdbc = jdbc;
         this.encoder = encoder;
         this.jwt = jwt;
@@ -45,6 +48,8 @@ public class AccountAuthService {
     }
 
     public String googleClientId() { return google.clientId(); }
+
+    public boolean codesAvailable() { return otp.available(); }
 
     /** Is this token allowed to act on this tenant's host? Patients only on a clinic they belong to, clients only on a store. */
     public boolean hasAccess(JwtService.Subject s, TenantContext.Current t) {
@@ -153,6 +158,120 @@ public class AccountAuthService {
         }
         return jdbc.sql("INSERT INTO commerce.client_accounts (google_sub, email, name, last_login_at) VALUES (:s, :e, :n, now()) RETURNING id")
                 .param("s", g.sub()).param("e", g.email()).param("n", g.name() == null ? "" : g.name()).query(UUID.class).single();
+    }
+
+    // ---- shop clients with a phone number and password ---------------------------------------------------------------
+
+    private static final String PW_ALPHABET = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+    private static String tempPassword() {
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < 10; i++) b.append(PW_ALPHABET.charAt(RANDOM.nextInt(PW_ALPHABET.length())));
+        return b.toString();
+    }
+
+    /** Orders and customer records that were made with this phone before the account existed now belong to the account (in every shop). */
+    private void linkByPhone(UUID accountId, String phone) {
+        jdbc.sql("UPDATE commerce.customers SET user_id = :a WHERE phone = :p AND user_id IS NULL").param("a", accountId).param("p", phone).update();
+        jdbc.sql("UPDATE commerce.orders SET user_id = :a WHERE customer_phone_snapshot = :p AND user_id IS NULL").param("a", accountId).param("p", phone).update();
+    }
+
+    public record Ensured(UUID id, boolean created, String tempPassword) {}
+
+    /**
+     * A customer confirmed an order on WhatsApp, which proves the phone is theirs: they get an account with a temporary password, or, when the phone already has
+     * one, nothing is created (their orders are attached to it). id is null when the account exists but is switched off.
+     */
+    @Transactional
+    public Ensured ensureClientForConfirmedPhone(String phone, String name) {
+        var existing = jdbc.sql("SELECT id, status FROM commerce.client_accounts WHERE phone = :p").param("p", phone).query().listOfRows().stream().findFirst().orElse(null);
+        if (existing != null) {
+            if (!"ACTIVE".equals(existing.get("status"))) return new Ensured(null, false, null);
+            UUID id = (UUID) existing.get("id");
+            linkByPhone(id, phone);
+            return new Ensured(id, false, null);
+        }
+        String pw = tempPassword();
+        UUID id = jdbc.sql("INSERT INTO commerce.client_accounts (name, phone, password_hash, phone_verified_at, must_change_password, created_via) VALUES (:n, :p, :h, now(), TRUE, 'WHATSAPP') RETURNING id")
+                .param("n", name == null ? "" : name.trim()).param("p", phone).param("h", encoder.encode(pw)).query(UUID.class).single();
+        linkByPhone(id, phone);
+        return new Ensured(id, true, pw);
+    }
+
+    /** Step 1 of signing up: validate, then send a code on WhatsApp. Nothing is created until the code is entered. */
+    public void clientRegister(String name, String phone, String password, String ip) {
+        validatePassword(password);
+        if (name == null || name.trim().length() < 2) throw BusinessException.badRequest("VALIDATION_ERROR", "Your name is required");
+        String p = PhoneNormalizer.normalize(phone);
+        if (jdbc.sql("SELECT count(*) FROM commerce.client_accounts WHERE phone = :p").param("p", p).query(Long.class).single() > 0)
+            throw BusinessException.conflict("ACCOUNT_EXISTS", "This phone already has an account: sign in, or reset the password");
+        otp.request(p, "REGISTER", Map.of("name", name.trim(), "hash", encoder.encode(password)), ip);
+    }
+
+    /** Step 2: the code proves the phone; the account is created and signed in. */
+    @Transactional(noRollbackFor = BusinessException.class)   // a wrong code must still count as a try
+    public TokenResponse clientRegisterVerify(String phone, String code, TenantContext.Current tenant, String ip, String ua) {
+        requireOpen(tenant);
+        String p = PhoneNormalizer.normalize(phone);
+        throttle.check("otp-verify|" + p, 10, Duration.ofMinutes(10));
+        var payload = otp.verify(p, "REGISTER", code);
+        if (jdbc.sql("SELECT count(*) FROM commerce.client_accounts WHERE phone = :p").param("p", p).query(Long.class).single() > 0)
+            throw BusinessException.conflict("ACCOUNT_EXISTS", "This phone already has an account: sign in, or reset the password");
+        UUID id = jdbc.sql("INSERT INTO commerce.client_accounts (name, phone, password_hash, phone_verified_at, created_via, last_login_at) VALUES (:n, :p, :h, now(), 'REGISTER', now()) RETURNING id")
+                .param("n", String.valueOf(payload.get("name"))).param("p", p).param("h", String.valueOf(payload.get("hash"))).query(UUID.class).single();
+        linkByPhone(id, p);
+        return issue("CLIENT", id, ip, ua);
+    }
+
+    @Transactional
+    public TokenResponse clientPhoneLogin(String phone, String password, TenantContext.Current tenant, String ip, String ua) {
+        requireOpen(tenant);
+        if (tenant != null && !"STORE".equals(tenant.type())) throw BusinessException.notFound("TENANT_NOT_FOUND", "Not available here");
+        String p;
+        try { p = PhoneNormalizer.normalize(phone); } catch (BusinessException e) { throw BusinessException.unauthorized("INVALID_CREDENTIALS", "Wrong phone or password"); }
+        throttle.check("client-login|" + p, 8, Duration.ofMinutes(10));
+        throttle.check("client-login-ip|" + ip, 30, Duration.ofMinutes(10));
+        var row = jdbc.sql("SELECT id, password_hash, status FROM commerce.client_accounts WHERE phone = :p").param("p", p).query().listOfRows().stream().findFirst().orElse(null);
+        if (row == null || row.get("password_hash") == null || !encoder.matches(password == null ? "" : password, (String) row.get("password_hash")))
+            throw BusinessException.unauthorized("INVALID_CREDENTIALS", "Wrong phone or password");
+        if (!"ACTIVE".equals(row.get("status"))) throw BusinessException.forbidden("ACCOUNT_DISABLED", "Account is not active");
+        UUID id = (UUID) row.get("id");
+        jdbc.sql("UPDATE commerce.client_accounts SET last_login_at = now() WHERE id = :u").param("u", id).update();
+        return issue("CLIENT", id, ip, ua);
+    }
+
+    /** "Forgot password": a code on WhatsApp for a phone that has an account. The answer is the same whether or not the phone has one, so nobody can probe for accounts. */
+    public void clientForgot(String phone, String ip) {
+        String p;
+        try { p = PhoneNormalizer.normalize(phone); } catch (BusinessException e) { return; }
+        throttle.check("otp-ip|" + ip, 10, Duration.ofMinutes(10));
+        if (jdbc.sql("SELECT count(*) FROM commerce.client_accounts WHERE phone = :p AND status = 'ACTIVE'").param("p", p).query(Long.class).single() == 0) return;
+        otp.request(p, "RESET", null, ip);
+    }
+
+    @Transactional(noRollbackFor = BusinessException.class)
+    public TokenResponse clientReset(String phone, String code, String newPassword, TenantContext.Current tenant, String ip, String ua) {
+        requireOpen(tenant);
+        validatePassword(newPassword);
+        String p = PhoneNormalizer.normalize(phone);
+        throttle.check("otp-verify|" + p, 10, Duration.ofMinutes(10));
+        otp.verify(p, "RESET", code);
+        UUID id = jdbc.sql("SELECT id FROM commerce.client_accounts WHERE phone = :p AND status = 'ACTIVE'").param("p", p).query(UUID.class).optional().orElseThrow(() -> BusinessException.badRequest("INVALID_CODE", "The code is wrong or expired"));
+        jdbc.sql("UPDATE commerce.client_accounts SET password_hash = :h, must_change_password = FALSE, phone_verified_at = coalesce(phone_verified_at, now()) WHERE id = :u").param("h", encoder.encode(newPassword)).param("u", id).update();
+        jdbc.sql("UPDATE core.user_sessions SET revoked_at = now() WHERE user_id = :u AND revoked_at IS NULL").param("u", id).update();
+        return issue("CLIENT", id, ip, ua);
+    }
+
+    @Transactional(noRollbackFor = BusinessException.class)
+    public TokenResponse changeClientPassword(UUID id, String current, String newPassword, String ip, String ua) {
+        throttle.check("chgpw|" + id, 5, Duration.ofMinutes(10));
+        validatePassword(newPassword);
+        String hash = jdbc.sql("SELECT password_hash FROM commerce.client_accounts WHERE id = :u").param("u", id).query(String.class).optional().orElse(null);
+        // an account that signed up with Google has no password yet: it may set one without a current one
+        if (hash != null && !encoder.matches(current == null ? "" : current, hash)) throw BusinessException.unauthorized("INVALID_CREDENTIALS", "Current password is wrong");
+        if (hash != null && encoder.matches(newPassword, hash)) throw BusinessException.badRequest("PASSWORD_UNCHANGED", "Choose a password different from the current one");
+        jdbc.sql("UPDATE commerce.client_accounts SET password_hash = :h, must_change_password = FALSE WHERE id = :u").param("h", encoder.encode(newPassword)).param("u", id).update();
+        return issue("CLIENT", id, ip, ua);
     }
 
     // ---- shared ------------------------------------------------------------------------------------------------

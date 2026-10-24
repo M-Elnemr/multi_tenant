@@ -63,7 +63,7 @@ public class ShopperService {
     }
 
     public Map<String, Object> profile(UUID clientId) {
-        return Rows.camel(jdbc.sql("SELECT id, name, phone, email, gender FROM commerce.client_accounts WHERE id = :u").param("u", clientId).query().listOfRows().stream().findFirst()
+        return Rows.camel(jdbc.sql("SELECT id, name, phone, email, gender, must_change_password, (password_hash IS NOT NULL) AS has_password FROM commerce.client_accounts WHERE id = :u").param("u", clientId).query().listOfRows().stream().findFirst()
                 .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Account not found")));
     }
 
@@ -76,7 +76,11 @@ public class ShopperService {
     @Transactional
     public Map<String, Object> updateProfile(UUID clientId, String name, String phone) {
         String p = phone == null || phone.isBlank() ? null : com.platform.shared.PhoneNormalizer.normalize(phone);
-        jdbc.sql("UPDATE commerce.client_accounts SET name = coalesce(nullif(btrim(:n), ''), name), phone = coalesce(:p, phone) WHERE id = :u").param("n", name).param("p", p).param("u", clientId).update();
+        try {
+            jdbc.sql("UPDATE commerce.client_accounts SET name = coalesce(nullif(btrim(:n), ''), name), phone = coalesce(:p, phone) WHERE id = :u").param("n", name).param("p", p).param("u", clientId).update();
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            throw BusinessException.conflict("PHONE_TAKEN", "Another account already uses this phone number");
+        }
         return profile(clientId);
     }
 

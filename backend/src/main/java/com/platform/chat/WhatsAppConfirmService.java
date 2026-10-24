@@ -22,12 +22,14 @@ public class WhatsAppConfirmService {
     private static final Pattern STOP = Pattern.compile("^(ايقاف|وقف|الغاء الاشتراك|الغاء|stop|unsubscribe|cancel)$", Pattern.CASE_INSENSITIVE);
     private static final Pattern ASK = Pattern.compile("^(?:تاكيد|confirm)\\s*(?:طلب|الطلب|الاوردر|order)?\\s*#?\\s*([a-z0-9][a-z0-9-]{2,40})$", Pattern.CASE_INSENSITIVE);
 
+    private final AccountNotice accountNotice;
     private final com.platform.commerce.GenderService genders;
     private final JdbcClient jdbc;
     private final ChatService chat;
     private final AuditService audit;
 
-    public WhatsAppConfirmService(JdbcClient jdbc, ChatService chat, AuditService audit, com.platform.commerce.GenderService genders) {
+    public WhatsAppConfirmService(JdbcClient jdbc, ChatService chat, AuditService audit, com.platform.commerce.GenderService genders, @org.springframework.context.annotation.Lazy AccountNotice accountNotice) {
+        this.accountNotice = accountNotice;
         this.genders = genders;
         this.jdbc = jdbc;
         this.chat = chat;
@@ -82,7 +84,7 @@ public class WhatsAppConfirmService {
     }
 
     /** The customer tapped Confirm (or we are sure they agree): confirm the order now and say so, with the order summary. */
-    String confirmNow(UUID tenantId, String sender, String orderNumber, boolean arabic) { return g(tenantId, sender, confirmNowRaw(tenantId, sender, orderNumber, arabic), arabic); }
+    public String confirmNow(UUID tenantId, String sender, String orderNumber, boolean arabic) { return g(tenantId, sender, confirmNowRaw(tenantId, sender, orderNumber, arabic), arabic); }
 
     /** Arabic texts carry {masculine|feminine} pairs; the customer's gender picks one side. */
     private String g(UUID tenantId, String sender, String text, boolean arabic) { return arabic ? genders.forPhone(tenantId, sender).apply(text) : text; }
@@ -99,7 +101,18 @@ public class WhatsAppConfirmService {
         jdbc.sql("UPDATE commerce.orders SET confirmed_at = coalesce(confirmed_at, now()), whatsapp_confirmed_at = now(), whatsapp_number = coalesce(whatsapp_number, :w), whatsapp_opt_in_at = coalesce(whatsapp_opt_in_at, now()), updated_at = now() WHERE id = :o AND tenant_id = :t").param("o", id).param("t", tenantId).param("w", "+" + digits(sender)).update();
         audit.record(null, tenantId, "ORDER_CONFIRMED_WHATSAPP", "order", id, null);
         return (arabic ? "تم تأكيد طلبك رقم " + o.get("order_number") + " ✅\n" : "Order " + o.get("order_number") + " is confirmed ✅\n") + summary
-                + (arabic ? "\nهنجهزه ونتواصل {معاك|معاكي} للتسليم. شكراً لثقتك 🌸" : "\nWe will prepare it and contact you for delivery. Thank you!");
+                + (arabic ? "\nهنجهزه ونتواصل {معاك|معاكي} للتسليم. شكراً لثقتك 🌸" : "\nWe will prepare it and contact you for delivery. Thank you!")
+                + notice(tenantId, id, arabic);
+    }
+
+    /** The account message that follows a confirmation on WhatsApp (empty when there is nothing to say). */
+    private String notice(UUID tenantId, UUID orderId, boolean arabic) {
+        try {
+            String n = accountNotice.forOrder(tenantId, orderId, arabic);
+            return n.isBlank() ? "" : "\n\n" + n;
+        } catch (RuntimeException e) {
+            return "";   // the order is confirmed either way; the account message is a courtesy
+        }
     }
 
     /** Items, total and address of an order as plain text. */
@@ -153,6 +166,7 @@ public class WhatsAppConfirmService {
             return arabic ? "تعذر تأكيد هذا الطلب." : "This order could not be confirmed.";
         jdbc.sql("UPDATE commerce.orders SET confirmed_at = coalesce(confirmed_at, now()), whatsapp_confirmed_at = now(), whatsapp_number = coalesce(whatsapp_number, :w), whatsapp_opt_in_at = coalesce(whatsapp_opt_in_at, now()), updated_at = now() WHERE id = :o AND tenant_id = :t").param("o", orderId).param("t", tenantId).param("w", "+" + digits(sender)).update();
         audit.record(null, tenantId, "ORDER_CONFIRMED_WHATSAPP", "order", orderId, null);
-        return arabic ? "تم تأكيد طلبك رقم " + o.get("order_number") + " ✅\nهنجهزه ونتواصل {معاك|معاكي} للتسليم. شكراً لثقتك 🌸" : "Order " + o.get("order_number") + " is confirmed ✅\nWe will prepare it and contact you for delivery. Thank you!";
+        return (arabic ? "تم تأكيد طلبك رقم " + o.get("order_number") + " ✅\nهنجهزه ونتواصل {معاك|معاكي} للتسليم. شكراً لثقتك 🌸" : "Order " + o.get("order_number") + " is confirmed ✅\nWe will prepare it and contact you for delivery. Thank you!")
+                + notice(tenantId, orderId, arabic);
     }
 }
