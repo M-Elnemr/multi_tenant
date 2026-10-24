@@ -21,6 +21,11 @@ services:
       APP_MARKETING_VIDEO_DIR: /app/uploads/reels
       DB_POOL_SIZE: "6"
       DB_POOL_MIN_IDLE: "1"
+      AI_PROVIDER: ${AI_PROVIDER:-gemini}
+      GEMINI_MODELS: ${GEMINI_MODELS:-gemini-3-flash-preview,gemini-flash-lite-latest,gemini-3.1-flash-lite}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-6-luna}
+      OPENAI_REASONING_EFFORT: ${OPENAI_REASONING_EFFORT:-none}
       EVOLUTION_BASE_URL: ${EVOLUTION_BASE_URL:-}
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-}
       EVOLUTION_WEBHOOK_SECRET: ${EVOLUTION_WEBHOOK_SECRET:-}
