@@ -3,6 +3,7 @@ import 'package:platform_core/platform_core.dart';
 
 import 'common.dart';
 import 'forms.dart';
+import 'templates.dart';
 
 const _govs = <(String, String, String)>[
   ('CAI', 'القاهرة', 'Cairo'), ('GIZ', 'الجيزة', 'Giza'), ('ALX', 'الإسكندرية', 'Alexandria'), ('QLY', 'القليوبية', 'Qalyubia'), ('SHR', 'الشرقية', 'Sharqia'),
@@ -282,6 +283,7 @@ class StoreSettings extends StatelessWidget {
       ),
       if (manage) _StoreCategories(ctx: ctx),
       if (manage) brandingCard(ctx),
+      if (manage) TemplateCard(ctx: ctx),
       if (ship) _PaymentMethods(ctx: ctx),
       if (ship) _ShippingMethods(ctx: ctx),
       if (ship) _Zones(ctx: ctx),

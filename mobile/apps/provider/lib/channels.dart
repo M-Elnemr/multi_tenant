@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:platform_core/platform_core.dart';
 
 import 'common.dart';
+import 'plan.dart';
 import 'campaign.dart';
 import 'connect.dart';
 import 'forms.dart';
@@ -416,9 +417,9 @@ class _MarketingScreenState extends State<MarketingScreen> {
             if (ctx.canWrite('marketing')) FilledButton.icon(onPressed: () => connectMeta(context, ctx), icon: const Icon(Icons.facebook_rounded), label: Text(ar ? 'اربط فيسبوك وإنستجرام' : 'Connect Facebook and Instagram')),
           ]);
         }
-        return DefaultTabController(length: 2, child: Column(children: [
-          TabBar(tabs: [Tab(text: ar ? 'المنشورات' : 'Posts'), Tab(text: ar ? 'الحملات' : 'Campaigns')]),
-          Expanded(child: TabBarView(children: [_Posts(ctx: ctx, ov: ov), _Campaigns(ctx: ctx, ov: ov)])),
+        return DefaultTabController(length: 4, child: Column(children: [
+          TabBar(isScrollable: true, tabAlignment: TabAlignment.start, tabs: [Tab(text: ar ? 'المنشورات' : 'Posts'), Tab(text: ar ? 'خطة الأسبوع' : 'Weekly plan'), Tab(text: ar ? 'الحملات' : 'Campaigns'), Tab(text: ar ? 'الطيار الآلي' : 'Autopilot')]),
+          Expanded(child: TabBarView(children: [_Posts(ctx: ctx, ov: ov), PlanTab(ctx: ctx), _Campaigns(ctx: ctx, ov: ov), AutopilotTab(ctx: ctx)])),
         ]));
       },
     ));

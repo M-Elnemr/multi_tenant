@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:platform_core/platform_core.dart';
 
 import 'clinic_panel.dart';
+import 'copilot.dart';
 import 'admin.dart';
 import 'common.dart';
 import 'dashboards.dart';
@@ -52,6 +53,7 @@ List<PanelSection> storeSections() => [
       PanelSection('العملاء', 'Customers', Icons.people_alt_rounded, screen: 'customers', build: (c) => CustomersScreen(ctx: c)),
       PanelSection('الكوبونات', 'Coupons', Icons.local_offer_rounded, screen: 'coupons', build: (c) => CouponsScreen(ctx: c)),
       PanelSection('التقييمات', 'Reviews', Icons.star_rounded, screen: 'reviews', build: (c) => ReviewsScreen(ctx: c)),
+      PanelSection('اسأل نشاطك', 'Ask your business', Icons.auto_awesome_rounded, perm: 'copilot.use', build: (c) => CopilotScreen(ctx: c)),
       PanelSection('التسويق', 'Marketing', Icons.campaign_rounded, screen: 'marketing', build: (c) => MarketingScreen(ctx: c)),
       PanelSection('الإعدادات', 'Settings', Icons.settings_rounded, screen: 'settings', build: (c) => StoreSettings(ctx: c)),
       PanelSection('النطاقات', 'Domains', Icons.language_rounded, screen: 'domains', build: (c) => DomainsScreen(ctx: c)),
