@@ -46,9 +46,10 @@ public class RetailController {
     private final BlogService blog;
     private final TranslationService translations;
     private final MarketService market;
+    private final ReturnService returns;
 
     public RetailController(PurchasingService purchasing, InventoryService inventory, PosService pos, InvoiceService invoices, ExportService exports, ReportsPlusService reports,
-                            ApiKeyService keys, WebhookService webhooks, BlogService blog, TranslationService translations, MarketService market) {
+                            ApiKeyService keys, WebhookService webhooks, BlogService blog, TranslationService translations, MarketService market, ReturnService returns) {
         this.purchasing = purchasing;
         this.inventory = inventory;
         this.pos = pos;
@@ -60,6 +61,7 @@ public class RetailController {
         this.blog = blog;
         this.translations = translations;
         this.market = market;
+        this.returns = returns;
     }
 
     private static UUID user(Authentication a) { return (UUID) a.getPrincipal(); }
@@ -139,6 +141,23 @@ public class RetailController {
     @PreAuthorize("hasAuthority('pos.use') or hasAuthority('product.update')")
     public List<Map<String, Object>> labels(@RequestParam(required = false) String q) { return pos.labels(t(), q); }
 
+    @GetMapping("/pos/search")
+    @PreAuthorize(POS)
+    public List<Map<String, Object>> search(@RequestParam(required = false) String q, @RequestParam(required = false) Integer limit) { return pos.search(t(), q, limit == null ? 30 : limit); }
+
+    @GetMapping("/pos/returns/order")
+    @PreAuthorize(POS)
+    public Map<String, Object> returnOrder(@RequestParam String q) { return returns.findOrder(t(), q); }
+
+    @PostMapping("/pos/returns")
+    @PreAuthorize("hasAuthority('pos.use') and hasAuthority('refund.create')")
+    @ResponseStatus(HttpStatus.CREATED)
+    public Map<String, Object> createReturn(@RequestBody ReturnService.ReturnReq r, Authentication a) { return returns.create(t(), user(a), r); }
+
+    @GetMapping("/pos/returns")
+    @PreAuthorize(POS)
+    public List<Map<String, Object>> recentReturns() { return returns.recent(t()); }
+
     @GetMapping("/pos/today")
     @PreAuthorize(POS)
     public Map<String, Object> today() { return pos.today(t()); }
@@ -178,6 +197,10 @@ public class RetailController {
     @GetMapping("/export/customers.csv")
     @PreAuthorize(REPORT)
     public ResponseEntity<byte[]> exportCustomers() { return csv("customers.csv", exports.customers(t())); }
+
+    @GetMapping("/reports/overview")
+    @PreAuthorize(REPORT)
+    public Map<String, Object> overview(@RequestParam(required = false, defaultValue = "30") int days) { return reports.overview(t(), days); }
 
     @GetMapping("/reports/margin")
     @PreAuthorize(REPORT)

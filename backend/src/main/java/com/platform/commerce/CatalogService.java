@@ -119,11 +119,11 @@ public class CatalogService {
                 variantId = jdbc.sql("""
                         INSERT INTO commerce.product_variants (tenant_id, product_id, sku, barcode, price_minor, compare_at_price_minor, weight_grams, combo_key)
                         VALUES (:t, :p, :sku, :bc, :pr, :cp, :w, :ck) RETURNING id
-                        """).param("t", tenantId).param("p", productId).param("sku", v.sku().trim()).param("bc", v.barcode())
+                        """).param("t", tenantId).param("p", productId).param("sku", v.sku().trim()).param("bc", cleanBarcode(v.barcode()))
                         .param("pr", v.priceMinor()).param("cp", v.compareAtPriceMinor()).param("w", v.weightGrams()).param("ck", combo)
                         .query(UUID.class).single();
             } catch (DuplicateKeyException e) {
-                throw BusinessException.conflict("SKU_TAKEN", "SKU already exists: " + v.sku());
+                throw duplicate(e, v.sku(), v.barcode());
             }
             if (v.optionValues() != null)
                 for (var e : v.optionValues().entrySet())
@@ -312,9 +312,12 @@ public class CatalogService {
             throw BusinessException.badRequest("VALIDATION_ERROR", "A product without options has exactly one variant");
         Set<String> seen = new HashSet<>();
         Set<String> skus = new HashSet<>();
+        Set<String> barcodes = new HashSet<>();
         for (VariantReq v : variants) {
             if (v.sku() == null || v.sku().isBlank()) throw BusinessException.badRequest("VALIDATION_ERROR", "SKU is required");
             if (!skus.add(v.sku().trim())) throw BusinessException.conflict("SKU_TAKEN", "Duplicate SKU " + v.sku());
+            String bc = cleanBarcode(v.barcode());
+            if (bc != null && !barcodes.add(bc)) throw BusinessException.conflict("BARCODE_TAKEN", "Duplicate barcode " + bc);
             if (v.priceMinor() < 0) throw BusinessException.badRequest("VALIDATION_ERROR", "Price cannot be negative");
             if (!seen.add(comboKey(options, v.optionValues())))
                 throw BusinessException.badRequest("DUPLICATE_VARIANT", "Two variants have the same option combination");
@@ -362,15 +365,39 @@ public class CatalogService {
     }
 
     @Transactional
-    public void updateVariant(UUID tenantId, UUID actor, UUID variantId, Long priceMinor, Long compareAt, String status) {
+    public void updateVariant(UUID tenantId, UUID actor, UUID variantId, Long priceMinor, Long compareAt, String status, String barcode, String sku) {
         requireOwned("commerce.product_variants", variantId, tenantId);
         if (priceMinor != null && priceMinor < 0) throw BusinessException.badRequest("VALIDATION_ERROR", "Price cannot be negative");
-        jdbc.sql("""
-                UPDATE commerce.product_variants SET price_minor = coalesce(:p, price_minor),
-                       compare_at_price_minor = coalesce(:c, compare_at_price_minor), status = coalesce(:s, status), updated_at = now()
-                WHERE id = :i AND tenant_id = :t
-                """).param("p", priceMinor).param("c", compareAt).param("s", status).param("i", variantId).param("t", tenantId).update();
+        if (sku != null && sku.isBlank()) throw BusinessException.badRequest("VALIDATION_ERROR", "SKU cannot be empty");
+        // barcode: null leaves it, an empty text clears it, anything else sets it
+        boolean setBarcode = barcode != null;
+        String bc = setBarcode ? cleanBarcode(barcode) : null;
+        try {
+            jdbc.sql("""
+                    UPDATE commerce.product_variants SET price_minor = coalesce(:p, price_minor),
+                           compare_at_price_minor = coalesce(:c, compare_at_price_minor), status = coalesce(:s, status),
+                           sku = coalesce(:sku, sku), barcode = CASE WHEN :sb THEN CAST(:bc AS varchar) ELSE barcode END, updated_at = now()
+                    WHERE id = :i AND tenant_id = :t
+                    """).param("p", priceMinor).param("c", compareAt).param("s", status).param("sku", sku == null ? null : sku.trim()).param("sb", setBarcode).param("bc", bc)
+                    .param("i", variantId).param("t", tenantId).update();
+        } catch (DuplicateKeyException e) {
+            throw duplicate(e, sku, bc);
+        }
         audit.record(actor, tenantId, "PRODUCT_UPDATED", "product_variant", variantId, null);
+    }
+
+    /** A barcode is kept as typed or scanned, without spaces; an empty one means none. */
+    static String cleanBarcode(String raw) {
+        if (raw == null) return null;
+        String b = raw.replaceAll("\\s+", "");
+        if (b.length() > 80) throw BusinessException.badRequest("VALIDATION_ERROR", "The barcode is too long");
+        return b.isEmpty() ? null : b;
+    }
+
+    private static BusinessException duplicate(DuplicateKeyException e, String sku, String barcode) {
+        String m = String.valueOf(e.getMessage());
+        if (m.contains("uq_variant_barcode")) return BusinessException.conflict("BARCODE_TAKEN", "Barcode already used: " + barcode);
+        return BusinessException.conflict("SKU_TAKEN", "SKU already exists: " + sku);
     }
 
     /** Products are never hard-deleted (orders keep snapshots; history stays intact): DELETE archives. */

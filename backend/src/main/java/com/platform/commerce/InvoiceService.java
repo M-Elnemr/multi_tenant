@@ -87,6 +87,27 @@ public class InvoiceService {
         return get(t, id);
     }
 
+    /**
+     * The credit note of one return: only the pieces that came back, at the price they were sold for. The order's invoice is issued first when it does not exist yet
+     * (a counter sale never asked for one), because a credit note always refers to an invoice.
+     */
+    @Transactional
+    public Map<String, Object> creditNoteForReturn(UUID t, UUID actor, UUID orderId, UUID returnId, List<Map<String, Object>> lines, long amountMinor, String reason) {
+        var inv = jdbc.sql("SELECT * FROM commerce.invoices WHERE order_id = :o AND kind = 'INVOICE'").param("o", orderId).query().listOfRows().stream().findFirst().orElse(null);
+        if (inv == null) { issue(t, actor, orderId); inv = jdbc.sql("SELECT * FROM commerce.invoices WHERE order_id = :o AND kind = 'INVOICE'").param("o", orderId).query().listOfRows().stream().findFirst().orElseThrow(); }
+        double pct = inv.get("vat_percent") instanceof Number n ? n.doubleValue() : 0;
+        boolean included = !Boolean.FALSE.equals(inv.get("vat_included"));
+        long vat = pct > 0 && included ? Math.round(amountMinor * pct / (100 + pct)) : 0;
+        UUID id = jdbc.sql("""
+                INSERT INTO commerce.invoices (tenant_id, number, kind, order_id, related_invoice_id, return_id, currency, subtotal_minor, discount_minor, shipping_minor, total_minor, vat_percent, vat_minor, vat_included, seller_name, seller_tax_id, seller_address, buyer_name, buyer_phone, buyer_address, lines, reason, created_by)
+                SELECT tenant_id, :n, 'CREDIT_NOTE', order_id, id, :rid, currency, :amt, 0, 0, :amt, vat_percent, :vat, vat_included, seller_name, seller_tax_id, seller_address, buyer_name, buyer_phone, buyer_address, CAST(:lines AS jsonb), :r, :u
+                FROM commerce.invoices WHERE id = :i RETURNING id
+                """).param("n", number(t, "CN", "CN")).param("rid", returnId).param("amt", amountMinor).param("vat", vat).param("lines", json(lines))
+                .param("r", reason).param("u", actor).param("i", inv.get("id")).query(UUID.class).single();
+        audit.record(actor, t, "CREDIT_NOTE_ISSUED", "invoice", id, null);
+        return get(t, id);
+    }
+
     @SuppressWarnings("unchecked")
     private static String buyerAddress(Map<String, Object> o) {
         StringBuilder b = new StringBuilder();

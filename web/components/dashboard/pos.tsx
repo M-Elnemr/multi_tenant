@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/client";
 import { money } from "@/lib/format";
-import { useAction, useApi } from "../hooks";
+import { useAction, useApi, useMe } from "../hooks";
 import { useI18n } from "../i18n-provider";
-import { Alert, Button, Card, ErrorText, Field, Input, Select } from "../ui";
+import { Alert, Button, Card, ErrorText, Field, Input, Select, Tabs } from "../ui";
+import PosReturn from "./pos-return";
+import { finePointer, ProductPicker, useWedgeScanner, type Found } from "./pos-picker";
 
-type Found = { variantId: string; name: string; variantLabel?: string | null; priceMinor: number; currency: string; available: number };
 type Line = Found & { qty: number };
 type Done = { orderId: string; orderNumber: string; totalMinor: number; currency: string; paymentMethod: string; lines: Line[]; discountMinor: number };
 type Today = { sales: number; totalMinor: number };
@@ -17,9 +18,22 @@ type DetectorCtor = new (o?: { formats: string[] }) => Detector;
 
 /** Counter sales: scan a product label (QR or barcode) with the camera, a USB scanner or by typing, take the money, print the receipt. */
 export default function Pos() {
+  const { can } = useMe();
+  const { t } = useI18n();
+  const [tab, setTab] = useState<"sell" | "return">("sell");
+  const canReturn = can("refund.create");
+  return (
+    <>
+      {canReturn && <div className="mb-4"><Tabs tabs={[{ key: "sell", label: t("pos.tabSell") }, { key: "return", label: t("pos.tabReturn") }]} value={tab} onChange={setTab} /></div>}
+      {tab === "return" && canReturn ? <PosReturn /> : <Sell />}
+    </>
+  );
+}
+
+function Sell() {
   const { t, locale, currency } = useI18n();
   const [lines, setLines] = useState<Line[]>([]);
-  const [code, setCode] = useState("");
+  const scanBox = useRef<HTMLInputElement>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [discount, setDiscount] = useState("");
   const [method, setMethod] = useState("CASH");
@@ -31,18 +45,17 @@ export default function Pos() {
   const last = useRef<{ code: string; at: number }>({ code: "", at: 0 });
   const video = useRef<HTMLVideoElement>(null);
 
-  const scan = useAction(async (raw: string) => {
-    const c = raw.trim();
-    if (!c) return;
+  const add = useCallback((f: Found) => {
     setMsg(null);
-    const f = await api<Found>(`store/pos/lookup?code=${encodeURIComponent(c)}`);
     setLines((cur) => {
       const i = cur.findIndex((l) => l.variantId === f.variantId);
       if (i >= 0) return cur.map((l, k) => (k === i ? { ...l, qty: Math.min(l.qty + 1, Math.max(1, l.available)) } : l));
       return [...cur, { ...f, qty: 1 }];
     });
-    setCode("");
-  });
+  }, []);
+  const lookup = async (raw: string) => { add(await api<Found>(`store/pos/lookup?code=${encodeURIComponent(raw.trim())}`)); };
+  const scan = useAction(async (raw: string) => { const c = raw.trim(); if (c) await lookup(c); });
+  useWedgeScanner((c) => void scan.run(c), !done);
   const scanRef = useRef(scan.run);
   useEffect(() => { scanRef.current = scan.run; });
 
@@ -86,6 +99,7 @@ export default function Pos() {
     setDone({ ...r, lines, discountMinor: disc });
     setLines([]); setDiscount(""); setPhone(""); setName("");
     await today.reload();
+    if (finePointer()) setTimeout(() => scanBox.current?.focus(), 50);
   });
 
   if (done) {
@@ -104,11 +118,11 @@ export default function Pos() {
     <div className="grid min-w-0 gap-5 lg:grid-cols-5">
       <div className="min-w-0 space-y-4 lg:col-span-3">
         <Card className="space-y-3">
-          <form onSubmit={(e) => { e.preventDefault(); void scan.run(code); }} className="flex flex-wrap gap-2">
-            <input autoFocus value={code} onChange={(e) => setCode(e.target.value)} placeholder={t("pos.scanHint")} dir="ltr" className="w-full min-w-0 flex-1 basis-40 rounded-xl border px-3 py-2.5 text-sm outline-none focus:border-brand" />
-            <Button loading={scan.loading}>{t("pos.add")}</Button>
+          <div className="flex flex-wrap items-start gap-2">
+            <ProductPicker inputRef={scanBox} onPick={add} onCode={lookup} />
             <Button type="button" variant="secondary" onClick={() => setCamera(!camera)}>{camera ? t("pos.cameraOff") : t("pos.cameraOn")}</Button>
-          </form>
+          </div>
+          <p className="text-xs text-slate-500">{t("pos.scannerHint")}</p>
           {camera && (supported ? <video ref={video} playsInline muted className="aspect-video w-full max-w-md rounded-xl bg-black object-cover" /> : <Alert tone="amber">{t("pos.noDetector")}</Alert>)}
           <ErrorText error={scan.error} />
           {msg && <Alert tone="amber">{msg}</Alert>}

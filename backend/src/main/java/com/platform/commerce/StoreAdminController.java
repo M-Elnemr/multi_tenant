@@ -34,7 +34,7 @@ public class StoreAdminController {
     }
 
     public record ProductPatch(String name, String description, String shortDescription, String brand, Integer taxonomyId, String audience, String condition, String status) {}
-    public record VariantPatch(Long priceMinor, Long compareAtPriceMinor, String status) {}
+    public record VariantPatch(Long priceMinor, Long compareAtPriceMinor, String status, String barcode, String sku) {}
     public record AdjustRequest(UUID branchId, UUID variantId, int delta, String type, String reason) {}
     public record StatusRequest(String status, String reason) {}
     public record RefundRequest(long amountMinor, String reason) {}
@@ -139,7 +139,7 @@ public class StoreAdminController {
     @PatchMapping("/variants/{id}")
     @PreAuthorize("hasAuthority('product.update')")
     public Map<String, Object> updateVariant(@PathVariable UUID id, @RequestBody VariantPatch r, Authentication a) {
-        catalog.updateVariant(StoreContext.tenantId(), user(a), id, r.priceMinor(), r.compareAtPriceMinor(), r.status());
+        catalog.updateVariant(StoreContext.tenantId(), user(a), id, r.priceMinor(), r.compareAtPriceMinor(), r.status(), r.barcode(), r.sku());
         return Map.of("ok", true);
     }
 
@@ -167,8 +167,8 @@ public class StoreAdminController {
     @GetMapping("/orders")
     @PreAuthorize("hasAuthority('order.read')")
     public Map<String, Object> orders(@RequestParam(required = false) String status, @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize,
-                                      @RequestParam(required = false) Boolean unconfirmed, @RequestParam(required = false) String governorate, @RequestParam(required = false) String q) {
-        return orders.list(StoreContext.tenantId(), Page.of(page, pageSize), status, null, unconfirmed, governorate, q);
+                                      @RequestParam(required = false) Boolean unconfirmed, @RequestParam(required = false) String governorate, @RequestParam(required = false) String q, @RequestParam(required = false) String channel) {
+        return orders.list(StoreContext.tenantId(), Page.of(page, pageSize), status, null, unconfirmed, governorate, q, channel);
     }
 
     /** Counter for the dashboard badge: new orders nobody has called yet. */

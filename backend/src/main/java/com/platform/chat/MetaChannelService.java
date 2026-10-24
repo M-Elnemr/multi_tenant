@@ -84,7 +84,14 @@ public class MetaChannelService {
         String name;
         String phone = null;
         try {
-            Map<String, Object> info = graph.get(ext + ("WHATSAPP".equals(p) ? "?fields=verified_name,display_phone_number" : "?fields=id,name,username"), token);
+            Map<String, Object> info;
+            if ("FACEBOOK".equals(p)) {
+                // A Page token reads its own page through /me, which needs no extra permission (reading the page node by id asks for pages_read_engagement).
+                info = graph.get("me?fields=id,name", token);
+                if (info.get("id") != null && !ext.equals(String.valueOf(info.get("id")))) throw BusinessException.badRequest("META_TOKEN_NOT_PAGE", "The token does not belong to this page");
+            } else {
+                info = graph.get(ext + ("WHATSAPP".equals(p) ? "?fields=verified_name,display_phone_number" : "?fields=id,name,username"), token);
+            }
             name = String.valueOf(info.getOrDefault("verified_name", info.getOrDefault("name", info.getOrDefault("username", ext))));
             if ("WHATSAPP".equals(p) && info.get("display_phone_number") != null) { phone = String.valueOf(info.get("display_phone_number")); name += " " + phone; }
             String subscribeTo = "FACEBOOK".equals(p) ? ext : (pageId == null || pageId.isBlank() ? null : pageId.trim());   // Instagram: its linked page; WhatsApp: its business account
@@ -92,7 +99,10 @@ public class MetaChannelService {
                 try { graph.post(subscribeTo + "/subscribed_apps", token, "WHATSAPP".equals(p) ? Map.of() : Map.of("subscribed_fields", "messages")); } catch (MetaGraph.MetaException e) { log.warn("Could not subscribe {} to webhooks: {}", subscribeTo, e.getMessage()); }
             }
         } catch (MetaGraph.MetaException e) {
-            throw BusinessException.badRequest("META_REJECTED", "Meta did not accept these details: " + e.getMessage());
+            String m = e.getMessage() == null ? "" : e.getMessage();
+            if (e.code() == 190) throw BusinessException.badRequest("META_TOKEN_EXPIRED", "The token is invalid or expired");
+            if (m.contains("pages_read_engagement") || m.contains("Page Public") || m.contains("permission")) throw BusinessException.badRequest("META_MISSING_PERMISSION", "Meta needs a Page access token with the messaging permission: " + m);
+            throw BusinessException.badRequest("META_REJECTED", "Meta did not accept these details: " + m);
         }
         var owner = jdbc.sql("SELECT tenant_id FROM chat.channels WHERE platform = :p AND external_id = :e").param("p", p).param("e", ext).query(UUID.class).optional();
         if (owner.isPresent() && !owner.get().equals(tenantId)) throw BusinessException.conflict("CHANNEL_TAKEN", "This account is already connected to another shop");
@@ -180,6 +190,45 @@ public class MetaChannelService {
     public WaChannel whatsappChannel(UUID tenantId) {
         var r = jdbc.sql("SELECT external_id, token_enc, waba_id, phone FROM chat.channels WHERE tenant_id = :t AND platform = 'WHATSAPP' AND status = 'ACTIVE' ORDER BY created_at LIMIT 1").param("t", tenantId).query().listOfRows().stream().findFirst().orElse(null);
         return r == null ? null : new WaChannel((String) r.get("external_id"), crypto.decrypt((String) r.get("token_enc")), (String) r.get("waba_id"), (String) r.get("phone"));
+    }
+
+    /** Saves the WhatsApp Business Account id after checking with Meta that it owns the connected phone number. */
+    public Map<String, Object> setWaba(UUID tenantId, UUID actor, String wabaId) {
+        String id = wabaId == null ? "" : wabaId.trim();
+        if (!id.matches("\\d{5,40}")) throw BusinessException.badRequest("VALIDATION_ERROR", "The id is a number of 15 digits or so");
+        WaChannel ch = whatsappChannel(tenantId);
+        if (ch == null) throw BusinessException.badRequest("NO_CHANNEL", "Connect WhatsApp first");
+        try {
+            Map<String, Object> phones = graph.get(id + "/phone_numbers?fields=id&limit=50", ch.token());
+            boolean owns = phones.get("data") instanceof List<?> l && l.stream().anyMatch(x -> x instanceof Map<?, ?> m && ch.phoneId().equals(String.valueOf(m.get("id"))));
+            if (!owns) throw BusinessException.badRequest("WABA_MISMATCH", "This account does not own the connected WhatsApp number");
+        } catch (MetaGraph.MetaException e) {
+            throw BusinessException.badRequest("META_REJECTED", "Meta did not accept these details: " + e.getMessage());
+        }
+        jdbc.sql("UPDATE chat.channels SET waba_id = :w WHERE tenant_id = :t AND platform = 'WHATSAPP' AND external_id = :e").param("w", id).param("t", tenantId).param("e", ch.phoneId()).update();
+        audit.record(actor, tenantId, "AI_CHANNEL_WABA_SET", "ai_channel", null, null);
+        return Map.of("wabaId", id);
+    }
+
+    /** Looks the account up from the connected number, so the owner does not have to find it in Meta's screens. */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> detectWaba(UUID tenantId, UUID actor) {
+        WaChannel ch = whatsappChannel(tenantId);
+        if (ch == null) throw BusinessException.badRequest("NO_CHANNEL", "Connect WhatsApp first");
+        try {
+            Map<String, Object> biz = graph.get("me/businesses?fields=owned_whatsapp_business_accounts{id,phone_numbers{id}}&limit=25", ch.token());
+            for (Object b : (List<Object>) biz.getOrDefault("data", List.of())) {
+                if (!(((Map<String, Object>) b).get("owned_whatsapp_business_accounts") instanceof Map<?, ?> wm) || !(wm.get("data") instanceof List<?> wl)) continue;
+                for (Object w : wl) {
+                    Map<String, Object> waba = (Map<String, Object>) w;
+                    if (waba.get("phone_numbers") instanceof Map<?, ?> pm && pm.get("data") instanceof List<?> pl && pl.stream().anyMatch(x -> x instanceof Map<?, ?> m && ch.phoneId().equals(String.valueOf(m.get("id")))))
+                        return setWaba(tenantId, actor, String.valueOf(waba.get("id")));
+                }
+            }
+        } catch (MetaGraph.MetaException e) {
+            log.debug("WABA lookup failed: {}", e.getMessage());
+        }
+        throw BusinessException.notFound("WABA_NOT_FOUND", "We could not find the account automatically");
     }
 
     public record WaChannel(String phoneId, String token, String wabaId, String phone) {}

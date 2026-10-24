@@ -45,7 +45,8 @@ public class HttpMetaGraph implements MetaGraph {
             if (res.statusCode() / 100 != 2) {
                 Object err = out.get("error");
                 String msg = err instanceof Map<?, ?> m && m.get("message") != null ? String.valueOf(m.get("message")) : "HTTP " + res.statusCode();
-                throw new MetaException(msg);
+                int code = err instanceof Map<?, ?> m2 && m2.get("code") instanceof Number n ? n.intValue() : 0;
+                throw new MetaException(msg, code);
             }
             return out;
         } catch (MetaException e) {

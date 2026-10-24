@@ -534,6 +534,8 @@ public class ChatService {
         } catch (BusinessException e) {
             return obj("error", e.getMessage());
         }
+        String orderChannel = switch (String.valueOf(ctx.channel())) { case "FACEBOOK", "INSTAGRAM", "WHATSAPP" -> ctx.channel(); default -> "WEBSITE"; };
+        jdbc.sql("UPDATE commerce.orders SET channel = :ch WHERE id = :o").param("ch", orderChannel).param("o", res.get("orderId")).update();
         jdbc.sql("UPDATE chat.conversations SET pending = NULL, last_order = :o WHERE id = :c").param("o", String.valueOf(res.get("orderNumber"))).param("c", ctx.conversationId()).update();
         if (ctx.clientId() != null && !pickup) rememberAddress(ctx.clientId(), addr);
         String waNumber = (String) p.get("whatsapp");

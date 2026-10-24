@@ -1,5 +1,6 @@
 // ignore_for_file: use_build_context_synchronously, prefer_const_constructors
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:platform_core/platform_core.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -24,6 +25,22 @@ const _reasons = {
 };
 
 /// A small chip on an order row when cash-on-delivery risk is high or medium.
+/// Where an order came from: website, Facebook, Instagram, WhatsApp, the till or elsewhere.
+const Map<String, List<String>> kChannels = {
+  'WEBSITE': ['الموقع', 'Website'], 'FACEBOOK': ['فيسبوك', 'Facebook'], 'INSTAGRAM': ['إنستجرام', 'Instagram'], 'WHATSAPP': ['واتساب', 'WhatsApp'], 'POS': ['نقطة البيع', 'Point of sale'], 'OTHER': ['أخرى', 'Other'],
+};
+const Map<String, Color> _channelColors = {'WEBSITE': Color(0xFFE0F2FE), 'FACEBOOK': Color(0xFFDBEAFE), 'INSTAGRAM': Color(0xFFFCE7F3), 'WHATSAPP': Color(0xFFD1FAE5), 'POS': Color(0xFFFEF3C7), 'OTHER': Color(0xFFF1F5F9)};
+const Map<String, IconData> _channelIcons = {'WEBSITE': Icons.language_rounded, 'FACEBOOK': Icons.facebook_rounded, 'INSTAGRAM': Icons.photo_camera_rounded, 'WHATSAPP': Icons.chat_rounded, 'POS': Icons.point_of_sale_rounded, 'OTHER': Icons.more_horiz_rounded};
+
+Widget channelChip(Map<String, dynamic> o, bool ar) {
+  final c = kChannels.containsKey(o['channel']) ? o['channel'] as String : 'OTHER';
+  return Chip(
+    visualDensity: VisualDensity.compact, padding: EdgeInsets.zero, backgroundColor: _channelColors[c],
+    avatar: Icon(_channelIcons[c], size: 14, color: Colors.black87),
+    label: Text(kChannels[c]![ar ? 0 : 1], style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.black87)),
+  );
+}
+
 Widget riskChip(Map<String, dynamic> o, bool ar) {
   final level = o['riskLevel'];
   if ((level != 'HIGH' && level != 'MEDIUM') || o['paymentMethod'] != 'CASH_ON_DELIVERY') return const SizedBox.shrink();
@@ -146,6 +163,7 @@ class InvoicesScreen extends StatelessWidget {
 
 // ---- point of sale -------------------------------------------------------------------------------------------------------
 
+/// The till: a Sell tab and, for people who may refund, a Return tab.
 class PosScreen extends StatefulWidget {
   const PosScreen({super.key, required this.ctx});
   final Ctx ctx;
@@ -154,6 +172,66 @@ class PosScreen extends StatefulWidget {
 }
 
 class _PosScreenState extends State<PosScreen> {
+  int _tab = 0;
+  @override
+  Widget build(BuildContext context) {
+    final ar = S.of(context).ar;
+    final canReturn = widget.ctx.can('refund.create');
+    return Column(children: [
+      if (canReturn) Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 0), child: SegmentedButton<int>(
+        segments: [ButtonSegment(value: 0, label: Text(ar ? 'بيع' : 'Sell'), icon: const Icon(Icons.point_of_sale_rounded)), ButtonSegment(value: 1, label: Text(ar ? 'مرتجع' : 'Return'), icon: const Icon(Icons.assignment_return_rounded))],
+        selected: {_tab}, onSelectionChanged: (v) => setState(() => _tab = v.first))),
+      Expanded(child: _tab == 1 && canReturn ? _ReturnView(ctx: widget.ctx) : _SellView(ctx: widget.ctx)),
+    ]);
+  }
+}
+
+/// A code from a label QR (the product address with ?v=SKU) or a plain barcode / SKU: the part that identifies the product.
+String _codeKey(String raw) {
+  final c = raw.trim();
+  if (c.startsWith('http')) { final v = Uri.tryParse(c)?.queryParameters['v']; if (v != null && v.isNotEmpty) return v; }
+  return c;
+}
+
+/// A laser (keyboard-wedge) scanner types the code very fast and ends with Enter. This listens for that burst when no text box has focus.
+/// Slow typing is ignored. It is removed with the screen.
+class _WedgeListener {
+  _WedgeListener(this.onCode) { HardwareKeyboard.instance.addHandler(_handle); }
+  final void Function(String code) onCode;
+  String _buf = '';
+  DateTime _last = DateTime.fromMillisecondsSinceEpoch(0);
+
+  bool _typing() => FocusManager.instance.primaryFocus?.context?.findAncestorWidgetOfExactType<EditableText>() != null;
+
+  bool _handle(KeyEvent e) {
+    if (e is! KeyDownEvent || _typing()) return false;
+    final now = DateTime.now();
+    if (e.logicalKey == LogicalKeyboardKey.enter || e.logicalKey == LogicalKeyboardKey.numpadEnter) {
+      final code = _buf;
+      _buf = '';
+      if (code.length >= 4) { onCode(code); return true; }
+      return false;
+    }
+    final ch = e.character;
+    if (ch == null || ch.length != 1) return false;
+    _buf = now.difference(_last).inMilliseconds > 80 ? ch : _buf + ch;   // a person is slower than 80 ms per key
+    _last = now;
+    return false;
+  }
+
+  void dispose() => HardwareKeyboard.instance.removeHandler(_handle);
+}
+
+class _SellView extends StatefulWidget {
+  const _SellView({required this.ctx});
+  final Ctx ctx;
+  @override
+  State<_SellView> createState() => _SellViewState();
+}
+
+class _SellViewState extends State<_SellView> {
+  _WedgeListener? _wedge;
+  final _focus = FocusNode();
   final _code = TextEditingController(), _discount = TextEditingController(), _phone = TextEditingController(), _name = TextEditingController();
   final _lines = <Map<String, dynamic>>[];
   String _method = 'CASH';
@@ -162,20 +240,39 @@ class _PosScreenState extends State<PosScreen> {
   int _gen = 0;
 
   @override
-  void dispose() { for (final c in [_code, _discount, _phone, _name]) { c.dispose(); } super.dispose(); }
+  void initState() { super.initState(); _wedge = _WedgeListener((c) { if (mounted && _done == null) _scan(c); }); }
 
-  Future<void> _scan(String raw) async {
-    final c = raw.trim();
+  @override
+  void dispose() { _wedge?.dispose(); _focus.dispose(); for (final c in [_code, _discount, _phone, _name]) { c.dispose(); } super.dispose(); }
+
+  /// Adds a product the cashier picked from the list (or found by scanning).
+  void _add(Map<String, dynamic> f) {
+    setState(() {
+      final i = _lines.indexWhere((l) => l['variantId'] == f['variantId']);
+      if (i >= 0) { _lines[i]['qty'] = ((_lines[i]['qty'] as int) + 1).clamp(1, ((f['available'] as num?) ?? 1).toInt().clamp(1, 1000)); } else { _lines.add({...f, 'qty': 1}); }
+      _code.clear();
+    });
+  }
+
+  /// Typed text + Enter, or a scanner: an exact barcode / SKU / label address; when nothing matches exactly but exactly one product matches the text, that one.
+  Future<void> _submitText(String raw) async {
+    final c = _codeKey(raw);
     if (c.isEmpty) return;
     Map<String, dynamic>? f;
-    if (await run(context, () async { f = await widget.ctx.api.get('store/pos/lookup', query: {'code': c}) as Map<String, dynamic>; }) && f != null && mounted) {
-      setState(() {
-        final i = _lines.indexWhere((l) => l['variantId'] == f!['variantId']);
-        if (i >= 0) { _lines[i]['qty'] = ((_lines[i]['qty'] as int) + 1).clamp(1, ((f!['available'] as num?) ?? 1).toInt().clamp(1, 1000)); } else { _lines.add({...f!, 'qty': 1}); }
-        _code.clear();
-      });
+    try { f = await widget.ctx.api.get('store/pos/lookup', query: {'code': c}) as Map<String, dynamic>; } catch (_) {
+      final r = _maps(await widget.ctx.api.get('store/pos/search', query: {'q': c, 'limit': '2'}));
+      if (r.length == 1) f = r.first;
     }
+    if (!mounted) return;
+    if (f == null) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(S.of(context).ar ? 'مفيش منتج بالكود ده' : 'No product matches'))); return; }
+    _add(f);
   }
+
+  Future<Iterable<Map<String, dynamic>>> _options(String q) async {
+    try { return _maps(await widget.ctx.api.get('store/pos/search', query: {'q': q.trim(), 'limit': '30'})); } catch (_) { return const []; }
+  }
+
+  Future<void> _scan(String raw) => _submitText(raw);
 
   num get _subtotal => _lines.fold<num>(0, (n, l) => n + (l['priceMinor'] as num) * (l['qty'] as int));
 
@@ -191,7 +288,7 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   Future<void> _camera() async {
-    final code = await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => const _CodeScanPage()));
+    final code = await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => const CodeScanPage()));
     if (code != null) await _scan(code);
   }
 
@@ -220,7 +317,25 @@ class _PosScreenState extends State<PosScreen> {
       backgroundColor: Colors.transparent,
       body: ListView(padding: const EdgeInsets.all(16), children: [
         Row(children: [
-          Expanded(child: TextField(controller: _code, textDirection: TextDirection.ltr, textInputAction: TextInputAction.done, onSubmitted: _scan, decoration: InputDecoration(labelText: ar ? 'امسح أو اكتب الكود' : 'Scan or type the code', isDense: true, suffixIcon: IconButton(icon: const Icon(Icons.add_rounded), onPressed: () => _scan(_code.text))))),
+          Expanded(child: LayoutBuilder(builder: (context, box) => RawAutocomplete<Map<String, dynamic>>(
+            textEditingController: _code, focusNode: _focus,
+            optionsBuilder: (v) => _options(v.text),
+            displayStringForOption: (o) => '${o['name']}',
+            onSelected: (o) { _add(o); _focus.requestFocus(); },
+            fieldViewBuilder: (c, ctrl, node, submit) => TextField(controller: ctrl, focusNode: node, textInputAction: TextInputAction.done, onSubmitted: _submitText,
+                decoration: InputDecoration(labelText: ar ? 'اكتب اسم المنتج أو الكود، أو امسح الباركود' : 'Type a name or code, or scan the barcode', isDense: true, prefixIcon: const Icon(Icons.search_rounded), suffixIcon: IconButton(icon: const Icon(Icons.arrow_drop_down_rounded), onPressed: node.requestFocus))),
+            optionsViewBuilder: (c, onSelected, options) => Align(alignment: AlignmentDirectional.topStart, child: Material(elevation: 6, borderRadius: BorderRadius.circular(14), child: ConstrainedBox(constraints: BoxConstraints(maxHeight: 300, maxWidth: box.maxWidth), child: ListView.builder(
+              padding: EdgeInsets.zero, shrinkWrap: true, itemCount: options.length,
+              itemBuilder: (c, i) {
+                final o = options.elementAt(i);
+                final out = ((o['available'] as num?) ?? 0) <= 0;
+                return ListTile(dense: true, enabled: true, onTap: () => onSelected(o),
+                  title: Text('${o['name']}${o['variantLabel'] != null ? ' · ${o['variantLabel']}' : ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w700, color: out ? Colors.grey : null)),
+                  subtitle: Text('${o['sku'] ?? ''}${o['barcode'] != null ? ' · ${o['barcode']}' : ''}', textDirection: TextDirection.ltr, textAlign: TextAlign.start),
+                  trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [Text(S.of(c).money(o['priceMinor'] as num, '${o['currency']}'), style: const TextStyle(fontWeight: FontWeight.w800)), Text('${ar ? 'مخزون' : 'stock'} ${o['available']}', style: const TextStyle(fontSize: 11))]));
+              },
+            )))),
+          ))),
           const SizedBox(width: 8),
           IconButton.filled(onPressed: _camera, icon: const Icon(Icons.qr_code_scanner_rounded)),
         ]),
@@ -252,13 +367,127 @@ class _PosScreenState extends State<PosScreen> {
   }
 }
 
-class _CodeScanPage extends StatefulWidget {
-  const _CodeScanPage();
+/// Returns by item: find the order by its number, scan each piece that came back (or tap +), and only those pieces go back to stock and are refunded.
+class _ReturnView extends StatefulWidget {
+  const _ReturnView({required this.ctx});
+  final Ctx ctx;
   @override
-  State<_CodeScanPage> createState() => _CodeScanPageState();
+  State<_ReturnView> createState() => _ReturnViewState();
 }
 
-class _CodeScanPageState extends State<_CodeScanPage> {
+class _ReturnViewState extends State<_ReturnView> {
+  final _q = TextEditingController(), _reason = TextEditingController();
+  Map<String, dynamic>? _order;
+  final _take = <String, int>{};
+  Map<String, dynamic>? _result;
+  bool _busy = false;
+  _WedgeListener? _wedge;
+
+  @override
+  void initState() { super.initState(); _wedge = _WedgeListener(_scanned); }
+
+  @override
+  void dispose() { _wedge?.dispose(); _q.dispose(); _reason.dispose(); super.dispose(); }
+
+  List<Map<String, dynamic>> get _items => _maps(_order?['items']);
+
+  void _bump(Map<String, dynamic> l, int by) {
+    final id = '${l['orderItemId']}';
+    setState(() => _take[id] = ((_take[id] ?? 0) + by).clamp(0, (l['returnable'] as num).toInt()));
+  }
+
+  void _scanned(String raw) {
+    if (_order == null || !mounted) return;
+    final key = _codeKey(raw);
+    final ar = S.of(context).ar;
+    final l = _items.where((x) => x['barcode'] == key || x['sku'] == key).cast<Map<String, dynamic>?>().firstWhere((_) => true, orElse: () => null);
+    String? msg;
+    if (l == null) { msg = ar ? 'المنتج ده مش ضمن الطلب' : 'This product is not in the order'; }
+    else if ((_take['${l['orderItemId']}'] ?? 0) >= (l['returnable'] as num).toInt()) { msg = ar ? 'كل القطع اتحسبت بالفعل' : 'All pieces are already counted'; }
+    else { _bump(l, 1); }
+    if (msg != null) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  Future<void> _find() async {
+    final q = _q.text.trim();
+    if (q.length < 3) return;
+    Map<String, dynamic>? o;
+    if (await run(context, () async { o = await widget.ctx.api.get('store/pos/returns/order', query: {'q': q}) as Map<String, dynamic>; }) && mounted) {
+      setState(() { _order = o; _take.clear(); _result = null; });
+    }
+  }
+
+  Future<void> _camera() async {
+    final code = await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => const CodeScanPage()));
+    if (code != null) _scanned(code);
+  }
+
+  num get _value => _items.fold<num>(0, (n, l) => n + (l['unitMinor'] as num) * (_take['${l['orderItemId']}'] ?? 0));
+  bool get _any => _take.values.any((v) => v > 0);
+
+  Future<void> _submit() async {
+    setState(() => _busy = true);
+    Map<String, dynamic>? r;
+    final ok = await run(context, () async {
+      r = await widget.ctx.api.post('store/pos/returns', {'orderId': _order!['id'], if (_reason.text.trim().isNotEmpty) 'reason': _reason.text.trim(), 'items': [for (final e in _take.entries) if (e.value > 0) {'orderItemId': e.key, 'quantity': e.value}]}) as Map<String, dynamic>;
+    });
+    if (!mounted) return;
+    setState(() { _busy = false; if (ok) { _result = r; _order = null; _take.clear(); _reason.clear(); _q.clear(); } });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    final ar = s.ar;
+    final cur = '${_order?['currency'] ?? widget.ctx.currency}';
+    return ListView(padding: const EdgeInsets.all(16), children: [
+      Row(children: [
+        Expanded(child: TextField(controller: _q, textDirection: TextDirection.ltr, textInputAction: TextInputAction.search, onSubmitted: (_) => _find(), decoration: InputDecoration(labelText: ar ? 'رقم الطلب (مثال POS-20261024-000001)' : 'Order number (e.g. POS-20261024-000001)', isDense: true))),
+        const SizedBox(width: 8),
+        IconButton.filled(onPressed: _find, icon: const Icon(Icons.search_rounded)),
+      ]),
+      if (_result != null) Card(color: const Color(0xFFDCFCE7), child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(ar ? 'تم تسجيل المرتجع. المخزون رجع والإشعار الدائن جاهز.' : 'Return recorded. Stock is back and the credit note is ready.', style: const TextStyle(fontWeight: FontWeight.w800)),
+        const SizedBox(height: 4),
+        Text('${ar ? 'المبلغ المسترد' : 'Refunded'}: ${s.money((_result!['refundMinor'] as num?) ?? 0, widget.ctx.currency)}${_result!['orderFullyReturned'] == true ? (ar ? ' · الطلب كله مرتجع' : ' · whole order returned') : ''}'),
+        Text('${(_result!['creditNote'] as Map?)?['number'] ?? ''}', textDirection: TextDirection.ltr),
+      ]))),
+      if (_order != null) ...[
+        const SizedBox(height: 10),
+        Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [Expanded(child: Text('${_order!['orderNumber']}', textDirection: TextDirection.ltr, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17))), IconButton(onPressed: _camera, icon: const Icon(Icons.qr_code_scanner_rounded))]),
+          Text('${_order!['customerNameSnapshot']} · ${s.money(_order!['totalMinor'] as num, cur)}'),
+          if (_order!['canReturn'] != true) Padding(padding: const EdgeInsets.only(top: 8), child: Text(ar ? 'الإرجاع للطلبات المسلّمة اللي لسه فيها قطع.' : 'Only delivered orders with pieces left can have items returned.', style: const TextStyle(color: Color(0xFFB45309), fontWeight: FontWeight.w700)))
+          else Padding(padding: const EdgeInsets.only(top: 6), child: Text(ar ? 'امسح كل قطعة رجعت أو اضغط +' : 'Scan each returned piece, or tap +', style: const TextStyle(color: Color(0xFF6B7C8D)))),
+        ]))),
+        for (final l in _items) Card(child: ListTile(
+          title: Text('${l['name']}${l['variantName'] != null ? ' · ${l['variantName']}' : ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800)),
+          subtitle: Text('${l['sku']}${l['barcode'] != null ? ' · ${l['barcode']}' : ''}\n${ar ? 'اتباع' : 'Sold'} ${l['quantity']} · ${ar ? 'رجع' : 'returned'} ${l['returned']} · ${s.money(l['unitMinor'] as num, cur)}', textDirection: TextDirection.ltr, textAlign: TextAlign.start),
+          isThreeLine: true,
+          trailing: _order!['canReturn'] == true && (l['returnable'] as num) > 0 ? Row(mainAxisSize: MainAxisSize.min, children: [
+            IconButton(icon: const Icon(Icons.remove_circle_outline), onPressed: () => _bump(l, -1)),
+            Text('${_take['${l['orderItemId']}'] ?? 0}', style: const TextStyle(fontWeight: FontWeight.w900)),
+            IconButton(icon: const Icon(Icons.add_circle_outline), onPressed: () => _bump(l, 1)),
+          ]) : null,
+        )),
+        if (_order!['canReturn'] == true) ...[
+          const SizedBox(height: 8),
+          TextField(controller: _reason, decoration: InputDecoration(labelText: ar ? 'السبب (اختياري)' : 'Reason (optional)', isDense: true)),
+          const SizedBox(height: 12),
+          FilledButton(onPressed: _busy || !_any ? null : _submit, child: Text('${ar ? 'رجّع واسترد' : 'Return and refund'} ${s.money(_value, cur)}')),
+        ],
+      ],
+    ]);
+  }
+}
+
+class CodeScanPage extends StatefulWidget {
+  const CodeScanPage({super.key});
+  @override
+  State<CodeScanPage> createState() => CodeScanPageState();
+}
+
+class CodeScanPageState extends State<CodeScanPage> {
   final _c = MobileScannerController(formats: const [BarcodeFormat.qrCode, BarcodeFormat.ean13, BarcodeFormat.ean8, BarcodeFormat.code128, BarcodeFormat.upcA], detectionSpeed: DetectionSpeed.noDuplicates);
   bool _done = false;
 
@@ -392,40 +621,153 @@ class _PurchasingScreenState extends State<PurchasingScreen> {
 
 // ---- reports -------------------------------------------------------------------------------------------------------------
 
-class ReportsScreen extends StatelessWidget {
+/// Report centre: one period for every tab, the previous period beside each total, a revenue chart and the splits by channel, payment, area and product.
+class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key, required this.ctx});
   final Ctx ctx;
+  @override
+  State<ReportsScreen> createState() => _ReportsScreenState();
+}
+
+class _ReportsScreenState extends State<ReportsScreen> {
+  int _days = 30;
+  String _tab = 'overview';
+
+  static const _tabs = {'overview': ['نظرة عامة', 'Overview'], 'sales': ['المبيعات', 'Sales'], 'products': ['المنتجات', 'Products'], 'customers': ['العملاء', 'Customers'], 'operations': ['التشغيل', 'Operations']};
+  static const _pay = {'CASH_ON_DELIVERY': ['الدفع عند الاستلام', 'Cash on delivery'], 'CARD': ['بطاقة', 'Card'], 'CASH': ['كاش', 'Cash'], 'CARD_POS': ['فيزا', 'Card machine'], 'TRANSFER': ['تحويل', 'Transfer']};
+
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
     final ar = s.ar;
+    final ctx = widget.ctx;
     String m(Object? v) => s.money(v as num?, ctx.currency);
-    return Async<List<dynamic>>(
-      load: () async => [await ctx.api.get('store/attribution', query: {'days': '30'}), await ctx.api.get('store/reports/margin', query: {'days': '30'}), await ctx.api.get('store/reports/cohorts')],
-      builder: (context, d, reload) {
-        final a = d[0] as Map<String, dynamic>, g = d[1] as Map<String, dynamic>;
-        final cohorts = _maps(d[2]);
-        const src = {'WEB': ('الموقع', 'Website'), 'AI_CHAT': ('البائع الذكي', 'AI seller'), 'POS': ('نقطة البيع', 'Point of sale'), 'WHATSAPP': ('واتساب', 'WhatsApp')};
-        Widget tile(String t, String v, [String? h]) => Expanded(child: Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(children: [Text(t, textAlign: TextAlign.center, style: const TextStyle(fontSize: 11.5, color: Color(0xFF6B7C8D))), const SizedBox(height: 4), FittedBox(child: Text(v, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16))), if (h != null) Text(h, style: const TextStyle(fontSize: 11, color: Color(0xFF6B7C8D)))]))));
-        return RefreshIndicator(onRefresh: reload, child: ListView(padding: const EdgeInsets.all(16), children: [
-          Text(ar ? 'الإيراد جه منين (٣٠ يوم)' : 'Where the revenue came from (30 days)', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
-          const SizedBox(height: 8),
-          Row(children: [tile(ar ? 'باعه البائع الذكي' : 'AI seller', m(a['aiSellerRevenueMinor']), '${a['aiConversations']} ${ar ? 'محادثة' : 'chats'}'), tile(ar ? 'سلات اترجعت' : 'Recovered carts', m(a['recoveredCartsMinor']), '${a['recoveredCarts']}')]),
-          Row(children: [tile(ar ? 'وفّرته من أوردرات خطرة' : 'Risky COD saved', m(a['codSavedMinor']), '${a['riskyOrdersLost']} ${ar ? 'ضاعت' : 'lost'}'), tile(ar ? 'أوردرات بنقاط' : 'Orders with points', '${a['loyaltyOrders']}')]),
-          for (final x in _maps(a['bySource'])) ListTile(dense: true, contentPadding: EdgeInsets.zero, title: Text(ar ? (src['${x['source']}']?.$1 ?? '${x['source']}') : (src['${x['source']}']?.$2 ?? '${x['source']}')), subtitle: Text('${x['orders']} ${ar ? 'أوردر' : 'orders'}'), trailing: Text(m(x['revenueMinor']), style: const TextStyle(fontWeight: FontWeight.w800))),
-          const Divider(height: 28),
-          Text(ar ? 'هامش الربح' : 'Margin', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
-          Row(children: [tile(ar ? 'الإيراد' : 'Revenue', m(g['totalRevenueMinor'])), tile(ar ? 'الهامش' : 'Margin', m(g['totalMarginMinor'])), tile('%', '${g['marginPercent']}%')]),
-          Text(ar ? 'المنتجات بدون سعر تكلفة مش داخلة في الإجمالي.' : 'Products without a cost price are not counted in the totals.', style: const TextStyle(fontSize: 12, color: Color(0xFF6B7C8D))),
-          for (final p in _maps(g['products']).take(15)) ListTile(dense: true, contentPadding: EdgeInsets.zero, title: Text('${p['name']}', maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text('${p['units']} ${ar ? 'قطعة' : 'units'} · ${m(p['revenueMinor'])}'), trailing: Text(p['marginPercent'] == null ? (ar ? 'بدون تكلفة' : 'no cost') : '${p['marginPercent']}%', style: const TextStyle(fontWeight: FontWeight.w800))),
-          const Divider(height: 28),
-          Text(ar ? 'رجوع العملاء' : 'Customer cohorts', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
-          Text(ar ? 'من اللي طلبوا أول مرة في شهر، كام واحد رجع بعد شهر وشهرين وتلاتة.' : 'Of the customers who first ordered in a month, how many came back after 1, 2 and 3 months.', style: const TextStyle(fontSize: 12, color: Color(0xFF6B7C8D))),
-          for (final c in cohorts) ListTile(dense: true, contentPadding: EdgeInsets.zero, title: Text(fmtDate(c['month'] as String?, time: false)), subtitle: Text('${c['customers']} ${ar ? 'عميل جديد' : 'new'} · ${c['back1']} / ${c['back2']} / ${c['back3']}')),
-        ]));
-      },
-    );
+    String pct(num n, num d) => d == 0 ? '-' : '${(n * 100 / d).round()}%';
+    String? delta(num cur, num prev) => prev == 0 ? (cur == 0 ? null : (ar ? 'جديد' : 'new')) : '${cur >= prev ? '+' : ''}${((cur - prev) * 100 / prev).round()}%';
+    Widget tile(String t, String v, {String? h, bool? up}) => Expanded(child: Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(children: [
+          Text(t, textAlign: TextAlign.center, style: const TextStyle(fontSize: 11.5, color: Color(0xFF6B7C8D))),
+          const SizedBox(height: 4),
+          FittedBox(child: Text(v, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17))),
+          if (h != null) Text(h, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: up == null ? const Color(0xFF6B7C8D) : (up ? const Color(0xFF15803D) : const Color(0xFFB91C1C)))),
+        ]))));
+    Widget head(String t) => Padding(padding: const EdgeInsets.only(top: 14, bottom: 6), child: Text(t, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)));
+    Widget bars(List<Map<String, dynamic>> rows, String Function(Map<String, dynamic>) label) {
+      final max = rows.fold<num>(1, (n, r) => (r['revenueMinor'] as num) > n ? r['revenueMinor'] as num : n);
+      if (rows.isEmpty) return Padding(padding: const EdgeInsets.all(8), child: Text(ar ? 'لا توجد مبيعات في الفترة دي لسه.' : 'No sales in this period yet.', style: const TextStyle(color: Color(0xFF6B7C8D))));
+      return Column(children: [for (final r in rows) Padding(padding: const EdgeInsets.symmetric(vertical: 5), child: Column(children: [
+        Row(children: [Expanded(child: Text(label(r), maxLines: 1, overflow: TextOverflow.ellipsis)), Text(m(r['revenueMinor']), style: const TextStyle(fontWeight: FontWeight.w800)), const SizedBox(width: 6), Text('${r['orders'] ?? r['units']}', style: const TextStyle(fontSize: 11, color: Color(0xFF6B7C8D)))]),
+        const SizedBox(height: 3),
+        ClipRRect(borderRadius: BorderRadius.circular(6), child: LinearProgressIndicator(value: ((r['revenueMinor'] as num) / max).toDouble().clamp(0.02, 1.0), minHeight: 7, backgroundColor: const Color(0xFFE8EEF4))),
+      ]))]);
+    }
+    String chan(Map<String, dynamic> r) => r['key'] == '-' ? '—' : (kChannels['${r['key']}']?[ar ? 0 : 1] ?? '${r['key']}');
+    String payl(Map<String, dynamic> r) => r['key'] == '-' ? '—' : (_pay['${r['key']}']?[ar ? 0 : 1] ?? '${r['key']}');
+
+    return Column(children: [
+      SizedBox(height: 52, child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.fromLTRB(16, 8, 16, 0), children: [
+        for (final e in _tabs.entries) Padding(padding: const EdgeInsetsDirectional.only(end: 8), child: ChoiceChip(label: Text(e.value[ar ? 0 : 1]), selected: _tab == e.key, onSelected: (_) => setState(() => _tab = e.key))),
+      ])),
+      Padding(padding: const EdgeInsets.fromLTRB(16, 6, 16, 0), child: SegmentedButton<int>(
+        segments: [for (final d in [7, 30, 90]) ButtonSegment(value: d, label: Text(ar ? 'آخر $d يوم' : 'Last $d days'))],
+        selected: {_days}, onSelectionChanged: (v) => setState(() => _days = v.first))),
+      Expanded(child: Async<List<dynamic>>(
+        key: ValueKey('r$_days'),
+        load: () async => [
+          await ctx.api.get('store/reports/overview', query: {'days': '$_days'}),
+          await ctx.api.get('store/reports/margin', query: {'days': '$_days'}),
+          await ctx.api.get('store/reports/cohorts'),
+          await ctx.api.get('store/attribution', query: {'days': '$_days'}),
+        ],
+        builder: (context, d, reload) {
+          final o = d[0] as Map<String, dynamic>, g = d[1] as Map<String, dynamic>, a = d[3] as Map<String, dynamic>;
+          final cohorts = _maps(d[2]);
+          final cur = o['current'] as Map<String, dynamic>, prev = o['previous'] as Map<String, dynamic>;
+          final trend = _maps(o['trend']);
+          final ops = o['operations'] as Map<String, dynamic>;
+          final mix = o['customerMix'] as Map<String, dynamic>;
+          final children = <Widget>[];
+          switch (_tab) {
+            case 'overview':
+              children.addAll([
+                Row(children: [
+                  tile(ar ? 'الإيراد' : 'Revenue', m(cur['revenueMinor']), h: delta(cur['revenueMinor'] as num, prev['revenueMinor'] as num), up: (cur['revenueMinor'] as num) >= (prev['revenueMinor'] as num)),
+                  tile(ar ? 'الطلبات' : 'Orders', '${cur['orders']}', h: delta(cur['orders'] as num, prev['orders'] as num), up: (cur['orders'] as num) >= (prev['orders'] as num)),
+                ]),
+                Row(children: [
+                  tile(ar ? 'متوسط الطلب' : 'Average order', m(cur['aovMinor']), h: delta(cur['aovMinor'] as num, prev['aovMinor'] as num), up: (cur['aovMinor'] as num) >= (prev['aovMinor'] as num)),
+                  tile(ar ? 'العملاء' : 'Customers', '${cur['customers']}', h: delta(cur['customers'] as num, prev['customers'] as num), up: (cur['customers'] as num) >= (prev['customers'] as num)),
+                ]),
+                Text(ar ? 'مقارنة بالفترة اللي قبلها' : 'Compared with the period before', style: const TextStyle(fontSize: 11.5, color: Color(0xFF6B7C8D))),
+                head(ar ? 'الإيراد يوميًا' : 'Revenue by day'),
+                Card(child: Padding(padding: const EdgeInsets.all(12), child: SizedBox(height: 150, child: CustomPaint(painter: _TrendPainter([for (final t in trend) (t['revenueMinor'] as num).toDouble()], Theme.of(context).colorScheme.primary), size: Size.infinite)))),
+                head(ar ? 'الأكثر مبيعًا' : 'Best sellers'),
+                bars([for (final p in _maps(o['topProducts'])) {...p, 'orders': '${p['units']} ${ar ? 'قطعة' : 'units'}'}], (r) => '${r['name']}'),
+                head(ar ? 'المبيعات حسب القناة' : 'Sales by channel'),
+                bars(_maps(o['byChannel']), chan),
+              ]);
+            case 'sales':
+              children.addAll([
+                head(ar ? 'المبيعات حسب القناة' : 'Sales by channel'), bars(_maps(o['byChannel']), chan),
+                head(ar ? 'المبيعات حسب طريقة الدفع' : 'Sales by payment method'), bars(_maps(o['byPayment']), payl),
+                head(ar ? 'المبيعات حسب المحافظة' : 'Sales by governorate'), bars(_maps(o['byGovernorate']), (r) => r['key'] == '-' ? '—' : '${r['key']}'),
+              ]);
+            case 'products':
+              final low = _maps(o['lowStock']);
+              children.addAll([
+                head(ar ? 'الأكثر مبيعًا' : 'Best sellers'),
+                bars([for (final p in _maps(o['topProducts'])) {...p, 'orders': '${p['units']} ${ar ? 'قطعة' : 'units'}'}], (r) => '${r['name']}'),
+                head(ar ? 'على وشك النفاد' : 'Running low'),
+                if (low.isEmpty) Text(ar ? 'مفيش حاجة على وشك النفاد.' : 'Nothing is running low.', style: const TextStyle(color: Color(0xFF6B7C8D))),
+                for (final x in low) ListTile(dense: true, contentPadding: EdgeInsets.zero, title: Text('${x['name']}', maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text('${x['sku']}', textDirection: TextDirection.ltr, textAlign: TextAlign.start), trailing: Text('${x['available']}', style: TextStyle(fontWeight: FontWeight.w900, color: (x['available'] as num) <= 0 ? const Color(0xFFB91C1C) : const Color(0xFFB45309)))),
+                head(ar ? 'هامش الربح' : 'Margin'),
+                Row(children: [tile(ar ? 'الإيراد' : 'Revenue', m(g['totalRevenueMinor'])), tile(ar ? 'الهامش' : 'Margin', m(g['totalMarginMinor'])), tile('%', '${g['marginPercent']}%')]),
+                Text(ar ? 'المنتجات بدون سعر تكلفة مش داخلة في الإجمالي.' : 'Products without a cost price are not counted in the totals.', style: const TextStyle(fontSize: 12, color: Color(0xFF6B7C8D))),
+                for (final p in _maps(g['products']).take(15)) ListTile(dense: true, contentPadding: EdgeInsets.zero, title: Text('${p['name']}', maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text('${p['units']} ${ar ? 'قطعة' : 'units'} · ${m(p['revenueMinor'])}'), trailing: Text(p['marginPercent'] == null ? (ar ? 'بدون تكلفة' : 'No cost') : '${p['marginPercent']}%', style: const TextStyle(fontWeight: FontWeight.w800))),
+              ]);
+            case 'customers':
+              children.addAll([
+                Row(children: [tile(ar ? 'العملاء' : 'Customers', '${cur['customers']}', h: delta(cur['customers'] as num, prev['customers'] as num), up: (cur['customers'] as num) >= (prev['customers'] as num)), tile(ar ? 'جدد' : 'New', '${mix['newCustomers']}'), tile(ar ? 'راجعين' : 'Returning', '${mix['returningCustomers']}', h: pct(mix['returningCustomers'] as num, (mix['newCustomers'] as num) + (mix['returningCustomers'] as num)))]),
+                head(ar ? 'رجوع العملاء' : 'Customer cohorts'),
+                Text(ar ? 'من اللي طلبوا أول مرة في شهر، كام واحد رجع بعد شهر وشهرين وتلاتة.' : 'Of the customers who first ordered in a month, how many came back after 1, 2 and 3 months.', style: const TextStyle(fontSize: 12, color: Color(0xFF6B7C8D))),
+                for (final c in cohorts) ListTile(dense: true, contentPadding: EdgeInsets.zero, title: Text(fmtDate(c['month'] as String?, time: false)), subtitle: Text('${c['customers']} ${ar ? 'عميل جديد' : 'new'} · ${c['back1']} / ${c['back2']} / ${c['back3']}')),
+              ]);
+            default:
+              children.addAll([
+                Row(children: [tile(ar ? 'ملغية' : 'Cancelled', '${ops['cancelled']}', h: pct(ops['cancelled'] as num, ops['allOrders'] as num)), tile(ar ? 'مرتجعة' : 'Returned', '${ops['returned']}', h: pct(ops['returned'] as num, ops['allOrders'] as num))]),
+                Row(children: [tile(ar ? 'مستردة عند الكاشير' : 'Refunded at till', m(ops['refundedMinor'])), tile(ar ? 'دفع عند الاستلام' : 'Cash on delivery', '${ops['cod']}', h: pct(ops['cod'] as num, ops['allOrders'] as num))]),
+                head(ar ? 'الإيراد جه منين' : 'Where the revenue came from'),
+                Row(children: [tile(ar ? 'باعه البائع الذكي' : 'AI seller', m(a['aiSellerRevenueMinor']), h: '${a['aiConversations']} ${ar ? 'محادثة' : 'chats'}'), tile(ar ? 'سلات اترجعت' : 'Recovered carts', m(a['recoveredCartsMinor']), h: '${a['recoveredCarts']}')]),
+                Row(children: [tile(ar ? 'وفّرته من أوردرات خطرة' : 'Risky COD saved', m(a['codSavedMinor']), h: '${a['riskyOrdersLost']} ${ar ? 'ضاعت' : 'lost'}'), tile(ar ? 'أوردرات بنقاط' : 'Orders with points', '${a['loyaltyOrders']}')]),
+              ]);
+          }
+          return RefreshIndicator(onRefresh: reload, child: ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 24), children: children));
+        },
+      )),
+    ]);
   }
+}
+
+class _TrendPainter extends CustomPainter {
+  _TrendPainter(this.points, this.color);
+  final List<double> points;
+  final Color color;
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (points.isEmpty) return;
+    final max = points.fold<double>(1, (n, v) => v > n ? v : n);
+    final step = points.length > 1 ? size.width / (points.length - 1) : 0.0;
+    final pts = [for (var i = 0; i < points.length; i++) Offset(i * step, size.height - 4 - (points[i] / max) * (size.height - 8))];
+    final grid = Paint()..color = const Color(0x14000000)..strokeWidth = 1;
+    for (final g in [0.25, 0.5, 0.75]) { canvas.drawLine(Offset(0, size.height * g), Offset(size.width, size.height * g), grid); }
+    final path = Path()..moveTo(pts.first.dx, pts.first.dy);
+    for (final p in pts.skip(1)) { path.lineTo(p.dx, p.dy); }
+    final area = Path.from(path)..lineTo(pts.last.dx, size.height)..lineTo(pts.first.dx, size.height)..close();
+    canvas.drawPath(area, Paint()..shader = LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [color.withValues(alpha: 0.28), color.withValues(alpha: 0)]).createShader(Offset.zero & size));
+    canvas.drawPath(path, Paint()..color = color..style = PaintingStyle.stroke..strokeWidth = 2.5..strokeJoin = StrokeJoin.round..strokeCap = StrokeCap.round);
+  }
+
+  @override
+  bool shouldRepaint(_TrendPainter old) => old.points != points || old.color != color;
 }
 
 // ---- store settings cards ---------------------------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 "use client";
 
 import { shipName } from "@/lib/ship-name";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/client";
 import { toMinor, money } from "@/lib/format";
 import BrandingCard from "@/components/dashboard/branding";
@@ -15,11 +15,15 @@ import { BranchesCard, ContactCard, MarketingCard, SetupChecklist, type StorePro
 import { CategoryPicker, categoriesValid, type CategoryOption } from "@/components/category-picker";
 import { useAction, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
-import { Alert, Button, Card, ErrorText, Field, Input, PageHeader, Select, Table, Td, Textarea } from "@/components/ui";
+import { Alert, Button, Card, ErrorText, Field, Input, PageHeader, Select, Table, Tabs, Td, Textarea } from "@/components/ui";
 
 type Profile = StoreProfile & { categories?: { code: string }[]; otherCategory?: string | null; shippingPolicy?: string; returnPolicy?: string; privacyPolicy?: string; termsText?: string };
 type Pm = { method: string; enabled: boolean };
 type Ship = { id: string; type: string; name: string; feeMinor: number; freeAboveMinor?: number; isActive: boolean };
+
+type Tab = "profile" | "look" | "sales" | "marketing" | "branches";
+/** Old links such as /dashboard/settings#cod-guard land on the tab that holds that card. */
+const ANCHOR_TAB: Record<string, Tab> = { profile: "profile", contact: "profile", look: "look", branding: "look", templates: "look", sales: "sales", shipping: "sales", "cod-guard": "sales", market: "sales", marketing: "marketing", "whatsapp-report": "marketing", branches: "branches" };
 
 export default function StoreSettings() {
   const { t, locale, currency } = useI18n();
@@ -33,6 +37,13 @@ export default function StoreSettings() {
   const [edited, setP] = useState<Profile | null>(null);
   const p = edited ?? profile.data;
   const [saved, setSaved] = useState(false);
+  const [tab, setTab] = useState<Tab>("profile");
+  useEffect(() => {
+    const id = window.location.hash.slice(1);
+    if (!ANCHOR_TAB[id]) return;
+    setTimeout(() => { setTab(ANCHOR_TAB[id]); setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" }), 150); }, 0);
+  }, []);
+  const show = (k: Tab) => tab === k;
   const saveProfile = useAction(async () => { await api("store/profile", { method: "PATCH", body: { storeName: p?.storeName, shortDescription: p?.shortDescription, about: p?.about, shippingPolicy: p?.shippingPolicy, returnPolicy: p?.returnPolicy, privacyPolicy: p?.privacyPolicy, termsText: p?.termsText, minOrderMinor: p?.minOrderMinor, taxId: p?.taxId, vatIncluded: p?.vatIncluded, vatPercent: p?.vatPercent, returnWindowDays: p?.returnWindowDays } }); setSaved(true); });
   const catList = useApi<CategoryOption[]>(readSettings ? "store/business-categories" : null);
   const [editedCats, setCats] = useState<{ codes: string[]; other: string } | null>(null);
@@ -54,8 +65,9 @@ export default function StoreSettings() {
       <fieldset disabled={!canWrite("settings")} className="m-0 min-w-0 border-0 p-0">
       <div className="space-y-6">
         {profile.data && <SetupChecklist profile={profile.data} hasLogo={!!brand.data?.logoFileId} />}
-        {profile.data && <section id="contact"><ContactCard key={JSON.stringify(profile.data.workingHours) + profile.data.coverFileId} profile={profile.data} reload={profile.reload} /></section>}
-        {p && (
+        <Tabs<Tab> tabs={[{ key: "profile", label: t("settings.tab.profile") }, { key: "look", label: t("settings.tab.look") }, { key: "sales", label: t("settings.tab.sales") }, { key: "marketing", label: t("settings.tab.marketing") }, ...(can("branch.manage") ? [{ key: "branches" as Tab, label: t("settings.tab.branches") }] : [])]} value={tab} onChange={setTab} />
+        {show("profile") && profile.data && <section id="contact"><ContactCard key={JSON.stringify(profile.data.workingHours) + profile.data.coverFileId} profile={profile.data} reload={profile.reload} /></section>}
+        {show("profile") && p && (
           <Card className="space-y-4">
             <h2 className="font-medium">{t("settings.storeProfile")}</h2>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -75,7 +87,7 @@ export default function StoreSettings() {
             <Button loading={saveProfile.loading} onClick={() => { setSaved(false); void saveProfile.run(); }}>{t("common.save")}</Button>
           </Card>
         )}
-        {cats && catList.data && (
+        {show("profile") && cats && catList.data && (
           <Card className="space-y-3">
             <h2 className="font-medium">{t("storeSettings.categories")}</h2>
             <CategoryPicker options={catList.data} value={cats.codes} onChange={(codes) => setCats({ ...cats, codes })} other={cats.other} onOther={(other) => setCats({ ...cats, other })} />
@@ -83,12 +95,12 @@ export default function StoreSettings() {
             <Button loading={saveCats.loading} disabled={!categoriesValid(cats.codes, cats.other)} onClick={() => { setSaved(false); void saveCats.run(); }}>{t("common.save")}</Button>
           </Card>
         )}
-        {can("settings.manage") && <section id="branding"><BrandingCard /></section>}
-        {can("settings.manage") && <section id="templates"><TemplatePicker /></section>}
-        {can("copilot.use") && <section id="whatsapp-report"><WaReportCard /></section>}
-        {can("settings.manage") && <section id="cod-guard"><CodGuardCard /></section>}
-        {can("settings.manage") && <section id="market"><MarketCard /></section>}
-        {methods.data && (
+        {show("look") && can("settings.manage") && <section id="branding"><BrandingCard /></section>}
+        {show("look") && can("settings.manage") && <section id="templates"><TemplatePicker /></section>}
+        {show("marketing") && can("copilot.use") && <section id="whatsapp-report"><WaReportCard /></section>}
+        {show("sales") && can("settings.manage") && <section id="cod-guard"><CodGuardCard /></section>}
+        {show("sales") && can("settings.manage") && <section id="market"><MarketCard /></section>}
+        {show("sales") && methods.data && (
           <Card className="space-y-3">
             <h2 className="font-medium">{t("settings.paymentMethods")}</h2>
             {methods.data.map((m) => (
@@ -97,7 +109,7 @@ export default function StoreSettings() {
             <ErrorText error={setMethod.error} />
           </Card>
         )}
-        {ships.data && (<section id="shipping">
+        {show("sales") && ships.data && (<section id="shipping">
           <Card className="space-y-3">
             <h2 className="font-medium">{t("settings.shipping")}</h2>
             <Table head={[t("products.name"), t("settings.type"), t("settings.fee"), ""]}>
@@ -113,10 +125,10 @@ export default function StoreSettings() {
             <ErrorText error={addShip.error ?? toggleShip.error} />
           </Card></section>
         )}
-        {can("settings.manage") && <BannersCard />}
-        {profile.data && can("settings.manage") && <MarketingCard profile={profile.data} reload={profile.reload} />}
-        {can("shipping.manage") && <ZonesCard />}
-        {can("branch.manage") && <section id="branches"><BranchesCard /></section>}
+        {show("look") && can("settings.manage") && <BannersCard />}
+        {show("marketing") && profile.data && can("settings.manage") && <MarketingCard profile={profile.data} reload={profile.reload} />}
+        {show("sales") && can("shipping.manage") && <ZonesCard />}
+        {show("branches") && can("branch.manage") && <section id="branches"><BranchesCard /></section>}
       </div>
       </fieldset>
     </>

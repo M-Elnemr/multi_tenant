@@ -110,9 +110,9 @@ public class CheckoutService {
                 INSERT INTO commerce.orders (id, tenant_id, order_number, customer_id, user_id, status, payment_status, payment_method, shipping_method_id, coupon_code,
                     currency, subtotal_minor, discount_minor, shipping_minor, total_minor, customer_name_snapshot, customer_phone_snapshot,
                     shipping_address_snapshot, notes, idempotency_key, reservation_expires_at,
-                    governorate_code, area, landmark, phone2, cod_fee_minor, eta_min_days, eta_max_days, source, risk_score, risk_level, risk_reasons, needs_confirmation)
+                    governorate_code, area, landmark, phone2, cod_fee_minor, eta_min_days, eta_max_days, source, channel, risk_score, risk_level, risk_reasons, needs_confirmation)
                 VALUES (:id, :t, :n, :c, :u, :st, 'UNPAID', :pm, :sm, :cc, :cur, :sub, :disc, :ship, :total, :cn, :cp, CAST(:addr AS jsonb), :notes, :key, :exp,
-                    :gov, :area, :lm, :ph2, :codfee, :emin, :emax, :src, :rs, :rl, :rr, :nc)
+                    :gov, :area, :lm, :ph2, :codfee, :emin, :emax, :src, :ch, :rs, :rl, :rr, :nc)
                 """).param("id", orderId).param("t", tenantId).param("n", number).param("c", customerId).param("u", userId)
                 .param("st", card ? "PENDING" : "REQUESTED").param("pm", r.paymentMethod()).param("sm", r.shippingMethodId()).param("cc", q.couponCode())
                 .param("cur", q.currency()).param("sub", q.subtotal()).param("disc", q.discount()).param("ship", q.shipping()).param("total", q.total())
@@ -120,7 +120,7 @@ public class CheckoutService {
                 .param("key", key == null || key.isBlank() ? null : key)
                 .param("exp", card ? java.sql.Timestamp.from(Instant.now().plus(30, ChronoUnit.MINUTES)) : null)
                 .param("gov", nz(r.address().governorateCode()).toUpperCase()).param("area", nz(r.address().area())).param("lm", nz(r.address().landmark())).param("ph2", nz(r.address().phone2()))
-                .param("codfee", q.codFee()).param("emin", q.etaMin()).param("emax", q.etaMax()).param("src", source == null ? "WEB" : source)
+                .param("codfee", q.codFee()).param("emin", q.etaMin()).param("emax", q.etaMax()).param("src", source == null ? "WEB" : source).param("ch", "POS".equals(source) ? "POS" : "OPEN".equals(source) ? "OTHER" : "WEBSITE")
                 .param("rs", risk.score()).param("rl", risk.level()).param("rr", String.join(",", risk.reasons())).param("nc", risk.score() > 0 && risk.level().length() > 0 && codRisk.mustHold(tenantId, risk.level())).update();
 
         for (QuoteLine l : q.lines())

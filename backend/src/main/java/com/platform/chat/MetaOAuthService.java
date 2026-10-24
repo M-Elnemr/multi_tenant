@@ -106,7 +106,13 @@ public class MetaOAuthService {
     @SuppressWarnings("unchecked")
     private List<Item> discover(String userToken) {
         List<Item> out = new ArrayList<>();
-        Map<String, Object> accounts = graph.get("me/accounts?fields=id,name,access_token,instagram_business_account{id,username}&limit=50", userToken);
+        Map<String, Object> accounts;
+        try {
+            accounts = graph.get("me/accounts?fields=id,name,access_token,instagram_business_account{id,username}&limit=50", userToken);
+        } catch (MetaGraph.MetaException e) {
+            if (e.code() != 100 && e.code() != 10 && e.code() != 200) throw e;
+            accounts = graph.get("me/accounts?fields=id,name,access_token&limit=50", userToken);   // without the Instagram link when the app lacks that access
+        }
         for (Object o : (List<Object>) accounts.getOrDefault("data", List.of())) {
             Map<String, Object> pg = (Map<String, Object>) o;
             String pageToken = String.valueOf(pg.get("access_token"));

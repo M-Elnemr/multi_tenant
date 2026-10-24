@@ -6,6 +6,7 @@ import { useAction, useApi } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Alert, Button, ErrorText, Field, Input, StatusBadge } from "@/components/ui";
 import { dateTime, money } from "@/lib/format";
+import { WabaDialog } from "./waba-dialog";
 
 type Overview = {
   settings: { enabled: boolean; confirmAfterHours: number; reminderEnabled: boolean; reminderAfterHours: number; brandName?: string | null };
@@ -16,8 +17,8 @@ type Overview = {
 };
 type Msg = { kind: string; status: string; costMinor: number; error?: string; sentAt?: string; createdAt: string; orderNumber: string };
 
-const Check = ({ ok, label }: { ok: boolean; label: string }) => (
-  <li className="flex items-center gap-2 text-sm"><span className={`flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold text-white ${ok ? "bg-emerald-500" : "bg-slate-300"}`}>{ok ? "✓" : "·"}</span><span className={ok ? "" : "text-slate-500"}>{label}</span></li>
+const Check = ({ ok, label, action }: { ok: boolean; label: string; action?: React.ReactNode }) => (
+  <li className="flex items-center gap-2 text-sm"><span className={`flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold text-white ${ok ? "bg-emerald-500" : "bg-slate-300"}`}>{ok ? "✓" : "·"}</span><span className={ok ? "" : "text-slate-500"}>{label}</span>{action}</li>
 );
 
 /** Automatic WhatsApp order confirmation: settings, what is still missing, prepaid credit and the log of sent messages. */
@@ -28,6 +29,7 @@ export function AiWhatsApp({ write }: { write: boolean }) {
   const [edit, setEdit] = useState<Partial<Overview["settings"]>>({});
   const [saved, setSaved] = useState(false);
   const [amount, setAmount] = useState(10000);
+  const [wabaOpen, setWabaOpen] = useState(false);
   const f = data ? { ...data.settings, ...edit } : null;
 
   const save = useAction(async () => {
@@ -43,13 +45,14 @@ export function AiWhatsApp({ write }: { write: boolean }) {
 
   return (
     <div className="max-w-2xl space-y-5">
+      <WabaDialog open={wabaOpen} onClose={() => setWabaOpen(false)} onSaved={() => void reload()} />
       <Alert tone="blue">{t("wa.intro", { price })}</Alert>
 
       <section className="space-y-2 rounded-xl border bg-white p-4">
         <h3 className="font-semibold">{t("wa.readiness")}</h3>
         <ul className="space-y-1.5">
           <Check ok={data.readiness.channelConnected} label={t("wa.r.channel")} />
-          <Check ok={data.readiness.wabaKnown} label={t("wa.r.waba")} />
+          <Check ok={data.readiness.wabaKnown} label={data.readiness.wabaKnown ? t("wa.r.waba") : t("wa.r.wabaMissing")} action={data.readiness.channelConnected && write ? <button type="button" onClick={() => setWabaOpen(true)} className="ms-auto rounded-full bg-brand px-3 py-1 text-xs font-bold text-white hover:opacity-90">{data.readiness.wabaKnown ? t("waba.change") : t("waba.add")}</button> : undefined} />
           <Check ok={data.readiness.templatesApproved} label={t("wa.r.templates")} />
           <Check ok={data.readiness.hasCredit} label={t("wa.r.credit")} />
         </ul>

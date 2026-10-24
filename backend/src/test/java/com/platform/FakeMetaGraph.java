@@ -16,6 +16,7 @@ public class FakeMetaGraph implements MetaGraph {
     public static final List<Sent> SENT = new ArrayList<>();
 
     /** What "Facebook login" finds for the person (set by the test). */
+    public static volatile String WABA_PHONE = "99900011122";
     public static volatile String PAGE_ID = "111111111111", IG_ID = "222222222222";
 
     /** What Meta says about the message templates, and whether sending a template fails. */
@@ -39,7 +40,11 @@ public class FakeMetaGraph implements MetaGraph {
         if (path.contains("/insights")) return Map.of("data", java.util.List.of(Map.of("impressions", "1200", "reach", "900", "clicks", "45", "spend", "31.50", "ctr", "3.75", "cpc", "0.70")));
         if (path.contains("fields=status,effective_status")) return Map.of("status", "ACTIVE", "effective_status", "ACTIVE");
         if (path.contains("/message_templates")) return Map.of("data", java.util.List.of(Map.of("name", "t", "status", TEMPLATE_STATUS)));
+        if (token.startsWith("NOPERM")) throw new MetaException("(#100) This endpoint requires the 'pages_read_engagement' permission or the 'Page Public Content Access' feature", 100);
+        if (token.startsWith("EXPIRED")) throw new MetaException("Error validating access token: Session has expired", 190);
         if (token.startsWith("BAD")) throw new MetaException("Invalid OAuth access token");
+        if (path.startsWith("me?fields=id,name")) return token.startsWith("PAGE-OF-") ? Map.of("id", token.substring(8, token.indexOf('-', 8)), "name", "Test Page") : Map.of("name", "Test Page");
+        if (path.contains("/phone_numbers")) return Map.of("data", java.util.List.of(Map.of("id", WABA_PHONE)));
         return Map.of("id", path.split("\\?")[0], "name", "Test Page");
     }
 

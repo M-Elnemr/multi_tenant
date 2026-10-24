@@ -14,7 +14,7 @@ import { TaxonomyPicker, type TaxonomyNode } from "@/components/dashboard/taxono
 
 type Detail = {
   id: string; name: string; description: string; brand?: string; status: string; audience?: string; itemCondition?: string; taxonomy?: { id: number; slug: string; nameAr: string; nameEn: string; level: number }[]; badge?: string; tags?: string[]; specs?: { k: string; v: string }[]; sizeGuide?: string; isFeatured?: boolean;
-  variants: { id: string; sku: string; priceMinor: number; comboKey: string; status: string; available: number }[];
+  variants: { id: string; sku: string; barcode?: string | null; priceMinor: number; comboKey: string; status: string; available: number }[];
   media: ProductMedia[];
   options?: ColorOption[];
 };
@@ -29,12 +29,14 @@ export default function EditProduct({ params }: { params: Promise<{ id: string }
   const [picked, setPicked] = useState<TaxonomyNode | null>(null);
   const [f, setF] = useState<{ name: string; description: string; status: string; brand: string; audience: string; condition: string } | null>(null);
   const [prices, setPrices] = useState<Record<string, string>>({});
+  const [codes, setCodes] = useState<Record<string, string>>({});
   const form = f ?? (data ? { name: data.name, description: data.description, status: data.status, brand: data.brand ?? "", audience: data.audience ?? "", condition: data.itemCondition ?? "NEW" } : null);
   const save = useAction(async () => {
     if (!form) return;
     await api(`store/products/${id}`, { method: "PATCH", body: { ...form, taxonomyId: picked?.id, audience: form.audience || undefined } });
     for (const [vid, p] of Object.entries(prices)) await api(`store/variants/${vid}`, { method: "PATCH", body: { priceMinor: toMinor(p) } });
-    setPrices({});
+    for (const [vid, b] of Object.entries(codes)) await api(`store/variants/${vid}`, { method: "PATCH", body: { barcode: b.trim() } });
+    setPrices({}); setCodes({});
     await reload();
   });
   const archive = useAction(async () => { await api(`store/products/${id}`, { method: "DELETE" }); router.replace("/dashboard/products"); });
@@ -61,6 +63,7 @@ export default function EditProduct({ params }: { params: Promise<{ id: string }
           <h2 className="mb-3 font-medium">{t("products.variants")}</h2>
           <table className="w-full text-sm"><tbody>{data.variants.map((v) => (
             <tr key={v.id} className="border-b last:border-0"><td className="py-2">{v.comboKey.replace(/\|/g, " / ").replace(/=/g, ": ") || "-"}<div className="font-mono text-xs text-slate-500">{v.sku}</div></td>
+              <td className="py-2"><Input className="max-w-44" dir="ltr" inputMode="numeric" placeholder={t("products.barcode")} value={codes[v.id] ?? v.barcode ?? ""} onChange={(e) => setCodes({ ...codes, [v.id]: e.target.value })} /></td>
               <td className="py-2"><Input className="max-w-32" dir="ltr" value={prices[v.id] ?? fromMinor(v.priceMinor)} onChange={(e) => setPrices({ ...prices, [v.id]: e.target.value })} /></td>
               <td className="py-2 text-end text-slate-600">{t("products.stock")}: <b>{v.available}</b></td></tr>
           ))}</tbody></table>

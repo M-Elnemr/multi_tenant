@@ -29,12 +29,12 @@ public class ExportService {
     public String orders(UUID t, LocalDate from, LocalDate to) {
         LocalDate f = from == null ? LocalDate.now().minusDays(90) : from, e = to == null ? LocalDate.now() : to;
         var rows = jdbc.sql("""
-                SELECT order_number, created_at, status, payment_status, payment_method, source, currency, subtotal_minor / 100.0 AS subtotal, discount_minor / 100.0 AS discount, shipping_minor / 100.0 AS shipping,
+                SELECT order_number, created_at, status, payment_status, payment_method, source, channel, currency, subtotal_minor / 100.0 AS subtotal, discount_minor / 100.0 AS discount, shipping_minor / 100.0 AS shipping,
                        total_minor / 100.0 AS total, customer_name_snapshot, customer_phone_snapshot, governorate_code, area, tracking_number, risk_level
                 FROM commerce.orders WHERE tenant_id = :t AND created_at >= :f AND created_at < :e ORDER BY created_at DESC LIMIT 50000
                 """).param("t", t).param("f", java.sql.Date.valueOf(f)).param("e", java.sql.Date.valueOf(e.plusDays(1))).query().listOfRows();
-        return csv(List.of("order_number", "created_at", "status", "payment_status", "payment_method", "source", "currency", "subtotal", "discount", "shipping", "total", "customer", "phone", "governorate", "area", "tracking", "risk"),
-                rows, List.of("order_number", "created_at", "status", "payment_status", "payment_method", "source", "currency", "subtotal", "discount", "shipping", "total", "customer_name_snapshot", "customer_phone_snapshot", "governorate_code", "area", "tracking_number", "risk_level"));
+        return csv(List.of("order_number", "created_at", "status", "payment_status", "payment_method", "channel", "currency", "subtotal", "discount", "shipping", "total", "customer", "phone", "governorate", "area", "tracking", "risk"),
+                rows, List.of("order_number", "created_at", "status", "payment_status", "payment_method", "channel", "currency", "subtotal", "discount", "shipping", "total", "customer_name_snapshot", "customer_phone_snapshot", "governorate_code", "area", "tracking_number", "risk_level"));
     }
 
     public String customers(UUID t) {

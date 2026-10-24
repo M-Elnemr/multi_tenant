@@ -4,6 +4,7 @@ import 'package:platform_core/platform_core.dart';
 import 'common.dart';
 import 'channels.dart';
 import 'forms.dart';
+import 'retail.dart' show CodeScanPage;
 
 List<Map<String, dynamic>> _maps(dynamic v) => ((v as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
 
@@ -152,6 +153,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
   final _opts = <_Opt>[];
   final _rows = <String, Map<String, TextEditingController>>{};
   final _prices = <String, TextEditingController>{};
+  final _barcodes = <String, TextEditingController>{};
   Object? _error;
   bool _busy = false;
   final int _skuSeed = DateTime.now().millisecondsSinceEpoch % 100000;
@@ -174,7 +176,8 @@ class _ProductFormPageState extends State<ProductFormPage> {
         _name.text = '${d['name'] ?? ''}'; _desc.text = '${d['description'] ?? ''}'; _brand.text = '${d['brand'] ?? ''}';
         _status = '${d['status'] ?? 'ACTIVE'}'; _condition = '${d['itemCondition'] ?? 'NEW'}'; _audience = '${d['audience'] ?? ''}';
         _prices.clear();
-        for (final v in _maps(d['variants'])) { _prices['${v['id']}'] = TextEditingController(text: fmtMoney(v['priceMinor'] as num?)); }
+        _barcodes.clear();
+        for (final v in _maps(d['variants'])) { _prices['${v['id']}'] = TextEditingController(text: fmtMoney(v['priceMinor'] as num?)); _barcodes['${v['id']}'] = TextEditingController(text: '${v['barcode'] ?? ''}'); }
         if (mounted) setState(() => _detail = d);
       }
     } catch (e) {
@@ -204,7 +207,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
         final variants = <Map<String, dynamic>>[];
         for (var i = 0; i < combos.length; i++) {
           final r = _rowFor(combos[i], i);
-          variants.add({'sku': r['sku']!.text.trim(), 'priceMinor': toMinor(r['price']!.text), 'optionValues': combos[i], 'stock': [{'branchId': _branchId, 'quantity': int.tryParse(r['stock']!.text.trim()) ?? 0}]});
+          variants.add({'sku': r['sku']!.text.trim(), if (r['barcode']!.text.trim().isNotEmpty) 'barcode': r['barcode']!.text.trim(), 'priceMinor': toMinor(r['price']!.text), 'optionValues': combos[i], 'stock': [{'branchId': _branchId, 'quantity': int.tryParse(r['stock']!.text.trim()) ?? 0}]});
         }
         final res = await ctx.api.post('store/products', {
           'name': _name.text.trim(), 'description': _desc.text.trim(), if (_picked != null) 'taxonomyId': _picked!['id'], if (_audience.isNotEmpty) 'audience': _audience,
@@ -217,7 +220,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
       } else {
         await ctx.api.patch('store/products/${widget.id}', {'name': _name.text.trim(), 'description': _desc.text.trim(), 'status': _status, 'brand': _brand.text.trim(), if (_audience.isNotEmpty) 'audience': _audience, 'condition': _condition, if (_picked != null) 'taxonomyId': _picked!['id']});
         for (final e in _prices.entries) {
-          await ctx.api.patch('store/variants/${e.key}', {'priceMinor': toMinor(e.value.text)});
+          await ctx.api.patch('store/variants/${e.key}', {'priceMinor': toMinor(e.value.text), 'barcode': _barcodes[e.key]?.text.trim() ?? ''});
         }
         await _reloadDetail();
         if (mounted) toast(context, isAr ? 'تم الحفظ' : 'Saved');
@@ -227,7 +230,17 @@ class _ProductFormPageState extends State<ProductFormPage> {
     if (mounted) setState(() => _busy = false);
   }
 
-  Map<String, TextEditingController> _rowFor(Map<String, String> combo, int i) => _rows.putIfAbsent(combo.values.join('|'), () => {'sku': TextEditingController(text: 'SKU-${_skuSeed + i}'), 'price': TextEditingController(), 'stock': TextEditingController(text: '0')});
+  Map<String, TextEditingController> _rowFor(Map<String, String> combo, int i) => _rows.putIfAbsent(combo.values.join('|'), () => {'sku': TextEditingController(text: 'SKU-${_skuSeed + i}'), 'barcode': TextEditingController(), 'price': TextEditingController(), 'stock': TextEditingController(text: '0')});
+
+  /// A barcode box that takes typing, a USB / laser scanner, or the camera.
+  Widget _barcodeField(TextEditingController c, bool isAr, {String? label}) => Padding(padding: const EdgeInsets.only(top: 8), child: TextField(
+        controller: c, keyboardType: TextInputType.number, textDirection: TextDirection.ltr,
+        decoration: InputDecoration(labelText: label ?? (isAr ? 'الباركود (اختياري)' : 'Barcode (optional)'), isDense: true,
+            suffixIcon: IconButton(icon: const Icon(Icons.qr_code_scanner_rounded), onPressed: () async {
+              final code = await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => const CodeScanPage()));
+              if (code != null) setState(() => c.text = code.trim());
+            })),
+      ));
 
   bool get _showAudience => !isNew || _picked?['appliesAudience'] == true;
 
@@ -368,6 +381,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
                 const SizedBox(width: 8),
                 Expanded(flex: 2, child: tf(r['stock']!, isAr ? 'المخزون' : 'Stock', number: true, ltr: true)),
               ]),
+              _barcodeField(r['barcode']!, isAr),
             ]),
           );
         }),
@@ -452,6 +466,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
           ])),
           SizedBox(width: 110, child: TextField(controller: _prices['${v['id']}'], keyboardType: const TextInputType.numberWithOptions(decimal: true), textDirection: TextDirection.ltr, decoration: InputDecoration(labelText: ctx.currency))),
         ])),
+        for (final v in variants) if (_barcodes['${v['id']}'] != null) _barcodeField(_barcodes['${v['id']}']!, isAr, label: '${isAr ? 'الباركود' : 'Barcode'} · ${comboLabel(v['comboKey']).isEmpty ? '${v['sku']}' : comboLabel(v['comboKey'])}'),
         Padding(padding: const EdgeInsets.only(top: 8), child: Text(isAr ? 'لتعديل المخزون استخدم قسم المخزون.' : 'Use the Inventory section to change stock.', style: const TextStyle(fontSize: 12, color: Color(0xFF6B7C8D)))),
       ]))),
       const SizedBox(height: 12),

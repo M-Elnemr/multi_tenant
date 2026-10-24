@@ -235,17 +235,30 @@ class _ClinicBranches extends StatelessWidget {
 
 // ---------------------------------------------------------------- Store settings
 
-class StoreSettings extends StatelessWidget {
+class StoreSettings extends StatefulWidget {
   const StoreSettings({super.key, required this.ctx});
   final Ctx ctx;
+  @override
+  State<StoreSettings> createState() => _StoreSettingsState();
+}
+
+class _StoreSettingsState extends State<StoreSettings> {
+  String _tab = 'profile';
 
   @override
   Widget build(BuildContext context) {
+    final ctx = widget.ctx;
+    final ar = S.of(context).ar;
+    final tabs = {'profile': ar ? 'بيانات المتجر' : 'Store details', 'look': ar ? 'الشكل والهوية' : 'Look and branding', 'sales': ar ? 'البيع والتوصيل' : 'Sales and delivery', 'marketing': ar ? 'التسويق' : 'Marketing', if (ctx.can('branch.manage')) 'branches': ar ? 'الفروع' : 'Branches'};
     final manage = ctx.canAny(['settings.manage', 'settings.read']);
     final ship = ctx.canAny(['shipping.manage', 'shipping.read']);
     final ro = !ctx.canWrite('settings');   // read only access shows the values without a save button
-    return _page([
-      if (manage) FormCard(readOnly: ro, 
+    return Column(children: [
+      SizedBox(height: 52, child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.fromLTRB(16, 8, 16, 0), children: [
+        for (final e in tabs.entries) Padding(padding: const EdgeInsetsDirectional.only(end: 8), child: ChoiceChip(label: Text(e.value), selected: _tab == e.key, onSelected: (_) => setState(() => _tab = e.key))),
+      ])),
+      Expanded(child: _page([
+      if (_tab == 'profile' && manage) FormCard(readOnly: ro, 
         ctx: ctx, titleAr: 'بيانات التواصل والمواعيد', titleEn: 'Contact and hours', loadPath: 'store/profile', savePath: 'store/profile',
         transform: (b) => {...b, 'coverFileId': b['coverFileId'] ?? ''},
         fields: const [
@@ -266,7 +279,7 @@ class StoreSettings extends StatelessWidget {
           F(FK.area, 'announcement', 'إعلان', 'Announcement'),
         ],
       ),
-      if (manage) FormCard(readOnly: ro, 
+      if (_tab == 'profile' && manage) FormCard(readOnly: ro, 
         ctx: ctx, titleAr: 'بيانات المتجر والسياسات', titleEn: 'Store details and policies', loadPath: 'store/profile', savePath: 'store/profile',
         fields: const [
           F(FK.text, 'storeName', 'اسم المتجر', 'Store name'),
@@ -282,21 +295,22 @@ class StoreSettings extends StatelessWidget {
           F(FK.area, 'termsText', 'الشروط والأحكام', 'Terms'),
         ],
       ),
-      if (manage) _StoreCategories(ctx: ctx),
-      if (manage) brandingCard(ctx),
-      if (manage) TemplateCard(ctx: ctx),
-      if (manage) CodGuardCard(ctx: ctx),
-      MarketCard(ctx: ctx),
-      if (ship) _PaymentMethods(ctx: ctx),
-      if (ship) _ShippingMethods(ctx: ctx),
-      if (ship) _Zones(ctx: ctx),
-      if (manage) _Banners(ctx: ctx),
-      if (manage) FormCard(readOnly: ro, 
+      if (_tab == 'profile' && manage) _StoreCategories(ctx: ctx),
+      if (_tab == 'look' && manage) brandingCard(ctx),
+      if (_tab == 'look' && manage) TemplateCard(ctx: ctx),
+      if (_tab == 'sales' && manage) CodGuardCard(ctx: ctx),
+      if (_tab == 'sales') MarketCard(ctx: ctx),
+      if (_tab == 'sales' && ship) _PaymentMethods(ctx: ctx),
+      if (_tab == 'sales' && ship) _ShippingMethods(ctx: ctx),
+      if (_tab == 'sales' && ship) _Zones(ctx: ctx),
+      if (_tab == 'look' && manage) _Banners(ctx: ctx),
+      if (_tab == 'marketing' && manage) FormCard(readOnly: ro, 
         ctx: ctx, titleAr: 'الإعلانات والتحليلات', titleEn: 'Ads and analytics', subtitleAr: 'الصق المعرّفات من Meta وTikTok وGoogle', subtitleEn: 'Paste your Meta, TikTok and Google IDs',
         loadPath: 'store/profile', savePath: 'store/profile',
         fields: const [F(FK.ltr, 'metaPixelId', 'Meta Pixel ID', 'Meta Pixel ID'), F(FK.ltr, 'tiktokPixelId', 'TikTok Pixel ID', 'TikTok Pixel ID'), F(FK.ltr, 'gaId', 'Google Analytics ID', 'Google Analytics ID')],
       ),
-      if (ctx.can('branch.manage')) _StoreBranches(ctx: ctx),
+      if (_tab == 'branches' && ctx.can('branch.manage')) _StoreBranches(ctx: ctx),
+    ])),
     ]);
   }
 }

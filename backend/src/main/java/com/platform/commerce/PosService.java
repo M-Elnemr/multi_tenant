@@ -61,10 +61,10 @@ public class PosService {
             if (sku == null) throw BusinessException.notFound("RESOURCE_NOT_FOUND", "This code is not one of your product labels");
         }
         var r = jdbc.sql("""
-                SELECT v.id AS variant_id, v.sku, v.price_minor, v.currency, v.combo_key, p.id AS product_id, p.name,
+                SELECT v.id AS variant_id, v.sku, v.barcode, v.price_minor, v.currency, v.combo_key, p.id AS product_id, p.name,
                        coalesce((SELECT sum(i.quantity_on_hand - i.quantity_reserved) FROM commerce.inventory_items i WHERE i.variant_id = v.id), 0) AS available
                 FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id
-                WHERE v.tenant_id = :t AND v.status = 'ACTIVE' AND p.status = 'ACTIVE' AND (v.sku = :c OR v.barcode = :c) LIMIT 1
+                WHERE v.tenant_id = :t AND v.status = 'ACTIVE' AND p.status = 'ACTIVE' AND (v.sku = :c OR v.barcode = :c) ORDER BY (v.barcode = :c) DESC LIMIT 1
                 """).param("t", t).param("c", sku).query().listOfRows().stream().findFirst().orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "No product has this code"));
         Map<String, Object> m = new LinkedHashMap<>(Rows.camel(r));
         String combo = (String) r.get("combo_key");
@@ -73,18 +73,46 @@ public class PosService {
         return m;
     }
 
+    /**
+     * Type-ahead for the till: sellable variants whose product name, SKU or barcode matches. With no text it lists the first products, so a short catalog can be picked from a list.
+     * Rows have the same shape as {@link #lookup}, so the screen adds them the same way.
+     */
+    public List<Map<String, Object>> search(UUID t, String q, int limit) {
+        String text = q == null ? "" : q.trim();
+        String like = text.isEmpty() ? null : "%" + text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+        int lim = Math.max(1, Math.min(limit, 100));
+        var rows = jdbc.sql("""
+                SELECT v.id AS variant_id, v.sku, v.barcode, v.price_minor, v.currency, v.combo_key, p.id AS product_id, p.name,
+                       coalesce((SELECT sum(i.quantity_on_hand - i.quantity_reserved) FROM commerce.inventory_items i WHERE i.variant_id = v.id), 0) AS available
+                FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id
+                WHERE v.tenant_id = :t AND v.status = 'ACTIVE' AND p.status = 'ACTIVE'
+                  AND (CAST(:q AS varchar) IS NULL OR p.name ILIKE CAST(:q AS varchar) OR v.sku ILIKE CAST(:q AS varchar) OR v.barcode ILIKE CAST(:q AS varchar))
+                ORDER BY (v.barcode = :raw OR v.sku = :raw) DESC, p.name, v.sku LIMIT :l
+                """).param("t", t).param("q", like).param("raw", text).param("l", lim).query().listOfRows();
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (var r : rows) {
+            Map<String, Object> m = new LinkedHashMap<>(Rows.camel(r));
+            String combo = (String) r.get("combo_key");
+            m.put("variantLabel", combo == null || combo.isEmpty() ? null : combo.replace("|", ", ").replace("=", ": "));
+            m.remove("comboKey");
+            out.add(m);
+        }
+        return out;
+    }
+
     /** Every sellable variant with the text its label QR should hold: the product's web address plus the SKU, so customers and the cashier use the same code. */
     public List<Map<String, Object>> labels(UUID t, String q) {
         String host = urls.hosts(List.of(t)).get(t);
         String base = urls.baseUrl(host);
         String like = q == null || q.isBlank() ? null : "%" + q.trim() + "%";
         List<Map<String, Object>> out = new ArrayList<>();
-        for (var r : jdbc.sql("SELECT v.id AS variant_id, v.sku, v.barcode, v.price_minor, v.currency, v.combo_key, p.name, p.slug FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE v.tenant_id = :t AND v.status = 'ACTIVE' AND p.status = 'ACTIVE' AND (CAST(:q AS varchar) IS NULL OR p.name ILIKE CAST(:q AS varchar) OR v.sku ILIKE CAST(:q AS varchar)) ORDER BY p.name, v.sku LIMIT 300")
+        for (var r : jdbc.sql("SELECT v.id AS variant_id, v.sku, v.barcode, v.price_minor, v.currency, v.combo_key, p.name, p.slug FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE v.tenant_id = :t AND v.status = 'ACTIVE' AND p.status = 'ACTIVE' AND (CAST(:q AS varchar) IS NULL OR p.name ILIKE CAST(:q AS varchar) OR v.sku ILIKE CAST(:q AS varchar) OR v.barcode ILIKE CAST(:q AS varchar)) ORDER BY p.name, v.sku LIMIT 300")
                 .param("t", t).param("q", like).query().listOfRows()) {
             String combo = (String) r.get("combo_key");
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("variantId", r.get("variant_id"));
             m.put("sku", r.get("sku"));
+            m.put("barcode", r.get("barcode"));
             m.put("name", r.get("name"));
             m.put("variantLabel", combo == null || combo.isEmpty() ? null : combo.replace("|", ", ").replace("=", ": "));
             m.put("priceMinor", r.get("price_minor"));
@@ -144,8 +172,8 @@ public class PosService {
         String number = nextNumber(t);
         jdbc.sql("""
                 INSERT INTO commerce.orders (id, tenant_id, order_number, customer_id, status, payment_status, fulfillment_status, payment_method, currency, subtotal_minor, discount_minor, shipping_minor, total_minor,
-                    customer_name_snapshot, customer_phone_snapshot, source, confirmed_at, delivered_at, risk_level, risk_score)
-                VALUES (:id, :t, :n, :c, 'ARRIVED', 'PAID', 'FULFILLED', :pm, :cur, :sub, :disc, 0, :total, :cn, :cp, 'POS', now(), now(), 'LOW', 0)
+                    customer_name_snapshot, customer_phone_snapshot, source, channel, confirmed_at, delivered_at, risk_level, risk_score)
+                VALUES (:id, :t, :n, :c, 'ARRIVED', 'PAID', 'FULFILLED', :pm, :cur, :sub, :disc, 0, :total, :cn, :cp, 'POS', 'POS', now(), now(), 'LOW', 0)
                 """).param("id", orderId).param("t", t).param("n", number).param("c", customerId).param("pm", method).param("cur", currency).param("sub", subtotal).param("disc", discount).param("total", total)
                 .param("cn", name).param("cp", phone).update();
         for (var row : rows) {

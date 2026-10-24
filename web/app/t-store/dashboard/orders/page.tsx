@@ -4,17 +4,19 @@ import Link from "next/link";
 import { useState } from "react";
 import { Page, useApi } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
+import { ChannelBadge, CHANNELS } from "@/components/dashboard/channel-badge";
 import { Badge, ErrorText, Input, Loading, PageHeader, Pager, Select, StatusBadge, Table, Td } from "@/components/ui";
 import { dateTime, money } from "@/lib/format";
 import { GOVERNORATES, governorateName } from "@/lib/governorates";
 
-type Order = { id: string; orderNumber: string; source?: string; whatsappConfirmedAt?: string | null; status: string; paymentStatus: string; paymentMethod: string; totalMinor: number; currency: string; customerNameSnapshot: string; customerPhoneSnapshot: string; governorateCode?: string; confirmedAt?: string | null; courierName?: string; createdAt: string; riskLevel?: "LOW" | "MEDIUM" | "HIGH" | null; needsConfirmation?: boolean };
+type Order = { id: string; orderNumber: string; source?: string; channel?: string; whatsappConfirmedAt?: string | null; status: string; paymentStatus: string; paymentMethod: string; totalMinor: number; currency: string; customerNameSnapshot: string; customerPhoneSnapshot: string; governorateCode?: string; confirmedAt?: string | null; courierName?: string; createdAt: string; riskLevel?: "LOW" | "MEDIUM" | "HIGH" | null; needsConfirmation?: boolean };
 const STATUSES = ["REQUESTED", "PREPARING", "SHIPPED", "ARRIVED", "RETURNED", "CANCELLED"];
 
 export default function StoreOrders() {
   const { t, locale } = useI18n();
   const [status, setStatus] = useState("");
   const [gov, setGov] = useState("");
+  const [channel, setChannel] = useState("");
   const [q, setQ] = useState("");
   const [unconfirmed, setUnconfirmed] = useState(false);
   const [page, setPage] = useState(1);
@@ -22,6 +24,7 @@ export default function StoreOrders() {
   const qs = new URLSearchParams({ page: String(page) });
   if (status) qs.set("status", status);
   if (gov) qs.set("governorate", gov);
+  if (channel) qs.set("channel", channel);
   if (q.trim()) qs.set("q", q.trim());
   if (unconfirmed) qs.set("unconfirmed", "true");
   const { data, loading, error } = useApi<Page<Order>>(`store/orders?${qs}`);
@@ -35,10 +38,11 @@ export default function StoreOrders() {
           <span>📞 {t("confirm.banner", { n: pending })}</span><span className="text-amber-800">{unconfirmed ? t("filter.clear") : t("confirm.show")}</span>
         </button>
       )}
-      <div className="mb-4 grid gap-3 sm:grid-cols-3">
+      <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Input placeholder={t("orders.searchHint")} value={q} onChange={(e) => { setQ(e.target.value); reset(); }} />
         <Select value={status} onChange={(e) => { setStatus(e.target.value); reset(); }}><option value="">{t("admin.allStatuses")}</option>{STATUSES.map((s) => <option key={s} value={s}>{t(`status.${s}`)}</option>)}</Select>
         <Select value={gov} onChange={(e) => { setGov(e.target.value); reset(); }}><option value="">{t("orders.allGovernorates")}</option>{GOVERNORATES.map((g) => <option key={g.code} value={g.code}>{locale === "ar" ? g.ar : g.en}</option>)}</Select>
+        <Select value={channel} onChange={(e) => { setChannel(e.target.value); reset(); }}><option value="">{t("channel.all")}</option>{CHANNELS.map((c) => <option key={c} value={c}>{t(`channel.${c}`)}</option>)}</Select>
       </div>
       <ErrorText error={error} />
       {loading && !data ? <Loading /> : (
@@ -46,7 +50,7 @@ export default function StoreOrders() {
           <Table head={[t("orders.number"), t("orders.customer"), t("checkout.governorate"), t("admin.status"), t("orders.payment"), t("checkout.total"), t("admin.created")]}>
             {data?.data.map((o) => (
               <tr key={o.id} className="hover:bg-slate-50">
-                <Td><Link href={`/dashboard/orders/${o.id}`} className="font-mono text-brand">{o.orderNumber}</Link>{o.source === "AI_CHAT" && <span className="ms-2 rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-semibold text-violet-700">🤖 {t("ai.sourceTag")}</span>}{o.whatsappConfirmedAt && <span className="ms-2 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">✓ {t("orders.waConfirmed")}</span>}</Td>
+                <Td><Link href={`/dashboard/orders/${o.id}`} className="font-mono text-brand">{o.orderNumber}</Link><span className="ms-2"><ChannelBadge channel={o.channel} /></span>{o.source === "AI_CHAT" && <span className="ms-2 rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-semibold text-violet-700">🤖 {t("ai.sourceTag")}</span>}{o.whatsappConfirmedAt && <span className="ms-2 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">✓ {t("orders.waConfirmed")}</span>}</Td>
                 <Td>{o.customerNameSnapshot}<div dir="ltr" className="text-xs text-slate-500">{o.customerPhoneSnapshot}</div></Td>
                 <Td>{governorateName(o.governorateCode, locale) || "—"}</Td>
                 <Td><StatusBadge status={o.status} />{(o.riskLevel === "HIGH" || o.riskLevel === "MEDIUM") && o.paymentMethod === "CASH_ON_DELIVERY" && <div className="mt-1"><Badge tone={o.riskLevel === "HIGH" ? "red" : "amber"}>{o.riskLevel === "HIGH" ? "⚠️ " + t("risk.high") : t("risk.medium")}{o.needsConfirmation && !o.confirmedAt ? " · " + t("risk.held") : ""}</Badge></div>}{o.status === "REQUESTED" && !o.confirmedAt && <div className="mt-1"><Badge tone="amber">📞 {t("confirm.unconfirmed")}</Badge></div>}</Td>

@@ -172,20 +172,21 @@ public class OrderService {
 
     // ---- reads -------------------------------------------------------------------------------------------
 
-    public Map<String, Object> list(UUID tenantId, Page page, String status, UUID userId) { return list(tenantId, page, status, userId, null, null, null); }
+    public Map<String, Object> list(UUID tenantId, Page page, String status, UUID userId) { return list(tenantId, page, status, userId, null, null, null, null); }
 
     /** unconfirmed=true: new COD orders nobody has called yet. q matches order number, name or phone. */
-    public Map<String, Object> list(UUID tenantId, Page page, String status, UUID userId, Boolean unconfirmed, String governorate, String q) {
+    public Map<String, Object> list(UUID tenantId, Page page, String status, UUID userId, Boolean unconfirmed, String governorate, String q, String channel) {
         String like = q == null || q.isBlank() ? null : "%" + q.trim() + "%";
         String where = "tenant_id = :t AND (CAST(:s AS varchar) IS NULL OR status = CAST(:s AS varchar)) AND (CAST(:u AS uuid) IS NULL OR user_id = CAST(:u AS uuid))"
                 + " AND (NOT :unc OR (status = 'REQUESTED' AND confirmed_at IS NULL)) AND (CAST(:g AS varchar) IS NULL OR governorate_code = CAST(:g AS varchar))"
-                + " AND (CAST(:q AS varchar) IS NULL OR order_number ILIKE CAST(:q AS varchar) OR customer_name_snapshot ILIKE CAST(:q AS varchar) OR customer_phone_snapshot LIKE CAST(:q AS varchar))";
+                + " AND (CAST(:q AS varchar) IS NULL OR order_number ILIKE CAST(:q AS varchar) OR customer_name_snapshot ILIKE CAST(:q AS varchar) OR customer_phone_snapshot LIKE CAST(:q AS varchar))"
+                + " AND (CAST(:ch AS varchar) IS NULL OR channel = CAST(:ch AS varchar))";
         boolean unc = Boolean.TRUE.equals(unconfirmed);
         String g = governorate == null || governorate.isBlank() ? null : governorate.toUpperCase();
-        long total = jdbc.sql("SELECT count(*) FROM commerce.orders WHERE " + where).param("t", tenantId).param("s", status).param("u", userId).param("unc", unc).param("g", g).param("q", like).query(Long.class).single();
-        var rows = jdbc.sql("SELECT id, order_number, source, whatsapp_confirmed_at, status, payment_status, fulfillment_status, payment_method, currency, total_minor, customer_name_snapshot, customer_phone_snapshot, governorate_code, "
+        long total = jdbc.sql("SELECT count(*) FROM commerce.orders WHERE " + where).param("t", tenantId).param("s", status).param("u", userId).param("unc", unc).param("g", g).param("q", like).param("ch", channel == null || channel.isBlank() ? null : channel.toUpperCase()).query(Long.class).single();
+        var rows = jdbc.sql("SELECT id, order_number, source, channel, whatsapp_confirmed_at, status, payment_status, fulfillment_status, payment_method, currency, total_minor, customer_name_snapshot, customer_phone_snapshot, governorate_code, "
                         + "confirmed_at, courier_name, tracking_number, created_at, risk_level, needs_confirmation FROM commerce.orders WHERE " + where + " ORDER BY created_at DESC LIMIT :lim OFFSET :off")
-                .param("t", tenantId).param("s", status).param("u", userId).param("unc", unc).param("g", g).param("q", like).param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows();
+                .param("t", tenantId).param("s", status).param("u", userId).param("unc", unc).param("g", g).param("q", like).param("ch", channel == null || channel.isBlank() ? null : channel.toUpperCase()).param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows();
         return page.wrap(Rows.camel(rows), total);
     }
 
@@ -196,7 +197,7 @@ public class OrderService {
 
     public Map<String, Object> get(UUID tenantId, UUID orderId) {
         var o = jdbc.sql("""
-                SELECT id, order_number, source, whatsapp_number, whatsapp_confirmed_at, status, payment_status, fulfillment_status, payment_method, coupon_code, currency, subtotal_minor, discount_minor,
+                SELECT id, order_number, source, channel, whatsapp_number, whatsapp_confirmed_at, status, payment_status, fulfillment_status, payment_method, coupon_code, currency, subtotal_minor, discount_minor,
                        shipping_minor, tax_minor, cod_fee_minor, total_minor, customer_name_snapshot, customer_phone_snapshot, shipping_address_snapshot::text AS shipping_address,
                        governorate_code, area, landmark, phone2, eta_min_days, eta_max_days, confirmed_at, courier_name, tracking_number, tracking_url, shipped_at, delivered_at,
                        notes, created_at, updated_at, user_id, risk_score, risk_level, risk_reasons, needs_confirmation
@@ -220,6 +221,24 @@ public class OrderService {
         o.remove("userId");
         o.remove("customerHistory");   // the shop's private view of a phone number
         return o;
+    }
+
+    /** Locks the order for the caller (used by item-level returns, which restock only what came back). */
+    Map<String, Object> lockForUpdate(UUID tenantId, UUID orderId) { return lock(tenantId, orderId); }
+
+    /**
+     * Marks a delivered order RETURNED when every item has come back through item-level returns. Stock was already restocked line by line,
+     * so unlike {@link #apply} this does not touch inventory.
+     */
+    void markFullyReturned(UUID tenantId, Map<String, Object> o, UUID changedBy, String reason) {
+        UUID orderId = (UUID) o.get("id");
+        String phone = (String) o.get("customer_phone_snapshot");
+        phoneFlags.bump(tenantId, phone, "returned_count");
+        loyalty.reverseForReturned(tenantId, orderId, phone);
+        jdbc.sql("UPDATE commerce.orders SET status = 'RETURNED', updated_at = now() WHERE id = :o").param("o", orderId).update();
+        jdbc.sql("INSERT INTO commerce.order_status_history (order_id, tenant_id, from_status, new_status, changed_by, reason) VALUES (:o, :t, :f, 'RETURNED', :c, :r)")
+                .param("o", orderId).param("t", tenantId).param("f", o.get("status")).param("c", changedBy).param("r", reason).update();
+        events.publishEvent(new OrderEvents.OrderStatusChanged(tenantId, orderId, (UUID) o.get("user_id"), (String) o.get("order_number"), "RETURNED"));
     }
 
     private Map<String, Object> lock(UUID tenantId, UUID orderId) {

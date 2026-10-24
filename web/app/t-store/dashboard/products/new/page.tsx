@@ -13,7 +13,7 @@ import { OptionBuilder, toRequest, type OptionDraft } from "@/components/dashboa
 import { TaxonomyPicker, type TaxonomyNode } from "@/components/dashboard/taxonomy-picker";
 
 type Branch = { id: string; name: string };
-type Row = { sku: string; price: string; stock: string };
+type Row = { sku: string; barcode: string; price: string; stock: string };
 
 function combos(options: { name: string; values: string[] }[]): Record<string, string>[] {
   return options.reduce<Record<string, string>[]>((acc, o) => acc.flatMap((c) => o.values.map((v) => ({ ...c, [o.name]: v }))), [{}]);
@@ -37,11 +37,11 @@ export default function NewProduct() {
   const colorChoices = useMemo(() => (parsed.find((o) => /color|colour|لون/i.test(o.name)) ?? parsed[0])?.values ?? [], [parsed]);
   const key = (c: Record<string, string>) => parsed.map((o) => c[o.name]).join("|");
   const branchId = f.branchId || branches.data?.[0]?.id || "";
-  const row = (c: Record<string, string>): Row => rows[key(c)] ?? { sku: "", price: "", stock: "0" };
+  const row = (c: Record<string, string>): Row => rows[key(c)] ?? { sku: "", barcode: "", price: "", stock: "0" };
 
   const draftRows: DraftRow[] = matrix.map((c) => { const r = row(c); return { key: key(c), label: Object.values(c).join(" / "), sku: r.sku, price: r.price, stock: r.stock }; });
   const save = useAction(async () => {
-    const variants = matrix.map((c) => { const r = row(c); return { sku: r.sku.trim(), priceMinor: toMinor(r.price), optionValues: c, stock: [{ branchId, quantity: Number(r.stock) || 0 }] }; });
+    const variants = matrix.map((c) => { const r = row(c); return { sku: r.sku.trim(), barcode: r.barcode.trim() || undefined, priceMinor: toMinor(r.price), optionValues: c, stock: [{ branchId, quantity: Number(r.stock) || 0 }] }; });
     const p = await api<{ id: string; variants: { id: string; sku: string }[] }>("store/products", { body: { name: f.name, description: f.description, taxonomyId: picked?.id, audience: f.audience || undefined, condition: f.condition, brand: f.brand || undefined, status: f.status, options: parsed, variants, media: images.map((im) => ({ fileId: im.id, optionValue: colorChoices.includes(im.color) ? im.color : undefined })) } });
     let failed = false;
     try {
@@ -94,7 +94,7 @@ export default function NewProduct() {
             {(branches.data?.length ?? 0) > 1 && <Select className="max-w-48" value={branchId} onChange={(e) => setF({ ...f, branchId: e.target.value })}>{branches.data?.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</Select>}
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm"><thead><tr className="text-start text-xs text-slate-500"><th className="p-1 text-start">{parsed.length ? t("products.combination") : ""}</th><th className="p-1 text-start">SKU</th><th className="p-1 text-start">{t("products.price")}</th><th className="p-1 text-start">{t("products.stock")}</th></tr></thead>
+            <table className="w-full text-sm"><thead><tr className="text-start text-xs text-slate-500"><th className="p-1 text-start">{parsed.length ? t("products.combination") : ""}</th><th className="p-1 text-start">SKU</th><th className="p-1 text-start">{t("products.barcode")}</th><th className="p-1 text-start">{t("products.price")}</th><th className="p-1 text-start">{t("products.stock")}</th></tr></thead>
               <tbody>{matrix.map((c) => {
                 const r = row(c);
                 const set = (patch: Partial<Row>) => setRows({ ...rows, [key(c)]: { ...r, ...patch } });
@@ -102,6 +102,7 @@ export default function NewProduct() {
                   <tr key={key(c)}>
                     <td className="p-1 text-slate-600">{Object.values(c).join(" / ")}</td>
                     <td className="p-1"><Input value={r.sku} onChange={(e) => set({ sku: e.target.value })} required dir="ltr" /></td>
+                    <td className="p-1"><Input value={r.barcode} onChange={(e) => set({ barcode: e.target.value })} dir="ltr" inputMode="numeric" placeholder={t("products.barcodeHint")} /></td>
                     <td className="p-1"><Input value={r.price} onChange={(e) => set({ price: e.target.value })} required inputMode="decimal" dir="ltr" /></td>
                     <td className="p-1"><Input value={r.stock} onChange={(e) => set({ stock: e.target.value })} inputMode="numeric" dir="ltr" /></td>
                   </tr>

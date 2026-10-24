@@ -12,10 +12,12 @@ import { WhatsAppButton } from "@/components/whatsapp-button";
 import { ConfirmCard, TrackingCard } from "@/components/dashboard/order-actions";
 import { governorateName } from "@/lib/governorates";
 import Link from "next/link";
+import { ChannelBadge } from "@/components/dashboard/channel-badge";
 import { useRouter } from "next/navigation";
 import { dateTime, money } from "@/lib/format";
 
 type Detail = {
+  channel?: string;
   id: string; orderNumber: string; status: string; paymentStatus: string; paymentMethod: string; currency: string; subtotalMinor: number; discountMinor: number; shippingMinor: number; totalMinor: number; customerNameSnapshot: string; customerPhoneSnapshot: string; whatsappNumber?: string | null; whatsappConfirmedAt?: string | null; notes?: string; createdAt: string;
   items: { productNameSnapshot: string; variantNameSnapshot?: string; sku_snapshot?: string; skuSnapshot?: string; unitPriceMinor: number; quantity: number; lineTotalMinor: number }[];
   history: { newStatus: string; reason?: string; createdAt: string }[];
@@ -52,7 +54,7 @@ export default function StoreOrder({ params }: { params: Promise<{ id: string }>
   const refunded = data.payments.filter((p) => p.kind === "REFUND").reduce((n, p) => n + p.amountMinor, 0);
   return (
     <>
-      <PageHeader title={`${t("orders.order")} ${data.orderNumber}`} subtitle={dateTime(data.createdAt, locale)} actions={<><StatusBadge status={data.status} /><StatusBadge status={data.paymentStatus} /></>} />
+      <PageHeader title={`${t("orders.order")} ${data.orderNumber}`} subtitle={dateTime(data.createdAt, locale)} actions={<><ChannelBadge channel={data.channel} /><StatusBadge status={data.status} /><StatusBadge status={data.paymentStatus} /></>} />
       <ErrorText error={move.error ?? taxDoc.error} />
       <div className="mb-4 flex flex-wrap items-center gap-2 print:hidden">
         {can("invoice.manage") && data.status !== "CANCELLED" && data.status !== "PENDING" && <button type="button" onClick={() => void taxDoc.run("invoice")} className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold hover:bg-slate-50">📑 {t("inv.taxInvoice")}</button>}

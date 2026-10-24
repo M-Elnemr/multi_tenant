@@ -6,6 +6,7 @@ import { dateTime, money } from "@/lib/format";
 import { useAction, useApi } from "../hooks";
 import { useI18n } from "../i18n-provider";
 import { Alert, Badge, Button, Card, Empty, ErrorText, Field, Input, Loading, Stat, Tabs } from "../ui";
+import { isNoWaba, WabaDialog } from "./waba-dialog";
 
 type Item = { name: string; variant?: string | null; quantity: number; priceMinor: number };
 type Cart = { id: string; name?: string | null; phone: string; items: Item[]; itemCount: number; totalMinor: number; currency: string; status: string; createdAt: string; contactedAt?: string | null; reminderStatus?: string | null; whatsappUrl: string };
@@ -24,6 +25,7 @@ export default function CartsView({ canWrite }: { canWrite: boolean }) {
   const d = res.data;
   const cur = form ?? (d ? { enabled: d.settings.recoveryEnabled, paid: d.settings.allowPaid, hours: String(d.settings.remindAfterHours), coupon: d.settings.couponCode ?? "" } : null);
   const save = useAction(async () => { if (!cur) return; await api("store/carts/settings", { method: "PUT", body: { recoveryEnabled: cur.enabled, allowPaid: cur.paid, remindAfterHours: Number(cur.hours), couponCode: cur.coupon } }); setForm(null); await res.reload(); });
+  const [wabaOpen, setWabaOpen] = useState(false);
   const template = useAction(async () => { const r = await api<{ status: string }>("store/carts/template", { body: {} }); setNotice(t("cart.templateStatus") + ": " + r.status); });
   if (res.loading && !d) return <Loading />;
   return (
@@ -75,7 +77,9 @@ export default function CartsView({ canWrite }: { canWrite: boolean }) {
             <Field label={t("cart.paid")}><select disabled={!canWrite || !cur.enabled} className="s-input w-full rounded-xl border px-3 py-2" value={cur.paid ? "1" : "0"} onChange={(e) => setForm({ ...cur, paid: e.target.value === "1" })}><option value="0">{t("wr.off")}</option><option value="1">{t("wr.on")}</option></select></Field>
           </div>
           <Alert tone="amber">{t("cart.paidWarn", { price: money(d?.settings.messagePriceMinor ?? 0, currency, locale) })}</Alert>
-          <ErrorText error={save.error} />
+          <ErrorText error={save.error ?? template.error} />
+          {isNoWaba(template.error) && <Button variant="secondary" onClick={() => setWabaOpen(true)}>{t("waba.add")}</Button>}
+          <WabaDialog open={wabaOpen} onClose={() => setWabaOpen(false)} onSaved={() => { template.setError(null); void template.run(); }} />
           {canWrite && <div className="flex flex-wrap gap-2"><Button loading={save.loading} onClick={() => void save.run()}>{t("common.save")}</Button><Button variant="secondary" loading={template.loading} onClick={() => void template.run()}>{t("cart.registerTemplate")}</Button></div>}
         </Card>
       )}

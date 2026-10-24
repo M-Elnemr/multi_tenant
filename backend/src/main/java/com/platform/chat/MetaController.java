@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -84,6 +85,16 @@ public class MetaController {
     public Map<String, Object> connect(@RequestBody ConnectRequest r, Authentication a) {
         return meta.connect(StoreContext.tenantId(), (UUID) a.getPrincipal(), r.platform(), r.externalId(), r.accessToken(), r.pageId());
     }
+
+    public record WabaRequest(String wabaId) {}
+
+    @PutMapping("/store/ai/whatsapp/waba")
+    @PreAuthorize("hasAuthority('ai.manage')")
+    public Map<String, Object> setWaba(@RequestBody WabaRequest r, Authentication a) { return meta.setWaba(StoreContext.tenantId(), (UUID) a.getPrincipal(), r.wabaId()); }
+
+    @PostMapping("/store/ai/whatsapp/waba/detect")
+    @PreAuthorize("hasAuthority('ai.manage')")
+    public Map<String, Object> detectWaba(Authentication a) { return meta.detectWaba(StoreContext.tenantId(), (UUID) a.getPrincipal()); }
 
     @DeleteMapping("/store/ai/channels/{id}")
     @PreAuthorize("hasAuthority('ai.manage')")

@@ -18,6 +18,7 @@ class OrdersScreen extends StatefulWidget {
 
 class _OrdersScreenState extends State<OrdersScreen> {
   int _unconfirmed = 0;
+  String _channel = '';
   @override
   void initState() {
     super.initState();
@@ -30,17 +31,25 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final ar = s.ar;
     final ctx = widget.ctx;
     return PagedList(
+      key: ValueKey('orders-$_channel'),
       api: ctx.api,
       path: 'store/orders',
+      query: _channel.isEmpty ? null : {'channel': _channel},
       searchHint: ar ? 'رقم الطلب أو اسم العميل أو الهاتف' : 'Order number, customer or phone',
       filterParam: 'status',
       filters: [('', s.all), for (final st in ['REQUESTED', 'PREPARING', 'SHIPPED', 'ARRIVED', 'RETURNED', 'CANCELLED']) (st, ar ? _arStatus[st]! : st[0] + st.substring(1).toLowerCase())],
-      header: _unconfirmed > 0 ? Container(margin: const EdgeInsets.fromLTRB(16, 4, 16, 4), padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFFFF4DD), borderRadius: BorderRadius.circular(14)), child: Row(children: [const Icon(Icons.phone_in_talk_rounded, color: Color(0xFFD98200)), const SizedBox(width: 8), Expanded(child: Text(ar ? '$_unconfirmed طلب لم يتم تأكيده بالاتصال بالعميل' : '$_unconfirmed order(s) not yet confirmed by phone', style: const TextStyle(fontWeight: FontWeight.w700)))])) : null,
+      header: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SizedBox(height: 44, child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 16), children: [
+          for (final e in [MapEntry('', [ar ? 'كل القنوات' : 'All channels', '']), ...kChannels.entries])
+            Padding(padding: const EdgeInsetsDirectional.only(end: 8), child: ChoiceChip(label: Text(e.value[ar ? 0 : 1] == '' ? e.value[0] : e.value[ar ? 0 : 1]), selected: _channel == e.key, onSelected: (_) => setState(() => _channel = e.key))),
+        ])),
+        if (_unconfirmed > 0) Container(margin: const EdgeInsets.fromLTRB(16, 4, 16, 4), padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFFFF4DD), borderRadius: BorderRadius.circular(14)), child: Row(children: [const Icon(Icons.phone_in_talk_rounded, color: Color(0xFFD98200)), const SizedBox(width: 8), Expanded(child: Text(ar ? '$_unconfirmed طلب لم يتم تأكيده بالاتصال بالعميل' : '$_unconfirmed order(s) not yet confirmed by phone', style: const TextStyle(fontWeight: FontWeight.w700)))])),
+      ]),
       emptyText: ar ? 'لا توجد طلبات' : 'No orders',
       itemBuilder: (c, o, reload) => Card(child: ListTile(
         contentPadding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
         title: Row(children: [Expanded(child: Text('${o['orderNumber']}', textDirection: TextDirection.ltr, textAlign: TextAlign.start, style: const TextStyle(fontWeight: FontWeight.w900))), StatusPill('${o['status']}'), riskChip(o, ar)]),
-        subtitle: Padding(padding: const EdgeInsets.only(top: 4), child: Text('${o['customerNameSnapshot']} · ${fmtDate(o['createdAt'] as String?)}\n${s.money(o['totalMinor'] as num, (o['currency'] as String?) ?? ctx.currency)}${o['confirmedAt'] == null && o['status'] == 'REQUESTED' ? (ar ? '  ·  غير مؤكد' : '  ·  unconfirmed') : ''}')),
+        subtitle: Padding(padding: const EdgeInsets.only(top: 4), child: Text('${(kChannels[o['channel']] ?? kChannels['OTHER']!)[ar ? 0 : 1]} · ${o['customerNameSnapshot']} · ${fmtDate(o['createdAt'] as String?)}\n${s.money(o['totalMinor'] as num, (o['currency'] as String?) ?? ctx.currency)}${o['confirmedAt'] == null && o['status'] == 'REQUESTED' ? (ar ? '  ·  غير مؤكد' : '  ·  unconfirmed') : ''}')),
         isThreeLine: true,
         onTap: () async {
           await Navigator.of(c).push(MaterialPageRoute(builder: (_) => OrderDetail(ctx: ctx, id: o['id'] as String)));
@@ -77,7 +86,8 @@ class OrderDetail extends StatelessWidget {
           return ListView(padding: const EdgeInsets.all(16), children: [
             Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [Expanded(child: Text('${o['orderNumber']}', textDirection: TextDirection.ltr, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900))), StatusPill('${o['status']}')]),
-              const SizedBox(height: 8),
+              Align(alignment: AlignmentDirectional.centerStart, child: channelChip(o, ar)),
+              const SizedBox(height: 4),
               kv(ar ? 'العميل' : 'Customer', '${o['customerNameSnapshot']}'),
               kv(s.phone, phone ?? '', ltr: true),
               kv(ar ? 'العنوان' : 'Address', addr),

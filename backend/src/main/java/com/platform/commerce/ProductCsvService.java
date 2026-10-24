@@ -14,7 +14,7 @@ import org.springframework.stereotype.Service;
 /** Spreadsheet import/export for products: one row per product (single variant). Categories are written as "Men > Shirts" and created when missing. */
 @Service
 public class ProductCsvService {
-    static final List<String> HEADER = List.of("name", "brand", "category", "audience", "condition", "sku", "price", "compare_at_price", "stock", "description", "status");
+    static final List<String> HEADER = List.of("name", "brand", "category", "audience", "condition", "sku", "price", "compare_at_price", "stock", "description", "status", "barcode");
     private static final int MAX_ROWS = 500;
 
     private final JdbcClient jdbc;
@@ -27,7 +27,7 @@ public class ProductCsvService {
         var rows = jdbc.sql("""
                 SELECT p.name, p.brand, p.status, p.description, p.audience, p.item_condition,
                   (SELECT string_agg(a.name_ar, ' > ' ORDER BY a.level) FROM commerce.taxonomy t JOIN commerce.taxonomy a ON t.path LIKE a.path || '%' WHERE t.id = p.taxonomy_id) AS category,
-                  v.sku, v.price_minor, v.compare_at_price_minor,
+                  v.sku, v.barcode, v.price_minor, v.compare_at_price_minor,
                   (SELECT coalesce(sum(i.quantity_on_hand), 0) FROM commerce.inventory_items i WHERE i.variant_id = v.id) AS stock
                 FROM commerce.products p JOIN commerce.product_variants v ON v.product_id = p.id AND v.status = 'ACTIVE'
                 WHERE p.tenant_id = :t AND p.status <> 'ARCHIVED' ORDER BY p.created_at, v.created_at
@@ -37,7 +37,7 @@ public class ProductCsvService {
             sb.append(cell(r.get("name"))).append(',').append(cell(r.get("brand"))).append(',').append(cell(r.get("category"))).append(',').append(cell(r.get("audience"))).append(',')
               .append(cell(r.get("item_condition"))).append(',').append(cell(r.get("sku"))).append(',')
               .append(money(r.get("price_minor"))).append(',').append(money(r.get("compare_at_price_minor"))).append(',').append(r.get("stock")).append(',')
-              .append(cell(r.get("description"))).append(',').append(cell(r.get("status"))).append("\r\n");
+              .append(cell(r.get("description"))).append(',').append(cell(r.get("status"))).append(',').append(cell(r.get("barcode"))).append("\r\n");
         }
         return sb.toString();
     }
@@ -71,7 +71,7 @@ public class ProductCsvService {
                 Integer categoryId = resolveCategory(m.getOrDefault("category", ""));
                 catalog.createProduct(tenantId, actor, new CatalogService.ProductReq(name, m.getOrDefault("description", ""), null, categoryId, null, m.getOrDefault("brand", "").isEmpty() ? null : m.get("brand"),
                         audienceOf(m.get("audience")), conditionOf(m.get("condition")), status, List.of(),
-                        List.of(new CatalogService.VariantReq(sku, price, compare, null, null, Map.of(), stock > 0 ? List.of(new CatalogService.StockReq(branch, stock)) : List.of())), List.of()));
+                        List.of(new CatalogService.VariantReq(sku, price, compare, m.getOrDefault("barcode", "").isEmpty() ? null : m.get("barcode"), null, Map.of(), stock > 0 ? List.of(new CatalogService.StockReq(branch, stock)) : List.of())), List.of()));
                 created++;
             } catch (BusinessException e) {
                 errors.add(new RowError(i + 1, e.getMessage()));
