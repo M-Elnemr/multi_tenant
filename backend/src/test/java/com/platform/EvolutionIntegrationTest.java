@@ -90,14 +90,14 @@ class EvolutionIntegrationTest extends IntegrationTestBase {
 
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("Welcome! What are you looking for?"));
         String id = "MSG" + uniq();
-        webhook(SECRET, message(inst, "201055550000", id, "hello")).andExpect(status().isOk());
+        webhook(SECRET, message(inst, "201055550000", id, "hello I need a dress")).andExpect(status().isOk());
         var sent = FakeEvolutionApi.CALLS.get(FakeEvolutionApi.CALLS.size() - 1);
         assertThat(sent.path()).isEqualTo("/message/sendText/" + inst);
         assertThat(sent.body().get("number")).isEqualTo("201055550000");
         assertThat((String) sent.body().get("text")).contains("Welcome!");
 
         int count = FakeEvolutionApi.CALLS.size();
-        webhook(SECRET, message(inst, "201055550000", id, "hello")).andExpect(status().isOk());   // the same delivery again
+        webhook(SECRET, message(inst, "201055550000", id, "hello I need a dress")).andExpect(status().isOk());   // the same delivery again
         webhook(SECRET, "{\"event\":\"messages.upsert\",\"instance\":\"%s\",\"data\":{\"key\":{\"remoteJid\":\"201055550000@s.whatsapp.net\",\"fromMe\":true,\"id\":\"E%s\"},\"message\":{\"conversation\":\"x\"}}}".formatted(inst, uniq())).andExpect(status().isOk());   // our own message
         webhook(SECRET, "{\"event\":\"messages.upsert\",\"instance\":\"%s\",\"data\":{\"key\":{\"remoteJid\":\"1203630@g.us\",\"fromMe\":false,\"id\":\"G%s\"},\"message\":{\"conversation\":\"hi all\"}}}".formatted(inst, uniq())).andExpect(status().isOk());   // a group
         webhook(SECRET, message("shop-unknown", "201055550000", "U" + uniq(), "hello")).andExpect(status().isOk());   // an unknown instance

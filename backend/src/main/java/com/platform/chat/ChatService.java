@@ -171,7 +171,7 @@ public class ChatService {
         long userMsgId = jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'user', :x) RETURNING id").param("c", conv).param("x", text).query(Long.class).single();
 
         List<Turn> turns = new ArrayList<>();
-        for (var m : jdbc.sql("SELECT role, content FROM (SELECT id, role, content FROM chat.messages WHERE conversation_id = :c ORDER BY id DESC LIMIT 24) x ORDER BY id").param("c", conv).query().listOfRows())
+        for (var m : jdbc.sql("SELECT role, content FROM (SELECT id, role, content FROM chat.messages WHERE conversation_id = :c ORDER BY id DESC LIMIT 12) x ORDER BY id").param("c", conv).query().listOfRows())
             turns.add("user".equals(m.get("role")) ? Turn.user((String) m.get("content")) : Turn.model((String) m.get("content")));
 
         @SuppressWarnings("unchecked") Map<String, Object>[] orderBox = new Map[1];
@@ -193,9 +193,22 @@ public class ChatService {
             jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x)").param("c", conv).param("x", answer).update();
             return new Reply(conv, answer, null, ctx.products());
         }
+        boolean first = turns.stream().noneMatch(t -> "model".equals(t.role()));
+        var instant = FastAnswers.answer(text, first, (String) getSettings(tenantId).get("greeting"));
+        if (instant.isPresent()) {
+            answer = instant.get();
+            if (!"TEST".equals(channel)) usage(tenantId, 0, new AiProvider.Usage(0, 0, 0), true);
+            jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x)").param("c", conv).param("x", answer).update();
+            jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();
+            return new Reply(conv, answer, null, ctx.products());
+        }
+        int calls = 0;
+        AiProvider.Usage used = AiProvider.Usage.NONE;
         try {
             for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
                 Turn t = ai.next(system, turns, tools);
+                calls++;
+                used = new AiProvider.Usage(used.input() + t.usage().input(), used.output() + t.usage().output(), used.cached() + t.usage().cached());
                 if (t.calls().isEmpty()) { answer = t.text(); break; }
                 turns.add(t);
                 List<ToolResult> results = new ArrayList<>();
@@ -206,11 +219,22 @@ public class ChatService {
             log.warn("AI unavailable: {} ({})", e.getMessage(), e.getCause() == null ? "no cause" : e.getCause().toString());
             answer = "عذرًا، المساعد غير متاح الآن، حاول بعد قليل. / Sorry, the assistant is unavailable right now. Please try again shortly.";
         }
-        if (!"TEST".equals(channel)) seller.count(tenantId);
+        if (!"TEST".equals(channel)) { seller.count(tenantId); usage(tenantId, calls, used, false); }
         if (answer == null || answer.isBlank()) answer = "عذرًا، لم أفهم. هل تعيد صياغة طلبك؟ / Sorry, I did not get that. Could you rephrase?";
         jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x)").param("c", conv).param("x", answer).update();
         jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();
         return new Reply(conv, answer, orderBox[0], ctx.products());
+    }
+
+    /** Adds one reply to the shop's token tally of the day. Never lets a logging problem break a chat. */
+    private void usage(UUID tenantId, int calls, AiProvider.Usage u, boolean instant) {
+        try {
+            jdbc.sql("""
+                    INSERT INTO chat.ai_usage (tenant_id, day, feature, replies, model_calls, input_tokens, output_tokens, cached_tokens, instant) VALUES (:t, current_date, 'chat', :r, :c, :i, :o, :k, :n)
+                    ON CONFLICT (tenant_id, day, feature) DO UPDATE SET replies = chat.ai_usage.replies + :r, model_calls = chat.ai_usage.model_calls + :c, input_tokens = chat.ai_usage.input_tokens + :i,
+                      output_tokens = chat.ai_usage.output_tokens + :o, cached_tokens = chat.ai_usage.cached_tokens + :k, instant = chat.ai_usage.instant + :n
+                    """).param("t", tenantId).param("r", instant ? 0 : 1).param("c", calls).param("i", (long) u.input()).param("o", (long) u.output()).param("k", (long) u.cached()).param("n", instant ? 1 : 0).update();
+        } catch (RuntimeException e) { log.warn("AI usage not recorded: {}", e.toString()); }
     }
 
     // ---- confirmation ----------------------------------------------------------------------------------------
@@ -297,16 +321,16 @@ public class ChatService {
         p.append(SalesPlaybook.TEXT);
         p.append("MAXIMUM DISCOUNT YOU MAY GIVE: ").append(s.get("maxDiscountPct")).append("%.\n\n");
         p.append(shopFacts(tenantId, profile));
+        var global = lessons(null);
+        var own = lessons(tenantId);
+        if (!global.isEmpty()) p.append("\nPLATFORM LESSONS (how to sell well; follow them unless they conflict with the RULES):\n").append(lessonText(global));
+        if (!own.isEmpty()) p.append("\nTHIS SHOP'S LESSONS (the owner's instructions for this shop; follow them unless they conflict with the RULES):\n").append(lessonText(own));
         String memo = seller.memory(tenantId, channel, externalId);
         if (!memo.isBlank()) p.append("\nWHAT YOU REMEMBER ABOUT THIS CUSTOMER (use it naturally, do not recite it):\n").append(memo).append("\n");
         p.append(genderRule(tenantId, channel, externalId, clientId));
         if ("WHATSAPP".equals(channel) && externalId != null) p.append("\nTHE CUSTOMER IS CHATTING WITH YOU ON WHATSAPP from the number +").append(externalId.replaceAll("\\D", "")).append(". NEVER ask for a phone number and NEVER ask about WhatsApp confirmation: this number is used for both and is filled in for you, and the customer's \"yes\" to the order summary is the confirmation. In your single message with the missing details ask only for the name, the full address (governorate included) and the payment method.\n");
         if (clientId != null) p.append(clientFacts(clientId));
         else p.append("The customer is a guest (not signed in): collect their name, phone and address from the chat; they will be saved as a customer of this shop.\n");
-        var global = lessons(null);
-        var own = lessons(tenantId);
-        if (!global.isEmpty()) p.append("\nPLATFORM LESSONS (how to sell well; follow them unless they conflict with the RULES):\n").append(lessonText(global));
-        if (!own.isEmpty()) p.append("\nTHIS SHOP'S LESSONS (the owner's instructions for this shop; follow them unless they conflict with the RULES):\n").append(lessonText(own));
         return p.toString();
     }
 
@@ -423,7 +447,7 @@ public class ChatService {
     private Map<String, Object> searchProducts(Ctx ctx, Map<String, Object> a) {
         String q = a.get("query") == null || String.valueOf(a.get("query")).isBlank() ? null : String.valueOf(a.get("query")).trim();
         Long max = a.get("maxPrice") instanceof Number n ? Math.round(n.doubleValue() * 100) : null;
-        var page = search.list(ctx.tenantId(), Page.of(1, 6), new StoreSearchService.Filter(q, null, null, max, null, true, null, null, "newest"));
+        var page = search.list(ctx.tenantId(), Page.of(1, 3), new StoreSearchService.Filter(q, null, null, max, null, true, null, null, "newest"));
         List<Map<String, Object>> rows = (List<Map<String, Object>>) page.get("data");
         List<Map<String, Object>> out = new ArrayList<>();
         for (var r : rows) {

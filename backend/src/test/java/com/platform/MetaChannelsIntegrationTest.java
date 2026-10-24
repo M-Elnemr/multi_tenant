@@ -72,7 +72,7 @@ class MetaChannelsIntegrationTest extends IntegrationTestBase {
         assertThat(FakeMetaGraph.SENT.get(0).path()).isEqualTo(page + "/subscribed_apps");
 
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("Welcome! What are you looking for?"));
-        String raw = pageMessage(page, "user-1", "mid-" + uniq(), "hello");
+        String raw = pageMessage(page, "user-1", "mid-" + uniq(), "hello I need a dress");
         webhook(raw, sign(raw)).andExpect(status().isOk());
         var sent = FakeMetaGraph.SENT.get(FakeMetaGraph.SENT.size() - 1);
         assertThat(sent.path()).isEqualTo("me/messages");
@@ -267,7 +267,7 @@ class MetaChannelsIntegrationTest extends IntegrationTestBase {
         // a quick answer gets no wait message
         FakeMetaGraph.reset();
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("Quick!"));
-        String raw2 = pageMessage(page, "user-slow", "mid-" + uniq(), "hello");
+        String raw2 = pageMessage(page, "user-slow", "mid-" + uniq(), "hello I need a dress");
         webhook(raw2, sign(raw2)).andExpect(status().isOk());
         assertThat(FakeMetaGraph.SENT).hasSize(1);
     }

@@ -141,7 +141,10 @@ public class GeminiProvider implements AiProvider {
     }
 
     private Turn parse(String responseBody) throws java.io.IOException {
-        JsonNode parts = JSON.readTree(responseBody).path("candidates").path(0).path("content").path("parts");
+        JsonNode root = JSON.readTree(responseBody);
+        JsonNode parts = root.path("candidates").path(0).path("content").path("parts");
+        JsonNode um = root.path("usageMetadata");
+        Usage usage = new Usage(um.path("promptTokenCount").asInt(0), um.path("candidatesTokenCount").asInt(0) + um.path("thoughtsTokenCount").asInt(0), um.path("cachedContentTokenCount").asInt(0));
         StringBuilder text = new StringBuilder();
         List<ToolCall> calls = new ArrayList<>();
         for (JsonNode p : parts) {
@@ -152,6 +155,6 @@ public class GeminiProvider implements AiProvider {
             }
         }
         if (text.length() == 0 && calls.isEmpty()) throw new AiUnavailableException("The AI assistant returned nothing");
-        return new Turn("model", text.toString().trim(), calls, List.of(), parts.isMissingNode() ? null : parts);
+        return new Turn("model", text.toString().trim(), calls, List.of(), parts.isMissingNode() ? null : parts, usage);
     }
 }

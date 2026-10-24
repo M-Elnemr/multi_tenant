@@ -15,7 +15,14 @@ public interface AiProvider {
      * One step of the exchange. {@code role} is "user", "model" or "tool". A model turn has text and/or tool calls; a tool turn carries the results.
      * {@code raw} is whatever the provider needs to replay its own turn exactly (opaque to everyone else).
      */
-    record Turn(String role, String text, List<ToolCall> calls, List<ToolResult> results, Object raw) {
+    /** Tokens the model billed for one call (cached = the part of the input served from the provider's prompt cache). */
+    record Usage(int input, int output, int cached) {
+        public static final Usage NONE = new Usage(0, 0, 0);
+    }
+
+    record Turn(String role, String text, List<ToolCall> calls, List<ToolResult> results, Object raw, Usage usage) {
+        public Turn(String role, String text, List<ToolCall> calls, List<ToolResult> results, Object raw) { this(role, text, calls, results, raw, Usage.NONE); }
+        public Turn withUsage(Usage u) { return new Turn(role, text, calls, results, raw, u); }
         public static Turn user(String text) { return new Turn("user", text, List.of(), List.of(), null); }
         public static Turn model(String text) { return new Turn("model", text, List.of(), List.of(), null); }
         public static Turn tool(List<ToolResult> results) { return new Turn("tool", null, List.of(), results, null); }

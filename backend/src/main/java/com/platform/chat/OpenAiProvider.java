@@ -136,6 +136,7 @@ public class OpenAiProvider implements AiProvider {
         raw.put("role", "assistant");
         raw.put("content", text);
         if (!calls.isEmpty()) raw.set("tool_calls", (ArrayNode) msg.path("tool_calls"));
-        return new Turn("model", text, calls, List.of(), raw);
+        JsonNode u = root.path("usage");
+        return new Turn("model", text, calls, List.of(), raw, new Usage(u.path("prompt_tokens").asInt(0), u.path("completion_tokens").asInt(0), u.path("prompt_tokens_details").path("cached_tokens").asInt(0)));
     }
 }

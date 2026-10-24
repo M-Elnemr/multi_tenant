@@ -141,7 +141,7 @@ class GenderAndReportIntegrationTest extends IntegrationTestBase {
         linkOwnNumber(s);
         String inst = jdbc.sql("SELECT instance FROM chat.evolution_settings WHERE tenant_id = :t").param("t", s.id()).query(String.class).single();
         FakeAiProvider.SCRIPT.add(turns -> com.platform.chat.AiProvider.Turn.model("أهلاً بيكي"));
-        String msg = "{\"event\":\"messages.upsert\",\"instance\":\"%s\",\"data\":{\"pushName\":\"Mona\",\"key\":{\"remoteJid\":\"2%s@s.whatsapp.net\",\"fromMe\":false,\"id\":\"R%s\"},\"message\":{\"conversation\":\"hello\"}}}".formatted(inst, p, uniq());
+        String msg = "{\"event\":\"messages.upsert\",\"instance\":\"%s\",\"data\":{\"pushName\":\"Mona\",\"key\":{\"remoteJid\":\"2%s@s.whatsapp.net\",\"fromMe\":false,\"id\":\"R%s\"},\"message\":{\"conversation\":\"hello I need a dress\"}}}".formatted(inst, p, uniq());
         mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/v1/chat/evolution/webhook/evolution-test-secret-0123456789").header("Host", "platform.test").contentType("application/json").content(msg)).andExpect(status().isOk());
         assertThat(FakeAiProvider.lastSystem).contains("WOMAN").contains("بيكي");
         assertThat(FakeEvolutionApi.CALLS.stream().anyMatch(c -> c.path().startsWith("/message/sendText/") && c.body().get("text").toString().contains("أهلاً بيكي"))).isTrue();

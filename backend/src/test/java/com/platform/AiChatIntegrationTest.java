@@ -137,9 +137,9 @@ class AiChatIntegrationTest extends IntegrationTestBase {
         Tenant a = onboard("STORE");
         Tenant b = onboard("STORE");
         onHost(a.host(), a.access(), "POST", "/api/v1/store/ai/lessons", "{\"instruction\":\"Always say marhaba first ALPHA\",\"exampleQuestion\":\"hi\",\"exampleAnswer\":\"marhaba!\"}").andExpect(status().isCreated());
-        onHost(a.host(), a.access(), "POST", "/api/v1/store/ai/test", "{\"message\":\"hi\"}").andExpect(status().isOk());
+        onHost(a.host(), a.access(), "POST", "/api/v1/store/ai/test", "{\"message\":\"hi I need a dress\"}").andExpect(status().isOk());
         assertThat(FakeAiProvider.lastSystem).contains("ALPHA");
-        onHost(b.host(), b.access(), "POST", "/api/v1/store/ai/test", "{\"message\":\"hi\"}").andExpect(status().isOk());
+        onHost(b.host(), b.access(), "POST", "/api/v1/store/ai/test", "{\"message\":\"hi I need a dress\"}").andExpect(status().isOk());
         assertThat(FakeAiProvider.lastSystem).doesNotContain("ALPHA");
         onHost(b.host(), b.access(), "GET", "/api/v1/store/ai/lessons", null).andExpect(jsonPath("$.length()").value(0));
 

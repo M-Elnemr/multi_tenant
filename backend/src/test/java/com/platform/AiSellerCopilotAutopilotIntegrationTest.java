@@ -70,7 +70,7 @@ class AiSellerCopilotAutopilotIntegrationTest extends IntegrationTestBase {
         Shop s = shop();
         String conv = UUID.randomUUID().toString();
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("اهلا بيك"));
-        chat(s, conv, "السلام عليكم");
+        chat(s, conv, "السلام عليكم عايز فستان");
         assertThat(FakeAiProvider.lastSystem).contains("HOW YOU SELL").contains("remember_customer").contains("schedule_follow_up").doesNotContain("customer-support");
         assertThat(FakeAiProvider.lastSystem).doesNotContain("will contact you").doesNotContain("خدمة العملاء");
 
