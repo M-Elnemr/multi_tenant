@@ -128,4 +128,22 @@ public class CopilotData {
     public long unansweredQuestions(UUID t) { return jdbc.sql("SELECT count(*) FROM chat.unanswered WHERE tenant_id = :t AND NOT resolved").param("t", t).query(Long.class).single(); }
 
     public int maxDiscountPct(UUID t) { return jdbc.sql("SELECT max_discount_pct FROM chat.settings WHERE tenant_id = :t").param("t", t).query(Integer.class).optional().orElse(0); }
+
+    /** Carts left for 24 hours or more and not yet recovered, and what was recovered in 30 days. */
+    public Map<String, Object> cartStats(UUID t) {
+        var r = jdbc.sql("""
+                SELECT count(*) FILTER (WHERE status = 'OPEN' AND created_at <= now() - interval '24 hours') AS waiting, coalesce(sum(total_minor) FILTER (WHERE status = 'OPEN' AND created_at <= now() - interval '24 hours'), 0) AS waiting_minor,
+                       count(*) FILTER (WHERE status = 'RECOVERED' AND recovered_at > now() - interval '30 days') AS recovered, coalesce(sum(total_minor) FILTER (WHERE status = 'RECOVERED' AND recovered_at > now() - interval '30 days'), 0) AS recovered_minor
+                FROM commerce.abandoned_carts WHERE tenant_id = :t
+                """).param("t", t).query().singleRow();
+        return Rows.camel(r);
+    }
+
+    public long dueCarts(UUID t) { return ((Number) cartStats(t).get("waiting")).longValue(); }
+
+    public Map<String, Object> segmentCounts(UUID t) {
+        Map<String, Object> out = obj("NEW", 0L, "REPEAT", 0L, "VIP", 0L, "AT_RISK", 0L, "LAPSED", 0L);
+        for (var r : jdbc.sql(com.platform.commerce.SegmentSql.BASE + "SELECT segment, count(*) AS n FROM s GROUP BY segment").param("t", t).query().listOfRows()) out.put((String) r.get("segment"), ((Number) r.get("n")).longValue());
+        return out;
+    }
 }

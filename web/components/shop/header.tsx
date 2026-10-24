@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { pickAnnouncement } from "@/lib/ab";
 import { useCart } from "@/lib/cart";
 import { useMe } from "../hooks";
 import { Icon } from "../icons";
@@ -91,11 +92,14 @@ function DrawerNode({ node, depth, close }: { node: CategoryNode; depth: number;
 export function ShopHeader({ name, logoUrl, announcement, closedMessage, isOpen, categories }: { name: string; logoUrl: string | null; announcement?: string; closedMessage?: string; isOpen: boolean; categories: ShopCategory[] }) {
   const { t, locale } = useI18n();
   const [drawer, setDrawer] = useState(false);
+  const [test, setTest] = useState<string | null>(null);   // the text of the running announcement test, if any
+  useEffect(() => { void pickAnnouncement().then(setTest); }, []);
+  const bar = test ?? announcement;
   const tree = buildTree(categories);
   return (
     <>
       {!isOpen && <div className="bg-[var(--s-ink)] px-4 py-2 text-center text-sm font-semibold text-white">🌙 {closedMessage || t("shop.closedNow")}</div>}
-      {announcement && isOpen && <div className="bg-brand-gradient px-4 py-2 text-center text-sm font-bold text-white">{announcement}</div>}
+      {bar && isOpen && <div className="bg-brand-gradient px-4 py-2 text-center text-sm font-bold text-white">{bar}</div>}
       <header className="s-header sticky top-0 z-40 border-b border-[var(--s-line)] bg-[var(--s-bg)]/90 backdrop-blur-xl">
         <div className="s-container s-header-row flex items-center gap-2 py-3 sm:gap-3">
           <button onClick={() => setDrawer(true)} aria-label={t("shop.menu")} className="grid h-11 w-11 place-items-center rounded-full transition hover:bg-[var(--s-soft)] lg:hidden"><Icon name="menu" className="h-6 w-6" /></button>

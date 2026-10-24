@@ -32,11 +32,15 @@ public class CopilotService {
     private final JdbcClient jdbc;
     private final AiProvider ai;
     private final CopilotData data;
+    private final com.platform.commerce.ExperimentService experiments;
+    private final com.platform.commerce.AttributionService attribution;
 
-    public CopilotService(JdbcClient jdbc, AiProvider ai, CopilotData data) {
+    public CopilotService(JdbcClient jdbc, AiProvider ai, CopilotData data, com.platform.commerce.ExperimentService experiments, com.platform.commerce.AttributionService attribution) {
         this.jdbc = jdbc;
         this.ai = ai;
         this.data = data;
+        this.experiments = experiments;
+        this.attribution = attribution;
     }
 
     public boolean available() { return ai.available(); }
@@ -71,6 +75,7 @@ public class CopilotService {
         }
         long unconfirmed = data.unconfirmedOrders(t), unanswered = data.unansweredQuestions(t);
         if (unconfirmed > 0) out.add(new Action("FOLLOW_UP", ar ? "أكّد " + unconfirmed + " أوردر" : "Confirm " + unconfirmed + " orders", ar ? "طلبات لسه مش متأكدة، كل ما تأكدها بدري قلّ احتمال الرفض." : "Orders not confirmed yet; the sooner you confirm, the fewer get refused."));
+        else if (data.dueCarts(t) > 0) out.add(new Action("FOLLOW_UP", ar ? "كلّم " + data.dueCarts(t) + " عميل سابوا سلتهم" : "Contact " + data.dueCarts(t) + " customers who left a cart", ar ? "سلات اتساب لها أكتر من ٢٤ ساعة. رسالة صغيرة ممكن ترجّع الأوردر." : "Carts left for over 24 hours. A short message can bring the order back."));
         else if (unanswered > 0) out.add(new Action("FOLLOW_UP", ar ? "ردّ على " + unanswered + " سؤال" : "Answer " + unanswered + " questions", ar ? "أسئلة عملاء المساعد ماقدرش يجاوبها. ضيف الإجابة في دروس المساعد." : "Customer questions the assistant could not answer. Add the answers to its lessons."));
         else out.add(new Action("FOLLOW_UP", ar ? "اطلب تقييم من عملاء الأسبوع" : "Ask last week's buyers for a review", ar ? "رسالة قصيرة لعملاء آخر أسبوع بتزوّد الثقة وطلبات التكرار." : "A short message to last week's buyers builds trust and repeat orders."));
         return out;
@@ -143,7 +148,11 @@ public class CopilotService {
                 new ToolDef("price_suggestions", "Discount ideas for slow products and price-rise ideas for fast ones (capped by the shop's limits).", none),
                 new ToolDef("campaign_performance", "Recent ad campaigns with spend, clicks and cost.", none),
                 new ToolDef("daily_actions", "The three things to do next.", none),
-                new ToolDef("unanswered_questions", "How many customer questions the AI seller could not answer.", none));
+                new ToolDef("unanswered_questions", "How many customer questions the AI seller could not answer.", none),
+                new ToolDef("abandoned_carts", "Carts customers left for 24 hours or more (not yet recovered) and what was recovered in 30 days.", none),
+                new ToolDef("customer_segments", "How many customers are New, Repeat, VIP, At risk or Lapsed.", none),
+                new ToolDef("experiments", "Results of the announcement A/B tests: visitors, orders, conversion and whether a winner is clear.", none),
+                new ToolDef("revenue_sources", "Revenue and orders by channel (website, AI seller, POS...), recovered carts and COD risk saved, for a number of days.", days("Period length in days, default 30")));
     }
 
     private Map<String, Object> run(UUID t, ToolCall c) {
@@ -157,6 +166,10 @@ public class CopilotService {
                 case "campaign_performance" -> obj("campaigns", data.campaigns(t));
                 case "daily_actions" -> obj("actions", dailyActions(t, "ar").stream().map(a -> obj("kind", a.kind(), "title", a.title(), "detail", a.detail())).toList());
                 case "unanswered_questions" -> obj("count", data.unansweredQuestions(t));
+                case "abandoned_carts" -> data.cartStats(t);
+                case "customer_segments" -> data.segmentCounts(t);
+                case "experiments" -> obj("tests", experiments.list(t));
+                case "revenue_sources" -> attribution.summary(t, d > 0 ? d : 30);
                 default -> obj("error", "Unknown tool");
             };
         } catch (RuntimeException e) {

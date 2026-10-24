@@ -40,31 +40,13 @@ public class SegmentService {
         this.audit = audit;
     }
 
-    private static final String BASE = """
-            WITH c AS (
-              SELECT customer_phone_snapshot AS phone, max(customer_name_snapshot) AS name,
-                     count(*) FILTER (WHERE status NOT IN ('CANCELLED','PENDING')) AS orders,
-                     count(*) FILTER (WHERE status = 'ARRIVED') AS delivered,
-                     coalesce(sum(total_minor) FILTER (WHERE status NOT IN ('CANCELLED','RETURNED','REFUNDED','PENDING')), 0) AS spent,
-                     max(created_at) FILTER (WHERE status NOT IN ('CANCELLED','PENDING')) AS last_order,
-                     max(whatsapp_number) FILTER (WHERE whatsapp_opt_in_at IS NOT NULL) AS wa
-              FROM commerce.orders WHERE tenant_id = :t GROUP BY customer_phone_snapshot
-            ), s AS (
-              SELECT c.*, CASE
-                WHEN last_order IS NULL THEN 'LAPSED'
-                WHEN last_order < now() - interval '60 days' THEN 'LAPSED'
-                WHEN delivered >= 3 THEN 'VIP'
-                WHEN last_order < now() - interval '30 days' THEN 'AT_RISK'
-                WHEN orders >= 2 THEN 'REPEAT'
-                ELSE 'NEW' END AS segment
-              FROM c WHERE orders > 0)
-            """;
+
 
     public Map<String, Object> overview(UUID tenantId) {
         Map<String, Object> out = new LinkedHashMap<>();
         for (String k : List.of("NEW", "REPEAT", "VIP", "AT_RISK", "LAPSED")) out.put(k, 0L);
         long withWa = 0;
-        for (var r : jdbc.sql(BASE + "SELECT segment, count(*) AS n, count(*) FILTER (WHERE wa IS NOT NULL) AS wa FROM s GROUP BY segment").param("t", tenantId).query().listOfRows()) {
+        for (var r : jdbc.sql(SegmentSql.BASE + "SELECT segment, count(*) AS n, count(*) FILTER (WHERE wa IS NOT NULL) AS wa FROM s GROUP BY segment").param("t", tenantId).query().listOfRows()) {
             out.put((String) r.get("segment"), ((Number) r.get("n")).longValue());
             withWa += ((Number) r.get("wa")).longValue();
         }
@@ -73,7 +55,7 @@ public class SegmentService {
 
     public List<Map<String, Object>> customers(UUID tenantId, String segment) {
         requireKey(segment);
-        return Rows.camel(jdbc.sql(BASE + "SELECT phone, name, orders, delivered, spent, last_order, (wa IS NOT NULL) AS whatsapp_consent FROM s WHERE segment = :g ORDER BY spent DESC LIMIT 200")
+        return Rows.camel(jdbc.sql(SegmentSql.BASE + "SELECT phone, name, orders, delivered, spent, last_order, (wa IS NOT NULL) AS whatsapp_consent FROM s WHERE segment = :g ORDER BY spent DESC LIMIT 200")
                 .param("t", tenantId).param("g", segment).query().listOfRows());
     }
 
@@ -82,7 +64,7 @@ public class SegmentService {
     /** How many people a broadcast would reach right now, for free. */
     public Map<String, Object> preview(UUID tenantId, String segment) {
         requireKey(segment);
-        var rows = jdbc.sql(BASE + "SELECT wa FROM s WHERE segment = :g").param("t", tenantId).param("g", segment).query().listOfRows();
+        var rows = jdbc.sql(SegmentSql.BASE + "SELECT wa FROM s WHERE segment = :g").param("t", tenantId).param("g", segment).query().listOfRows();
         long consent = rows.stream().filter(r -> r.get("wa") != null).count(), open = 0;
         for (var r : rows) if (r.get("wa") != null && windowOpen(tenantId, digits((String) r.get("wa")), Instant.now())) open++;
         return Map.of("audience", rows.size(), "withConsent", consent, "reachableNow", open);
@@ -103,7 +85,7 @@ public class SegmentService {
         if (ch == null) throw BusinessException.badRequest("NO_WHATSAPP", "Connect your WhatsApp number first");
         if (jdbc.sql("SELECT count(*) FROM commerce.broadcasts WHERE tenant_id = :t AND created_at > now() - interval '24 hours'").param("t", tenantId).query(Long.class).single() >= 1)
             throw BusinessException.conflict("BROADCAST_LIMIT", "One broadcast a day, to protect your WhatsApp number from being reported as spam");
-        var rows = jdbc.sql(BASE + "SELECT phone, name, wa FROM s WHERE segment = :g LIMIT 1000").param("t", tenantId).param("g", segment).query().listOfRows();
+        var rows = jdbc.sql(SegmentSql.BASE + "SELECT phone, name, wa FROM s WHERE segment = :g LIMIT 1000").param("t", tenantId).param("g", segment).query().listOfRows();
         int sent = 0, noWindow = 0, noConsent = 0;
         Instant now = Instant.now();
         for (var r : rows) {

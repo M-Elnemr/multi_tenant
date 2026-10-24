@@ -33,7 +33,9 @@ public class CheckoutService {
     public record AddressReq(String recipientName, String phone, String addressLine1, String addressLine2, String city,
                              String state, String district, String postalCode,
                              String governorateCode, String area, String landmark, String phone2) {}
-    public record CheckoutReq(List<Item> items, UUID shippingMethodId, AddressReq address, String paymentMethod, String couponCode, String notes) {}
+    public record CheckoutReq(List<Item> items, UUID shippingMethodId, AddressReq address, String paymentMethod, String couponCode, String notes, Boolean whatsappConsent) {
+        public CheckoutReq(List<Item> items, UUID shippingMethodId, AddressReq address, String paymentMethod, String couponCode, String notes) { this(items, shippingMethodId, address, paymentMethod, couponCode, notes, null); }
+    }
 
     private final JdbcClient jdbc;
     private final InventoryService inventory;
@@ -79,7 +81,7 @@ public class CheckoutService {
             Map<String, Object> prior = existingByKey(tenantId, key);
             if (prior != null) return prior;
         }
-        if (r.paymentMethod() == null || r.paymentMethod().isBlank()) r = new CheckoutReq(r.items(), r.shippingMethodId(), r.address(), "CASH_ON_DELIVERY", r.couponCode(), r.notes());
+        if (r.paymentMethod() == null || r.paymentMethod().isBlank()) r = new CheckoutReq(r.items(), r.shippingMethodId(), r.address(), "CASH_ON_DELIVERY", r.couponCode(), r.notes(), r.whatsappConsent());
         // userId is the signed-in client, or null for a guest. Either way we need who is buying and how to reach them.
         if (r.address() == null || blank(r.address().recipientName()) || blank(r.address().phone()))
             throw BusinessException.badRequest("CONTACT_REQUIRED", "Your name and mobile number are required");
@@ -152,6 +154,9 @@ public class CheckoutService {
         }
         ent.increment(tenantId, "orders_monthly", currentMonth(), 1);
         carts.markRecovered(tenantId, phone, orderId);
+        // an explicit tick on the checkout page is the customer's agreement to WhatsApp messages about this order and the shop's offers (never assumed)
+        if (Boolean.TRUE.equals(r.whatsappConsent()))
+            jdbc.sql("UPDATE commerce.orders SET whatsapp_number = :p, whatsapp_opt_in_at = now() WHERE id = :o AND whatsapp_number IS NULL").param("p", phone).param("o", orderId).update();
         events.publishEvent(new OrderEvents.OrderCreated(tenantId, orderId, userId, number));
         return summary(Map.of("id", orderId, "order_number", number, "status", card ? "PENDING" : "REQUESTED", "payment_status", "UNPAID",
                 "total_minor", q.total(), "currency", q.currency()), checkoutUrl, false);

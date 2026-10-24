@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { api, newKey } from "@/lib/client";
+import { reportOrder } from "@/lib/ab";
 import { clearCart, useCart } from "@/lib/cart";
 import { money } from "@/lib/format";
 import { GOVERNORATES } from "@/lib/governorates";
@@ -49,6 +50,7 @@ export default function Checkout() {
   const [quote, setQuote] = useState<Quote | null>(null);
   const [key] = useState(newKey);
   const [saveDetails, setSaveDetails] = useState(true);
+  const [waConsent, setWaConsent] = useState(false);
 
   const savedDefault = saved.data?.find((s) => s.isDefaultShipping) ?? saved.data?.[0];
   const base: Addr = savedDefault
@@ -66,7 +68,7 @@ export default function Checkout() {
   const zone = zonesMode ? profile.data?.shippingZones.find((z) => z.governorateCodes.includes(addr.governorateCode)) : undefined;
 
   const items = useMemo(() => lines.map((l) => ({ variantId: l.variantId, quantity: l.quantity })), [lines]);
-  const body = { items, shippingMethodId: shippingId, paymentMethod: "CASH_ON_DELIVERY", couponCode: coupon.trim() || undefined, notes: notes || undefined,
+  const body = { items, shippingMethodId: shippingId, paymentMethod: "CASH_ON_DELIVERY", whatsappConsent: waConsent || undefined, couponCode: coupon.trim() || undefined, notes: notes || undefined,
     address: needsAddress ? addr : { recipientName: addr.recipientName, phone: addr.phone, phone2: addr.phone2 } };
 
   const quoteAction = useAction(async () => { setQuote(await api<Quote>("shop/cart/quote", { body })); });
@@ -93,6 +95,7 @@ export default function Checkout() {
     const r = await api<Placed>("shop/checkout", { body, idempotencyKey: key });
     try { sessionStorage.setItem("lastOrderTotal", String((quote?.totalMinor ?? r.totalMinor) / 100)); sessionStorage.setItem("lastOrderCurrency", currency); } catch { /* storage unavailable */ }
     clearCart();
+    reportOrder(r.orderNumber);
     if (me && saveDetails) {
       await api("shop/me", { method: "PUT", body: { name: addr.recipientName, phone: addr.phone } }).catch(() => null);
       if (needsAddress && !(saved.data ?? []).some((a) => a.addressLine1 === addr.addressLine1 && a.city === addr.city))
@@ -155,6 +158,7 @@ export default function Checkout() {
             {codOk ? (
               <div className="flex items-center gap-3 rounded-2xl border-2 border-[var(--brand)] bg-[var(--s-soft)] p-4"><span className="text-3xl">💵</span><div><p className="font-extrabold">{t("pay.CASH_ON_DELIVERY")}</p><p className="text-sm text-[var(--s-mute)]">{t("checkout.cashOnly")}</p></div></div>
             ) : <p className="rounded-2xl bg-amber-50 p-3 text-sm font-bold text-amber-800">{t("checkout.noPayment")}</p>}
+            <label className="flex cursor-pointer items-start gap-2 text-sm"><input type="checkbox" checked={waConsent} onChange={(e) => setWaConsent(e.target.checked)} className="mt-1 accent-[var(--brand)]" /><span>{t("checkout.waConsent")}</span></label>
             {me && <label className="flex cursor-pointer items-center gap-2 text-sm"><input type="checkbox" checked={saveDetails} onChange={(e) => setSaveDetails(e.target.checked)} className="accent-[var(--brand)]" />{t("checkout.saveDetails")}</label>}
           </Section>
         </form>

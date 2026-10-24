@@ -133,13 +133,79 @@ export function FeedsTab() {
   );
 }
 
-export default function GrowthView() {
+
+// ---- announcement A/B tests and the AI store builder -----------------------------------------------------------------------
+
+type Exp = { id: string; name: string; variantA: string; variantB: string; status: string; winner?: string | null; viewsA: number; viewsB: number; ordersA: number; ordersB: number; rateA: number; rateB: number; enoughData: boolean; significant: boolean; recommendation?: string | null };
+
+export function ExperimentsTab() {
   const { t } = useI18n();
-  const [tab, setTab] = useState<"loyalty" | "segments" | "feeds">("segments");
+  const list = useApi<Exp[]>("store/experiments");
+  const [f, setF] = useState({ name: "", a: "", b: "" });
+  const start = useAction(async () => { await api("store/experiments", { body: f }); setF({ name: "", a: "", b: "" }); await list.reload(); });
+  const act = useAction(async (id: string, what: "stop" | "apply", winner?: string) => { await api(`store/experiments/${id}/${what}`, { body: winner ? { winner } : {} }); await list.reload(); });
   return (
     <div className="space-y-5">
-      <Tabs tabs={[{ key: "segments", label: t("gr.tab.segments") }, { key: "loyalty", label: t("gr.tab.loyalty") }, { key: "feeds", label: t("gr.tab.feeds") }]} value={tab} onChange={setTab} />
-      {tab === "segments" ? <SegmentsTab /> : tab === "loyalty" ? <LoyaltyTab /> : <FeedsTab />}
+      <Card className="space-y-3">
+        <div><h2 className="font-medium">{t("gr.exp")}</h2><p className="mt-1 text-sm text-slate-500">{t("gr.expHint")}</p></div>
+        <div className="grid gap-3 sm:grid-cols-3"><Field label={t("gr.expName")}><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field><Field label={t("gr.expA")}><Input value={f.a} onChange={(e) => setF({ ...f, a: e.target.value })} /></Field><Field label={t("gr.expB")}><Input value={f.b} onChange={(e) => setF({ ...f, b: e.target.value })} /></Field></div>
+        <ErrorText error={start.error ?? act.error} />
+        <Button loading={start.loading} disabled={f.a.trim().length < 3 || f.b.trim().length < 3} onClick={() => void start.run()}>{t("gr.expStart")}</Button>
+      </Card>
+      {(list.data ?? []).map((e) => (
+        <Card key={e.id} className="space-y-3">
+          <div className="flex items-center justify-between"><b>{e.name}</b><Badge tone={e.status === "RUNNING" ? "green" : "blue"}>{e.status === "RUNNING" ? t("gr.expRunning") : e.winner ? t("gr.expApplied", { w: e.winner }) : t("gr.expStopped")}</Badge></div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {(["A", "B"] as const).map((v) => {
+              const views = v === "A" ? e.viewsA : e.viewsB, orders = v === "A" ? e.ordersA : e.ordersB, rate = v === "A" ? e.rateA : e.rateB;
+              return <div key={v} className={`rounded-xl border p-3 text-sm ${e.recommendation === v ? "border-emerald-400 bg-emerald-50" : ""}`}><div className="font-semibold">{v}: {v === "A" ? e.variantA : e.variantB}</div><div className="mt-1 text-slate-600">{t("gr.expNumbers", { views, orders })} · <span dir="ltr">{rate}%</span></div>{e.recommendation === v && <div className="mt-1 text-xs font-bold text-emerald-700">{t("gr.expBetter")}</div>}</div>;
+            })}
+          </div>
+          {!e.enoughData && e.status === "RUNNING" && <p className="text-xs text-slate-500">{t("gr.expMore")}</p>}
+          {e.status === "RUNNING" && (
+            <div className="flex flex-wrap gap-2"><Button size="sm" onClick={() => void act.run(e.id, "apply", "A")}>{t("gr.expUse", { v: "A" })}</Button><Button size="sm" onClick={() => void act.run(e.id, "apply", "B")}>{t("gr.expUse", { v: "B" })}</Button><Button size="sm" variant="ghost" onClick={() => void act.run(e.id, "stop")}>{t("gr.expStop")}</Button></div>
+          )}
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+type Built = { shortDescription: string; about: string; descriptionSaved: boolean; suggestedTemplate: string; products: { id: string; name: string; priceMinor: number }[] };
+
+export function BuilderTab() {
+  const { t, locale, currency } = useI18n();
+  const [d, setD] = useState("");
+  const [res, setRes] = useState<Built | null>(null);
+  const go = useAction(async () => { setRes(await api<Built>("store/builder", { body: { description: d, language: locale } })); });
+  return (
+    <div className="space-y-5">
+      <Card className="space-y-3">
+        <div><h2 className="font-medium">{t("gr.builder")}</h2><p className="mt-1 text-sm text-slate-500">{t("gr.builderHint")}</p></div>
+        <Field label={t("gr.builderLabel")}><Textarea rows={5} maxLength={1500} value={d} onChange={(e) => setD(e.target.value)} placeholder={t("gr.builderExample")} /></Field>
+        <ErrorText error={go.error} />
+        <Button loading={go.loading} disabled={d.trim().length < 15} onClick={() => void go.run()}>{t("gr.builderGo")}</Button>
+      </Card>
+      {res && (
+        <Card className="space-y-2 text-sm">
+          <Alert tone="green">{t("gr.builderDone", { n: res.products.length })}</Alert>
+          {res.shortDescription && <p><b>{res.descriptionSaved ? t("gr.builderSaved") : t("gr.builderKept")}:</b> {res.shortDescription}</p>}
+          <p>{t("gr.builderTemplate", { tpl: res.suggestedTemplate })}</p>
+          <ul className="list-disc ps-5">{res.products.map((p) => <li key={p.id}>{p.name} · {money(p.priceMinor, currency, locale)}</li>)}</ul>
+          <a href="/dashboard/products" className="font-semibold text-brand hover:underline">{t("gr.builderReview")}</a>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+export default function GrowthView() {
+  const { t } = useI18n();
+  const [tab, setTab] = useState<"loyalty" | "segments" | "feeds" | "exp" | "builder">("segments");
+  return (
+    <div className="space-y-5">
+      <Tabs tabs={[{ key: "segments", label: t("gr.tab.segments") }, { key: "loyalty", label: t("gr.tab.loyalty") }, { key: "feeds", label: t("gr.tab.feeds") }, { key: "exp", label: t("gr.tab.exp") }, { key: "builder", label: t("gr.tab.builder") }]} value={tab} onChange={setTab} />
+      {tab === "segments" ? <SegmentsTab /> : tab === "loyalty" ? <LoyaltyTab /> : tab === "feeds" ? <FeedsTab /> : tab === "exp" ? <ExperimentsTab /> : <BuilderTab />}
     </div>
   );
 }
