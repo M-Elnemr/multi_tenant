@@ -49,11 +49,16 @@ public class SegmentService {
     private final OpenUrls urls;
     private final long priceMinor;
     private final boolean scheduler;
-    private final int gapSeconds;
+    private final int gapMin, gapMax, dailyCap, quietFrom, quietTo;
 
     public SegmentService(JdbcClient jdbc, MetaChannelService channels, MetaGraph graph, AuditService audit, EvolutionService evolution, WalletService wallet, NotificationService notifications, OpenUrls urls,
-                          @Value("${app.whatsapp.broadcast-price-minor:300}") long priceMinor, @Value("${app.integrations.scheduler.enabled:true}") boolean scheduler, @Value("${app.broadcast.free-gap-seconds:10}") int gapSeconds) {
-        this.gapSeconds = Math.max(0, gapSeconds);
+                          @Value("${app.whatsapp.broadcast-price-minor:300}") long priceMinor, @Value("${app.integrations.scheduler.enabled:true}") boolean scheduler, @Value("${app.broadcast.free-gap-min-seconds:8}") int gapMin, @Value("${app.broadcast.free-gap-max-seconds:25}") int gapMax,
+                          @Value("${app.broadcast.free-daily-cap:500}") int dailyCap, @Value("${app.broadcast.quiet-from-hour:22}") int quietFrom, @Value("${app.broadcast.quiet-to-hour:8}") int quietTo) {
+        this.gapMin = Math.max(0, gapMin);
+        this.gapMax = Math.max(this.gapMin, gapMax);
+        this.dailyCap = Math.max(1, dailyCap);
+        this.quietFrom = quietFrom;
+        this.quietTo = quietTo;
         this.jdbc = jdbc;
         this.channels = channels;
         this.graph = graph;
@@ -147,12 +152,14 @@ public class SegmentService {
         if ("FREE".equals(mode) && recent >= 3) throw BusinessException.conflict("BROADCAST_LIMIT", "Three free broadcasts a day at most, to protect your WhatsApp number from being reported as spam");
         if ("PAID".equals(mode) && recent >= 5) throw BusinessException.conflict("BROADCAST_LIMIT", "Five paid broadcasts a day at most");
 
-        var rows = jdbc.sql(SegmentSql.BASE + "SELECT phone, name, wa, uid, gender FROM s WHERE (:g = 'ALL' OR segment = :g) ORDER BY spent DESC LIMIT 20000").param("t", tenantId).param("g", r.segment()).query().listOfRows();
+        var rows = jdbc.sql(SegmentSql.BASE + "SELECT phone, name, wa, uid, gender, opted_out FROM s WHERE (:g = 'ALL' OR segment = :g) ORDER BY spent DESC LIMIT 20000").param("t", tenantId).param("g", r.segment()).query().listOfRows();
         Instant now = Instant.now();
         List<Map<String, Object>> queue = new ArrayList<>();
         int noConsent = 0, noWindow = 0;
         boolean onlyConsented = Boolean.TRUE.equals(r.onlyConsented());
+        int optedOut = 0;
         for (var row : rows) {
+            if (Boolean.TRUE.equals(row.get("opted_out")) && !"NONE".equals(mode)) { optedOut++; continue; }   // they asked us to stop
             if ("PAID".equals(mode)) {
                 if (row.get("wa") == null) { noConsent++; continue; }
                 if (!windowOpen(tenantId, digits((String) row.get("wa")), now)) { noWindow++; continue; }
@@ -199,7 +206,9 @@ public class SegmentService {
         out.put("pushSent", pushed);
         out.put("skippedNoWindow", noWindow);
         out.put("skippedNoConsent", noConsent);
-        out.put("etaMinutes", "FREE".equals(mode) ? (long) Math.ceil(queue.size() * Math.max(gapSeconds, 1) / 60.0) : 0);
+        out.put("etaMinutes", "FREE".equals(mode) ? (long) Math.ceil(queue.size() * ((gapMin + gapMax) / 2.0 + 1) / 60.0) : 0);
+        out.put("etaDays", "FREE".equals(mode) ? (long) Math.ceil(queue.size() / (double) dailyCap) : 0);
+        out.put("skippedOptOut", optedOut);
         out.put("costMinor", cost);
         return out;
     }
@@ -221,14 +230,26 @@ public class SegmentService {
     /** One pass: sends a few waiting messages of each running broadcast. Returns how many went out. Public for tests. */
     public synchronized int runDue() {
         int sent = 0;
-        for (var b : jdbc.sql("SELECT id, tenant_id, message, mode, image_file_id, last_sent_at FROM commerce.broadcasts WHERE status = 'SENDING' ORDER BY created_at LIMIT 20").query().listOfRows()) {
+        for (var b : jdbc.sql("SELECT id, tenant_id, message, mode, image_file_id, next_send_at FROM commerce.broadcasts WHERE status = 'SENDING' ORDER BY created_at LIMIT 20").query().listOfRows()) {
             UUID id = (UUID) b.get("id"), tenantId = (UUID) b.get("tenant_id");
             String mode = (String) b.get("mode"), text = (String) b.get("message");
             String shop = jdbc.sql("SELECT coalesce(nullif(sp.store_name, ''), t.name) FROM core.tenants t LEFT JOIN commerce.store_profiles sp ON sp.tenant_id = t.id WHERE t.id = :t").param("t", tenantId).query(String.class).single();
             String imageUrl = b.get("image_file_id") == null ? null : urls.baseUrl(urls.hosts(List.of(tenantId)).get(tenantId)) + "/api/bff/files/" + b.get("image_file_id") + "/content?variant=medium";
             boolean free = "FREE".equals(mode);
-            // free messages go out one at a time with a gap between them (10 seconds by default), however long the list is: a number that sends in bursts gets banned
-            if (free && b.get("last_sent_at") != null && ((Timestamp) b.get("last_sent_at")).toInstant().isAfter(Instant.now().minusSeconds(gapSeconds))) continue;
+            if (free) {
+                // 1) too many customers asked to stop: pause and let the owner look
+                var stats = jdbc.sql("SELECT count(*) FILTER (WHERE opted_out_at IS NOT NULL) AS stops, count(*) FILTER (WHERE status = 'SENT') AS sent FROM commerce.broadcast_recipients WHERE broadcast_id = :b").param("b", id).query().listOfRows().get(0);
+                long stops = ((Number) stats.get("stops")).longValue(), sentSoFar = ((Number) stats.get("sent")).longValue();
+                if (stops >= 3 && stops * 100 >= sentSoFar * 3) { jdbc.sql("UPDATE commerce.broadcasts SET status = 'PAUSED', pause_reason = 'OPT_OUTS' WHERE id = :i").param("i", id).update(); continue; }
+                // 2) quiet hours in the shop's own time: nobody gets a promotion at night
+                if (quiet(tenantId)) { setReason(id, "QUIET_HOURS"); continue; }
+                // 3) the daily limit per number
+                long today = jdbc.sql("SELECT count(*) FROM commerce.broadcast_recipients r JOIN commerce.broadcasts x ON x.id = r.broadcast_id WHERE x.tenant_id = :t AND x.mode = 'FREE' AND r.status = 'SENT' AND r.sent_at > now() - interval '24 hours'").param("t", tenantId).query(Long.class).single();
+                if (today >= dailyCap) { setReason(id, "DAILY_CAP"); continue; }
+                // 4) a random gap after every message, however long the list is: a fixed rhythm looks like a bot, and bursts get numbers banned
+                if (b.get("next_send_at") != null && ((Timestamp) b.get("next_send_at")).toInstant().isAfter(Instant.now())) continue;
+                setReason(id, null);
+            }
             int limit = free ? 1 : PAID_PER_PASS;
             var due = jdbc.sql("SELECT id, phone, name, gender FROM commerce.broadcast_recipients WHERE broadcast_id = :b AND status = 'PENDING' ORDER BY id LIMIT :l").param("b", id).param("l", limit).query().listOfRows();
             for (var rcp : due) {
@@ -236,10 +257,11 @@ public class SegmentService {
                 String result;
                 long charged = 0;
                 if ("FREE".equals(mode)) {
-                    var d = evolution.deliver(tenantId, to, body, imageUrl);
+                    var d = evolution.deliver(tenantId, to, body + OPT_OUT_LINE, imageUrl);   // every free message tells the customer how to stop, so they reply instead of reporting
                     if (d == EvolutionService.Delivery.DEFERRED) break;   // at the per-minute limit: the rest waits for the next pass
                     result = d == EvolutionService.Delivery.SENT ? "SENT" : "FAILED";
-                    jdbc.sql("UPDATE commerce.broadcasts SET last_sent_at = now() WHERE id = :i").param("i", id).update();
+                    int gap = gapMax <= gapMin ? gapMin : gapMin + java.util.concurrent.ThreadLocalRandom.current().nextInt(gapMax - gapMin + 1);
+                    jdbc.sql("UPDATE commerce.broadcasts SET next_send_at = now() + make_interval(secs => :g) WHERE id = :i").param("g", gap).param("i", id).update();
                 } else {
                     String ref = "bc-" + id + "-" + rcp.get("id");
                     if (!wallet.tryDebit(tenantId, priceMinor, ref, "WhatsApp broadcast")) result = "FAILED";
@@ -265,13 +287,46 @@ public class SegmentService {
                 jdbc.sql("UPDATE commerce.broadcasts SET sent_count = sent_count + :ok, failed_count = failed_count + :bad, pending_count = pending_count - 1, charged_minor = charged_minor + :c WHERE id = :i")
                         .param("ok", "SENT".equals(result) ? 1 : 0).param("bad", "FAILED".equals(result) ? 1 : 0).param("c", charged).param("i", id).update();
                 if ("SENT".equals(result)) sent++;
+                if (free) {
+                    // five failures in a row means something is wrong with the number: stop instead of hammering it
+                    int streak = jdbc.sql("UPDATE commerce.broadcasts SET consecutive_failures = CASE WHEN :ok THEN 0 ELSE consecutive_failures + 1 END WHERE id = :i RETURNING consecutive_failures").param("ok", "SENT".equals(result)).param("i", id).query(Integer.class).single();
+                    if (streak >= 5) { jdbc.sql("UPDATE commerce.broadcasts SET status = 'PAUSED', pause_reason = 'FAILURES' WHERE id = :i").param("i", id).update(); break; }
+                }
             }
             jdbc.sql("UPDATE commerce.broadcasts SET status = 'DONE' WHERE id = :i AND NOT EXISTS (SELECT 1 FROM commerce.broadcast_recipients WHERE broadcast_id = :i AND status = 'PENDING')").param("i", id).update();
         }
         return sent;
     }
 
+    static final String OPT_OUT_LINE = "\n\nلإيقاف الرسائل اكتب: إيقاف · Reply STOP to unsubscribe";
+
+    private void setReason(UUID id, String reason) { jdbc.sql("UPDATE commerce.broadcasts SET pause_reason = CAST(:r AS varchar) WHERE id = :i AND pause_reason IS DISTINCT FROM CAST(:r AS varchar)").param("r", reason).param("i", id).update(); }
+
+    /** True during the shop's quiet hours (22:00 to 08:00 by default, in the shop's time zone). From and to being equal switches quiet hours off. */
+    private boolean quiet(UUID tenantId) {
+        if (quietFrom == quietTo) return false;
+        int hour;
+        try { hour = java.time.ZonedDateTime.now(java.time.ZoneId.of(jdbc.sql("SELECT timezone FROM core.tenants WHERE id = :t").param("t", tenantId).query(String.class).single())).getHour(); }
+        catch (RuntimeException e) { hour = java.time.ZonedDateTime.now(java.time.ZoneId.of("Africa/Cairo")).getHour(); }
+        return quietFrom > quietTo ? (hour >= quietFrom || hour < quietTo) : (hour >= quietFrom && hour < quietTo);
+    }
+
+    /** The owner looked at a paused broadcast and wants it to go on. */
+    public Map<String, Object> resume(UUID tenantId, UUID id) {
+        if (jdbc.sql("UPDATE commerce.broadcasts SET status = 'SENDING', pause_reason = NULL, consecutive_failures = 0, next_send_at = NULL WHERE id = :i AND tenant_id = :t AND status = 'PAUSED'").param("i", id).param("t", tenantId).update() == 0)
+            throw BusinessException.conflict("INVALID_STATUS", "This broadcast is not paused");
+        return Map.of("ok", true);
+    }
+
+    /** Stops a broadcast for good: nothing more is sent from it. */
+    public Map<String, Object> cancel(UUID tenantId, UUID id) {
+        if (jdbc.sql("UPDATE commerce.broadcasts SET status = 'CANCELED', pause_reason = NULL, pending_count = 0 WHERE id = :i AND tenant_id = :t AND status IN ('SENDING', 'PAUSED')").param("i", id).param("t", tenantId).update() == 0)
+            throw BusinessException.conflict("INVALID_STATUS", "This broadcast is already finished");
+        jdbc.sql("UPDATE commerce.broadcast_recipients SET status = 'STOPPED' WHERE broadcast_id = :i AND status = 'PENDING'").param("i", id).update();
+        return Map.of("ok", true);
+    }
+
     public List<Map<String, Object>> history(UUID tenantId) {
-        return Rows.camel(jdbc.sql("SELECT id, segment, message, mode, push, push_sent, audience, sent_count, failed_count, pending_count, charged_minor, status, skipped_window, skipped_consent, created_at FROM commerce.broadcasts WHERE tenant_id = :t ORDER BY created_at DESC LIMIT 30").param("t", tenantId).query().listOfRows());
+        return Rows.camel(jdbc.sql("SELECT id, segment, message, mode, push, push_sent, audience, sent_count, failed_count, pending_count, charged_minor, status, pause_reason, next_send_at, skipped_window, skipped_consent, created_at FROM commerce.broadcasts WHERE tenant_id = :t ORDER BY created_at DESC LIMIT 30").param("t", tenantId).query().listOfRows());
     }
 }

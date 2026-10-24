@@ -21,7 +21,7 @@ class SendModesIntegrationTest extends IntegrationTestBase {
     @Autowired SegmentService segments;
 
     @BeforeEach
-    void clean() { FakeAiProvider.reset(); FakeHttpGateway.reset(); FakeMetaGraph.reset(); FakeEvolutionApi.reset(); }
+    void clean() { jdbc.sql("UPDATE commerce.broadcasts SET status = 'CANCELED' WHERE status IN ('SENDING', 'PAUSED')").update(); FakeAiProvider.reset(); FakeHttpGateway.reset(); FakeMetaGraph.reset(); FakeEvolutionApi.reset(); }
 
     String ok(ResultActions r) throws Exception { return r.andReturn().getResponse().getContentAsString(); }
 
@@ -40,6 +40,8 @@ class SendModesIntegrationTest extends IntegrationTestBase {
     }
 
     String phone() { return "010" + (10_000_000L + System.nanoTime() % 80_000_000L); }
+
+    void order(Shop s, String phone, int unused) throws Exception { order(s, phone); }
 
     void order(Shop s, String phone) throws Exception {
         String body = """
@@ -124,12 +126,13 @@ class SendModesIntegrationTest extends IntegrationTestBase {
         for (int i = 0; i < 3; i++) order(s, phone());
         linkOwnNumber(s);
         onHost(s.t().host(), s.t().access(), "POST", "/api/v1/store/broadcasts", "{\"segment\":\"ALL\",\"mode\":\"FREE\",\"message\":\"Hello there {name}\"}").andExpect(status().isOk()).andExpect(jsonPath("$.etaMinutes").exists());
-        org.springframework.test.util.ReflectionTestUtils.setField(segments, "gapSeconds", 10);
+        org.springframework.test.util.ReflectionTestUtils.setField(segments, "gapMin", 10);
+        org.springframework.test.util.ReflectionTestUtils.setField(segments, "gapMax", 10);
         try {
             assertThat(segments.runDue()).isEqualTo(1);   // the first goes out at once
             assertThat(segments.runDue()).isEqualTo(0);   // the next waits for the 10 seconds to pass
             assertThat(segments.runDue()).isEqualTo(0);
-        } finally { org.springframework.test.util.ReflectionTestUtils.setField(segments, "gapSeconds", 0); }
+        } finally { org.springframework.test.util.ReflectionTestUtils.setField(segments, "gapMin", 0); org.springframework.test.util.ReflectionTestUtils.setField(segments, "gapMax", 0); }
         while (segments.runDue() > 0) { /* finish */ }
     }
 
@@ -179,5 +182,109 @@ class SendModesIntegrationTest extends IntegrationTestBase {
         String cart2 = ((java.util.List<?>) JsonPath.read(ok(onHost(h, owner, "GET", "/api/v1/store/carts?view=all", null)), "$.carts[?(@.phone=='+2" + p2 + "')].id")).get(0).toString();
         onHost(h, owner, "POST", "/api/v1/store/carts/" + cart2 + "/remind", "{}").andExpect(status().isConflict());
         assertThat(FakeMetaGraph.SENT).isEmpty();
+    }
+
+    // ---- the safety rules of free broadcasts ----------------------------------------------------------------------------------------
+
+    void set(String field, int v) { org.springframework.test.util.ReflectionTestUtils.setField(segments, field, v); }
+
+    String startFree(Shop s, int customers) throws Exception {
+        for (int i = 0; i < customers; i++) order(s, phone());
+        linkOwnNumber(s);
+        return JsonPath.read(ok(onHost(s.t().host(), s.t().access(), "POST", "/api/v1/store/broadcasts", "{\"segment\":\"ALL\",\"mode\":\"FREE\",\"message\":\"Hello {name}\"}").andExpect(status().isOk())), "$.id");
+    }
+
+    String broadcastState(String id) { return jdbc.sql("SELECT status || ':' || coalesce(pause_reason, '') FROM commerce.broadcasts WHERE id = :i").param("i", UUID.fromString(id)).query(String.class).single(); }
+
+    @Test
+    void everyFreeMessageEndsWithHowToStopAndWaitsARandomGap() throws Exception {
+        Shop s = shop();
+        String id = startFree(s, 2);
+        set("gapMin", 8); set("gapMax", 25);
+        try {
+            assertThat(segments.runDue()).isEqualTo(1);
+            long wait = jdbc.sql("SELECT extract(epoch FROM next_send_at - now())::bigint FROM commerce.broadcasts WHERE id = :i").param("i", UUID.fromString(id)).query(Long.class).single();
+            assertThat(wait).isBetween(6L, 25L);   // somewhere between 8 and 25 seconds from the send
+        } finally { set("gapMin", 0); set("gapMax", 0); }
+        String text = FakeEvolutionApi.CALLS.stream().filter(c -> c.path().startsWith("/message/sendText/")).findFirst().orElseThrow().body().get("text").toString();
+        assertThat(text).startsWith("Hello Mona").endsWith("Reply STOP to unsubscribe").contains("اكتب: إيقاف");
+        while (segments.runDue() > 0) { /* finish */ }
+    }
+
+    @Test
+    void theDailyCapPausesTheBroadcastAndItGoesOnWhenThereIsRoom() throws Exception {
+        Shop s = shop();
+        String id = startFree(s, 3);
+        set("dailyCap", 2);
+        try {
+            assertThat(segments.runDue()).isEqualTo(1);
+            assertThat(segments.runDue()).isEqualTo(1);
+            assertThat(segments.runDue()).isEqualTo(0);   // 2 sent today: the third waits
+            assertThat(broadcastState(id)).isEqualTo("SENDING:DAILY_CAP");
+            onHost(s.t().host(), s.t().access(), "GET", "/api/v1/store/broadcasts", null).andExpect(jsonPath("$[0].pauseReason").value("DAILY_CAP")).andExpect(jsonPath("$[0].pendingCount").value(1));
+            // a long list is accepted and the answer says how many days it will take
+            onHost(s.t().host(), s.t().access(), "POST", "/api/v1/store/broadcasts", "{\"segment\":\"ALL\",\"mode\":\"FREE\",\"message\":\"Another\"}").andExpect(status().isConflict());   // one at a time
+        } finally { set("dailyCap", 500); }
+        assertThat(segments.runDue()).isEqualTo(1);
+        assertThat(broadcastState(id)).isEqualTo("DONE:");
+    }
+
+    @Test
+    void nothingIsSentDuringQuietHours() throws Exception {
+        Shop s = shop();
+        String id = startFree(s, 1);
+        set("quietFrom", 0); set("quietTo", 24);   // every hour is quiet
+        try {
+            assertThat(segments.runDue()).isEqualTo(0);
+            assertThat(broadcastState(id)).isEqualTo("SENDING:QUIET_HOURS");
+        } finally { set("quietFrom", 0); set("quietTo", 0); }
+        assertThat(segments.runDue()).isEqualTo(1);
+    }
+
+    @Test
+    void fiveFailuresInARowPauseItAndTheOwnerCanResumeOrCancel() throws Exception {
+        Shop s = shop();
+        String h = s.t().host(), owner = s.t().access();
+        String id = startFree(s, 7);
+        FakeEvolutionApi.FAIL_SEND = true;
+        for (int i = 0; i < 6; i++) segments.runDue();
+        assertThat(broadcastState(id)).isEqualTo("PAUSED:FAILURES");
+        assertThat(jdbc.sql("SELECT count(*) FROM commerce.broadcast_recipients WHERE broadcast_id = :i AND status = 'FAILED'").param("i", UUID.fromString(id)).query(Long.class).single()).isEqualTo(5L);   // it stopped instead of hammering the number
+        assertThat(segments.runDue()).isEqualTo(0);
+        FakeEvolutionApi.FAIL_SEND = false;
+        onHost(h, owner, "POST", "/api/v1/store/broadcasts/" + id + "/resume", "{}").andExpect(status().isOk());
+        assertThat(broadcastState(id)).isEqualTo("SENDING:");
+        assertThat(segments.runDue()).isEqualTo(1);
+        onHost(h, owner, "POST", "/api/v1/store/broadcasts/" + id + "/cancel", "{}").andExpect(status().isOk());
+        assertThat(broadcastState(id)).isEqualTo("CANCELED:");
+        assertThat(segments.runDue()).isEqualTo(0);
+        onHost(h, owner, "POST", "/api/v1/store/broadcasts/" + id + "/resume", "{}").andExpect(status().isConflict());
+        onHost(h, owner, "POST", "/api/v1/store/broadcasts/" + id + "/cancel", "{}").andExpect(status().isConflict());
+        Shop other = shop();
+        onHost(other.t().host(), other.t().access(), "POST", "/api/v1/store/broadcasts/" + id + "/cancel", "{}").andExpect(status().isConflict());   // not theirs
+    }
+
+    @Test
+    void customersWhoAnswerStopAreLeftOutAndSeveralStopsPauseTheBroadcast() throws Exception {
+        Shop s = shop();
+        String h = s.t().host(), owner = s.t().access();
+        String[] phones = new String[6];
+        for (int i = 0; i < 6; i++) { phones[i] = phone(); order(s, phones[i], i); }
+        linkOwnNumber(s);
+        String inst = jdbc.sql("SELECT instance FROM chat.evolution_settings WHERE tenant_id = :t").param("t", s.id()).query(String.class).single();
+        String id = JsonPath.read(ok(onHost(h, owner, "POST", "/api/v1/store/broadcasts", "{\"segment\":\"ALL\",\"mode\":\"FREE\",\"message\":\"Sale today\"}").andExpect(status().isOk())), "$.id");
+        for (int i = 0; i < 3; i++) assertThat(segments.runDue()).isEqualTo(1);
+        var sentTo = jdbc.sql("SELECT phone FROM commerce.broadcast_recipients WHERE broadcast_id = :i AND status = 'SENT'").param("i", UUID.fromString(id)).query(String.class).list();
+        assertThat(sentTo).hasSize(3);
+        for (String to : sentTo) {
+            String raw = "{\"event\":\"messages.upsert\",\"instance\":\"%s\",\"data\":{\"key\":{\"remoteJid\":\"%s@s.whatsapp.net\",\"fromMe\":false,\"id\":\"S%s\"},\"message\":{\"conversation\":\"إيقاف\"}}}".formatted(inst, to, uniq());
+            mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/v1/chat/evolution/webhook/evolution-test-secret-0123456789").header("Host", "platform.test").contentType("application/json").content(raw)).andExpect(status().isOk());
+        }
+        assertThat(segments.runDue()).isEqualTo(0);
+        assertThat(broadcastState(id)).isEqualTo("PAUSED:OPT_OUTS");   // three stops out of three sent: the owner is asked to look
+        assertThat(jdbc.sql("SELECT count(*) FROM commerce.customers WHERE tenant_id = :t AND broadcast_opt_out_at IS NOT NULL").param("t", s.id()).query(Long.class).single()).isEqualTo(3L);
+        // the customers who stopped are never part of a later broadcast
+        onHost(h, owner, "POST", "/api/v1/store/broadcasts/" + id + "/cancel", "{}").andExpect(status().isOk());
+        onHost(h, owner, "POST", "/api/v1/store/broadcasts", "{\"segment\":\"ALL\",\"mode\":\"FREE\",\"message\":\"Next one\"}").andExpect(status().isOk()).andExpect(jsonPath("$.queued").value(3)).andExpect(jsonPath("$.skippedOptOut").value(3));
     }
 }

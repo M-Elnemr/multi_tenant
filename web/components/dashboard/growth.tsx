@@ -49,7 +49,7 @@ export function LoyaltyTab() {
 type Seg = { segments: Record<string, number>; withWhatsappConsent: number; messagePriceMinor: number; balanceMinor: number };
 type Preview = { audience: number; withConsent: number; reachableNow: number; freeReachable: number; appUsers: number };
 type SegDetail = { customers: { phone: string; name?: string; orders: number; spent: number; lastOrder?: string; whatsappConsent: boolean; hasAccount: boolean }[]; preview: Preview };
-type Hist = { id: string; segment: string; message: string; mode: string; push: boolean; pushSent: number; audience: number; sentCount: number; failedCount: number; pendingCount: number; chargedMinor: number; status: string; createdAt: string }[];
+type Hist = { id: string; segment: string; message: string; mode: string; push: boolean; pushSent: number; audience: number; sentCount: number; failedCount: number; pendingCount: number; chargedMinor: number; status: string; pauseReason?: string | null; createdAt: string }[];
 const KEYS = ["ALL", "NEW", "REPEAT", "VIP", "AT_RISK", "LAPSED"] as const;
 type Way = "NONE" | "FREE" | "PAID";
 
@@ -78,6 +78,8 @@ export function SegmentsTab() {
     setMsg(""); setImage(null); await Promise.all([hist.reload(), seg.reload()]);
   });
   const chooseWay = (w: Way) => { if (w === "FREE" && !own.linked) { router.push("/dashboard/settings#whatsapp-own"); return; } setWay(w); };
+  const resume = useAction(async (id: string) => { await api(`store/broadcasts/${id}/resume`, { body: {} }); await hist.reload(); });
+  const cancel = useAction(async (id: string) => { await api(`store/broadcasts/${id}/cancel`, { body: {} }); await hist.reload(); });
   const modeLabel = (m: string) => (m === "FREE" ? t("sm.freeShort") : m === "PAID" ? t("sm.paidShort") : t("gr.appOnly"));
   return (
     <div className="space-y-5">
@@ -92,7 +94,7 @@ export function SegmentsTab() {
 
       <Card className="space-y-4">
         <h2 className="font-medium">{t("gr.compose", { segment: t(`gr.seg.${key}`) })}</h2>
-        <MessageComposer text={msg} onText={setMsg} imageId={image} onImage={setImage} />
+        <MessageComposer text={msg} onText={setMsg} imageId={image} onImage={setImage} footer={way === "FREE" ? t("gr.optOutLine") : undefined} />
 
         <div className="space-y-2">
           <div className="text-sm font-semibold">{t("gr.sendVia")}</div>
@@ -111,7 +113,7 @@ export function SegmentsTab() {
 
         {pv && (
           <div className="rounded-xl bg-slate-50 p-3 text-sm">
-            {way === "FREE" && <p>{t("gr.reachFree", { n: onlyConsented ? pv.withConsent : pv.freeReachable, min: Math.max(1, Math.ceil(((onlyConsented ? pv.withConsent : pv.freeReachable) * 10) / 60)) })}</p>}
+            {way === "FREE" && <p>{t("gr.reachFree", { n: onlyConsented ? pv.withConsent : pv.freeReachable, min: Math.max(1, Math.ceil(((onlyConsented ? pv.withConsent : pv.freeReachable) * 16.5) / 60)), days: Math.max(1, Math.ceil((onlyConsented ? pv.withConsent : pv.freeReachable) / 500)) })}</p>}
             {way === "PAID" && <p>{t("gr.reachPaid", { n: pv.reachableNow, consent: pv.withConsent, cost: money(paidCost, currency, locale), price: money(price, currency, locale) })}</p>}
             {way === "NONE" && <p>{t("gr.reachNone")}</p>}
             {push && <p>{t("gr.reachPush", { n: pv.appUsers })}</p>}
@@ -137,11 +139,18 @@ export function SegmentsTab() {
       {(hist.data ?? []).length > 0 && (
         <Card className="space-y-2">
           <h2 className="font-medium">{t("gr.history")}</h2>
+          <ErrorText error={resume.error ?? cancel.error} />
           {hist.data?.map((h) => (
             <div key={h.id} className="border-t pt-2 text-sm first:border-0 first:pt-0">
-              <div className="flex flex-wrap items-center justify-between gap-2"><span className="flex flex-wrap gap-1.5"><Badge tone="blue">{t(`gr.seg.${h.segment}`)}</Badge><Badge tone={h.mode === "FREE" ? "green" : h.mode === "PAID" ? "amber" : "slate"}>{modeLabel(h.mode)}</Badge>{h.push && <Badge tone="slate">📱 {h.pushSent}</Badge>}{h.status === "SENDING" && <Badge tone="amber">{t("gr.sending", { n: h.pendingCount })}</Badge>}</span>
+              <div className="flex flex-wrap items-center justify-between gap-2"><span className="flex flex-wrap gap-1.5"><Badge tone="blue">{t(`gr.seg.${h.segment}`)}</Badge><Badge tone={h.mode === "FREE" ? "green" : h.mode === "PAID" ? "amber" : "slate"}>{modeLabel(h.mode)}</Badge>{h.push && <Badge tone="slate">📱 {h.pushSent}</Badge>}{h.status === "SENDING" && <Badge tone="amber">{t("gr.sending", { n: h.pendingCount })}</Badge>}{h.pauseReason && <Badge tone="slate">{t(`gr.pause.${h.pauseReason}`)}</Badge>}{h.status === "PAUSED" && <Badge tone="red">{t("gr.state.PAUSED")}</Badge>}{h.status === "CANCELED" && <Badge tone="slate">{t("gr.state.CANCELED")}</Badge>}</span>
                 <span className="text-xs text-slate-500">{h.sentCount} ✓{h.failedCount > 0 ? ` · ${h.failedCount} ✗` : ""}{h.chargedMinor > 0 ? ` · ${money(h.chargedMinor, currency, locale)}` : ""} · {dateOnly(h.createdAt, locale)}</span></div>
               <p className="mt-1 line-clamp-2 text-slate-600">{h.message}</p>
+              {(h.status === "PAUSED" || h.status === "SENDING") && h.mode === "FREE" && (
+                <div className="mt-1 flex flex-wrap gap-2">
+                  {h.status === "PAUSED" && <Button size="sm" loading={resume.loading} onClick={() => void resume.run(h.id)}>{t("gr.resume")}</Button>}
+                  <Button size="sm" variant="ghost" loading={cancel.loading} onClick={() => { if (window.confirm(t("gr.confirmCancel"))) void cancel.run(h.id); }}>{t("gr.cancel")}</Button>
+                </div>
+              )}
             </div>
           ))}
         </Card>

@@ -97,6 +97,7 @@ const Map<String, List<String>> kErrorMessages = {
   "INVALID_SIGNATURE": ["توقيع الطلب غير صالح.", "The request signature is not valid."],
   "INVALID_SLUG": ["استخدم من 3 إلى 40 حرفًا أو رقمًا أو شرطة.", "Use 3-40 letters, numbers or dashes."],
   "INVALID_STATE": ["انتهت صلاحية رابط الربط. ابدأ من جديد.", "This connection link expired. Please start again."],
+  "INVALID_STATUS": ["الإجراء ده مش متاح دلوقتي.", "This action is not possible now."],
   "INVALID_STATUS_TRANSITION": ["هذا التغيير غير مسموح في الحالة الحالية.", "That change is not allowed in the current state."],
   "INVALID_TICKET": ["رابط الدخول غير صالح أو انتهت صلاحيته.", "This sign-in link is invalid or has expired."],
   "INVALID_WEBHOOK": ["الإشعار ينقصه بيانات مطلوبة.", "The notification is missing required details."],

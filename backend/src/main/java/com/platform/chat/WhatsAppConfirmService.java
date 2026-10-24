@@ -71,6 +71,13 @@ public class WhatsAppConfirmService {
         last9 = last9.substring(Math.max(0, last9.length() - 9));
         jdbc.sql("UPDATE commerce.orders SET whatsapp_opt_in_at = NULL WHERE tenant_id = :t AND whatsapp_confirmed_at IS NULL AND right(regexp_replace(coalesce(whatsapp_number, ''), '\\D', '', 'g'), 9) = :d").param("t", tenantId).param("d", last9).update();
         jdbc.sql("UPDATE commerce.customers SET whatsapp_opt_in_at = NULL WHERE tenant_id = :t AND right(regexp_replace(coalesce(whatsapp_number, ''), '\\D', '', 'g'), 9) = :d").param("t", tenantId).param("d", last9).update();
+        // also out of every broadcast: none is sent from now on, and a broadcast that many people stop is paused for the owner to look at
+        jdbc.sql("UPDATE commerce.customers SET broadcast_opt_out_at = now() WHERE tenant_id = :t AND right(regexp_replace(coalesce(phone, ''), '\\D', '', 'g'), 9) = :d").param("t", tenantId).param("d", last9).update();
+        jdbc.sql("""
+                UPDATE commerce.broadcast_recipients r SET status = CASE WHEN r.status = 'PENDING' THEN 'STOPPED' ELSE r.status END, opted_out_at = now()
+                FROM commerce.broadcasts b WHERE b.id = r.broadcast_id AND b.tenant_id = :t AND right(r.phone, 9) = :d AND r.status IN ('PENDING', 'SENT') AND b.created_at > now() - interval '3 days'
+                """).param("t", tenantId).param("d", last9).update();
+        jdbc.sql("UPDATE commerce.broadcasts b SET pending_count = (SELECT count(*) FROM commerce.broadcast_recipients r WHERE r.broadcast_id = b.id AND r.status = 'PENDING') WHERE b.tenant_id = :t AND b.created_at > now() - interval '3 days'").param("t", tenantId).update();
         return arabic ? "تم إيقاف رسائل واتساب من هذا المتجر. شكراً لك 🌸" : "WhatsApp messages from this shop are switched off. Thank you.";
     }
 

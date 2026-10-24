@@ -71,6 +71,14 @@ public class GrowthController {
     @PreAuthorize(MANAGE)
     public Map<String, Object> broadcast(@RequestBody BroadcastReq r, Authentication a) { return segments.broadcast(StoreContext.tenantId(), user(a), new SegmentService.Req(r.segment(), r.message(), r.imageFileId(), r.mode() == null ? "PAID" : r.mode(), r.push(), r.pushTitle(), r.onlyConsented())); }
 
+    @PostMapping("/api/v1/store/broadcasts/{id}/resume")
+    @PreAuthorize(MANAGE)
+    public Map<String, Object> resumeBroadcast(@PathVariable java.util.UUID id) { return segments.resume(StoreContext.tenantId(), id); }
+
+    @PostMapping("/api/v1/store/broadcasts/{id}/cancel")
+    @PreAuthorize(MANAGE)
+    public Map<String, Object> cancelBroadcast(@PathVariable java.util.UUID id) { return segments.cancel(StoreContext.tenantId(), id); }
+
     @GetMapping("/api/v1/store/broadcasts")
     @PreAuthorize(MANAGE)
     public List<Map<String, Object>> broadcasts() { return segments.history(StoreContext.tenantId()); }

@@ -164,6 +164,14 @@ class _SegmentsState extends State<_Segments> with AutomaticKeepAliveClientMixin
     setState(() {});
   }
 
+  static String _pauseText(String r, bool ar) => switch (r) {
+        'QUIET_HOURS' => ar ? 'استراحة الليل' : 'night break',
+        'DAILY_CAP' => ar ? 'وصل الحد اليومي' : 'daily limit reached',
+        'FAILURES' => ar ? 'اتوقف: الإرسال بيفشل' : 'stopped: sends keep failing',
+        'OPT_OUTS' => ar ? 'اتوقف: عملاء طلبوا الإيقاف' : 'stopped: customers asked to stop',
+        _ => r,
+      };
+
   Future<void> _customForm() async {
     final ar = S.of(context).ar;
     final m = TextEditingController(), f = TextEditingController();
@@ -241,12 +249,12 @@ class _SegmentsState extends State<_Segments> with AutomaticKeepAliveClientMixin
             ])),
             const SizedBox(height: 8),
             Row(children: [Text(ar ? 'المعاينة لـ:' : 'Preview for:', style: const TextStyle(fontSize: 12, color: Color(0xFF6B7C8D))), const SizedBox(width: 6), ChoiceChip(visualDensity: VisualDensity.compact, label: Text(ar ? 'ذكر' : 'Male'), selected: !_female, onSelected: (_) => setState(() => _female = false)), const SizedBox(width: 4), ChoiceChip(visualDensity: VisualDensity.compact, label: Text(ar ? 'أنثى' : 'Female'), selected: _female, onSelected: (_) => setState(() => _female = true))]),
-            Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFFDCF8C6), borderRadius: BorderRadius.circular(14)), child: Text(preview.isEmpty ? (ar ? 'رسالتك هتظهر هنا' : 'Your message appears here') : preview, style: TextStyle(color: preview.isEmpty ? Colors.black45 : Colors.black87))),
+            Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFFDCF8C6), borderRadius: BorderRadius.circular(14)), child: Text(preview.isEmpty ? (ar ? 'رسالتك هتظهر هنا' : 'Your message appears here') : (_way == 'FREE' ? '$preview\n\nلإيقاف الرسائل اكتب: إيقاف · Reply STOP to unsubscribe' : preview), style: TextStyle(color: preview.isEmpty ? Colors.black45 : Colors.black87))),
             const SizedBox(height: 12),
             Text(ar ? 'ابعت عن طريق' : 'Send through', style: const TextStyle(fontWeight: FontWeight.w800)),
             const SizedBox(height: 6),
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              way('FREE', ar ? '🆓 مجاني: رقمي' : '🆓 Free: my number', _linked ? (ar ? 'رسالة كل ١٠ ثواني' : 'One every 10 seconds') : (ar ? 'اربط رقمك الأول' : 'Link your number first')),
+              way('FREE', ar ? '🆓 مجاني: رقمي' : '🆓 Free: my number', _linked ? (ar ? '٨–٢٥ ثانية بين الرسائل، ٥٠٠ في اليوم' : '8–25 s apart, 500 a day') : (ar ? 'اربط رقمك الأول' : 'Link your number first')),
               const SizedBox(width: 6),
               way('PAID', ar ? '💳 مدفوع' : '💳 Paid', ar ? '${s.money(price, cur)} للعميل، جوه نافذة الـ٢٤ ساعة' : '${s.money(price, cur)} each, inside the 24h window'),
               const SizedBox(width: 6),
@@ -257,7 +265,7 @@ class _SegmentsState extends State<_Segments> with AutomaticKeepAliveClientMixin
             if (_push) TextField(controller: _pushTitle, maxLength: 80, decoration: InputDecoration(labelText: ar ? 'عنوان الإشعار (فاضي = اسم متجرك)' : 'Notification title (empty = shop name)', isDense: true)),
             if (_way == 'FREE') CheckboxListTile(contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading, value: _onlyConsented, onChanged: (v) => setState(() => _onlyConsented = v ?? false), title: Text(ar ? 'العملاء اللي وافقوا على واتساب بس' : 'Only customers who agreed to WhatsApp', style: const TextStyle(fontSize: 13.5))),
             Container(margin: const EdgeInsets.only(top: 6), padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(12)), child: Text(
-              _way == 'FREE' ? (ar ? 'مجانًا من رقمك: ${_onlyConsented ? pv['withConsent'] : pv['freeReachable']} عميل، رسالة كل ١٠ ثواني (حوالي ${((((_onlyConsented ? pv['withConsent'] : pv['freeReachable']) as num) * 10) / 60).ceil()} دقيقة). تقدر تقفل الشاشة والإرسال بيكمل.' : 'Free through your number: ${_onlyConsented ? pv['withConsent'] : pv['freeReachable']} customers, one every 10 seconds (about ${((((_onlyConsented ? pv['withConsent'] : pv['freeReachable']) as num) * 10) / 60).ceil()} minutes). You can close the screen; it keeps sending.')
+              _way == 'FREE' ? (ar ? 'مجانًا من رقمك: ${_onlyConsented ? pv['withConsent'] : pv['freeReachable']} عميل. رسالة كل ٨ لـ٢٥ ثانية، ٥٠٠ في اليوم ومفيش إرسال بالليل (على ${(((_onlyConsented ? pv['withConsent'] : pv['freeReachable']) as num) / 500).ceil().clamp(1, 1000)} يوم). تقدر تقفل الشاشة والإرسال بيكمل.' : 'Free through your number: ${_onlyConsented ? pv['withConsent'] : pv['freeReachable']} customers. One every 8–25 seconds, 500 a day, nothing at night (over ${(((_onlyConsented ? pv['withConsent'] : pv['freeReachable']) as num) / 500).ceil().clamp(1, 1000)} day(s)). You can close the screen; it keeps sending.')
               : _way == 'PAID' ? (ar ? 'مدفوع: ${pv['reachableNow']} عميل ينفع يوصلهم دلوقتي. التكلفة ${s.money(paidCost, cur)}. رصيدك ${s.money(balance, cur)}.' : 'Paid: ${pv['reachableNow']} customers reachable now. Cost ${s.money(paidCost, cur)}. Your credit ${s.money(balance, cur)}.')
               : (ar ? 'مش هتتبعت رسالة واتساب.' : 'No WhatsApp message will be sent.'), style: const TextStyle(fontSize: 12.5))),
             if (_way == 'FREE') _note(ar ? 'طريقة غير رسمية: واتساب ممكن يحظر الرقم لو العملاء بلّغوا إن الرسالة مزعجة.' : 'Unofficial route: WhatsApp can ban the number if customers report the message as spam.'),
@@ -280,7 +288,11 @@ class _SegmentsState extends State<_Segments> with AutomaticKeepAliveClientMixin
             Text(ar ? 'الرسائل السابقة' : 'Past broadcasts', style: const TextStyle(fontWeight: FontWeight.w900)),
             for (final h in hist.take(10)) ListTile(dense: true, contentPadding: EdgeInsets.zero,
               title: Text('${h['message']}', maxLines: 2, overflow: TextOverflow.ellipsis),
-              subtitle: Text('${h['mode'] == 'FREE' ? (ar ? 'مجاني' : 'Free') : h['mode'] == 'PAID' ? (ar ? 'مدفوع' : 'Paid') : (ar ? 'تطبيق' : 'App')} · ${h['sentCount']} ✓${(h['failedCount'] as num) > 0 ? ' · ${h['failedCount']} ✗' : ''}${h['status'] == 'SENDING' ? ' · ${ar ? 'فاضل' : 'left'} ${h['pendingCount']}' : ''}')),
+              subtitle: Text('${h['mode'] == 'FREE' ? (ar ? 'مجاني' : 'Free') : h['mode'] == 'PAID' ? (ar ? 'مدفوع' : 'Paid') : (ar ? 'تطبيق' : 'App')} · ${h['sentCount']} ✓${(h['failedCount'] as num) > 0 ? ' · ${h['failedCount']} ✗' : ''}${h['status'] == 'SENDING' ? ' · ${ar ? 'فاضل' : 'left'} ${h['pendingCount']}' : ''}${h['pauseReason'] != null ? ' · ${_pauseText(h['pauseReason'] as String, ar)}' : ''}${h['status'] == 'PAUSED' ? (ar ? ' · متوقف' : ' · paused') : h['status'] == 'CANCELED' ? (ar ? ' · ملغي' : ' · canceled') : ''}'),
+              trailing: h['mode'] == 'FREE' && (h['status'] == 'PAUSED' || h['status'] == 'SENDING') ? Row(mainAxisSize: MainAxisSize.min, children: [
+                if (h['status'] == 'PAUSED') TextButton(onPressed: () async { if (await run(context, () async { await widget.ctx.api.post('store/broadcasts/${h['id']}/resume', {}); }) && mounted) setState(() => _gen++); }, child: Text(ar ? 'كمّل' : 'Resume')),
+                TextButton(onPressed: () async { if (await run(context, () async { await widget.ctx.api.post('store/broadcasts/${h['id']}/cancel', {}); }) && mounted) setState(() => _gen++); }, child: Text(ar ? 'أوقف' : 'Stop')),
+              ]) : null),
           ],
           const SizedBox(height: 8),
           for (final c in _maps(det['customers'])) ListTile(dense: true, contentPadding: EdgeInsets.zero, title: Text('${c['name'] ?? ''}'), subtitle: Text('${c['phone']}', textDirection: TextDirection.ltr), trailing: Text('${c['orders']} · ${s.money(c['spent'] as num, cur)}')),
