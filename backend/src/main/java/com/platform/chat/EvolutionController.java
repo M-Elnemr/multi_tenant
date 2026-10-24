@@ -20,10 +20,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class EvolutionController {
     public record EnableRequest(Boolean acceptedRisk) {}
     public record TestRequest(String number, String text) {}
+    public record ReportRequest(String mode, Boolean enabled, String sendAfter, String language) {}
 
     private final EvolutionService evolution;
+    private final WaReportService report;
 
-    public EvolutionController(EvolutionService evolution) { this.evolution = evolution; }
+    public EvolutionController(EvolutionService evolution, WaReportService report) { this.evolution = evolution; this.report = report; }
 
     @GetMapping("/store/ai/evolution")
     @PreAuthorize("hasAuthority('ai.read') or hasAuthority('ai.manage')")
@@ -47,6 +49,20 @@ public class EvolutionController {
         evolution.test(StoreContext.tenantId(), r.number(), r.text());
         return ResponseEntity.noContent().build();
     }
+
+    private static final String REPORT = "hasAuthority('copilot.use') or hasAuthority('ai.manage')";
+
+    @GetMapping("/store/ai/evolution/report")
+    @PreAuthorize(REPORT)
+    public Map<String, Object> reportSettings() { return evolution.reportSettings(StoreContext.tenantId()); }
+
+    @org.springframework.web.bind.annotation.PutMapping("/store/ai/evolution/report")
+    @PreAuthorize(REPORT)
+    public Map<String, Object> saveReport(@RequestBody ReportRequest r) { return evolution.saveReport(StoreContext.tenantId(), r.mode(), r.enabled(), r.sendAfter(), r.language()); }
+
+    @PostMapping("/store/ai/evolution/report/send-now")
+    @PreAuthorize(REPORT)
+    public Map<String, Object> sendReportNow() { return report.sendFreeReportNow(StoreContext.tenantId()); }
 
     /** Evolution API reports connection changes and incoming messages here. The secret in the path proves the call came from our own service. */
     @PostMapping("/chat/evolution/webhook/{secret}")

@@ -19,10 +19,12 @@ public class StoreAdminController {
     private final StoreFulfillmentService fulfilment;
     private final ProductCsvService csv;
     private final TaxonomyService taxonomy;
+    private final GenderService genders;
     private final StoreSettingsService settings;
     private final ReportService reports;
 
-    public StoreAdminController(CatalogService catalog, InventoryService inventory, OrderService orders, StoreSettingsService settings, ReportService reports, StoreFulfillmentService fulfilment, ProductCsvService csv, TaxonomyService taxonomy) {
+    public StoreAdminController(CatalogService catalog, InventoryService inventory, OrderService orders, StoreSettingsService settings, ReportService reports, StoreFulfillmentService fulfilment, ProductCsvService csv, TaxonomyService taxonomy, GenderService genders) {
+        this.genders = genders;
         this.taxonomy = taxonomy;
         this.fulfilment = fulfilment;
         this.csv = csv;
@@ -248,6 +250,16 @@ public class StoreAdminController {
     @PreAuthorize("hasAuthority('customer.read')")
     public Map<String, Object> customers(@RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize, @RequestParam(required = false) String q) {
         return settings.customers(StoreContext.tenantId(), Page.of(page, pageSize), q);
+    }
+
+    public record GenderReq(String gender) {}
+
+    /** The shop owner tells us whether a customer is a man or a woman (only the label: contact details stay read-only). A customer's own pick cannot be overridden. */
+    @PutMapping("/customers/{id}/gender")
+    @PreAuthorize("hasAuthority('customer.read')")
+    public Map<String, Object> customerGender(@PathVariable UUID id, @RequestBody GenderReq r) {
+        genders.setByOwner(StoreContext.tenantId(), id, r.gender());
+        return Map.of("ok", true);
     }
 
     /** A client's orders. Read-only: there is deliberately no way for a store to create or edit clients. */

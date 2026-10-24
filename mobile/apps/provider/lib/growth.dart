@@ -131,6 +131,9 @@ class _Segments extends StatefulWidget {
   State<_Segments> createState() => _SegmentsState();
 }
 
+/// Pairs written {masculine|feminine}: the server picks the side that fits each customer. (label on the chip, text inserted)
+const _forms = [('أهلاً بيك/بيكي', 'أهلاً {بيك|بيكي}'), ('ليك/ليكي', '{ليك|ليكي}'), ('تحب/تحبي', '{تحب|تحبي}'), ('اتفضل/اتفضلي', '{اتفضل|اتفضلي}'), ('تعالى/تعالي', '{تعالى|تعالي}'), ('شوف/شوفي', '{شوف|شوفي}'), ('كمّل/كمّلي', '{كمّل|كمّلي}'), ('معاك/معاكي', '{معاك|معاكي}')];
+
 const _emoji = ['😀', '😍', '🥰', '😎', '🤩', '🙏', '👍', '👏', '🔥', '✨', '🎉', '🎁', '💥', '💯', '❤️', '🛍️', '🛒', '🏷️', '💸', '💰', '⭐', '🌟', '⏰', '📣', '📦', '🚚', '✅', '👇', '👉', '🌸', '☀️', '🌙', '🎊', '🥳', '😉', '🤝', '💐', '🧡', '💙', '🆕'];
 
 class _SegmentsState extends State<_Segments> with AutomaticKeepAliveClientMixin {
@@ -139,7 +142,7 @@ class _SegmentsState extends State<_Segments> with AutomaticKeepAliveClientMixin
   String _key = 'ALL', _way = 'PAID';
   final _msg = TextEditingController(), _pushTitle = TextEditingController();
   String? _image;
-  bool _push = false, _onlyConsented = false, _linked = false, _busy = false;
+  bool _push = false, _onlyConsented = false, _linked = false, _busy = false, _female = true;
   int _gen = 0;
 
   @override
@@ -159,6 +162,21 @@ class _SegmentsState extends State<_Segments> with AutomaticKeepAliveClientMixin
     final a = v.selection.start, b = v.selection.end;
     _msg.value = TextEditingValue(text: '${v.text.substring(0, a)}$mark${v.text.substring(a, b)}$mark${v.text.substring(b)}', selection: TextSelection(baseOffset: a + mark.length, extentOffset: b + mark.length));
     setState(() {});
+  }
+
+  Future<void> _customForm() async {
+    final ar = S.of(context).ar;
+    final m = TextEditingController(), f = TextEditingController();
+    final ok = await showDialog<bool>(context: context, builder: (d) => AlertDialog(
+      title: Text(ar ? 'صيغة من عندك' : 'Your own form'),
+      content: Column(mainAxisSize: MainAxisSize.min, children: [
+        TextField(controller: m, decoration: InputDecoration(labelText: ar ? 'للرجل، مثال تحب' : 'For a man, e.g. تحب')),
+        TextField(controller: f, decoration: InputDecoration(labelText: ar ? 'للست، مثال تحبي' : 'For a woman, e.g. تحبي')),
+      ]),
+      actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: Text(ar ? 'إلغاء' : 'Cancel')), FilledButton(onPressed: () => Navigator.pop(d, true), child: Text(ar ? 'أضف' : 'Add'))]));
+    final a = m.text.replaceAll(RegExp(r'[{}|]'), '').trim(), b = f.text.replaceAll(RegExp(r'[{}|]'), '').trim();
+    m.dispose(); f.dispose();
+    if (ok == true && a.isNotEmpty && b.isNotEmpty) _insert('{$a|$b}');
   }
 
   Future<void> _emojiSheet() => showModalBottomSheet<void>(context: context, builder: (c) => Padding(padding: const EdgeInsets.all(12), child: GridView.count(crossAxisCount: 8, shrinkWrap: true, children: [for (final e in _emoji) InkWell(onTap: () { Navigator.pop(c); _insert(e); }, child: Center(child: Text(e, style: const TextStyle(fontSize: 26))))])));
@@ -189,7 +207,7 @@ class _SegmentsState extends State<_Segments> with AutomaticKeepAliveClientMixin
         final paidCost = reachablePaid * price;
         final low = _way == 'PAID' && paidCost > balance;
         final name = ar ? 'منى' : 'Mona';
-        final preview = _msg.text.replaceAll('{name}', name).replaceAll('{shop}', ar ? 'متجرك' : 'your shop');
+        final preview = _msg.text.replaceAll('{name}', name).replaceAll('{shop}', ar ? 'متجرك' : 'your shop').replaceAllMapped(RegExp(r'\{([^{}|]{1,40})\|([^{}|]{1,40})\}'), (m) => _female ? m.group(2)! : m.group(1)!);
         Widget way(String w, String title, String hint) => Expanded(child: InkWell(borderRadius: BorderRadius.circular(14), onTap: () {
               if (w == 'FREE' && !_linked) { openOwnNumberSettings(context, widget.ctx); return; }
               setState(() => _way = w);
@@ -209,6 +227,12 @@ class _SegmentsState extends State<_Segments> with AutomaticKeepAliveClientMixin
               IconButton.outlined(visualDensity: VisualDensity.compact, onPressed: _emojiSheet, icon: const Icon(Icons.emoji_emotions_outlined)),
               IconButton.outlined(visualDensity: VisualDensity.compact, onPressed: _pickImage, icon: const Icon(Icons.image_outlined)),
             ]),
+            const SizedBox(height: 4),
+            Text(ar ? 'صيغ المذكر / المؤنث (بتتحول لكل عميل حسب نوعه):' : 'Man / woman forms (each customer gets theirs):', style: const TextStyle(fontSize: 12, color: Color(0xFF6B7C8D))),
+            Wrap(spacing: 6, runSpacing: 4, children: [
+              for (final f in _forms) ActionChip(backgroundColor: const Color(0xFFEDE9FE), label: Text(f.$1, style: const TextStyle(fontSize: 12.5)), onPressed: () => _insert(f.$2)),
+              ActionChip(avatar: const Icon(Icons.add, size: 14), label: Text(ar ? 'صيغة من عندك' : 'Your own', style: const TextStyle(fontSize: 12.5)), onPressed: _customForm),
+            ]),
             const SizedBox(height: 8),
             TextField(controller: _msg, maxLines: 5, maxLength: 1000, onChanged: (_) => setState(() {}), decoration: InputDecoration(hintText: ar ? 'اكتب رسالتك. اضغط «اسم العميل» لإضافة الاسم الأول لكل عميل.' : 'Write your message. Tap “Customer name” to add each customer\'s first name.')),
             if (_image != null) Align(alignment: AlignmentDirectional.centerStart, child: Stack(clipBehavior: Clip.none, children: [
@@ -216,12 +240,13 @@ class _SegmentsState extends State<_Segments> with AutomaticKeepAliveClientMixin
               PositionedDirectional(end: -8, top: -8, child: InkWell(onTap: () => setState(() => _image = null), child: const CircleAvatar(radius: 12, backgroundColor: Color(0xFFDC2626), child: Icon(Icons.close, size: 14, color: Colors.white)))),
             ])),
             const SizedBox(height: 8),
+            Row(children: [Text(ar ? 'المعاينة لـ:' : 'Preview for:', style: const TextStyle(fontSize: 12, color: Color(0xFF6B7C8D))), const SizedBox(width: 6), ChoiceChip(visualDensity: VisualDensity.compact, label: Text(ar ? 'ذكر' : 'Male'), selected: !_female, onSelected: (_) => setState(() => _female = false)), const SizedBox(width: 4), ChoiceChip(visualDensity: VisualDensity.compact, label: Text(ar ? 'أنثى' : 'Female'), selected: _female, onSelected: (_) => setState(() => _female = true))]),
             Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFFDCF8C6), borderRadius: BorderRadius.circular(14)), child: Text(preview.isEmpty ? (ar ? 'رسالتك هتظهر هنا' : 'Your message appears here') : preview, style: TextStyle(color: preview.isEmpty ? Colors.black45 : Colors.black87))),
             const SizedBox(height: 12),
             Text(ar ? 'ابعت عن طريق' : 'Send through', style: const TextStyle(fontWeight: FontWeight.w800)),
             const SizedBox(height: 6),
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              way('FREE', ar ? '🆓 مجاني: رقمي' : '🆓 Free: my number', _linked ? (ar ? 'بالتدريج، مرة في اليوم' : 'Paced, once a day') : (ar ? 'اربط رقمك الأول' : 'Link your number first')),
+              way('FREE', ar ? '🆓 مجاني: رقمي' : '🆓 Free: my number', _linked ? (ar ? 'رسالة كل ١٠ ثواني' : 'One every 10 seconds') : (ar ? 'اربط رقمك الأول' : 'Link your number first')),
               const SizedBox(width: 6),
               way('PAID', ar ? '💳 مدفوع' : '💳 Paid', ar ? '${s.money(price, cur)} للعميل، جوه نافذة الـ٢٤ ساعة' : '${s.money(price, cur)} each, inside the 24h window'),
               const SizedBox(width: 6),
@@ -232,7 +257,7 @@ class _SegmentsState extends State<_Segments> with AutomaticKeepAliveClientMixin
             if (_push) TextField(controller: _pushTitle, maxLength: 80, decoration: InputDecoration(labelText: ar ? 'عنوان الإشعار (فاضي = اسم متجرك)' : 'Notification title (empty = shop name)', isDense: true)),
             if (_way == 'FREE') CheckboxListTile(contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading, value: _onlyConsented, onChanged: (v) => setState(() => _onlyConsented = v ?? false), title: Text(ar ? 'العملاء اللي وافقوا على واتساب بس' : 'Only customers who agreed to WhatsApp', style: const TextStyle(fontSize: 13.5))),
             Container(margin: const EdgeInsets.only(top: 6), padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(12)), child: Text(
-              _way == 'FREE' ? (ar ? 'مجانًا من رقمك: ${_onlyConsented ? pv['withConsent'] : pv['freeReachable']} عميل (بتتبعت كام رسالة في الدقيقة).' : 'Free through your number: ${_onlyConsented ? pv['withConsent'] : pv['freeReachable']} customers (a few per minute).')
+              _way == 'FREE' ? (ar ? 'مجانًا من رقمك: ${_onlyConsented ? pv['withConsent'] : pv['freeReachable']} عميل، رسالة كل ١٠ ثواني (حوالي ${((((_onlyConsented ? pv['withConsent'] : pv['freeReachable']) as num) * 10) / 60).ceil()} دقيقة). تقدر تقفل الشاشة والإرسال بيكمل.' : 'Free through your number: ${_onlyConsented ? pv['withConsent'] : pv['freeReachable']} customers, one every 10 seconds (about ${((((_onlyConsented ? pv['withConsent'] : pv['freeReachable']) as num) * 10) / 60).ceil()} minutes). You can close the screen; it keeps sending.')
               : _way == 'PAID' ? (ar ? 'مدفوع: ${pv['reachableNow']} عميل ينفع يوصلهم دلوقتي. التكلفة ${s.money(paidCost, cur)}. رصيدك ${s.money(balance, cur)}.' : 'Paid: ${pv['reachableNow']} customers reachable now. Cost ${s.money(paidCost, cur)}. Your credit ${s.money(balance, cur)}.')
               : (ar ? 'مش هتتبعت رسالة واتساب.' : 'No WhatsApp message will be sent.'), style: const TextStyle(fontSize: 12.5))),
             if (_way == 'FREE') _note(ar ? 'طريقة غير رسمية: واتساب ممكن يحظر الرقم لو العملاء بلّغوا إن الرسالة مزعجة.' : 'Unofficial route: WhatsApp can ban the number if customers report the message as spam.'),

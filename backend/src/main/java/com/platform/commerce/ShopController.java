@@ -56,7 +56,7 @@ public class ShopController {
         this.webhooks = webhooks;
     }
 
-    public record ProfileRequest(String name, String phone) {}
+    public record ProfileRequest(String name, String phone, String gender) {}
     public record ReviewRequest(int rating, String text) {}
     public record CancelRequest(String reason) {}
     public record AddressRequest(String title, boolean makeDefault, CheckoutService.AddressReq address) {}
@@ -224,7 +224,7 @@ public class ShopController {
     /** The client keeps their own name and mobile on their account so the next order is pre-filled. */
     @PutMapping("/me")
     @PreAuthorize("hasRole('CUSTOMER')")
-    public Map<String, Object> updateMe(@RequestBody ProfileRequest r, Authentication a) { return shopper.updateProfile((UUID) a.getPrincipal(), r.name(), r.phone()); }
+    public Map<String, Object> updateMe(@RequestBody ProfileRequest r, Authentication a) { return shopper.updateProfile((UUID) a.getPrincipal(), r.name(), r.phone(), r.gender()); }
 
     /** Deletes the signed-in client's account (login, contact details, addresses, wishlist, devices). Orders stay with the shops. */
     @DeleteMapping("/me")

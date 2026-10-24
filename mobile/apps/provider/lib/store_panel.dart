@@ -388,6 +388,7 @@ class CustomerDetail extends StatelessWidget {
           kv(ar ? 'عميل منذ' : 'Customer since', fmtDate(c['createdAt'] as String?, time: false)),
           kv(ar ? 'الطلبات' : 'Orders', '${c['ordersCount']}'),
           kv(ar ? 'إجمالي المشتريات' : 'Total spent', s.money(c['totalSpentMinor'] as num?, ctx.currency)),
+          _GenderRow(ctx: ctx, customer: c),
           if (phone != null && phone.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 10), child: Row(children: [
             Expanded(child: FilledButton.icon(onPressed: () => dial(phone), icon: const Icon(Icons.call_rounded), label: Text(ar ? 'اتصال' : 'Call'))),
             const SizedBox(width: 10),
@@ -410,5 +411,38 @@ class CustomerDetail extends StatelessWidget {
         ),
       ]),
     );
+  }
+}
+
+/// Whether the customer is a man or a woman, so messages use the right form. A guess from the name is shown as a guess; the customer's own choice cannot be changed here.
+class _GenderRow extends StatefulWidget {
+  const _GenderRow({required this.ctx, required this.customer});
+  final Ctx ctx;
+  final Map<String, dynamic> customer;
+  @override
+  State<_GenderRow> createState() => _GenderRowState();
+}
+
+class _GenderRowState extends State<_GenderRow> {
+  late String? _g = widget.customer['gender'] as String?, _src = widget.customer['genderSource'] as String?;
+
+  Future<void> _set(String g) async {
+    final clear = _g == g && _src == 'OWNER';
+    if (await run(context, () async { await widget.ctx.api.put('store/customers/${widget.customer['id']}/gender', {'gender': clear ? '' : g}); }) && mounted) {
+      setState(() { _g = clear ? null : g; _src = clear ? null : 'OWNER'; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ar = S.of(context).ar;
+    final self = _src == 'SELF';
+    final note = self ? (ar ? 'اختاره العميل بنفسه' : 'chosen by the customer') : _src == 'AI' ? (ar ? 'تخمين من الاسم' : 'guessed from the name') : _src == 'OWNER' ? (ar ? 'إنت حددته' : 'set by you') : (ar ? 'غير معروف' : 'unknown');
+    return Padding(padding: const EdgeInsets.only(top: 8), child: Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+      Text(ar ? 'النوع' : 'Gender', style: const TextStyle(fontWeight: FontWeight.w700)),
+      ChoiceChip(label: Text(ar ? 'ذكر' : 'Male'), selected: _g == 'MALE', onSelected: self ? null : (_) => _set('MALE')),
+      ChoiceChip(label: Text(ar ? 'أنثى' : 'Female'), selected: _g == 'FEMALE', onSelected: self ? null : (_) => _set('FEMALE')),
+      Text(note, style: const TextStyle(fontSize: 11.5, color: Color(0xFF6B7C8D))),
+    ]));
   }
 }

@@ -246,7 +246,7 @@ public class MetaChannelService {
         String answer;
         if (text == null || text.isBlank()) {
             if (!aiOn) return;
-            answer = "أستطيع قراءة الرسائل النصية فقط، اكتب لي ما تحتاجه 🙏 / I can only read text messages, please type what you need.";
+            answer = "أستطيع قراءة الرسائل النصية فقط، {اكتب|اكتبي} لي ما {تحتاجه|تحتاجيه} 🙏 / I can only read text messages, please type what you need.";
         } else {
             try {
                 throttle.check("chat-meta|" + platform + "|" + sender, 40, Duration.ofMinutes(10));
@@ -275,7 +275,7 @@ public class MetaChannelService {
             }
         }
         try {
-            for (String part : chunks(answer, "INSTAGRAM".equals(platform) ? 900 : "WHATSAPP".equals(platform) ? 3500 : 1900)) send(platform, accountId, sender, token, part);
+            for (String part : chunks(com.platform.shared.Gender.MALE.apply(answer), "INSTAGRAM".equals(platform) ? 900 : "WHATSAPP".equals(platform) ? 3500 : 1900)) send(platform, accountId, sender, token, part);
         } catch (MetaGraph.MetaException e) {
             log.warn("Could not send the {} reply: {}", platform, e.getMessage());
         }

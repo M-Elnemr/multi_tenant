@@ -45,6 +45,7 @@ NEW = {
  'NO_CREDIT': ('Not enough WhatsApp credit. Top up and try again.', 'رصيد واتساب مش كفاية. اشحن الرصيد وحاول تاني.'),
  'NOBODY_TO_SEND': ('There is nobody to send this to. Try your own number (free) or an app notification.', 'مفيش حد تبعتله. جرّب رقمك الخاص (مجاني) أو إشعار التطبيق.'),
  'BROADCAST_LIMIT': ('You reached the daily limit for this way of sending. Try again tomorrow.', 'وصلت للحد اليومي لطريقة الإرسال دي. حاول بكرة.'),
+ 'BROADCAST_RUNNING': ('A free broadcast is still being sent. Wait until it finishes: one message every 10 seconds protects your number.', 'في رسالة جماعية مجانية لسه بتتبعت. استنى لما تخلص: رسالة كل ١٠ ثواني لحماية رقمك.'),
  'META_REJECTED': ('Facebook did not accept these details: {detail}', 'رفض فيسبوك هذه البيانات: {detail}'),
  'MIXED_CURRENCY': ('The items use different currencies.', 'المنتجات بعملات مختلفة، لا يمكن جمعها في طلب واحد.'),
  'NOT_CREATED': ('This campaign was not created on Facebook.', 'هذه الحملة لم تُنشأ على فيسبوك.'),

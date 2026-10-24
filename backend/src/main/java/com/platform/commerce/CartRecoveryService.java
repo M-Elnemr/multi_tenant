@@ -37,6 +37,7 @@ public class CartRecoveryService {
     private static final ObjectMapper JSON = new ObjectMapper();
     public static final String TEMPLATE = "cart_reminder_ar";
 
+    private final GenderService genders;
     private final com.platform.chat.EvolutionService evolution;
     private final JdbcClient jdbc;
     private final MetaChannelService channels;
@@ -48,7 +49,8 @@ public class CartRecoveryService {
     private final boolean scheduler;
 
     public CartRecoveryService(JdbcClient jdbc, MetaChannelService channels, MetaGraph graph, WalletService wallet, OpenUrls urls, AuditService audit,
-                               @Value("${app.whatsapp.marketing-price-minor:300}") long priceMinor, @Value("${app.integrations.scheduler.enabled:true}") boolean scheduler, com.platform.chat.EvolutionService evolution) {
+                               @Value("${app.whatsapp.marketing-price-minor:300}") long priceMinor, @Value("${app.integrations.scheduler.enabled:true}") boolean scheduler, com.platform.chat.EvolutionService evolution, GenderService genders) {
+        this.genders = genders;
         this.evolution = evolution;
         this.jdbc = jdbc;
         this.channels = channels;
@@ -216,8 +218,8 @@ public class CartRecoveryService {
     String whatsappUrl(UUID tenantId, String phone, String name, String extra) {
         String host = urls.hosts(List.of(tenantId)).get(tenantId);
         String shop = jdbc.sql("SELECT coalesce(nullif(sp.store_name, ''), t.name) FROM core.tenants t LEFT JOIN commerce.store_profiles sp ON sp.tenant_id = t.id WHERE t.id = :t").param("t", tenantId).query(String.class).single();
-        String text = "أهلاً " + (name == null || name.isBlank() ? "" : name.trim().split("\\s+")[0] + " ") + "👋 معاك " + shop + ". لاحظنا إن سلتك لسه مستنياك، تحب نكمّل الطلب؟ " + urls.baseUrl(host) + "/cart" + (extra == null ? "" : " " + extra);
-        return "https://wa.me/" + phone.replaceAll("\\D", "") + "?text=" + URLEncoder.encode(text, StandardCharsets.UTF_8);
+        String text = "أهلاً " + (name == null || name.isBlank() ? "" : name.trim().split("\\s+")[0] + " ") + "👋 {معاك|معاكي} " + shop + ". لاحظنا إن سلتك لسه مستنياك، {تحب|تحبي} نكمّل الطلب؟ " + urls.baseUrl(host) + "/cart" + (extra == null ? "" : " " + extra);
+        return "https://wa.me/" + phone.replaceAll("\\D", "") + "?text=" + URLEncoder.encode(genders.forPhone(tenantId, phone).apply(text), StandardCharsets.UTF_8);
     }
 
     // ---- reminders ---------------------------------------------------------------------------------------------------------
@@ -246,8 +248,8 @@ public class CartRecoveryService {
             String url = urls.baseUrl(urls.hosts(List.of(tenantId)).get(tenantId)) + "/cart";
             String cp = (String) settings.get("couponCode");
             String who = name == null || name.isBlank() ? "" : name.trim().split("\\s+")[0];
-            String text = "أهلاً " + who + " 👋 سلتك لسه مستنياك. تحب أكمّل معاك الطلب؟ " + url + (cp == null ? "" : "\nاستخدم كود الخصم " + cp);
-            return finish(cartId, evolution.sendFree(tenantId, phone, text) ? "SENT_FREE" : "FAILED");
+            String text = "أهلاً " + who + " 👋 سلتك لسه مستنياك. {تحب|تحبي} أكمّل {معاك|معاكي} الطلب؟ " + url + (cp == null ? "" : "\n{استخدم|استخدمي} كود الخصم " + cp);
+            return finish(cartId, evolution.sendFree(tenantId, phone, genders.forPhone(tenantId, phone).apply(text)) ? "SENT_FREE" : "FAILED");
         }
         if (ch == null) return finish(cartId, "NO_CHANNEL");
         boolean windowOpen = jdbc.sql("SELECT count(*) FROM chat.wa_windows WHERE tenant_id = :t AND number = :n AND last_inbound_at > :since").param("t", tenantId).param("n", phone)
@@ -256,9 +258,9 @@ public class CartRecoveryService {
         String link = urls.baseUrl(urls.hosts(List.of(tenantId)).get(tenantId)) + "/cart";
         String hello = name == null || name.isBlank() ? "" : name.trim().split("\\s+")[0];
         if (windowOpen) {
-            String text = "أهلاً " + hello + " 👋 سلتك لسه مستنياك. تحب أكمّل معاك الطلب؟ " + link + (coupon == null ? "" : "\nاستخدم كود الخصم " + coupon);
+            String text = "أهلاً " + hello + " 👋 سلتك لسه مستنياك. {تحب|تحبي} أكمّل {معاك|معاكي} الطلب؟ " + link + (coupon == null ? "" : "\n{استخدم|استخدمي} كود الخصم " + coupon);
             try {
-                graph.post(ch.phoneId() + "/messages", ch.token(), Map.of("messaging_product", "whatsapp", "to", phone, "type", "text", "text", Map.of("body", text)));
+                graph.post(ch.phoneId() + "/messages", ch.token(), Map.of("messaging_product", "whatsapp", "to", phone, "type", "text", "text", Map.of("body", genders.forPhone(tenantId, phone).apply(text))));
                 return finish(cartId, "SENT_FREE");
             } catch (MetaGraph.MetaException e) {
                 log.warn("Cart reminder failed: {}", e.getMessage());

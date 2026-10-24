@@ -14,11 +14,13 @@ import org.springframework.transaction.annotation.Transactional;
 /** Things a logged-in shopper does on a store besides checkout: wishlist, reviews, saved addresses. */
 @Service
 public class ShopperService {
+    private final GenderService genders;
     private final JdbcClient jdbc;
     private final EntitlementService ent;
     private final StoreCustomerService customers;
 
-    public ShopperService(JdbcClient jdbc, EntitlementService ent, StoreCustomerService customers) {
+    public ShopperService(JdbcClient jdbc, EntitlementService ent, StoreCustomerService customers, GenderService genders) {
+        this.genders = genders;
         this.jdbc = jdbc;
         this.ent = ent;
         this.customers = customers;
@@ -61,8 +63,14 @@ public class ShopperService {
     }
 
     public Map<String, Object> profile(UUID clientId) {
-        return Rows.camel(jdbc.sql("SELECT id, name, phone, email FROM commerce.client_accounts WHERE id = :u").param("u", clientId).query().listOfRows().stream().findFirst()
+        return Rows.camel(jdbc.sql("SELECT id, name, phone, email, gender FROM commerce.client_accounts WHERE id = :u").param("u", clientId).query().listOfRows().stream().findFirst()
                 .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Account not found")));
+    }
+
+    @Transactional
+    public Map<String, Object> updateProfile(UUID clientId, String name, String phone, String gender) {
+        if (gender != null) genders.setSelf(clientId, gender);
+        return updateProfile(clientId, name, phone);
     }
 
     @Transactional

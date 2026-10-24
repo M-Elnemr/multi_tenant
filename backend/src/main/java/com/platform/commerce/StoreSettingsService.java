@@ -381,7 +381,7 @@ public class StoreSettingsService {
         String where = "c.tenant_id = :t AND (CAST(:q AS varchar) IS NULL OR c.name ILIKE CAST(:q AS varchar) OR c.phone LIKE CAST(:q AS varchar) OR c.customer_number ILIKE CAST(:q AS varchar))";
         long total = jdbc.sql("SELECT count(*) FROM commerce.customers c WHERE " + where).param("t", tenantId).param("q", like).query(Long.class).single();
         var rows = jdbc.sql("""
-                SELECT c.id, c.customer_number, c.name, c.phone, c.email, c.address_json::text AS address, (c.user_id IS NOT NULL) AS has_account, c.created_at,
+                SELECT c.id, c.customer_number, c.name, c.phone, c.email, c.gender, c.gender_source, c.address_json::text AS address, (c.user_id IS NOT NULL) AS has_account, c.created_at,
                   (SELECT count(*) FROM commerce.orders o WHERE o.customer_id = c.id) AS orders_count,
                   (SELECT coalesce(sum(o.total_minor),0) FROM commerce.orders o WHERE o.customer_id = c.id AND o.status NOT IN ('CANCELLED','RETURNED','REFUNDED')) AS total_spent_minor,
                   (SELECT max(o.created_at) FROM commerce.orders o WHERE o.customer_id = c.id) AS last_order_at

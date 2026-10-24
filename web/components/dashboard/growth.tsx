@@ -111,7 +111,7 @@ export function SegmentsTab() {
 
         {pv && (
           <div className="rounded-xl bg-slate-50 p-3 text-sm">
-            {way === "FREE" && <p>{t("gr.reachFree", { n: onlyConsented ? pv.withConsent : pv.freeReachable })}</p>}
+            {way === "FREE" && <p>{t("gr.reachFree", { n: onlyConsented ? pv.withConsent : pv.freeReachable, min: Math.max(1, Math.ceil(((onlyConsented ? pv.withConsent : pv.freeReachable) * 10) / 60)) })}</p>}
             {way === "PAID" && <p>{t("gr.reachPaid", { n: pv.reachableNow, consent: pv.withConsent, cost: money(paidCost, currency, locale), price: money(price, currency, locale) })}</p>}
             {way === "NONE" && <p>{t("gr.reachNone")}</p>}
             {push && <p>{t("gr.reachPush", { n: pv.appUsers })}</p>}

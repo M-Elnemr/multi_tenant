@@ -36,6 +36,7 @@ public class WaReportService {
     private static final Pattern CODE = Pattern.compile("MNS\\s*[- ]?\\s*(\\d{6})", Pattern.CASE_INSENSITIVE);
     private static final SecureRandom RANDOM = new SecureRandom();
 
+    private final EvolutionService evolution;
     private final JdbcClient jdbc;
     private final MetaGraph graph;
     private final CopilotService copilot;
@@ -44,7 +45,8 @@ public class WaReportService {
     private final String displayNumber;
 
     public WaReportService(JdbcClient jdbc, MetaGraph graph, CopilotService copilot, @Value("${app.whatsapp.platform.phone-id:}") String phoneId,
-                           @Value("${app.whatsapp.platform.token:}") String token, @Value("${app.whatsapp.platform.number:}") String displayNumber) {
+                           @Value("${app.whatsapp.platform.token:}") String token, @Value("${app.whatsapp.platform.number:}") String displayNumber, EvolutionService evolution) {
+        this.evolution = evolution;
         this.jdbc = jdbc;
         this.graph = graph;
         this.copilot = copilot;
@@ -231,9 +233,9 @@ public class WaReportService {
 
     /** Sends every report that is due at {@code now}: not yet sent for its day, after the shop's chosen time (or up to 03:00 the next morning to catch up). */
     public int runDue(Instant now) {
-        if (!configured()) return 0;
-        int sent = 0;
-        for (var c : jdbc.sql("SELECT c.tenant_id, c.phone, c.send_after, c.language, c.last_inbound_at FROM whatsapp.contacts c WHERE c.enabled").query().listOfRows()) {
+        int sent = runFree(now);
+        if (!configured()) return sent;
+        for (var c : jdbc.sql("SELECT c.tenant_id, c.phone, c.send_after, c.language, c.last_inbound_at FROM whatsapp.contacts c WHERE c.enabled AND NOT EXISTS (SELECT 1 FROM chat.evolution_settings e WHERE e.tenant_id = c.tenant_id AND e.enabled AND e.report_mode = 'FREE' AND e.report_enabled)").query().listOfRows()) {
             UUID t = (UUID) c.get("tenant_id");
             try {
                 ZonedDateTime local = now.atZone(zone(t));
@@ -258,6 +260,41 @@ public class WaReportService {
             }
         }
         return sent;
+    }
+
+    /** The free report: from the shop's own linked number to that same number, like a message to yourself. No platform number, no window, no charge. */
+    int runFree(Instant now) {
+        int sent = 0;
+        for (var c : jdbc.sql("SELECT tenant_id, to_char(report_send_after, 'HH24:MI') AS send_after, report_language FROM chat.evolution_settings WHERE enabled AND status = 'CONNECTED' AND report_mode = 'FREE' AND report_enabled").query().listOfRows()) {
+            UUID t = (UUID) c.get("tenant_id");
+            try {
+                ZonedDateTime local = now.atZone(zone(t));
+                LocalTime sendAfter = LocalTime.parse((String) c.get("send_after"));
+                LocalDate day = local.toLocalTime().isBefore(LocalTime.of(3, 0)) ? local.toLocalDate().minusDays(1) : local.toLocalDate();
+                boolean due = local.toLocalTime().isBefore(LocalTime.of(3, 0)) || !local.toLocalTime().isBefore(sendAfter);
+                if (!due) continue;
+                if (jdbc.sql("SELECT count(*) FROM whatsapp.report_log WHERE tenant_id = :t AND day = :d AND status = 'SENT'").param("t", t).param("d", java.sql.Date.valueOf(day)).query(Long.class).single() > 0) continue;
+                String self = evolution.selfNumber(t);
+                if (self == null) continue;
+                var d = evolution.deliver(t, self, compose(t, day, "en".equals(c.get("report_language")) ? "en" : "ar"), null);
+                if (d == EvolutionService.Delivery.DEFERRED) continue;
+                record(t, day, d == EvolutionService.Delivery.SENT ? "SENT" : "FAILED", null, d == EvolutionService.Delivery.SENT ? null : "Send from the own number failed");
+                if (d == EvolutionService.Delivery.SENT) sent++;
+            } catch (RuntimeException e) {
+                log.warn("Free WhatsApp report for {} failed: {}", t, e.getMessage());
+            }
+        }
+        return sent;
+    }
+
+    /** "Send now" through the shop's own number. */
+    public Map<String, Object> sendFreeReportNow(UUID t) {
+        String self = evolution.selfNumber(t);
+        if (self == null) throw BusinessException.conflict("EVOLUTION_OFF", "Link your own WhatsApp number first");
+        var settings = evolution.reportSettings(t);
+        var d = evolution.deliver(t, self, compose(t, LocalDate.now(zone(t)), "en".equals(settings.get("language")) ? "en" : "ar"), null);
+        if (d != EvolutionService.Delivery.SENT) throw BusinessException.conflict("EVOLUTION_SEND_FAILED", "The message could not be sent");
+        return Map.of("sent", true);
     }
 
     private void record(UUID t, LocalDate day, String status, String id, String error) {

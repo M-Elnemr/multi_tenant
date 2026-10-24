@@ -91,6 +91,7 @@ class _OrdersPageState extends State<OrdersPage> {
             builder: (context, data, reload) {
               final orders = (data['data'] as List).cast<Map<String, dynamic>>();
               return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                _GenderPicker(api: api),
                 if (orders.isEmpty) Center(child: Padding(padding: const EdgeInsets.all(12), child: Text(s.empty))) else Text(s.ar ? 'طلباتي' : 'My orders', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
                 for (final o in orders) Card(child: ListTile(
                   title: Text(o['orderNumber'] as String, style: const TextStyle(fontWeight: FontWeight.w800), textDirection: TextDirection.ltr, textAlign: TextAlign.start),
@@ -248,5 +249,46 @@ class _GoogleSignInButtonState extends State<GoogleSignInButton> {
       OutlinedButton.icon(onPressed: busy ? null : _go, icon: const Icon(Icons.login), label: Text(s.ar ? 'المتابعة بجوجل' : 'Continue with Google')),
       if (error != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error))),
     ]);
+  }
+}
+
+/// "I am a man / a woman": so shops talk to the customer in the right form (أهلاً بيك / أهلاً بيكي). Saved on the account.
+class _GenderPicker extends StatefulWidget {
+  const _GenderPicker({required this.api});
+  final dynamic api;
+  @override
+  State<_GenderPicker> createState() => _GenderPickerState();
+}
+
+class _GenderPickerState extends State<_GenderPicker> {
+  String? _gender;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.api.get('shop/me').then((r) { if (mounted) setState(() { _gender = (r as Map)['gender'] as String?; _loaded = true; }); }).catchError((_) { if (mounted) setState(() => _loaded = true); });
+  }
+
+  Future<void> _set(String g) async {
+    final old = _gender;
+    setState(() => _gender = g);
+    try { await widget.api.put('shop/me', {'gender': g}); } catch (_) { if (mounted) setState(() => _gender = old); }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ar = S.of(context).ar;
+    if (!_loaded) return const SizedBox.shrink();
+    return Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(ar ? 'أنا' : 'I am', style: const TextStyle(fontWeight: FontWeight.w900)),
+      Text(ar ? 'عشان المتاجر تكلمك بالصيغة الصح.' : 'So shops speak to you correctly.', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+      const SizedBox(height: 8),
+      Row(children: [
+        Expanded(child: ChoiceChip(label: Center(child: Text(ar ? 'ذكر' : 'Male')), selected: _gender == 'MALE', onSelected: (_) => _set('MALE'))),
+        const SizedBox(width: 8),
+        Expanded(child: ChoiceChip(label: Center(child: Text(ar ? 'أنثى' : 'Female')), selected: _gender == 'FEMALE', onSelected: (_) => _set('FEMALE'))),
+      ]),
+    ])));
   }
 }

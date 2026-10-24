@@ -19,8 +19,9 @@ public class StoreCustomerService {
     public record Contact(String name, String phone, String email, String addressJson) {}
 
     private final JdbcClient jdbc;
+    private final GenderService genders;
 
-    public StoreCustomerService(JdbcClient jdbc) { this.jdbc = jdbc; }
+    public StoreCustomerService(JdbcClient jdbc, GenderService genders) { this.jdbc = jdbc; this.genders = genders; }
 
     /** The customer record of a signed-in client in this store (created from the account's own details when missing). */
     @Transactional
@@ -52,6 +53,7 @@ public class StoreCustomerService {
                                        THEN CAST(:p AS varchar) ELSE c.phone END
                         WHERE c.id = :i
                         """).param("n", name).param("e", c.email()).param("a", c.addressJson()).param("p", phone).param("i", id).update();
+                genders.refresh(id, name, clientId);
                 return id;
             }
             // A concurrent order for the same phone/client may win the insert; then the next round finds its row.
@@ -60,7 +62,7 @@ public class StoreCustomerService {
                     VALUES (:t, :u, :n, :nm, :p, :e, CAST(:a AS jsonb)) ON CONFLICT DO NOTHING RETURNING id
                     """).param("t", tenantId).param("u", clientId).param("n", "C-" + random(6)).param("nm", name).param("p", phone).param("e", c.email()).param("a", c.addressJson())
                     .query(UUID.class).optional();
-            if (created.isPresent()) return created.get();
+            if (created.isPresent()) { genders.refresh(created.get(), name, clientId); return created.get(); }
         }
         throw new IllegalStateException("Could not create the customer record");
     }

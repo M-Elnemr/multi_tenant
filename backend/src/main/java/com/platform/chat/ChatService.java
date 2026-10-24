@@ -56,9 +56,11 @@ public class ChatService {
     private final PaymentPolicy policy;
     private final AuditService audit;
     private final SellerTools seller;
+    private final com.platform.commerce.GenderService genders;
 
     public ChatService(JdbcClient jdbc, AiProvider ai, CatalogService catalog, StoreSearchService search, CheckoutService checkout, StoreSettingsService settings,
-                       StoreFulfillmentService fulfilment, ShopperService shopper, PaymentPolicy policy, AuditService audit, SellerTools seller) {
+                       StoreFulfillmentService fulfilment, ShopperService shopper, PaymentPolicy policy, AuditService audit, SellerTools seller, com.platform.commerce.GenderService genders) {
+        this.genders = genders;
         this.jdbc = jdbc;
         this.ai = ai;
         this.catalog = catalog;
@@ -294,6 +296,7 @@ public class ChatService {
         p.append(shopFacts(tenantId, profile));
         String memo = seller.memory(tenantId, channel, externalId);
         if (!memo.isBlank()) p.append("\nWHAT YOU REMEMBER ABOUT THIS CUSTOMER (use it naturally, do not recite it):\n").append(memo).append("\n");
+        p.append(genderRule(tenantId, channel, externalId, clientId));
         if (clientId != null) p.append(clientFacts(clientId));
         else p.append("The customer is a guest (not signed in): collect their name, phone and address from the chat; they will be saved as a customer of this shop.\n");
         var global = lessons(null);
@@ -331,6 +334,21 @@ public class ChatService {
         b.append("- Governorate codes: ");
         GOVERNORATES.forEach((k, v) -> b.append(k).append("=").append(v).append("; "));
         b.append("\n");
+        return b.toString();
+    }
+
+    /** Arabic is gendered: tell the model who it is talking to (from our records when we have them) and how to find out when we do not. */
+    private String genderRule(UUID tenantId, String channel, String externalId, UUID clientId) {
+        com.platform.shared.Gender known = com.platform.shared.Gender.UNKNOWN;
+        if (clientId != null) {
+            String g = jdbc.sql("SELECT coalesce(c.gender, a.gender) FROM commerce.client_accounts a LEFT JOIN commerce.customers c ON c.user_id = a.id AND c.tenant_id = :t WHERE a.id = :u").param("t", tenantId).param("u", clientId).query(String.class).optional().orElse(null);
+            known = com.platform.shared.Gender.of(g);
+        }
+        if (known == com.platform.shared.Gender.UNKNOWN && "WHATSAPP".equals(channel) && externalId != null) known = genders.forPhone(tenantId, externalId);
+        StringBuilder b = new StringBuilder("\nSPEAKING TO THE CUSTOMER (Arabic is gendered): ");
+        if (known == com.platform.shared.Gender.FEMALE) b.append("our records say the customer is a WOMAN: address her in the feminine (أهلاً بيكي، تحبي، اتفضلي، ليكي).\n");
+        else if (known == com.platform.shared.Gender.MALE) b.append("our records say the customer is a MAN: address him in the masculine (أهلاً بيك، تحب، اتفضل، ليك).\n");
+        else b.append("we do not know yet. Work it out from the customer's name (for example منى or سارة are women, محمد or أحمد are men) or from how they write, and then address them correctly. If the name does not tell, stay neutral until it is clear. Never ask for their gender directly.\n");
         return b.toString();
     }
 

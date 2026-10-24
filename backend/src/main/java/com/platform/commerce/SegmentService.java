@@ -8,6 +8,7 @@ import com.platform.chat.MetaGraph;
 import com.platform.notifications.NotificationService;
 import com.platform.open.OpenUrls;
 import com.platform.shared.BusinessException;
+import com.platform.shared.Gender;
 import com.platform.shared.Rows;
 import java.sql.Timestamp;
 import java.time.Duration;
@@ -34,7 +35,7 @@ import org.springframework.stereotype.Service;
 public class SegmentService {
     private static final Logger log = LoggerFactory.getLogger(SegmentService.class);
     public static final Set<String> KEYS = Set.of("ALL", "NEW", "REPEAT", "VIP", "AT_RISK", "LAPSED");
-    static final int FREE_DAILY_CAP = 300, FREE_PER_PASS = 4, PAID_PER_PASS = 20;
+    static final int PAID_PER_PASS = 20;
 
     public record Req(String segment, String message, UUID imageFileId, String mode, Boolean push, String pushTitle, Boolean onlyConsented) {}
 
@@ -48,9 +49,11 @@ public class SegmentService {
     private final OpenUrls urls;
     private final long priceMinor;
     private final boolean scheduler;
+    private final int gapSeconds;
 
     public SegmentService(JdbcClient jdbc, MetaChannelService channels, MetaGraph graph, AuditService audit, EvolutionService evolution, WalletService wallet, NotificationService notifications, OpenUrls urls,
-                          @Value("${app.whatsapp.broadcast-price-minor:300}") long priceMinor, @Value("${app.integrations.scheduler.enabled:true}") boolean scheduler) {
+                          @Value("${app.whatsapp.broadcast-price-minor:300}") long priceMinor, @Value("${app.integrations.scheduler.enabled:true}") boolean scheduler, @Value("${app.broadcast.free-gap-seconds:10}") int gapSeconds) {
+        this.gapSeconds = Math.max(0, gapSeconds);
         this.jdbc = jdbc;
         this.channels = channels;
         this.graph = graph;
@@ -112,9 +115,10 @@ public class SegmentService {
                 .param("s", Timestamp.from(now.minus(Duration.ofHours(24)))).query(Long.class).single() > 0;
     }
 
-    private static String personalize(String text, String name, String shop) {
+    /** {name} becomes the customer's first name, {shop} the shop's name, and every {masculine|feminine} pair the form that fits the customer. */
+    static String personalize(String text, String name, String shop, Gender gender) {
         String first = name == null ? "" : name.trim().split("\\s+")[0];
-        return text.replace("{name}", first).replace("{shop}", shop);
+        return gender.apply(text.replace("{name}", first).replace("{shop}", shop));
     }
 
     public Map<String, Object> broadcast(UUID tenantId, UUID actor, String segment, String message) { return broadcast(tenantId, actor, new Req(segment, message, null, "PAID", false, null, false)); }
@@ -138,10 +142,12 @@ public class SegmentService {
         if ("FREE".equals(mode) && !evolution.connected(tenantId)) throw BusinessException.conflict("EVOLUTION_OFF", "Link your own WhatsApp number first");
         if ("PAID".equals(mode) && channels.whatsappChannel(tenantId) == null) throw BusinessException.badRequest("NO_WHATSAPP", "Connect your WhatsApp number first");
         long recent = jdbc.sql("SELECT count(*) FROM commerce.broadcasts WHERE tenant_id = :t AND mode = :m AND created_at > now() - interval '24 hours'").param("t", tenantId).param("m", mode).query(Long.class).single();
-        if ("FREE".equals(mode) && recent >= 1) throw BusinessException.conflict("BROADCAST_LIMIT", "One free broadcast a day, to protect your WhatsApp number from being reported as spam");
+        if ("FREE".equals(mode) && jdbc.sql("SELECT count(*) FROM commerce.broadcasts WHERE tenant_id = :t AND mode = 'FREE' AND status = 'SENDING'").param("t", tenantId).query(Long.class).single() > 0)
+            throw BusinessException.conflict("BROADCAST_RUNNING", "A free broadcast is still being sent. Wait until it finishes: messages go out one every 10 seconds to protect your number");
+        if ("FREE".equals(mode) && recent >= 3) throw BusinessException.conflict("BROADCAST_LIMIT", "Three free broadcasts a day at most, to protect your WhatsApp number from being reported as spam");
         if ("PAID".equals(mode) && recent >= 5) throw BusinessException.conflict("BROADCAST_LIMIT", "Five paid broadcasts a day at most");
 
-        var rows = jdbc.sql(SegmentSql.BASE + "SELECT phone, name, wa, uid FROM s WHERE (:g = 'ALL' OR segment = :g) ORDER BY spent DESC LIMIT 1000").param("t", tenantId).param("g", r.segment()).query().listOfRows();
+        var rows = jdbc.sql(SegmentSql.BASE + "SELECT phone, name, wa, uid, gender FROM s WHERE (:g = 'ALL' OR segment = :g) ORDER BY spent DESC LIMIT 20000").param("t", tenantId).param("g", r.segment()).query().listOfRows();
         Instant now = Instant.now();
         List<Map<String, Object>> queue = new ArrayList<>();
         int noConsent = 0, noWindow = 0;
@@ -150,16 +156,14 @@ public class SegmentService {
             if ("PAID".equals(mode)) {
                 if (row.get("wa") == null) { noConsent++; continue; }
                 if (!windowOpen(tenantId, digits((String) row.get("wa")), now)) { noWindow++; continue; }
-                queue.add(Map.of("phone", digits((String) row.get("wa")), "name", String.valueOf(row.get("name") == null ? "" : row.get("name"))));
+                queue.add(Map.of("phone", digits((String) row.get("wa")), "name", String.valueOf(row.get("name") == null ? "" : row.get("name")), "gender", genderOf(row)));
             } else if ("FREE".equals(mode)) {
                 if (onlyConsented && row.get("wa") == null) { noConsent++; continue; }
                 String to = digits((String) (row.get("wa") != null ? row.get("wa") : row.get("phone")));
                 if (to.length() < 8 || to.length() > 15) continue;
-                queue.add(Map.of("phone", to, "name", String.valueOf(row.get("name") == null ? "" : row.get("name"))));
+                queue.add(Map.of("phone", to, "name", String.valueOf(row.get("name") == null ? "" : row.get("name")), "gender", genderOf(row)));
             }
         }
-        int skippedByCap = 0;
-        if ("FREE".equals(mode) && queue.size() > FREE_DAILY_CAP) { skippedByCap = queue.size() - FREE_DAILY_CAP; queue = new ArrayList<>(queue.subList(0, FREE_DAILY_CAP)); }
         long cost = "PAID".equals(mode) ? (long) queue.size() * priceMinor : 0;
         if ("PAID".equals(mode)) {
             if (queue.isEmpty()) throw BusinessException.conflict("NOBODY_TO_SEND", "No customer agreed to WhatsApp contact and wrote to you in the last 24 hours. Use your own number (free) or an app notification instead");
@@ -172,7 +176,7 @@ public class SegmentService {
                 VALUES (:t, :s, :m, :a, 0, :w, :c, :u, :mode, :push, :img, :p, :st) RETURNING id
                 """).param("t", tenantId).param("s", r.segment()).param("m", text).param("a", rows.size()).param("w", noWindow).param("c", noConsent).param("u", actor).param("mode", mode)
                 .param("push", push).param("img", r.imageFileId()).param("p", queue.size()).param("st", queue.isEmpty() ? "DONE" : "SENDING").query(UUID.class).single();
-        for (var q : queue) jdbc.sql("INSERT INTO commerce.broadcast_recipients (broadcast_id, phone, name) VALUES (:b, :p, :n)").param("b", id).param("p", q.get("phone")).param("n", q.get("name")).update();
+        for (var q : queue) jdbc.sql("INSERT INTO commerce.broadcast_recipients (broadcast_id, phone, name, gender) VALUES (:b, :p, :n, :g)").param("b", id).param("p", q.get("phone")).param("n", q.get("name")).param("g", q.get("gender")).update();
 
         int pushed = 0;
         if (push) {
@@ -181,7 +185,7 @@ public class SegmentService {
                 if (row.get("uid") == null) continue;
                 UUID uid = (UUID) row.get("uid");
                 if (!hasDevice(uid)) continue;
-                notifications.push(uid, tenantId, title.length() > 80 ? title.substring(0, 80) : title, personalize(text, (String) row.get("name"), shop), "{\"type\":\"BROADCAST\"}");
+                notifications.push(uid, tenantId, title.length() > 80 ? title.substring(0, 80) : title, personalize(text, (String) row.get("name"), shop, Gender.of(genderOf(row))), "{\"type\":\"BROADCAST\"}");
                 pushed++;
             }
             if (pushed > 0) notifications.dispatchSoon();
@@ -195,14 +199,20 @@ public class SegmentService {
         out.put("pushSent", pushed);
         out.put("skippedNoWindow", noWindow);
         out.put("skippedNoConsent", noConsent);
-        out.put("skippedByCap", skippedByCap);
+        out.put("etaMinutes", "FREE".equals(mode) ? (long) Math.ceil(queue.size() * Math.max(gapSeconds, 1) / 60.0) : 0);
         out.put("costMinor", cost);
         return out;
     }
 
+    private static String genderOf(Map<String, Object> row) {
+        if (row.get("gender") != null) return (String) row.get("gender");
+        String g = GenderService.guess((String) row.get("name"));
+        return g == null ? "UNKNOWN" : g;
+    }
+
     // ---- the sender -----------------------------------------------------------------------------------------------------------
 
-    @Scheduled(fixedDelay = 15_000, initialDelay = 30_000)
+    @Scheduled(fixedDelay = 3_000, initialDelay = 30_000)
     public void scheduled() {
         if (!scheduler) return;
         try { runDue(); } catch (RuntimeException e) { log.warn("Broadcast pass failed", e); }
@@ -211,21 +221,25 @@ public class SegmentService {
     /** One pass: sends a few waiting messages of each running broadcast. Returns how many went out. Public for tests. */
     public synchronized int runDue() {
         int sent = 0;
-        for (var b : jdbc.sql("SELECT id, tenant_id, message, mode, image_file_id FROM commerce.broadcasts WHERE status = 'SENDING' ORDER BY created_at LIMIT 20").query().listOfRows()) {
+        for (var b : jdbc.sql("SELECT id, tenant_id, message, mode, image_file_id, last_sent_at FROM commerce.broadcasts WHERE status = 'SENDING' ORDER BY created_at LIMIT 20").query().listOfRows()) {
             UUID id = (UUID) b.get("id"), tenantId = (UUID) b.get("tenant_id");
             String mode = (String) b.get("mode"), text = (String) b.get("message");
             String shop = jdbc.sql("SELECT coalesce(nullif(sp.store_name, ''), t.name) FROM core.tenants t LEFT JOIN commerce.store_profiles sp ON sp.tenant_id = t.id WHERE t.id = :t").param("t", tenantId).query(String.class).single();
             String imageUrl = b.get("image_file_id") == null ? null : urls.baseUrl(urls.hosts(List.of(tenantId)).get(tenantId)) + "/api/bff/files/" + b.get("image_file_id") + "/content?variant=medium";
-            int limit = "FREE".equals(mode) ? FREE_PER_PASS : PAID_PER_PASS;
-            var due = jdbc.sql("SELECT id, phone, name FROM commerce.broadcast_recipients WHERE broadcast_id = :b AND status = 'PENDING' ORDER BY id LIMIT :l").param("b", id).param("l", limit).query().listOfRows();
+            boolean free = "FREE".equals(mode);
+            // free messages go out one at a time with a gap between them (10 seconds by default), however long the list is: a number that sends in bursts gets banned
+            if (free && b.get("last_sent_at") != null && ((Timestamp) b.get("last_sent_at")).toInstant().isAfter(Instant.now().minusSeconds(gapSeconds))) continue;
+            int limit = free ? 1 : PAID_PER_PASS;
+            var due = jdbc.sql("SELECT id, phone, name, gender FROM commerce.broadcast_recipients WHERE broadcast_id = :b AND status = 'PENDING' ORDER BY id LIMIT :l").param("b", id).param("l", limit).query().listOfRows();
             for (var rcp : due) {
-                String body = personalize(text, (String) rcp.get("name"), shop), to = (String) rcp.get("phone");
+                String body = personalize(text, (String) rcp.get("name"), shop, Gender.of((String) rcp.get("gender"))), to = (String) rcp.get("phone");
                 String result;
                 long charged = 0;
                 if ("FREE".equals(mode)) {
                     var d = evolution.deliver(tenantId, to, body, imageUrl);
                     if (d == EvolutionService.Delivery.DEFERRED) break;   // at the per-minute limit: the rest waits for the next pass
                     result = d == EvolutionService.Delivery.SENT ? "SENT" : "FAILED";
+                    jdbc.sql("UPDATE commerce.broadcasts SET last_sent_at = now() WHERE id = :i").param("i", id).update();
                 } else {
                     String ref = "bc-" + id + "-" + rcp.get("id");
                     if (!wallet.tryDebit(tenantId, priceMinor, ref, "WhatsApp broadcast")) result = "FAILED";

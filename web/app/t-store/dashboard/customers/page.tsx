@@ -2,7 +2,8 @@
 
 import { localPhone } from "@/lib/phone";
 import { useState } from "react";
-import { Page, useApi } from "@/components/hooks";
+import { api } from "@/lib/client";
+import { Page, useAction, useApi } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Badge, Card, ErrorText, Input, Loading, Modal, PageHeader, Pager, StatusBadge, Table, Td, FilterBar } from "@/components/ui";
 import { Icon } from "@/components/icons";
@@ -12,7 +13,7 @@ import { dateOnly, dateTime, money } from "@/lib/format";
 
 type C = {
   id: string; customerNumber: string; name: string; phone?: string; email?: string; hasAccount: boolean; createdAt: string; ordersCount: number; totalSpentMinor: number; lastOrderAt?: string;
-  address?: { addressLine1?: string; city?: string; district?: string } | null;
+  address?: { addressLine1?: string; city?: string; district?: string } | null; gender?: "MALE" | "FEMALE" | null; genderSource?: "AI" | "SELF" | "OWNER" | null;
 };
 type O = { id: string; orderNumber: string; status: string; totalMinor: number; currency: string; createdAt: string };
 
@@ -22,7 +23,8 @@ export default function Customers() {
   const [page, setPage] = useState(1);
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<C | null>(null);
-  const { data, loading, error } = useApi<Page<C>>(`store/customers?page=${page}&q=${encodeURIComponent(q)}`);
+  const { data, loading, error, reload } = useApi<Page<C>>(`store/customers?page=${page}&q=${encodeURIComponent(q)}`);
+  const setGender = useAction(async (g: string) => { if (!open) return; await api(`store/customers/${open.id}/gender`, { method: "PUT", body: { gender: g } }); setOpen({ ...open, gender: (g || null) as C["gender"], genderSource: g ? "OWNER" : null }); await reload(); });
   const orders = useApi<O[]>(open ? `store/customers/${open.id}/orders` : null);
   const call = (c: C) => c.phone && (
     <a href={`tel:${c.phone}`} onClick={(e) => e.stopPropagation()} aria-label={t("customers.call")} title={t("customers.call")}
@@ -59,6 +61,12 @@ export default function Customers() {
               {open.email && <p dir="ltr" className="text-slate-500">{open.email}</p>}
               {open.address?.addressLine1 && <p className="text-slate-600">{open.address.addressLine1}, {open.address.city}</p>}
               <p className="text-slate-500">{t("customers.since")} {dateOnly(open.createdAt, locale)}</p>
+              <div className="flex flex-wrap items-center gap-2 pt-2">
+                <span className="font-medium">{t("customers.gender")}</span>
+                {(["MALE", "FEMALE"] as const).map((g) => <button key={g} type="button" disabled={open.genderSource === "SELF" || setGender.loading} onClick={() => void setGender.run(open.gender === g && open.genderSource === "OWNER" ? "" : g)} className={`rounded-full border px-3 py-1 text-xs font-semibold disabled:opacity-60 ${open.gender === g ? "border-brand bg-brand/10 text-brand" : "bg-white hover:bg-slate-50"}`}>{t(`gender.${g}`)}</button>)}
+                <span className="text-xs text-slate-500">{open.genderSource === "SELF" ? t("customers.genderSelf") : open.genderSource === "AI" ? t("customers.genderAi") : open.genderSource === "OWNER" ? t("customers.genderOwner") : t("customers.genderUnknown")}</span>
+              </div>
+              <ErrorText error={setGender.error} />
               <div className="flex items-center gap-2 pt-2">{call(open)}<WhatsAppButton phone={open.phone} message={t("customers.waHello", { name: open.name })} size={32} /></div>
             </Card>
             <div>

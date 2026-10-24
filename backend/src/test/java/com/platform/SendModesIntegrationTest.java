@@ -103,15 +103,34 @@ class SendModesIntegrationTest extends IntegrationTestBase {
         int before = FakeEvolutionApi.CALLS.size();
         onHost(h, owner, "POST", "/api/v1/store/broadcasts", body).andExpect(status().isOk()).andExpect(jsonPath("$.queued").value(6)).andExpect(jsonPath("$.costMinor").value(0));
         assertThat(FakeEvolutionApi.CALLS.size()).isEqualTo(before);   // nothing goes out inside the request: it is queued
-        assertThat(segments.runDue()).isEqualTo(4);                      // a few per pass, so the number is never flooded
-        assertThat(segments.runDue()).isEqualTo(2);
+        for (int i = 0; i < 6; i++) assertThat(segments.runDue()).isEqualTo(1);   // one message per pass, never a burst, however long the list is
         assertThat(segments.runDue()).isEqualTo(0);
         var sends = FakeEvolutionApi.CALLS.stream().filter(c -> c.path().startsWith("/message/sendText/")).toList();
         assertThat(sends).hasSize(6);
         assertThat(sends.get(0).body().get("text").toString()).contains("Hi Mona").doesNotContain("{name}");
         assertThat(wallet.balance(s.id())).isEqualTo(0L);   // free means free
-        onHost(h, owner, "POST", "/api/v1/store/broadcasts", body).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("BROADCAST_LIMIT"));
+        onHost(h, owner, "POST", "/api/v1/store/broadcasts", body).andExpect(status().isOk());   // the first one is finished: a second may start
+        onHost(h, owner, "POST", "/api/v1/store/broadcasts", body).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("BROADCAST_RUNNING"));   // but only one at a time
+        while (segments.runDue() > 0) { /* let it finish */ }
+        onHost(h, owner, "POST", "/api/v1/store/broadcasts", body).andExpect(status().isOk());
+        while (segments.runDue() > 0) { /* let it finish */ }
+        onHost(h, owner, "POST", "/api/v1/store/broadcasts", body).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("BROADCAST_LIMIT"));   // three a day at most
         onHost(h, owner, "GET", "/api/v1/store/broadcasts", null).andExpect(jsonPath("$[0].mode").value("FREE")).andExpect(jsonPath("$[0].status").value("DONE")).andExpect(jsonPath("$[0].sentCount").value(6));
+    }
+
+    @Test
+    void freeMessagesKeepAGapBetweenThemWhateverTheListSize() throws Exception {
+        Shop s = shop();
+        for (int i = 0; i < 3; i++) order(s, phone());
+        linkOwnNumber(s);
+        onHost(s.t().host(), s.t().access(), "POST", "/api/v1/store/broadcasts", "{\"segment\":\"ALL\",\"mode\":\"FREE\",\"message\":\"Hello there {name}\"}").andExpect(status().isOk()).andExpect(jsonPath("$.etaMinutes").exists());
+        org.springframework.test.util.ReflectionTestUtils.setField(segments, "gapSeconds", 10);
+        try {
+            assertThat(segments.runDue()).isEqualTo(1);   // the first goes out at once
+            assertThat(segments.runDue()).isEqualTo(0);   // the next waits for the 10 seconds to pass
+            assertThat(segments.runDue()).isEqualTo(0);
+        } finally { org.springframework.test.util.ReflectionTestUtils.setField(segments, "gapSeconds", 0); }
+        while (segments.runDue() > 0) { /* finish */ }
     }
 
     @Test

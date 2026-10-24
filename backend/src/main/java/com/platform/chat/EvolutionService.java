@@ -34,6 +34,7 @@ public class EvolutionService {
 
     private final JdbcClient jdbc;
     private final EvolutionApi api;
+    private final com.platform.commerce.GenderService genders;
     private final ChatService chat;
     private final WhatsAppConfirmService waConfirm;
     private final LoginThrottle throttle;
@@ -42,12 +43,13 @@ public class EvolutionService {
     private final int typingDelayMs;
     private final ExecutorService pool;
 
-    public EvolutionService(JdbcClient jdbc, EvolutionApi api, @Lazy ChatService chat, @Lazy WhatsAppConfirmService waConfirm, LoginThrottle throttle, AuditService audit,
+    public EvolutionService(JdbcClient jdbc, EvolutionApi api, @Lazy ChatService chat, @Lazy WhatsAppConfirmService waConfirm, LoginThrottle throttle, AuditService audit, com.platform.commerce.GenderService genders,
                             @Value("${app.evolution.base-url:}") String baseUrl, @Value("${app.evolution.webhook-secret:}") String secret, @Value("${app.evolution.backend-url:http://backend:8080}") String backendUrl,
                             @Value("${app.evolution.typing-delay-ms:1500}") int typingDelayMs, @Value("${app.evolution.async:true}") boolean async) {
         this.jdbc = jdbc;
         this.api = api;
         this.chat = chat;
+        this.genders = genders;
         this.waConfirm = waConfirm;
         this.throttle = throttle;
         this.audit = audit;
@@ -181,6 +183,42 @@ public class EvolutionService {
         if (!sendFree(tenantId, n, text == null || text.isBlank() ? "✅ رسالة تجريبية من متجرك / Test message from your shop" : text.trim())) throw BusinessException.conflict("EVOLUTION_SEND_FAILED", "The message could not be sent");
     }
 
+    // ---- the daily report on the shop's own number (a message to itself) ------------------------------------------------------------
+
+    public Map<String, Object> reportSettings(UUID tenantId) {
+        var r = jdbc.sql("SELECT enabled, status, phone, report_mode, report_enabled, to_char(report_send_after, 'HH24:MI') AS send_after, report_language FROM chat.evolution_settings WHERE tenant_id = :t").param("t", tenantId).query().listOfRows().stream().findFirst().orElse(null);
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("mode", r == null ? "PAID" : r.get("report_mode"));
+        m.put("enabled", r != null && Boolean.TRUE.equals(r.get("report_enabled")));
+        m.put("sendAfter", r == null ? "23:00" : r.get("send_after"));
+        m.put("language", r == null ? "ar" : r.get("report_language"));
+        m.put("linked", connected(tenantId));
+        m.put("phone", r == null ? null : r.get("phone"));
+        return m;
+    }
+
+    public Map<String, Object> saveReport(UUID tenantId, String mode, Boolean enabled, String sendAfter, String language) {
+        if (mode != null && !List.of("PAID", "FREE").contains(mode)) throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown way of sending");
+        if (language != null && !List.of("ar", "en").contains(language)) throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown language");
+        java.time.LocalTime at = null;
+        if (sendAfter != null) {
+            try { at = java.time.LocalTime.parse(sendAfter); } catch (RuntimeException e) { throw BusinessException.badRequest("VALIDATION_ERROR", "Time must look like 23:59"); }
+            if (at.isBefore(java.time.LocalTime.of(18, 0))) throw BusinessException.badRequest("VALIDATION_ERROR", "The report is an end-of-day report: choose a time from 18:00 to 23:59");
+        }
+        if ("FREE".equals(mode) && !connected(tenantId)) throw BusinessException.conflict("EVOLUTION_OFF", "Link your own WhatsApp number first");
+        if (jdbc.sql("UPDATE chat.evolution_settings SET report_mode = coalesce(:m, report_mode), report_enabled = coalesce(:e, report_enabled), report_send_after = coalesce(CAST(:a AS time), report_send_after), report_language = coalesce(:l, report_language), updated_at = now() WHERE tenant_id = :t")
+                .param("m", mode).param("e", enabled).param("a", at == null ? null : at.toString()).param("l", language).param("t", tenantId).update() == 0 && !"PAID".equals(mode) && mode != null)
+            throw BusinessException.conflict("EVOLUTION_OFF", "Link your own WhatsApp number first");
+        return reportSettings(tenantId);
+    }
+
+    /** The number the report goes to: the shop's own linked number (a message to itself). Null when the phone is not linked. */
+    public String selfNumber(UUID tenantId) {
+        if (!connected(tenantId)) return null;
+        String p = jdbc.sql("SELECT phone FROM chat.evolution_settings WHERE tenant_id = :t").param("t", tenantId).query(String.class).optional().orElse(null);
+        return p == null || p.isBlank() ? null : p;
+    }
+
     // ---- sending --------------------------------------------------------------------------------------------------------------------
 
     /** Result of one paced send: SENT, FAILED, or DEFERRED (the shop is at its per-minute limit; try again on the next pass). */
@@ -259,7 +297,7 @@ public class EvolutionService {
         try {
             if (text == null || text.isBlank()) {
                 if (!aiOn) return;
-                answer = "أستطيع قراءة الرسائل النصية فقط، اكتب لي ما تحتاجه 🙏 / I can only read text messages, please type what you need.";
+                answer = "أستطيع قراءة الرسائل النصية فقط، {اكتب|اكتبي} لي ما {تحتاجه|تحتاجيه} 🙏 / I can only read text messages, please type what you need.";
             } else {
                 throttle.check("chat-evo|" + tenantId + "|" + sender, 40, Duration.ofMinutes(10));
                 var special = waConfirm.handle(tenantId, sender, text);
@@ -271,7 +309,10 @@ public class EvolutionService {
             log.debug("Evolution message ignored: {}", e.getMessage());
             return;
         }
-        for (String part : MetaChannelService.chunks(answer, 3000)) sendFree(tenantId, sender, part);
+        // the customer's gender from our records, else from the name WhatsApp shows for them
+        com.platform.shared.Gender g = genders.forPhone(tenantId, sender);
+        if (g == com.platform.shared.Gender.UNKNOWN) g = com.platform.commerce.GenderService.forName(m.path("pushName").asText(""));
+        for (String part : MetaChannelService.chunks(g.apply(answer), 3000)) sendFree(tenantId, sender, part);
     }
 
     private static BusinessException unreachable(EvolutionApi.EvolutionException e) {

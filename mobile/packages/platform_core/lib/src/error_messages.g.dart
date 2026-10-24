@@ -18,6 +18,7 @@ const Map<String, List<String>> kErrorMessages = {
   "BOOKING_DISABLED": ["الحجز الإلكتروني غير متاح.", "Online booking is not available."],
   "BRANCH_CODE_TAKEN": ["كود الفرع مستخدم بالفعل. اختر كودًا آخر.", "This branch code is already used. Choose another."],
   "BROADCAST_LIMIT": ["وصلت للحد اليومي لطريقة الإرسال دي. حاول بكرة.", "You reached the daily limit for this way of sending. Try again tomorrow."],
+  "BROADCAST_RUNNING": ["في رسالة جماعية مجانية لسه بتتبعت. استنى لما تخلص: رسالة كل ١٠ ثواني لحماية رقمك.", "A free broadcast is still being sent. Wait until it finishes: one message every 10 seconds protects your number."],
   "CANCELLATION_WINDOW_PASSED": ["فات وقت الإلغاء أونلاين. يرجى الاتصال بالعيادة.", "It is too late to cancel online. Please call the clinic."],
   "CANNOT_EDIT_OWNER": ["صاحب النشاط لديه كل الصلاحيات دائمًا ولا يمكن تعديلها.", "The owner always has full access and cannot be changed."],
   "CANNOT_EDIT_SELF": ["لا يمكنك تعديل صلاحياتك بنفسك.", "You cannot change your own access."],

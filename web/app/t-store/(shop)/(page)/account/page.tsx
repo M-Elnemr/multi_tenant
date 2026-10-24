@@ -16,10 +16,11 @@ type Wish = { id: string; name: string; slug: string };
 function ProfileCard() {
   const t = useT();
   const { me } = useMe();
-  const [edits, setEdits] = useState<{ name?: string; phone?: string }>({});
+  const profile = useApi<{ gender?: string | null }>("shop/me");
+  const [edits, setEdits] = useState<{ name?: string; phone?: string; gender?: string }>({});
   const [saved, setSaved] = useState(false);
   const save = useAction(async () => {
-    await api("shop/me", { method: "PUT", body: { name: edits.name ?? me?.firstName ?? "", phone: edits.phone ?? me?.phone ?? "" } });
+    await api("shop/me", { method: "PUT", body: { name: edits.name ?? me?.firstName ?? "", phone: edits.phone ?? me?.phone ?? "", gender: edits.gender ?? profile.data?.gender ?? undefined } });
     window.dispatchEvent(new Event("auth:changed"));
     setSaved(true);
   });
@@ -30,6 +31,9 @@ function ProfileCard() {
       <form onSubmit={(e) => { e.preventDefault(); setSaved(false); void save.run(); }} className="grid gap-3 sm:grid-cols-2">
         <Field label={t("form.name")}><Input value={edits.name ?? me?.firstName ?? ""} onChange={(e) => setEdits({ ...edits, name: e.target.value })} required /></Field>
         <Field label={t("register.phone")}><PhoneInput value={edits.phone ?? me?.phone ?? ""} onValue={(phone) => setEdits({ ...edits, phone })} /></Field>
+        <Field label={t("account.gender")} hint={t("account.genderHint")}>
+          <div className="flex gap-2">{(["MALE", "FEMALE"] as const).map((g) => <button key={g} type="button" onClick={() => setEdits({ ...edits, gender: g })} className={`flex-1 rounded-xl border px-3 py-2 text-sm font-semibold ${(edits.gender ?? profile.data?.gender) === g ? "border-brand bg-brand/10 text-brand" : "bg-white hover:bg-slate-50"}`}>{t(`gender.${g}`)}</button>)}</div>
+        </Field>
         <div className="sm:col-span-2"><ErrorText error={save.error} />{saved && <p className="text-sm text-emerald-700">{t("account.saved")}</p>}<Button type="submit" size="sm" loading={save.loading}>{t("common.save")}</Button></div>
       </form>
     </Card>
