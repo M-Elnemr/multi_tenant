@@ -80,7 +80,7 @@ public class GeminiProvider implements AiProvider {
 
     private ObjectNode requestBody(String system, List<Turn> turns, List<ToolDef> tools) {
         ObjectNode body = JSON.createObjectNode();
-        body.putObject("systemInstruction").putArray("parts").addObject().put("text", system);
+        body.putObject("systemInstruction").putArray("parts").addObject().put("text", AiProvider.flat(system));
         ArrayNode contents = body.putArray("contents");
         for (Turn t : turns) {
             ObjectNode c = contents.addObject();

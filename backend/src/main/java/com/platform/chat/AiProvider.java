@@ -28,6 +28,11 @@ public interface AiProvider {
         public static Turn tool(List<ToolResult> results) { return new Turn("tool", null, List.of(), results, null); }
     }
 
+    /** Splits the system prompt: everything before it is identical for every customer of a shop (cacheable), everything after changes per customer. Providers that cannot cache just drop it. */
+    String CACHE_BREAK = "\n\u0001CACHE_BREAK\u0001\n";
+
+    static String flat(String system) { return system == null ? "" : system.replace(CACHE_BREAK, "\n"); }
+
     /** False while no API key is set: the storefront then hides the chat instead of showing a dead button. */
     default boolean available() { return true; }
 

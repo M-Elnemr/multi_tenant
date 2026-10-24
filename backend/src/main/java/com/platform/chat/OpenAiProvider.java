@@ -75,7 +75,7 @@ public class OpenAiProvider implements AiProvider {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
         List<Object> messages = new ArrayList<>();
-        messages.add(Map.of("role", "system", "content", system == null ? "" : system));
+        messages.add(Map.of("role", "system", "content", AiProvider.flat(system)));
         JsonNode lastCalls = null;   // the tool calls of the previous model turn: their ids pair with the results that follow
         for (Turn t : turns) {
             if ("user".equals(t.role())) {
