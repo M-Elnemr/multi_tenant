@@ -5,7 +5,9 @@ import { useI18n } from "../i18n-provider";
 import { ImageUploader } from "../uploader";
 
 const EMOJI = ["😀", "😍", "🥰", "😎", "🤩", "🙏", "👍", "👏", "🔥", "✨", "🎉", "🎁", "💥", "💯", "❤️", "🛍️", "🛒", "🏷️", "💸", "💰", "⭐", "🌟", "⏰", "📣", "📦", "🚚", "✅", "👇", "👉", "🌸", "☀️", "🌙", "🎊", "🥳", "😉", "🤝", "💐", "🧡", "💙", "🆕"];
-const PLACEHOLDERS = [["{name}", "msg.insName"], ["{shop}", "msg.insShop"]] as const;
+const PLACEHOLDERS = [["{name}", "msg.insName"], ["{shop}", "msg.insShop"], ["{last_product}", "msg.insLastProduct"], ["{last_order}", "msg.insLastOrder"], ["{last_date}", "msg.insLastDate"], ["{orders_count}", "msg.insOrdersCount"]] as const;
+/** {{a|b|c}}: each customer gets one of the wordings, so the messages are not all identical. Ready-made sets (label, inserted text). */
+const SPINS: [string, string][] = [["هلا|أهلاً|مرحباً", "{{هلا|أهلاً|مرحباً}}"], ["عندنا|متاح عندنا|وصلنا", "{{عندنا|متاح عندنا|وصلنا}}"], ["شكراً|ميرسي|تسلم", "{{شكراً|ميرسي|تسلم}}"], ["قريب|دلوقتي|النهارده", "{{قريب|دلوقتي|النهارده}}"]];
 /** Pairs written {masculine|feminine}: the server picks the side that fits each customer. [label shown on the button, token inserted] */
 const FORMS: [string, string][] = [["أهلاً بيك/بيكي", "أهلاً {بيك|بيكي}"], ["ليك/ليكي", "{ليك|ليكي}"], ["تحب/تحبي", "{تحب|تحبي}"], ["اتفضل/اتفضلي", "{اتفضل|اتفضلي}"], ["تعالى/تعالي", "{تعالى|تعالي}"], ["شوف/شوفي", "{شوف|شوفي}"], ["كمّل/كمّلي", "{كمّل|كمّلي}"], ["معاك/معاكي", "{معاك|معاكي}"]];
 
@@ -18,6 +20,7 @@ export default function MessageComposer({ text, onText, imageId, onImage, max = 
   const ref = useRef<HTMLTextAreaElement>(null);
   const [sample, setSample] = useState<"MALE" | "FEMALE">("FEMALE");
   const [custom, setCustom] = useState({ m: "", f: "" });
+  const [spin, setSpin] = useState("");
   const insert = (s: string) => {
     const el = ref.current;
     const a = el?.selectionStart ?? text.length, b = el?.selectionEnd ?? text.length;
@@ -31,7 +34,7 @@ export default function MessageComposer({ text, onText, imageId, onImage, max = 
     onText((text.slice(0, a) + mark + text.slice(a, b) + mark + text.slice(b)).slice(0, max));
     requestAnimationFrame(() => { el?.focus(); el?.setSelectionRange(a + mark.length, b + mark.length); });
   };
-  const preview = text.replace(/\{name\}/g, t("msg.sampleName")).replace(/\{shop\}/g, t("msg.sampleShop")).replace(/\{([^{}|]{1,40})\|([^{}|]{1,40})\}/g, (_m, a: string, b: string) => (sample === "FEMALE" ? b : a));
+  const preview = text.replace(/\{name\}/g, t("msg.sampleName")).replace(/\{shop\}/g, t("msg.sampleShop")).replace(/\{last_product\}/g, t("msg.sampleProduct")).replace(/\{last_order\}/g, "ST-20261001-000012").replace(/\{last_date\}/g, "1/10/2026").replace(/\{orders_count\}/g, "3").replace(/\{\{([^{}]{1,300})\}\}/g, (_m, a: string) => a.split("|")[0].trim()).replace(/\{([^{}|]{1,40})\|([^{}|]{1,40})\}/g, (_m, a: string, b: string) => (sample === "FEMALE" ? b : a));
   const html = preview.split("\n").map((l) => l);
   return (
     <div className="space-y-2">
@@ -55,6 +58,17 @@ export default function MessageComposer({ text, onText, imageId, onImage, max = 
             <input value={custom.m} onChange={(e) => setCustom({ ...custom, m: e.target.value.replace(/[{}|]/g, "") })} placeholder={t("msg.formMale")} className="w-full rounded-lg border px-2 py-1.5 text-sm" />
             <input value={custom.f} onChange={(e) => setCustom({ ...custom, f: e.target.value.replace(/[{}|]/g, "") })} placeholder={t("msg.formFemale")} className="w-full rounded-lg border px-2 py-1.5 text-sm" />
             <button type="button" disabled={!custom.m.trim() || !custom.f.trim()} onClick={(ev) => { insert(`{${custom.m.trim()}|${custom.f.trim()}}`); setCustom({ m: "", f: "" }); (ev.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open"); }} className="w-full rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50">{t("common.add")}</button>
+          </div>
+        </details>
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-xs font-medium text-slate-500">{t("msg.spin")}</span>
+        {SPINS.map(([label, token]) => <button key={token} type="button" onClick={() => insert(token)} className="rounded-full bg-sky-100 px-3 py-1 text-sm font-semibold text-sky-800 hover:bg-sky-200">＋ {label}</button>)}
+        <details className="relative">
+          <summary className="cursor-pointer list-none rounded-full border bg-white px-3 py-1 text-sm font-semibold hover:bg-slate-50">＋ {t("msg.spinCustom")}</summary>
+          <div className="absolute z-20 mt-1 w-72 space-y-2 rounded-xl border bg-white p-3 shadow-lg">
+            <input value={spin} onChange={(e) => setSpin(e.target.value.replace(/[{}]/g, ""))} placeholder={t("msg.spinHint")} className="w-full rounded-lg border px-2 py-1.5 text-sm" />
+            <button type="button" disabled={spin.split(/[|،,]/).filter((x) => x.trim()).length < 2} onClick={(ev) => { insert(`{{${spin.split(/[|،,]/).map((x) => x.trim()).filter(Boolean).join("|")}}}`); setSpin(""); (ev.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open"); }} className="w-full rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50">{t("common.add")}</button>
           </div>
         </details>
       </div>

@@ -37,7 +37,7 @@ public class SegmentService {
     public static final Set<String> KEYS = Set.of("ALL", "NEW", "REPEAT", "VIP", "AT_RISK", "LAPSED");
     static final int PAID_PER_PASS = 20;
 
-    public record Req(String segment, String message, UUID imageFileId, String mode, Boolean push, String pushTitle, Boolean onlyConsented) {}
+    public record Req(String segment, String message, UUID imageFileId, String mode, Boolean push, String pushTitle, Boolean onlyConsented, List<String> variants) {}
 
     private final JdbcClient jdbc;
     private final MetaChannelService channels;
@@ -46,12 +46,14 @@ public class SegmentService {
     private final EvolutionService evolution;
     private final WalletService wallet;
     private final NotificationService notifications;
+    private final com.platform.chat.AiProvider ai;
+    private final com.platform.core.auth.LoginThrottle throttle;
     private final OpenUrls urls;
     private final long priceMinor;
     private final boolean scheduler;
     private final int gapMin, gapMax, dailyCap, quietFrom, quietTo;
 
-    public SegmentService(JdbcClient jdbc, MetaChannelService channels, MetaGraph graph, AuditService audit, EvolutionService evolution, WalletService wallet, NotificationService notifications, OpenUrls urls,
+    public SegmentService(JdbcClient jdbc, MetaChannelService channels, MetaGraph graph, AuditService audit, EvolutionService evolution, WalletService wallet, NotificationService notifications, OpenUrls urls, com.platform.chat.AiProvider ai, com.platform.core.auth.LoginThrottle throttle,
                           @Value("${app.whatsapp.broadcast-price-minor:300}") long priceMinor, @Value("${app.integrations.scheduler.enabled:true}") boolean scheduler, @Value("${app.broadcast.free-gap-min-seconds:8}") int gapMin, @Value("${app.broadcast.free-gap-max-seconds:25}") int gapMax,
                           @Value("${app.broadcast.free-daily-cap:500}") int dailyCap, @Value("${app.broadcast.quiet-from-hour:22}") int quietFrom, @Value("${app.broadcast.quiet-to-hour:8}") int quietTo) {
         this.gapMin = Math.max(0, gapMin);
@@ -66,6 +68,8 @@ public class SegmentService {
         this.evolution = evolution;
         this.wallet = wallet;
         this.notifications = notifications;
+        this.ai = ai;
+        this.throttle = throttle;
         this.urls = urls;
         this.priceMinor = priceMinor;
         this.scheduler = scheduler;
@@ -120,18 +124,54 @@ public class SegmentService {
                 .param("s", Timestamp.from(now.minus(Duration.ofHours(24)))).query(Long.class).single() > 0;
     }
 
-    /** {name} becomes the customer's first name, {shop} the shop's name, and every {masculine|feminine} pair the form that fits the customer. */
-    static String personalize(String text, String name, String shop, Gender gender) {
+    private static final java.util.regex.Pattern SPIN = java.util.regex.Pattern.compile("\\{\\{([^{}]{1,300})\\}\\}");
+
+    /**
+     * The text one customer receives. {{a|b|c}} picks one wording (the same pick every time for the same customer); {name}, {shop}, {last_product}, {last_order}, {last_date}
+     * and {orders_count} are filled from the customer and their previous orders; every {masculine|feminine} pair takes the form that fits the customer.
+     */
+    static String personalize(String text, String name, String shop, Gender gender, Map<String, Object> vars, long seed) {
+        var rnd = new java.util.Random(seed);
+        var spin = SPIN.matcher(text);
+        StringBuilder sb = new StringBuilder();
+        while (spin.find()) {
+            String[] options = spin.group(1).split("\\|");
+            spin.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(options[rnd.nextInt(options.length)].trim()));
+        }
+        spin.appendTail(sb);
+        String out = sb.toString();
+        boolean arabic = out.codePoints().anyMatch(cp -> cp >= 0x0600 && cp <= 0x06FF);
         String first = name == null ? "" : name.trim().split("\\s+")[0];
-        return gender.apply(text.replace("{name}", first).replace("{shop}", shop));
+        out = out.replace("{name}", first).replace("{shop}", shop);
+        out = out.replace("{last_product}", str(vars, "lastProduct", arabic ? "طلبك السابق" : "your last order"))
+                .replace("{last_order}", str(vars, "lastOrder", arabic ? "طلبك السابق" : "your last order"))
+                .replace("{last_date}", str(vars, "lastDate", ""))
+                .replace("{orders_count}", str(vars, "orders", ""));
+        return gender.apply(out);
     }
 
-    public Map<String, Object> broadcast(UUID tenantId, UUID actor, String segment, String message) { return broadcast(tenantId, actor, new Req(segment, message, null, "PAID", false, null, false)); }
+    private static String str(Map<String, Object> vars, String key, String fallback) {
+        Object v = vars == null ? null : vars.get(key);
+        return v == null || String.valueOf(v).isBlank() ? fallback : String.valueOf(v);
+    }
+
+    /** Which of the wordings a customer gets: spread evenly and always the same for the same customer. */
+    static String pickVersion(String main, List<String> variants, UUID recipient) {
+        if (variants == null || variants.isEmpty()) return main;
+        int i = Math.floorMod(recipient.hashCode(), variants.size() + 1);
+        return i == 0 ? main : variants.get(i - 1);
+    }
+
+    public Map<String, Object> broadcast(UUID tenantId, UUID actor, String segment, String message) { return broadcast(tenantId, actor, new Req(segment, message, null, "PAID", false, null, false, null)); }
 
     public Map<String, Object> broadcast(UUID tenantId, UUID actor, Req r) {
         requireKey(r.segment());
         String text = r.message() == null ? "" : r.message().trim();
         if (text.length() < 3 || text.length() > 1000) throw BusinessException.badRequest("VALIDATION_ERROR", "The message must be 3 to 1000 characters");
+        List<String> variants = new ArrayList<>();
+        if (r.variants() != null) for (String v : r.variants()) { String t = v == null ? "" : v.trim(); if (!t.isEmpty()) variants.add(t); }
+        if (variants.size() > 5) throw BusinessException.badRequest("VALIDATION_ERROR", "At most 5 other wordings");
+        for (String v : variants) if (v.length() < 3 || v.length() > 1000) throw BusinessException.badRequest("VALIDATION_ERROR", "Each wording must be 3 to 1000 characters");
         String mode = r.mode() == null ? "NONE" : r.mode().toUpperCase();
         if (!Set.of("NONE", "FREE", "PAID").contains(mode)) throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown way of sending");
         boolean push = Boolean.TRUE.equals(r.push());
@@ -152,23 +192,24 @@ public class SegmentService {
         if ("FREE".equals(mode) && recent >= 3) throw BusinessException.conflict("BROADCAST_LIMIT", "Three free broadcasts a day at most, to protect your WhatsApp number from being reported as spam");
         if ("PAID".equals(mode) && recent >= 5) throw BusinessException.conflict("BROADCAST_LIMIT", "Five paid broadcasts a day at most");
 
-        var rows = jdbc.sql(SegmentSql.BASE + "SELECT phone, name, wa, uid, gender, opted_out FROM s WHERE (:g = 'ALL' OR segment = :g) ORDER BY spent DESC LIMIT 20000").param("t", tenantId).param("g", r.segment()).query().listOfRows();
+        var rows = jdbc.sql(SegmentSql.BASE + "SELECT phone, name, wa, uid, gender, opted_out, orders FROM s WHERE (:g = 'ALL' OR segment = :g) ORDER BY spent DESC LIMIT 20000").param("t", tenantId).param("g", r.segment()).query().listOfRows();
         Instant now = Instant.now();
         List<Map<String, Object>> queue = new ArrayList<>();
         int noConsent = 0, noWindow = 0;
         boolean onlyConsented = Boolean.TRUE.equals(r.onlyConsented());
         int optedOut = 0;
+        var prev = previousOrders(tenantId);
         for (var row : rows) {
             if (Boolean.TRUE.equals(row.get("opted_out")) && !"NONE".equals(mode)) { optedOut++; continue; }   // they asked us to stop
             if ("PAID".equals(mode)) {
                 if (row.get("wa") == null) { noConsent++; continue; }
                 if (!windowOpen(tenantId, digits((String) row.get("wa")), now)) { noWindow++; continue; }
-                queue.add(Map.of("phone", digits((String) row.get("wa")), "name", String.valueOf(row.get("name") == null ? "" : row.get("name")), "gender", genderOf(row)));
+                queue.add(Map.of("phone", digits((String) row.get("wa")), "name", String.valueOf(row.get("name") == null ? "" : row.get("name")), "gender", genderOf(row), "vars", varsJson(row, prev)));
             } else if ("FREE".equals(mode)) {
                 if (onlyConsented && row.get("wa") == null) { noConsent++; continue; }
                 String to = digits((String) (row.get("wa") != null ? row.get("wa") : row.get("phone")));
                 if (to.length() < 8 || to.length() > 15) continue;
-                queue.add(Map.of("phone", to, "name", String.valueOf(row.get("name") == null ? "" : row.get("name")), "gender", genderOf(row)));
+                queue.add(Map.of("phone", to, "name", String.valueOf(row.get("name") == null ? "" : row.get("name")), "gender", genderOf(row), "vars", varsJson(row, prev)));
             }
         }
         long cost = "PAID".equals(mode) ? (long) queue.size() * priceMinor : 0;
@@ -179,11 +220,11 @@ public class SegmentService {
         if ("FREE".equals(mode) && queue.isEmpty()) throw BusinessException.conflict("NOBODY_TO_SEND", "No customer to send to");
 
         UUID id = jdbc.sql("""
-                INSERT INTO commerce.broadcasts (tenant_id, segment, message, audience, sent_count, skipped_window, skipped_consent, created_by, mode, push, image_file_id, pending_count, status)
-                VALUES (:t, :s, :m, :a, 0, :w, :c, :u, :mode, :push, :img, :p, :st) RETURNING id
+                INSERT INTO commerce.broadcasts (tenant_id, segment, message, audience, sent_count, skipped_window, skipped_consent, created_by, mode, push, image_file_id, pending_count, status, variants)
+                VALUES (:t, :s, :m, :a, 0, :w, :c, :u, :mode, :push, :img, :p, :st, CAST(:v AS jsonb)) RETURNING id
                 """).param("t", tenantId).param("s", r.segment()).param("m", text).param("a", rows.size()).param("w", noWindow).param("c", noConsent).param("u", actor).param("mode", mode)
-                .param("push", push).param("img", r.imageFileId()).param("p", queue.size()).param("st", queue.isEmpty() ? "DONE" : "SENDING").query(UUID.class).single();
-        for (var q : queue) jdbc.sql("INSERT INTO commerce.broadcast_recipients (broadcast_id, phone, name, gender) VALUES (:b, :p, :n, :g)").param("b", id).param("p", q.get("phone")).param("n", q.get("name")).param("g", q.get("gender")).update();
+                .param("push", push).param("img", r.imageFileId()).param("p", queue.size()).param("st", queue.isEmpty() ? "DONE" : "SENDING").param("v", variants.isEmpty() ? null : toJson(variants)).query(UUID.class).single();
+        for (var q : queue) jdbc.sql("INSERT INTO commerce.broadcast_recipients (broadcast_id, phone, name, gender, vars) VALUES (:b, :p, :n, :g, CAST(:v AS jsonb))").param("b", id).param("p", q.get("phone")).param("n", q.get("name")).param("g", q.get("gender")).param("v", q.get("vars")).update();
 
         int pushed = 0;
         if (push) {
@@ -192,7 +233,7 @@ public class SegmentService {
                 if (row.get("uid") == null) continue;
                 UUID uid = (UUID) row.get("uid");
                 if (!hasDevice(uid)) continue;
-                notifications.push(uid, tenantId, title.length() > 80 ? title.substring(0, 80) : title, personalize(text, (String) row.get("name"), shop, Gender.of(genderOf(row))), "{\"type\":\"BROADCAST\"}");
+                notifications.push(uid, tenantId, title.length() > 80 ? title.substring(0, 80) : title, personalize(pickVersion(text, variants, uid), (String) row.get("name"), shop, Gender.of(genderOf(row)), varsOf(row, prev), uid.getMostSignificantBits()), "{\"type\":\"BROADCAST\"}");
                 pushed++;
             }
             if (pushed > 0) notifications.dispatchSoon();
@@ -213,6 +254,72 @@ public class SegmentService {
         return out;
     }
 
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper();
+
+    private static String toJson(Object o) { try { return JSON.writeValueAsString(o); } catch (Exception e) { throw new IllegalStateException(e); } }
+
+    /** What each customer last bought, by phone: the order number, its date and the first product in it. */
+    private Map<String, Map<String, Object>> previousOrders(UUID tenantId) {
+        Map<String, Map<String, Object>> out = new java.util.HashMap<>();
+        for (var r : jdbc.sql("""
+                SELECT DISTINCT ON (o.customer_phone_snapshot) o.customer_phone_snapshot AS phone, o.order_number, o.created_at,
+                       (SELECT i.product_name_snapshot FROM commerce.order_items i WHERE i.order_id = o.id ORDER BY i.created_at, i.id LIMIT 1) AS product
+                FROM commerce.orders o WHERE o.tenant_id = :t AND o.status NOT IN ('CANCELLED', 'PENDING') ORDER BY o.customer_phone_snapshot, o.created_at DESC
+                """).param("t", tenantId).query().listOfRows()) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("lastOrder", r.get("order_number"));
+            m.put("lastProduct", r.get("product"));
+            m.put("lastDate", java.time.LocalDate.ofInstant(((Timestamp) r.get("created_at")).toInstant(), java.time.ZoneId.of("Africa/Cairo")).format(java.time.format.DateTimeFormatter.ofPattern("d/M/yyyy")));
+            out.put((String) r.get("phone"), m);
+        }
+        return out;
+    }
+
+    private static Map<String, Object> varsOf(Map<String, Object> row, Map<String, Map<String, Object>> prev) {
+        Map<String, Object> m = new LinkedHashMap<>(prev.getOrDefault((String) row.get("phone"), Map.of()));
+        if (row.get("orders") != null) m.put("orders", String.valueOf(row.get("orders")));
+        return m;
+    }
+
+    private static String varsJson(Map<String, Object> row, Map<String, Map<String, Object>> prev) { return toJson(varsOf(row, prev)); }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> parseVars(Object o) {
+        try { return o == null ? Map.of() : JSON.readValue(o.toString(), Map.class); } catch (Exception e) { return Map.of(); }
+    }
+
+    /**
+     * Rewrites a message in a few different ways (same offer, same links, same placeholders) so that not every customer gets the identical text.
+     * The owner reads and edits the suggestions before sending anything. Nothing new is promised: prices, offers and links stay as written.
+     */
+    public List<String> suggestVariants(UUID tenantId, String message, int count) {
+        String text = message == null ? "" : message.trim();
+        if (text.length() < 3 || text.length() > 1000) throw BusinessException.badRequest("VALIDATION_ERROR", "The message must be 3 to 1000 characters");
+        int n = Math.max(1, Math.min(count, 4));
+        throttle.check("bc-variants|" + tenantId, 10, Duration.ofHours(1));
+        String system = "You rewrite a WhatsApp message that a shop sends to its customers. Write exactly " + n + " different versions: same meaning, same offer, same prices, same links and same emojis' mood, "
+                + "but with different wording and sentence structure, natural and friendly, in the same language and dialect as the original. Keep every placeholder in curly braces exactly as written "
+                + "(for example {name}, {shop}, {last_product}, {last_order}, {last_date}, {orders_count}) and every pair such as {بيك|بيكي}. Do not add new offers, discounts, claims or links. "
+                + "Output only the versions, separated by a line that contains only ---.";
+        String out;
+        try { out = ai.next(system, List.of(com.platform.chat.AiProvider.Turn.user(text)), List.of()).text(); }
+        catch (com.platform.chat.AiProvider.AiUnavailableException e) { throw BusinessException.conflict("AI_NOT_AVAILABLE", "The assistant is not available right now"); }
+        java.util.regex.Pattern ph = java.util.regex.Pattern.compile("\\{[^{}]{1,60}\\}");
+        List<String> need = new ArrayList<>();
+        var m = ph.matcher(text);
+        while (m.find()) need.add(m.group());
+        List<String> versions = new ArrayList<>();
+        for (String part : (out == null ? "" : out).split("\\n\\s*---\\s*\\n?")) {
+            String v = part.trim();
+            if (v.length() < 3 || v.length() > 1000 || v.equals(text) || versions.contains(v)) continue;
+            boolean keeps = true;
+            for (String t : need) if (!v.contains(t)) { keeps = false; break; }
+            if (keeps) versions.add(v);
+            if (versions.size() >= n) break;
+        }
+        return versions;
+    }
+
     private static String genderOf(Map<String, Object> row) {
         if (row.get("gender") != null) return (String) row.get("gender");
         String g = GenderService.guess((String) row.get("name"));
@@ -230,9 +337,11 @@ public class SegmentService {
     /** One pass: sends a few waiting messages of each running broadcast. Returns how many went out. Public for tests. */
     public synchronized int runDue() {
         int sent = 0;
-        for (var b : jdbc.sql("SELECT id, tenant_id, message, mode, image_file_id, next_send_at FROM commerce.broadcasts WHERE status = 'SENDING' AND " + com.platform.shared.TenantState.running("tenant_id") + " ORDER BY created_at LIMIT 20").query().listOfRows()) {
+        for (var b : jdbc.sql("SELECT id, tenant_id, message, mode, image_file_id, next_send_at, variants::text AS variants FROM commerce.broadcasts WHERE status = 'SENDING' AND " + com.platform.shared.TenantState.running("tenant_id") + " ORDER BY created_at LIMIT 20").query().listOfRows()) {
             UUID id = (UUID) b.get("id"), tenantId = (UUID) b.get("tenant_id");
             String mode = (String) b.get("mode"), text = (String) b.get("message");
+            List<String> versions = new ArrayList<>();
+            try { if (b.get("variants") != null) for (var v : JSON.readTree(b.get("variants").toString())) versions.add(v.asText()); } catch (Exception ignored) { /* no extra wordings */ }
             String shop = jdbc.sql("SELECT coalesce(nullif(sp.store_name, ''), t.name) FROM core.tenants t LEFT JOIN commerce.store_profiles sp ON sp.tenant_id = t.id WHERE t.id = :t").param("t", tenantId).query(String.class).single();
             String imageUrl = b.get("image_file_id") == null ? null : urls.baseUrl(urls.hosts(List.of(tenantId)).get(tenantId)) + "/api/bff/files/" + b.get("image_file_id") + "/content?variant=medium";
             boolean free = "FREE".equals(mode);
@@ -251,9 +360,9 @@ public class SegmentService {
                 setReason(id, null);
             }
             int limit = free ? 1 : PAID_PER_PASS;
-            var due = jdbc.sql("SELECT id, phone, name, gender FROM commerce.broadcast_recipients WHERE broadcast_id = :b AND status = 'PENDING' ORDER BY id LIMIT :l").param("b", id).param("l", limit).query().listOfRows();
+            var due = jdbc.sql("SELECT id, phone, name, gender, vars::text AS vars FROM commerce.broadcast_recipients WHERE broadcast_id = :b AND status = 'PENDING' ORDER BY id LIMIT :l").param("b", id).param("l", limit).query().listOfRows();
             for (var rcp : due) {
-                String body = personalize(text, (String) rcp.get("name"), shop, Gender.of((String) rcp.get("gender"))), to = (String) rcp.get("phone");
+                String body = personalize(pickVersion(text, versions, (UUID) rcp.get("id")), (String) rcp.get("name"), shop, Gender.of((String) rcp.get("gender")), parseVars(rcp.get("vars")), ((UUID) rcp.get("id")).getMostSignificantBits()), to = (String) rcp.get("phone");
                 String result;
                 long charged = 0;
                 if ("FREE".equals(mode)) {

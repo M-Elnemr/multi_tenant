@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.*;
 public class GrowthController {
     public record LoyaltySettingsReq(Boolean enabled, Integer earnPercent, Integer minRedeem) {}
     public record RedeemReq(Integer points) {}
-    public record BroadcastReq(String segment, String message, java.util.UUID imageFileId, String mode, Boolean push, String pushTitle, Boolean onlyConsented) {}
+    public record BroadcastReq(String segment, String message, java.util.UUID imageFileId, String mode, Boolean push, String pushTitle, Boolean onlyConsented, java.util.List<String> variants) {}
     public record CapiReq(Boolean enabled, String token) {}
 
     private static final String MANAGE = "hasAuthority('growth.manage')";
@@ -69,7 +69,13 @@ public class GrowthController {
 
     @PostMapping("/api/v1/store/broadcasts")
     @PreAuthorize(MANAGE)
-    public Map<String, Object> broadcast(@RequestBody BroadcastReq r, Authentication a) { return segments.broadcast(StoreContext.tenantId(), user(a), new SegmentService.Req(r.segment(), r.message(), r.imageFileId(), r.mode() == null ? "PAID" : r.mode(), r.push(), r.pushTitle(), r.onlyConsented())); }
+    public Map<String, Object> broadcast(@RequestBody BroadcastReq r, Authentication a) { return segments.broadcast(StoreContext.tenantId(), user(a), new SegmentService.Req(r.segment(), r.message(), r.imageFileId(), r.mode() == null ? "PAID" : r.mode(), r.push(), r.pushTitle(), r.onlyConsented(), r.variants())); }
+
+    public record VariantsReq(String message, Integer count) {}
+
+    @PostMapping("/api/v1/store/broadcasts/variants")
+    @PreAuthorize(MANAGE)
+    public Map<String, Object> variants(@RequestBody VariantsReq r) { return Map.of("variants", segments.suggestVariants(StoreContext.tenantId(), r.message(), r.count() == null ? 3 : r.count())); }
 
     @PostMapping("/api/v1/store/broadcasts/{id}/resume")
     @PreAuthorize(MANAGE)

@@ -67,17 +67,19 @@ export function SegmentsTab() {
   const [push, setPush] = useState(false);
   const [pushTitle, setPushTitle] = useState("");
   const [onlyConsented, setOnlyConsented] = useState(false);
+  const [versions, setVersions] = useState<string[]>([]);
   const [done, setDone] = useState<string | null>(null);
   const pv = det.data?.preview;
   const price = seg.data?.messagePriceMinor ?? 300;
   const paidCost = (pv?.reachableNow ?? 0) * price;
   const lowCredit = way === "PAID" && !!seg.data && paidCost > seg.data.balanceMinor;
   const send = useAction(async () => {
-    const r = await api<{ queued: number; pushSent: number; costMinor: number; skippedNoWindow: number; skippedNoConsent: number }>("store/broadcasts", { body: { segment: key, message: msg, imageFileId: image ?? undefined, mode: way, push, pushTitle: pushTitle || undefined, onlyConsented } });
+    const r = await api<{ queued: number; pushSent: number; costMinor: number; skippedNoWindow: number; skippedNoConsent: number }>("store/broadcasts", { body: { segment: key, message: msg, imageFileId: image ?? undefined, variants: versions.map((v) => v.trim()).filter((v) => v.length >= 3), mode: way, push, pushTitle: pushTitle || undefined, onlyConsented } });
     setDone(t("gr.sentResult2", { queued: r.queued, push: r.pushSent, cost: money(r.costMinor, currency, locale) }));
-    setMsg(""); setImage(null); await Promise.all([hist.reload(), seg.reload()]);
+    setMsg(""); setImage(null); setVersions([]); await Promise.all([hist.reload(), seg.reload()]);
   });
   const chooseWay = (w: Way) => { if (w === "FREE" && !own.linked) { router.push("/dashboard/settings#whatsapp-own"); return; } setWay(w); };
+  const suggest = useAction(async () => { const r = await api<{ variants: string[] }>("store/broadcasts/variants", { body: { message: msg, count: 3 } }); setVersions((cur) => [...cur, ...r.variants].slice(0, 5)); });
   const resume = useAction(async (id: string) => { await api(`store/broadcasts/${id}/resume`, { body: {} }); await hist.reload(); });
   const cancel = useAction(async (id: string) => { await api(`store/broadcasts/${id}/cancel`, { body: {} }); await hist.reload(); });
   const modeLabel = (m: string) => (m === "FREE" ? t("sm.freeShort") : m === "PAID" ? t("sm.paidShort") : t("gr.appOnly"));
@@ -95,6 +97,22 @@ export function SegmentsTab() {
       <Card className="space-y-4">
         <h2 className="font-medium">{t("gr.compose", { segment: t(`gr.seg.${key}`) })}</h2>
         <MessageComposer text={msg} onText={setMsg} imageId={image} onImage={setImage} footer={way === "FREE" ? t("gr.optOutLine") : undefined} />
+
+        <div className="space-y-2 rounded-xl border border-dashed p-3">
+          <div className="text-sm font-semibold">{t("gr.versions")}</div>
+          <p className="text-xs text-slate-500">{t("gr.versionsHint")}</p>
+          {versions.map((v, i) => (
+            <div key={i} className="flex items-start gap-2">
+              <textarea rows={2} maxLength={1000} value={v} onChange={(e) => setVersions(versions.map((x, k) => (k === i ? e.target.value : x)))} className="min-w-0 flex-1 rounded-xl border px-3 py-2 text-sm outline-none focus:border-brand" />
+              <button type="button" onClick={() => setVersions(versions.filter((_, k) => k !== i))} className="h-9 w-9 shrink-0 rounded-full text-slate-400 hover:text-red-600" aria-label={t("common.delete")}>✕</button>
+            </div>
+          ))}
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="secondary" disabled={versions.length >= 5} onClick={() => setVersions([...versions, ""])}>＋ {t("gr.addVersion")}</Button>
+            <Button size="sm" variant="secondary" loading={suggest.loading} disabled={msg.trim().length < 3 || versions.length >= 5} onClick={() => void suggest.run()}>✨ {t("gr.suggestVersions")}</Button>
+          </div>
+          <ErrorText error={suggest.error} />
+        </div>
 
         <div className="space-y-2">
           <div className="text-sm font-semibold">{t("gr.sendVia")}</div>

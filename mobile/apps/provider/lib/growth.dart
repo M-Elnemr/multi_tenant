@@ -134,6 +134,9 @@ class _Segments extends StatefulWidget {
 /// Pairs written {masculine|feminine}: the server picks the side that fits each customer. (label on the chip, text inserted)
 const _forms = [('أهلاً بيك/بيكي', 'أهلاً {بيك|بيكي}'), ('ليك/ليكي', '{ليك|ليكي}'), ('تحب/تحبي', '{تحب|تحبي}'), ('اتفضل/اتفضلي', '{اتفضل|اتفضلي}'), ('تعالى/تعالي', '{تعالى|تعالي}'), ('شوف/شوفي', '{شوف|شوفي}'), ('كمّل/كمّلي', '{كمّل|كمّلي}'), ('معاك/معاكي', '{معاك|معاكي}')];
 
+/// {{a|b|c}}: each customer gets one of the wordings, so the messages are not all identical. (label on the chip, text inserted)
+const _spins = [('هلا|أهلاً|مرحباً', '{{هلا|أهلاً|مرحباً}}'), ('عندنا|متاح عندنا|وصلنا', '{{عندنا|متاح عندنا|وصلنا}}'), ('شكراً|ميرسي|تسلم', '{{شكراً|ميرسي|تسلم}}'), ('قريب|دلوقتي|النهارده', '{{قريب|دلوقتي|النهارده}}')];
+
 const _emoji = ['😀', '😍', '🥰', '😎', '🤩', '🙏', '👍', '👏', '🔥', '✨', '🎉', '🎁', '💥', '💯', '❤️', '🛍️', '🛒', '🏷️', '💸', '💰', '⭐', '🌟', '⏰', '📣', '📦', '🚚', '✅', '👇', '👉', '🌸', '☀️', '🌙', '🎊', '🥳', '😉', '🤝', '💐', '🧡', '💙', '🆕'];
 
 class _SegmentsState extends State<_Segments> with AutomaticKeepAliveClientMixin {
@@ -142,6 +145,7 @@ class _SegmentsState extends State<_Segments> with AutomaticKeepAliveClientMixin
   String _key = 'ALL', _way = 'PAID';
   final _msg = TextEditingController(), _pushTitle = TextEditingController();
   String? _image;
+  final _versions = <String>[];
   bool _push = false, _onlyConsented = false, _linked = false, _busy = false, _female = true;
   int _gen = 0;
 
@@ -171,6 +175,28 @@ class _SegmentsState extends State<_Segments> with AutomaticKeepAliveClientMixin
         'OPT_OUTS' => ar ? 'اتوقف: عملاء طلبوا الإيقاف' : 'stopped: customers asked to stop',
         _ => r,
       };
+
+  Future<void> _customSpin() async {
+    final ar = S.of(context).ar;
+    final c = TextEditingController();
+    final ok = await showDialog<bool>(context: context, builder: (d) => AlertDialog(
+      title: Text(ar ? 'كلمات متنوعة' : 'Different wording'),
+      content: TextField(controller: c, decoration: InputDecoration(hintText: ar ? 'كلمات بينها فاصلة، مثال: هلا، أهلاً، مرحباً' : 'Words separated by commas, e.g. hi, hello, welcome')),
+      actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: Text(ar ? 'إلغاء' : 'Cancel')), FilledButton(onPressed: () => Navigator.pop(d, true), child: Text(ar ? 'أضف' : 'Add'))]));
+    final parts = c.text.replaceAll(RegExp(r'[{}]'), '').split(RegExp(r'[|،,]')).map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    c.dispose();
+    if (ok == true && parts.length >= 2) _insert('{{${parts.join('|')}}}');
+  }
+
+  Future<void> _suggest() async {
+    final ar = S.of(context).ar;
+    Map<String, dynamic>? r;
+    if (await run(context, () async { r = await widget.ctx.api.post('store/broadcasts/variants', {'message': _msg.text, 'count': 3}) as Map<String, dynamic>; }) && mounted) {
+      final list = ((r!['variants'] as List?) ?? const []).cast<String>();
+      setState(() { _versions.addAll(list); if (_versions.length > 5) _versions.removeRange(5, _versions.length); });
+      if (list.isEmpty) toast(context, ar ? 'ماقدرناش نقترح صيغ جديدة. جرّب تعدّل الرسالة.' : 'No new wording came back. Try changing the message.');
+    }
+  }
 
   Future<void> _customForm() async {
     final ar = S.of(context).ar;
@@ -215,7 +241,7 @@ class _SegmentsState extends State<_Segments> with AutomaticKeepAliveClientMixin
         final paidCost = reachablePaid * price;
         final low = _way == 'PAID' && paidCost > balance;
         final name = ar ? 'منى' : 'Mona';
-        final preview = _msg.text.replaceAll('{name}', name).replaceAll('{shop}', ar ? 'متجرك' : 'your shop').replaceAllMapped(RegExp(r'\{([^{}|]{1,40})\|([^{}|]{1,40})\}'), (m) => _female ? m.group(2)! : m.group(1)!);
+        final preview = _msg.text.replaceAll('{name}', name).replaceAll('{shop}', ar ? 'متجرك' : 'your shop').replaceAll('{last_product}', ar ? 'قميص كتان' : 'Linen shirt').replaceAll('{last_order}', 'ST-20261001-000012').replaceAll('{last_date}', '1/10/2026').replaceAll('{orders_count}', '3').replaceAllMapped(RegExp(r'\{\{([^{}]{1,300})\}\}'), (m) => m.group(1)!.split('|').first.trim()).replaceAllMapped(RegExp(r'\{([^{}|]{1,40})\|([^{}|]{1,40})\}'), (m) => _female ? m.group(2)! : m.group(1)!);
         Widget way(String w, String title, String hint) => Expanded(child: InkWell(borderRadius: BorderRadius.circular(14), onTap: () {
               if (w == 'FREE' && !_linked) { openOwnNumberSettings(context, widget.ctx); return; }
               setState(() => _way = w);
@@ -230,6 +256,10 @@ class _SegmentsState extends State<_Segments> with AutomaticKeepAliveClientMixin
             Wrap(spacing: 6, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
               ActionChip(avatar: const Icon(Icons.add, size: 16), label: Text(ar ? 'اسم العميل' : 'Customer name'), onPressed: () => _insert('{name}')),
               ActionChip(avatar: const Icon(Icons.add, size: 16), label: Text(ar ? 'اسم المتجر' : 'Shop name'), onPressed: () => _insert('{shop}')),
+              ActionChip(avatar: const Icon(Icons.add, size: 16), label: Text(ar ? 'آخر منتج اشتراه' : 'Last product'), onPressed: () => _insert('{last_product}')),
+              ActionChip(avatar: const Icon(Icons.add, size: 16), label: Text(ar ? 'رقم آخر طلب' : 'Last order no.'), onPressed: () => _insert('{last_order}')),
+              ActionChip(avatar: const Icon(Icons.add, size: 16), label: Text(ar ? 'تاريخ آخر طلب' : 'Last order date'), onPressed: () => _insert('{last_date}')),
+              ActionChip(avatar: const Icon(Icons.add, size: 16), label: Text(ar ? 'عدد طلباته' : 'Orders count'), onPressed: () => _insert('{orders_count}')),
               IconButton.outlined(visualDensity: VisualDensity.compact, onPressed: () => _wrap('*'), icon: const Icon(Icons.format_bold_rounded)),
               IconButton.outlined(visualDensity: VisualDensity.compact, onPressed: () => _wrap('_'), icon: const Icon(Icons.format_italic_rounded)),
               IconButton.outlined(visualDensity: VisualDensity.compact, onPressed: _emojiSheet, icon: const Icon(Icons.emoji_emotions_outlined)),
@@ -237,6 +267,12 @@ class _SegmentsState extends State<_Segments> with AutomaticKeepAliveClientMixin
             ]),
             const SizedBox(height: 4),
             Text(ar ? 'صيغ المذكر / المؤنث (بتتحول لكل عميل حسب نوعه):' : 'Man / woman forms (each customer gets theirs):', style: const TextStyle(fontSize: 12, color: Color(0xFF6B7C8D))),
+            Text(ar ? 'كلمات متنوعة (كل عميل يستلم واحدة):' : 'Different wording (each customer gets one):', style: const TextStyle(fontSize: 12, color: Color(0xFF6B7C8D))),
+            Wrap(spacing: 6, runSpacing: 4, children: [
+              for (final f in _spins) ActionChip(backgroundColor: const Color(0xFFE0F2FE), label: Text(f.$1, style: const TextStyle(fontSize: 12.5)), onPressed: () => _insert(f.$2)),
+              ActionChip(avatar: const Icon(Icons.add, size: 14), label: Text(ar ? 'من عندك' : 'Your own', style: const TextStyle(fontSize: 12.5)), onPressed: _customSpin),
+            ]),
+            const SizedBox(height: 4),
             Wrap(spacing: 6, runSpacing: 4, children: [
               for (final f in _forms) ActionChip(backgroundColor: const Color(0xFFEDE9FE), label: Text(f.$1, style: const TextStyle(fontSize: 12.5)), onPressed: () => _insert(f.$2)),
               ActionChip(avatar: const Icon(Icons.add, size: 14), label: Text(ar ? 'صيغة من عندك' : 'Your own', style: const TextStyle(fontSize: 12.5)), onPressed: _customForm),
@@ -250,6 +286,16 @@ class _SegmentsState extends State<_Segments> with AutomaticKeepAliveClientMixin
             const SizedBox(height: 8),
             Row(children: [Text(ar ? 'المعاينة لـ:' : 'Preview for:', style: const TextStyle(fontSize: 12, color: Color(0xFF6B7C8D))), const SizedBox(width: 6), ChoiceChip(visualDensity: VisualDensity.compact, label: Text(ar ? 'ذكر' : 'Male'), selected: !_female, onSelected: (_) => setState(() => _female = false)), const SizedBox(width: 4), ChoiceChip(visualDensity: VisualDensity.compact, label: Text(ar ? 'أنثى' : 'Female'), selected: _female, onSelected: (_) => setState(() => _female = true))]),
             Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFFDCF8C6), borderRadius: BorderRadius.circular(14)), child: Text(preview.isEmpty ? (ar ? 'رسالتك هتظهر هنا' : 'Your message appears here') : (_way == 'FREE' ? '$preview\n\nلإيقاف الرسائل اكتب: إيقاف · Reply STOP to unsubscribe' : preview), style: TextStyle(color: preview.isEmpty ? Colors.black45 : Colors.black87))),
+            const SizedBox(height: 12),
+            Text(ar ? 'صيغ تانية للرسالة (كل عميل يستلم صيغة منهم)' : 'Other wordings (each customer gets one)', style: const TextStyle(fontWeight: FontWeight.w800)),
+            for (var i = 0; i < _versions.length; i++) Padding(padding: const EdgeInsets.only(top: 6), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(child: TextFormField(key: ValueKey('v$i${_versions[i].hashCode}'), initialValue: _versions[i], maxLines: 2, maxLength: 1000, onChanged: (v) => _versions[i] = v, decoration: const InputDecoration(isDense: true))),
+              IconButton(onPressed: () => setState(() => _versions.removeAt(i)), icon: const Icon(Icons.close_rounded)),
+            ])),
+            Wrap(spacing: 8, children: [
+              OutlinedButton.icon(onPressed: _versions.length >= 5 ? null : () => setState(() => _versions.add('')), icon: const Icon(Icons.add), label: Text(ar ? 'أضف صيغة' : 'Add a wording')),
+              OutlinedButton.icon(onPressed: _versions.length >= 5 || _msg.text.trim().length < 3 ? null : _suggest, icon: const Icon(Icons.auto_awesome_rounded), label: Text(ar ? 'اقترح بالذكاء الاصطناعي' : 'Suggest with AI')),
+            ]),
             const SizedBox(height: 12),
             Text(ar ? 'ابعت عن طريق' : 'Send through', style: const TextStyle(fontWeight: FontWeight.w800)),
             const SizedBox(height: 6),
@@ -274,12 +320,12 @@ class _SegmentsState extends State<_Segments> with AutomaticKeepAliveClientMixin
             FilledButton(onPressed: _busy || _msg.text.trim().length < 3 || (_way == 'NONE' && !_push) || low ? null : () async {
               setState(() => _busy = true);
               Map<String, dynamic>? r;
-              final ok = await run(context, () async { r = await widget.ctx.api.post('store/broadcasts', {'segment': _key, 'message': _msg.text, if (_image != null) 'imageFileId': _image, 'mode': _way, 'push': _push, if (_pushTitle.text.trim().isNotEmpty) 'pushTitle': _pushTitle.text.trim(), 'onlyConsented': _onlyConsented}) as Map<String, dynamic>; });
+              final ok = await run(context, () async { r = await widget.ctx.api.post('store/broadcasts', {'segment': _key, 'message': _msg.text, if (_image != null) 'imageFileId': _image, 'variants': [for (final v in _versions) if (v.trim().length >= 3) v.trim()], 'mode': _way, 'push': _push, if (_pushTitle.text.trim().isNotEmpty) 'pushTitle': _pushTitle.text.trim(), 'onlyConsented': _onlyConsented}) as Map<String, dynamic>; });
               if (!mounted) return;
               setState(() => _busy = false);
               if (ok) {
                 toast(context, ar ? 'اتجهّزت ${r!['queued']} رسالة واتساب، واتبعت ${r!['pushSent']} إشعار.' : 'Queued ${r!['queued']} WhatsApp messages, ${r!['pushSent']} notifications sent.');
-                _msg.clear(); _image = null; setState(() => _gen++);
+                _msg.clear(); _image = null; _versions.clear(); setState(() => _gen++);
               }
             }, child: Text(ar ? 'ابعت' : 'Send')),
           ]))),

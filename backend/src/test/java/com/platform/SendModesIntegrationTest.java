@@ -287,4 +287,47 @@ class SendModesIntegrationTest extends IntegrationTestBase {
         onHost(h, owner, "POST", "/api/v1/store/broadcasts/" + id + "/cancel", "{}").andExpect(status().isOk());
         onHost(h, owner, "POST", "/api/v1/store/broadcasts", "{\"segment\":\"ALL\",\"mode\":\"FREE\",\"message\":\"Next one\"}").andExpect(status().isOk()).andExpect(jsonPath("$.queued").value(3)).andExpect(jsonPath("$.skippedOptOut").value(3));
     }
+
+    // ---- details of previous orders and different wordings -------------------------------------------------------------------------
+
+    java.util.List<String> sentTexts(Shop s) {
+        return FakeEvolutionApi.CALLS.stream().filter(c -> c.path().equals("/message/sendText/" + jdbc.sql("SELECT instance FROM chat.evolution_settings WHERE tenant_id = :t").param("t", s.id()).query(String.class).single())).map(c -> c.body().get("text").toString()).toList();
+    }
+
+    @Test
+    void messagesCanMentionThePreviousOrderAndEachCustomerGetsOneOfSeveralWordings() throws Exception {
+        Shop s = shop();
+        String h = s.t().host(), owner = s.t().access();
+        for (int i = 0; i < 12; i++) order(s, phone());
+        linkOwnNumber(s);
+        String product = jdbc.sql("SELECT name FROM commerce.products WHERE tenant_id = :t").param("t", s.id()).query(String.class).single();
+        String orderNo = jdbc.sql("SELECT order_number FROM commerce.orders WHERE tenant_id = :t ORDER BY created_at LIMIT 1").param("t", s.id()).query(String.class).single();
+        String msg = "{{هلا|أهلاً|مرحباً}} {name}، آخر حاجة اشتريتها كانت {last_product} (طلب {last_order} يوم {last_date}) وده طلبك رقم {orders_count}";
+        onHost(h, owner, "POST", "/api/v1/store/broadcasts", ("{\"segment\":\"ALL\",\"mode\":\"FREE\",\"message\":\"" + msg + "\",\"variants\":[\"Version B for {name}: {last_product}\",\"Version C for {name}: {last_product}\"]}")).andExpect(status().isOk());
+        while (segments.runDue() > 0) { /* send them all */ }
+        var texts = sentTexts(s);
+        assertThat(texts).hasSize(12);
+        assertThat(texts.stream().noneMatch(t -> t.contains("{") || t.contains("}"))).isTrue();   // nothing is left unfilled
+        assertThat(texts.stream().allMatch(t -> t.contains(product))).isTrue();                     // the previous product is in every wording
+        var main = texts.stream().filter(t -> !t.startsWith("Version")).toList();
+        assertThat(main).isNotEmpty();
+        assertThat(main.stream().allMatch(t -> t.startsWith("هلا Mona") || t.startsWith("أهلاً Mona") || t.startsWith("مرحباً Mona"))).isTrue();
+        assertThat(main.get(0)).contains("طلب ST-").contains("وده طلبك رقم 1");
+        assertThat(texts.stream().map(t -> t.startsWith("Version B") ? "B" : t.startsWith("Version C") ? "C" : "A").distinct().count()).isGreaterThanOrEqualTo(2L);   // not everybody gets the same text
+        onHost(h, owner, "POST", "/api/v1/store/broadcasts", "{\"segment\":\"ALL\",\"mode\":\"NONE\",\"push\":true,\"message\":\"Hello there\",\"variants\":[\"a\"]}").andExpect(status().isBadRequest());   // a wording needs 3 characters
+        assertThat(orderNo).startsWith("ST-");
+    }
+
+    @Test
+    void theAssistantSuggestsOtherWordingsThatKeepThePlaceholders() throws Exception {
+        Shop s = shop();
+        String h = s.t().host(), owner = s.t().access();
+        FakeAiProvider.SCRIPT.add(turns -> com.platform.chat.AiProvider.Turn.model("أهلاً {name}، عندنا خصم على {last_product} 🎁\n---\nيا {name} وصلنا خصم لطيف على {last_product}\n---\nخصم لطيف من غير الاسم\n---\nأهلاً {name}، عندنا خصم على {last_product} 🎁"));
+        String res = ok(onHost(h, owner, "POST", "/api/v1/store/broadcasts/variants", "{\"message\":\"أهلاً {name}، عندنا خصم على {last_product} 🎁\",\"count\":3}").andExpect(status().isOk()));
+        java.util.List<String> v = JsonPath.read(res, "$.variants");
+        assertThat(v).containsExactly("يا {name} وصلنا خصم لطيف على {last_product}");   // the copy of the original and the one that lost {name} are dropped
+        assertThat(FakeAiProvider.lastSystem).contains("Keep every placeholder").contains("Do not add new offers");
+        onHost(h, owner, "POST", "/api/v1/store/broadcasts/variants", "{\"message\":\"hi\"}").andExpect(status().isBadRequest());
+        onHost(h, null, "POST", "/api/v1/store/broadcasts/variants", "{\"message\":\"hello there\"}").andExpect(status().isUnauthorized());
+    }
 }
