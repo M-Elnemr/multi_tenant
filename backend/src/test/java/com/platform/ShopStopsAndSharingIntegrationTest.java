@@ -136,6 +136,7 @@ class ShopStopsAndSharingIntegrationTest extends IntegrationTestBase {
         FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("search_products", Map.of("query", "Linen")));
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("عندي " + s.name() + " قميص كتان خفيف، تحبي أجهزه؟"));
         webhook(incoming(s, p, "عايزة قميص")).andExpect(status().isOk());
+        assertThat(FakeAiProvider.lastSystem).contains("in ONE single message").contains("رقم تليفون عليه واتساب").contains("never ask for it as a separate question");   // all missing details are asked together
         var sends = FakeEvolutionApi.CALLS.stream().filter(c -> c.path().startsWith("/message/send")).toList();
         assertThat(sends.get(0).path()).startsWith("/message/sendText/");
         assertThat(sends.get(0).body().get("text").toString()).contains(s.name());
