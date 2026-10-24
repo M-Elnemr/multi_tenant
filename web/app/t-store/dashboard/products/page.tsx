@@ -18,7 +18,7 @@ export default function Products() {
   const { data, loading, error, reload } = useApi<Page<Row>>(`store/products?page=${page}&q=${encodeURIComponent(q)}`);
   return (
     <>
-      <PageHeader title={t("nav.products")} actions={can("product.create") && <Link href="/dashboard/products/new" className="rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-white">{t("products.add")}</Link>} />
+      <PageHeader title={t("nav.products")} actions={<div className="flex gap-2"><Link href="/dashboard/products/labels" className="rounded-lg border bg-white px-4 py-2.5 text-sm font-medium hover:bg-slate-50">{t("labels.title")}</Link>{can("product.create") && <Link href="/dashboard/products/new" className="rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-white">{t("products.add")}</Link>}</div>} />
       <div className="mb-4 max-w-sm"><Input placeholder={t("common.search")} value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} /></div>
       {can("product.create") && <ProductCsv onImported={reload} />}
       <ErrorText error={error} />

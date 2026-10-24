@@ -14,7 +14,8 @@ const clean = (s: string) => { try { return decodeURIComponent(s); } catch { ret
 
 async function load(slug: string): Promise<(ProductDetail & { taxonomy?: { slug: string; nameAr: string; nameEn: string }[] }) | null> {
   try {
-    return await backendJson<ProductDetail & { taxonomy?: { slug: string; nameAr: string; nameEn: string }[] }>(`/shop/products/${encodeURIComponent(clean(slug))}`);
+    const { locale } = await getT();
+    return await backendJson<ProductDetail & { taxonomy?: { slug: string; nameAr: string; nameEn: string }[] }>(`/shop/products/${encodeURIComponent(clean(slug))}?lang=${locale}`);
   } catch (e) {
     if (e instanceof BackendError && e.status === 404) return null;
     throw e;
@@ -36,7 +37,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const { t, locale } = await getT();
   const [prof, related, together] = await Promise.all([
     backendJson<{ profile: ShopProfile }>("/shop/profile").catch(() => null),
-    backendJson<ShopProduct[]>(`/shop/products/${encodeURIComponent(clean(slug))}/related`).catch(() => [] as ShopProduct[]),
+    backendJson<ShopProduct[]>(`/shop/products/${encodeURIComponent(clean(slug))}/related?lang=${locale}`).catch(() => [] as ShopProduct[]),
     backendJson<{ id: string; name: string; slug: string; currency: string; priceMinor: number }[]>(`/shop/products/${encodeURIComponent(clean(slug))}/together`).catch(() => []),
   ]);
   const crumbs = (p.taxonomy ?? []).map((c) => ({ id: c.slug, slug: c.slug, name: locale === "ar" ? c.nameAr : c.nameEn }));

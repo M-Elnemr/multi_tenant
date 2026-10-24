@@ -12,6 +12,7 @@ import { WhatsAppButton } from "@/components/whatsapp-button";
 import { ConfirmCard, TrackingCard } from "@/components/dashboard/order-actions";
 import { governorateName } from "@/lib/governorates";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { dateTime, money } from "@/lib/format";
 
 type Detail = {
@@ -38,6 +39,8 @@ export default function StoreOrder({ params }: { params: Promise<{ id: string }>
   const { data, loading, error, reload } = useApi<Detail>(`store/orders/${id}`);
   const shop = useApi<{ storeName: string }>(can("settings.manage") ? "store/profile" : null);
   const blockPhone = useAction(async (blocked: boolean) => { await api("store/phone-flags", { body: { phone: data?.customerPhoneSnapshot, blocked } }); await reload(); });
+  const router = useRouter();
+  const taxDoc = useAction(async (kind: "invoice" | "credit-note") => { const r = await api<{ id: string }>(`store/orders/${id}/${kind}`, { body: {} }); router.push(`/dashboard/invoices/${r.id}`); });
   const [refundOpen, setRefundOpen] = useState(false);
   const [shipOpen, setShipOpen] = useState(false);
   const [amount, setAmount] = useState("");
@@ -50,8 +53,10 @@ export default function StoreOrder({ params }: { params: Promise<{ id: string }>
   return (
     <>
       <PageHeader title={`${t("orders.order")} ${data.orderNumber}`} subtitle={dateTime(data.createdAt, locale)} actions={<><StatusBadge status={data.status} /><StatusBadge status={data.paymentStatus} /></>} />
-      <ErrorText error={move.error} />
+      <ErrorText error={move.error ?? taxDoc.error} />
       <div className="mb-4 flex flex-wrap items-center gap-2 print:hidden">
+        {can("invoice.manage") && data.status !== "CANCELLED" && data.status !== "PENDING" && <button type="button" onClick={() => void taxDoc.run("invoice")} className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold hover:bg-slate-50">📑 {t("inv.taxInvoice")}</button>}
+        {can("invoice.manage") && ["RETURNED", "REFUNDED", "CANCELLED"].includes(data.status) && <button type="button" onClick={() => void taxDoc.run("credit-note")} className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-semibold hover:bg-amber-100">↩️ {t("inv.creditNote")}</button>}
         <Link href={`/dashboard/orders/${id}/print?doc=invoice`} className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold hover:bg-slate-50">🧾 {t("print.invoice")}</Link>
         <Link href={`/dashboard/orders/${id}/print?doc=label`} className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold hover:bg-slate-50">🏷️ {t("print.label")}</Link>
       </div>

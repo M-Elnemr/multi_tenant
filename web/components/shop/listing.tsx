@@ -19,6 +19,7 @@ export async function Listing({ params, category }: { params: ListingParams; cat
   const qs = new URLSearchParams({ pageSize: "12" });
   for (const k of ["q", "page", "sort", "minPrice", "maxPrice", "brand", "inStock", "onSale", "minRating", "audience", "color", "size", "condition"] as const) if (params[k]) qs.set(k, params[k]!);
   if (slug) qs.set("category", slug);
+  qs.set("lang", locale);
   const fq = new URLSearchParams(); if (params.q) fq.set("q", params.q); if (slug) fq.set("category", slug);
   const [cats, res, facets] = await Promise.all([
     backendJson<ShopCategory[]>(`/shop/categories?lang=${locale}`).catch(() => [] as ShopCategory[]),

@@ -4,6 +4,7 @@ import "./templates.css";
 import { templateFontVars } from "@/components/shop/templates/fonts";
 import { isTemplate } from "@/components/shop/templates/ids";
 import { TemplateBridge } from "@/components/shop/templates/template-bridge";
+import { SwRegister } from "@/components/shop/sw-register";
 import { ShopFooter } from "@/components/shop/footer";
 import { ShopHeader } from "@/components/shop/header";
 import { MobileBar } from "@/components/shop/mobile-bar";
@@ -34,6 +35,7 @@ export default async function ShopLayout({ children }: { children: React.ReactNo
   return (
     <div className={`shop flex min-h-dvh flex-col ${templateFontVars}`} data-template={isTemplate(p.template) ? p.template : "original"}>
       <TemplateBridge />
+      <SwRegister />
       <ShopHeader name={storeName} logoUrl={logoUrl} announcement={p.announcement} closedMessage={p.closedMessage} isOpen={p.isOpen !== false} categories={categories} />
       <VisitTracker />
       <main className="flex-1 pb-chrome">{children}</main>

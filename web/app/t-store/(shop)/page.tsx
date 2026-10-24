@@ -38,7 +38,7 @@ export default async function StoreHome({ searchParams }: { searchParams?: Promi
   const [profileRes, cats, home, branches] = await Promise.all([
     backendJson<{ profile: ShopProfile }>("/shop/profile").catch(() => null),
     backendJson<ShopCategory[]>(`/shop/categories?lang=${locale}`).catch(() => [] as ShopCategory[]),
-    backendJson<Home>("/shop/home").catch(() => ({ featured: [], newest: [], offers: [], bestSellers: [], banners: [] }) as Home),
+    backendJson<Home>(`/shop/home?lang=${locale}`).catch(() => ({ featured: [], newest: [], offers: [], bestSellers: [], banners: [] }) as Home),
     backendJson<ShopBranch[]>("/shop/branches").catch(() => [] as ShopBranch[]),
   ]);
   const p = profileRes?.profile;

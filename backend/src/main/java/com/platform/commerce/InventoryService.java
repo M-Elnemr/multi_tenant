@@ -112,6 +112,43 @@ public class InventoryService {
         movement(tenantId, branchId, variantId, "RETURN", qty, "order", orderId, "Customer return", null);
     }
 
+    /** Moves stock between two branches in one step; refuses to touch what is reserved for open orders. */
+    @Transactional
+    public Map<String, Object> transfer(UUID tenantId, UUID actor, UUID variantId, UUID from, UUID to, int qty, String note) {
+        if (qty < 1 || qty > 100000) throw BusinessException.badRequest("VALIDATION_ERROR", "Quantity must be at least 1");
+        if (from == null || to == null || from.equals(to)) throw BusinessException.badRequest("VALIDATION_ERROR", "Choose two different branches");
+        owned("commerce.branches", from, tenantId);
+        owned("commerce.branches", to, tenantId);
+        owned("commerce.product_variants", variantId, tenantId);
+        int n = jdbc.sql("UPDATE commerce.inventory_items SET quantity_on_hand = quantity_on_hand - :q, updated_at = now() WHERE tenant_id = :t AND branch_id = :b AND variant_id = :v AND quantity_on_hand - quantity_reserved >= :q")
+                .param("q", qty).param("t", tenantId).param("b", from).param("v", variantId).update();
+        if (n == 0) throw BusinessException.conflict("INSUFFICIENT_STOCK", "Not enough free stock in the source branch");
+        jdbc.sql("INSERT INTO commerce.inventory_items (tenant_id, branch_id, variant_id) VALUES (:t, :b, :v) ON CONFLICT (branch_id, variant_id) DO NOTHING").param("t", tenantId).param("b", to).param("v", variantId).update();
+        jdbc.sql("UPDATE commerce.inventory_items SET quantity_on_hand = quantity_on_hand + :q, updated_at = now() WHERE tenant_id = :t AND branch_id = :b AND variant_id = :v").param("q", qty).param("t", tenantId).param("b", to).param("v", variantId).update();
+        UUID id = jdbc.sql("INSERT INTO commerce.stock_transfers (tenant_id, variant_id, from_branch, to_branch, quantity, note, created_by) VALUES (:t, :v, :f, :to, :q, :n, :u) RETURNING id")
+                .param("t", tenantId).param("v", variantId).param("f", from).param("to", to).param("q", qty).param("n", note == null ? "" : note.trim()).param("u", actor).query(UUID.class).single();
+        movement(tenantId, from, variantId, "TRANSFER_OUT", -qty, "transfer", id, note, actor);
+        movement(tenantId, to, variantId, "TRANSFER_IN", qty, "transfer", id, note, actor);
+        audit.record(actor, tenantId, "STOCK_TRANSFERRED", "product_variant", variantId, "{\"qty\":" + qty + "}");
+        return Map.of("id", id, "quantity", qty);
+    }
+
+    public java.util.List<Map<String, Object>> transfers(UUID tenantId) {
+        return Rows.camel(jdbc.sql("""
+                SELECT t.id, t.quantity, t.note, t.created_at, p.name AS product_name, v.sku, f.name AS from_name, d.name AS to_name
+                FROM commerce.stock_transfers t JOIN commerce.product_variants v ON v.id = t.variant_id JOIN commerce.products p ON p.id = v.product_id
+                JOIN commerce.branches f ON f.id = t.from_branch JOIN commerce.branches d ON d.id = t.to_branch WHERE t.tenant_id = :t ORDER BY t.created_at DESC LIMIT 50
+                """).param("t", tenantId).query().listOfRows());
+    }
+
+    /** A counter sale: takes the goods from one chosen branch, right away. */
+    void sellFromBranch(UUID tenantId, UUID branchId, UUID variantId, int qty, UUID orderId) {
+        int n = jdbc.sql("UPDATE commerce.inventory_items SET quantity_on_hand = quantity_on_hand - :q, updated_at = now() WHERE tenant_id = :t AND branch_id = :b AND variant_id = :v AND quantity_on_hand - quantity_reserved >= :q")
+                .param("q", qty).param("t", tenantId).param("b", branchId).param("v", variantId).update();
+        if (n == 0) throw BusinessException.conflict("INSUFFICIENT_STOCK", "Not enough stock for one of the items");
+        movement(tenantId, branchId, variantId, "SALE", -qty, "order", orderId, "Point of sale", null);
+    }
+
     private void movement(UUID tenantId, UUID branchId, UUID variantId, String type, int delta, String refType, UUID refId, String reason, UUID actor) {
         jdbc.sql("""
                 INSERT INTO commerce.inventory_movements (tenant_id, branch_id, variant_id, type, quantity_delta, reference_type, reference_id, reason, created_by)

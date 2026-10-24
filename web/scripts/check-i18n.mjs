@@ -33,7 +33,7 @@ walk(root);
 // Keys passed around as plain strings (nav labels, copy tables): any "ns.key" literal whose namespace we define must exist.
 const namespaces = new Set([...en].map((k) => k.split(".")[0]));
 const IGNORE = new Set(["next.js", "react.js"]);
-const PERMISSION = /\.(manage|read|update|create|delete|adjust|moderate|upload|review|export|update_status)$/;
+const PERMISSION = /\.(manage|read|update|create|delete|adjust|moderate|upload|review|export|update_status|use)$/;
 for (const text of literals) {
   for (const m of text.matchAll(/["'`]([a-z][A-Za-z]*)\.([A-Za-z0-9_]+)["'`]/g)) {
     const key = `${m[1]}.${m[2]}`;

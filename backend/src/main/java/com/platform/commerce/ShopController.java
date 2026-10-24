@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.*;
 /** Storefront API: public catalog, shopper account, cart quote, checkout, own orders. The store comes from the Host. */
 @RestController
 @RequestMapping("/api/v1/shop")
+@SuppressWarnings("unchecked")
 public class ShopController {
     private final CatalogService catalog;
     private final StoreSearchService search;
@@ -35,9 +36,14 @@ public class ShopController {
     private final List<PaymentProvider> providers;
     private final WebhookEventStore webhooks;
 
+    private final TranslationService translations;
+    private final BlogService blog;
+
     public ShopController(CatalogService catalog, StoreSearchService search, TaxonomyService taxonomy, StoreFulfillmentService fulfilment, StoreSettingsService settings, com.platform.core.auth.LoginThrottle throttle, CheckoutService checkout,
-                          OrderService orders, ShopperService shopper, List<PaymentProvider> providers, WebhookEventStore webhooks) {
+                          OrderService orders, ShopperService shopper, List<PaymentProvider> providers, WebhookEventStore webhooks, TranslationService translations, BlogService blog) {
         this.catalog = catalog;
+        this.translations = translations;
+        this.blog = blog;
         this.search = search;
         this.taxonomy = taxonomy;
         this.fulfilment = fulfilment;
@@ -83,6 +89,12 @@ public class ShopController {
                 "shippingMethods", settings.shippingMethods(t, true), "shippingZones", fulfilment.zones(t, true));
     }
 
+    @GetMapping("/blog")
+    public List<Map<String, Object>> blogList() { return blog.publicList(StoreContext.tenantId()); }
+
+    @GetMapping("/blog/{slug}")
+    public Map<String, Object> blogPost(@PathVariable String slug) { return blog.publicGet(StoreContext.tenantId(), slug); }
+
     @GetMapping("/categories")
     public List<Map<String, Object>> categories(@RequestParam(required = false) String lang) { return taxonomy.publicTree(StoreContext.tenantId(), lang); }
 
@@ -92,8 +104,10 @@ public class ShopController {
                                         @RequestParam(required = false) Boolean inStock, @RequestParam(required = false) Boolean onSale, @RequestParam(required = false) Integer minRating,
                                         @RequestParam(required = false) String sort, @RequestParam(required = false) String audience, @RequestParam(required = false) String color,
                                         @RequestParam(required = false) String size, @RequestParam(required = false) String condition,
-                                        @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize) {
-        return search.list(StoreContext.tenantId(), Page.of(page, pageSize), new StoreSearchService.Filter(q, category, minPrice, maxPrice, brand, inStock, onSale, minRating, sort, audience, color, size, condition));
+                                        @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize, @RequestParam(required = false) String lang) {
+        Map<String, Object> res = search.list(StoreContext.tenantId(), Page.of(page, pageSize), new StoreSearchService.Filter(q, category, minPrice, maxPrice, brand, inStock, onSale, minRating, sort, audience, color, size, condition));
+        if (res.get("data") instanceof List<?> l) translations.overlay(StoreContext.tenantId(), lang, (List<Map<String, Object>>) l);
+        return res;
     }
 
     @GetMapping("/products/facets")
@@ -105,18 +119,25 @@ public class ShopController {
     public Map<String, Object> suggest(@RequestParam String q) { return search.suggest(StoreContext.tenantId(), q); }
 
     @GetMapping("/home")
-    public Map<String, Object> home() { return search.home(StoreContext.tenantId()); }
+    public Map<String, Object> home(@RequestParam(required = false) String lang) {
+        Map<String, Object> h = search.home(StoreContext.tenantId());
+        for (String k : List.of("featured", "newest", "offers", "bestSellers")) if (h.get(k) instanceof List<?> l) translations.overlay(StoreContext.tenantId(), lang, (List<Map<String, Object>>) l);
+        return h;
+    }
 
     @GetMapping("/products/{slug}/related")
-    public List<Map<String, Object>> related(@PathVariable String slug) {
+    public List<Map<String, Object>> related(@PathVariable String slug, @RequestParam(required = false) String lang) {
         UUID t = StoreContext.tenantId();
-        return catalog.related(t, (UUID) catalog.detailBySlug(t, slug).get("id"), 8);
+        List<Map<String, Object>> rows = catalog.related(t, (UUID) catalog.detailBySlug(t, slug).get("id"), 8);
+        translations.overlay(t, lang, rows);
+        return rows;
     }
 
     @GetMapping("/products/{slug}")
-    public Map<String, Object> product(@PathVariable String slug) {
+    public Map<String, Object> product(@PathVariable String slug, @RequestParam(required = false) String lang) {
         UUID t = StoreContext.tenantId();
         Map<String, Object> p = catalog.detailBySlug(t, slug);
+        translations.overlayOne(t, lang, p);
         p.put("reviews", shopper.publicReviews(t, (UUID) p.get("id")));
         return p;
     }

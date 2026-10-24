@@ -21,6 +21,8 @@ export async function GET(req: Request) {
       for (const p of res.data) urls.push(`${base}/products/${encodeURIComponent(p.slug)}`);
       if (!res.meta.hasNext) break;
     }
+    const posts = await backendJson<{ slug: string }[]>("/shop/blog").catch(() => [] as { slug: string }[]);
+    for (const b of posts) urls.push(`${base}/blog/${encodeURIComponent(b.slug)}`);
     urls.push(`${base}/branches`, `${base}/contact`);
   }
   const body = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map((u) => `  <url><loc>${esc(u)}</loc></url>`).join("\n")}\n</urlset>\n`;
