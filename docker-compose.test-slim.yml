@@ -17,6 +17,8 @@ services:
       STORAGE_TYPE: local
       APP_FILES_DIR: /app/uploads
       REDIS_ENABLED: "false"
+      APP_MARKETING_VIDEO_ENABLED: "true"
+      APP_MARKETING_VIDEO_DIR: /app/uploads/reels
       DB_POOL_SIZE: "6"
       DB_POOL_MIN_IDLE: "1"
       JAVA_TOOL_OPTIONS: ${BACKEND_JAVA_OPTS:--Xmx320m -Xss512k -XX:+UseSerialGC -XX:MaxMetaspaceSize=160m}

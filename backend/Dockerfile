@@ -15,6 +15,9 @@ RUN ./gradlew bootJar --no-daemon -x test
 FROM mirror.gcr.io/library/eclipse-temurin:17-jre-jammy
 WORKDIR /app
 
+# ffmpeg makes the short product slideshow videos (marketing plan); off unless APP_MARKETING_VIDEO_ENABLED=true
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+
 RUN useradd --system --create-home --shell /usr/sbin/nologin appuser \
     && mkdir -p /app/uploads \
     && chown -R appuser:appuser /app

@@ -56,7 +56,7 @@ public class ReelService {
         Path work = null;
         try {
             work = Files.createTempDirectory("reel");
-            List<String> cmd = new ArrayList<>(List.of(ffmpeg, "-y", "-loglevel", "error"));
+            List<String> cmd = new ArrayList<>(List.of(ffmpeg, "-y", "-loglevel", "error", "-threads", "1"));
             StringBuilder filter = new StringBuilder();
             int n = 0;
             for (UUID id : ids) {
