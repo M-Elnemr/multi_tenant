@@ -116,6 +116,30 @@ public class AiContentService {
         return out;
     }
 
+    /** Three different texts for the same ad (different hooks: benefit, price/offer, trust). Never invents discounts; falls back to fixed templates when the model is unavailable. */
+    public List<String[]> adVariants(AdContext c, String language) {
+        boolean ar = !"en".equalsIgnoreCase(language);
+        String name = c.productName() == null ? c.shopName() : clip(c.productName(), 30);
+        List<String[]> out = new ArrayList<>();
+        String system = "You write Meta (Facebook/Instagram) ad copy for small shops in " + market(c.country()) + ". Write THREE clearly different versions for the same ad in " + (ar ? "Arabic (natural, friendly)" : "English")
+                + ": 1) benefit-led, 2) price or convenience-led (cash on delivery, delivery to the door) without inventing any discount, 3) trust-led (easy returns only if stated in the facts, otherwise quality and service). "
+                + "Reply with ONLY a JSON object: {\"variants\": [{\"headline\": string max 38 chars, \"primaryText\": string max 180 chars}, x3]}. Never invent prices, discounts, materials or guarantees.";
+        String facts = "Shop: " + c.shopName() + (c.productName() == null ? "" : "\nProduct: " + c.productName() + "\nPrice: " + price(Math.max(0, c.priceMinor()), c.currency()) + (c.description() == null ? "" : "\nDescription: " + clip(c.description(), 300)));
+        try {
+            Map<String, Object> m = json(ai.next(system, List.of(AiProvider.Turn.user(facts)), List.of()).text());
+            if (m.get("variants") instanceof List<?> l) for (Object o : l) if (o instanceof Map<?, ?> v && str(v.get("headline")) != null && str(v.get("primaryText")) != null && out.size() < 3)
+                out.add(new String[]{clip(str(v.get("headline")), 38), clip(str(v.get("primaryText")), 200)});
+        } catch (RuntimeException e) {
+            log.info("AI ad variants fell back to templates: {}", e.getMessage());
+        }
+        if (out.size() >= 2) return out;
+        out.clear();
+        out.add(ar ? new String[]{clip(name, 38), "اكتشف " + name + " من " + c.shopName() + " ✨ جودة تستاهل وتوصيل لحد باب البيت"} : new String[]{clip(name, 38), "Discover " + name + " from " + c.shopName() + " ✨ quality you will love, delivered to your door"});
+        out.add(ar ? new String[]{"اطلب الآن وادفع عند الاستلام", name + " متاح دلوقتي 🚚 اطلبه من " + c.shopName() + " وادفع كاش لما يوصلك"} : new String[]{"Order now, pay on delivery", name + " is available now 🚚 order from " + c.shopName() + " and pay cash on delivery"});
+        out.add(ar ? new String[]{"اختيار آلاف العملاء", c.shopName() + " بيهتم بكل أوردر 🌸 تابع طلبك خطوة بخطوة لحد ما يوصلك"} : new String[]{"Shop with confidence", c.shopName() + " takes care of every order 🌸 track yours step by step until it arrives"});
+        return out;
+    }
+
     // ---- helpers --------------------------------------------------------------------------------------------------
 
     static Map<String, Object> json(String text) {

@@ -242,6 +242,78 @@ public class AdsService {
         }
     }
 
+    // ---- budget and copy variants (used by the autopilot, always inside the owner's guardrails) -------------------
+
+    /** Changes the daily budget of the campaign's ad set(s) and the stored value. */
+    public void setDailyBudget(UUID tenantId, UUID id, long minor) {
+        var c = row(tenantId, id);
+        if (c.get("external_id") == null) throw BusinessException.conflict("NOT_CREATED", "This campaign was not created on Meta");
+        var account = integrations.row(tenantId, (UUID) c.get("account_id"));
+        String token = integrations.credentials(account).get("userToken");
+        try {
+            Map<String, Object> sets = graph.get(c.get("external_id") + "/adsets?fields=id&limit=20", token);
+            if (sets.get("data") instanceof List<?> l) for (Object o : l) if (o instanceof Map<?, ?> m) graph.post(String.valueOf(m.get("id")), token, Map.of("daily_budget", minor));
+        } catch (MetaGraph.MetaException e) {
+            throw new BusinessException(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY, "AD_REJECTED", e.getMessage());
+        }
+        jdbc.sql("UPDATE marketing.campaigns SET daily_budget_minor = :b WHERE id = :i AND tenant_id = :t").param("b", minor).param("i", id).param("t", tenantId).update();
+    }
+
+    /** Adds one extra ad per text to the campaign's first ad set (same picture, link and audience), so the texts compete fairly. */
+    @SuppressWarnings("unchecked")
+    public List<Map<String, Object>> addVariants(UUID tenantId, UUID id, List<String[]> texts) {
+        var c = jdbc.sql("SELECT id, account_id, external_id, status, name, params::text AS params FROM marketing.campaigns WHERE id = :i AND tenant_id = :t").param("i", id).param("t", tenantId).query().listOfRows().stream().findFirst()
+                .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Campaign not found"));
+        if (c.get("external_id") == null) throw BusinessException.conflict("NOT_CREATED", "This campaign was not created on Meta");
+        var account = integrations.row(tenantId, (UUID) c.get("account_id"));
+        Map<String, String> cred = integrations.credentials(account);
+        String token = cred.get("userToken"), act = cred.get("adAccountId");
+        Map<String, Object> p = (Map<String, Object>) Rows.json(c.get("params"));
+        List<Map<String, Object>> out = new ArrayList<>();
+        try {
+            Map<String, Object> sets = graph.get(c.get("external_id") + "/adsets?fields=id&limit=1", token);
+            String adset = sets.get("data") instanceof List<?> l && !l.isEmpty() && l.get(0) instanceof Map<?, ?> m ? String.valueOf(m.get("id")) : null;
+            if (adset == null) throw BusinessException.conflict("NOT_CREATED", "The campaign has no ad set");
+            String adStatus = "ACTIVE".equals(c.get("status")) ? "ACTIVE" : "PAUSED";
+            for (String[] t : texts) {
+                Map<String, Object> linkData = new LinkedHashMap<>();
+                linkData.put("message", t[1]); linkData.put("link", p.get("linkUrl")); linkData.put("name", t[0]); linkData.put("picture", p.get("imageUrl"));
+                linkData.put("call_to_action", Map.of("type", p.get("cta"), "value", Map.of("link", p.get("linkUrl"))));
+                String creative = String.valueOf(graph.post(act + "/adcreatives", token, Map.of("name", c.get("name") + " - variant", "object_story_spec", Map.of("page_id", p.get("pageId"), "link_data", linkData))).get("id"));
+                String ad = String.valueOf(graph.post(act + "/ads", token, Map.of("name", c.get("name") + " - " + t[0], "adset_id", adset, "creative", Map.of("creative_id", creative), "status", adStatus)).get("id"));
+                UUID vid = jdbc.sql("INSERT INTO marketing.copy_variants (tenant_id, campaign_id, headline, primary_text, ad_external_id) VALUES (:t, :c, :h, :p, :a) RETURNING id")
+                        .param("t", tenantId).param("c", id).param("h", t[0]).param("p", t[1]).param("a", ad).query(UUID.class).single();
+                out.add(Map.of("id", vid, "headline", t[0], "primaryText", t[1], "adId", ad));
+            }
+        } catch (MetaGraph.MetaException e) {
+            throw new BusinessException(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY, "AD_REJECTED", e.getMessage());
+        }
+        return out;
+    }
+
+    /** Pauses or resumes one variant's ad on Meta. */
+    public void setAdStatus(UUID tenantId, UUID campaignId, String adExternalId, boolean active) {
+        var c = row(tenantId, campaignId);
+        String token = integrations.credentials(integrations.row(tenantId, (UUID) c.get("account_id"))).get("userToken");
+        try { graph.post(adExternalId, token, Map.of("status", active ? "ACTIVE" : "PAUSED")); } catch (MetaGraph.MetaException e) { throw new BusinessException(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY, "AD_REJECTED", e.getMessage()); }
+    }
+
+    /** Reads each variant's own results from Meta into its row. */
+    @SuppressWarnings("unchecked")
+    public void refreshVariants(UUID tenantId, UUID campaignId) {
+        var c = row(tenantId, campaignId);
+        String token = integrations.credentials(integrations.row(tenantId, (UUID) c.get("account_id"))).get("userToken");
+        for (var v : jdbc.sql("SELECT id, ad_external_id FROM marketing.copy_variants WHERE campaign_id = :c AND ad_external_id IS NOT NULL").param("c", campaignId).query().listOfRows()) {
+            try {
+                Map<String, Object> ins = graph.get(v.get("ad_external_id") + "/insights?fields=impressions,clicks,spend,cpc&date_preset=maximum", token);
+                Map<String, Object> r = ins.get("data") instanceof List<?> l && !l.isEmpty() && l.get(0) instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of();
+                jdbc.sql("UPDATE marketing.copy_variants SET insights = CAST(:i AS jsonb) WHERE id = :v").param("i", com.fasterxml.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(r)).param("v", v.get("id")).update();
+            } catch (MetaGraph.MetaException | com.fasterxml.jackson.core.JsonProcessingException e) {
+                log.debug("Variant insights failed: {}", e.getMessage());
+            }
+        }
+    }
+
     // ---- reading ------------------------------------------------------------------------------------------------
 
     private Map<String, Object> row(UUID tenantId, UUID id) {

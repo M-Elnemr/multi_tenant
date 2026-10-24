@@ -7,6 +7,7 @@ import { ChatPanel } from "@/components/shop/live-chat";
 import { AiChannels } from "@/components/dashboard/ai-channels";
 import { AiWhatsApp } from "@/components/dashboard/ai-whatsapp";
 import { AiLessons } from "@/components/dashboard/ai-lessons";
+import { Unanswered } from "@/components/dashboard/unanswered";
 import { useAction, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Alert, Button, ErrorText, Field, Input, PageHeader, Select } from "@/components/ui";
@@ -53,7 +54,7 @@ function AiAssistant() {
           </div>
         </div>
       )}
-      {tab === "lessons" && <div className="max-w-2xl"><AiLessons key={teach?.n ?? 0} base="store/ai/lessons" title={t("ai.teachTitle")} canWrite={write} prefill={teach} /><p className="mt-4 text-xs text-slate-500">{t("ai.platformLessons")}</p></div>}
+      {tab === "lessons" && <div className="max-w-2xl"><AiLessons key={teach?.n ?? 0} base="store/ai/lessons" title={t("ai.teachTitle")} canWrite={write} prefill={teach} /><p className="mt-4 text-xs text-slate-500">{t("ai.platformLessons")}</p><Unanswered canWrite={write} /></div>}
       {tab === "channels" && <AiChannels write={write} pendingId={pendingId} metaError={metaError} />}
       {tab === "whatsapp" && <AiWhatsApp write={write} />}
       {tab === "settings" && <SettingsForm write={write} />}

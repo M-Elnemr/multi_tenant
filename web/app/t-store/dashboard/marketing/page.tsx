@@ -8,13 +8,15 @@ import { useI18n } from "@/components/i18n-provider";
 import { Alert, Button, Empty, ErrorText, Loading, PageHeader, Tabs } from "@/components/ui";
 import { CampaignsView } from "@/components/dashboard/marketing/campaigns";
 import { PostsView, type Overview } from "@/components/dashboard/marketing/posts";
+import { PlanView } from "@/components/dashboard/marketing/plan";
+import { AutopilotView } from "@/components/dashboard/marketing/autopilot";
 
 export default function MarketingPage() {
   const { t } = useI18n();
   const me = useMe();
   const canWrite = me.canWrite("marketing");
   const ov = useApi<Overview>("store/marketing/overview");
-  const [tab, setTab] = useState<"posts" | "ads">("posts");
+  const [tab, setTab] = useState<"posts" | "plan" | "ads" | "auto">("posts");
   const start = useAction(async () => { const r = await api<{ url: string }>("store/ai/meta/start", { body: {} }); window.location.assign(r.url); });
   if (ov.loading && !ov.data) return <Loading />;
   const data = ov.data;
@@ -32,8 +34,8 @@ export default function MarketingPage() {
       ) : data && (
         <div className="space-y-5">
           {data.adAccounts.length === 0 && <Alert tone="blue">{t("mk.reconnectHint")}</Alert>}
-          <Tabs tabs={[{ key: "posts", label: t("mk.tab.posts") }, { key: "ads", label: t("mk.tab.ads") }]} value={tab} onChange={setTab} />
-          {tab === "posts" ? <PostsView ov={data} canWrite={canWrite} /> : <CampaignsView ov={data} canWrite={canWrite} />}
+          <Tabs tabs={[{ key: "posts", label: t("mk.tab.posts") }, { key: "plan", label: t("mk.tab.plan") }, { key: "ads", label: t("mk.tab.ads") }, { key: "auto", label: t("mk.tab.auto") }]} value={tab} onChange={setTab} />
+          {tab === "posts" ? <PostsView ov={data} canWrite={canWrite} /> : tab === "plan" ? <PlanView canWrite={canWrite} /> : tab === "auto" ? <AutopilotView canWrite={canWrite} /> : <CampaignsView ov={data} canWrite={canWrite} />}
         </div>
       )}
     </>

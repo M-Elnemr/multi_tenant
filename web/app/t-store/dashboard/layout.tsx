@@ -11,6 +11,7 @@ const NAV: NavItem[] = [
   { href: "/dashboard/inventory", label: "nav.inventory", group: "navgrp.catalog", screen: "inventory", icon: "inventory" },
   { href: "/dashboard/coupons", label: "nav.coupons", group: "navgrp.catalog", screen: "coupons", icon: "coupon" },
   { href: "/dashboard/reviews", label: "nav.reviews", group: "navgrp.catalog", screen: "reviews", icon: "star" },
+  { href: "/dashboard/copilot", label: "nav.copilot", group: "navgrp.setup", perm: "copilot.use", icon: "sparkles" },
   { href: "/dashboard/marketing", label: "nav.marketing", group: "navgrp.setup", screen: "marketing", icon: "trending" },
   { href: "/dashboard/ai", label: "nav.ai", group: "navgrp.setup", screen: "ai", icon: "sparkles" },
   { href: "/dashboard/settings", label: "nav.settings", group: "navgrp.setup", screen: "settings", icon: "settings" },

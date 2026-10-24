@@ -43,12 +43,13 @@ public class MetaChannelService {
     private final LoginThrottle throttle;
     private final AuditService audit;
     private final WhatsAppConfirmService waConfirm;
+    private final WaReportService waReport;
     private final String appSecret;
     private final String verifyToken;
     private final ExecutorService pool;
     private final java.util.concurrent.ScheduledExecutorService holder = Executors.newSingleThreadScheduledExecutor();
 
-    public MetaChannelService(JdbcClient jdbc, MetaGraph graph, TokenCrypto crypto, ChatService chat, LoginThrottle throttle, AuditService audit, WhatsAppConfirmService waConfirm,
+    public MetaChannelService(JdbcClient jdbc, MetaGraph graph, TokenCrypto crypto, ChatService chat, LoginThrottle throttle, AuditService audit, WhatsAppConfirmService waConfirm, WaReportService waReport,
                               @Value("${app.meta.app-secret:}") String appSecret, @Value("${app.meta.verify-token:}") String verifyToken, @Value("${app.meta.async:true}") boolean async) {
         this.jdbc = jdbc;
         this.graph = graph;
@@ -57,6 +58,7 @@ public class MetaChannelService {
         this.throttle = throttle;
         this.audit = audit;
         this.waConfirm = waConfirm;
+        this.waReport = waReport;
         this.appSecret = appSecret == null || appSecret.isBlank() ? null : appSecret.trim();
         this.verifyToken = verifyToken == null || verifyToken.isBlank() ? null : verifyToken.trim();
         this.pool = async ? Executors.newFixedThreadPool(4) : null;
@@ -139,6 +141,15 @@ public class MetaChannelService {
                 for (JsonNode change : entry.path("changes")) {
                     JsonNode v = change.path("value");
                     String pnid = v.path("metadata").path("phone_number_id").asText("");
+                    if (waReport.isPlatformNumber(pnid)) {   // our own report number, not a shop's channel
+                        for (JsonNode m : v.path("messages")) {
+                            String mid = m.path("id").asText("");
+                            if (!mid.isEmpty() && jdbc.sql("INSERT INTO chat.meta_events (mid) VALUES (:m) ON CONFLICT DO NOTHING").param("m", mid).update() > 0) {
+                                try { waReport.inbound(m.path("from").asText(""), whatsappText(m)); } catch (RuntimeException e) { log.warn("Report number message failed: {}", e.getMessage()); }
+                            }
+                        }
+                        continue;
+                    }
                     for (JsonNode m : v.path("messages"))
                         inbound("WHATSAPP", pnid, m.path("from").asText(""), m.path("id").asText(""), whatsappText(m));
                 }
@@ -248,6 +259,42 @@ public class MetaChannelService {
         }
         if (!rest.isEmpty()) out.add(rest);
         return out;
+    }
+
+    // ---- follow-ups and back-in-stock alerts the assistant promised ----------------------------------------------
+
+    /** Sends due follow-ups and back-in-stock alerts, only while the channel's 24 h window with that customer is open; anything else is skipped, never sent as a paid message. */
+    @Scheduled(fixedDelay = 300_000, initialDelay = 120_000)
+    public void sendDue() {
+        for (var f : jdbc.sql("SELECT f.id, f.tenant_id, f.body, c.channel, c.external_id FROM chat.follow_ups f JOIN chat.conversations c ON c.id = f.conversation_id WHERE f.status = 'PENDING' AND f.due_at <= now() LIMIT 100").query().listOfRows()) {
+            boolean ok = deliver((UUID) f.get("tenant_id"), (String) f.get("channel"), (String) f.get("external_id"), (String) f.get("body"));
+            jdbc.sql("UPDATE chat.follow_ups SET status = :s WHERE id = :i").param("s", ok ? "SENT" : "SKIPPED").param("i", f.get("id")).update();
+        }
+        for (var a : jdbc.sql("""
+                SELECT a.id, a.tenant_id, c.channel, c.external_id, p.name FROM chat.stock_alerts a JOIN chat.conversations c ON c.id = a.conversation_id
+                JOIN commerce.product_variants v ON v.id = a.variant_id JOIN commerce.products p ON p.id = v.product_id
+                WHERE a.status = 'WAITING' AND EXISTS (SELECT 1 FROM commerce.inventory_items i WHERE i.variant_id = a.variant_id AND i.quantity_on_hand - i.quantity_reserved > 0) LIMIT 100
+                """).query().listOfRows()) {
+            String name = String.valueOf(a.get("name"));
+            boolean ok = deliver((UUID) a.get("tenant_id"), (String) a.get("channel"), (String) a.get("external_id"), "رجع متوفر: " + name + " 🎉 تحب أجهزلك أوردر؟ / Back in stock: " + name + ". Shall I set up an order?");
+            jdbc.sql("UPDATE chat.stock_alerts SET status = :s WHERE id = :i").param("s", ok ? "SENT" : "SKIPPED").param("i", a.get("id")).update();
+        }
+    }
+
+    private boolean deliver(UUID tenantId, String platform, String to, String text) {
+        try {
+            var ch = jdbc.sql("SELECT external_id, token_enc FROM chat.channels WHERE tenant_id = :t AND platform = :p AND status = 'ACTIVE' ORDER BY created_at LIMIT 1").param("t", tenantId).param("p", platform).query().listOfRows().stream().findFirst();
+            if (ch.isEmpty()) return false;
+            boolean open = "WHATSAPP".equals(platform)
+                    ? jdbc.sql("SELECT EXISTS (SELECT 1 FROM chat.wa_windows WHERE tenant_id = :t AND number = :n AND last_inbound_at > now() - interval '23 hours')").param("t", tenantId).param("n", to.replaceAll("\\D", "")).query(Boolean.class).single()
+                    : jdbc.sql("SELECT EXISTS (SELECT 1 FROM chat.conversations c JOIN chat.messages m ON m.conversation_id = c.id AND m.role = 'user' WHERE c.tenant_id = :t AND c.channel = :p AND c.external_id = :e AND m.created_at > now() - interval '23 hours')").param("t", tenantId).param("p", platform).param("e", to).query(Boolean.class).single();
+            if (!open) return false;
+            send(platform, (String) ch.get().get("external_id"), to, crypto.decrypt((String) ch.get().get("token_enc")), text);
+            return true;
+        } catch (RuntimeException e) {
+            log.warn("Could not send the promised {} message: {}", platform, e.getMessage());
+            return false;
+        }
     }
 
     @Scheduled(cron = "0 15 3 * * *")

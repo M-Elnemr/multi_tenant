@@ -78,7 +78,7 @@ class AiChatIntegrationTest extends IntegrationTestBase {
         FakeAiProvider.RESULTS.clear();
         String reply = send(t, conv, "تمام حضرتك");   // a plain agreement places the order in code; the model is not involved
         assertThat(JsonPath.<String>read(reply, "$.order.orderNumber")).isNotBlank();
-        assertThat(JsonPath.<String>read(reply, "$.reply")).contains("تمام تم تأكيد الأوردر").contains(JsonPath.<String>read(reply, "$.order.orderNumber")).contains("خدمة العملاء هيتواصلوا معاك في خلال ٢٤ ساعة");
+        assertThat(JsonPath.<String>read(reply, "$.reply")).contains("تمام تم تأكيد الأوردر").contains(JsonPath.<String>read(reply, "$.order.orderNumber")).contains("هنراجع الأوردر ونبلغك بكل جديد على رقمك").doesNotContain("خدمة العملاء");
         assertThat(orders(t)).isEqualTo(1);
         String list = body(onHost(t.host(), t.access(), "GET", "/api/v1/store/orders", null));
         assertThat(JsonPath.<String>read(list, "$.data[0].source")).isEqualTo("AI_CHAT");
