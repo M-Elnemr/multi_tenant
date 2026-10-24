@@ -200,6 +200,7 @@ public class WhatsAppAutoConfirmService {
                 WHERE o.whatsapp_number IS NOT NULL AND o.whatsapp_opt_in_at IS NOT NULL AND o.confirmed_at IS NULL AND o.whatsapp_confirmed_at IS NULL
                   AND o.status IN ('REQUESTED', 'PREPARING') AND s.enabled_at IS NOT NULL AND o.created_at >= s.enabled_at AND o.created_at > :cutoff
                   AND (CAST(:only AS uuid) IS NULL OR o.tenant_id = CAST(:only AS uuid))
+                  AND EXISTS (SELECT 1 FROM core.tenants tn WHERE tn.id = o.tenant_id AND tn.status NOT IN ('SUSPENDED','CANCELLED','ARCHIVED'))
                 ORDER BY o.created_at LIMIT 200
                 """).param("cutoff", Timestamp.from(now.minus(Duration.ofDays(7)))).param("only", onlyTenant).query().listOfRows();
         int sent = 0;

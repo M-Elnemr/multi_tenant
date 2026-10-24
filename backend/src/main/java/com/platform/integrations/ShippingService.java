@@ -183,7 +183,7 @@ public class ShippingService {
     @Scheduled(cron = "0 */30 * * * *")
     public void followAll() {
         if (!scheduler) return;
-        for (var s : jdbc.sql("SELECT id, account_id, tracking_number, status, order_id, channel_order_id FROM integrations.shipments WHERE status NOT IN ('DELIVERED', 'RETURNED', 'CANCELLED') AND created_at > now() - interval '60 days' ORDER BY updated_at LIMIT 100").query().listOfRows()) {
+        for (var s : jdbc.sql("SELECT id, account_id, tracking_number, status, order_id, channel_order_id FROM integrations.shipments WHERE status NOT IN ('DELIVERED', 'RETURNED', 'CANCELLED') AND created_at > now() - interval '60 days' AND EXISTS (SELECT 1 FROM core.tenants tn WHERE tn.id = integrations.shipments.tenant_id AND tn.status NOT IN ('SUSPENDED','CANCELLED','ARCHIVED')) ORDER BY updated_at LIMIT 100").query().listOfRows()) {
             try { follow(s); } catch (RuntimeException e) { log.debug("Follow failed: {}", e.getMessage()); }
         }
     }

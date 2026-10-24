@@ -338,7 +338,7 @@ public class SocialService {
     /** Claims the posts that are due (safe with several instances) and sends them. Public so a test can run it without waiting for the clock. */
     public void runDueNow() {
         var due = jdbc.sql("""
-                UPDATE marketing.posts SET status = 'POSTING' WHERE id IN (SELECT id FROM marketing.posts WHERE status = 'SCHEDULED' AND scheduled_at <= now() ORDER BY scheduled_at LIMIT 10 FOR UPDATE SKIP LOCKED)
+                UPDATE marketing.posts SET status = 'POSTING' WHERE id IN (SELECT id FROM marketing.posts WHERE status = 'SCHEDULED' AND scheduled_at <= now() AND EXISTS (SELECT 1 FROM core.tenants tn WHERE tn.id = marketing.posts.tenant_id AND tn.status NOT IN ('SUSPENDED','CANCELLED','ARCHIVED')) ORDER BY scheduled_at LIMIT 10 FOR UPDATE SKIP LOCKED)
                 RETURNING id, tenant_id
                 """).query().listOfRows();
         for (var d : due) {

@@ -326,7 +326,8 @@ public class CartRecoveryService {
         for (var c : jdbc.sql("""
                 SELECT a.* FROM commerce.abandoned_carts a JOIN commerce.cart_settings s ON s.tenant_id = a.tenant_id AND s.recovery_enabled
                 WHERE a.status = 'OPEN' AND a.reminder_sent_at IS NULL AND a.created_at <= CAST(:now AS timestamptz) - make_interval(hours => s.remind_after_hours) AND a.created_at > CAST(:old AS timestamptz)
-                  AND (a.reminder_status IS NULL OR a.reminder_status IN ('NOT_SENT_WINDOW','NO_CREDIT','NOT_APPROVED','NO_CHANNEL')) ORDER BY a.created_at LIMIT 200
+                  AND (a.reminder_status IS NULL OR a.reminder_status IN ('NOT_SENT_WINDOW','NO_CREDIT','NOT_APPROVED','NO_CHANNEL'))
+                  AND EXISTS (SELECT 1 FROM core.tenants tn WHERE tn.id = a.tenant_id AND tn.status NOT IN ('SUSPENDED','CANCELLED','ARCHIVED')) ORDER BY a.created_at LIMIT 200
                 """).param("now", Timestamp.from(now)).param("old", Timestamp.from(now.minus(Duration.ofDays(14)))).query().listOfRows()) {
             try {
                 String r = remind((UUID) c.get("tenant_id"), c, now, false);

@@ -235,7 +235,7 @@ public class WaReportService {
     public int runDue(Instant now) {
         int sent = runFree(now);
         if (!configured()) return sent;
-        for (var c : jdbc.sql("SELECT c.tenant_id, c.phone, c.send_after, c.language, c.last_inbound_at FROM whatsapp.contacts c WHERE c.enabled AND NOT EXISTS (SELECT 1 FROM chat.evolution_settings e WHERE e.tenant_id = c.tenant_id AND e.enabled AND e.report_mode = 'FREE' AND e.report_enabled)").query().listOfRows()) {
+        for (var c : jdbc.sql("SELECT c.tenant_id, c.phone, c.send_after, c.language, c.last_inbound_at FROM whatsapp.contacts c WHERE c.enabled AND EXISTS (SELECT 1 FROM core.tenants tn WHERE tn.id = c.tenant_id AND tn.status NOT IN ('SUSPENDED','CANCELLED','ARCHIVED')) AND NOT EXISTS (SELECT 1 FROM chat.evolution_settings e WHERE e.tenant_id = c.tenant_id AND e.enabled AND e.report_mode = 'FREE' AND e.report_enabled)").query().listOfRows()) {
             UUID t = (UUID) c.get("tenant_id");
             try {
                 ZonedDateTime local = now.atZone(zone(t));
@@ -265,7 +265,7 @@ public class WaReportService {
     /** The free report: from the shop's own linked number to that same number, like a message to yourself. No platform number, no window, no charge. */
     int runFree(Instant now) {
         int sent = 0;
-        for (var c : jdbc.sql("SELECT tenant_id, to_char(report_send_after, 'HH24:MI') AS send_after, report_language FROM chat.evolution_settings WHERE enabled AND status = 'CONNECTED' AND report_mode = 'FREE' AND report_enabled").query().listOfRows()) {
+        for (var c : jdbc.sql("SELECT tenant_id, to_char(report_send_after, 'HH24:MI') AS send_after, report_language FROM chat.evolution_settings WHERE enabled AND status = 'CONNECTED' AND report_mode = 'FREE' AND report_enabled AND EXISTS (SELECT 1 FROM core.tenants tn WHERE tn.id = tenant_id AND tn.status NOT IN ('SUSPENDED','CANCELLED','ARCHIVED'))").query().listOfRows()) {
             UUID t = (UUID) c.get("tenant_id");
             try {
                 ZonedDateTime local = now.atZone(zone(t));

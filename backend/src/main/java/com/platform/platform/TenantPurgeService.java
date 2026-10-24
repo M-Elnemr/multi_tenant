@@ -32,13 +32,15 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class TenantPurgeService {
     private static final Logger log = LoggerFactory.getLogger(TenantPurgeService.class);
 
+    private final com.platform.chat.EvolutionService evolution;
     private final JdbcClient jdbc;
     private final FileStorage storage;
     private final AuditService audit;
     private final com.platform.core.tenant.TenantDirectory directory;
     private final TransactionTemplate tx;
 
-    public TenantPurgeService(JdbcClient jdbc, FileStorage storage, AuditService audit, com.platform.core.tenant.TenantDirectory directory, PlatformTransactionManager tm) {
+    public TenantPurgeService(JdbcClient jdbc, FileStorage storage, AuditService audit, com.platform.core.tenant.TenantDirectory directory, PlatformTransactionManager tm, com.platform.chat.EvolutionService evolution) {
+        this.evolution = evolution;
         this.jdbc = jdbc;
         this.storage = storage;
         this.audit = audit;
@@ -54,6 +56,7 @@ public class TenantPurgeService {
         String slug = (String) t.get("slug");
         if (confirmSlug == null || !confirmSlug.trim().equalsIgnoreCase(slug))
             throw BusinessException.badRequest("CONFIRMATION_MISMATCH", "Type the business address name exactly to confirm");
+        evolution.purge(tenantId);   // the shop's own WhatsApp link is removed first: nothing may keep sending for a deleted shop
 
         Map<String, Object> report = tx.execute(status -> deleteRows(tenantId));
         int keys = 0;

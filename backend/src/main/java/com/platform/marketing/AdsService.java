@@ -237,7 +237,7 @@ public class AdsService {
 
     @Scheduled(cron = "0 20 */3 * * *")
     public void refreshActive() {
-        for (var c : jdbc.sql("SELECT id, tenant_id FROM marketing.campaigns WHERE status IN ('ACTIVE', 'PAUSED') AND external_id IS NOT NULL AND created_at > now() - interval '120 days' LIMIT 200").query().listOfRows()) {
+        for (var c : jdbc.sql("SELECT id, tenant_id FROM marketing.campaigns WHERE status IN ('ACTIVE', 'PAUSED') AND external_id IS NOT NULL AND created_at > now() - interval '120 days' AND EXISTS (SELECT 1 FROM core.tenants tn WHERE tn.id = marketing.campaigns.tenant_id AND tn.status NOT IN ('SUSPENDED','CANCELLED','ARCHIVED')) LIMIT 200").query().listOfRows()) {
             try { refresh((UUID) c.get("tenant_id"), (UUID) c.get("id")); } catch (RuntimeException e) { log.debug("Ad refresh failed: {}", e.getMessage()); }
         }
     }

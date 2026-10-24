@@ -230,7 +230,7 @@ public class SegmentService {
     /** One pass: sends a few waiting messages of each running broadcast. Returns how many went out. Public for tests. */
     public synchronized int runDue() {
         int sent = 0;
-        for (var b : jdbc.sql("SELECT id, tenant_id, message, mode, image_file_id, next_send_at FROM commerce.broadcasts WHERE status = 'SENDING' ORDER BY created_at LIMIT 20").query().listOfRows()) {
+        for (var b : jdbc.sql("SELECT id, tenant_id, message, mode, image_file_id, next_send_at FROM commerce.broadcasts WHERE status = 'SENDING' AND " + com.platform.shared.TenantState.running("tenant_id") + " ORDER BY created_at LIMIT 20").query().listOfRows()) {
             UUID id = (UUID) b.get("id"), tenantId = (UUID) b.get("tenant_id");
             String mode = (String) b.get("mode"), text = (String) b.get("message");
             String shop = jdbc.sql("SELECT coalesce(nullif(sp.store_name, ''), t.name) FROM core.tenants t LEFT JOIN commerce.store_profiles sp ON sp.tenant_id = t.id WHERE t.id = :t").param("t", tenantId).query(String.class).single();

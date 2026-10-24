@@ -33,7 +33,7 @@ public class TenantResolutionFilter extends OncePerRequestFilter {
             if (host != null && !props.isPlatformHost(host) && !props.isOpenHost(host)) {
                 directory.resolve(host).ifPresent(TenantContext::set);
                 TenantContext.Current c = TenantContext.get();
-                if (c != null && "SUSPENDED".equals(c.status()) && !allowedWhileDisabled(req)) {
+                if (c != null && java.util.Set.of("SUSPENDED", "CANCELLED", "ARCHIVED").contains(c.status()) && !allowedWhileDisabled(req)) {
                     res.setStatus(403);
                     res.setContentType("application/problem+json");
                     res.getWriter().write("{\"status\":403,\"code\":\"TENANT_DISABLED\",\"message\":\"This business is currently disabled\"}");

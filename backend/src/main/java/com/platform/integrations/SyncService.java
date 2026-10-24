@@ -48,7 +48,7 @@ public class SyncService {
     @Scheduled(cron = "0 */15 * * * *")
     public void enqueueOrders() {
         if (!enabled) return;
-        for (var a : jdbc.sql("SELECT id, tenant_id, provider FROM integrations.accounts WHERE status <> 'PAUSED' AND kind IN ('MARKETPLACE', 'STORE_PLATFORM')").query().listOfRows()) {
+        for (var a : jdbc.sql("SELECT id, tenant_id, provider FROM integrations.accounts WHERE status <> 'PAUSED' AND kind IN ('MARKETPLACE', 'STORE_PLATFORM') AND EXISTS (SELECT 1 FROM core.tenants tn WHERE tn.id = integrations.accounts.tenant_id AND tn.status NOT IN ('SUSPENDED','CANCELLED','ARCHIVED'))").query().listOfRows()) {
             Providers.Def d = Providers.get((String) a.get("provider"));
             if (d != null && Providers.supports(d, "ORDERS")) integrations.enqueue((UUID) a.get("tenant_id"), (UUID) a.get("id"), "PULL_ORDERS", Map.of());
         }
@@ -57,7 +57,7 @@ public class SyncService {
     @Scheduled(cron = "0 7 * * * *")
     public void enqueueProducts() {
         if (!enabled) return;
-        for (var a : jdbc.sql("SELECT id, tenant_id, provider FROM integrations.accounts WHERE status <> 'PAUSED' AND kind IN ('MARKETPLACE', 'STORE_PLATFORM')").query().listOfRows()) {
+        for (var a : jdbc.sql("SELECT id, tenant_id, provider FROM integrations.accounts WHERE status <> 'PAUSED' AND kind IN ('MARKETPLACE', 'STORE_PLATFORM') AND EXISTS (SELECT 1 FROM core.tenants tn WHERE tn.id = integrations.accounts.tenant_id AND tn.status NOT IN ('SUSPENDED','CANCELLED','ARCHIVED'))").query().listOfRows()) {
             Providers.Def d = Providers.get((String) a.get("provider"));
             if (d != null && Providers.supports(d, "PRODUCTS")) integrations.enqueue((UUID) a.get("tenant_id"), (UUID) a.get("id"), "IMPORT_PRODUCTS", Map.of());
         }
@@ -85,6 +85,7 @@ public class SyncService {
                 UPDATE integrations.jobs SET status = 'RUNNING', attempts = attempts + 1, next_run_at = now()
                 WHERE id = (SELECT j.id FROM integrations.jobs j WHERE j.status = 'PENDING' AND j.next_run_at <= now()
                               AND NOT EXISTS (SELECT 1 FROM integrations.jobs r WHERE r.account_id = j.account_id AND r.status = 'RUNNING')
+                              AND EXISTS (SELECT 1 FROM core.tenants tn WHERE tn.id = j.tenant_id AND tn.status NOT IN ('SUSPENDED','CANCELLED','ARCHIVED'))
                             ORDER BY j.id LIMIT 1 FOR UPDATE SKIP LOCKED)
                 RETURNING id, tenant_id, account_id, type, payload::text AS payload, attempts
                 """).query().listOfRows().stream().findFirst().orElse(null);

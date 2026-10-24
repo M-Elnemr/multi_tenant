@@ -44,12 +44,13 @@ public class MetaChannelService {
     private final AuditService audit;
     private final WhatsAppConfirmService waConfirm;
     private final WaReportService waReport;
+    private final ProductShare share;
     private final String appSecret;
     private final String verifyToken;
     private final ExecutorService pool;
     private final java.util.concurrent.ScheduledExecutorService holder = Executors.newSingleThreadScheduledExecutor();
 
-    public MetaChannelService(JdbcClient jdbc, MetaGraph graph, TokenCrypto crypto, ChatService chat, LoginThrottle throttle, AuditService audit, WhatsAppConfirmService waConfirm, WaReportService waReport,
+    public MetaChannelService(JdbcClient jdbc, MetaGraph graph, TokenCrypto crypto, ChatService chat, LoginThrottle throttle, AuditService audit, WhatsAppConfirmService waConfirm, WaReportService waReport, ProductShare share,
                               @Value("${app.meta.app-secret:}") String appSecret, @Value("${app.meta.verify-token:}") String verifyToken, @Value("${app.meta.async:true}") boolean async) {
         this.jdbc = jdbc;
         this.graph = graph;
@@ -59,6 +60,7 @@ public class MetaChannelService {
         this.audit = audit;
         this.waConfirm = waConfirm;
         this.waReport = waReport;
+        this.share = share;
         this.appSecret = appSecret == null || appSecret.isBlank() ? null : appSecret.trim();
         this.verifyToken = verifyToken == null || verifyToken.isBlank() ? null : verifyToken.trim();
         this.pool = async ? Executors.newFixedThreadPool(4) : null;
@@ -233,17 +235,21 @@ public class MetaChannelService {
 
     public record WaChannel(String phoneId, String token, String wabaId, String phone) {}
 
+    private boolean running(UUID tenantId) { return jdbc.sql("SELECT " + com.platform.shared.TenantState.running("CAST(:t AS uuid)")).param("t", tenantId).query(Boolean.class).single(); }
+
     private void inbound(String platform, String accountId, String sender, String mid, String text) {
         if (accountId.isEmpty() || sender.isEmpty() || mid.isEmpty()) return;
         var ch = jdbc.sql("SELECT tenant_id, token_enc, status FROM chat.channels WHERE platform = :p AND external_id = :e").param("p", platform).param("e", accountId).query().listOfRows().stream().findFirst();
         if (ch.isEmpty() || !"ACTIVE".equals(ch.get().get("status"))) return;
         if (jdbc.sql("INSERT INTO chat.meta_events (mid) VALUES (:m) ON CONFLICT DO NOTHING").param("m", mid).update() == 0) return;   // already handled
         UUID tenantId = (UUID) ch.get().get("tenant_id");
+        if (!running(tenantId)) return;   // a suspended, cancelled or archived shop does not answer customers
         String token = crypto.decrypt((String) ch.get().get("token_enc"));
         if ("WHATSAPP".equals(platform)) jdbc.sql("INSERT INTO chat.wa_windows (tenant_id, number, last_inbound_at) VALUES (:t, :n, now()) ON CONFLICT (tenant_id, number) DO UPDATE SET last_inbound_at = now()")
                 .param("t", tenantId).param("n", sender.replaceAll("\\D", "")).update();
         boolean aiOn = chat.enabled(tenantId);
         String answer;
+        List<ProductShare.Card> cards = List.of();
         if (text == null || text.isBlank()) {
             if (!aiOn) return;
             answer = "أستطيع قراءة الرسائل النصية فقط، {اكتب|اكتبي} لي ما {تحتاجه|تحتاجيه} 🙏 / I can only read text messages, please type what you need.";
@@ -264,6 +270,7 @@ public class MetaChannelService {
                     try {
                         var reply = chat.reply(tenantId, platform, sender, null, text.length() > 1000 ? text.substring(0, 1000) : text);
                         answer = reply.text();
+                        cards = share.pick(tenantId, answer, reply.products());
                         if (reply.order() != null && !Boolean.TRUE.equals(reply.order().get("test"))) answer += orderLinks(tenantId, reply.order());
                     } finally {
                         hold.cancel(false);
@@ -278,6 +285,23 @@ public class MetaChannelService {
             for (String part : chunks(com.platform.shared.Gender.MALE.apply(answer), "INSTAGRAM".equals(platform) ? 900 : "WHATSAPP".equals(platform) ? 3500 : 1900)) send(platform, accountId, sender, token, part);
         } catch (MetaGraph.MetaException e) {
             log.warn("Could not send the {} reply: {}", platform, e.getMessage());
+        }
+        for (var card : cards) sendCard(platform, accountId, sender, token, card);
+    }
+
+    /** A suggested product: its picture with name, price and link; when the picture cannot be sent, the link alone. */
+    private void sendCard(String platform, String accountId, String to, String token, ProductShare.Card card) {
+        try {
+            if (card.imageUrl() != null) {
+                if ("WHATSAPP".equals(platform)) {
+                    graph.post(accountId + "/messages", token, Map.of("messaging_product", "whatsapp", "to", to, "type", "image", "image", Map.of("link", card.imageUrl(), "caption", card.caption())));
+                    return;
+                }
+                graph.post("me/messages", token, Map.of("recipient", Map.of("id", to), "messaging_type", "RESPONSE", "message", Map.of("attachment", Map.of("type", "image", "payload", Map.of("url", card.imageUrl(), "is_reusable", false)))));
+            }
+            send(platform, accountId, to, token, card.caption());
+        } catch (MetaGraph.MetaException e) {
+            try { send(platform, accountId, to, token, card.caption()); } catch (MetaGraph.MetaException ignored) { log.warn("Could not send a product card: {}", e.getMessage()); }
         }
     }
 
@@ -315,14 +339,14 @@ public class MetaChannelService {
     /** Sends due follow-ups and back-in-stock alerts, only while the channel's 24 h window with that customer is open; anything else is skipped, never sent as a paid message. */
     @Scheduled(fixedDelay = 300_000, initialDelay = 120_000)
     public void sendDue() {
-        for (var f : jdbc.sql("SELECT f.id, f.tenant_id, f.body, c.channel, c.external_id FROM chat.follow_ups f JOIN chat.conversations c ON c.id = f.conversation_id WHERE f.status = 'PENDING' AND f.due_at <= now() LIMIT 100").query().listOfRows()) {
+        for (var f : jdbc.sql("SELECT f.id, f.tenant_id, f.body, c.channel, c.external_id FROM chat.follow_ups f JOIN chat.conversations c ON c.id = f.conversation_id WHERE f.status = 'PENDING' AND f.due_at <= now() AND EXISTS (SELECT 1 FROM core.tenants tn WHERE tn.id = f.tenant_id AND tn.status NOT IN ('SUSPENDED','CANCELLED','ARCHIVED')) LIMIT 100").query().listOfRows()) {
             boolean ok = deliver((UUID) f.get("tenant_id"), (String) f.get("channel"), (String) f.get("external_id"), (String) f.get("body"));
             jdbc.sql("UPDATE chat.follow_ups SET status = :s WHERE id = :i").param("s", ok ? "SENT" : "SKIPPED").param("i", f.get("id")).update();
         }
         for (var a : jdbc.sql("""
                 SELECT a.id, a.tenant_id, c.channel, c.external_id, p.name FROM chat.stock_alerts a JOIN chat.conversations c ON c.id = a.conversation_id
                 JOIN commerce.product_variants v ON v.id = a.variant_id JOIN commerce.products p ON p.id = v.product_id
-                WHERE a.status = 'WAITING' AND EXISTS (SELECT 1 FROM commerce.inventory_items i WHERE i.variant_id = a.variant_id AND i.quantity_on_hand - i.quantity_reserved > 0) LIMIT 100
+                WHERE a.status = 'WAITING' AND EXISTS (SELECT 1 FROM core.tenants tn WHERE tn.id = a.tenant_id AND tn.status NOT IN ('SUSPENDED','CANCELLED','ARCHIVED')) AND EXISTS (SELECT 1 FROM commerce.inventory_items i WHERE i.variant_id = a.variant_id AND i.quantity_on_hand - i.quantity_reserved > 0) LIMIT 100
                 """).query().listOfRows()) {
             String name = String.valueOf(a.get("name"));
             boolean ok = deliver((UUID) a.get("tenant_id"), (String) a.get("channel"), (String) a.get("external_id"), "رجع متوفر: " + name + " 🎉 تحب أجهزلك أوردر؟ / Back in stock: " + name + ". Shall I set up an order?");

@@ -144,7 +144,7 @@ public class WebhookService {
     /** Sends what is due; returns how many calls were answered with 2xx. Public for tests. */
     public int deliverDue(Instant now) {
         int ok = 0;
-        for (var d : jdbc.sql("SELECT d.id, d.webhook_id, d.event, d.payload, d.attempts, w.url, w.secret_enc FROM commerce.webhook_deliveries d JOIN commerce.webhooks w ON w.id = d.webhook_id WHERE d.status = 'PENDING' AND d.next_attempt_at <= :n ORDER BY d.id LIMIT 100")
+        for (var d : jdbc.sql("SELECT d.id, d.webhook_id, d.event, d.payload, d.attempts, w.url, w.secret_enc FROM commerce.webhook_deliveries d JOIN commerce.webhooks w ON w.id = d.webhook_id WHERE d.status = 'PENDING' AND d.next_attempt_at <= :n AND EXISTS (SELECT 1 FROM core.tenants tn WHERE tn.id = w.tenant_id AND tn.status NOT IN ('SUSPENDED','CANCELLED','ARCHIVED')) ORDER BY d.id LIMIT 100")
                 .param("n", Timestamp.from(now)).query().listOfRows()) {
             long id = ((Number) d.get("id")).longValue();
             int attempts = ((Number) d.get("attempts")).intValue() + 1;

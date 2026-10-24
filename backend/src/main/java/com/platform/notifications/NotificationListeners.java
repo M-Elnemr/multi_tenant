@@ -274,6 +274,7 @@ public class NotificationListeners {
         List<Map<String, Object>> due = jdbc.sql("""
                 UPDATE medical.appointments SET reminder_sent_at = now()
                 WHERE status = 'CONFIRMED' AND reminder_sent_at IS NULL AND start_at > now() AND start_at < now() + interval '24 hours'
+                  AND EXISTS (SELECT 1 FROM core.tenants tn WHERE tn.id = medical.appointments.tenant_id AND tn.status NOT IN ('SUSPENDED','CANCELLED','ARCHIVED'))
                 RETURNING id, tenant_id, patient_id
                 """).query().listOfRows();
         for (var a : due) {

@@ -134,7 +134,7 @@ public class ListingService {
                 SELECT l.id, l.account_id, l.external_product_id, l.external_variant_id, l.external_sku, l.external_ref, l.quantity,
                   (SELECT greatest(0, coalesce(sum(i.quantity_on_hand - i.quantity_reserved), 0)) FROM commerce.inventory_items i JOIN commerce.branches b ON b.id = i.branch_id AND b.is_active WHERE i.variant_id = l.variant_id) AS available
                 FROM integrations.listings l JOIN integrations.accounts a ON a.id = l.account_id AND a.status = 'ACTIVE'
-                WHERE l.stock_sync AND l.variant_id IS NOT NULL ORDER BY l.last_synced_at NULLS FIRST LIMIT :lim
+                WHERE l.stock_sync AND l.variant_id IS NOT NULL AND EXISTS (SELECT 1 FROM core.tenants tn WHERE tn.id = a.tenant_id AND tn.status NOT IN ('SUSPENDED','CANCELLED','ARCHIVED')) ORDER BY l.last_synced_at NULLS FIRST LIMIT :lim
                 """).param("lim", limit).query().listOfRows();
         for (var l : rows) {
             int available = ((Number) l.get("available")).intValue();

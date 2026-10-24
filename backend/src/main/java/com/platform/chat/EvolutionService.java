@@ -34,6 +34,7 @@ public class EvolutionService {
 
     private final JdbcClient jdbc;
     private final EvolutionApi api;
+    private final ProductShare share;
     private final com.platform.commerce.GenderService genders;
     private final ChatService chat;
     private final WhatsAppConfirmService waConfirm;
@@ -43,13 +44,14 @@ public class EvolutionService {
     private final int typingDelayMs;
     private final ExecutorService pool;
 
-    public EvolutionService(JdbcClient jdbc, EvolutionApi api, @Lazy ChatService chat, @Lazy WhatsAppConfirmService waConfirm, LoginThrottle throttle, AuditService audit, com.platform.commerce.GenderService genders,
+    public EvolutionService(JdbcClient jdbc, EvolutionApi api, @Lazy ChatService chat, @Lazy WhatsAppConfirmService waConfirm, LoginThrottle throttle, AuditService audit, com.platform.commerce.GenderService genders, ProductShare share,
                             @Value("${app.evolution.base-url:}") String baseUrl, @Value("${app.evolution.webhook-secret:}") String secret, @Value("${app.evolution.backend-url:http://backend:8080}") String backendUrl,
                             @Value("${app.evolution.typing-delay-ms:1500}") int typingDelayMs, @Value("${app.evolution.async:true}") boolean async) {
         this.jdbc = jdbc;
         this.api = api;
         this.chat = chat;
         this.genders = genders;
+        this.share = share;
         this.waConfirm = waConfirm;
         this.throttle = throttle;
         this.audit = audit;
@@ -78,11 +80,27 @@ public class EvolutionService {
         return m;
     }
 
+    private boolean running(UUID tenantId) { return jdbc.sql("SELECT " + com.platform.shared.TenantState.running("CAST(:t AS uuid)")).param("t", tenantId).query(Boolean.class).single(); }
+
+    /** The shop is being deleted: unlink its phone and remove its instance from the service (its rows go with the shop). Never throws. */
+    public void purge(UUID tenantId) {
+        try {
+            var r = row(tenantId);
+            if (r == null || !available()) return;
+            String inst = r.get("instance").toString();
+            for (String path : List.of("/instance/logout/" + inst, "/instance/delete/" + inst)) {
+                try { api.call("DELETE", path, null); } catch (RuntimeException e) { log.debug("Evolution cleanup {}: {}", path, e.getMessage()); }
+            }
+        } catch (RuntimeException e) { log.warn("Could not remove the Evolution instance of a deleted shop: {}", e.getMessage()); }
+    }
+
     /** True when the shop turned the mode on and its phone is linked right now. */
     public boolean connected(UUID tenantId) {
         if (!available()) return false;
         var r = row(tenantId);
-        return r != null && Boolean.TRUE.equals(r.get("enabled")) && "CONNECTED".equals(r.get("status"));
+        // a suspended, cancelled or archived shop sends nothing, whatever its phone status
+        return r != null && Boolean.TRUE.equals(r.get("enabled")) && "CONNECTED".equals(r.get("status"))
+                && jdbc.sql("SELECT " + com.platform.shared.TenantState.running("CAST(:t AS uuid)")).param("t", tenantId).query(Boolean.class).single();
     }
 
     // ---- shop side ----------------------------------------------------------------------------------------------------------------
@@ -270,6 +288,7 @@ public class EvolutionService {
             var tenant = jdbc.sql("SELECT tenant_id FROM chat.evolution_settings WHERE instance = :i AND enabled").param("i", instance).query(UUID.class).optional();
             if (tenant.isEmpty()) return;
             UUID tenantId = tenant.get();
+            if (!running(tenantId)) return;   // a suspended, cancelled or archived shop does not answer customers
             String event = root.path("event").asText("").toLowerCase().replace('_', '.');
             JsonNode data = root.path("data");
             if (event.equals("connection.update")) { applyState(tenantId, data.path("state").asText("")); return; }
@@ -294,6 +313,7 @@ public class EvolutionService {
         String text = msg.hasNonNull("conversation") ? msg.path("conversation").asText() : msg.path("extendedTextMessage").hasNonNull("text") ? msg.path("extendedTextMessage").path("text").asText() : null;
         boolean aiOn = chat.enabled(tenantId);
         String answer;
+        List<ProductShare.Card> cards = List.of();
         try {
             if (text == null || text.isBlank()) {
                 if (!aiOn) return;
@@ -303,7 +323,11 @@ public class EvolutionService {
                 var special = waConfirm.handle(tenantId, sender, text);
                 if (special.isPresent()) answer = special.get();
                 else if (!aiOn) return;
-                else answer = chat.reply(tenantId, "WHATSAPP", sender, null, text.length() > 1000 ? text.substring(0, 1000) : text).text();
+                else {
+                    var reply = chat.reply(tenantId, "WHATSAPP", sender, null, text.length() > 1000 ? text.substring(0, 1000) : text);
+                    answer = reply.text();
+                    cards = share.pick(tenantId, answer, reply.products());
+                }
             }
         } catch (BusinessException e) {
             log.debug("Evolution message ignored: {}", e.getMessage());
@@ -313,6 +337,9 @@ public class EvolutionService {
         com.platform.shared.Gender g = genders.forPhone(tenantId, sender);
         if (g == com.platform.shared.Gender.UNKNOWN) g = com.platform.commerce.GenderService.forName(m.path("pushName").asText(""));
         for (String part : MetaChannelService.chunks(g.apply(answer), 3000)) sendFree(tenantId, sender, part);
+        for (var card : cards) {   // the picture, price and link of each product the assistant suggested; a product without a picture goes as its link alone
+            if (deliver(tenantId, sender, card.caption(), card.imageUrl()) == Delivery.FAILED && card.imageUrl() != null) deliver(tenantId, sender, card.caption(), null);
+        }
     }
 
     private static BusinessException unreachable(EvolutionApi.EvolutionException e) {

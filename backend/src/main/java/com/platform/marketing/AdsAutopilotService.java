@@ -254,7 +254,7 @@ public class AdsAutopilotService {
     @Scheduled(cron = "0 40 */6 * * *")
     public void optimizeAll() {
         if (!scheduler) return;
-        for (UUID t : jdbc.sql("SELECT tenant_id FROM marketing.guardrails WHERE enabled").query(UUID.class).list()) {
+        for (UUID t : jdbc.sql("SELECT tenant_id FROM marketing.guardrails WHERE enabled AND " + com.platform.shared.TenantState.running("tenant_id")).query(UUID.class).list()) {
             try { optimize(t); } catch (RuntimeException e) { log.warn("Ad optimizer failed for {}: {}", t, e.getMessage()); }
         }
     }
