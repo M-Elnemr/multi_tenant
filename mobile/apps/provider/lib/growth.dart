@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:platform_core/platform_core.dart';
 
 import 'common.dart';
+import 'send_mode.dart';
+import 'forms.dart';
 
 // Growth tools of the Business app: incomplete carts, customer segments and free WhatsApp broadcasts, loyalty points, feeds and server-side tracking, announcement tests, the AI store builder.
 
@@ -80,6 +82,8 @@ class _CartSettings extends StatefulWidget {
 
 class _CartSettingsState extends State<_CartSettings> {
   late bool _on = widget.settings['recoveryEnabled'] == true, _paid = widget.settings['allowPaid'] == true;
+  late String _mode = '${widget.settings['sendMode'] ?? 'PAID'}';
+  bool _linked = false;
   late final _hours = TextEditingController(text: '${widget.settings['remindAfterHours']}'), _coupon = TextEditingController(text: '${widget.settings['couponCode'] ?? ''}');
 
   @override
@@ -96,9 +100,10 @@ class _CartSettingsState extends State<_CartSettings> {
       SwitchListTile(contentPadding: EdgeInsets.zero, title: Text(ar ? 'التذكير التلقائي' : 'Automatic reminders'), value: _on, onChanged: write ? (v) => setState(() { _on = v; if (!v) _paid = false; }) : null),
       const SizedBox(height: 6),
       Row(children: [Expanded(child: TextField(controller: _hours, enabled: write, keyboardType: TextInputType.number, decoration: InputDecoration(labelText: ar ? 'ذكّر بعد (ساعات)' : 'Remind after (hours)', isDense: true))), const SizedBox(width: 8), Expanded(child: TextField(controller: _coupon, enabled: write, textDirection: TextDirection.ltr, decoration: InputDecoration(labelText: ar ? 'كوبون (اختياري)' : 'Coupon (optional)', isDense: true)))]),
-      SwitchListTile(contentPadding: EdgeInsets.zero, title: Text(ar ? 'اسمح بالرسائل المدفوعة' : 'Allow paid messages'), subtitle: Text(ar ? 'خارج نافذة الـ٢٤ ساعة كل رسالة بتتخصم من رصيدك (حوالي ${s.money(widget.settings['messagePriceMinor'] as num?, widget.ctx.currency)}، السعر بتحدده المنصة وممكن يختلف عن سعر ميتا). وميتا بتعتبر تذكير السلة رسالة تسويقية. متوقف إلا لو شغّلته.' : 'Outside the 24-hour window each message is charged from your credit (about ${s.money(widget.settings['messagePriceMinor'] as num?, widget.ctx.currency)}; the platform sets this and it may differ from the Meta rate). Meta treats a cart reminder as a marketing message. Off unless you turn it on.'), value: _paid, onChanged: write && _on ? (v) => setState(() => _paid = v) : null),
+      SendModePicker(ctx: widget.ctx, value: _mode, enabled: write, onChanged: (m) => setState(() => _mode = m), onLinked: (l) { if (_linked != l) { WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) setState(() => _linked = l); }); } }),
+      if (!(_linked && _mode == 'FREE')) SwitchListTile(contentPadding: EdgeInsets.zero, title: Text(ar ? 'اسمح بالرسائل المدفوعة' : 'Allow paid messages'), subtitle: Text(ar ? 'خارج نافذة الـ٢٤ ساعة كل رسالة بتتخصم من رصيدك (حوالي ${s.money(widget.settings['messagePriceMinor'] as num?, widget.ctx.currency)}، السعر بتحدده المنصة وممكن يختلف عن سعر ميتا). وميتا بتعتبر تذكير السلة رسالة تسويقية. متوقف إلا لو شغّلته.' : 'Outside the 24-hour window each message is charged from your credit (about ${s.money(widget.settings['messagePriceMinor'] as num?, widget.ctx.currency)}; the platform sets this and it may differ from the Meta rate). Meta treats a cart reminder as a marketing message. Off unless you turn it on.'), value: _paid, onChanged: write && _on ? (v) => setState(() => _paid = v) : null),
       if (write) FilledButton(onPressed: () async {
-        if (await run(context, () async { await widget.ctx.api.put('store/carts/settings', {'recoveryEnabled': _on, 'allowPaid': _paid, 'remindAfterHours': int.tryParse(_hours.text) ?? 24, 'couponCode': _coupon.text.trim()}); }) && context.mounted) { toast(context, ar ? 'تم الحفظ' : 'Saved'); widget.onSaved(); }
+        if (await run(context, () async { await widget.ctx.api.put('store/carts/settings', {'recoveryEnabled': _on, 'allowPaid': _paid, 'remindAfterHours': int.tryParse(_hours.text) ?? 24, 'couponCode': _coupon.text.trim(), 'sendMode': _linked ? _mode : 'PAID'}); }) && context.mounted) { toast(context, ar ? 'تم الحفظ' : 'Saved'); widget.onSaved(); }
       }, child: Text(ar ? 'حفظ' : 'Save')),
     ])));
   }
@@ -126,48 +131,134 @@ class _Segments extends StatefulWidget {
   State<_Segments> createState() => _SegmentsState();
 }
 
+const _emoji = ['😀', '😍', '🥰', '😎', '🤩', '🙏', '👍', '👏', '🔥', '✨', '🎉', '🎁', '💥', '💯', '❤️', '🛍️', '🛒', '🏷️', '💸', '💰', '⭐', '🌟', '⏰', '📣', '📦', '🚚', '✅', '👇', '👉', '🌸', '☀️', '🌙', '🎊', '🥳', '😉', '🤝', '💐', '🧡', '💙', '🆕'];
+
 class _SegmentsState extends State<_Segments> with AutomaticKeepAliveClientMixin {
   @override
   bool get wantKeepAlive => true;
-  String _key = 'NEW';
-  final _msg = TextEditingController();
+  String _key = 'ALL', _way = 'PAID';
+  final _msg = TextEditingController(), _pushTitle = TextEditingController();
+  String? _image;
+  bool _push = false, _onlyConsented = false, _linked = false, _busy = false;
   int _gen = 0;
 
   @override
-  void dispose() { _msg.dispose(); super.dispose(); }
+  void dispose() { _msg.dispose(); _pushTitle.dispose(); super.dispose(); }
+
+  void _insert(String t) {
+    final v = _msg.value;
+    final a = v.selection.isValid ? v.selection.start : v.text.length, b = v.selection.isValid ? v.selection.end : v.text.length;
+    final text = v.text.replaceRange(a, b, t);
+    _msg.value = TextEditingValue(text: text.length > 1000 ? text.substring(0, 1000) : text, selection: TextSelection.collapsed(offset: a + t.length));
+    setState(() {});
+  }
+
+  void _wrap(String mark) {
+    final v = _msg.value;
+    if (!v.selection.isValid) return;
+    final a = v.selection.start, b = v.selection.end;
+    _msg.value = TextEditingValue(text: '${v.text.substring(0, a)}$mark${v.text.substring(a, b)}$mark${v.text.substring(b)}', selection: TextSelection(baseOffset: a + mark.length, extentOffset: b + mark.length));
+    setState(() {});
+  }
+
+  Future<void> _emojiSheet() => showModalBottomSheet<void>(context: context, builder: (c) => Padding(padding: const EdgeInsets.all(12), child: GridView.count(crossAxisCount: 8, shrinkWrap: true, children: [for (final e in _emoji) InkWell(onTap: () { Navigator.pop(c); _insert(e); }, child: Center(child: Text(e, style: const TextStyle(fontSize: 26))))])));
+
+  Future<void> _pickImage() async {
+    final id = await pickAndUpload(context, widget.ctx.api, 'PRODUCT_IMAGE', aspect: 4 / 3);
+    if (id != null && mounted) setState(() => _image = id);
+  }
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
     final s = S.of(context);
     final ar = s.ar;
-    const names = {'NEW': ('جدد', 'New'), 'REPEAT': ('متكررين', 'Repeat'), 'VIP': ('VIP', 'VIP'), 'AT_RISK': ('معرضين للفقد', 'At risk'), 'LAPSED': ('غايبين', 'Lapsed')};
+    final cur = widget.ctx.currency;
+    const names = {'ALL': ('كل العملاء', 'All customers'), 'NEW': ('جدد', 'New'), 'REPEAT': ('متكررين', 'Repeat'), 'VIP': ('VIP', 'VIP'), 'AT_RISK': ('معرضين للفقد', 'At risk'), 'LAPSED': ('غايبين', 'Lapsed')};
     return Async<List<dynamic>>(
       key: ValueKey('sg$_key$_gen'),
-      load: () async => [await widget.ctx.api.get('store/segments'), await widget.ctx.api.get('store/segments/$_key')],
+      load: () async => [await widget.ctx.api.get('store/segments'), await widget.ctx.api.get('store/segments/$_key'), await widget.ctx.api.get('store/broadcasts')],
       builder: (context, d, reload) {
-        final counts = (d[0] as Map)['segments'] as Map;
+        final top = d[0] as Map;
+        final counts = top['segments'] as Map;
+        final price = (top['messagePriceMinor'] as num?) ?? 300, balance = (top['balanceMinor'] as num?) ?? 0;
         final det = d[1] as Map<String, dynamic>;
         final pv = det['preview'] as Map<String, dynamic>;
+        final hist = _maps(d[2]);
+        final reachablePaid = (pv['reachableNow'] as num?) ?? 0;
+        final paidCost = reachablePaid * price;
+        final low = _way == 'PAID' && paidCost > balance;
+        final name = ar ? 'منى' : 'Mona';
+        final preview = _msg.text.replaceAll('{name}', name).replaceAll('{shop}', ar ? 'متجرك' : 'your shop');
+        Widget way(String w, String title, String hint) => Expanded(child: InkWell(borderRadius: BorderRadius.circular(14), onTap: () {
+              if (w == 'FREE' && !_linked) { openOwnNumberSettings(context, widget.ctx); return; }
+              setState(() => _way = w);
+            }, child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), border: Border.all(color: _way == w ? Theme.of(context).colorScheme.primary : const Color(0xFFD9E1E8), width: _way == w ? 2 : 1)),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)), const SizedBox(height: 3), Text(hint, style: const TextStyle(fontSize: 11, color: Color(0xFF475569)))]))));
         return RefreshIndicator(onRefresh: reload, child: ListView(padding: const EdgeInsets.all(16), children: [
           Wrap(spacing: 8, children: [for (final k in names.keys) ChoiceChip(label: Text('${ar ? names[k]!.$1 : names[k]!.$2} ${counts[k] ?? 0}'), selected: _key == k, onSelected: (_) => setState(() => _key = k))]),
           const SizedBox(height: 12),
           Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Text(ar ? 'رسالة واتساب للشريحة دي' : 'WhatsApp message to this segment', style: const TextStyle(fontWeight: FontWeight.w900)),
-            Text(ar ? '${pv['audience']} عميل، ${pv['withConsent']} وافقوا على واتساب، و${pv['reachableNow']} ينفع نبعتلهم مجانًا دلوقتي.' : '${pv['audience']} customers, ${pv['withConsent']} agreed to WhatsApp, ${pv['reachableNow']} can get a free message now.'),
-            _note(ar ? 'مجاني فقط: للعملاء اللي وافقوا وكلموك في آخر ٢٤ ساعة. مفيش رسالة مدفوعة بتتبعت أبدًا. رسالة جماعية واحدة في اليوم.' : 'Free only: customers who agreed and wrote to you in the last 24 hours. No paid message is ever sent. One broadcast a day.'),
+            Text(ar ? 'رسالة جديدة إلى: ${ar ? names[_key]!.$1 : names[_key]!.$2}' : 'New message to: ${names[_key]!.$2}', style: const TextStyle(fontWeight: FontWeight.w900)),
+            const SizedBox(height: 8),
+            Wrap(spacing: 6, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
+              ActionChip(avatar: const Icon(Icons.add, size: 16), label: Text(ar ? 'اسم العميل' : 'Customer name'), onPressed: () => _insert('{name}')),
+              ActionChip(avatar: const Icon(Icons.add, size: 16), label: Text(ar ? 'اسم المتجر' : 'Shop name'), onPressed: () => _insert('{shop}')),
+              IconButton.outlined(visualDensity: VisualDensity.compact, onPressed: () => _wrap('*'), icon: const Icon(Icons.format_bold_rounded)),
+              IconButton.outlined(visualDensity: VisualDensity.compact, onPressed: () => _wrap('_'), icon: const Icon(Icons.format_italic_rounded)),
+              IconButton.outlined(visualDensity: VisualDensity.compact, onPressed: _emojiSheet, icon: const Icon(Icons.emoji_emotions_outlined)),
+              IconButton.outlined(visualDensity: VisualDensity.compact, onPressed: _pickImage, icon: const Icon(Icons.image_outlined)),
+            ]),
+            const SizedBox(height: 8),
+            TextField(controller: _msg, maxLines: 5, maxLength: 1000, onChanged: (_) => setState(() {}), decoration: InputDecoration(hintText: ar ? 'اكتب رسالتك. اضغط «اسم العميل» لإضافة الاسم الأول لكل عميل.' : 'Write your message. Tap “Customer name” to add each customer\'s first name.')),
+            if (_image != null) Align(alignment: AlignmentDirectional.centerStart, child: Stack(clipBehavior: Clip.none, children: [
+              ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.network(fileUrl(widget.ctx, _image!), width: 96, height: 96, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(width: 96, height: 96, color: const Color(0xFFE8EEF4), child: const Icon(Icons.image)))),
+              PositionedDirectional(end: -8, top: -8, child: InkWell(onTap: () => setState(() => _image = null), child: const CircleAvatar(radius: 12, backgroundColor: Color(0xFFDC2626), child: Icon(Icons.close, size: 14, color: Colors.white)))),
+            ])),
+            const SizedBox(height: 8),
+            Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFFDCF8C6), borderRadius: BorderRadius.circular(14)), child: Text(preview.isEmpty ? (ar ? 'رسالتك هتظهر هنا' : 'Your message appears here') : preview, style: TextStyle(color: preview.isEmpty ? Colors.black45 : Colors.black87))),
             const SizedBox(height: 12),
-            TextField(controller: _msg, maxLines: 3, maxLength: 800, decoration: InputDecoration(labelText: ar ? 'الرسالة ({name} = أول اسم العميل)' : 'Message ({name} = first name)')),
-            FilledButton(onPressed: () async {
+            Text(ar ? 'ابعت عن طريق' : 'Send through', style: const TextStyle(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 6),
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              way('FREE', ar ? '🆓 مجاني: رقمي' : '🆓 Free: my number', _linked ? (ar ? 'بالتدريج، مرة في اليوم' : 'Paced, once a day') : (ar ? 'اربط رقمك الأول' : 'Link your number first')),
+              const SizedBox(width: 6),
+              way('PAID', ar ? '💳 مدفوع' : '💳 Paid', ar ? '${s.money(price, cur)} للعميل، جوه نافذة الـ٢٤ ساعة' : '${s.money(price, cur)} each, inside the 24h window'),
+              const SizedBox(width: 6),
+              way('NONE', ar ? '📵 بدون واتساب' : '📵 No WhatsApp', ar ? 'إشعار التطبيق بس' : 'App notification only'),
+            ]),
+            Offstage(offstage: true, child: SendModePicker(ctx: widget.ctx, value: 'PAID', onChanged: (_) {}, onLinked: (l) { if (_linked != l) { WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) setState(() { _linked = l; if (l && _way == 'PAID') _way = 'FREE'; }); }); } })),
+            SwitchListTile(contentPadding: EdgeInsets.zero, title: Text(ar ? 'ابعت كمان كإشعار على التليفون' : 'Also send as a phone notification'), subtitle: Text(ar ? '${pv['appUsers']} عندهم التطبيق' : '${pv['appUsers']} have the app'), value: _push, onChanged: (v) => setState(() => _push = v)),
+            if (_push) TextField(controller: _pushTitle, maxLength: 80, decoration: InputDecoration(labelText: ar ? 'عنوان الإشعار (فاضي = اسم متجرك)' : 'Notification title (empty = shop name)', isDense: true)),
+            if (_way == 'FREE') CheckboxListTile(contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading, value: _onlyConsented, onChanged: (v) => setState(() => _onlyConsented = v ?? false), title: Text(ar ? 'العملاء اللي وافقوا على واتساب بس' : 'Only customers who agreed to WhatsApp', style: const TextStyle(fontSize: 13.5))),
+            Container(margin: const EdgeInsets.only(top: 6), padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(12)), child: Text(
+              _way == 'FREE' ? (ar ? 'مجانًا من رقمك: ${_onlyConsented ? pv['withConsent'] : pv['freeReachable']} عميل (بتتبعت كام رسالة في الدقيقة).' : 'Free through your number: ${_onlyConsented ? pv['withConsent'] : pv['freeReachable']} customers (a few per minute).')
+              : _way == 'PAID' ? (ar ? 'مدفوع: ${pv['reachableNow']} عميل ينفع يوصلهم دلوقتي. التكلفة ${s.money(paidCost, cur)}. رصيدك ${s.money(balance, cur)}.' : 'Paid: ${pv['reachableNow']} customers reachable now. Cost ${s.money(paidCost, cur)}. Your credit ${s.money(balance, cur)}.')
+              : (ar ? 'مش هتتبعت رسالة واتساب.' : 'No WhatsApp message will be sent.'), style: const TextStyle(fontSize: 12.5))),
+            if (_way == 'FREE') _note(ar ? 'طريقة غير رسمية: واتساب ممكن يحظر الرقم لو العملاء بلّغوا إن الرسالة مزعجة.' : 'Unofficial route: WhatsApp can ban the number if customers report the message as spam.'),
+            if (low) Text(ar ? 'رصيد واتساب مش كفاية: المطلوب ${s.money(paidCost, cur)}.' : 'Not enough WhatsApp credit: needs ${s.money(paidCost, cur)}.', style: const TextStyle(color: Color(0xFFB91C1C), fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            FilledButton(onPressed: _busy || _msg.text.trim().length < 3 || (_way == 'NONE' && !_push) || low ? null : () async {
+              setState(() => _busy = true);
               Map<String, dynamic>? r;
-              if (await run(context, () async { r = await widget.ctx.api.post('store/broadcasts', {'segment': _key, 'message': _msg.text}) as Map<String, dynamic>; }) && context.mounted) {
-                toast(context, ar ? 'اتبعت ${r!['sent']}. اتخطى: ${r!['skippedNoWindow']} برا نافذة الـ٢٤ ساعة، ${r!['skippedNoConsent']} من غير موافقة.' : 'Sent ${r!['sent']}. Skipped: ${r!['skippedNoWindow']} outside the 24h window, ${r!['skippedNoConsent']} without consent.');
-                _msg.clear(); setState(() => _gen++);
+              final ok = await run(context, () async { r = await widget.ctx.api.post('store/broadcasts', {'segment': _key, 'message': _msg.text, if (_image != null) 'imageFileId': _image, 'mode': _way, 'push': _push, if (_pushTitle.text.trim().isNotEmpty) 'pushTitle': _pushTitle.text.trim(), 'onlyConsented': _onlyConsented}) as Map<String, dynamic>; });
+              if (!mounted) return;
+              setState(() => _busy = false);
+              if (ok) {
+                toast(context, ar ? 'اتجهّزت ${r!['queued']} رسالة واتساب، واتبعت ${r!['pushSent']} إشعار.' : 'Queued ${r!['queued']} WhatsApp messages, ${r!['pushSent']} notifications sent.');
+                _msg.clear(); _image = null; setState(() => _gen++);
               }
             }, child: Text(ar ? 'ابعت' : 'Send')),
           ]))),
+          if (hist.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(ar ? 'الرسائل السابقة' : 'Past broadcasts', style: const TextStyle(fontWeight: FontWeight.w900)),
+            for (final h in hist.take(10)) ListTile(dense: true, contentPadding: EdgeInsets.zero,
+              title: Text('${h['message']}', maxLines: 2, overflow: TextOverflow.ellipsis),
+              subtitle: Text('${h['mode'] == 'FREE' ? (ar ? 'مجاني' : 'Free') : h['mode'] == 'PAID' ? (ar ? 'مدفوع' : 'Paid') : (ar ? 'تطبيق' : 'App')} · ${h['sentCount']} ✓${(h['failedCount'] as num) > 0 ? ' · ${h['failedCount']} ✗' : ''}${h['status'] == 'SENDING' ? ' · ${ar ? 'فاضل' : 'left'} ${h['pendingCount']}' : ''}')),
+          ],
           const SizedBox(height: 8),
-          for (final c in _maps(det['customers'])) ListTile(dense: true, contentPadding: EdgeInsets.zero, title: Text('${c['name'] ?? ''}'), subtitle: Text('${c['phone']}', textDirection: TextDirection.ltr), trailing: Text('${c['orders']} · ${s.money(c['spent'] as num?, widget.ctx.currency)}${c['whatsappConsent'] == true ? ' ✓' : ''}')),
+          for (final c in _maps(det['customers'])) ListTile(dense: true, contentPadding: EdgeInsets.zero, title: Text('${c['name'] ?? ''}'), subtitle: Text('${c['phone']}', textDirection: TextDirection.ltr), trailing: Text('${c['orders']} · ${s.money(c['spent'] as num, cur)}')),
         ]));
       },
     );

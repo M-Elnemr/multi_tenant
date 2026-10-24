@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 public class CartController {
     public record SnapshotReq(String clientKey, String name, String phone, List<CartRecoveryService.Line> items) {}
-    public record SettingsReq(Boolean recoveryEnabled, Boolean allowPaid, Integer remindAfterHours, String couponCode) {}
+    public record SettingsReq(Boolean recoveryEnabled, Boolean allowPaid, Integer remindAfterHours, String couponCode, String sendMode) {}
 
     private final CartRecoveryService carts;
     private final CodRiskService risk;
@@ -40,7 +40,7 @@ public class CartController {
 
     @PutMapping("/api/v1/store/carts/settings")
     @PreAuthorize("hasAuthority('cart.manage')")
-    public Map<String, Object> settings(@RequestBody SettingsReq r, Authentication a) { return carts.saveSettings(StoreContext.tenantId(), (UUID) a.getPrincipal(), r.recoveryEnabled(), r.allowPaid(), r.remindAfterHours(), r.couponCode()); }
+    public Map<String, Object> settings(@RequestBody SettingsReq r, Authentication a) { return carts.saveSettings(StoreContext.tenantId(), (UUID) a.getPrincipal(), r.recoveryEnabled(), r.allowPaid(), r.remindAfterHours(), r.couponCode(), r.sendMode()); }
 
     @PostMapping("/api/v1/store/carts/{id}/remind")
     @PreAuthorize("hasAuthority('cart.manage')")

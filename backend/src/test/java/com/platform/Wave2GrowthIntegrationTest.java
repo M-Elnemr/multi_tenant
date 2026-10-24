@@ -109,7 +109,7 @@ class Wave2GrowthIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void segmentsAndBroadcastsNeverCostMoney() throws Exception {
+    void segmentsAreComputedFromOrdersAndCountConsentAndOpenWindows() throws Exception {
         Shop s = shop();
         String h = s.t().host(), owner = s.t().access();
         String vip = phone(), fresh = phone(), silent = phone();
@@ -128,14 +128,7 @@ class Wave2GrowthIntegrationTest extends IntegrationTestBase {
         onHost(h, owner, "POST", "/api/v1/store/ai/channels", "{\"platform\":\"WHATSAPP\",\"externalId\":\"%s\",\"accessToken\":\"EAAG-secret-token-0123456789\"}".formatted("7" + System.nanoTime())).andExpect(status().isCreated());
         jdbc.sql("INSERT INTO chat.wa_windows (tenant_id, number, last_inbound_at) VALUES (:t, :n, now())").param("t", s.id()).param("n", "2" + fresh).update();
         onHost(h, owner, "GET", "/api/v1/store/segments/NEW", null).andExpect(jsonPath("$.preview.audience").value(2)).andExpect(jsonPath("$.preview.withConsent").value(2)).andExpect(jsonPath("$.preview.reachableNow").value(1));
-        FakeMetaGraph.SENT.clear();
-        onHost(h, owner, "POST", "/api/v1/store/broadcasts", "{\"segment\":\"NEW\",\"message\":\"Hi {name}, new arrivals today\"}").andExpect(status().isOk())
-                .andExpect(jsonPath("$.sent").value(1)).andExpect(jsonPath("$.skippedNoWindow").value(1)).andExpect(jsonPath("$.skippedNoConsent").value(0));
-        assertThat(FakeMetaGraph.SENT.stream().filter(x -> "text".equals(x.body().get("type"))).count()).isEqualTo(1);
-        assertThat(FakeMetaGraph.SENT.stream().noneMatch(x -> "template".equals(x.body().get("type")))).isTrue();   // never a paid template
-        assertThat(String.valueOf(FakeMetaGraph.SENT.get(0).body())).contains("Hi Mona");
-        onHost(h, owner, "POST", "/api/v1/store/broadcasts", "{\"segment\":\"NEW\",\"message\":\"Second one today\"}").andExpect(status().isConflict());   // one a day
-        onHost(h, owner, "GET", "/api/v1/store/broadcasts", null).andExpect(jsonPath("$.length()").value(1));
+        // the broadcast rules (free / paid / app notification) have their own test in SendModesIntegrationTest
         Shop other = shop();
         onHost(other.t().host(), other.t().access(), "GET", "/api/v1/store/segments", null).andExpect(jsonPath("$.segments.VIP").value(0));
         onHost(h, null, "GET", "/api/v1/store/segments", null).andExpect(status().isUnauthorized());

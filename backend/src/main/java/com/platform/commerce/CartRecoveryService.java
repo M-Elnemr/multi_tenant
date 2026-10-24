@@ -119,18 +119,24 @@ public class CartRecoveryService {
     // ---- settings ----------------------------------------------------------------------------------------------------------
 
     public Map<String, Object> settings(UUID tenantId) {
-        var r = jdbc.sql("SELECT recovery_enabled, allow_paid, remind_after_hours, coupon_code FROM commerce.cart_settings WHERE tenant_id = :t").param("t", tenantId).query().listOfRows().stream().findFirst().orElse(null);
+        var r = jdbc.sql("SELECT recovery_enabled, allow_paid, remind_after_hours, coupon_code, send_mode FROM commerce.cart_settings WHERE tenant_id = :t").param("t", tenantId).query().listOfRows().stream().findFirst().orElse(null);
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("recoveryEnabled", r != null && Boolean.TRUE.equals(r.get("recovery_enabled")));
         m.put("allowPaid", r != null && Boolean.TRUE.equals(r.get("allow_paid")));
         m.put("remindAfterHours", r == null ? 24 : r.get("remind_after_hours"));
         m.put("couponCode", r == null ? null : r.get("coupon_code"));
+        m.put("sendMode", r == null ? "PAID" : r.get("send_mode"));
         m.put("messagePriceMinor", priceMinor);
         return m;
     }
 
-    public Map<String, Object> saveSettings(UUID tenantId, UUID actor, Boolean enabled, Boolean allowPaid, Integer hours, String coupon) {
+    public Map<String, Object> saveSettings(UUID tenantId, UUID actor, Boolean enabled, Boolean allowPaid, Integer hours, String coupon) { return saveSettings(tenantId, actor, enabled, allowPaid, hours, coupon, null); }
+
+    public Map<String, Object> saveSettings(UUID tenantId, UUID actor, Boolean enabled, Boolean allowPaid, Integer hours, String coupon, String sendMode) {
+        if (sendMode != null && !List.of("PAID", "FREE").contains(sendMode)) throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown way of sending");
+        if ("FREE".equals(sendMode) && !evolution.connected(tenantId)) throw BusinessException.conflict("EVOLUTION_OFF", "Link your own WhatsApp number first");
         var cur = settings(tenantId);
+        String mode = sendMode != null ? sendMode : (String) cur.get("sendMode");
         boolean e = enabled != null ? enabled : (Boolean) cur.get("recoveryEnabled");
         boolean p = allowPaid != null ? allowPaid : (Boolean) cur.get("allowPaid");
         int h = hours != null ? hours : ((Number) cur.get("remindAfterHours")).intValue();
@@ -140,8 +146,8 @@ public class CartRecoveryService {
         if (c != null && jdbc.sql("SELECT count(*) FROM commerce.coupons WHERE tenant_id = :t AND upper(code) = :c AND is_active").param("t", tenantId).param("c", c).query(Long.class).single() == 0)
             throw BusinessException.badRequest("COUPON_INVALID", "That coupon does not exist or is switched off");
         if (!e) p = false;   // paid messages make no sense without recovery
-        jdbc.sql("INSERT INTO commerce.cart_settings (tenant_id, recovery_enabled, allow_paid, remind_after_hours, coupon_code) VALUES (:t, :e, :p, :h, :c) ON CONFLICT (tenant_id) DO UPDATE SET recovery_enabled = :e, allow_paid = :p, remind_after_hours = :h, coupon_code = :c, updated_at = now()")
-                .param("t", tenantId).param("e", e).param("p", p).param("h", h).param("c", c).update();
+        jdbc.sql("INSERT INTO commerce.cart_settings (tenant_id, recovery_enabled, allow_paid, remind_after_hours, coupon_code, send_mode) VALUES (:t, :e, :p, :h, :c, :sm) ON CONFLICT (tenant_id) DO UPDATE SET recovery_enabled = :e, allow_paid = :p, remind_after_hours = :h, coupon_code = :c, send_mode = :sm, updated_at = now()")
+                .param("t", tenantId).param("e", e).param("p", p).param("h", h).param("c", c).param("sm", mode).update();
         audit.record(actor, tenantId, "SETTINGS_CHANGED", "cart_recovery", null, null);
         return settings(tenantId);
     }
@@ -235,7 +241,8 @@ public class CartRecoveryService {
         String phone = ((String) c.get("phone")).replaceAll("\\D", "");
         String name = (String) c.get("name");
         var settings = settings(tenantId);
-        if (evolution.connected(tenantId)) {   // the shop's own linked number: a normal free message, no window, no template, no charge
+        if ("FREE".equals(settings.get("sendMode"))) {   // the shop chose its own linked number: a normal free message, no window, no template, no charge; never the paid route instead
+            if (!evolution.connected(tenantId)) return manual ? "NO_CHANNEL" : finish(cartId, "NO_CHANNEL");
             String url = urls.baseUrl(urls.hosts(List.of(tenantId)).get(tenantId)) + "/cart";
             String cp = (String) settings.get("couponCode");
             String who = name == null || name.isBlank() ? "" : name.trim().split("\\s+")[0];

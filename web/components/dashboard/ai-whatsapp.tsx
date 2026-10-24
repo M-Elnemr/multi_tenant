@@ -6,10 +6,11 @@ import { useAction, useApi } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Alert, Button, ErrorText, Field, Input, StatusBadge } from "@/components/ui";
 import { dateTime, money } from "@/lib/format";
+import { SendModePicker, useOwnNumber, type SendMode } from "./send-mode";
 import { WabaDialog } from "./waba-dialog";
 
 type Overview = {
-  settings: { enabled: boolean; confirmAfterHours: number; reminderEnabled: boolean; reminderAfterHours: number; brandName?: string | null };
+  settings: { enabled: boolean; confirmAfterHours: number; reminderEnabled: boolean; reminderAfterHours: number; brandName?: string | null; sendMode?: SendMode };
   readiness: { channelConnected: boolean; wabaKnown: boolean; templatesApproved: boolean; hasCredit: boolean };
   templates: { name: string; status: string; rejectedReason?: string }[];
   balanceMinor: number; priceMinor: number;
@@ -30,11 +31,12 @@ export function AiWhatsApp({ write }: { write: boolean }) {
   const [saved, setSaved] = useState(false);
   const [amount, setAmount] = useState(10000);
   const [wabaOpen, setWabaOpen] = useState(false);
+  const own = useOwnNumber();
   const f = data ? { ...data.settings, ...edit } : null;
 
   const save = useAction(async () => {
     if (!f) return;
-    await api("store/ai/whatsapp", { method: "PUT", body: { enabled: f.enabled, confirmAfterHours: f.confirmAfterHours, reminderEnabled: f.reminderEnabled, reminderAfterHours: f.reminderAfterHours, brandName: f.brandName ?? "" } });
+    await api("store/ai/whatsapp", { method: "PUT", body: { enabled: f.enabled, confirmAfterHours: f.confirmAfterHours, reminderEnabled: f.reminderEnabled, reminderAfterHours: f.reminderAfterHours, brandName: f.brandName ?? "", sendMode: own.linked ? (f.sendMode ?? "PAID") : "PAID" } });
     setEdit({}); setSaved(true); await reload();
   });
   const templates = useAction(async (path: string) => { await api(`store/ai/whatsapp/${path}`, { body: {} }); await reload(); });
@@ -49,6 +51,12 @@ export function AiWhatsApp({ write }: { write: boolean }) {
       <Alert tone="blue">{t("wa.intro", { price })}</Alert>
 
       <section className="space-y-2 rounded-xl border bg-white p-4">
+        <h3 className="font-semibold">{t("sm.title")}</h3>
+        <SendModePicker value={own.linked ? (f.sendMode ?? "PAID") : "PAID"} onChange={(m) => setEdit({ ...edit, sendMode: m })} disabled={!write} />
+        {own.linked && f.sendMode === "FREE" && <Alert tone="green">{t("wa.freeInfo")}</Alert>}
+      </section>
+
+      {!(own.linked && f.sendMode === "FREE") && <section className="space-y-2 rounded-xl border bg-white p-4">
         <h3 className="font-semibold">{t("wa.readiness")}</h3>
         <ul className="space-y-1.5">
           <Check ok={data.readiness.channelConnected} label={t("wa.r.channel")} />
@@ -57,7 +65,7 @@ export function AiWhatsApp({ write }: { write: boolean }) {
           <Check ok={data.readiness.hasCredit} label={t("wa.r.credit")} />
         </ul>
         {!ready && <p className="text-xs text-slate-500">{t("wa.r.note")}</p>}
-      </section>
+      </section>}
 
       <form onSubmit={(e) => { e.preventDefault(); setSaved(false); void save.run(); }} className="space-y-4 rounded-xl border bg-white p-4">
         <fieldset disabled={!write} className="space-y-4 disabled:opacity-70">

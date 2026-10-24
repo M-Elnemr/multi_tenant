@@ -57,31 +57,38 @@ public class WhatsAppAutoConfirmService {
     // ---- settings --------------------------------------------------------------------------------------------
 
     public Map<String, Object> settings(UUID tenantId) {
-        var r = jdbc.sql("SELECT auto_confirm_enabled, confirm_after_hours, reminder_enabled, reminder_after_hours, brand_name FROM chat.wa_settings WHERE tenant_id = :t").param("t", tenantId).query().listOfRows().stream().findFirst();
+        var r = jdbc.sql("SELECT auto_confirm_enabled, confirm_after_hours, reminder_enabled, reminder_after_hours, brand_name, send_mode FROM chat.wa_settings WHERE tenant_id = :t").param("t", tenantId).query().listOfRows().stream().findFirst();
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("enabled", r.map(x -> x.get("auto_confirm_enabled")).orElse(false));
         m.put("confirmAfterHours", r.map(x -> x.get("confirm_after_hours")).orElse(22));
         m.put("reminderEnabled", r.map(x -> x.get("reminder_enabled")).orElse(true));
         m.put("reminderAfterHours", r.map(x -> x.get("reminder_after_hours")).orElse(24));
         m.put("brandName", r.map(x -> x.get("brand_name")).orElse(null));
+        m.put("sendMode", r.map(x -> x.get("send_mode")).orElse("PAID"));
         return m;
     }
 
     public Map<String, Object> saveSettings(UUID tenantId, UUID actor, Boolean enabled, Integer confirmAfter, Boolean reminderEnabled, Integer reminderAfter, String brandName) {
+        return saveSettings(tenantId, actor, enabled, confirmAfter, reminderEnabled, reminderAfter, brandName, null);
+    }
+
+    public Map<String, Object> saveSettings(UUID tenantId, UUID actor, Boolean enabled, Integer confirmAfter, Boolean reminderEnabled, Integer reminderAfter, String brandName, String sendMode) {
+        if (sendMode != null && !List.of("PAID", "FREE").contains(sendMode)) throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown way of sending");
+        if ("FREE".equals(sendMode) && !evolution.connected(tenantId)) throw BusinessException.conflict("EVOLUTION_OFF", "Link your own WhatsApp number first");
         if (confirmAfter != null && (confirmAfter < 1 || confirmAfter > 72)) throw BusinessException.badRequest("VALIDATION_ERROR", "The delay must be between 1 and 72 hours");
         if (reminderAfter != null && (reminderAfter < 1 || reminderAfter > 72)) throw BusinessException.badRequest("VALIDATION_ERROR", "The reminder delay must be between 1 and 72 hours");
         if (brandName != null && brandName.trim().length() > 40) throw BusinessException.badRequest("VALIDATION_ERROR", "The shop name is too long (40 letters at most)");
         boolean wasOn = Boolean.TRUE.equals(settings(tenantId).get("enabled"));
         jdbc.sql("""
-                INSERT INTO chat.wa_settings (tenant_id, auto_confirm_enabled, enabled_at, confirm_after_hours, reminder_enabled, reminder_after_hours, brand_name)
-                VALUES (:t, coalesce(:e, FALSE), CASE WHEN coalesce(:e, FALSE) THEN now() END, coalesce(:c, 22), coalesce(:re, TRUE), coalesce(:r, 24), :b)
+                INSERT INTO chat.wa_settings (tenant_id, auto_confirm_enabled, enabled_at, confirm_after_hours, reminder_enabled, reminder_after_hours, brand_name, send_mode)
+                VALUES (:t, coalesce(:e, FALSE), CASE WHEN coalesce(:e, FALSE) THEN now() END, coalesce(:c, 22), coalesce(:re, TRUE), coalesce(:r, 24), :b, coalesce(:sm, 'PAID'))
                 ON CONFLICT (tenant_id) DO UPDATE SET
                   auto_confirm_enabled = coalesce(:e, chat.wa_settings.auto_confirm_enabled),
                   enabled_at = CASE WHEN :e IS TRUE AND NOT chat.wa_settings.auto_confirm_enabled THEN now() ELSE chat.wa_settings.enabled_at END,
                   confirm_after_hours = coalesce(:c, chat.wa_settings.confirm_after_hours), reminder_enabled = coalesce(:re, chat.wa_settings.reminder_enabled),
-                  reminder_after_hours = coalesce(:r, chat.wa_settings.reminder_after_hours), brand_name = CASE WHEN :setb THEN :b ELSE chat.wa_settings.brand_name END, updated_at = now()
+                  reminder_after_hours = coalesce(:r, chat.wa_settings.reminder_after_hours), send_mode = coalesce(:sm, chat.wa_settings.send_mode), brand_name = CASE WHEN :setb THEN :b ELSE chat.wa_settings.brand_name END, updated_at = now()
                 """).param("t", tenantId).param("e", enabled).param("c", confirmAfter).param("re", reminderEnabled).param("r", reminderAfter)
-                .param("b", brandName == null || brandName.isBlank() ? null : brandName.trim()).param("setb", brandName != null).update();
+                .param("b", brandName == null || brandName.isBlank() ? null : brandName.trim()).param("setb", brandName != null).param("sm", sendMode).update();
         audit.record(actor, tenantId, "SETTINGS_CHANGED", "whatsapp_auto_confirm", null, null);
         return settings(tenantId);
     }
@@ -183,7 +190,7 @@ public class WhatsAppAutoConfirmService {
     public synchronized int runOnce(Instant now, UUID onlyTenant) {
         var rows = jdbc.sql("""
                 SELECT o.id, o.tenant_id, o.order_number, o.customer_name_snapshot, o.whatsapp_number, o.created_at,
-                       s.confirm_after_hours, s.reminder_enabled, s.reminder_after_hours, s.brand_name,
+                       s.confirm_after_hours, s.reminder_enabled, s.reminder_after_hours, s.brand_name, s.send_mode,
                        c.status AS cstatus, c.attempts AS cattempts, c.sent_at AS csent,
                        r.status AS rstatus, r.attempts AS rattempts
                 FROM commerce.orders o
@@ -220,7 +227,8 @@ public class WhatsAppAutoConfirmService {
     private boolean attempt(String kind, Map<String, Object> row, Instant now) {
         UUID tenantId = (UUID) row.get("tenant_id"), orderId = (UUID) row.get("id");
         String orderNo = (String) row.get("order_number"), to = ((String) row.get("whatsapp_number")).replaceAll("\\D", "");
-        if (evolution.connected(tenantId)) {   // the shop's own linked number: a normal free message, no template and no charge
+        if ("FREE".equals(row.get("send_mode"))) {   // the shop chose its own linked number: a normal free message, no template and no charge; nothing is ever sent through the paid route instead
+            if (!evolution.connected(tenantId)) return false;
             String text = confirm.askText(tenantId, to, orderNo).orElse(null);
             if (text == null) return false;
             boolean ok = evolution.sendFree(tenantId, to, text);

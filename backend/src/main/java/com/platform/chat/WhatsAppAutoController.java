@@ -32,7 +32,7 @@ public class WhatsAppAutoController {
         this.wallet = wallet;
     }
 
-    public record SettingsRequest(Boolean enabled, Integer confirmAfterHours, Boolean reminderEnabled, Integer reminderAfterHours, String brandName) {}
+    public record SettingsRequest(Boolean enabled, Integer confirmAfterHours, Boolean reminderEnabled, Integer reminderAfterHours, String brandName, String sendMode) {}
     public record TopupRequest(long amountMinor, String phone, String note) {}
     public record HandleRequest(boolean approve, String adminNote) {}
     public record AdjustRequest(UUID tenantId, long amountMinor, String note) {}
@@ -54,7 +54,7 @@ public class WhatsAppAutoController {
     @PutMapping("/store/ai/whatsapp")
     @PreAuthorize("hasAuthority('ai.manage')")
     public Map<String, Object> save(@RequestBody SettingsRequest r, Authentication a) {
-        return auto.saveSettings(StoreContext.tenantId(), (UUID) a.getPrincipal(), r.enabled(), r.confirmAfterHours(), r.reminderEnabled(), r.reminderAfterHours(), r.brandName());
+        return auto.saveSettings(StoreContext.tenantId(), (UUID) a.getPrincipal(), r.enabled(), r.confirmAfterHours(), r.reminderEnabled(), r.reminderAfterHours(), r.brandName(), r.sendMode());
     }
 
     @PostMapping("/store/ai/whatsapp/templates")

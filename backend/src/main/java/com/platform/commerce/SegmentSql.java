@@ -11,7 +11,8 @@ public final class SegmentSql {
                      count(*) FILTER (WHERE status = 'ARRIVED') AS delivered,
                      coalesce(sum(total_minor) FILTER (WHERE status NOT IN ('CANCELLED','RETURNED','REFUNDED','PENDING')), 0) AS spent,
                      max(created_at) FILTER (WHERE status NOT IN ('CANCELLED','PENDING')) AS last_order,
-                     max(whatsapp_number) FILTER (WHERE whatsapp_opt_in_at IS NOT NULL) AS wa
+                     max(whatsapp_number) FILTER (WHERE whatsapp_opt_in_at IS NOT NULL) AS wa,
+                     (array_agg(user_id) FILTER (WHERE user_id IS NOT NULL))[1] AS uid
               FROM commerce.orders WHERE tenant_id = :t GROUP BY customer_phone_snapshot
             ), s AS (
               SELECT c.*, CASE

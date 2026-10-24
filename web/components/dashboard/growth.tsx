@@ -1,10 +1,14 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { api } from "@/lib/client";
 import { dateOnly, money } from "@/lib/format";
 import { useAction, useApi } from "../hooks";
 import { useI18n } from "../i18n-provider";
+import MessageComposer from "./message-composer";
+import { useOwnNumber } from "./send-mode";
 import { Alert, Badge, Button, Card, ErrorText, Field, Input, Loading, Select, Tabs, Textarea } from "../ui";
 
 // ---- loyalty -----------------------------------------------------------------------------------------------------------------
@@ -42,27 +46,42 @@ export function LoyaltyTab() {
 
 // ---- segments and broadcasts -------------------------------------------------------------------------------------------------
 
-type Seg = { segments: Record<string, number>; withWhatsappConsent: number };
-type SegDetail = { customers: { phone: string; name?: string; orders: number; spent: number; lastOrder?: string; whatsappConsent: boolean }[]; preview: { audience: number; withConsent: number; reachableNow: number } };
-type Hist = { id: string; segment: string; message: string; audience: number; sentCount: number; skippedWindow: number; skippedConsent: number; createdAt: string }[];
-const KEYS = ["NEW", "REPEAT", "VIP", "AT_RISK", "LAPSED"] as const;
+type Seg = { segments: Record<string, number>; withWhatsappConsent: number; messagePriceMinor: number; balanceMinor: number };
+type Preview = { audience: number; withConsent: number; reachableNow: number; freeReachable: number; appUsers: number };
+type SegDetail = { customers: { phone: string; name?: string; orders: number; spent: number; lastOrder?: string; whatsappConsent: boolean; hasAccount: boolean }[]; preview: Preview };
+type Hist = { id: string; segment: string; message: string; mode: string; push: boolean; pushSent: number; audience: number; sentCount: number; failedCount: number; pendingCount: number; chargedMinor: number; status: string; createdAt: string }[];
+const KEYS = ["ALL", "NEW", "REPEAT", "VIP", "AT_RISK", "LAPSED"] as const;
+type Way = "NONE" | "FREE" | "PAID";
 
 export function SegmentsTab() {
   const { t, locale, currency } = useI18n();
   const seg = useApi<Seg>("store/segments");
   const hist = useApi<Hist>("store/broadcasts");
-  const [key, setKey] = useState<(typeof KEYS)[number]>("NEW");
+  const own = useOwnNumber();
+  const router = useRouter();
+  const [key, setKey] = useState<(typeof KEYS)[number]>("ALL");
   const det = useApi<SegDetail>(`store/segments/${key}`);
   const [msg, setMsg] = useState("");
+  const [image, setImage] = useState<string | null>(null);
+  const [way, setWay] = useState<Way>("PAID");
+  const [push, setPush] = useState(false);
+  const [pushTitle, setPushTitle] = useState("");
+  const [onlyConsented, setOnlyConsented] = useState(false);
   const [done, setDone] = useState<string | null>(null);
+  const pv = det.data?.preview;
+  const price = seg.data?.messagePriceMinor ?? 300;
+  const paidCost = (pv?.reachableNow ?? 0) * price;
+  const lowCredit = way === "PAID" && !!seg.data && paidCost > seg.data.balanceMinor;
   const send = useAction(async () => {
-    const r = await api<{ sent: number; skippedNoWindow: number; skippedNoConsent: number }>("store/broadcasts", { body: { segment: key, message: msg } });
-    setDone(t("gr.sentResult", { sent: r.sent, window: r.skippedNoWindow, consent: r.skippedNoConsent }));
-    setMsg(""); await hist.reload();
+    const r = await api<{ queued: number; pushSent: number; costMinor: number; skippedNoWindow: number; skippedNoConsent: number }>("store/broadcasts", { body: { segment: key, message: msg, imageFileId: image ?? undefined, mode: way, push, pushTitle: pushTitle || undefined, onlyConsented } });
+    setDone(t("gr.sentResult2", { queued: r.queued, push: r.pushSent, cost: money(r.costMinor, currency, locale) }));
+    setMsg(""); setImage(null); await Promise.all([hist.reload(), seg.reload()]);
   });
+  const chooseWay = (w: Way) => { if (w === "FREE" && !own.linked) { router.push("/dashboard/settings#whatsapp-own"); return; } setWay(w); };
+  const modeLabel = (m: string) => (m === "FREE" ? t("sm.freeShort") : m === "PAID" ? t("sm.paidShort") : t("gr.appOnly"));
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {KEYS.map((k) => (
           <button key={k} type="button" onClick={() => { setKey(k); setDone(null); }} className={`rounded-2xl border p-4 text-start transition ${k === key ? "border-brand bg-brand/5 ring-2 ring-brand/20" : "bg-white hover:bg-slate-50"}`}>
             <div className="text-xs text-slate-500">{t(`gr.seg.${k}`)}</div><div className="text-2xl font-bold">{seg.data?.segments[k] ?? 0}</div>
@@ -70,20 +89,47 @@ export function SegmentsTab() {
         ))}
       </div>
       <p className="text-sm text-slate-500">{t(`gr.segHint.${key}`)}</p>
-      <Card className="space-y-3">
-        <h2 className="font-medium">{t("gr.broadcast")}</h2>
-        {det.data && <p className="text-sm">{t("gr.reach", { audience: det.data.preview.audience, consent: det.data.preview.withConsent, now: det.data.preview.reachableNow })}</p>}
-        <Alert tone="blue">{t("gr.freeOnly")}</Alert>
-        <Field label={t("gr.message")} hint={t("gr.messageHint")}><Textarea rows={3} maxLength={800} value={msg} onChange={(e) => setMsg(e.target.value)} /></Field>
+
+      <Card className="space-y-4">
+        <h2 className="font-medium">{t("gr.compose", { segment: t(`gr.seg.${key}`) })}</h2>
+        <MessageComposer text={msg} onText={setMsg} imageId={image} onImage={setImage} />
+
+        <div className="space-y-2">
+          <div className="text-sm font-semibold">{t("gr.sendVia")}</div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {([["FREE", "🆓", "sm.free", own.linked ? "gr.wayFreeHint" : "sm.freeOff"], ["PAID", "💳", "sm.paid", "gr.wayPaidHint"], ["NONE", "📵", "gr.noWhatsapp", "gr.wayNoneHint"]] as const).map(([w, icon, label, hint]) => (
+              <button key={w} type="button" onClick={() => chooseWay(w)} className={`rounded-2xl border p-3 text-start transition ${way === w ? "border-brand bg-brand/5 ring-2 ring-brand/20" : "bg-white hover:bg-slate-50"}`}>
+                <div className="flex items-center justify-between gap-2"><span className="font-semibold">{icon} {t(label)}</span>{w === "FREE" && !own.linked && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">{t("sm.linkFirst")}</span>}</div>
+                <p className="mt-1 text-xs text-slate-600">{t(hint, { price: money(price, currency, locale) })}</p>
+              </button>
+            ))}
+          </div>
+          <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" className="h-5 w-5" checked={push} onChange={(e) => setPush(e.target.checked)} />📱 {t("gr.alsoPush")} {pv && <span className="text-xs font-normal text-slate-500">({t("gr.appUsers", { n: pv.appUsers })})</span>}</label>
+          {push && <Field label={t("gr.pushTitle")} hint={t("gr.pushTitleHint")}><Input maxLength={80} value={pushTitle} onChange={(e) => setPushTitle(e.target.value)} /></Field>}
+          {way === "FREE" && <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-5 w-5" checked={onlyConsented} onChange={(e) => setOnlyConsented(e.target.checked)} />{t("gr.onlyConsented")}</label>}
+        </div>
+
+        {pv && (
+          <div className="rounded-xl bg-slate-50 p-3 text-sm">
+            {way === "FREE" && <p>{t("gr.reachFree", { n: onlyConsented ? pv.withConsent : pv.freeReachable })}</p>}
+            {way === "PAID" && <p>{t("gr.reachPaid", { n: pv.reachableNow, consent: pv.withConsent, cost: money(paidCost, currency, locale), price: money(price, currency, locale) })}</p>}
+            {way === "NONE" && <p>{t("gr.reachNone")}</p>}
+            {push && <p>{t("gr.reachPush", { n: pv.appUsers })}</p>}
+          </div>
+        )}
+        {way === "FREE" && <Alert tone="amber">{t("gr.freeWarn")}</Alert>}
+        {way === "PAID" && <Alert tone="blue">{t("gr.paidInfo", { price: money(price, currency, locale), balance: money(seg.data?.balanceMinor ?? 0, currency, locale) })}</Alert>}
+        {lowCredit && <Alert tone="red">{t("gr.lowCredit", { need: money(paidCost, currency, locale) })} <Link href="/dashboard/ai" className="font-semibold underline">{t("gr.topUp")}</Link></Alert>}
         <ErrorText error={send.error} />
         {done && <Alert tone="green">{done}</Alert>}
-        <Button loading={send.loading} disabled={msg.trim().length < 5} onClick={() => { setDone(null); void send.run(); }}>{t("gr.send")}</Button>
+        <Button loading={send.loading} disabled={msg.trim().length < 3 || (way === "NONE" && !push) || lowCredit} onClick={() => { setDone(null); void send.run(); }}>{t("gr.send")}</Button>
       </Card>
+
       <Card className="space-y-2">
         <h2 className="font-medium">{t("gr.customers")}</h2>
         {(det.data?.customers ?? []).length === 0 ? <p className="text-sm text-slate-500">{t("gr.noCustomers")}</p> : det.data?.customers.map((c) => (
           <div key={c.phone} className="flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-sm first:border-0 first:pt-0">
-            <span>{c.name ?? ""} <span dir="ltr" className="text-slate-500">{c.phone}</span> {c.whatsappConsent && <Badge tone="green">WhatsApp</Badge>}</span>
+            <span>{c.name ?? ""} <span dir="ltr" className="text-slate-500">{c.phone}</span> {c.whatsappConsent && <Badge tone="green">WhatsApp</Badge>} {c.hasAccount && <Badge tone="blue">📱 App</Badge>}</span>
             <span className="text-xs text-slate-500">{c.orders} · {money(c.spent, currency, locale)}{c.lastOrder ? ` · ${dateOnly(c.lastOrder, locale)}` : ""}</span>
           </div>
         ))}
@@ -91,7 +137,13 @@ export function SegmentsTab() {
       {(hist.data ?? []).length > 0 && (
         <Card className="space-y-2">
           <h2 className="font-medium">{t("gr.history")}</h2>
-          {hist.data?.map((h) => <div key={h.id} className="border-t pt-2 text-sm first:border-0 first:pt-0"><div className="flex justify-between"><Badge tone="blue">{t(`gr.seg.${h.segment}`)}</Badge><span className="text-xs text-slate-500">{dateOnly(h.createdAt, locale)}</span></div><p className="mt-1">{h.message}</p><p className="text-xs text-slate-500">{t("gr.sentResult", { sent: h.sentCount, window: h.skippedWindow, consent: h.skippedConsent })}</p></div>)}
+          {hist.data?.map((h) => (
+            <div key={h.id} className="border-t pt-2 text-sm first:border-0 first:pt-0">
+              <div className="flex flex-wrap items-center justify-between gap-2"><span className="flex flex-wrap gap-1.5"><Badge tone="blue">{t(`gr.seg.${h.segment}`)}</Badge><Badge tone={h.mode === "FREE" ? "green" : h.mode === "PAID" ? "amber" : "slate"}>{modeLabel(h.mode)}</Badge>{h.push && <Badge tone="slate">📱 {h.pushSent}</Badge>}{h.status === "SENDING" && <Badge tone="amber">{t("gr.sending", { n: h.pendingCount })}</Badge>}</span>
+                <span className="text-xs text-slate-500">{h.sentCount} ✓{h.failedCount > 0 ? ` · ${h.failedCount} ✗` : ""}{h.chargedMinor > 0 ? ` · ${money(h.chargedMinor, currency, locale)}` : ""} · {dateOnly(h.createdAt, locale)}</span></div>
+              <p className="mt-1 line-clamp-2 text-slate-600">{h.message}</p>
+            </div>
+          ))}
         </Card>
       )}
     </div>

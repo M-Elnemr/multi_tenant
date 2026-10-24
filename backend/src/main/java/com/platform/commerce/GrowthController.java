@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.*;
 public class GrowthController {
     public record LoyaltySettingsReq(Boolean enabled, Integer earnPercent, Integer minRedeem) {}
     public record RedeemReq(Integer points) {}
-    public record BroadcastReq(String segment, String message) {}
+    public record BroadcastReq(String segment, String message, java.util.UUID imageFileId, String mode, Boolean push, String pushTitle, Boolean onlyConsented) {}
     public record CapiReq(Boolean enabled, String token) {}
 
     private static final String MANAGE = "hasAuthority('growth.manage')";
@@ -69,7 +69,7 @@ public class GrowthController {
 
     @PostMapping("/api/v1/store/broadcasts")
     @PreAuthorize(MANAGE)
-    public Map<String, Object> broadcast(@RequestBody BroadcastReq r, Authentication a) { return segments.broadcast(StoreContext.tenantId(), user(a), r.segment(), r.message()); }
+    public Map<String, Object> broadcast(@RequestBody BroadcastReq r, Authentication a) { return segments.broadcast(StoreContext.tenantId(), user(a), new SegmentService.Req(r.segment(), r.message(), r.imageFileId(), r.mode() == null ? "PAID" : r.mode(), r.push(), r.pushTitle(), r.onlyConsented())); }
 
     @GetMapping("/api/v1/store/broadcasts")
     @PreAuthorize(MANAGE)

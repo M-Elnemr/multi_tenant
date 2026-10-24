@@ -237,14 +237,15 @@ class _ClinicBranches extends StatelessWidget {
 // ---------------------------------------------------------------- Store settings
 
 class StoreSettings extends StatefulWidget {
-  const StoreSettings({super.key, required this.ctx});
+  const StoreSettings({super.key, required this.ctx, this.initialTab = 'profile'});
   final Ctx ctx;
+  final String initialTab;
   @override
   State<StoreSettings> createState() => _StoreSettingsState();
 }
 
 class _StoreSettingsState extends State<StoreSettings> {
-  String _tab = 'profile';
+  late String _tab = widget.initialTab;
 
   @override
   Widget build(BuildContext context) {

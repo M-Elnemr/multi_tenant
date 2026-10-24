@@ -183,6 +183,24 @@ public class EvolutionService {
 
     // ---- sending --------------------------------------------------------------------------------------------------------------------
 
+    /** Result of one paced send: SENT, FAILED, or DEFERRED (the shop is at its per-minute limit; try again on the next pass). */
+    public enum Delivery { SENT, FAILED, DEFERRED }
+
+    /** One message from the shop's own number, text or a picture with the text as its caption. Used by broadcasts, which retry a deferred message later. */
+    public Delivery deliver(UUID tenantId, String number, String text, String imageUrl) {
+        try {
+            if (!connected(tenantId)) return Delivery.FAILED;
+            try { throttle.check("evo-out|" + tenantId, 20, Duration.ofMinutes(1)); } catch (BusinessException e) { return Delivery.DEFERRED; }
+            String n = number.replaceAll("\\D", ""), inst = row(tenantId).get("instance").toString();
+            if (imageUrl != null && !imageUrl.isBlank()) api.call("POST", "/message/sendMedia/" + inst, Map.of("number", n, "mediatype", "image", "media", imageUrl, "caption", text == null ? "" : text, "delay", typingDelayMs));
+            else api.call("POST", "/message/sendText/" + inst, Map.of("number", n, "text", text, "delay", typingDelayMs));
+            return Delivery.SENT;
+        } catch (RuntimeException e) {
+            log.warn("Unofficial WhatsApp send failed: {}", e.getMessage());
+            return Delivery.FAILED;
+        }
+    }
+
     /** Sends a normal text from the shop's own number. False when the mode is off, the phone is not linked, the shop is sending too fast, or the send failed. Never throws. */
     public boolean sendFree(UUID tenantId, String number, String text) {
         try {

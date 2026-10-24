@@ -8,6 +8,7 @@ import 'package:platform_core/platform_core.dart';
 import 'channels.dart';
 import 'common.dart';
 import 'connect.dart';
+import 'send_mode.dart';
 
 /// AI assistant setup: the connected Facebook / Instagram / WhatsApp channels and what WhatsApp still needs before confirmation messages can go out.
 class AiAssistantScreen extends StatefulWidget {
@@ -77,7 +78,12 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
           if (write) Padding(padding: const EdgeInsets.only(top: 8), child: FilledButton.icon(onPressed: () => connectMeta(context, ctx), icon: const Icon(Icons.facebook_rounded), label: Text(ar ? 'اربط بفيسبوك' : 'Connect with Facebook'))),
           const SizedBox(height: 20),
           Text(ar ? 'تأكيد الطلبات بواتساب' : 'WhatsApp order confirmation', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
-          Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(children: [
+          const SizedBox(height: 6),
+          SendModePicker(ctx: ctx, value: '${(wa['settings'] as Map?)?['sendMode'] ?? 'PAID'}', enabled: write, onChanged: (m) async {
+            if (await run(context, () async { await ctx.api.put('store/ai/whatsapp', {'sendMode': m}); }) && mounted) setState(() => _gen++);
+          }),
+          if (((wa['settings'] as Map?)?['sendMode']) == 'FREE') Padding(padding: const EdgeInsets.only(top: 8), child: Text(ar ? 'التأكيدات والتذكيرات بتتبعت مجانًا من رقمك المربوط، فمفيش قوالب ولا رصيد مطلوب.' : 'Confirmations and reminders are sent free from your linked number, so no templates or credit are needed.', style: const TextStyle(color: Color(0xFF475569)))),
+          if (((wa['settings'] as Map?)?['sendMode']) != 'FREE') Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(children: [
             check(ready['channelConnected'] == true, ar ? 'رقم واتساب مربوط' : 'WhatsApp number connected'),
             check(ready['wabaKnown'] == true, ready['wabaKnown'] == true ? (ar ? 'معرّف حساب واتساب للأعمال محفوظ' : 'WhatsApp Business Account ID is saved') : (ar ? 'معرّف حساب واتساب للأعمال ناقص: أضفه لتسجيل القوالب' : 'WhatsApp Business Account ID is missing: add it to register templates'),
                 action: ready['channelConnected'] == true && write ? FilledButton.tonal(onPressed: _wabaDialog, child: Text(ready['wabaKnown'] == true ? (ar ? 'تغيير' : 'Change') : (ar ? 'أضف المعرّف' : 'Add the ID'))) : null),

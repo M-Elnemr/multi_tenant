@@ -6,12 +6,13 @@ import { dateTime, money } from "@/lib/format";
 import { useAction, useApi } from "../hooks";
 import { useI18n } from "../i18n-provider";
 import { Alert, Badge, Button, Card, Empty, ErrorText, Field, Input, Loading, Stat, Tabs } from "../ui";
+import { SendModePicker, useOwnNumber, type SendMode } from "./send-mode";
 import { isNoWaba, WabaDialog } from "./waba-dialog";
 
 type Item = { name: string; variant?: string | null; quantity: number; priceMinor: number };
 type Cart = { id: string; name?: string | null; phone: string; items: Item[]; itemCount: number; totalMinor: number; currency: string; status: string; createdAt: string; contactedAt?: string | null; reminderStatus?: string | null; whatsappUrl: string };
 type Stats = { dueCount: number; dueMinor: number; recentCount: number; recoveredCount: number; recoveredMinor: number; recoveryRatePercent: number };
-type Settings = { recoveryEnabled: boolean; allowPaid: boolean; remindAfterHours: number; couponCode: string | null; messagePriceMinor: number };
+type Settings = { recoveryEnabled: boolean; allowPaid: boolean; remindAfterHours: number; couponCode: string | null; messagePriceMinor: number; sendMode?: SendMode };
 type Res = { carts: Cart[]; stats: Stats; settings: Settings };
 
 /** Carts that were not completed: shown 24 hours after they were started, with ways to reach the customer and a switch for reminders. Paid WhatsApp messages stay off unless the owner turns them on here. */
@@ -21,10 +22,11 @@ export default function CartsView({ canWrite }: { canWrite: boolean }) {
   const res = useApi<Res>(`store/carts?view=${view}`);
   const [notice, setNotice] = useState<string | null>(null);
   const act = useAction(async (id: string, what: "remind" | "dismiss" | "contacted") => { const r = await api<{ result?: string }>(`store/carts/${id}/${what}`, { body: {} }); if (what === "remind") setNotice(t("cart.reminded")); await res.reload(); return r; });
-  const [form, setForm] = useState<{ enabled: boolean; paid: boolean; hours: string; coupon: string } | null>(null);
+  const [form, setForm] = useState<{ enabled: boolean; paid: boolean; hours: string; coupon: string; mode: SendMode } | null>(null);
+  const own = useOwnNumber();
   const d = res.data;
-  const cur = form ?? (d ? { enabled: d.settings.recoveryEnabled, paid: d.settings.allowPaid, hours: String(d.settings.remindAfterHours), coupon: d.settings.couponCode ?? "" } : null);
-  const save = useAction(async () => { if (!cur) return; await api("store/carts/settings", { method: "PUT", body: { recoveryEnabled: cur.enabled, allowPaid: cur.paid, remindAfterHours: Number(cur.hours), couponCode: cur.coupon } }); setForm(null); await res.reload(); });
+  const cur = form ?? (d ? { enabled: d.settings.recoveryEnabled, paid: d.settings.allowPaid, hours: String(d.settings.remindAfterHours), coupon: d.settings.couponCode ?? "", mode: d.settings.sendMode ?? "PAID" } : null);
+  const save = useAction(async () => { if (!cur) return; await api("store/carts/settings", { method: "PUT", body: { recoveryEnabled: cur.enabled, allowPaid: cur.paid, remindAfterHours: Number(cur.hours), couponCode: cur.coupon, sendMode: own.linked ? cur.mode : "PAID" } }); setForm(null); await res.reload(); });
   const [wabaOpen, setWabaOpen] = useState(false);
   const template = useAction(async () => { const r = await api<{ status: string }>("store/carts/template", { body: {} }); setNotice(t("cart.templateStatus") + ": " + r.status); });
   if (res.loading && !d) return <Loading />;
@@ -70,13 +72,14 @@ export default function CartsView({ canWrite }: { canWrite: boolean }) {
       {cur && (
         <Card className="space-y-4">
           <div><h2 className="font-medium">{t("cart.settings")}</h2><p className="mt-1 text-sm text-slate-500">{t("cart.settingsHint")}</p></div>
+          <Field label={t("sm.title")}><SendModePicker value={own.linked ? cur.mode : "PAID"} onChange={(m) => setForm({ ...cur, mode: m })} disabled={!canWrite} /></Field>
           <div className="grid gap-4 sm:grid-cols-4">
             <Field label={t("cart.autoRemind")}><select disabled={!canWrite} className="s-input w-full rounded-xl border px-3 py-2" value={cur.enabled ? "1" : "0"} onChange={(e) => setForm({ ...cur, enabled: e.target.value === "1", paid: e.target.value === "1" ? cur.paid : false })}><option value="0">{t("wr.off")}</option><option value="1">{t("wr.on")}</option></select></Field>
             <Field label={t("cart.afterHours")}><Input dir="ltr" inputMode="numeric" disabled={!canWrite} value={cur.hours} onChange={(e) => setForm({ ...cur, hours: e.target.value })} /></Field>
             <Field label={t("cart.coupon")} hint={t("cart.couponHint")}><Input dir="ltr" disabled={!canWrite} value={cur.coupon} onChange={(e) => setForm({ ...cur, coupon: e.target.value })} /></Field>
-            <Field label={t("cart.paid")}><select disabled={!canWrite || !cur.enabled} className="s-input w-full rounded-xl border px-3 py-2" value={cur.paid ? "1" : "0"} onChange={(e) => setForm({ ...cur, paid: e.target.value === "1" })}><option value="0">{t("wr.off")}</option><option value="1">{t("wr.on")}</option></select></Field>
+            {(!own.linked || cur.mode === "PAID") && <Field label={t("cart.paid")}><select disabled={!canWrite || !cur.enabled} className="s-input w-full rounded-xl border px-3 py-2" value={cur.paid ? "1" : "0"} onChange={(e) => setForm({ ...cur, paid: e.target.value === "1" })}><option value="0">{t("wr.off")}</option><option value="1">{t("wr.on")}</option></select></Field>}
           </div>
-          <Alert tone="amber">{t("cart.paidWarn", { price: money(d?.settings.messagePriceMinor ?? 0, currency, locale) })}</Alert>
+          {own.linked && cur.mode === "FREE" ? <Alert tone="green">{t("cart.freeInfo")}</Alert> : <Alert tone="amber">{t("cart.paidWarn", { price: money(d?.settings.messagePriceMinor ?? 0, currency, locale) })}</Alert>}
           <ErrorText error={save.error ?? template.error} />
           {isNoWaba(template.error) && <Button variant="secondary" onClick={() => setWabaOpen(true)}>{t("waba.add")}</Button>}
           <WabaDialog open={wabaOpen} onClose={() => setWabaOpen(false)} onSaved={() => { template.setError(null); void template.run(); }} />
