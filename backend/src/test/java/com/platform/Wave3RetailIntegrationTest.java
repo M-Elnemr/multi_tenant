@@ -109,6 +109,9 @@ class Wave3RetailIntegrationTest extends IntegrationTestBase {
         assertThat(pos.lookup(s.id(), "https://" + h + "/products/" + s.slug() + "?v=" + s.sku()).get("variantId").toString()).isEqualTo(s.variant());
         assertThatThrownBy(() -> pos.lookup(s.id(), "https://" + h + "/products/x")).isInstanceOf(com.platform.shared.BusinessException.class);
         onHost(h, owner, "GET", "/api/v1/store/pos/lookup?code=NOPE-1", null).andExpect(status().isNotFound());
+        String labels = ok(onHost(h, owner, "GET", "/api/v1/store/pos/labels", null).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1)));
+        assertThat((String) JsonPath.read(labels, "$[0].qr")).startsWith("https://" + h + "/products/" + s.slug() + "?v=").endsWith(s.sku());
+        assertThat((String) JsonPath.read(labels, "$[0].variantId")).isEqualTo(s.variant());
 
         String sale = ok(onHost(h, owner, "POST", "/api/v1/store/pos/sales", "{\"items\":[{\"variantId\":\"%s\",\"quantity\":3}],\"paymentMethod\":\"CASH\",\"discountMinor\":1000}".formatted(s.variant())).andExpect(status().isCreated()).andExpect(jsonPath("$.totalMinor").value(59000)));
         String orderId = JsonPath.read(sale, "$.orderId");

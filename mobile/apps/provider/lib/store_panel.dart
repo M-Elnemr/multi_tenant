@@ -3,6 +3,7 @@ import 'package:platform_core/platform_core.dart';
 
 import 'channels.dart';
 import 'common.dart';
+import 'retail.dart';
 import 'forms.dart';
 import 'products.dart';
 
@@ -38,7 +39,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
       emptyText: ar ? 'لا توجد طلبات' : 'No orders',
       itemBuilder: (c, o, reload) => Card(child: ListTile(
         contentPadding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
-        title: Row(children: [Expanded(child: Text('${o['orderNumber']}', textDirection: TextDirection.ltr, textAlign: TextAlign.start, style: const TextStyle(fontWeight: FontWeight.w900))), StatusPill('${o['status']}')]),
+        title: Row(children: [Expanded(child: Text('${o['orderNumber']}', textDirection: TextDirection.ltr, textAlign: TextAlign.start, style: const TextStyle(fontWeight: FontWeight.w900))), StatusPill('${o['status']}'), riskChip(o, ar)]),
         subtitle: Padding(padding: const EdgeInsets.only(top: 4), child: Text('${o['customerNameSnapshot']} · ${fmtDate(o['createdAt'] as String?)}\n${s.money(o['totalMinor'] as num, (o['currency'] as String?) ?? ctx.currency)}${o['confirmedAt'] == null && o['status'] == 'REQUESTED' ? (ar ? '  ·  غير مؤكد' : '  ·  unconfirmed') : ''}')),
         isThreeLine: true,
         onTap: () async {
@@ -84,11 +85,13 @@ class OrderDetail extends StatelessWidget {
               kv(ar ? 'التاريخ' : 'Date', fmtDate(o['createdAt'] as String?)),
               if ((o['notes'] as String?)?.isNotEmpty == true) kv(ar ? 'ملاحظات' : 'Notes', '${o['notes']}'),
             ]))),
+            riskBanner(o, ar),
             Row(children: [
               Expanded(child: OutlinedButton.icon(onPressed: () => dial(phone), icon: const Icon(Icons.call_rounded), label: Text(ar ? 'اتصال' : 'Call'))),
               const SizedBox(width: 8),
               Expanded(child: OutlinedButton.icon(onPressed: () => whatsapp(phone, ar ? 'مرحباً ${o['customerNameSnapshot']}، بخصوص طلبك ${o['orderNumber']}' : 'Hello ${o['customerNameSnapshot']}, about your order ${o['orderNumber']}'), icon: const Icon(Icons.chat_rounded), label: const Text('WhatsApp'))),
             ]),
+            taxDocButtons(context, ctx, o, id, reload),
             if (ctx.can('order.update_status') && ctx.canSee('shipping') && ['REQUESTED', 'PREPARING'].contains(o['status']))
               Padding(padding: const EdgeInsets.only(top: 8), child: FilledButton.tonalIcon(
                 icon: const Icon(Icons.local_shipping_rounded),

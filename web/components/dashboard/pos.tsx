@@ -101,11 +101,11 @@ export default function Pos() {
     );
   }
   return (
-    <div className="grid gap-5 lg:grid-cols-5">
-      <div className="space-y-4 lg:col-span-3">
+    <div className="grid min-w-0 gap-5 lg:grid-cols-5">
+      <div className="min-w-0 space-y-4 lg:col-span-3">
         <Card className="space-y-3">
-          <form onSubmit={(e) => { e.preventDefault(); void scan.run(code); }} className="flex gap-2">
-            <input autoFocus value={code} onChange={(e) => setCode(e.target.value)} placeholder={t("pos.scanHint")} dir="ltr" className="min-w-0 flex-1 rounded-xl border px-3 py-2.5 text-sm outline-none focus:border-brand" />
+          <form onSubmit={(e) => { e.preventDefault(); void scan.run(code); }} className="flex flex-wrap gap-2">
+            <input autoFocus value={code} onChange={(e) => setCode(e.target.value)} placeholder={t("pos.scanHint")} dir="ltr" className="w-full min-w-0 flex-1 basis-40 rounded-xl border px-3 py-2.5 text-sm outline-none focus:border-brand" />
             <Button loading={scan.loading}>{t("pos.add")}</Button>
             <Button type="button" variant="secondary" onClick={() => setCamera(!camera)}>{camera ? t("pos.cameraOff") : t("pos.cameraOn")}</Button>
           </form>

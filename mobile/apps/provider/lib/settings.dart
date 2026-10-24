@@ -3,6 +3,7 @@ import 'package:platform_core/platform_core.dart';
 
 import 'common.dart';
 import 'forms.dart';
+import 'retail.dart';
 import 'templates.dart';
 
 const _govs = <(String, String, String)>[
@@ -284,6 +285,8 @@ class StoreSettings extends StatelessWidget {
       if (manage) _StoreCategories(ctx: ctx),
       if (manage) brandingCard(ctx),
       if (manage) TemplateCard(ctx: ctx),
+      if (manage) CodGuardCard(ctx: ctx),
+      MarketCard(ctx: ctx),
       if (ship) _PaymentMethods(ctx: ctx),
       if (ship) _ShippingMethods(ctx: ctx),
       if (ship) _Zones(ctx: ctx),

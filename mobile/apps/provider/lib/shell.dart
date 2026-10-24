@@ -3,6 +3,9 @@ import 'package:platform_core/platform_core.dart';
 
 import 'clinic_panel.dart';
 import 'copilot.dart';
+import 'dev_content.dart';
+import 'growth.dart';
+import 'retail.dart';
 import 'admin.dart';
 import 'common.dart';
 import 'dashboards.dart';
@@ -51,6 +54,14 @@ List<PanelSection> storeSections() => [
       PanelSection('المخزون', 'Inventory', Icons.inventory_2_rounded, screen: 'inventory', build: (c) => InventoryScreen(ctx: c)),
       PanelSection('المرتجعات', 'Returns', Icons.assignment_return_rounded, screen: 'orders', build: (c) => ReturnsScreen(ctx: c)),
       PanelSection('العملاء', 'Customers', Icons.people_alt_rounded, screen: 'customers', build: (c) => CustomersScreen(ctx: c)),
+      PanelSection('نقطة البيع', 'Point of sale', Icons.point_of_sale_rounded, perm: 'pos.use', build: (c) => PosScreen(ctx: c)),
+      PanelSection('سلات غير مكتملة', 'Incomplete carts', Icons.remove_shopping_cart_rounded, perm: ['cart.read', 'cart.manage'], build: (c) => CartsScreen(ctx: c)),
+      PanelSection('نمو العملاء', 'Customers growth', Icons.trending_up_rounded, perm: 'growth.manage', build: (c) => GrowthScreen(ctx: c)),
+      PanelSection('المشتريات', 'Purchasing', Icons.local_mall_rounded, perm: 'purchase.manage', build: (c) => PurchasingScreen(ctx: c)),
+      PanelSection('الفواتير الضريبية', 'Tax invoices', Icons.receipt_long_rounded, perm: 'invoice.manage', build: (c) => InvoicesScreen(ctx: c)),
+      PanelSection('التقارير', 'Reports', Icons.bar_chart_rounded, perm: 'report.read', build: (c) => ReportsScreen(ctx: c)),
+      PanelSection('المدونة والإنجليزي', 'Blog and English', Icons.article_rounded, perm: 'blog.manage', build: (c) => ContentScreen(ctx: c)),
+      PanelSection('للمطورين', 'Developers', Icons.code_rounded, perm: 'api.manage', build: (c) => DevelopersScreen(ctx: c)),
       PanelSection('الكوبونات', 'Coupons', Icons.local_offer_rounded, screen: 'coupons', build: (c) => CouponsScreen(ctx: c)),
       PanelSection('التقييمات', 'Reviews', Icons.star_rounded, screen: 'reviews', build: (c) => ReviewsScreen(ctx: c)),
       PanelSection('اسأل نشاطك', 'Ask your business', Icons.auto_awesome_rounded, perm: 'copilot.use', build: (c) => CopilotScreen(ctx: c)),
