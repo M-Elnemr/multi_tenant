@@ -22,6 +22,7 @@ type Detail = {
   shippingAddress: Record<string, string>;
   governorateCode?: string; area?: string; landmark?: string; phone2?: string; codFeeMinor?: number; confirmedAt?: string | null; courierName?: string; trackingNumber?: string; trackingUrl?: string;
   etaMinDays?: number; etaMaxDays?: number;
+  riskScore?: number; riskLevel?: "LOW" | "MEDIUM" | "HIGH" | null; riskReasons?: string; needsConfirmation?: boolean;
   customerHistory?: { deliveredCount: number; returnedCount: number; cancelledCount: number; blocked: boolean };
 };
 
@@ -54,6 +55,13 @@ export default function StoreOrder({ params }: { params: Promise<{ id: string }>
         <Link href={`/dashboard/orders/${id}/print?doc=invoice`} className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold hover:bg-slate-50">🧾 {t("print.invoice")}</Link>
         <Link href={`/dashboard/orders/${id}/print?doc=label`} className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold hover:bg-slate-50">🏷️ {t("print.label")}</Link>
       </div>
+      {(data.riskLevel === "HIGH" || data.riskLevel === "MEDIUM") && data.paymentMethod === "CASH_ON_DELIVERY" && (
+        <div className={`mb-4 rounded-2xl border p-4 text-sm ${data.riskLevel === "HIGH" ? "border-red-200 bg-red-50 text-red-800" : "border-amber-200 bg-amber-50 text-amber-900"}`}>
+          <div className="font-bold">{data.riskLevel === "HIGH" ? "⚠️ " + t("risk.highTitle") : t("risk.mediumTitle")} ({data.riskScore}/100)</div>
+          <ul className="mt-1 list-disc ps-5">{(data.riskReasons ?? "").split(",").filter(Boolean).map((r) => <li key={r}>{t(`risk.r.${r}`)}</li>)}</ul>
+          {data.needsConfirmation && !data.confirmedAt && <p className="mt-2 font-semibold">{t("risk.callFirst")}</p>}
+        </div>
+      )}
       {data.customerHistory && (data.customerHistory.returnedCount > 0 || data.customerHistory.cancelledCount > 1 || data.customerHistory.blocked) && (
         <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">⚠️ {t("history.warn", { d: data.customerHistory.deliveredCount, r: data.customerHistory.returnedCount, c: data.customerHistory.cancelledCount })}
           {can("order.update_status") && <Button size="sm" variant={data.customerHistory.blocked ? "secondary" : "danger"} className="ms-3" loading={blockPhone.loading} onClick={() => blockPhone.run(!data.customerHistory!.blocked)}>{data.customerHistory.blocked ? t("history.unblock") : t("history.block")}</Button>}</div>

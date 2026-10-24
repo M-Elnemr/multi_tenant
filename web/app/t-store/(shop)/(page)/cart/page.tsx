@@ -4,11 +4,18 @@ import Link from "next/link";
 import { clearCart, removeLine, setQuantity, useCart } from "@/lib/cart";
 import { money } from "@/lib/format";
 import { useI18n } from "@/components/i18n-provider";
+import { useApi } from "@/components/hooks";
+
+type ShipProfile = { shippingMethods: { type: string; freeAboveMinor?: number | null }[]; shippingZones: { freeAboveMinor?: number | null }[] };
 
 export default function Cart() {
   const { t, locale, currency } = useI18n();
   const lines = useCart();
   const total = lines.reduce((n, l) => n + l.unitPriceMinor * l.quantity, 0);
+  const ship = useApi<ShipProfile>("shop/profile");
+  // the lowest free-delivery threshold the shop offers anywhere: a nudge, the real fee is worked out at checkout
+  const thresholds = [...(ship.data?.shippingMethods ?? []).filter((m) => m.type === "FREE_ABOVE").map((m) => m.freeAboveMinor), ...(ship.data?.shippingZones ?? []).map((z) => z.freeAboveMinor)].filter((x): x is number => typeof x === "number" && x > 0);
+  const freeAt = thresholds.length ? Math.min(...thresholds) : null;
   if (lines.length === 0) {
     return (
       <div className="s-card mx-auto grid max-w-lg place-items-center gap-4 p-14 text-center">
@@ -49,6 +56,12 @@ export default function Cart() {
         <aside className="s-card space-y-4 p-6 lg:sticky lg:top-28">
           <h2 className="text-lg font-extrabold">{t("checkout.summary")}</h2>
           <div className="flex justify-between text-sm"><span className="text-[var(--s-mute)]">{t("checkout.subtotal")}</span><b>{money(total, currency, locale)}</b></div>
+          {freeAt !== null && (
+            <div className="rounded-2xl bg-[var(--s-soft)] p-3 text-xs">
+              <p className="mb-2 font-bold">{total >= freeAt ? "🎉 " + t("cart.freeReached") : "🚚 " + t("cart.freeMore", { amount: money(freeAt - total, currency, locale) })}</p>
+              <div className="h-2 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full transition-all" style={{ width: `${Math.min(100, Math.round((total / freeAt) * 100))}%`, background: "var(--brand)" }} /></div>
+            </div>
+          )}
           <p className="rounded-2xl bg-[var(--s-soft)] p-3 text-xs text-[var(--s-mute)]">🚚 {t("cart.shippingNote")}</p>
           <Link href="/checkout" className="s-btn w-full !py-3.5">{t("cart.checkout")} →</Link>
           <p className="text-center text-xs text-[var(--s-mute)]">💵 {t("trust.codText")}</p>

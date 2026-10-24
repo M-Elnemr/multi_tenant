@@ -7,6 +7,7 @@ import { toMinor, money } from "@/lib/format";
 import BrandingCard from "@/components/dashboard/branding";
 import TemplatePicker from "@/components/dashboard/template-picker";
 import WaReportCard from "@/components/dashboard/wa-report";
+import CodGuardCard from "@/components/dashboard/cod-guard";
 import { ZonesCard } from "@/components/dashboard/zones";
 import { BannersCard } from "@/components/dashboard/banners";
 import { BranchesCard, ContactCard, MarketingCard, SetupChecklist, type StoreProfile } from "@/components/dashboard/store-identity";
@@ -84,6 +85,7 @@ export default function StoreSettings() {
         {can("settings.manage") && <section id="branding"><BrandingCard /></section>}
         {can("settings.manage") && <section id="templates"><TemplatePicker /></section>}
         {can("copilot.use") && <section id="whatsapp-report"><WaReportCard /></section>}
+        {can("settings.manage") && <section id="cod-guard"><CodGuardCard /></section>}
         {methods.data && (
           <Card className="space-y-3">
             <h2 className="font-medium">{t("settings.paymentMethods")}</h2>

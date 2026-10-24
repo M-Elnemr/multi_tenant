@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ShopProductCard, type ShopProduct } from "@/components/shop/product-card";
 import type { ShopProfile } from "@/components/shop/types";
 import { backendJson, BackendError } from "@/lib/backend";
+import { money } from "@/lib/format";
 import { getT } from "@/lib/i18n-server";
 import { mediaUrl } from "@/lib/media";
 import { ProductBuy, type ProductDetail } from "./buy";
@@ -33,9 +34,10 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const p = await load(slug);
   if (!p) notFound();
   const { t, locale } = await getT();
-  const [prof, related] = await Promise.all([
+  const [prof, related, together] = await Promise.all([
     backendJson<{ profile: ShopProfile }>("/shop/profile").catch(() => null),
     backendJson<ShopProduct[]>(`/shop/products/${encodeURIComponent(clean(slug))}/related`).catch(() => [] as ShopProduct[]),
+    backendJson<{ id: string; name: string; slug: string; currency: string; priceMinor: number }[]>(`/shop/products/${encodeURIComponent(clean(slug))}/together`).catch(() => []),
   ]);
   const crumbs = (p.taxonomy ?? []).map((c) => ({ id: c.slug, slug: c.slug, name: locale === "ar" ? c.nameAr : c.nameEn }));
   const prices = p.variants.map((v) => v.priceMinor);
@@ -54,6 +56,12 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
         {crumbs.map((c) => <span key={c.id} className="flex items-center gap-1.5"><span>/</span><Link href={`/c/${c.slug}`} className="hover:text-[var(--brand)]">{c.name}</Link></span>)}
       </nav>
       <ProductBuy product={p} whatsapp={prof?.profile.whatsapp} storeName={prof?.profile.storeName ?? ""} isOpen={prof?.profile.isOpen !== false} returnDays={prof?.profile.returnWindowDays ?? 14} />
+      {together.length > 0 && (
+        <section className="mt-12">
+          <h2 className="s-section-title mb-5">{t("product.together")}</h2>
+          <ul className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">{together.map((x) => <li key={x.id}><Link href={`/products/${x.slug}`} className="s-card block p-4 hover:shadow-md"><span className="line-clamp-2 font-extrabold">{x.name}</span><span className="mt-2 block font-bold" style={{ color: "var(--brand)" }}>{money(x.priceMinor, x.currency, locale)}</span></Link></li>)}</ul>
+        </section>
+      )}
       <section className="mt-14">
         <h2 className="s-section-title mb-5">{t("shop.reviews")} <span className="text-[var(--s-mute)]">({p.reviews.count})</span></h2>
         {p.reviews.count === 0 ? <p className="s-card p-8 text-center text-[var(--s-mute)]">{t("shop.noReviews")}</p> : (

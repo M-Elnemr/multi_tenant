@@ -44,13 +44,17 @@ public class CheckoutService {
     private final com.platform.shared.PaymentPolicy policy;
     private final StoreFulfillmentService fulfilment;
     private final PhoneFlags phoneFlags;
+    private final CodRiskService codRisk;
+    private final CartRecoveryService carts;
 
     public CheckoutService(JdbcClient jdbc, InventoryService inventory, EntitlementService ent, List<PaymentProvider> providers,
                            StoreCustomerService customers, ApplicationEventPublisher events, com.platform.shared.PaymentPolicy policy,
-                           StoreFulfillmentService fulfilment, PhoneFlags phoneFlags) {
+                           StoreFulfillmentService fulfilment, PhoneFlags phoneFlags, CodRiskService codRisk, @org.springframework.context.annotation.Lazy CartRecoveryService carts) {
         this.policy = policy;
         this.fulfilment = fulfilment;
         this.phoneFlags = phoneFlags;
+        this.codRisk = codRisk;
+        this.carts = carts;
         this.jdbc = jdbc;
         this.inventory = inventory;
         this.ent = ent;
@@ -95,6 +99,7 @@ public class CheckoutService {
             branchByVariant.put(l.variantId(), inventory.reserve(tenantId, l.variantId(), l.quantity(), orderId));
 
         boolean card = "CARD".equals(r.paymentMethod());
+        var risk = codRisk.assess(tenantId, phoneNorm, r.address().recipientName(), r.address().addressLine1(), r.address().governorateCode(), q.total(), q.lines().stream().mapToInt(QuoteLine::quantity).sum(), !card);
         String number = nextOrderNumber(tenantId);
         String name = r.address().recipientName().trim();
         String phone = phoneNorm;
@@ -103,9 +108,9 @@ public class CheckoutService {
                 INSERT INTO commerce.orders (id, tenant_id, order_number, customer_id, user_id, status, payment_status, payment_method, shipping_method_id, coupon_code,
                     currency, subtotal_minor, discount_minor, shipping_minor, total_minor, customer_name_snapshot, customer_phone_snapshot,
                     shipping_address_snapshot, notes, idempotency_key, reservation_expires_at,
-                    governorate_code, area, landmark, phone2, cod_fee_minor, eta_min_days, eta_max_days, source)
+                    governorate_code, area, landmark, phone2, cod_fee_minor, eta_min_days, eta_max_days, source, risk_score, risk_level, risk_reasons, needs_confirmation)
                 VALUES (:id, :t, :n, :c, :u, :st, 'UNPAID', :pm, :sm, :cc, :cur, :sub, :disc, :ship, :total, :cn, :cp, CAST(:addr AS jsonb), :notes, :key, :exp,
-                    :gov, :area, :lm, :ph2, :codfee, :emin, :emax, :src)
+                    :gov, :area, :lm, :ph2, :codfee, :emin, :emax, :src, :rs, :rl, :rr, :nc)
                 """).param("id", orderId).param("t", tenantId).param("n", number).param("c", customerId).param("u", userId)
                 .param("st", card ? "PENDING" : "REQUESTED").param("pm", r.paymentMethod()).param("sm", r.shippingMethodId()).param("cc", q.couponCode())
                 .param("cur", q.currency()).param("sub", q.subtotal()).param("disc", q.discount()).param("ship", q.shipping()).param("total", q.total())
@@ -113,7 +118,8 @@ public class CheckoutService {
                 .param("key", key == null || key.isBlank() ? null : key)
                 .param("exp", card ? java.sql.Timestamp.from(Instant.now().plus(30, ChronoUnit.MINUTES)) : null)
                 .param("gov", nz(r.address().governorateCode()).toUpperCase()).param("area", nz(r.address().area())).param("lm", nz(r.address().landmark())).param("ph2", nz(r.address().phone2()))
-                .param("codfee", q.codFee()).param("emin", q.etaMin()).param("emax", q.etaMax()).param("src", source == null ? "WEB" : source).update();
+                .param("codfee", q.codFee()).param("emin", q.etaMin()).param("emax", q.etaMax()).param("src", source == null ? "WEB" : source)
+                .param("rs", risk.score()).param("rl", risk.level()).param("rr", String.join(",", risk.reasons())).param("nc", risk.score() > 0 && risk.level().length() > 0 && codRisk.mustHold(tenantId, risk.level())).update();
 
         for (QuoteLine l : q.lines())
             jdbc.sql("""
@@ -145,6 +151,7 @@ public class CheckoutService {
                     .param("o", orderId).param("t", tenantId).param("a", q.total()).param("c", q.currency()).param("k", paymentKey).update();
         }
         ent.increment(tenantId, "orders_monthly", currentMonth(), 1);
+        carts.markRecovered(tenantId, phone, orderId);
         events.publishEvent(new OrderEvents.OrderCreated(tenantId, orderId, userId, number));
         return summary(Map.of("id", orderId, "order_number", number, "status", card ? "PENDING" : "REQUESTED", "payment_status", "UNPAID",
                 "total_minor", q.total(), "currency", q.currency()), checkoutUrl, false);

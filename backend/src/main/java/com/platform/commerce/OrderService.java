@@ -30,14 +30,16 @@ public class OrderService {
     private final InventoryService inventory;
     private final AuditService audit;
     private final ApplicationEventPublisher events;
+    private final LoyaltyService loyalty;
     private final PhoneFlags phoneFlags;
 
-    public OrderService(JdbcClient jdbc, InventoryService inventory, AuditService audit, ApplicationEventPublisher events, PhoneFlags phoneFlags) {
+    public OrderService(JdbcClient jdbc, InventoryService inventory, AuditService audit, ApplicationEventPublisher events, PhoneFlags phoneFlags, LoyaltyService loyalty) {
         this.phoneFlags = phoneFlags;
         this.jdbc = jdbc;
         this.inventory = inventory;
         this.audit = audit;
         this.events = events;
+        this.loyalty = loyalty;
     }
 
     /** Staff-driven (actor = staff user) or customer-driven (customerUserId set) status change. */
@@ -64,6 +66,8 @@ public class OrderService {
         if (!TRANSITIONS.getOrDefault(from, Set.of()).contains(newStatus))
             throw new BusinessException(org.springframework.http.HttpStatus.CONFLICT, "INVALID_STATUS_TRANSITION", "Cannot move an order from " + from + " to " + newStatus);
 
+        if (Set.of("PREPARING", "SHIPPED").contains(newStatus) && Boolean.TRUE.equals(o.get("needs_confirmation")) && o.get("confirmed_at") == null)
+            throw new BusinessException(org.springframework.http.HttpStatus.CONFLICT, "ORDER_NEEDS_CONFIRMATION", "This order looks risky: call the customer and confirm it before preparing or shipping it");
         var items = jdbc.sql("SELECT variant_id, branch_id, quantity FROM commerce.order_items WHERE order_id = :o AND tenant_id = :t").param("o", orderId).param("t", tenantId).query().listOfRows();
         switch (newStatus) {
             case "CANCELLED" -> {
@@ -89,8 +93,9 @@ public class OrderService {
         String phone = (String) o.get("customer_phone_snapshot");
         switch (newStatus) {
             case "SHIPPED" -> jdbc.sql("UPDATE commerce.orders SET shipped_at = coalesce(shipped_at, now()), confirmed_at = coalesce(confirmed_at, now()) WHERE id = :o").param("o", orderId).update();
-            case "ARRIVED" -> { jdbc.sql("UPDATE commerce.orders SET delivered_at = now() WHERE id = :o").param("o", orderId).update(); phoneFlags.bump(tenantId, phone, "delivered_count"); }
-            case "RETURNED" -> phoneFlags.bump(tenantId, phone, "returned_count");
+            case "ARRIVED" -> { jdbc.sql("UPDATE commerce.orders SET delivered_at = now() WHERE id = :o").param("o", orderId).update(); phoneFlags.bump(tenantId, phone, "delivered_count");
+                loyalty.earnForDelivered(tenantId, orderId, phone, ((Number) o.get("subtotal_minor")).longValue(), ((Number) o.get("discount_minor")).longValue()); }
+            case "RETURNED" -> { phoneFlags.bump(tenantId, phone, "returned_count"); if ("ARRIVED".equals(from)) loyalty.reverseForReturned(tenantId, orderId, phone); }
             case "CANCELLED" -> phoneFlags.bump(tenantId, phone, "cancelled_count");
             default -> { }
         }
@@ -179,7 +184,7 @@ public class OrderService {
         String g = governorate == null || governorate.isBlank() ? null : governorate.toUpperCase();
         long total = jdbc.sql("SELECT count(*) FROM commerce.orders WHERE " + where).param("t", tenantId).param("s", status).param("u", userId).param("unc", unc).param("g", g).param("q", like).query(Long.class).single();
         var rows = jdbc.sql("SELECT id, order_number, source, whatsapp_confirmed_at, status, payment_status, fulfillment_status, payment_method, currency, total_minor, customer_name_snapshot, customer_phone_snapshot, governorate_code, "
-                        + "confirmed_at, courier_name, tracking_number, created_at FROM commerce.orders WHERE " + where + " ORDER BY created_at DESC LIMIT :lim OFFSET :off")
+                        + "confirmed_at, courier_name, tracking_number, created_at, risk_level, needs_confirmation FROM commerce.orders WHERE " + where + " ORDER BY created_at DESC LIMIT :lim OFFSET :off")
                 .param("t", tenantId).param("s", status).param("u", userId).param("unc", unc).param("g", g).param("q", like).param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows();
         return page.wrap(Rows.camel(rows), total);
     }
@@ -194,7 +199,7 @@ public class OrderService {
                 SELECT id, order_number, source, whatsapp_number, whatsapp_confirmed_at, status, payment_status, fulfillment_status, payment_method, coupon_code, currency, subtotal_minor, discount_minor,
                        shipping_minor, tax_minor, cod_fee_minor, total_minor, customer_name_snapshot, customer_phone_snapshot, shipping_address_snapshot::text AS shipping_address,
                        governorate_code, area, landmark, phone2, eta_min_days, eta_max_days, confirmed_at, courier_name, tracking_number, tracking_url, shipped_at, delivered_at,
-                       notes, created_at, updated_at, user_id
+                       notes, created_at, updated_at, user_id, risk_score, risk_level, risk_reasons, needs_confirmation
                 FROM commerce.orders WHERE id = :o AND tenant_id = :t
                 """).param("o", orderId).param("t", tenantId).query().listOfRows().stream().findFirst()
                 .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Order not found"));

@@ -76,6 +76,19 @@ export default function Checkout() {
     return () => clearTimeout(h);
   }, [shippingId, coupon, addr.addressLine1, addr.city, addr.governorateCode, addr.phone, items.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Once a phone number is typed, tell the shop about the cart so an unfinished order can be followed up after 24 hours.
+  useEffect(() => {
+    const digits = addr.phone.replace(/\D/g, "");
+    if (digits.length < 10 || items.length === 0) return;
+    const h = setTimeout(() => {
+      let clientKey = "";
+      try { clientKey = localStorage.getItem("cart:key") ?? ""; if (!clientKey) { clientKey = newKey().replace(/[^A-Za-z0-9_-]/g, "").slice(0, 40); localStorage.setItem("cart:key", clientKey); } } catch { return; }
+      if (clientKey.length < 8) return;
+      void api("shop/carts/snapshot", { body: { clientKey, name: addr.recipientName || undefined, phone: addr.phone, items } }).catch(() => null);
+    }, 1500);
+    return () => clearTimeout(h);
+  }, [addr.phone, addr.recipientName, items]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const place = useAction(async () => {
     const r = await api<Placed>("shop/checkout", { body, idempotencyKey: key });
     try { sessionStorage.setItem("lastOrderTotal", String((quote?.totalMinor ?? r.totalMinor) / 100)); sessionStorage.setItem("lastOrderCurrency", currency); } catch { /* storage unavailable */ }

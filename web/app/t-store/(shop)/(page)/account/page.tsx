@@ -36,6 +36,34 @@ function ProfileCard() {
   );
 }
 
+type Loyalty = { enabled: boolean; earnPercent: number; minRedeem: number; points: number; lifetimePoints: number };
+
+/** Points earned on delivered orders; turned into a one-time coupon on request. Only shown when the shop uses points. */
+function LoyaltyCard() {
+  const t = useT();
+  const l = useApi<Loyalty>("shop/loyalty");
+  const [pts, setPts] = useState("");
+  const [code, setCode] = useState<string | null>(null);
+  const redeem = useAction(async () => { const r = await api<{ couponCode: string }>("shop/loyalty/redeem", { body: { points: Number(pts) } }); setCode(r.couponCode); setPts(""); await l.reload(); });
+  if (!l.data || !l.data.enabled) return null;
+  const d = l.data;
+  return (
+    <Card className="mb-6 space-y-3">
+      <h2 className="font-medium">{t("loyalty.title")}</h2>
+      <p className="text-sm text-slate-500">{t("loyalty.hint", { percent: d.earnPercent })}</p>
+      <p className="text-3xl font-extrabold">{d.points} <span className="text-base font-semibold text-slate-500">{t("loyalty.points")}</span></p>
+      {d.points >= d.minRedeem ? (
+        <form onSubmit={(e) => { e.preventDefault(); void redeem.run(); }} className="flex flex-wrap items-end gap-3">
+          <Field label={t("loyalty.redeemHow", { min: d.minRedeem })}><Input dir="ltr" inputMode="numeric" value={pts} onChange={(e) => setPts(e.target.value)} placeholder={String(d.minRedeem)} /></Field>
+          <Button type="submit" size="sm" loading={redeem.loading}>{t("loyalty.redeem")}</Button>
+        </form>
+      ) : <p className="text-xs text-slate-500">{t("loyalty.needMore", { min: d.minRedeem })}</p>}
+      <ErrorText error={redeem.error} />
+      {code && <p className="rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800">{t("loyalty.yourCode")}: <b dir="ltr">{code}</b></p>}
+    </Card>
+  );
+}
+
 export default function Account() {
   const t = useT();
   const { me, ready } = useMe();
@@ -53,6 +81,7 @@ export default function Account() {
     <>
       <PageHeader title={t("account.title")} subtitle={me ? `${me.firstName} ${me.phone ? "· " + me.phone : ""}` : ""} actions={<><Link href="/orders" className="rounded-lg border bg-white px-3 py-2 text-sm">{t("orders.mine")}</Link><LogoutButton /></>} />
       <ProfileCard />
+      <LoyaltyCard />
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
           <h2 className="mb-3 font-medium">{t("account.addresses")}</h2>

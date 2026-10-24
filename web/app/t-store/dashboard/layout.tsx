@@ -3,6 +3,7 @@ import { DashboardShell, type NavItem } from "@/components/dashboard/shell";
 const NAV: NavItem[] = [
   { href: "/dashboard", label: "nav.overview", group: "navgrp.sales", icon: "dashboard" },
   { href: "/dashboard/orders", label: "nav.orders", group: "navgrp.sales", screen: "orders", icon: "box" },
+  { href: "/dashboard/carts", label: "nav.carts", group: "navgrp.sales", perm: ["cart.read", "cart.manage"], icon: "bag" },
   { href: "/dashboard/returns", label: "nav.returns", group: "navgrp.sales", screen: "orders", icon: "file" },
   { href: "/dashboard/customers", label: "nav.customers", group: "navgrp.sales", screen: "customers", icon: "users" },
   { href: "/dashboard/channels", label: "nav.channels", group: "navgrp.sales", screen: "integrations", icon: "link" },
@@ -12,6 +13,7 @@ const NAV: NavItem[] = [
   { href: "/dashboard/coupons", label: "nav.coupons", group: "navgrp.catalog", screen: "coupons", icon: "coupon" },
   { href: "/dashboard/reviews", label: "nav.reviews", group: "navgrp.catalog", screen: "reviews", icon: "star" },
   { href: "/dashboard/copilot", label: "nav.copilot", group: "navgrp.setup", perm: "copilot.use", icon: "sparkles" },
+  { href: "/dashboard/growth", label: "nav.growth", group: "navgrp.setup", perm: "growth.manage", icon: "users" },
   { href: "/dashboard/marketing", label: "nav.marketing", group: "navgrp.setup", screen: "marketing", icon: "trending" },
   { href: "/dashboard/ai", label: "nav.ai", group: "navgrp.setup", screen: "ai", icon: "sparkles" },
   { href: "/dashboard/settings", label: "nav.settings", group: "navgrp.setup", screen: "settings", icon: "settings" },
