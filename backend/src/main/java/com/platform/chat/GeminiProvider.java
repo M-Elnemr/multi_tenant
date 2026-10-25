@@ -22,6 +22,7 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(name = "app.ai.provider", havingValue = "gemini", matchIfMissing = true)
 public class GeminiProvider implements AiProvider {
     private static final ObjectMapper JSON = new ObjectMapper();
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(GeminiProvider.class);
     private final String key;
     private final List<String> models;
     private final long hedgeMs;
@@ -33,7 +34,7 @@ public class GeminiProvider implements AiProvider {
      * answers in a second. A model that fails answers the next one at once, and one that is merely slow is joined by the next after {@code hedgeMs}.
      */
     public GeminiProvider(@Value("${app.ai.gemini.api-key:}") String key, @Value("${app.ai.gemini.models:gemini-3-flash-preview,gemini-flash-lite-latest,gemini-3.1-flash-lite}") String models,
-                          @Value("${app.ai.gemini.hedge-ms:4000}") long hedgeMs) {
+                          @Value("${app.ai.gemini.hedge-ms:10000}") long hedgeMs) {
         this.key = key == null || key.isBlank() ? null : key.trim();
         this.models = java.util.Arrays.stream(models.split(",")).map(String::trim).filter(m -> !m.isEmpty()).toList();
         this.hedgeMs = hedgeMs;
@@ -57,7 +58,7 @@ public class GeminiProvider implements AiProvider {
             while (System.nanoTime() < deadline) {
                 java.util.concurrent.Future<Turn> f = done.poll(next < models.size() ? hedgeMs : 1000, java.util.concurrent.TimeUnit.MILLISECONDS);
                 if (f == null) {   // nobody answered yet: bring in the next model alongside
-                    if (next < models.size()) { final String m = models.get(next++); running.add(done.submit(() -> call(m, body))); }
+                    if (next < models.size()) { final String m = models.get(next++); log.info("Gemini slow after {} ms: also asking {}", hedgeMs, m); running.add(done.submit(() -> call(m, body))); }
                     continue;
                 }
                 try {
