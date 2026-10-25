@@ -7,6 +7,8 @@ import { AreaChart, Badge, Button, Card, Empty, ErrorText, Input, Loading, Modal
 
 type Sums = { requests: number; instant: number; modelCalls: number; input: number; output: number; cached: number; cacheWrite: number; costUsd: number; fallbacks: number };
 type Price = { input: number; output: number; cached: number; cacheWrite: number };
+type ModelKey = "all" | "gemini" | "anthropic";
+const MODELS: { key: Exclude<ModelKey, "all">; label: string }[] = [{ key: "gemini", label: "Gemini" }, { key: "anthropic", label: "Claude" }];
 type Prices = { provider: string; models: Record<string, Price> };
 type Shop = Sums & { tenantId: string | null; name: string; conversations: number };
 type Day = {
@@ -39,11 +41,13 @@ export default function AiUsage() {
   const [day, setDay] = useState(cairoToday);
   const [shopId, setShopId] = useState<string | null>(null);
   const [convId, setConvId] = useState<string | null>(null);
+  const [model, setModel] = useState<ModelKey>("all");
   const [tab, setTab] = useState<"shops" | "steps" | "features" | "models" | "channels">("shops");
   const [shopTab, setShopTab] = useState<"conversations" | "steps" | "features" | "models" | "other">("conversations");
   
-  const data = useApi<Day>(`platform/ai-usage?day=${day}`);
-  const shop = useApi<ShopDay>(shopId ? `platform/ai-usage/shops/${shopId}?day=${day}` : null);
+  const mq = model === "all" ? "" : `&model=${model}`;
+  const data = useApi<Day>(`platform/ai-usage?day=${day}${mq}`);
+  const shop = useApi<ShopDay>(shopId ? `platform/ai-usage/shops/${shopId}?day=${day}${mq}` : null);
   const conv = useApi<ConvDetail>(convId ? `platform/ai-usage/conversations/${convId}` : null);
 
   const n = (v: number) => v.toLocaleString(locale);
@@ -96,6 +100,28 @@ export default function AiUsage() {
       <ErrorText error={data.error} />
       {!d ? <Loading /> : (
         <div className="space-y-6">
+          <Card>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-ink">{t("aiu.pickModel")}</p>
+              <Tabs tabs={[{ key: "all", label: t("aiu.modelAll") }, ...MODELS.map((m) => ({ key: m.key, label: m.label }))]} value={model} onChange={(k) => { setModel(k as ModelKey); setConvId(null); }} />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {MODELS.map((m) => {
+                const r = d.byModel.find((x) => x.model === m.key);
+                const tokens = r ? total(r) : 0;
+                return (
+                  <button type="button" key={m.key} onClick={() => { setModel(m.key); setConvId(null); }} className={`rounded-2xl border p-4 text-start transition ${model === m.key ? "border-brand bg-brand-soft" : "border-slate-200 hover:border-brand/50"}`}>
+                    <p className="text-base font-bold text-ink">{m.label}</p>
+                    <p className="mt-1 text-2xl font-extrabold tabular-nums text-ink">{n(tokens)} <span className="text-sm font-medium text-slate-500">{t("aiu.tokens")}</span></p>
+                    <p className="text-xs text-slate-500">{r ? `${n(r.input)} ${t("aiu.in")} · ${n(r.output)} ${t("aiu.out")} · ${n(r.requests)} ${t("aiu.requests")} · ${n(r.instant)} ${t("aiu.instant")} · ${t("aiu.cacheHit")} ${pct(r.cached, r.input)}` : t("aiu.none")}</p>
+                    <p className="mt-1 text-lg font-bold text-red-600">{usd(r ? cost(r) : 0)}</p>
+                  </button>
+                );
+              })}
+            </div>
+            {model !== "all" && <p className="mt-3 text-xs text-slate-500">{t("aiu.filtered", { m: MODELS.find((x) => x.key === model)?.label ?? model })}</p>}
+          </Card>
+
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
             <Stat label={t("aiu.tokens")} value={n(total(d.totals))} icon="chart" hint={`${n(d.totals.input)} ${t("aiu.in")} · ${n(d.totals.output)} ${t("aiu.out")}`} />
             <Stat label={t("aiu.requests")} value={n(d.totals.requests)} icon="chat" hint={`${n(d.totals.modelCalls)} ${t("aiu.modelCalls")}`} />

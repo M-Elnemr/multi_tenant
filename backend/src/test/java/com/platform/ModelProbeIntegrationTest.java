@@ -63,5 +63,18 @@ class ModelProbeIntegrationTest extends IntegrationTestBase {
         assertThat(one(s, "gemini", "costUsd").doubleValue()).isGreaterThan(3.4);    // 0.50 in + 3.00 out
         assertThat(one(s, "gemini", "fallbacks").intValue()).isEqualTo(1);
         assertThat(JsonPath.<Number>read(s, "$.totals.costUsd").doubleValue()).isGreaterThan(4.0);
+
+        // choosing one model counts only that model's requests everywhere on the screen; the by-model comparison keeps both
+        String claude = onHost("platform.test", token, "GET", "/api/v1/platform/ai-usage/shops/" + id + "?day=" + today + "&model=anthropic", null).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(JsonPath.<Number>read(claude, "$.totals.input").longValue()).isEqualTo(1_000_000L);
+        assertThat(JsonPath.<Number>read(claude, "$.totals.costUsd").doubleValue()).isEqualTo(0.60);
+        assertThat(JsonPath.<List<Object>>read(claude, "$.conversations")).hasSize(1);
+        assertThat(JsonPath.<List<Object>>read(claude, "$.byModel")).hasSize(2);
+        String gem = onHost("platform.test", token, "GET", "/api/v1/platform/ai-usage?day=" + today + "&model=gemini", null).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(JsonPath.<String>read(gem, "$.model")).isEqualTo("gemini");
+        assertThat(JsonPath.<List<String>>read(gem, "$.byModel[*].model")).contains("anthropic", "gemini");
+        assertThat(JsonPath.<Number>read(gem, "$.totals.input").longValue()).isGreaterThanOrEqualTo(1_000_010L);
+        assertThat(JsonPath.<String>read(onHost("platform.test", token, "GET", "/api/v1/platform/ai-usage?day=" + today + "&model=all", null).andReturn().getResponse().getContentAsString(), "$.model")).isEqualTo("all");
+        onHost("platform.test", token, "GET", "/api/v1/platform/ai-usage?day=" + today + "&model=x';drop", null).andExpect(status().isBadRequest());
     }
 }

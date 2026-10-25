@@ -478,6 +478,7 @@ class AiUsageScreen extends StatefulWidget {
 
 class _AiUsageScreenState extends State<AiUsageScreen> {
   DateTime _day = DateTime.now();
+  String _model = 'all';   // 'all' | 'gemini' | 'anthropic': every number below counts only that model
 
   bool get _today => _day.year == DateTime.now().year && _day.month == DateTime.now().month && _day.day == DateTime.now().day;
 
@@ -496,10 +497,22 @@ class _AiUsageScreenState extends State<AiUsageScreen> {
           IconButton(icon: const Icon(Icons.chevron_right_rounded), onPressed: _today ? null : () => setState(() => _day = _day.add(const Duration(days: 1)))),
         ]),
       ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+        child: SizedBox(
+          width: double.infinity,
+          child: SegmentedButton<String>(
+            showSelectedIcon: false,
+            segments: [ButtonSegment(value: 'all', label: Text(ar ? 'الكل' : 'All')), const ButtonSegment(value: 'gemini', label: Text('Gemini')), const ButtonSegment(value: 'anthropic', label: Text('Claude'))],
+            selected: {_model},
+            onSelectionChanged: (v) => setState(() => _model = v.first),
+          ),
+        ),
+      ),
       Expanded(
         child: _Loader(
-          key: ValueKey('u${_day.toString().substring(0, 10)}'),
-          load: () => widget.api.get('platform/ai-usage', query: {'day': _day.toString().substring(0, 10)}),
+          key: ValueKey('u${_day.toString().substring(0, 10)}$_model'),
+          load: () => widget.api.get('platform/ai-usage', query: {'day': _day.toString().substring(0, 10), if (_model != 'all') 'model': _model}),
           builder: (context, d, reload) {
             final t = d['totals'] as Map<String, dynamic>;
             final models = ((d['byModel'] as List?) ?? []).cast<Map<String, dynamic>>();
@@ -510,24 +523,44 @@ class _AiUsageScreenState extends State<AiUsageScreen> {
                 Row(children: [_stat(ar ? 'توكنز' : 'Tokens', _n(((t['input'] as num?) ?? 0) + ((t['output'] as num?) ?? 0))), _stat(ar ? 'طلبات' : 'Requests', _n(t['requests']))]),
                 Row(children: [_stat(ar ? 'رد فوري' : 'Instant', _n(t['instant']), tone: const Color(0xFF1E9E5A)), _stat(ar ? 'توفير الكاش' : 'Cache hit', _pct((t['cached'] as num?) ?? 0, (t['input'] as num?) ?? 0)), _stat(ar ? 'التكلفة' : 'Cost', _usd(t['costUsd']), tone: const Color(0xFFD14343))]),
                 const SizedBox(height: 8),
-                Text(ar ? 'مقارنة الموديلات' : 'Models', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+                Text(ar ? 'كل موديل على حدة' : 'Each model', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
                 const SizedBox(height: 6),
-                if (models.isEmpty) emptyState(ar ? 'مفيش استهلاك في اليوم ده' : 'No usage on this day'),
-                for (final m in models)
-                  _card(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('${m['model']}', style: const TextStyle(fontWeight: FontWeight.w900)),
-                    const SizedBox(height: 4),
-                    Text('${_n(m['requests'])} ${ar ? 'طلب' : 'requests'} · ${_n(m['instant'])} ${ar ? 'فوري' : 'instant'} · ${_n(m['fallbacks'])} ${ar ? 'رجع للأساسي' : 'fell back'}', style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 12.5)),
-                    Text('${_n(m['input'])} in · ${_n(m['output'])} out · ${ar ? 'كاش' : 'cache'} ${_pct((m['cached'] as num?) ?? 0, (m['input'] as num?) ?? 0)}', style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 12.5)),
-                    const SizedBox(height: 4),
-                    Text('${_usd(m['costUsd'])}  ·  ${((m['requests'] as num?) ?? 0) > 0 ? '${_n((((m['input'] as num?) ?? 0) + ((m['output'] as num?) ?? 0)) / (m['requests'] as num))} ${ar ? 'توكن/طلب' : 'tokens/request'} · ${_usd(((m['costUsd'] as num?) ?? 0) / (m['requests'] as num))}/${ar ? 'طلب' : 'request'}' : '–'}', style: const TextStyle(fontWeight: FontWeight.w800)),
-                  ])),
+                for (final key in const ['gemini', 'anthropic'])
+                  () {
+                    final m = models.cast<Map<String, dynamic>?>().firstWhere((x) => x?['model'] == key, orElse: () => null);
+                    final tokens = m == null ? 0 : ((m['input'] as num?) ?? 0) + ((m['output'] as num?) ?? 0);
+                    final reqs = (m?['requests'] as num?) ?? 0;
+                    return PressScale(
+                      onTap: () => setState(() => _model = key),
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: _model == key ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.08) : Colors.white,
+                          border: Border.all(color: _model == key ? Theme.of(context).colorScheme.primary : const Color(0xFFE2E8F0)),
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(key == 'gemini' ? 'Gemini' : 'Claude', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+                          const SizedBox(height: 4),
+                          Text('${_n(tokens)} ${ar ? 'توكن' : 'tokens'}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 22)),
+                          if (m == null) Text(ar ? 'مفيش استهلاك في اليوم ده' : 'No usage on this day', style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 12.5))
+                          else ...[
+                            Text('${_n(m['input'])} in · ${_n(m['output'])} out · ${_n(reqs)} ${ar ? 'طلب' : 'requests'} · ${_n(m['instant'])} ${ar ? 'فوري' : 'instant'}', style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 12.5)),
+                            Text('${ar ? 'توفير الكاش' : 'Cache hit'} ${_pct((m['cached'] as num?) ?? 0, (m['input'] as num?) ?? 0)} · ${_n(m['fallbacks'])} ${ar ? 'رجع للأساسي' : 'fell back'}${reqs > 0 ? ' · ${_n(tokens / reqs)} ${ar ? 'توكن/طلب' : 'tokens/request'}' : ''}', style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 12.5)),
+                          ],
+                          const SizedBox(height: 4),
+                          Text(_usd(m?['costUsd']), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: Color(0xFFD14343))),
+                        ]),
+                      ),
+                    );
+                  }(),
                 const SizedBox(height: 8),
                 Text(ar ? 'المتاجر' : 'Shops', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
                 const SizedBox(height: 6),
                 for (final s in shops)
                   PressScale(
-                    onTap: s['tenantId'] == null ? null : () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => Scaffold(appBar: AppBar(title: Text('${s['name']}')), body: _ShopUsage(api: widget.api, id: '${s['tenantId']}', day: _day.toString().substring(0, 10))))),
+                    onTap: s['tenantId'] == null ? null : () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => Scaffold(appBar: AppBar(title: Text('${s['name']}')), body: _ShopUsage(api: widget.api, id: '${s['tenantId']}', day: _day.toString().substring(0, 10), model: _model)))),
                     child: _card(Row(children: [
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text(s['tenantId'] == null ? (ar ? 'على مستوى المنصة' : 'Platform level') : '${s['name']}', style: const TextStyle(fontWeight: FontWeight.w800)),
@@ -546,13 +579,13 @@ class _AiUsageScreenState extends State<AiUsageScreen> {
 }
 
 class _ShopUsage extends StatelessWidget {
-  const _ShopUsage({required this.api, required this.id, required this.day});
+  const _ShopUsage({required this.api, required this.id, required this.day, this.model = 'all'});
   final ApiClient api;
-  final String id, day;
+  final String id, day, model;
   @override
   Widget build(BuildContext context) {
     final ar = AppLocale.isAr;
-    return _Loader(load: () => api.get('platform/ai-usage/shops/$id', query: {'day': day}), builder: (context, d, reload) {
+    return _Loader(load: () => api.get('platform/ai-usage/shops/$id', query: {'day': day, if (model != 'all') 'model': model}), builder: (context, d, reload) {
       final t = d['totals'] as Map<String, dynamic>;
       final convs = ((d['conversations'] as List?) ?? []).cast<Map<String, dynamic>>();
       final models = ((d['byModel'] as List?) ?? []).cast<Map<String, dynamic>>();
@@ -614,7 +647,7 @@ class WalletScreen extends StatelessWidget {
         api: api,
         path: 'platform/wallet/topups',
         filterParam: 'status',
-        filters: [('PENDING', ar ? 'بانتظار' : 'Pending'), ('APPROVED', ar ? 'مقبول' : 'Approved'), ('REJECTED', ar ? 'مرفوض' : 'Rejected')],
+        filters: [('', ar ? 'الكل' : 'All'), ('PENDING', ar ? 'بانتظار' : 'Pending'), ('APPROVED', ar ? 'مقبول' : 'Approved'), ('REJECTED', ar ? 'مرفوض' : 'Rejected')],
         emptyText: ar ? 'مفيش طلبات شحن' : 'No top-up requests',
         itemBuilder: (context, r, reload) => _card(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [Expanded(child: Text('${r['tenantName']}', style: const TextStyle(fontWeight: FontWeight.w900))), StatusPill('${r['status']}')]),

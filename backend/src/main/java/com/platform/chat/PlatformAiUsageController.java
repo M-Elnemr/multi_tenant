@@ -19,10 +19,10 @@ public class PlatformAiUsageController {
     public PlatformAiUsageController(AiUsageService usage) { this.usage = usage; }
 
     @GetMapping
-    public Map<String, Object> day(@RequestParam(required = false) String day) { return usage.day(day); }
+    public Map<String, Object> day(@RequestParam(required = false) String day, @RequestParam(required = false) String model) { return usage.day(day, model); }
 
     @GetMapping("/shops/{tenantId}")
-    public Map<String, Object> shop(@PathVariable UUID tenantId, @RequestParam(required = false) String day) { return usage.shop(tenantId, day); }
+    public Map<String, Object> shop(@PathVariable UUID tenantId, @RequestParam(required = false) String day, @RequestParam(required = false) String model) { return usage.shop(tenantId, day, model); }
 
     @GetMapping("/conversations/{id}")
     public Map<String, Object> conversation(@PathVariable UUID id) { return usage.conversation(id); }

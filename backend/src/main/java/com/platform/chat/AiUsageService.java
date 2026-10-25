@@ -108,6 +108,15 @@ public class AiUsageService {
         catch (java.time.format.DateTimeParseException e) { throw BusinessException.badRequest("VALIDATION_ERROR", "The date must look like 2026-10-25"); }
     }
 
+    /** "gemini", "anthropic"...: when given, every number of the screen counts only that model's requests (old rows with no model count as the default one). */
+    private String modelOf(String model) {
+        if (model == null || model.isBlank() || "all".equalsIgnoreCase(model)) return null;
+        if (!model.matches("[a-z]{2,16}")) throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown model");
+        return model;
+    }
+
+    private String mfilter(String model, String col) { return model == null ? "" : " AND coalesce(" + col + ", '" + provider.replace("'", "") + "') = :m"; }
+
     private static OffsetDateTime start(LocalDate d) { return d.atStartOfDay(ZONE).toOffsetDateTime(); }
 
     private Map<String, Object> prices() {
@@ -123,10 +132,11 @@ public class AiUsageService {
         return Rows.camel(q.query().listOfRows());
     }
 
-    private List<Map<String, Object>> hours(LocalDate day, UUID tenant) {
-        String tf = tenant == null ? "" : " AND tenant_id = :t";
+    private List<Map<String, Object>> hours(LocalDate day, UUID tenant, String model) {
+        String tf = (tenant == null ? "" : " AND tenant_id = :t") + mfilter(model, "model");
         Map<String, Object> p = new LinkedHashMap<>(Map.of("f", start(day), "to", start(day.plusDays(1))));
         if (tenant != null) p.put("t", tenant);
+        if (model != null) p.put("m", model);
         var found = new LinkedHashMap<Integer, Map<String, Object>>();
         for (var r : rows("SELECT extract(hour FROM created_at AT TIME ZONE 'Africa/Cairo')::int AS hour, " + sums + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to" + tf + " GROUP BY 1", p)) found.put(((Number) r.get("hour")).intValue(), r);
         List<Map<String, Object>> out = new ArrayList<>();
@@ -134,10 +144,11 @@ public class AiUsageService {
         return out;
     }
 
-    private List<Map<String, Object>> steps(LocalDate day, UUID tenant) {
-        String tf = tenant == null ? "" : " AND l.tenant_id = :t";
+    private List<Map<String, Object>> steps(LocalDate day, UUID tenant, String model) {
+        String tf = (tenant == null ? "" : " AND l.tenant_id = :t") + mfilter(model, "l.model");
         Map<String, Object> p = new LinkedHashMap<>(Map.of("f", start(day), "to", start(day.plusDays(1))));
         if (tenant != null) p.put("t", tenant);
+        if (model != null) p.put("m", model);
         String roundCost = cost("(c ->> 'in')::int", "(c ->> 'out')::int", "(c ->> 'cached')::int", "coalesce((c ->> 'write')::int, 0)", "l.model");
         return rows("""
                 SELECT coalesce(nullif(array_to_string(ARRAY(SELECT jsonb_array_elements_text(c -> 'tools')), ', '), ''), '(final answer)') AS step, l.feature, count(*) AS rounds,
@@ -149,50 +160,64 @@ public class AiUsageService {
     }
 
     /** The whole platform on one day. */
-    public Map<String, Object> day(String dayText) {
+    public Map<String, Object> day(String dayText) { return day(dayText, null); }
+
+    public Map<String, Object> day(String dayText, String modelText) {
         LocalDate day = dayOf(dayText);
-        Map<String, Object> p = Map.of("f", start(day), "to", start(day.plusDays(1)));
+        String model = modelOf(modelText);
+        String mf = mfilter(model, "model"), mfl = mfilter(model, "l.model");
+        Map<String, Object> p = new LinkedHashMap<>(Map.of("f", start(day), "to", start(day.plusDays(1))));
+        if (model != null) p.put("m", model);
+        Map<String, Object> allModels = Map.of("f", start(day), "to", start(day.plusDays(1)));
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("day", day.toString());
         out.put("prices", prices());
-        out.put("totals", rows("SELECT " + sums + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to", p).get(0));
-        out.put("byFeature", rows("SELECT feature, " + sums + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to GROUP BY feature ORDER BY sum(input_tokens + output_tokens) DESC", p));
-        out.put("byChannel", rows("SELECT coalesce(channel, '-') AS channel, " + sums + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to AND feature = 'CHAT' GROUP BY 1 ORDER BY sum(input_tokens + output_tokens) DESC", p));
-        out.put("byStep", steps(day, null));
-        out.put("byModel", rows("SELECT coalesce(model, '" + provider.replace("'", "") + "') AS model, " + sums + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to GROUP BY 1 ORDER BY sum(input_tokens + output_tokens) DESC", p));
-        out.put("byHour", hours(day, null));
+        out.put("model", model == null ? "all" : model);
+        out.put("totals", rows("SELECT " + sums + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to" + mf, p).get(0));
+        out.put("byFeature", rows("SELECT feature, " + sums + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to" + mf + " GROUP BY feature ORDER BY sum(input_tokens + output_tokens) DESC", p));
+        out.put("byChannel", rows("SELECT coalesce(channel, '-') AS channel, " + sums + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to AND feature = 'CHAT'" + mf + " GROUP BY 1 ORDER BY sum(input_tokens + output_tokens) DESC", p));
+        out.put("byStep", steps(day, null, model));
+        out.put("byModel", rows("SELECT coalesce(model, '" + provider.replace("'", "") + "') AS model, " + sums + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to GROUP BY 1 ORDER BY sum(input_tokens + output_tokens) DESC", allModels));
+        out.put("byHour", hours(day, null, model));
         out.put("shops", rows("""
-                SELECT l.tenant_id, coalesce(t.name, '—') AS name, count(DISTINCT l.conversation_id) AS conversations, """ + sums + """
-                 FROM chat.ai_usage_log l LEFT JOIN core.tenants t ON t.id = l.tenant_id WHERE l.created_at >= :f AND l.created_at < :to
+                SELECT l.tenant_id, coalesce(t.name, '—') AS name, count(DISTINCT l.conversation_id) AS conversations, """ + sums + " " + """
+                 FROM chat.ai_usage_log l LEFT JOIN core.tenants t ON t.id = l.tenant_id WHERE l.created_at >= :f AND l.created_at < :to""" + mfl + """
                  GROUP BY l.tenant_id, t.name ORDER BY sum(l.input_tokens + l.output_tokens) DESC
                 """, p));
-        out.put("series", rows("SELECT (created_at AT TIME ZONE 'Africa/Cairo')::date AS day, " + sums + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to GROUP BY 1 ORDER BY 1",
-                Map.of("f", start(day.minusDays(29)), "to", start(day.plusDays(1)))));
+        out.put("series", rows("SELECT (created_at AT TIME ZONE 'Africa/Cairo')::date AS day, " + sums + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to GROUP BY 1 ORDER BY 1".replace("GROUP BY 1 ORDER BY 1", mf + " GROUP BY 1 ORDER BY 1"),
+                model == null ? Map.of("f", start(day.minusDays(29)), "to", start(day.plusDays(1))) : Map.of("f", start(day.minusDays(29)), "to", start(day.plusDays(1)), "m", model)));
         return out;
     }
 
     /** One shop on one day: its conversations, features, steps and hours. */
-    public Map<String, Object> shop(UUID tenantId, String dayText) {
+    public Map<String, Object> shop(UUID tenantId, String dayText) { return shop(tenantId, dayText, null); }
+
+    public Map<String, Object> shop(UUID tenantId, String dayText, String modelText) {
         LocalDate day = dayOf(dayText);
-        Map<String, Object> p = Map.of("f", start(day), "to", start(day.plusDays(1)), "t", tenantId);
+        String model = modelOf(modelText);
+        String mf = mfilter(model, "model");
+        Map<String, Object> p = new LinkedHashMap<>(Map.of("f", start(day), "to", start(day.plusDays(1)), "t", tenantId));
+        if (model != null) p.put("m", model);
+        Map<String, Object> allModels = Map.of("f", start(day), "to", start(day.plusDays(1)), "t", tenantId);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("day", day.toString());
         out.put("prices", prices());
         out.put("shop", jdbc.sql("SELECT id, name FROM core.tenants WHERE id = :t").param("t", tenantId).query().listOfRows().stream().findFirst().map(Rows::camel).orElse(Map.of("id", tenantId, "name", "—")));
-        out.put("totals", rows("SELECT " + sums + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to AND tenant_id = :t", p).get(0));
-        out.put("byFeature", rows("SELECT feature, " + sums + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to AND tenant_id = :t GROUP BY feature ORDER BY sum(input_tokens + output_tokens) DESC", p));
-        out.put("byStep", steps(day, tenantId));
-        out.put("byModel", rows("SELECT coalesce(model, '" + provider.replace("'", "") + "') AS model, " + sums + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to AND tenant_id = :t GROUP BY 1 ORDER BY sum(input_tokens + output_tokens) DESC", p));
-        out.put("byHour", hours(day, tenantId));
+        out.put("model", model == null ? "all" : model);
+        out.put("totals", rows("SELECT " + sums + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to AND tenant_id = :t" + mf, p).get(0));
+        out.put("byFeature", rows("SELECT feature, " + sums + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to AND tenant_id = :t" + mf + " GROUP BY feature ORDER BY sum(input_tokens + output_tokens) DESC", p));
+        out.put("byStep", steps(day, tenantId, model));
+        out.put("byModel", rows("SELECT coalesce(model, '" + provider.replace("'", "") + "') AS model, " + sums + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to AND tenant_id = :t GROUP BY 1 ORDER BY sum(input_tokens + output_tokens) DESC", allModels));
+        out.put("byHour", hours(day, tenantId, model));
         out.put("conversations", rows("""
-                SELECT conversation_id, max(channel) AS channel, max(model) AS model, min(created_at) AS first_at, max(created_at) AS last_at, (array_agg(preview ORDER BY id) FILTER (WHERE preview IS NOT NULL))[1] AS first_message, """ + sums + """
-                 FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to AND tenant_id = :t AND conversation_id IS NOT NULL
+                SELECT conversation_id, max(channel) AS channel, max(model) AS model, min(created_at) AS first_at, max(created_at) AS last_at, (array_agg(preview ORDER BY id) FILTER (WHERE preview IS NOT NULL))[1] AS first_message, """ + sums + " " + """
+                 FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to AND tenant_id = :t AND conversation_id IS NOT NULL""" + mf + """
                  GROUP BY conversation_id ORDER BY sum(input_tokens + output_tokens) DESC LIMIT 300
                 """, p));
         out.put("other", rows(("""
                 SELECT id, created_at, feature, model, model_calls, input_tokens AS input, output_tokens AS output, cached_tokens AS cached, cache_write_tokens AS cache_write, ROWCOST AS cost_usd FROM chat.ai_usage_log
-                 WHERE created_at >= :f AND created_at < :to AND tenant_id = :t AND conversation_id IS NULL ORDER BY id DESC LIMIT 200
-                """).replace("ROWCOST", rowCost()), p));
+                 WHERE created_at >= :f AND created_at < :to AND tenant_id = :t AND conversation_id IS NULL ROWMF ORDER BY id DESC LIMIT 200
+                """).replace("ROWCOST", rowCost()).replace("ROWMF", mf), p));
         return out;
     }
 
