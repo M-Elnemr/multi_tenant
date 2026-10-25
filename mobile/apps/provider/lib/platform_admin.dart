@@ -9,6 +9,7 @@ import 'clinic_panel.dart' show NotificationsScreen;
 import 'common.dart';
 import 'forms.dart';
 import 'main.dart' show BusinessHome, BusinessLogo;
+import 'platform_more.dart';
 import 'push.dart';
 
 /// The platform owner's area: every shop and clinic, their subscriptions and contacts, and the "Proceed to pay" requests to call back.
@@ -65,11 +66,12 @@ class _AdminHomeState extends State<AdminHome> {
   @override
   Widget build(BuildContext context) {
     final ar = AppLocale.isAr;
-    final titles = [ar ? 'نظرة عامة' : 'Overview', ar ? 'الأنشطة' : 'Businesses', ar ? 'طلبات الدفع' : 'Pay requests'];
+    final titles = [ar ? 'نظرة عامة' : 'Overview', ar ? 'الأنشطة' : 'Businesses', ar ? 'طلبات الدفع' : 'Pay requests', ar ? 'المزيد' : 'More'];
     final pages = <Widget>[
       _Overview(key: ValueKey('o${_gen[0] ?? 0}'), api: widget.api, goTo: (i) => setState(() => _tab = i)),
       _Businesses(key: ValueKey('b${_gen[1] ?? 0}'), api: widget.api, perms: widget.perms),
       _Requests(key: ValueKey('r${_gen[2] ?? 0}'), api: widget.api, perms: widget.perms),
+      AdminMore(key: ValueKey('m${_gen[3] ?? 0}'), api: widget.api, perms: widget.perms, onSignOut: widget.onSignOut),
     ];
     return Scaffold(
       appBar: AppBar(
@@ -99,6 +101,7 @@ class _AdminHomeState extends State<AdminHome> {
           NavigationDestination(icon: const Icon(Icons.dashboard_rounded), label: titles[0]),
           NavigationDestination(icon: const Icon(Icons.storefront_rounded), label: titles[1]),
           NavigationDestination(icon: const Icon(Icons.payments_rounded), label: titles[2]),
+          NavigationDestination(icon: const Icon(Icons.apps_rounded), label: titles[3]),
         ],
       ),
     );
