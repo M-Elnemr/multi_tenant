@@ -107,7 +107,7 @@ class SendModesIntegrationTest extends IntegrationTestBase {
         assertThat(FakeEvolutionApi.CALLS.size()).isEqualTo(before);   // nothing goes out inside the request: it is queued
         for (int i = 0; i < 6; i++) assertThat(segments.runDue()).isEqualTo(1);   // one message per pass, never a burst, however long the list is
         assertThat(segments.runDue()).isEqualTo(0);
-        var sends = FakeEvolutionApi.CALLS.stream().filter(c -> c.path().startsWith("/message/sendText/")).toList();
+        var sends = FakeEvolutionApi.CALLS.stream().filter(c -> c.path().startsWith("/message/sendText/") && c.body().get("text").toString().startsWith("Hi ")).toList();   // not the nightly shop report, which the scheduler may send around midnight
         assertThat(sends).hasSize(6);
         assertThat(sends.get(0).body().get("text").toString()).contains("Hi Mona").doesNotContain("{name}");
         assertThat(wallet.balance(s.id())).isEqualTo(0L);   // free means free
