@@ -19,30 +19,50 @@ public class ChannelAi {
     private static final List<String> SOCIAL = List.of("WHATSAPP", "FACEBOOK", "INSTAGRAM");
 
     private final AiProvider defaultAi;
-    private final AiProvider claude;
+    private final AiProvider claude, gemini25;
     private final String social, web;
 
     @org.springframework.beans.factory.annotation.Autowired
     public ChannelAi(AiProvider defaultAi, @Value("${app.ai.route.social:default}") String social, @Value("${app.ai.route.web:default}") String web,
                      @Value("${app.ai.anthropic.api-key:}") String key, @Value("${app.ai.anthropic.model:claude-haiku-5-5}") String model, @Value("${app.ai.anthropic.effort:low}") String effort,
                      @Value("${app.ai.anthropic.base-url:https://api.anthropic.com/v1}") String baseUrl, @Value("${app.ai.anthropic.cache-ttl:1h}") String cacheTtl,
-                     @Value("${app.ai.route.chat-max-output-tokens:1000}") int chatMaxOutput) {
-        this(defaultAi, new AnthropicProvider(key, model, effort, baseUrl, cacheTtl, chatMaxOutput), social, web);
+                     @Value("${app.ai.route.chat-max-output-tokens:1000}") int chatMaxOutput,
+                     @Value("${app.ai.gemini.api-key:}") String geminiKey, @Value("${app.ai.gemini25.model:gemini-2.5-flash-lite}") String gemini25Model, @Value("${app.ai.gemini.hedge-ms:10000}") long hedgeMs) {
+        this(defaultAi, new AnthropicProvider(key, model, effort, baseUrl, cacheTtl, chatMaxOutput), new GeminiProvider(geminiKey, gemini25Model, hedgeMs, "gemini25"), social, web);
     }
 
     /** For tests: any two models. */
-    public ChannelAi(AiProvider defaultAi, AiProvider claude, String social, String web) {
+    public ChannelAi(AiProvider defaultAi, AiProvider claude, String social, String web) { this(defaultAi, claude, null, social, web); }
+
+    /** For tests: all three models. */
+    public ChannelAi(AiProvider defaultAi, AiProvider claude, AiProvider gemini25, String social, String web) {
         this.defaultAi = defaultAi;
         this.claude = claude;
+        this.gemini25 = gemini25;
         this.social = social == null ? "default" : social.trim().toLowerCase(Locale.ROOT);
         this.web = web == null ? "default" : web.trim().toLowerCase(Locale.ROOT);
     }
 
     /** The model for one reply on {@code channel}: the routed one, falling back to the default if it fails before any tool exchange has begun. */
-    public Routed forChannel(String channel) {
-        String route = channel != null && SOCIAL.contains(channel) ? social : web;
-        AiProvider primary = "anthropic".equals(route) && claude.available() ? claude : defaultAi;
+    public Routed forChannel(String channel) { return forChannel(channel, null); }
+
+    /** Same, for a customer who picked a model with {@link #command}: {@code chosen} is "gemini", "gemini25" or "anthropic" (null = the channel's default). */
+    public Routed forChannel(String channel, String chosen) {
+        String route = chosen != null ? chosen : channel != null && SOCIAL.contains(channel) ? social : web;
+        AiProvider primary = "anthropic".equals(route) && claude.available() ? claude : "gemini25".equals(route) && gemini25 != null && gemini25.available() ? gemini25 : defaultAi;
         return new Routed(primary, defaultAi);
+    }
+
+    /** "claude", "gemini 3.1", "gemini 2.5" (optionally after "use" / "switch to" / "model"): the model code the customer asked for, or null when the text is not such a command. */
+    public static String command(String text) {
+        if (text == null || text.length() > 40) return null;
+        String n = FastAnswers.norm(text).replaceFirst("^(use|switch to|switch|change to|model|use model|talk to)\\s+", "");
+        return switch (n) {
+            case "claude", "claude haiku", "haiku" -> "anthropic";
+            case "gemini", "gemini 3 1", "gemini 31", "gemini 3", "gemini 3 1 flash lite" -> "gemini";
+            case "gemini 2 5", "gemini 25", "gemini 2", "gemini 2 5 flash lite" -> "gemini25";
+            default -> null;
+        };
     }
 
     /** One reply's model. It stays on whichever model it fell back to for the rest of the reply, because a model's own tool-exchange blocks cannot be replayed to another. */

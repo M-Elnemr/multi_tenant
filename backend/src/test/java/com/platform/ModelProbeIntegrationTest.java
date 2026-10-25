@@ -45,6 +45,21 @@ class ModelProbeIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void aModelCommandSwitchesOnlyThatChatAndNeedsNoModelCall() throws Exception {
+        Tenant shop = onboard("STORE");
+        UUID id = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", shop.slug()).query(UUID.class).single();
+        var reply = chat.reply(id, "WHATSAPP", "201000000009", null, "gemini 2.5");
+        assertThat(reply.text()).startsWith("✅");
+        assertThat(jdbc.sql("SELECT ai_model FROM chat.conversations WHERE id = :c").param("c", reply.conversationId()).query(String.class).single()).isEqualTo("gemini25");
+        chat.reply(id, "WHATSAPP", "201000000009", null, "claude");
+        assertThat(jdbc.sql("SELECT ai_model FROM chat.conversations WHERE id = :c").param("c", reply.conversationId()).query(String.class).single()).isEqualTo("anthropic");
+        // another customer is untouched
+        var other = chat.reply(id, "WHATSAPP", "201000000010", null, "ai-name");
+        assertThat(jdbc.sql("SELECT ai_model FROM chat.conversations WHERE id = :c").param("c", other.conversationId()).query(String.class).optional()).isEmpty();
+        assertThat(FakeAiProvider.lastSystem).isEmpty();
+    }
+
+    @Test
     void eachModelIsCostedWithItsOwnPrices() throws Exception {
         Tenant admin = onboard("STORE");
         UUID user = jdbc.sql("SELECT u.id FROM core.users u WHERE u.phone = :p").param("p", admin.phone()).query(UUID.class).single();

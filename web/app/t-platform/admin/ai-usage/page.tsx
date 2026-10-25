@@ -7,8 +7,8 @@ import { AreaChart, Badge, Button, Card, Empty, ErrorText, Input, Loading, Modal
 
 type Sums = { requests: number; instant: number; modelCalls: number; input: number; output: number; cached: number; cacheWrite: number; costUsd: number; fallbacks: number };
 type Price = { input: number; output: number; cached: number; cacheWrite: number };
-type ModelKey = "all" | "gemini" | "anthropic";
-const MODELS: { key: Exclude<ModelKey, "all">; label: string }[] = [{ key: "gemini", label: "Gemini" }, { key: "anthropic", label: "Claude" }];
+type ModelKey = "all" | "gemini" | "gemini25" | "anthropic";
+const MODELS: { key: Exclude<ModelKey, "all">; label: string }[] = [{ key: "gemini", label: "Gemini 3.1" }, { key: "gemini25", label: "Gemini 2.5" }, { key: "anthropic", label: "Claude" }];
 type Prices = { provider: string; models: Record<string, Price> };
 type Shop = Sums & { tenantId: string | null; name: string; conversations: number };
 type Day = {
@@ -105,7 +105,7 @@ export default function AiUsage() {
               <p className="text-sm font-semibold text-ink">{t("aiu.pickModel")}</p>
               <Tabs tabs={[{ key: "all", label: t("aiu.modelAll") }, ...MODELS.map((m) => ({ key: m.key, label: m.label }))]} value={model} onChange={(k) => { setModel(k as ModelKey); setConvId(null); }} />
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-3">
               {MODELS.map((m) => {
                 const r = d.byModel.find((x) => x.model === m.key);
                 const tokens = r ? total(r) : 0;

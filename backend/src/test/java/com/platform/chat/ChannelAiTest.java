@@ -41,6 +41,25 @@ class ChannelAiTest {
     }
 
     @Test
+    void aCustomerCanPickAnyOfTheThreeModelsAndTheCommandsAreRecognised() {
+        Scripted g31 = new Scripted("gemini", true), g25 = new Scripted("gemini25", true), claude = new Scripted("anthropic", true);
+        ChannelAi ai = new ChannelAi(g31, claude, g25, "default", "default");
+        assertThat(ai.forChannel("WHATSAPP").code()).isEqualTo("gemini");   // default: Gemini 3.1
+        assertThat(ai.forChannel("WHATSAPP", "anthropic").code()).isEqualTo("anthropic");
+        assertThat(ai.forChannel("WHATSAPP", "gemini25").code()).isEqualTo("gemini25");
+        assertThat(ai.forChannel("WHATSAPP", "gemini").code()).isEqualTo("gemini");
+        // a model that is not configured falls back to the default instead of failing the chat
+        assertThat(new ChannelAi(g31, claude, new Scripted("gemini25", false), "default", "default").forChannel("WEB", "gemini25").code()).isEqualTo("gemini");
+        assertThat(ChannelAi.command("Claude")).isEqualTo("anthropic");
+        assertThat(ChannelAi.command("switch to claude")).isEqualTo("anthropic");
+        assertThat(ChannelAi.command("gemini 3.1")).isEqualTo("gemini");
+        assertThat(ChannelAi.command("Gemini 2.5")).isEqualTo("gemini25");
+        assertThat(ChannelAi.command("use gemini 2.5")).isEqualTo("gemini25");
+        assertThat(ChannelAi.command("do you have claude shirts")).isNull();
+        assertThat(ChannelAi.command("بكام")).isNull();
+    }
+
+    @Test
     void aFailedOrEmptyAnswerOnTheFirstRoundIsAnsweredByTheDefaultModel() {
         Scripted gemini = new Scripted("gemini", true), claude = new Scripted("anthropic", true);
         claude.script.add(() -> { throw new AiUnavailableException("credit exhausted"); });

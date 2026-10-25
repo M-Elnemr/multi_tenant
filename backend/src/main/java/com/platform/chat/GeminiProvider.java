@@ -23,7 +23,7 @@ import org.springframework.stereotype.Component;
 public class GeminiProvider implements AiProvider {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(GeminiProvider.class);
-    private final String key;
+    private final String key, code;
     private final List<String> models;
     private final long hedgeMs;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build();
@@ -33,14 +33,21 @@ public class GeminiProvider implements AiProvider {
      * {@code models} is the list to try, fastest first: Google's free tier is often overloaded for some models (503 or 30 s answers) while another
      * answers in a second. A model that fails answers the next one at once, and one that is merely slow is joined by the next after {@code hedgeMs}.
      */
+    @org.springframework.beans.factory.annotation.Autowired
     public GeminiProvider(@Value("${app.ai.gemini.api-key:}") String key, @Value("${app.ai.gemini.models:gemini-3.1-flash-lite}") String models,
                           @Value("${app.ai.gemini.hedge-ms:10000}") long hedgeMs) {
+        this(key, models, hedgeMs, "gemini");
+    }
+
+    /** {@code code} names this instance in the usage log ("gemini", "gemini25"): a second instance answers when a customer picks another Gemini model. */
+    public GeminiProvider(String key, String models, long hedgeMs, String code) {
+        this.code = code;
         this.key = key == null || key.isBlank() ? null : key.trim();
         this.models = java.util.Arrays.stream(models.split(",")).map(String::trim).filter(m -> !m.isEmpty()).toList();
         this.hedgeMs = hedgeMs;
     }
 
-    @Override public String code() { return "gemini"; }
+    @Override public String code() { return code; }
 
     @Override public String label() { return "Gemini (" + (models.isEmpty() ? "?" : models.get(0)) + ")"; }
 
