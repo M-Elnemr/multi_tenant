@@ -17,6 +17,9 @@
 (app) {
 	encode zstd gzip
 
+	# Browsers must use https for this host and its subdomains for a year (the API sends the same header, the web app did not).
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
 	# Public product images/logos: served straight from the public bucket. Keys contain a content hash, so they are immutable.
 	# Only GET/HEAD; the private (medical) bucket is never mapped here.
 	@media {

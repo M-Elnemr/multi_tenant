@@ -51,6 +51,15 @@ public class StoreBuilderService {
         try { var turn = ai.next(system, List.of(AiProvider.Turn.user(d)), List.of()); aiUsage.recordCall(t, "STORE_BUILDER", turn); m = AiTextHelper.json(turn.text()); }
         catch (AiProvider.AiUnavailableException e) { throw new BusinessException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, "AI_UNAVAILABLE", "The AI assistant could not be reached, try again"); }
         catch (RuntimeException e) { throw new BusinessException(org.springframework.http.HttpStatus.BAD_GATEWAY, "AI_BAD_ANSWER", "The AI answer could not be read, try again"); }
+        return applyDraft(t, actor, m, "STORE_BUILDER_USED", null);
+    }
+
+    /**
+     * Saves what the AI proposed: the shop description (only where the shop has none yet) and up to 8 DRAFT products. {@code afterProduct}, when given, is told each created product
+     * together with the AI's entry for it (the social import uses it to attach the picture of the post the product came from).
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> applyDraft(UUID t, UUID actor, Map<String, Object> m, String auditAction, java.util.function.BiConsumer<Map<?, ?>, UUID> afterProduct) {
         Map<String, Object> out = new LinkedHashMap<>();
         String sd = m.get("shortDescription") instanceof String s ? clip(s.trim(), 120) : "", about = m.get("about") instanceof String s ? clip(s.trim(), 400) : "";
         boolean wrote = false;
@@ -70,6 +79,7 @@ public class StoreBuilderService {
                     var r = catalog.createProduct(t, actor, new CatalogService.ProductReq(clip(name.trim(), 80), p.get("description") instanceof String s ? clip(s.trim(), 300) : "", null, null, null, null, "ALL", null, "DRAFT", List.of(),
                             List.of(new CatalogService.VariantReq("AI-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(), price * 100, null, null, null, Map.of(), List.of())), List.of()));
                     created.add(Map.of("id", r.get("id"), "name", name.trim(), "priceMinor", price * 100));
+                    if (afterProduct != null) afterProduct.accept(p, UUID.fromString(String.valueOf(r.get("id"))));
                 } catch (BusinessException e) {
                     log.info("Builder product skipped: {}", e.getMessage());
                     if ("PLAN_LIMIT_REACHED".equals(e.getCode())) break;
@@ -77,7 +87,7 @@ public class StoreBuilderService {
             }
         }
         out.put("products", created);
-        audit.record(actor, t, "STORE_BUILDER_USED", "tenant", t, "{\"products\":" + created.size() + "}");
+        audit.record(actor, t, auditAction, "tenant", t, "{\"products\":" + created.size() + "}");
         return out;
     }
 

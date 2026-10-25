@@ -84,7 +84,7 @@ public class AdsService {
             productName = (String) p.get("name"); description = (String) p.get("description"); category = (String) p.get("category"); price = p.get("price") == null ? 0 : ((Number) p.get("price")).longValue();
         }
         String lang = language == null || language.isBlank() ? (String) shop.get("default_locale") : language;
-        return content.adSuggestion(new AiContentService.AdContext((String) account.get("country"), currency, productName, description, category, price, (String) shop.get("name")), lang);
+        return content.adSuggestion(tenantId, new AiContentService.AdContext((String) account.get("country"), currency, productName, description, category, price, (String) shop.get("name")), lang);
     }
 
     // ---- creating ------------------------------------------------------------------------------------------------

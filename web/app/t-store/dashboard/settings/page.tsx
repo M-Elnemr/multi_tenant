@@ -10,6 +10,7 @@ import WaReportCard from "@/components/dashboard/wa-report";
 import CodGuardCard from "@/components/dashboard/cod-guard";
 import MarketCard from "@/components/dashboard/market-card";
 import EvolutionCard from "@/components/dashboard/evolution-card";
+import SecurityCard from "@/components/dashboard/security-card";
 import { ZonesCard } from "@/components/dashboard/zones";
 import { BannersCard } from "@/components/dashboard/banners";
 import { BranchesCard, ContactCard, MarketingCard, SetupChecklist, type StoreProfile } from "@/components/dashboard/store-identity";
@@ -129,6 +130,7 @@ export default function StoreSettings() {
         {show("look") && can("settings.manage") && <BannersCard />}
         {show("marketing") && profile.data && can("settings.manage") && <MarketingCard profile={profile.data} reload={profile.reload} />}
         {show("sales") && can("shipping.manage") && <ZonesCard />}
+        {show("profile") && <section id="security"><SecurityCard /></section>}
         {show("whatsapp") && (can("ai.read") || can("ai.manage")) && <section id="whatsapp-own"><EvolutionCard write={can("ai.manage")} /></section>}
         {show("branches") && can("branch.manage") && <section id="branches"><BranchesCard /></section>}
       </div>

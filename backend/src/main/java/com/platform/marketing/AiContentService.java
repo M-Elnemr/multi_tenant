@@ -29,7 +29,7 @@ public class AiContentService {
 
     private static String market(String country) { return "SA".equals(country) ? "Saudi Arabia" : "AE".equals(country) ? "the United Arab Emirates" : "Egypt"; }
 
-    public Draft post(Subject s, String language, String tone, String country) {
+    public Draft post(java.util.UUID tenant, Subject s, String language, String tone, String country) {
         boolean ar = !"en".equalsIgnoreCase(language);
         String system = "You write social media posts for an online shop selling in " + market(country) + ". Write in " + (ar ? "Arabic (friendly, natural, easy dialect-neutral wording)" : "English")
                 + ". Tone: " + (tone == null || tone.isBlank() ? "friendly and persuasive" : tone) + ". Be truthful: never invent discounts, materials, certifications or stock claims that are not in the facts. "
@@ -42,7 +42,7 @@ public class AiContentService {
                 : "Shop: " + s.shopName() + (s.shopAbout() == null || s.shopAbout().isBlank() ? "" : "\nAbout: " + clip(s.shopAbout(), 500)) + (s.topProducts().isEmpty() ? "" : "\nPopular products: " + String.join(", ", s.topProducts()));
         try {
             AiProvider.Turn t = ai.next(system, List.of(AiProvider.Turn.user(facts)), List.of());
-            aiUsage.recordCall(null, "SOCIAL_POST", t);
+            aiUsage.recordCall(tenant, "SOCIAL_POST", t);
             Map<String, Object> m = json(t.text());
             String caption = str(m.get("caption"));
             if (caption != null && !caption.isBlank()) return new Draft(clip(caption, 900), tags(m.get("hashtags")), str(m.get("imagePrompt")) == null ? defaultImagePrompt(s) : str(m.get("imagePrompt")), true);
@@ -74,7 +74,7 @@ public class AiContentService {
     public record AdContext(String country, String currency, String productName, String description, String category, long priceMinor, String shopName) {}
 
     /** Settings proposed for a new campaign. The numbers have rule-based defaults; the model improves the words, audience and reasoning. */
-    public Map<String, Object> adSuggestion(AdContext c, String language) {
+    public Map<String, Object> adSuggestion(java.util.UUID tenant, AdContext c, String language) {
         boolean ar = !"en".equalsIgnoreCase(language);
         Map<String, Object> out = new LinkedHashMap<>();
         long price = Math.max(0, c.priceMinor());
@@ -100,7 +100,7 @@ public class AiContentService {
         String facts = "Shop: " + c.shopName() + (c.productName() == null ? "" : "\nProduct: " + c.productName() + "\nPrice: " + price(price, c.currency()) + (c.category() == null ? "" : "\nCategory: " + c.category()) + (c.description() == null ? "" : "\nDescription: " + clip(c.description(), 400)));
         try {
             AiProvider.Turn turn = ai.next(system, List.of(AiProvider.Turn.user(facts)), List.of());
-            aiUsage.recordCall(null, "AD_SUGGESTION", turn);
+            aiUsage.recordCall(tenant, "AD_SUGGESTION", turn);
             Map<String, Object> m = json(turn.text());
             String obj = str(m.get("objective"));
             if (obj != null && List.of("OUTCOME_TRAFFIC", "OUTCOME_ENGAGEMENT", "OUTCOME_AWARENESS").contains(obj)) out.put("objective", obj);
@@ -122,7 +122,7 @@ public class AiContentService {
     }
 
     /** Three different texts for the same ad (different hooks: benefit, price/offer, trust). Never invents discounts; falls back to fixed templates when the model is unavailable. */
-    public List<String[]> adVariants(AdContext c, String language) {
+    public List<String[]> adVariants(java.util.UUID tenant, AdContext c, String language) {
         boolean ar = !"en".equalsIgnoreCase(language);
         String name = c.productName() == null ? c.shopName() : clip(c.productName(), 30);
         List<String[]> out = new ArrayList<>();
@@ -132,7 +132,7 @@ public class AiContentService {
         String facts = "Shop: " + c.shopName() + (c.productName() == null ? "" : "\nProduct: " + c.productName() + "\nPrice: " + price(Math.max(0, c.priceMinor()), c.currency()) + (c.description() == null ? "" : "\nDescription: " + clip(c.description(), 300)));
         try {
             AiProvider.Turn turn = ai.next(system, List.of(AiProvider.Turn.user(facts)), List.of());
-            aiUsage.recordCall(null, "AD_VARIANTS", turn);
+            aiUsage.recordCall(tenant, "AD_VARIANTS", turn);
             Map<String, Object> m = json(turn.text());
             if (m.get("variants") instanceof List<?> l) for (Object o : l) if (o instanceof Map<?, ?> v && str(v.get("headline")) != null && str(v.get("primaryText")) != null && out.size() < 3)
                 out.add(new String[]{clip(str(v.get("headline")), 38), clip(str(v.get("primaryText")), 200)});

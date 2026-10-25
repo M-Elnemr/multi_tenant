@@ -21,12 +21,16 @@ public class AuthController {
     private final AccountAuthService accounts;
 
     private final com.platform.shared.PlatformProperties props;
+    private final TotpService totp;
+    private final org.springframework.jdbc.core.simple.JdbcClient jdbc;
 
-    public AuthController(AuthService auth, SsoService sso, AccountAuthService accounts, com.platform.shared.PlatformProperties props) { this.auth = auth; this.sso = sso; this.accounts = accounts; this.props = props; }
+    public AuthController(AuthService auth, SsoService sso, AccountAuthService accounts, com.platform.shared.PlatformProperties props, TotpService totp, org.springframework.jdbc.core.simple.JdbcClient jdbc) { this.auth = auth; this.sso = sso; this.accounts = accounts; this.props = props; this.totp = totp; this.jdbc = jdbc; }
 
     public record IdentifierRequest(@NotBlank String identifier) {}
     /** `app` says which mobile app is signing in ("business" or "client"); web and unknown callers leave it empty. */
-    public record LoginRequest(@NotBlank String identifier, @NotBlank String password, String app) {}
+    public record LoginRequest(@NotBlank String identifier, @NotBlank String password, String app, String totpCode) {}
+    public record CodeRequest(String code) {}
+    public record DisableMfaRequest(String code) {}
     public record ActivateRequest(@NotBlank String identifier, @NotBlank String pin, @NotBlank String newPassword) {}
     public record RefreshRequest(@NotBlank String refreshToken) {}
     public record ChangePasswordRequest(@NotBlank String currentPassword, @NotBlank String newPassword) {}
@@ -41,7 +45,7 @@ public class AuthController {
 
     @PostMapping("/login")
     public TokenResponse login(@Valid @RequestBody LoginRequest r, HttpServletRequest req) {
-        return auth.login(r.identifier(), r.password(), r.app(), ClientInfo.ip(req), req.getHeader("User-Agent"));
+        return auth.login(r.identifier(), r.password(), r.app(), r.totpCode(), ClientInfo.ip(req), req.getHeader("User-Agent"));
     }
 
     /** First-time password creation (or reset) with the PIN given by the clinic/store. */
@@ -131,6 +135,27 @@ public class AuthController {
         // signInHost: the one address registered with Google. Shops send their visitors there to sign in (Google cannot list every shop subdomain).
         boolean codes = accounts.codesAvailable();   // registering with a phone needs the platform's WhatsApp number to send the code
         return id == null ? Map.of("googleEnabled", false, "phoneRegisterEnabled", codes) : Map.of("googleEnabled", true, "googleClientId", id, "signInHost", props.rootDomain(), "phoneRegisterEnabled", codes);
+    }
+
+    // ---- two-step sign-in and session control (signed-in staff only) ----------------------------------------------------------------
+
+    @GetMapping("/2fa")
+    public Map<String, Object> mfaStatus(Authentication a) { return Map.of("enabled", totp.enabled((UUID) a.getPrincipal())); }
+
+    @PostMapping("/2fa/setup")
+    public Map<String, Object> mfaSetup(Authentication a) { return totp.setup((UUID) a.getPrincipal()); }
+
+    @PostMapping("/2fa/enable")
+    public Map<String, Object> mfaEnable(@RequestBody CodeRequest r, Authentication a) { return Map.of("recoveryCodes", totp.enable((UUID) a.getPrincipal(), r.code())); }
+
+    @PostMapping("/2fa/disable")
+    public Map<String, Object> mfaDisable(@RequestBody DisableMfaRequest r, Authentication a) { totp.disable((UUID) a.getPrincipal(), r.code()); return Map.of("ok", true); }
+
+    /** "Sign out everywhere": every refresh token of this account stops working (access tokens expire within minutes). */
+    @PostMapping("/logout-all")
+    public Map<String, Object> logoutAll(Authentication a) {
+        int n = jdbc.sql("UPDATE core.user_sessions SET revoked_at = now() WHERE user_id = :u AND revoked_at IS NULL").param("u", (UUID) a.getPrincipal()).update();
+        return Map.of("ok", true, "sessions", n);
     }
 
     @GetMapping("/me")

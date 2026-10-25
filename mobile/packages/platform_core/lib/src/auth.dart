@@ -71,8 +71,8 @@ class AuthRepository {
   }
 
   /// `app` is "business" or "client" for the mobile apps (each refuses the other kind of account with a clear message).
-  Future<Map<String, dynamic>> login(String identifier, String password, {String? app}) async {
-    final r = await api.post('auth/login', {'identifier': identifier, 'password': password, if (app != null) 'app': app}) as Map<String, dynamic>;
+  Future<Map<String, dynamic>> login(String identifier, String password, {String? app, String? totpCode}) async {
+    final r = await api.post('auth/login', {'identifier': identifier, 'password': password, if (app != null) 'app': app, if (totpCode != null && totpCode.isNotEmpty) 'totpCode': totpCode}) as Map<String, dynamic>;
     await api.session.save(r);
     return r['user'] as Map<String, dynamic>;
   }

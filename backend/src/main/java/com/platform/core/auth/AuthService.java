@@ -41,11 +41,13 @@ public class AuthService {
     private final JdbcClient jdbc;
     private final String dummyHash;
     private final AccountAuthService accounts;
+    private final TotpService totp;
 
     public AuthService(UserRepository users, MembershipRepository memberships, RbacService rbac, PasswordEncoder encoder,
                        JwtService jwt, JwtProperties jwtProps, ActivationService activation, LoginThrottle throttle,
-                       JdbcClient jdbc, AccountAuthService accounts) {
+                       JdbcClient jdbc, AccountAuthService accounts, TotpService totp) {
         this.accounts = accounts;
+        this.totp = totp;
         this.users = users;
         this.memberships = memberships;
         this.rbac = rbac;
@@ -79,11 +81,13 @@ public class AuthService {
                 .map(u -> IdentifierState.ACTIVATE).orElse(IdentifierState.ENTER_PASSWORD);
     }
 
-    public TokenResponse login(String identifier, String password, String ip, String userAgent) { return login(identifier, password, null, ip, userAgent); }
+    public TokenResponse login(String identifier, String password, String ip, String userAgent) { return login(identifier, password, null, null, ip, userAgent); }
+
+    public TokenResponse login(String identifier, String password, String app, String ip, String userAgent) { return login(identifier, password, app, null, ip, userAgent); }
 
     /** `app` = "business" | "client" for the mobile apps: each only accepts its own kind of account and explains the mismatch. */
     @Transactional
-    public TokenResponse login(String identifier, String password, String app, String ip, String userAgent) {
+    public TokenResponse login(String identifier, String password, String app, String totpCode, String ip, String userAgent) {
         String key = "login|" + ip + "|" + (identifier == null ? "" : identifier.toLowerCase());
         throttle.check(key, 5, Duration.ofMinutes(1));
         Optional<User> found = findByIdentifier(identifier);
@@ -98,11 +102,13 @@ public class AuthService {
             try {
                 requireTenantAccess(user);
                 if ("client".equals(app)) throw BusinessException.forbidden("WRONG_APP_STAFF", "This is a business account. Use the Elmanassa Business app");
+                totp.requireAtLogin(user.getId(), totpCode);   // staff with two-step sign-in on must also give the authenticator code
                 throttle.reset(key);
                 user.setLastLoginAt(Instant.now());
                 users.save(user);
                 return issueTokens(user, ip, userAgent);
             } catch (BusinessException e) {
+                if (e.getCode().contains("MFA")) throw e;
                 staffProblem = e;   // a staff account that is not a member here may still be a patient of this clinic (see below)
             }
         }

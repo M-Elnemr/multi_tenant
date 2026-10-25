@@ -19,6 +19,9 @@ public class FakeMetaGraph implements MetaGraph {
     public static volatile String WABA_PHONE = "99900011122";
     public static volatile String PAGE_ID = "111111111111", IG_ID = "222222222222";
 
+    /** The posts the connected Facebook page / Instagram account shows (set by the test). */
+    public static volatile List<Map<String, Object>> FB_POSTS = List.of(), IG_POSTS = List.of();
+
     /** What Meta says about the message templates, and whether sending a template fails. */
     public static volatile String TEMPLATE_STATUS = "APPROVED";
     public static volatile boolean FAIL_TEMPLATE_SEND = false;
@@ -44,6 +47,9 @@ public class FakeMetaGraph implements MetaGraph {
         if (token.startsWith("EXPIRED")) throw new MetaException("Error validating access token: Session has expired", 190);
         if (token.startsWith("BAD")) throw new MetaException("Invalid OAuth access token");
         if (path.startsWith("me?fields=id,name")) return token.startsWith("PAGE-OF-") ? Map.of("id", token.substring(8, token.indexOf('-', 8)), "name", "Test Page") : Map.of("name", "Test Page");
+        if (path.contains("/posts?fields=message")) return Map.of("data", FB_POSTS);
+        if (path.contains("/media?fields=caption")) return Map.of("data", IG_POSTS);
+        if (path.contains("?fields=id,name,username,about") || path.contains("?fields=id,username,name,biography")) return Map.of("id", path.split("\\?")[0], "name", "My Shop", "username", "myshop", "about", "Cotton basics from Cairo");
         if (path.contains("/phone_numbers")) return Map.of("data", java.util.List.of(Map.of("id", WABA_PHONE)));
         return Map.of("id", path.split("\\?")[0], "name", "Test Page");
     }

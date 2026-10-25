@@ -27,6 +27,8 @@ class _LoginScreenState extends State<LoginScreen> {
   final _id = TextEditingController();
   final _pw = TextEditingController();
   final _pin = TextEditingController();
+  final _totp = TextEditingController();   // authenticator code, asked only when the account has two-step sign-in on
+  bool _mfa = false;
   _Step _step = _Step.login;
   String? _error;
   bool _busy = false;
@@ -48,18 +50,18 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   @override
-  void dispose() { _id.dispose(); _pw.dispose(); _pin.dispose(); super.dispose(); }
+  void dispose() { _id.dispose(); _pw.dispose(); _pin.dispose(); _totp.dispose(); super.dispose(); }
 
-  void _go(_Step s) => setState(() { _step = s; _error = null; _pw.clear(); _pin.clear(); });
+  void _go(_Step s) => setState(() { _step = s; _error = null; _mfa = false; _pw.clear(); _pin.clear(); _totp.clear(); });
 
   Future<void> _submit() async {
     final auth = AuthRepository(widget.api);
     final id = _id.text.trim();
-    if (id.isEmpty || _pw.text.isEmpty || (_step != _Step.login && _pin.text.trim().isEmpty)) return;
+    if (id.isEmpty || _pw.text.isEmpty || (_step != _Step.login && _pin.text.trim().isEmpty) || (_mfa && _totp.text.trim().isEmpty)) return;
     setState(() { _busy = true; _error = null; });
     try {
       final Map<String, dynamic> user = switch (_step) {
-        _Step.login => await auth.login(id, _pw.text, app: widget.app),
+        _Step.login => await auth.login(id, _pw.text, app: widget.app, totpCode: _mfa ? _totp.text.trim() : null),
         _Step.activate => await auth.activate(id, _pin.text.trim(), _pw.text),
         _Step.reset => await auth.resetPassword(id, _pin.text.trim(), _pw.text),
       };
@@ -68,6 +70,8 @@ class _LoginScreenState extends State<LoginScreen> {
     } on ApiException catch (e) {
       if (e.code == 'ACTIVATION_REQUIRED' && _step == _Step.login) {
         _go(_Step.activate);
+      } else if (e.code == 'MFA_REQUIRED' && _step == _Step.login && !_mfa) {
+        setState(() { _mfa = true; _error = null; });   // the password was right: now ask for the authenticator code
       } else {
         setState(() => _error = errorText(e));
       }
@@ -132,6 +136,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                 TextField(controller: _pin, textInputAction: TextInputAction.next, decoration: InputDecoration(labelText: s.code_, prefixIcon: const Icon(Icons.pin_outlined)), keyboardType: TextInputType.number, textDirection: TextDirection.ltr),
                               ])),
                       ),
+                      if (login && _mfa) ...[
+                        const SizedBox(height: 14),
+                        TextField(controller: _totp, textInputAction: TextInputAction.next, autofocus: true, decoration: InputDecoration(labelText: s.mfaCode, helperText: s.mfaHint, prefixIcon: const Icon(Icons.shield_outlined)), textDirection: TextDirection.ltr, autofillHints: const [AutofillHints.oneTimeCode]),
+                      ],
                       const SizedBox(height: 14),
                       PasswordField(controller: _pw, label: login ? s.password : s.newPassword, textInputAction: TextInputAction.done, onSubmitted: (_) => _submit()),
                       AnimatedSwitcher(

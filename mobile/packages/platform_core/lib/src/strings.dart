@@ -52,6 +52,8 @@ class S {
   String get show => ar ? 'إظهار' : 'Show';
   String get hide => ar ? 'إخفاء' : 'Hide';
   String get welcomeBack => ar ? 'أهلاً بك' : 'Welcome back';
+  String get mfaCode => ar ? 'الكود من تطبيق المصادقة' : 'Code from your authenticator app';
+  String get mfaHint => ar ? 'أو كود استرداد' : 'Or a recovery code';
   String get signInHint => ar ? 'سجّل الدخول للمتابعة' : 'Sign in to continue';
   String get settings => ar ? 'الإعدادات' : 'Settings';
   String get language => ar ? 'اللغة' : 'Language';

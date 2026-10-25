@@ -9,7 +9,7 @@ import { Button, ErrorText, Field, Input } from "./ui";
 import { IdentifierInput } from "@/components/inputs";
 
 type Me = { roles: string[]; permissions: string[]; mustChangePassword?: boolean };
-type Step = "login" | "activate" | "reset";
+type Step = "login" | "activate" | "reset" | "mfa";
 
 /** Phone/email + password. First-time users (and anyone who forgot their password) use the one-time PIN given by the business: no SMS. */
 export function LoginForm({ defaultIdentifier = "" }: { defaultIdentifier?: string }) {
@@ -21,6 +21,7 @@ export function LoginForm({ defaultIdentifier = "" }: { defaultIdentifier?: stri
   const [identifier, setIdentifier] = useState(defaultIdentifier);
   const [password, setPassword] = useState("");
   const [pin, setPin] = useState("");
+  const [code, setCode] = useState("");   // the authenticator (or recovery) code, asked only when two-step sign-in is on
 
   /** Where this identity belongs. `next` is honoured only when it is somewhere that identity can actually use. */
   async function finish() {
@@ -41,10 +42,11 @@ export function LoginForm({ defaultIdentifier = "" }: { defaultIdentifier?: stri
 
   const login = useAction(async () => {
     try {
-      await api("auth/login", { body: { identifier: identifier.trim(), password } });
+      await api("auth/login", { body: { identifier: identifier.trim(), password, ...(step === "mfa" ? { totpCode: code.trim() } : {}) } });
     } catch (e) {
       // a colleague who was invited has no password yet: carry on with the one-time PIN instead of "wrong password"
       if ((e as { code?: string }).code === "ACTIVATION_REQUIRED") { setStep("activate"); setPassword(""); return; }
+      if ((e as { code?: string }).code === "MFA_REQUIRED" && step === "login") { setStep("mfa"); setCode(""); return; }
       throw e;
     }
     await finish();
@@ -56,7 +58,7 @@ export function LoginForm({ defaultIdentifier = "" }: { defaultIdentifier?: stri
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (step === "login") void login.run();
+    if (step === "login" || step === "mfa") void login.run();
     else void activate.run(step === "activate" ? "auth/activate" : "auth/reset-password");
   };
   const busy = login.loading || activate.loading;
@@ -65,7 +67,7 @@ export function LoginForm({ defaultIdentifier = "" }: { defaultIdentifier?: stri
   return (
     <form onSubmit={submit} className="space-y-4">
       <Field label={t("login.identifier")} hint={step === "login" ? t("login.identifierHint") : undefined}>
-        <IdentifierInput value={identifier} onValue={setIdentifier} required disabled={step !== "login"} autoFocus />
+        <IdentifierInput value={identifier} onValue={setIdentifier} required disabled={step !== "login"} autoFocus={step === "login"} />
       </Field>
 
       {step === "activate" && <p className="rounded-lg bg-sky-50 p-3 text-sm text-sky-900">{t("login.firstTime")}</p>}
@@ -75,17 +77,22 @@ export function LoginForm({ defaultIdentifier = "" }: { defaultIdentifier?: stri
           <Input value={pin} onChange={(e) => setPin(e.target.value)} inputMode="numeric" dir="ltr" autoComplete="one-time-code" required autoFocus />
         </Field>
       )}
-      <Field label={step === "login" ? t("login.password") : t("login.newPassword")} hint={step === "login" ? undefined : t("login.passwordRule")}>
+      {step === "mfa" && (
+        <Field label={t("login.mfaCode")} hint={t("login.mfaHint")}>
+          <Input value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" dir="ltr" autoComplete="one-time-code" maxLength={12} required autoFocus />
+        </Field>
+      )}
+      <Field label={step === "login" || step === "mfa" ? t("login.password") : t("login.newPassword")} hint={step === "login" ? undefined : t("login.passwordRule")}>
         <div className="relative">
-          <Input type={show ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={step === "login" ? "current-password" : "new-password"} minLength={step === "login" ? undefined : 8} required className="pe-16" />
+          <Input type={show ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={step === "login" || step === "mfa" ? "current-password" : "new-password"} minLength={step === "login" || step === "mfa" ? undefined : 8} readOnly={step === "mfa"} required className="pe-16" />
           <button type="button" onClick={() => setShow((v) => !v)} className="absolute end-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-500 hover:text-brand" tabIndex={-1}>{show ? t("login.hide") : t("login.show")}</button>
         </div>
       </Field>
 
       <ErrorText error={error} />
-      <Button type="submit" loading={busy} className="w-full">{step === "login" ? t("login.submit") : t("login.createPassword")}</Button>
+      <Button type="submit" loading={busy} className="w-full">{step === "login" || step === "mfa" ? t("login.submit") : t("login.createPassword")}</Button>
       {step === "login" && <button type="button" onClick={() => { setStep("reset"); setPassword(""); }} className="block w-full text-center text-sm text-slate-500 underline">{t("login.forgot")}</button>}
-      {step !== "login" && <button type="button" onClick={() => { setStep("login"); setPassword(""); setPin(""); }} className="block w-full text-center text-sm text-slate-500 underline">{t("common.back")}</button>}
+      {step !== "login" && <button type="button" onClick={() => { setStep("login"); setPassword(""); setPin(""); setCode(""); }} className="block w-full text-center text-sm text-slate-500 underline">{t("common.back")}</button>}
     </form>
   );
 }

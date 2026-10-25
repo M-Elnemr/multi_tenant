@@ -250,15 +250,40 @@ export function ExperimentsTab() {
   );
 }
 
-type Built = { shortDescription: string; about: string; descriptionSaved: boolean; suggestedTemplate: string; products: { id: string; name: string; priceMinor: number }[] };
+type Built = { shortDescription: string; about: string; descriptionSaved: boolean; suggestedTemplate: string; products: { id: string; name: string; priceMinor: number }[]; needsPrice?: string[]; withPicture?: number };
 
 export function BuilderTab() {
   const { t, locale, currency } = useI18n();
   const [d, setD] = useState("");
   const [res, setRes] = useState<Built | null>(null);
   const go = useAction(async () => { setRes(await api<Built>("store/builder", { body: { description: d, language: locale } })); });
+  // start from the Facebook page / Instagram account the owner already connected
+  const sources = useApi<{ platform: "FACEBOOK" | "INSTAGRAM"; name: string }[]>("store/builder/social");
+  const [platform, setPlatform] = useState<"FACEBOOK" | "INSTAGRAM">("FACEBOOK");
+  const [url, setUrl] = useState("");
+  const chosen = sources.data?.find((s) => s.platform === platform) ?? sources.data?.[0];
+  const fromSocial = useAction(async () => { setRes(await api<Built>("store/builder/social", { body: { platform: chosen?.platform ?? platform, url: url.trim() || undefined, language: locale } })); });
   return (
     <div className="space-y-5">
+      <Card className="space-y-3">
+        <div><h2 className="font-medium">{t("gr.social")}</h2><p className="mt-1 text-sm text-slate-500">{t("gr.socialHint")}</p></div>
+        {sources.data && sources.data.length === 0 && <Alert tone="blue">{t("gr.socialNone")} <a href="/dashboard/channels" className="font-semibold underline">{t("gr.socialConnect")}</a></Alert>}
+        {sources.data && sources.data.length > 0 && (
+          <>
+            {sources.data.length > 1 && (
+              <Field label={t("gr.socialFrom")}>
+                <Select value={chosen?.platform} onChange={(e) => setPlatform(e.target.value as "FACEBOOK" | "INSTAGRAM")}>
+                  {sources.data.map((s) => <option key={s.platform} value={s.platform}>{s.platform === "FACEBOOK" ? "Facebook" : "Instagram"} · {s.name}</option>)}
+                </Select>
+              </Field>
+            )}
+            {sources.data.length === 1 && <p className="text-sm font-medium">{chosen?.platform === "FACEBOOK" ? "Facebook" : "Instagram"} · {chosen?.name}</p>}
+            <Field label={t("gr.socialUrl")} hint={t("gr.socialUrlHint")}><Input dir="ltr" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://www.facebook.com/your-page" /></Field>
+            <ErrorText error={fromSocial.error} />
+            <Button loading={fromSocial.loading} onClick={() => void fromSocial.run()}>{t("gr.socialGo")}</Button>
+          </>
+        )}
+      </Card>
       <Card className="space-y-3">
         <div><h2 className="font-medium">{t("gr.builder")}</h2><p className="mt-1 text-sm text-slate-500">{t("gr.builderHint")}</p></div>
         <Field label={t("gr.builderLabel")}><Textarea rows={5} maxLength={1500} value={d} onChange={(e) => setD(e.target.value)} placeholder={t("gr.builderExample")} /></Field>
@@ -271,6 +296,8 @@ export function BuilderTab() {
           {res.shortDescription && <p><b>{res.descriptionSaved ? t("gr.builderSaved") : t("gr.builderKept")}:</b> {res.shortDescription}</p>}
           <p>{t("gr.builderTemplate", { tpl: res.suggestedTemplate })}</p>
           <ul className="list-disc ps-5">{res.products.map((p) => <li key={p.id}>{p.name} · {money(p.priceMinor, currency, locale)}</li>)}</ul>
+          {!!res.withPicture && <p>{t("gr.socialPictures", { n: res.withPicture })}</p>}
+          {!!res.needsPrice?.length && <Alert tone="amber">{t("gr.socialNeedsPrice", { n: res.needsPrice.length })}</Alert>}
           <a href="/dashboard/products" className="font-semibold text-brand hover:underline">{t("gr.builderReview")}</a>
         </Card>
       )}

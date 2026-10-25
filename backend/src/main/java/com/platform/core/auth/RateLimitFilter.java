@@ -41,6 +41,10 @@ public class RateLimitFilter extends OncePerRequestFilter {
             if (path.equals("/api/v1/shop/checkout")) ok = limiter.tryAcquire("checkout|" + who, 10, MINUTE);
             else if (path.equals("/api/v1/portal/appointments") || path.equals("/api/v1/clinic/appointments")) ok = limiter.tryAcquire("appt|" + who, 10, MINUTE);
             else if (path.equals("/api/v1/files/presign")) ok = limiter.tryAcquire("presign|" + who, 20, MINUTE);
+            // sign-in, codes and password routes: a person needs a handful a minute, a guessing script needs thousands (the per-account limits sit on top of this)
+            else if (path.startsWith("/api/v1/auth/")) ok = limiter.tryAcquire("auth|" + ip, 60, MINUTE);
+            // payment gateway callbacks come from a few addresses: generous, but not unlimited
+            else if (path.startsWith("/api/v1/billing/webhooks/") || path.startsWith("/api/v1/shop/webhooks/")) ok = limiter.tryAcquire("hook|" + ip, 300, MINUTE);
         } else if (ok && "GET".equals(m) && (path.equals("/api/v1/shop/products") || path.equals("/api/v1/clinic/public/slots"))) {
             ok = limiter.tryAcquire("search|" + ip, 60, MINUTE);
         }

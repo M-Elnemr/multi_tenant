@@ -35,11 +35,12 @@ public class AiUsageService {
     private final JdbcClient jdbc;
     private final int retentionDays;
     private final String provider;
-    private final double priceIn, priceOut, priceCached;
+    private final double priceIn, priceOut, priceCached, priceWrite;
 
     public AiUsageService(JdbcClient jdbc, @Value("${app.ai.usage-retention-days:90}") int retentionDays, @Value("${app.ai.provider:gemini}") String provider,
-                          @Value("${app.ai.price.input:0.50}") double priceIn, @Value("${app.ai.price.output:3.00}") double priceOut, @Value("${app.ai.price.cached:0.05}") double priceCached) {
+                          @Value("${app.ai.price.input:0.50}") double priceIn, @Value("${app.ai.price.output:3.00}") double priceOut, @Value("${app.ai.price.cached:0.05}") double priceCached, @Value("${app.ai.price.cache-write:-1}") double priceWrite) {
         this.jdbc = jdbc; this.retentionDays = retentionDays; this.provider = provider; this.priceIn = priceIn; this.priceOut = priceOut; this.priceCached = priceCached;
+        this.priceWrite = priceWrite >= 0 ? priceWrite : priceIn;   // unset: a cache write costs like a normal input token (Anthropic 1h writes are about double: set AI_PRICE_CACHE_WRITE)
     }
 
     // ---- writing ---------------------------------------------------------------------------------------------------------------
@@ -47,21 +48,21 @@ public class AiUsageService {
     /** Logs one request. Never lets a logging problem break the feature that called it. */
     public void record(UUID tenantId, String feature, String channel, UUID conversationId, boolean instant, String preview, List<Round> rounds) {
         try {
-            int in = 0, out = 0, cached = 0;
+            int in = 0, out = 0, cached = 0, written = 0;
             List<Map<String, Object>> calls = new ArrayList<>();
             for (Round r : rounds) {
-                in += r.usage().input(); out += r.usage().output(); cached += r.usage().cached();
+                in += r.usage().input(); out += r.usage().output(); cached += r.usage().cached(); written += r.usage().cacheWrite();
                 Map<String, Object> c = new LinkedHashMap<>();
-                c.put("tools", r.tools()); c.put("in", r.usage().input()); c.put("out", r.usage().output()); c.put("cached", r.usage().cached());
+                c.put("tools", r.tools()); c.put("in", r.usage().input()); c.put("out", r.usage().output()); c.put("cached", r.usage().cached()); c.put("write", r.usage().cacheWrite());
                 calls.add(c);
             }
             String clip = preview == null ? null : preview.replaceAll("\\s+", " ").trim();
             if (clip != null && clip.length() > 80) clip = clip.substring(0, 80);
             jdbc.sql("""
-                    INSERT INTO chat.ai_usage_log (tenant_id, feature, channel, conversation_id, instant, model_calls, input_tokens, output_tokens, cached_tokens, calls, preview)
-                    VALUES (:t, :f, :ch, :cv, :i, :mc, :in, :out, :k, CAST(:calls AS jsonb), :p)
+                    INSERT INTO chat.ai_usage_log (tenant_id, feature, channel, conversation_id, instant, model_calls, input_tokens, output_tokens, cached_tokens, cache_write_tokens, calls, preview)
+                    VALUES (:t, :f, :ch, :cv, :i, :mc, :in, :out, :k, :w, CAST(:calls AS jsonb), :p)
                     """).param("t", tenantId).param("f", feature).param("ch", channel).param("cv", conversationId).param("i", instant).param("mc", rounds.size())
-                    .param("in", in).param("out", out).param("k", cached).param("calls", JSON.writeValueAsString(calls)).param("p", clip).update();
+                    .param("in", in).param("out", out).param("k", cached).param("w", written).param("calls", JSON.writeValueAsString(calls)).param("p", clip).update();
         } catch (Exception e) { log.warn("AI usage not recorded: {}", e.toString()); }
     }
 
@@ -87,9 +88,9 @@ public class AiUsageService {
     private static OffsetDateTime start(LocalDate d) { return d.atStartOfDay(ZONE).toOffsetDateTime(); }
 
     private static final String SUMS = "count(*) FILTER (WHERE NOT instant) AS requests, count(*) FILTER (WHERE instant) AS instant, coalesce(sum(model_calls),0) AS model_calls, "
-            + "coalesce(sum(input_tokens),0) AS input, coalesce(sum(output_tokens),0) AS output, coalesce(sum(cached_tokens),0) AS cached";
+            + "coalesce(sum(input_tokens),0) AS input, coalesce(sum(output_tokens),0) AS output, coalesce(sum(cached_tokens),0) AS cached, coalesce(sum(cache_write_tokens),0) AS cache_write";
 
-    private Map<String, Object> prices() { return Map.of("provider", provider, "inputPerMillion", priceIn, "outputPerMillion", priceOut, "cachedPerMillion", priceCached); }
+    private Map<String, Object> prices() { return Map.of("provider", provider, "inputPerMillion", priceIn, "outputPerMillion", priceOut, "cachedPerMillion", priceCached, "cacheWritePerMillion", priceWrite); }
 
     private List<Map<String, Object>> rows(String sql, Map<String, Object> params) {
         var q = jdbc.sql(sql);
@@ -104,7 +105,7 @@ public class AiUsageService {
         var found = new LinkedHashMap<Integer, Map<String, Object>>();
         for (var r : rows("SELECT extract(hour FROM created_at AT TIME ZONE 'Africa/Cairo')::int AS hour, " + SUMS + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to" + tf + " GROUP BY 1", p)) found.put(((Number) r.get("hour")).intValue(), r);
         List<Map<String, Object>> out = new ArrayList<>();
-        for (int h = 0; h < 24; h++) out.add(found.getOrDefault(h, Map.of("hour", h, "requests", 0L, "instant", 0L, "modelCalls", 0L, "input", 0L, "output", 0L, "cached", 0L)));
+        for (int h = 0; h < 24; h++) out.add(found.getOrDefault(h, Map.of("hour", h, "requests", 0L, "instant", 0L, "modelCalls", 0L, "input", 0L, "output", 0L, "cached", 0L, "cacheWrite", 0L)));
         return out;
     }
 
@@ -114,7 +115,7 @@ public class AiUsageService {
         if (tenant != null) p.put("t", tenant);
         return rows("""
                 SELECT coalesce(nullif(array_to_string(ARRAY(SELECT jsonb_array_elements_text(c -> 'tools')), ', '), ''), '(final answer)') AS step, l.feature, count(*) AS rounds,
-                  sum((c ->> 'in')::int) AS input, sum((c ->> 'out')::int) AS output, sum((c ->> 'cached')::int) AS cached
+                  sum((c ->> 'in')::int) AS input, sum((c ->> 'out')::int) AS output, sum((c ->> 'cached')::int) AS cached, sum(coalesce((c ->> 'write')::int, 0)) AS cache_write
                 FROM chat.ai_usage_log l, jsonb_array_elements(l.calls) c
                 WHERE l.created_at >= :f AND l.created_at < :to""" + tf + " GROUP BY 1, 2 ORDER BY sum((c ->> 'in')::int) + sum((c ->> 'out')::int) DESC", p);
     }
@@ -159,7 +160,7 @@ public class AiUsageService {
                  GROUP BY conversation_id ORDER BY sum(input_tokens + output_tokens) DESC LIMIT 300
                 """, p));
         out.put("other", rows("""
-                SELECT id, created_at, feature, model_calls, input_tokens AS input, output_tokens AS output, cached_tokens AS cached FROM chat.ai_usage_log
+                SELECT id, created_at, feature, model_calls, input_tokens AS input, output_tokens AS output, cached_tokens AS cached, cache_write_tokens AS cache_write FROM chat.ai_usage_log
                  WHERE created_at >= :f AND created_at < :to AND tenant_id = :t AND conversation_id IS NULL ORDER BY id DESC LIMIT 200
                 """, p));
         return out;
@@ -168,7 +169,7 @@ public class AiUsageService {
     /** Every reply of one conversation, with the rounds behind it. */
     public Map<String, Object> conversation(UUID conversationId) {
         var replies = rows("""
-                SELECT id, created_at, feature, instant, preview, model_calls, input_tokens AS input, output_tokens AS output, cached_tokens AS cached, calls::text AS calls, channel, tenant_id
+                SELECT id, created_at, feature, instant, preview, model_calls, input_tokens AS input, output_tokens AS output, cached_tokens AS cached, cache_write_tokens AS cache_write, calls::text AS calls, channel, tenant_id
                  FROM chat.ai_usage_log WHERE conversation_id = :c ORDER BY id
                 """, Map.of("c", conversationId));
         if (replies.isEmpty()) throw BusinessException.notFound("RESOURCE_NOT_FOUND", "No AI usage was recorded for this conversation");

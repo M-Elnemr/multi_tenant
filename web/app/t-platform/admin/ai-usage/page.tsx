@@ -5,18 +5,18 @@ import { useApi } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { AreaChart, Badge, Button, Card, Empty, ErrorText, Input, Loading, Modal, PageHeader, Section, Stat, Table, Tabs, Td } from "@/components/ui";
 
-type Sums = { requests: number; instant: number; modelCalls: number; input: number; output: number; cached: number };
-type Prices = { provider: string; inputPerMillion: number; outputPerMillion: number; cachedPerMillion: number };
+type Sums = { requests: number; instant: number; modelCalls: number; input: number; output: number; cached: number; cacheWrite: number };
+type Prices = { provider: string; inputPerMillion: number; outputPerMillion: number; cachedPerMillion: number; cacheWritePerMillion: number };
 type Shop = Sums & { tenantId: string | null; name: string; conversations: number };
 type Day = {
   day: string; prices: Prices; totals: Sums; byHour: (Sums & { hour: number })[]; series: (Sums & { day: string })[]; shops: Shop[];
-  byFeature: (Sums & { feature: string })[]; byChannel: (Sums & { channel: string })[]; byStep: { step: string; feature: string; rounds: number; input: number; output: number; cached: number }[];
+  byFeature: (Sums & { feature: string })[]; byChannel: (Sums & { channel: string })[]; byStep: { step: string; feature: string; rounds: number; input: number; output: number; cached: number; cacheWrite: number }[];
 };
 type Conv = Sums & { conversationId: string; channel: string | null; firstAt: string; lastAt: string; firstMessage: string | null };
-type Other = { id: number; createdAt: string; feature: string; modelCalls: number; input: number; output: number; cached: number };
+type Other = { id: number; createdAt: string; feature: string; modelCalls: number; input: number; output: number; cached: number; cacheWrite: number };
 type ShopDay = Omit<Day, "shops" | "series" | "byChannel"> & { shop: { id: string; name: string }; conversations: Conv[]; other: Other[] };
 type Round = { tools: string[]; in: number; out: number; cached: number };
-type Reply = { id: number; createdAt: string; feature: string; instant: boolean; preview: string | null; modelCalls: number; input: number; output: number; cached: number; calls: Round[] };
+type Reply = { id: number; createdAt: string; feature: string; instant: boolean; preview: string | null; modelCalls: number; input: number; output: number; cached: number; cacheWrite: number; calls: Round[] };
 type ConvDetail = { conversationId: string; channel: string | null; prices: Prices; replies: Reply[] };
 
 const cairoToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
@@ -40,7 +40,7 @@ export default function AiUsage() {
   const [convId, setConvId] = useState<string | null>(null);
   const [tab, setTab] = useState<"shops" | "steps" | "features" | "channels">("shops");
   const [shopTab, setShopTab] = useState<"conversations" | "steps" | "features" | "other">("conversations");
-  const [price, setPrice] = useState<{ i: string; o: string; c: string } | null>(null);
+  const [edited, setPrice] = useState<{ i: string; o: string; c: string; w: string } | null>(null);
 
   const data = useApi<Day>(`platform/ai-usage?day=${day}`);
   const shop = useApi<ShopDay>(shopId ? `platform/ai-usage/shops/${shopId}?day=${day}` : null);
@@ -49,10 +49,23 @@ export default function AiUsage() {
   const n = (v: number) => v.toLocaleString(locale);
   const pct = (a: number, b: number) => (b > 0 ? `${Math.round((a / b) * 100)}%` : "–");
   const p = data.data?.prices;
+  // The prices the admin types are kept in this browser, one set per provider, so they survive a reload.
+  const saved = useMemo(() => {
+    if (!p) return null;
+    try { const raw = localStorage.getItem(`aiu.price.${p.provider}`); return raw ? (JSON.parse(raw) as { i: string; o: string; c: string; w: string }) : null; } catch { return null; }
+  }, [p?.provider]); // eslint-disable-line react-hooks/exhaustive-deps
+  const price = edited ?? saved;
+  const setP = (k: "i" | "o" | "c" | "w", v: string) => {
+    if (!p) return;
+    const next = { i: price?.i ?? String(p.inputPerMillion), o: price?.o ?? String(p.outputPerMillion), c: price?.c ?? String(p.cachedPerMillion), w: price?.w ?? String(p.cacheWritePerMillion), [k]: v };
+    setPrice(next);
+    try { localStorage.setItem(`aiu.price.${p.provider}`, JSON.stringify(next)); } catch { /* private window: the prices just are not kept */ }
+  };
   const pin = price ? Number(price.i) || 0 : p?.inputPerMillion ?? 0;
   const pout = price ? Number(price.o) || 0 : p?.outputPerMillion ?? 0;
   const pc = price ? Number(price.c) || 0 : p?.cachedPerMillion ?? 0;
-  const cost = (s: { input: number; output: number; cached: number }) => ((Math.max(0, s.input - s.cached) * pin + s.cached * pc + s.output * pout) / 1e6);
+  const pw = price ? Number(price.w) || 0 : p?.cacheWritePerMillion ?? 0;
+  const cost = (s: { input: number; output: number; cached: number; cacheWrite?: number }) => ((Math.max(0, s.input - s.cached - (s.cacheWrite ?? 0)) * pin + s.cached * pc + (s.cacheWrite ?? 0) * pw + s.output * pout) / 1e6);
   const usd = (v: number) => `$${v < 1 ? v.toFixed(4) : v.toFixed(2)}`;
   const time = (iso: string) => new Date(iso).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Cairo" });
   const feature = (f: string) => { const k = `aiu.f.${f}`; const v = t(k); return v === k ? f : v; };
@@ -99,10 +112,11 @@ export default function AiUsage() {
 
           <Card>
             <p className="mb-3 text-sm font-semibold text-ink">{t("aiu.prices")}</p>
-            <div className="grid grid-cols-3 gap-3 sm:max-w-md">
-              <label className="text-xs text-slate-500">{t("aiu.priceIn")}<Input type="number" step="0.01" min="0" value={price?.i ?? String(d.prices.inputPerMillion)} onChange={(e) => setPrice({ i: e.target.value, o: price?.o ?? String(d.prices.outputPerMillion), c: price?.c ?? String(d.prices.cachedPerMillion) })} /></label>
-              <label className="text-xs text-slate-500">{t("aiu.priceOut")}<Input type="number" step="0.01" min="0" value={price?.o ?? String(d.prices.outputPerMillion)} onChange={(e) => setPrice({ i: price?.i ?? String(d.prices.inputPerMillion), o: e.target.value, c: price?.c ?? String(d.prices.cachedPerMillion) })} /></label>
-              <label className="text-xs text-slate-500">{t("aiu.priceCached")}<Input type="number" step="0.001" min="0" value={price?.c ?? String(d.prices.cachedPerMillion)} onChange={(e) => setPrice({ i: price?.i ?? String(d.prices.inputPerMillion), o: price?.o ?? String(d.prices.outputPerMillion), c: e.target.value })} /></label>
+            <div className="grid grid-cols-2 gap-3 sm:max-w-xl sm:grid-cols-4">
+              <label className="text-xs text-slate-500">{t("aiu.priceIn")}<Input type="number" step="0.01" min="0" value={price?.i ?? String(d.prices.inputPerMillion)} onChange={(e) => setP("i", e.target.value)} /></label>
+              <label className="text-xs text-slate-500">{t("aiu.priceOut")}<Input type="number" step="0.01" min="0" value={price?.o ?? String(d.prices.outputPerMillion)} onChange={(e) => setP("o", e.target.value)} /></label>
+              <label className="text-xs text-slate-500">{t("aiu.priceCached")}<Input type="number" step="0.001" min="0" value={price?.c ?? String(d.prices.cachedPerMillion)} onChange={(e) => setP("c", e.target.value)} /></label>
+              <label className="text-xs text-slate-500">{t("aiu.priceWrite")}<Input type="number" step="0.01" min="0" value={price?.w ?? String(d.prices.cacheWritePerMillion)} onChange={(e) => setP("w", e.target.value)} /></label>
             </div>
             <p className="mt-2 text-xs text-slate-500">{t("aiu.pricesHint")}</p>
           </Card>

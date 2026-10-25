@@ -43,9 +43,10 @@ public class SocialService {
     private final MetaGraph graph;
     private final TokenCrypto crypto;
     private final AuditService audit;
+    private final com.platform.chat.AiUsageService aiUsage;
     private final boolean scheduler;
 
-    public SocialService(JdbcClient jdbc, AiContentService content, ImageGenerator images, FileService files, OpenUrls urls, MetaGraph graph, TokenCrypto crypto, AuditService audit,
+    public SocialService(JdbcClient jdbc, AiContentService content, ImageGenerator images, FileService files, OpenUrls urls, MetaGraph graph, TokenCrypto crypto, AuditService audit, com.platform.chat.AiUsageService aiUsage,
                          @Value("${app.integrations.scheduler.enabled:true}") boolean scheduler) {
         this.jdbc = jdbc;
         this.content = content;
@@ -55,6 +56,7 @@ public class SocialService {
         this.graph = graph;
         this.crypto = crypto;
         this.audit = audit;
+        this.aiUsage = aiUsage;
         this.scheduler = scheduler;
     }
 
@@ -74,7 +76,7 @@ public class SocialService {
         if ("PRODUCT".equals(kind) && r.productId() == null) throw BusinessException.badRequest("VALIDATION_ERROR", "Choose a product");
         AiContentService.Subject subject = subject(tenantId, kind, r.productId());
         String language = r.language() == null || r.language().isBlank() ? tenantLocale(tenantId) : r.language();
-        AiContentService.Draft d = content.post(subject, language, r.tone(), country(tenantId));
+        AiContentService.Draft d = content.post(tenantId, subject, language, r.tone(), country(tenantId));
         String caption = d.caption();
         List<String> chans = cleanChannels(r.channels(), tenantId);
         UUID id = jdbc.sql("""
@@ -145,6 +147,7 @@ public class SocialService {
         }
         ImageGenerator.Generated g;
         try { g = images.generate(prompt, ref, refType); } catch (ImageGenerator.ImageException e) { throw new BusinessException(org.springframework.http.HttpStatus.BAD_GATEWAY, "AI_IMAGE_FAILED", e.getMessage()); }
+        aiUsage.record(tenantId, "IMAGE", null, null, false, null, List.of(new com.platform.chat.AiUsageService.Round(List.of(), com.platform.chat.AiProvider.Usage.NONE)));   // images bill per picture: counted, no tokens
         String type = g.contentType() != null && g.contentType().toLowerCase().contains("png") ? "image/png" : "image/jpeg";
         UUID fileId = storePublic(tenantId, actor, g.data(), type);
         jdbc.sql("UPDATE marketing.posts SET image_file_id = :f, image_url = :u WHERE id = :i AND tenant_id = :t").param("f", fileId).param("u", publicUrl(tenantId, fileId)).param("i", postId).param("t", tenantId).update();
@@ -228,7 +231,7 @@ public class SocialService {
         var post = get(tenantId, id);
         if (List.of("POSTED", "POSTING").contains(post.get("status"))) throw BusinessException.conflict("POST_LOCKED", "This post was already published");
         UUID productId = (UUID) post.get("productId");
-        AiContentService.Draft d = content.post(subject(tenantId, (String) post.get("kind"), productId), tenantLocale(tenantId), tone, country(tenantId));
+        AiContentService.Draft d = content.post(tenantId, subject(tenantId, (String) post.get("kind"), productId), tenantLocale(tenantId), tone, country(tenantId));
         if ("image".equals(what)) return attachAiImage(tenantId, actor, id, d.imagePrompt(), productId);
         jdbc.sql("UPDATE marketing.posts SET caption = :c WHERE id = :i AND tenant_id = :t").param("c", withTags(d.caption(), d.hashtags())).param("i", id).param("t", tenantId).update();
         return get(tenantId, id);

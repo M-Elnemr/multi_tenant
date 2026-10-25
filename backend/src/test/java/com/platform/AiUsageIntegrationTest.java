@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.jayway.jsonpath.JsonPath;
 import com.platform.chat.AiProvider.Turn;
 import com.platform.chat.AiProvider.Usage;
+import com.platform.chat.AiUsageService;
 import com.platform.chat.ChatService;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -21,6 +22,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 class AiUsageIntegrationTest extends IntegrationTestBase {
     @Autowired JdbcClient jdbc;
     @Autowired ChatService chat;
+    @Autowired AiUsageService usage;
 
     @BeforeEach
     void clean() { FakeAiProvider.reset(); }
@@ -68,5 +70,40 @@ class AiUsageIntegrationTest extends IntegrationTestBase {
 
         onHost("platform.test", admin, "GET", "/api/v1/platform/ai-usage?day=not-a-date", null).andExpect(status().isBadRequest());
         onHost("platform.test", shop.access(), "GET", "/api/v1/platform/ai-usage", null).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void aShopsPostsAdsAndPicturesAreCountedForThatShopWithCacheWrites() throws Exception {
+        String admin = platformToken();
+        Tenant shop = onboard("STORE");
+        UUID id = idOf(shop);
+        String today = LocalDate.now(ZoneId.of("Africa/Cairo")).toString();
+
+        // a call outside any request (a scheduled autopilot run) still names its shop
+        usage.recordCall(id, "AD_VARIANTS", Turn.model("{}").withUsage(new Usage(500, 40, 100, 300)));
+        usage.record(id, "IMAGE", null, null, false, null, List.of(new AiUsageService.Round(List.of(), Usage.NONE)));
+
+        String s = onHost("platform.test", admin, "GET", "/api/v1/platform/ai-usage/shops/" + id + "?day=" + today, null).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(JsonPath.<Number>read(s, "$.totals.input").intValue()).isEqualTo(500);
+        assertThat(JsonPath.<Number>read(s, "$.totals.cacheWrite").intValue()).isEqualTo(300);
+        assertThat(JsonPath.<List<String>>read(s, "$.byFeature[*].feature")).contains("AD_VARIANTS", "IMAGE");
+        assertThat(JsonPath.<List<Object>>read(s, "$.other")).hasSize(2);
+        assertThat(JsonPath.<Number>read(s, "$.prices.cacheWritePerMillion").doubleValue()).isGreaterThan(0);
+    }
+
+    @Test
+    void aDayRunsFromCairoMidnightToCairoMidnight() throws Exception {
+        String admin = platformToken();
+        Tenant shop = onboard("STORE");
+        UUID id = idOf(shop);
+        LocalDate day = LocalDate.now(ZoneId.of("Africa/Cairo")).minusDays(3);
+        var cairo = ZoneId.of("Africa/Cairo");
+        for (var at : List.of(day.atTime(23, 59, 30).atZone(cairo), day.plusDays(1).atTime(0, 0, 30).atZone(cairo)))
+            jdbc.sql("INSERT INTO chat.ai_usage_log (tenant_id, feature, created_at, model_calls, input_tokens, output_tokens) VALUES (:t, 'CHAT', :at, 1, 100, 10)").param("t", id).param("at", at.toOffsetDateTime()).update();
+
+        String d = onHost("platform.test", admin, "GET", "/api/v1/platform/ai-usage/shops/" + id + "?day=" + day, null).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(JsonPath.<Number>read(d, "$.totals.input").intValue()).isEqualTo(100);
+        String next = onHost("platform.test", admin, "GET", "/api/v1/platform/ai-usage/shops/" + id + "?day=" + day.plusDays(1), null).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(JsonPath.<Number>read(next, "$.totals.input").intValue()).isEqualTo(100);
     }
 }

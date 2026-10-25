@@ -173,7 +173,7 @@ public class AdsAutopilotService {
                 .param("c", campaignId).param("t", t).query().listOfRows().stream().findFirst().orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Campaign not found"));
         if (jdbc.sql("SELECT count(*) FROM marketing.copy_variants WHERE campaign_id = :c").param("c", campaignId).query(Long.class).single() > 0) throw BusinessException.conflict("VARIANTS_EXIST", "This campaign already has text variants");
         String cur = String.valueOf(c.get("currency"));
-        var texts = content.adVariants(new AiContentService.AdContext("SAR".equals(cur) ? "SA" : "AED".equals(cur) ? "AE" : "EG", cur, (String) c.get("name"), (String) c.get("description"), null, c.get("price") == null ? 0 : ((Number) c.get("price")).longValue(), (String) c.get("shop")), language);
+        var texts = content.adVariants(t, new AiContentService.AdContext("SAR".equals(cur) ? "SA" : "AED".equals(cur) ? "AE" : "EG", cur, (String) c.get("name"), (String) c.get("description"), null, c.get("price") == null ? 0 : ((Number) c.get("price")).longValue(), (String) c.get("shop")), language);
         return ads.addVariants(t, campaignId, texts);
     }
 

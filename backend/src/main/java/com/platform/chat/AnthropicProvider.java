@@ -159,7 +159,8 @@ public class AnthropicProvider implements AiProvider {
         }
         JsonNode u = root.path("usage");
         int cached = u.path("cache_read_input_tokens").asInt(0);
-        int input = u.path("input_tokens").asInt(0) + cached + u.path("cache_creation_input_tokens").asInt(0);
-        return new Turn("model", text.toString().trim(), calls, List.of(), content, new Usage(input, u.path("output_tokens").asInt(0), cached));
+        int written = u.path("cache_creation_input_tokens").asInt(0);
+        int input = u.path("input_tokens").asInt(0) + cached + written;
+        return new Turn("model", text.toString().trim(), calls, List.of(), content, new Usage(input, u.path("output_tokens").asInt(0), cached, written));
     }
 }

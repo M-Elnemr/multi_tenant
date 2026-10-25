@@ -50,9 +50,10 @@ public class MetaChannelService {
     private final String verifyToken;
     private final ExecutorService pool;
     private final java.util.concurrent.ScheduledExecutorService holder = Executors.newSingleThreadScheduledExecutor();
+    private final InboundBurst burst;
 
     public MetaChannelService(JdbcClient jdbc, MetaGraph graph, TokenCrypto crypto, ChatService chat, LoginThrottle throttle, AuditService audit, WhatsAppConfirmService waConfirm, WaReportService waReport, ProductShare share, com.platform.commerce.GenderService genders,
-                              @Value("${app.meta.app-secret:}") String appSecret, @Value("${app.meta.verify-token:}") String verifyToken, @Value("${app.meta.async:true}") boolean async) {
+                              @Value("${app.meta.app-secret:}") String appSecret, @Value("${app.meta.verify-token:}") String verifyToken, @Value("${app.meta.async:true}") boolean async, @Value("${app.chat.burst-ms:3000}") long burstMs) {
         this.jdbc = jdbc;
         this.graph = graph;
         this.crypto = crypto;
@@ -66,6 +67,7 @@ public class MetaChannelService {
         this.appSecret = appSecret == null || appSecret.isBlank() ? null : appSecret.trim();
         this.verifyToken = verifyToken == null || verifyToken.isBlank() ? null : verifyToken.trim();
         this.pool = async ? Executors.newFixedThreadPool(4) : null;
+        this.burst = pool == null ? new InboundBurst(holder, Runnable::run, 0, 0) : new InboundBurst(holder, pool, burstMs, 10_000);
     }
 
     public boolean configured() { return appSecret != null && verifyToken != null; }
@@ -244,9 +246,15 @@ public class MetaChannelService {
         var ch = jdbc.sql("SELECT tenant_id, token_enc, status FROM chat.channels WHERE platform = :p AND external_id = :e").param("p", platform).param("e", accountId).query().listOfRows().stream().findFirst();
         if (ch.isEmpty() || !"ACTIVE".equals(ch.get().get("status"))) return;
         if (jdbc.sql("INSERT INTO chat.meta_events (mid) VALUES (:m) ON CONFLICT DO NOTHING").param("m", mid).update() == 0) return;   // already handled
-        UUID tenantId = (UUID) ch.get().get("tenant_id");
+        // a customer's quick lines are joined and answered once (see InboundBurst); media and empty messages go straight on
+        if (burst.enabled() && text != null && !text.isBlank()) { var row = ch.get(); burst.add(platform + "|" + accountId + "|" + sender, text, joined -> respond(platform, accountId, sender, joined, row)); return; }
+        respond(platform, accountId, sender, text, ch.get());
+    }
+
+    private void respond(String platform, String accountId, String sender, String text, Map<String, Object> chRow) {
+        UUID tenantId = (UUID) chRow.get("tenant_id");
         if (!running(tenantId)) return;   // a suspended, cancelled or archived shop does not answer customers
-        String token = crypto.decrypt((String) ch.get().get("token_enc"));
+        String token = crypto.decrypt((String) chRow.get("token_enc"));
         if ("WHATSAPP".equals(platform)) jdbc.sql("INSERT INTO chat.wa_windows (tenant_id, number, last_inbound_at) VALUES (:t, :n, now()) ON CONFLICT (tenant_id, number) DO UPDATE SET last_inbound_at = now()")
                 .param("t", tenantId).param("n", sender.replaceAll("\\D", "")).update();
         boolean aiOn = chat.enabled(tenantId);

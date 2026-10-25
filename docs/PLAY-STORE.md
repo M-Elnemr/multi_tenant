@@ -91,3 +91,13 @@ Note: your clinic creates your account at your first visit and gives you a tempo
 ```
 **Business (ar)** — Title: المنصّة للأعمال · Short: تابع طلبات متجرك ومواعيد عيادتك وإحصاءاتك من هاتفك.
 **Business (en)** — Title: Elmanassa Business · Short: Follow your shop orders, clinic queue and daily stats from your phone.
+
+## Hardened release build
+
+Build the Play Store bundle with code obfuscation, and keep the symbols file (needed to read crash reports) outside the repository:
+
+```
+flutter build appbundle --release --obfuscate --split-debug-info=../../release/symbols/<app>-<version>
+```
+
+Never ship a debug or profile build. `allowBackup` is already off in the three manifests, and the tokens live in the platform's secure storage (Keychain / Keystore).
