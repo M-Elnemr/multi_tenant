@@ -27,7 +27,10 @@ public class StoreBuilderService {
     private final JdbcClient jdbc;
     private final AuditService audit;
 
-    public StoreBuilderService(AiProvider ai, CatalogService catalog, JdbcClient jdbc, AuditService audit) {
+    private final com.platform.chat.AiUsageService aiUsage;
+
+    public StoreBuilderService(AiProvider ai, CatalogService catalog, JdbcClient jdbc, AuditService audit, com.platform.chat.AiUsageService aiUsage) {
+        this.aiUsage = aiUsage;
         this.ai = ai;
         this.catalog = catalog;
         this.jdbc = jdbc;
@@ -45,7 +48,7 @@ public class StoreBuilderService {
                 + "Write in " + (ar ? "Arabic (friendly Egyptian-neutral wording)" : "English") + ". Prices are integers in " + cur + " units (not cents) and must be plausible for this market; do not invent brands, certifications or claims. "
                 + "Reply with ONLY a JSON object {\"shortDescription\": string, \"about\": string, \"template\": one of original|atelier|souq|midnight|bloom|oud, \"products\": [{\"name\": string max 80, \"description\": string max 300, \"price\": integer}]}.";
         Map<String, Object> m;
-        try { m = AiTextHelper.json(ai.next(system, List.of(AiProvider.Turn.user(d)), List.of()).text()); }
+        try { var turn = ai.next(system, List.of(AiProvider.Turn.user(d)), List.of()); aiUsage.recordCall(t, "STORE_BUILDER", turn); m = AiTextHelper.json(turn.text()); }
         catch (AiProvider.AiUnavailableException e) { throw new BusinessException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, "AI_UNAVAILABLE", "The AI assistant could not be reached, try again"); }
         catch (RuntimeException e) { throw new BusinessException(org.springframework.http.HttpStatus.BAD_GATEWAY, "AI_BAD_ANSWER", "The AI answer could not be read, try again"); }
         Map<String, Object> out = new LinkedHashMap<>();

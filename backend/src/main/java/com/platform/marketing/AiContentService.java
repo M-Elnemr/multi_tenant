@@ -18,7 +18,9 @@ public class AiContentService {
     private static final ObjectMapper JSON = new ObjectMapper();
     private final AiProvider ai;
 
-    public AiContentService(AiProvider ai) { this.ai = ai; }
+    private final com.platform.chat.AiUsageService aiUsage;
+
+    public AiContentService(AiProvider ai, com.platform.chat.AiUsageService aiUsage) { this.ai = ai; this.aiUsage = aiUsage; }
 
     /** What the model is told about the thing being promoted. {@code kind} PRODUCT or SHOP. */
     public record Subject(String kind, String shopName, String shopAbout, String name, String description, String brand, String category, long priceMinor, Long compareAtMinor, String currency, String url, List<String> topProducts) {}
@@ -40,6 +42,7 @@ public class AiContentService {
                 : "Shop: " + s.shopName() + (s.shopAbout() == null || s.shopAbout().isBlank() ? "" : "\nAbout: " + clip(s.shopAbout(), 500)) + (s.topProducts().isEmpty() ? "" : "\nPopular products: " + String.join(", ", s.topProducts()));
         try {
             AiProvider.Turn t = ai.next(system, List.of(AiProvider.Turn.user(facts)), List.of());
+            aiUsage.recordCall(null, "SOCIAL_POST", t);
             Map<String, Object> m = json(t.text());
             String caption = str(m.get("caption"));
             if (caption != null && !caption.isBlank()) return new Draft(clip(caption, 900), tags(m.get("hashtags")), str(m.get("imagePrompt")) == null ? defaultImagePrompt(s) : str(m.get("imagePrompt")), true);
@@ -96,7 +99,9 @@ public class AiContentService {
                 + "\"headline\": string max 40 chars in " + (ar ? "Arabic" : "English") + ", \"primaryText\": string max 200 chars in " + (ar ? "Arabic" : "English") + ", \"reasoning\": one short sentence in " + (ar ? "Arabic" : "English") + " on why these choices}.";
         String facts = "Shop: " + c.shopName() + (c.productName() == null ? "" : "\nProduct: " + c.productName() + "\nPrice: " + price(price, c.currency()) + (c.category() == null ? "" : "\nCategory: " + c.category()) + (c.description() == null ? "" : "\nDescription: " + clip(c.description(), 400)));
         try {
-            Map<String, Object> m = json(ai.next(system, List.of(AiProvider.Turn.user(facts)), List.of()).text());
+            AiProvider.Turn turn = ai.next(system, List.of(AiProvider.Turn.user(facts)), List.of());
+            aiUsage.recordCall(null, "AD_SUGGESTION", turn);
+            Map<String, Object> m = json(turn.text());
             String obj = str(m.get("objective"));
             if (obj != null && List.of("OUTCOME_TRAFFIC", "OUTCOME_ENGAGEMENT", "OUTCOME_AWARENESS").contains(obj)) out.put("objective", obj);
             if (m.get("dailyBudgetMinor") instanceof Number n && n.longValue() >= budget / 4 && n.longValue() <= budget * 10) out.put("dailyBudgetMinor", n.longValue());
@@ -126,7 +131,9 @@ public class AiContentService {
                 + "Reply with ONLY a JSON object: {\"variants\": [{\"headline\": string max 38 chars, \"primaryText\": string max 180 chars}, x3]}. Never invent prices, discounts, materials or guarantees.";
         String facts = "Shop: " + c.shopName() + (c.productName() == null ? "" : "\nProduct: " + c.productName() + "\nPrice: " + price(Math.max(0, c.priceMinor()), c.currency()) + (c.description() == null ? "" : "\nDescription: " + clip(c.description(), 300)));
         try {
-            Map<String, Object> m = json(ai.next(system, List.of(AiProvider.Turn.user(facts)), List.of()).text());
+            AiProvider.Turn turn = ai.next(system, List.of(AiProvider.Turn.user(facts)), List.of());
+            aiUsage.recordCall(null, "AD_VARIANTS", turn);
+            Map<String, Object> m = json(turn.text());
             if (m.get("variants") instanceof List<?> l) for (Object o : l) if (o instanceof Map<?, ?> v && str(v.get("headline")) != null && str(v.get("primaryText")) != null && out.size() < 3)
                 out.add(new String[]{clip(str(v.get("headline")), 38), clip(str(v.get("primaryText")), 200)});
         } catch (RuntimeException e) {

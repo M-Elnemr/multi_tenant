@@ -53,9 +53,12 @@ public class SegmentService {
     private final boolean scheduler;
     private final int gapMin, gapMax, dailyCap, quietFrom, quietTo;
 
-    public SegmentService(JdbcClient jdbc, MetaChannelService channels, MetaGraph graph, AuditService audit, EvolutionService evolution, WalletService wallet, NotificationService notifications, OpenUrls urls, com.platform.chat.AiProvider ai, com.platform.core.auth.LoginThrottle throttle,
+    private final com.platform.chat.AiUsageService aiUsage;
+
+    public SegmentService(JdbcClient jdbc, MetaChannelService channels, MetaGraph graph, AuditService audit, EvolutionService evolution, WalletService wallet, NotificationService notifications, OpenUrls urls, com.platform.chat.AiProvider ai, com.platform.core.auth.LoginThrottle throttle, com.platform.chat.AiUsageService aiUsage,
                           @Value("${app.whatsapp.broadcast-price-minor:300}") long priceMinor, @Value("${app.integrations.scheduler.enabled:true}") boolean scheduler, @Value("${app.broadcast.free-gap-min-seconds:8}") int gapMin, @Value("${app.broadcast.free-gap-max-seconds:25}") int gapMax,
                           @Value("${app.broadcast.free-daily-cap:500}") int dailyCap, @Value("${app.broadcast.quiet-from-hour:22}") int quietFrom, @Value("${app.broadcast.quiet-to-hour:8}") int quietTo) {
+        this.aiUsage = aiUsage;
         this.gapMin = Math.max(0, gapMin);
         this.gapMax = Math.max(this.gapMin, gapMax);
         this.dailyCap = Math.max(1, dailyCap);
@@ -302,7 +305,7 @@ public class SegmentService {
                 + "(for example {name}, {shop}, {last_product}, {last_order}, {last_date}, {orders_count}) and every pair such as {بيك|بيكي}. Do not add new offers, discounts, claims or links. "
                 + "Output only the versions, separated by a line that contains only ---.";
         String out;
-        try { out = ai.next(system, List.of(com.platform.chat.AiProvider.Turn.user(text)), List.of()).text(); }
+        try { var turn = ai.next(system, List.of(com.platform.chat.AiProvider.Turn.user(text)), List.of()); aiUsage.recordCall(tenantId, "BROADCAST_VARIANTS", turn); out = turn.text(); }
         catch (com.platform.chat.AiProvider.AiUnavailableException e) { throw BusinessException.conflict("AI_NOT_AVAILABLE", "The assistant is not available right now"); }
         java.util.regex.Pattern ph = java.util.regex.Pattern.compile("\\{[^{}]{1,60}\\}");
         List<String> need = new ArrayList<>();

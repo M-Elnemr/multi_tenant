@@ -25,7 +25,10 @@ public class TranslationService {
     private final AiProvider ai;
     private final AuditService audit;
 
-    public TranslationService(JdbcClient jdbc, AiProvider ai, AuditService audit) {
+    private final com.platform.chat.AiUsageService aiUsage;
+
+    public TranslationService(JdbcClient jdbc, AiProvider ai, AuditService audit, com.platform.chat.AiUsageService aiUsage) {
+        this.aiUsage = aiUsage;
         this.jdbc = jdbc;
         this.ai = ai;
         this.audit = audit;
@@ -60,7 +63,9 @@ public class TranslationService {
             try {
                 String system = "Translate an online shop product from Arabic to natural English for shoppers. Keep brand names, numbers and sizes. Do not add claims that are not in the text. Reply with ONLY a JSON object {\"name\": string max 120 chars, \"description\": string}.";
                 String facts = "Name: " + p.get("name") + "\nDescription: " + clip((String) p.get("description"), 1500);
-                var m = com.platform.marketing.AiTextHelper.json(ai.next(system, List.of(AiProvider.Turn.user(facts)), List.of()).text());
+                var turn = ai.next(system, List.of(AiProvider.Turn.user(facts)), List.of());
+                aiUsage.recordCall(t, "TRANSLATION", turn);
+                var m = com.platform.marketing.AiTextHelper.json(turn.text());
                 String name = m.get("name") instanceof String s ? s.trim() : "";
                 if (name.length() < 2) continue;
                 String desc = m.get("description") instanceof String s ? s.trim() : "";

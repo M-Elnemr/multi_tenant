@@ -33,11 +33,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     { href: "/admin/taxonomy", label: "admin.taxonomy", icon: "tag" },
     { href: "/admin/visitors", label: "admin.visitors", icon: "users" },
     { href: "/admin/ai", label: "admin.ai", icon: "sparkles" },
+    { href: "/admin/ai-usage", label: "aiu.title", icon: "chart" },
     { href: "/admin/wallet", label: "wa.adminTitle", icon: "wallet" },
     { href: "/admin/whatsapp", label: "pwa.title", icon: "link" },
     { href: "/admin/audit", label: "admin.audit", icon: "shield" },
   ];
-  const active = (i: Item) => (i.href === "/admin" ? path === "/admin" : path.startsWith(i.href));
+  const active = (i: Item) => (i.href === "/admin" ? path === "/admin" : path === i.href || path.startsWith(i.href + "/"));
   const current = items.find(active);
   const name = me ? `${me.firstName} ${me.lastName}`.trim() : "";
 

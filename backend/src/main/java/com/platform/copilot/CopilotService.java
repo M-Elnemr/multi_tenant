@@ -35,7 +35,10 @@ public class CopilotService {
     private final com.platform.commerce.ExperimentService experiments;
     private final com.platform.commerce.AttributionService attribution;
 
-    public CopilotService(JdbcClient jdbc, AiProvider ai, CopilotData data, com.platform.commerce.ExperimentService experiments, com.platform.commerce.AttributionService attribution) {
+    private final com.platform.chat.AiUsageService aiUsage;
+
+    public CopilotService(JdbcClient jdbc, AiProvider ai, CopilotData data, com.platform.commerce.ExperimentService experiments, com.platform.commerce.AttributionService attribution, com.platform.chat.AiUsageService aiUsage) {
+        this.aiUsage = aiUsage;
         this.jdbc = jdbc;
         this.ai = ai;
         this.data = data;
@@ -110,9 +113,11 @@ public class CopilotService {
         for (var m : jdbc.sql("SELECT role, content FROM (SELECT id, role, content FROM copilot.messages WHERE tenant_id = :t AND user_id = :u ORDER BY id DESC LIMIT 12) x ORDER BY id").param("t", t).param("u", user).query().listOfRows())
             turns.add("user".equals(m.get("role")) ? Turn.user((String) m.get("content")) : Turn.model((String) m.get("content")));
         String answer = null;
+        List<com.platform.chat.AiUsageService.Round> rounds = new ArrayList<>();
         try {
             for (int round = 0; round < 5; round++) {
                 Turn r = ai.next(system(t), turns, tools());
+                rounds.add(new com.platform.chat.AiUsageService.Round(r.calls().stream().map(ToolCall::name).toList(), r.usage()));
                 if (r.calls().isEmpty()) { answer = r.text(); break; }
                 turns.add(r);
                 List<ToolResult> results = new ArrayList<>();
@@ -123,6 +128,7 @@ public class CopilotService {
             log.warn("Copilot AI unavailable: {}", e.getMessage());
             answer = "المساعد مش متاح دلوقتي، جرّب بعد شوية. / The assistant is unavailable right now, try again shortly.";
         }
+        aiUsage.record(t, "COPILOT", null, null, false, q, rounds);
         if (answer == null || answer.isBlank()) answer = "ماقدرتش أجاوب على ده. جرّب تسأل بطريقة تانية. / I could not answer that. Try asking differently.";
         jdbc.sql("INSERT INTO copilot.messages (tenant_id, user_id, role, content) VALUES (:t, :u, 'assistant', :c)").param("t", t).param("u", user).param("c", answer).update();
         return answer;

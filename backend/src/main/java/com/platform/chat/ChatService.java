@@ -59,8 +59,11 @@ public class ChatService {
     private final AccountNotice accountNotice;
     private final com.platform.commerce.GenderService genders;
 
+    private final AiUsageService usageLog;
+
     public ChatService(JdbcClient jdbc, AiProvider ai, CatalogService catalog, StoreSearchService search, CheckoutService checkout, StoreSettingsService settings,
-                       StoreFulfillmentService fulfilment, ShopperService shopper, PaymentPolicy policy, AuditService audit, SellerTools seller, com.platform.commerce.GenderService genders, @org.springframework.context.annotation.Lazy AccountNotice accountNotice) {
+                       StoreFulfillmentService fulfilment, ShopperService shopper, PaymentPolicy policy, AuditService audit, SellerTools seller, com.platform.commerce.GenderService genders, @org.springframework.context.annotation.Lazy AccountNotice accountNotice, AiUsageService usageLog) {
+        this.usageLog = usageLog;
         this.accountNotice = accountNotice;
         this.genders = genders;
         this.jdbc = jdbc;
@@ -197,18 +200,16 @@ public class ChatService {
         var instant = FastAnswers.answer(text, first, (String) getSettings(tenantId).get("greeting"));
         if (instant.isPresent()) {
             answer = instant.get();
-            if (!"TEST".equals(channel)) usage(tenantId, 0, new AiProvider.Usage(0, 0, 0), true);
+            if (!"TEST".equals(channel)) usageLog.record(tenantId, "CHAT", channel, conv, true, text, List.of());
             jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x)").param("c", conv).param("x", answer).update();
             jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();
             return new Reply(conv, answer, null, ctx.products());
         }
-        int calls = 0;
-        AiProvider.Usage used = AiProvider.Usage.NONE;
+        List<AiUsageService.Round> rounds = new ArrayList<>();
         try {
             for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
                 Turn t = ai.next(system, turns, tools);
-                calls++;
-                used = new AiProvider.Usage(used.input() + t.usage().input(), used.output() + t.usage().output(), used.cached() + t.usage().cached());
+                rounds.add(new AiUsageService.Round(t.calls().stream().map(ToolCall::name).toList(), t.usage()));
                 if (t.calls().isEmpty()) { answer = t.text(); break; }
                 turns.add(t);
                 List<ToolResult> results = new ArrayList<>();
@@ -219,22 +220,11 @@ public class ChatService {
             log.warn("AI unavailable: {} ({})", e.getMessage(), e.getCause() == null ? "no cause" : e.getCause().toString());
             answer = "عذرًا، المساعد غير متاح الآن، حاول بعد قليل. / Sorry, the assistant is unavailable right now. Please try again shortly.";
         }
-        if (!"TEST".equals(channel)) { seller.count(tenantId); usage(tenantId, calls, used, false); }
+        if (!"TEST".equals(channel)) { seller.count(tenantId); usageLog.record(tenantId, "CHAT", channel, conv, false, text, rounds); }
         if (answer == null || answer.isBlank()) answer = "عذرًا، لم أفهم. هل تعيد صياغة طلبك؟ / Sorry, I did not get that. Could you rephrase?";
         jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x)").param("c", conv).param("x", answer).update();
         jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();
         return new Reply(conv, answer, orderBox[0], ctx.products());
-    }
-
-    /** Adds one reply to the shop's token tally of the day. Never lets a logging problem break a chat. */
-    private void usage(UUID tenantId, int calls, AiProvider.Usage u, boolean instant) {
-        try {
-            jdbc.sql("""
-                    INSERT INTO chat.ai_usage (tenant_id, day, feature, replies, model_calls, input_tokens, output_tokens, cached_tokens, instant) VALUES (:t, current_date, 'chat', :r, :c, :i, :o, :k, :n)
-                    ON CONFLICT (tenant_id, day, feature) DO UPDATE SET replies = chat.ai_usage.replies + :r, model_calls = chat.ai_usage.model_calls + :c, input_tokens = chat.ai_usage.input_tokens + :i,
-                      output_tokens = chat.ai_usage.output_tokens + :o, cached_tokens = chat.ai_usage.cached_tokens + :k, instant = chat.ai_usage.instant + :n
-                    """).param("t", tenantId).param("r", instant ? 0 : 1).param("c", calls).param("i", (long) u.input()).param("o", (long) u.output()).param("k", (long) u.cached()).param("n", instant ? 1 : 0).update();
-        } catch (RuntimeException e) { log.warn("AI usage not recorded: {}", e.toString()); }
     }
 
     // ---- confirmation ----------------------------------------------------------------------------------------
