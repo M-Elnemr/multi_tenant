@@ -94,6 +94,26 @@ class AiChatIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void modelKnowsWhatTheShopSellsAndAGeneralWordNeverReturnsNothing() throws Exception {
+        Tenant t = onboard("STORE");
+        mug(t);
+        String conv = UUID.randomUUID().toString();
+        // "cookware" is a category, not a word of the product's name: the old search found nothing and the model denied having it
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("search_products", Map.of("query", "cookware")));
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("search_products", Map.of("query", "zzzunknown")));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("We have mugs"));
+        send(t, conv, "do you have cookware");
+        assertThat(FakeAiProvider.lastSystem).contains("SHOP CATALOG").contains("Cookware").contains("Mug ").contains("1 products");
+        var byCategory = FakeAiProvider.RESULTS.get(0).result();
+        assertThat(byCategory.get("count")).isEqualTo(1);
+        assertThat(byCategory.get("products").toString()).contains("Mug ");
+        // nothing matches at all: the shop's own products come back with a note that says they are the closest, not an empty answer
+        var nothing = FakeAiProvider.RESULTS.get(1).result();
+        assertThat(nothing.get("count")).isEqualTo(1);
+        assertThat(nothing.get("note").toString()).contains("closest").contains("never tell the customer");
+    }
+
+    @Test
     void onlyAPlainAgreementCountsAsConfirmation() {
         for (String yes : List.of("تمام", "تمام حضرتك", "ايوه يا فندم", "أيوه", "نعم", "yes", "Yes please", "ok ✅", "اكيد", "موافق", "تمام جدا"))
             assertThat(com.platform.chat.ChatService.isConfirmation(yes)).as(yes).isTrue();

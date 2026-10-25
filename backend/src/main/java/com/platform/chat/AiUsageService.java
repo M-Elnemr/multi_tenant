@@ -42,7 +42,7 @@ public class AiUsageService {
     private final String sums;
 
     public AiUsageService(JdbcClient jdbc, @Value("${app.ai.usage-retention-days:90}") int retentionDays, @Value("${app.ai.provider:gemini}") String provider,
-                          @Value("${app.ai.price.input:0.50}") double priceIn, @Value("${app.ai.price.output:3.00}") double priceOut, @Value("${app.ai.price.cached:0.05}") double priceCached, @Value("${app.ai.price.cache-write:-1}") double priceWrite,
+                          @Value("${app.ai.price.input:0.25}") double priceIn, @Value("${app.ai.price.output:1.50}") double priceOut, @Value("${app.ai.price.cached:0.025}") double priceCached, @Value("${app.ai.price.cache-write:-1}") double priceWrite,
                           @Value("${app.ai.price.anthropic.input:0.10}") double aIn, @Value("${app.ai.price.anthropic.output:0.50}") double aOut, @Value("${app.ai.price.anthropic.cached:0.01}") double aCached, @Value("${app.ai.price.anthropic.cache-write:0.20}") double aWrite) {
         this.jdbc = jdbc; this.retentionDays = retentionDays; this.provider = provider;
         // the default model's prices (app.ai.price.*): a cache write costs like a normal input token unless set (Anthropic 1h writes are about double)

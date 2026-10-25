@@ -33,7 +33,7 @@ public class GeminiProvider implements AiProvider {
      * {@code models} is the list to try, fastest first: Google's free tier is often overloaded for some models (503 or 30 s answers) while another
      * answers in a second. A model that fails answers the next one at once, and one that is merely slow is joined by the next after {@code hedgeMs}.
      */
-    public GeminiProvider(@Value("${app.ai.gemini.api-key:}") String key, @Value("${app.ai.gemini.models:gemini-3-flash-preview,gemini-flash-lite-latest,gemini-3.1-flash-lite}") String models,
+    public GeminiProvider(@Value("${app.ai.gemini.api-key:}") String key, @Value("${app.ai.gemini.models:gemini-3.1-flash-lite}") String models,
                           @Value("${app.ai.gemini.hedge-ms:10000}") long hedgeMs) {
         this.key = key == null || key.isBlank() ? null : key.trim();
         this.models = java.util.Arrays.stream(models.split(",")).map(String::trim).filter(m -> !m.isEmpty()).toList();

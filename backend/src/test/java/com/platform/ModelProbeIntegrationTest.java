@@ -60,9 +60,9 @@ class ModelProbeIntegrationTest extends IntegrationTestBase {
         String today = LocalDate.now(ZoneId.of("Africa/Cairo")).toString();
         String s = onHost("platform.test", token, "GET", "/api/v1/platform/ai-usage/shops/" + id + "?day=" + today, null).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         assertThat(one(s, "anthropic", "costUsd").doubleValue()).isEqualTo(0.60);   // 0.10 in + 0.50 out
-        assertThat(one(s, "gemini", "costUsd").doubleValue()).isGreaterThan(3.4);    // 0.50 in + 3.00 out
+        assertThat(one(s, "gemini", "costUsd").doubleValue()).isGreaterThan(1.7);    // 0.25 in + 1.50 out
         assertThat(one(s, "gemini", "fallbacks").intValue()).isEqualTo(1);
-        assertThat(JsonPath.<Number>read(s, "$.totals.costUsd").doubleValue()).isGreaterThan(4.0);
+        assertThat(JsonPath.<Number>read(s, "$.totals.costUsd").doubleValue()).isGreaterThan(2.3);
 
         // choosing one model counts only that model's requests everywhere on the screen; the by-model comparison keeps both
         String claude = onHost("platform.test", token, "GET", "/api/v1/platform/ai-usage/shops/" + id + "?day=" + today + "&model=anthropic", null).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();

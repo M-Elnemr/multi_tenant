@@ -148,6 +148,45 @@ public class StoreSearchService {
         return Map.of("products", products, "categories", cats);
     }
 
+    /** Categories (leaf, with their parent) that hold active products of this shop, most stocked first, with counts and the price range: what the AI seller is told the shop sells. */
+    public List<Map<String, Object>> categoryCounts(UUID tenantId, int limit) {
+        return Rows.camel(jdbc.sql("""
+                SELECT c.name_ar, c.name_en, c.slug, par.name_ar AS parent_ar, par.name_en AS parent_en, count(*) AS n,
+                       min((SELECT min(v.price_minor) FROM commerce.product_variants v WHERE v.product_id = p.id AND v.status = 'ACTIVE')) AS min_minor,
+                       max((SELECT min(v.price_minor) FROM commerce.product_variants v WHERE v.product_id = p.id AND v.status = 'ACTIVE')) AS max_minor
+                FROM commerce.products p JOIN commerce.taxonomy c ON c.id = p.taxonomy_id LEFT JOIN commerce.taxonomy par ON par.id = c.parent_id
+                WHERE p.tenant_id = :t AND p.status = 'ACTIVE'
+                GROUP BY c.id, c.name_ar, c.name_en, c.slug, par.name_ar, par.name_en ORDER BY n DESC, c.name_en LIMIT :lim
+                """).param("t", tenantId).param("lim", limit).query().listOfRows());
+    }
+
+    /** Names and starting prices of the shop's best sellers (in stock first), for the AI's catalog digest. */
+    public List<Map<String, Object>> topProducts(UUID tenantId, int limit) {
+        return Rows.camel(jdbc.sql("""
+                SELECT p.name, (SELECT min(v.price_minor) FROM commerce.product_variants v WHERE v.product_id = p.id AND v.status = 'ACTIVE') AS min_minor, p.currency
+                FROM commerce.products p
+                WHERE p.tenant_id = :t AND p.status = 'ACTIVE'
+                ORDER BY EXISTS (SELECT 1 FROM commerce.product_variants v JOIN commerce.inventory_items i ON i.variant_id = v.id
+                                 WHERE v.product_id = p.id AND v.status = 'ACTIVE' AND i.quantity_on_hand - i.quantity_reserved > 0) DESC,
+                         p.sold_count DESC, p.created_at DESC LIMIT :lim
+                """).param("t", tenantId).param("lim", limit).query().listOfRows());
+    }
+
+    /** Slugs of the categories (with active products in this shop) whose Arabic or English name contains one of the words. */
+    public List<String> categoriesMatching(UUID tenantId, List<String> words) {
+        List<String> out = new ArrayList<>();
+        for (String w : words) {
+            if (w.length() < 2) continue;
+            for (String slug : jdbc.sql("""
+                    SELECT t.slug FROM commerce.taxonomy t
+                    WHERE t.is_active AND t.search_text ILIKE '%' || :q || '%'
+                      AND EXISTS (SELECT 1 FROM commerce.products p JOIN commerce.taxonomy c ON c.id = p.taxonomy_id WHERE p.tenant_id = :t AND p.status = 'ACTIVE' AND c.path LIKE t.path || '%')
+                    ORDER BY t.level, t.sort_order LIMIT 2
+                    """).param("t", tenantId).param("q", norm(w)).query(String.class).list()) if (!out.contains(slug)) out.add(slug);
+        }
+        return out;
+    }
+
     /** Home page sections in one call. */
     public Map<String, Object> home(UUID tenantId) {
         Filter none = new Filter(null, null, null, null, null, null, null, null, null);
