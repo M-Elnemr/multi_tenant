@@ -60,10 +60,15 @@ public class ChatService {
     private final com.platform.commerce.GenderService genders;
 
     private final AiUsageService usageLog;
+    private final ChannelAi channelAi;
+    private final boolean nameProbe;
 
     public ChatService(JdbcClient jdbc, AiProvider ai, CatalogService catalog, StoreSearchService search, CheckoutService checkout, StoreSettingsService settings,
-                       StoreFulfillmentService fulfilment, ShopperService shopper, PaymentPolicy policy, AuditService audit, SellerTools seller, com.platform.commerce.GenderService genders, @org.springframework.context.annotation.Lazy AccountNotice accountNotice, AiUsageService usageLog) {
+                       StoreFulfillmentService fulfilment, ShopperService shopper, PaymentPolicy policy, AuditService audit, SellerTools seller, com.platform.commerce.GenderService genders, @org.springframework.context.annotation.Lazy AccountNotice accountNotice, AiUsageService usageLog, ChannelAi channelAi,
+                       @org.springframework.beans.factory.annotation.Value("${app.ai.name-probe:false}") boolean nameProbe) {
         this.usageLog = usageLog;
+        this.channelAi = channelAi;
+        this.nameProbe = nameProbe;
         this.accountNotice = accountNotice;
         this.genders = genders;
         this.jdbc = jdbc;
@@ -191,6 +196,15 @@ public class ChatService {
             jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();
             return new Reply(conv, answer, orderBox[0], ctx.products());
         }
+        // Test word: "ai-name" answers with the model that handles this channel, so a comparison of two models can be checked from the real chat. Off unless app.ai.name-probe is on.
+        if (nameProbe && "ai name".equals(FastAnswers.norm(text))) {
+            var routed = channelAi.forChannel(channel);
+            answer = routed.label();
+            if (!"TEST".equals(channel)) usageLog.record(tenantId, "CHAT", channel, conv, true, text, List.of(), routed.code(), false);
+            jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x)").param("c", conv).param("x", answer).update();
+            jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();
+            return new Reply(conv, answer, null, ctx.products());
+        }
         if (!"TEST".equals(channel) && seller.overQuota(tenantId)) {
             answer = "شكرًا لتواصلك! وصلنا للحد الشهري للمحادثات الآلية، ابعتلنا رسالتك تاني بعد شوية 🌸 / Thanks for your message! Our automatic chat limit is reached for now, please message again a little later.";
             jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x)").param("c", conv).param("x", answer).update();
@@ -200,15 +214,16 @@ public class ChatService {
         var instant = FastAnswers.answer(text, first, (String) getSettings(tenantId).get("greeting"));
         if (instant.isPresent()) {
             answer = instant.get();
-            if (!"TEST".equals(channel)) usageLog.record(tenantId, "CHAT", channel, conv, true, text, List.of());
+            if (!"TEST".equals(channel)) usageLog.record(tenantId, "CHAT", channel, conv, true, text, List.of(), null, false);
             jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x)").param("c", conv).param("x", answer).update();
             jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();
             return new Reply(conv, answer, null, ctx.products());
         }
         List<AiUsageService.Round> rounds = new ArrayList<>();
+        var routed = channelAi.forChannel(channel);
         try {
             for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
-                Turn t = ai.next(system, turns, tools);
+                Turn t = routed.next(system, turns, tools);
                 rounds.add(new AiUsageService.Round(t.calls().stream().map(ToolCall::name).toList(), t.usage()));
                 if (t.calls().isEmpty()) { answer = t.text(); break; }
                 turns.add(t);
@@ -220,7 +235,7 @@ public class ChatService {
             log.warn("AI unavailable: {} ({})", e.getMessage(), e.getCause() == null ? "no cause" : e.getCause().toString());
             answer = "عذرًا، المساعد غير متاح الآن، حاول بعد قليل. / Sorry, the assistant is unavailable right now. Please try again shortly.";
         }
-        if (!"TEST".equals(channel)) { seller.count(tenantId); usageLog.record(tenantId, "CHAT", channel, conv, false, text, rounds); }
+        if (!"TEST".equals(channel)) { seller.count(tenantId); usageLog.record(tenantId, "CHAT", channel, conv, false, text, rounds, routed.code(), routed.fellBack()); }
         if (answer == null || answer.isBlank()) answer = "عذرًا، لم أفهم. هل تعيد صياغة طلبك؟ / Sorry, I did not get that. Could you rephrase?";
         jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x)").param("c", conv).param("x", answer).update();
         jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();

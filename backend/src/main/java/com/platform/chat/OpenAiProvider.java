@@ -41,6 +41,10 @@ public class OpenAiProvider implements AiProvider {
         this.maxOutput = maxOutput;
     }
 
+    @Override public String code() { return "openai"; }
+
+    @Override public String label() { return "OpenAI (" + model + ")"; }
+
     @Override public boolean available() { return key != null; }
 
     @Override

@@ -40,6 +40,10 @@ public class GeminiProvider implements AiProvider {
         this.hedgeMs = hedgeMs;
     }
 
+    @Override public String code() { return "gemini"; }
+
+    @Override public String label() { return "Gemini (" + (models.isEmpty() ? "?" : models.get(0)) + ")"; }
+
     @Override public boolean available() { return key != null; }
 
     @Override

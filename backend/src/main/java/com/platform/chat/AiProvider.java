@@ -34,6 +34,11 @@ public interface AiProvider {
 
     static String flat(String system) { return system == null ? "" : system.replace(CACHE_BREAK, "\n"); }
 
+    /** Short code stored with every usage row ("gemini", "anthropic", "openai"...), and the name shown to people (the "ai-name" test word, the admin page). */
+    default String code() { return "default"; }
+
+    default String label() { return getClass().getSimpleName(); }
+
     /** False while no API key is set: the storefront then hides the chat instead of showing a dead button. */
     default boolean available() { return true; }
 

@@ -88,7 +88,7 @@ class AiUsageIntegrationTest extends IntegrationTestBase {
         assertThat(JsonPath.<Number>read(s, "$.totals.cacheWrite").intValue()).isEqualTo(300);
         assertThat(JsonPath.<List<String>>read(s, "$.byFeature[*].feature")).contains("AD_VARIANTS", "IMAGE");
         assertThat(JsonPath.<List<Object>>read(s, "$.other")).hasSize(2);
-        assertThat(JsonPath.<Number>read(s, "$.prices.cacheWritePerMillion").doubleValue()).isGreaterThan(0);
+        assertThat(JsonPath.<Number>read(s, "$.prices.models.anthropic.cacheWrite").doubleValue()).isGreaterThan(0);
     }
 
     @Test

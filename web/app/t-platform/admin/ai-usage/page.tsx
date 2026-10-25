@@ -5,18 +5,19 @@ import { useApi } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { AreaChart, Badge, Button, Card, Empty, ErrorText, Input, Loading, Modal, PageHeader, Section, Stat, Table, Tabs, Td } from "@/components/ui";
 
-type Sums = { requests: number; instant: number; modelCalls: number; input: number; output: number; cached: number; cacheWrite: number };
-type Prices = { provider: string; inputPerMillion: number; outputPerMillion: number; cachedPerMillion: number; cacheWritePerMillion: number };
+type Sums = { requests: number; instant: number; modelCalls: number; input: number; output: number; cached: number; cacheWrite: number; costUsd: number; fallbacks: number };
+type Price = { input: number; output: number; cached: number; cacheWrite: number };
+type Prices = { provider: string; models: Record<string, Price> };
 type Shop = Sums & { tenantId: string | null; name: string; conversations: number };
 type Day = {
-  day: string; prices: Prices; totals: Sums; byHour: (Sums & { hour: number })[]; series: (Sums & { day: string })[]; shops: Shop[];
-  byFeature: (Sums & { feature: string })[]; byChannel: (Sums & { channel: string })[]; byStep: { step: string; feature: string; rounds: number; input: number; output: number; cached: number; cacheWrite: number }[];
+  day: string; prices: Prices; totals: Sums; byModel: (Sums & { model: string })[]; byHour: (Sums & { hour: number })[]; series: (Sums & { day: string })[]; shops: Shop[];
+  byFeature: (Sums & { feature: string })[]; byChannel: (Sums & { channel: string })[]; byStep: { step: string; feature: string; rounds: number; input: number; output: number; cached: number; cacheWrite: number; costUsd: number }[];
 };
-type Conv = Sums & { conversationId: string; channel: string | null; firstAt: string; lastAt: string; firstMessage: string | null };
-type Other = { id: number; createdAt: string; feature: string; modelCalls: number; input: number; output: number; cached: number; cacheWrite: number };
+type Conv = Sums & { conversationId: string; channel: string | null; model: string | null; firstAt: string; lastAt: string; firstMessage: string | null };
+type Other = { id: number; createdAt: string; feature: string; model: string | null; modelCalls: number; input: number; output: number; cached: number; cacheWrite: number; costUsd: number };
 type ShopDay = Omit<Day, "shops" | "series" | "byChannel"> & { shop: { id: string; name: string }; conversations: Conv[]; other: Other[] };
 type Round = { tools: string[]; in: number; out: number; cached: number };
-type Reply = { id: number; createdAt: string; feature: string; instant: boolean; preview: string | null; modelCalls: number; input: number; output: number; cached: number; cacheWrite: number; calls: Round[] };
+type Reply = { id: number; createdAt: string; feature: string; instant: boolean; preview: string | null; model: string | null; fallback: boolean; modelCalls: number; input: number; output: number; cached: number; cacheWrite: number; costUsd: number; calls: Round[] };
 type ConvDetail = { conversationId: string; channel: string | null; prices: Prices; replies: Reply[] };
 
 const cairoToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
@@ -38,34 +39,17 @@ export default function AiUsage() {
   const [day, setDay] = useState(cairoToday);
   const [shopId, setShopId] = useState<string | null>(null);
   const [convId, setConvId] = useState<string | null>(null);
-  const [tab, setTab] = useState<"shops" | "steps" | "features" | "channels">("shops");
-  const [shopTab, setShopTab] = useState<"conversations" | "steps" | "features" | "other">("conversations");
-  const [edited, setPrice] = useState<{ i: string; o: string; c: string; w: string } | null>(null);
-
+  const [tab, setTab] = useState<"shops" | "steps" | "features" | "models" | "channels">("shops");
+  const [shopTab, setShopTab] = useState<"conversations" | "steps" | "features" | "models" | "other">("conversations");
+  
   const data = useApi<Day>(`platform/ai-usage?day=${day}`);
   const shop = useApi<ShopDay>(shopId ? `platform/ai-usage/shops/${shopId}?day=${day}` : null);
   const conv = useApi<ConvDetail>(convId ? `platform/ai-usage/conversations/${convId}` : null);
 
   const n = (v: number) => v.toLocaleString(locale);
   const pct = (a: number, b: number) => (b > 0 ? `${Math.round((a / b) * 100)}%` : "–");
-  const p = data.data?.prices;
-  // The prices the admin types are kept in this browser, one set per provider, so they survive a reload.
-  const saved = useMemo(() => {
-    if (!p) return null;
-    try { const raw = localStorage.getItem(`aiu.price.${p.provider}`); return raw ? (JSON.parse(raw) as { i: string; o: string; c: string; w: string }) : null; } catch { return null; }
-  }, [p?.provider]); // eslint-disable-line react-hooks/exhaustive-deps
-  const price = edited ?? saved;
-  const setP = (k: "i" | "o" | "c" | "w", v: string) => {
-    if (!p) return;
-    const next = { i: price?.i ?? String(p.inputPerMillion), o: price?.o ?? String(p.outputPerMillion), c: price?.c ?? String(p.cachedPerMillion), w: price?.w ?? String(p.cacheWritePerMillion), [k]: v };
-    setPrice(next);
-    try { localStorage.setItem(`aiu.price.${p.provider}`, JSON.stringify(next)); } catch { /* private window: the prices just are not kept */ }
-  };
-  const pin = price ? Number(price.i) || 0 : p?.inputPerMillion ?? 0;
-  const pout = price ? Number(price.o) || 0 : p?.outputPerMillion ?? 0;
-  const pc = price ? Number(price.c) || 0 : p?.cachedPerMillion ?? 0;
-  const pw = price ? Number(price.w) || 0 : p?.cacheWritePerMillion ?? 0;
-  const cost = (s: { input: number; output: number; cached: number; cacheWrite?: number }) => ((Math.max(0, s.input - s.cached - (s.cacheWrite ?? 0)) * pin + s.cached * pc + (s.cacheWrite ?? 0) * pw + s.output * pout) / 1e6);
+  // every row arrives with its cost already worked out by the server, each model with its own prices (set with the AI_PRICE_* settings)
+  const cost = (x: { costUsd: number }) => x.costUsd;
   const usd = (v: number) => `$${v < 1 ? v.toFixed(4) : v.toFixed(2)}`;
   const time = (iso: string) => new Date(iso).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Cairo" });
   const feature = (f: string) => { const k = `aiu.f.${f}`; const v = t(k); return v === k ? f : v; };
@@ -76,6 +60,16 @@ export default function AiUsage() {
       {rows.map((r, i) => (
         <tr key={i}>
           <Td className="font-mono text-xs">{r.step === "(final answer)" ? t("aiu.finalAnswer") : r.step}</Td><Td>{feature(r.feature)}</Td><Td>{n(r.rounds)}</Td><Td>{n(r.input)}</Td><Td>{n(r.output)}</Td><Td>{pct(r.cached, r.input)}</Td><Td>{usd(cost(r))}</Td>
+        </tr>
+      ))}
+    </Table>
+  );
+  const modelTable = (rows: (Sums & { model: string })[]) => rows.length === 0 ? <Empty>{t("aiu.none")}</Empty> : (
+    <Table head={[t("aiu.model"), t("aiu.requests"), t("aiu.instant"), t("aiu.fallbacks"), t("aiu.input"), t("aiu.output"), t("aiu.cacheHit"), t("aiu.avgTokens"), t("aiu.cost"), t("aiu.avgCost")]}>
+      {rows.map((r) => (
+        <tr key={r.model}>
+          <Td className="font-semibold">{r.model}</Td><Td>{n(r.requests)}</Td><Td>{n(r.instant)}</Td><Td>{n(r.fallbacks)}</Td><Td>{n(r.input)}</Td><Td>{n(r.output)}</Td><Td>{pct(r.cached, r.input)}</Td>
+          <Td>{r.requests > 0 ? n(Math.round(total(r) / r.requests)) : "–"}</Td><Td>{usd(cost(r))}</Td><Td>{r.requests > 0 ? usd(cost(r) / r.requests) : "–"}</Td>
         </tr>
       ))}
     </Table>
@@ -107,18 +101,13 @@ export default function AiUsage() {
             <Stat label={t("aiu.requests")} value={n(d.totals.requests)} icon="chat" hint={`${n(d.totals.modelCalls)} ${t("aiu.modelCalls")}`} />
             <Stat label={t("aiu.instant")} value={n(d.totals.instant)} icon="check" tone="green" hint={t("aiu.instantHint")} />
             <Stat label={t("aiu.cacheHit")} value={pct(d.totals.cached, d.totals.input)} icon="sparkles" tone="amber" hint={`${n(d.totals.cached)} ${t("aiu.cachedTokens")}`} />
-            <Stat label={t("aiu.cost")} value={usd(cost(d.totals))} icon="wallet" tone="red" hint={d.prices.provider} />
+            <Stat label={t("aiu.cost")} value={usd(cost(d.totals))} icon="wallet" tone="red" hint={d.byModel.map((m) => m.model).join(" + ")} />
           </div>
 
           <Card>
-            <p className="mb-3 text-sm font-semibold text-ink">{t("aiu.prices")}</p>
-            <div className="grid grid-cols-2 gap-3 sm:max-w-xl sm:grid-cols-4">
-              <label className="text-xs text-slate-500">{t("aiu.priceIn")}<Input type="number" step="0.01" min="0" value={price?.i ?? String(d.prices.inputPerMillion)} onChange={(e) => setP("i", e.target.value)} /></label>
-              <label className="text-xs text-slate-500">{t("aiu.priceOut")}<Input type="number" step="0.01" min="0" value={price?.o ?? String(d.prices.outputPerMillion)} onChange={(e) => setP("o", e.target.value)} /></label>
-              <label className="text-xs text-slate-500">{t("aiu.priceCached")}<Input type="number" step="0.001" min="0" value={price?.c ?? String(d.prices.cachedPerMillion)} onChange={(e) => setP("c", e.target.value)} /></label>
-              <label className="text-xs text-slate-500">{t("aiu.priceWrite")}<Input type="number" step="0.01" min="0" value={price?.w ?? String(d.prices.cacheWritePerMillion)} onChange={(e) => setP("w", e.target.value)} /></label>
-            </div>
-            <p className="mt-2 text-xs text-slate-500">{t("aiu.pricesHint")}</p>
+            <p className="mb-1 text-sm font-semibold text-ink">{t("aiu.prices")}</p>
+            <p className="text-xs text-slate-500" dir="ltr">{Object.entries(d.prices.models).map(([m, x]) => `${m}: ${x.input} in · ${x.output} out · ${x.cached} cached · ${x.cacheWrite} cache write`).join("   |   ")} ($/1M)</p>
+            <p className="mt-1 text-xs text-slate-500">{t("aiu.pricesHint")}</p>
           </Card>
 
           <div className="grid gap-6 lg:grid-cols-2">
@@ -139,7 +128,7 @@ export default function AiUsage() {
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <Tabs tabs={[{ key: "shops", label: t("aiu.shops"), count: d.shops.length }, { key: "steps", label: t("aiu.steps") }, { key: "features", label: t("aiu.features") }, { key: "channels", label: t("aiu.channels") }]} value={tab} onChange={setTab} />
+            <Tabs tabs={[{ key: "shops", label: t("aiu.shops"), count: d.shops.length }, { key: "steps", label: t("aiu.steps") }, { key: "features", label: t("aiu.features") }, { key: "models", label: t("aiu.models"), count: d.byModel.length }, { key: "channels", label: t("aiu.channels") }]} value={tab} onChange={setTab} />
             {tab === "shops" && d.shops.length > 0 && <Button variant="secondary" size="sm" onClick={() => download(`ai-usage-${day}.csv`, [["shop", "conversations", "requests", "instant", "model_calls", "input", "output", "cached", "est_cost_usd"], ...d.shops.map((s) => [s.name, s.conversations, s.requests, s.instant, s.modelCalls, s.input, s.output, s.cached, cost(s).toFixed(4)])])}>{t("aiu.csv")}</Button>}
           </div>
 
@@ -155,6 +144,7 @@ export default function AiUsage() {
           ))}
           {tab === "steps" && <><p className="text-xs text-slate-500">{t("aiu.stepsHint")}</p>{d.byStep.length ? stepTable(d.byStep) : <Empty>{t("aiu.none")}</Empty>}</>}
           {tab === "features" && (d.byFeature.length ? featureTable(d.byFeature) : <Empty>{t("aiu.none")}</Empty>)}
+          {tab === "models" && <><p className="text-xs text-slate-500">{t("aiu.modelsHint")}</p>{modelTable(d.byModel)}</>}
           {tab === "channels" && (d.byChannel.length === 0 ? <Empty>{t("aiu.none")}</Empty> : (
             <Table head={[t("aiu.channel"), t("aiu.requests"), t("aiu.instant"), t("aiu.input"), t("aiu.output"), t("aiu.cached"), t("aiu.cost")]}>
               {d.byChannel.map((c) => <tr key={c.channel}><Td>{c.channel}</Td><Td>{n(c.requests)}</Td><Td>{n(c.instant)}</Td><Td>{n(c.input)}</Td><Td>{n(c.output)}</Td><Td>{pct(c.cached, c.input)}</Td><Td>{usd(cost(c))}</Td></tr>)}
@@ -173,7 +163,7 @@ export default function AiUsage() {
                     <Stat label={t("aiu.cost")} value={usd(cost(sd.totals))} tone="red" hint={`${t("aiu.cacheHit")} ${pct(sd.totals.cached, sd.totals.input)}`} />
                   </div>
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <Tabs tabs={[{ key: "conversations", label: t("aiu.conversations"), count: sd.conversations.length }, { key: "steps", label: t("aiu.steps") }, { key: "features", label: t("aiu.features") }, { key: "other", label: t("aiu.other"), count: sd.other.length }]} value={shopTab} onChange={setShopTab} />
+                    <Tabs tabs={[{ key: "conversations", label: t("aiu.conversations"), count: sd.conversations.length }, { key: "steps", label: t("aiu.steps") }, { key: "features", label: t("aiu.features") }, { key: "models", label: t("aiu.models") }, { key: "other", label: t("aiu.other"), count: sd.other.length }]} value={shopTab} onChange={setShopTab} />
                     {shopTab === "conversations" && sd.conversations.length > 0 && <Button variant="secondary" size="sm" onClick={() => download(`ai-usage-${sd.shop.name}-${day}.csv`, [["conversation", "channel", "first_message", "from", "to", "requests", "instant", "model_calls", "input", "output", "cached", "est_cost_usd"], ...sd.conversations.map((c) => [c.conversationId, c.channel ?? "", c.firstMessage ?? "", c.firstAt, c.lastAt, c.requests, c.instant, c.modelCalls, c.input, c.output, c.cached, cost(c).toFixed(4)])])}>{t("aiu.csv")}</Button>}
                   </div>
                   {shopTab === "conversations" && (sd.conversations.length === 0 ? <Empty>{t("aiu.none")}</Empty> : (
@@ -188,6 +178,7 @@ export default function AiUsage() {
                   ))}
                   {shopTab === "steps" && (sd.byStep.length ? stepTable(sd.byStep) : <Empty>{t("aiu.none")}</Empty>)}
                   {shopTab === "features" && (sd.byFeature.length ? featureTable(sd.byFeature) : <Empty>{t("aiu.none")}</Empty>)}
+                  {shopTab === "models" && modelTable(sd.byModel)}
                   {shopTab === "other" && (sd.other.length === 0 ? <Empty>{t("aiu.none")}</Empty> : (
                     <Table head={[t("aiu.time"), t("aiu.feature"), t("aiu.modelCalls"), t("aiu.input"), t("aiu.output"), t("aiu.cost")]}>
                       {sd.other.map((o) => <tr key={o.id}><Td>{time(o.createdAt)}</Td><Td>{feature(o.feature)}</Td><Td>{n(o.modelCalls)}</Td><Td>{n(o.input)}</Td><Td>{n(o.output)}</Td><Td>{usd(cost(o))}</Td></tr>)}
@@ -210,7 +201,7 @@ export default function AiUsage() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="min-w-0 truncate text-sm font-semibold text-ink">{r.preview ?? "—"}</p>
                   <div className="flex items-center gap-2 text-xs text-slate-500">
-                    <span>{time(r.createdAt)}</span>{r.instant ? <Badge tone="green">{t("aiu.instantBadge")}</Badge> : <Badge>{n(r.input + r.output)} {t("aiu.tokens")}</Badge>}
+                    <span>{time(r.createdAt)}</span>{r.model && <Badge>{r.model}</Badge>}{r.fallback && <Badge tone="amber">{t("aiu.fallback")}</Badge>}{r.instant ? <Badge tone="green">{t("aiu.instantBadge")}</Badge> : <Badge>{n(r.input + r.output)} {t("aiu.tokens")}</Badge>}
                     {!r.instant && <span>{usd(cost(r))}</span>}
                   </div>
                 </div>

@@ -41,6 +41,10 @@ public class AnthropicProvider implements AiProvider {
         this.maxOutput = maxOutput;
     }
 
+    @Override public String code() { return "anthropic"; }
+
+    @Override public String label() { return "Claude (" + model + ")"; }
+
     @Override public boolean available() { return key != null; }
 
     @Override
