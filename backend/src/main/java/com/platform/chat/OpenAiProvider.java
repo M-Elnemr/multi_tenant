@@ -27,23 +27,37 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(name = "app.ai.provider", havingValue = "openai")
 public class OpenAiProvider implements AiProvider {
     private static final ObjectMapper JSON = new ObjectMapper();
-    private final String key, model, effort, baseUrl;
+    private final String code, name, key, model, effort, baseUrl, extraBody;
+    private final boolean maxTokensField;
     private final int maxOutput;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build();
 
+    @org.springframework.beans.factory.annotation.Autowired
     public OpenAiProvider(@Value("${app.ai.openai.api-key:}") String key, @Value("${app.ai.openai.model:gpt-6-luna}") String model,
                           @Value("${app.ai.openai.reasoning-effort:none}") String effort, @Value("${app.ai.openai.base-url:https://api.openai.com/v1}") String baseUrl,
                           @Value("${app.ai.openai.max-output-tokens:1500}") int maxOutput) {
+        this("openai", "OpenAI", key, model, effort, baseUrl, maxOutput, false, "");
+    }
+
+    /**
+     * Any other service that speaks the same Chat Completions protocol (DeepSeek...), under its own model code. {@code maxTokensField} sends the limit as {@code max_tokens}
+     * (what those services read) instead of {@code max_completion_tokens}; {@code extraBody} is a JSON object merged into every request, e.g. a setting that switches thinking off.
+     */
+    public OpenAiProvider(String code, String name, String key, String model, String effort, String baseUrl, int maxOutput, boolean maxTokensField, String extraBody) {
+        this.code = code;
+        this.name = name;
         this.key = key == null || key.isBlank() ? null : key.trim();
         this.model = model.trim();
         this.effort = effort == null ? "" : effort.trim();
         this.baseUrl = baseUrl.trim().replaceAll("/+$", "");
         this.maxOutput = maxOutput;
+        this.maxTokensField = maxTokensField;
+        this.extraBody = extraBody == null ? "" : extraBody.trim();
     }
 
-    @Override public String code() { return "openai"; }
+    @Override public String code() { return code; }
 
-    @Override public String label() { return "OpenAI (" + model + ")"; }
+    @Override public String label() { return name + " (" + model + ")"; }
 
     @Override public boolean available() { return key != null; }
 
@@ -106,7 +120,10 @@ public class OpenAiProvider implements AiProvider {
             body.put("tools", defs);
         }
         if (!effort.isEmpty()) body.put("reasoning_effort", effort);
-        body.put("max_completion_tokens", maxOutput);
+        body.put(maxTokensField ? "max_tokens" : "max_completion_tokens", maxOutput);
+        if (!extraBody.isEmpty()) {
+            try { body.putAll(JSON.readValue(extraBody, new TypeReference<Map<String, Object>>() {})); } catch (Exception e) { throw new AiUnavailableException("The extra request settings of " + code + " are not valid JSON"); }
+        }
         return body;
     }
 
@@ -141,6 +158,8 @@ public class OpenAiProvider implements AiProvider {
         raw.put("content", text);
         if (!calls.isEmpty()) raw.set("tool_calls", (ArrayNode) msg.path("tool_calls"));
         JsonNode u = root.path("usage");
-        return new Turn("model", text, calls, List.of(), raw, new Usage(u.path("prompt_tokens").asInt(0), u.path("completion_tokens").asInt(0), u.path("prompt_tokens_details").path("cached_tokens").asInt(0)));
+        // OpenAI reports the cached part under prompt_tokens_details, DeepSeek as prompt_cache_hit_tokens: both are part of prompt_tokens
+        int cached = Math.max(u.path("prompt_tokens_details").path("cached_tokens").asInt(0), u.path("prompt_cache_hit_tokens").asInt(0));
+        return new Turn("model", text, calls, List.of(), raw, new Usage(u.path("prompt_tokens").asInt(0), u.path("completion_tokens").asInt(0), cached));
     }
 }

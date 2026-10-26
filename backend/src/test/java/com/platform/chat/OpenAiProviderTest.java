@@ -48,6 +48,24 @@ class OpenAiProviderTest {
     OpenAiProvider provider(String key) { return new OpenAiProvider(key, "gpt-6-luna", "none", "http://127.0.0.1:" + server.getAddress().getPort() + "/v1", 1500); }
 
     @Test
+    void deepSeekIsTheSameProtocolUnderItsOwnCodeWithMaxTokensExtraSettingsAndItsCacheCounter() throws Exception {
+        answer = "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"تمام\"}}],\"usage\":{\"prompt_tokens\":4500,\"completion_tokens\":40,\"prompt_cache_hit_tokens\":3600,\"prompt_cache_miss_tokens\":900}}";
+        var ds = new OpenAiProvider("deepseek", "DeepSeek", "sk-ds", "deepseek-v4.1-flash-1017", "", "http://127.0.0.1:" + server.getAddress().getPort() + "/v1/", 1000, true, "{\"thinking\":{\"type\":\"disabled\"}}");
+        assertThat(ds.code()).isEqualTo("deepseek");
+        assertThat(ds.label()).isEqualTo("DeepSeek (deepseek-v4.1-flash-1017)");
+        Turn t = ds.next("sys", List.of(Turn.user("hi")), List.of());
+        assertThat(t.usage().input()).isEqualTo(4500);
+        assertThat(t.usage().cached()).isEqualTo(3600);
+        JsonNode body = JSON.readTree(bodies.get(0));
+        assertThat(body.path("max_tokens").asInt()).isEqualTo(1000);
+        assertThat(body.has("max_completion_tokens")).isFalse();
+        assertThat(body.has("reasoning_effort")).isFalse();
+        assertThat(body.path("thinking").path("type").asText()).isEqualTo("disabled");
+        assertThatThrownBy(() -> new OpenAiProvider("deepseek", "DeepSeek", "k", "m", "", "http://x", 10, true, "not json").requestBody("s", List.of(Turn.user("a")), List.of()))
+                .isInstanceOf(AiUnavailableException.class);
+    }
+
+    @Test
     void sendsTheConversationWithToolsInJsonSchemaAndReasoningOff() throws Exception {
         answer = "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"أهلاً بيكي\"}}]}";
         var tools = List.of(new ToolDef("search_products", "Search", Map.of("type", "OBJECT", "properties", Map.of("query", Map.of("type", "STRING", "description", "words")), "required", List.of("query"))));

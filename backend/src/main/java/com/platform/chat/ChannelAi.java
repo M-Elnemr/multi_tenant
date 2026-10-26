@@ -19,7 +19,7 @@ public class ChannelAi {
     private static final List<String> SOCIAL = List.of("WHATSAPP", "FACEBOOK", "INSTAGRAM");
 
     private final AiProvider defaultAi;
-    private final AiProvider claude, gemini25;
+    private final AiProvider claude, gemini25, deepseek;
     private final String social, web;
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -27,18 +27,25 @@ public class ChannelAi {
                      @Value("${app.ai.anthropic.api-key:}") String key, @Value("${app.ai.anthropic.model:claude-haiku-5-5}") String model, @Value("${app.ai.anthropic.effort:low}") String effort,
                      @Value("${app.ai.anthropic.base-url:https://api.anthropic.com/v1}") String baseUrl, @Value("${app.ai.anthropic.cache-ttl:1h}") String cacheTtl,
                      @Value("${app.ai.route.chat-max-output-tokens:1000}") int chatMaxOutput,
-                     @Value("${app.ai.gemini.api-key:}") String geminiKey, @Value("${app.ai.gemini25.model:gemini-2.5-flash-lite}") String gemini25Model, @Value("${app.ai.gemini.hedge-ms:10000}") long hedgeMs) {
-        this(defaultAi, new AnthropicProvider(key, model, effort, baseUrl, cacheTtl, chatMaxOutput), new GeminiProvider(geminiKey, gemini25Model, hedgeMs, "gemini25"), social, web);
+                     @Value("${app.ai.gemini.api-key:}") String geminiKey, @Value("${app.ai.gemini25.model:gemini-2.5-flash-lite}") String gemini25Model, @Value("${app.ai.gemini.hedge-ms:10000}") long hedgeMs,
+                     @Value("${app.ai.deepseek.api-key:}") String deepseekKey, @Value("${app.ai.deepseek.model:deepseek-v4.1-flash-1017}") String deepseekModel,
+                     @Value("${app.ai.deepseek.base-url:https://api.deepseek.com}") String deepseekUrl, @Value("${app.ai.deepseek.extra-body:}") String deepseekExtra) {
+        this(defaultAi, new AnthropicProvider(key, model, effort, baseUrl, cacheTtl, chatMaxOutput), new GeminiProvider(geminiKey, gemini25Model, hedgeMs, "gemini25"),
+                new OpenAiProvider("deepseek", "DeepSeek", deepseekKey, deepseekModel, "", deepseekUrl, chatMaxOutput, true, deepseekExtra), social, web);
     }
 
     /** For tests: any two models. */
-    public ChannelAi(AiProvider defaultAi, AiProvider claude, String social, String web) { this(defaultAi, claude, null, social, web); }
+    public ChannelAi(AiProvider defaultAi, AiProvider claude, String social, String web) { this(defaultAi, claude, null, null, social, web); }
 
-    /** For tests: all three models. */
-    public ChannelAi(AiProvider defaultAi, AiProvider claude, AiProvider gemini25, String social, String web) {
+    /** For tests: three models. */
+    public ChannelAi(AiProvider defaultAi, AiProvider claude, AiProvider gemini25, String social, String web) { this(defaultAi, claude, gemini25, null, social, web); }
+
+    /** All four models: the default (Gemini 3.1), Claude, Gemini 2.5 and DeepSeek. */
+    public ChannelAi(AiProvider defaultAi, AiProvider claude, AiProvider gemini25, AiProvider deepseek, String social, String web) {
         this.defaultAi = defaultAi;
         this.claude = claude;
         this.gemini25 = gemini25;
+        this.deepseek = deepseek;
         this.social = social == null ? "default" : social.trim().toLowerCase(Locale.ROOT);
         this.web = web == null ? "default" : web.trim().toLowerCase(Locale.ROOT);
     }
@@ -49,9 +56,10 @@ public class ChannelAi {
     /** Same, for a customer who picked a model with {@link #command}: {@code chosen} is "gemini", "gemini25" or "anthropic" (null = the channel's default). */
     public Routed forChannel(String channel, String chosen) {
         String route = chosen != null ? chosen : channel != null && SOCIAL.contains(channel) ? social : web;
-        AiProvider primary = "anthropic".equals(route) && claude.available() ? claude : "gemini25".equals(route) && gemini25 != null && gemini25.available() ? gemini25 : defaultAi;
-        // a customer who typed "gemini 2.5" is testing that model: show its error instead of quietly answering with another one
-        if (chosen != null && primary == gemini25) return new Routed(primary, null);
+        AiProvider primary = "anthropic".equals(route) && claude.available() ? claude : "gemini25".equals(route) && gemini25 != null && gemini25.available() ? gemini25
+                : "deepseek".equals(route) && deepseek != null && deepseek.available() ? deepseek : defaultAi;
+        // a customer who typed "gemini 2.5" or "deepseek" is testing that model: show its error instead of quietly answering with another one
+        if (chosen != null && (primary == gemini25 || primary == deepseek)) return new Routed(primary, null);
         return new Routed(primary, defaultAi);
     }
 
@@ -63,6 +71,7 @@ public class ChannelAi {
             case "claude", "claude haiku", "haiku" -> "anthropic";
             case "gemini", "gemini 3 1", "gemini 31", "gemini 3", "gemini 3 1 flash lite" -> "gemini";
             case "gemini 2 5", "gemini 25", "gemini 2", "gemini 2 5 flash lite" -> "gemini25";
+            case "deepseek", "deep seek", "deepseek flash", "deepseek v4", "deepseek v4 1", "deepseek v4 1 flash" -> "deepseek";
             default -> null;
         };
     }

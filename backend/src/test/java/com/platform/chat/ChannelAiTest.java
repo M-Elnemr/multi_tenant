@@ -41,6 +41,20 @@ class ChannelAiTest {
     }
 
     @Test
+    void deepSeekIsPickedByItsCommandAndShowsItsErrorsToo() {
+        Scripted g31 = new Scripted("gemini", true), claude = new Scripted("anthropic", true), g25 = new Scripted("gemini25", true), ds = new Scripted("deepseek", true);
+        for (String c : List.of("deepseek", "DeepSeek", "use deepseek", "deep seek", "DeepSeek V4.1")) assertThat(ChannelAi.command(c)).as(c).isEqualTo("deepseek");
+        ChannelAi ai = new ChannelAi(g31, claude, g25, ds, "default", "default");
+        var routed = ai.forChannel("WHATSAPP", "deepseek");
+        assertThat(routed.code()).isEqualTo("deepseek");
+        assertThat(routed.showsErrors()).isTrue();
+        // without a key it is not used at all and the chat stays on the default model
+        assertThat(new ChannelAi(g31, claude, g25, new Scripted("deepseek", false), "default", "default").forChannel("WHATSAPP", "deepseek").code()).isEqualTo("gemini");
+        // routed by configuration (not chosen by a customer) it falls back like Claude does
+        assertThat(new ChannelAi(g31, claude, g25, ds, "deepseek", "default").forChannel("WHATSAPP").showsErrors()).isFalse();
+    }
+
+    @Test
     void aFailingGemini25ChosenByTheCustomerShowsItsErrorInsteadOfFallingBack() {
         Scripted g31 = new Scripted("gemini", true), g25 = new Scripted("gemini25", true), claude = new Scripted("anthropic", true);
         g25.script.add(() -> { throw new AiUnavailableException("The AI assistant could not answer (gemini-2.5-flash-lite 404: no longer available)"); });
