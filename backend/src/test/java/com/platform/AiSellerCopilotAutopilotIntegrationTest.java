@@ -125,9 +125,9 @@ class AiSellerCopilotAutopilotIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void theEvaluationSetHasFortyConversationsWithRubrics() throws Exception {
+    void theEvaluationSetHasFortyThreeConversationsWithRubrics() throws Exception {
         JsonNode set = JSON.readTree(getClass().getResourceAsStream("/ai-eval.json"));
-        assertThat(set.path("conversations")).hasSize(40);
+        assertThat(set.path("conversations")).hasSize(43);
         for (JsonNode c : set.path("conversations")) {
             assertThat(c.path("customer").size()).as("customer turns of #" + c.path("id")).isGreaterThan(0);
             assertThat(c.path("expect").size()).as("rubric of #" + c.path("id")).isGreaterThan(0);

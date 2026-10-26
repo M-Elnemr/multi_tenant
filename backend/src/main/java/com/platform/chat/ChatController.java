@@ -145,4 +145,60 @@ public class ChatController {
     @PreAuthorize("hasAuthority('platform.chat.teach')")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteGlobalLesson(@PathVariable UUID id, Authentication a) { chat.deleteLesson(null, (UUID) a.getPrincipal(), id); }
+
+    // ---- platform admin: training room (chat with a shop's assistant as a customer, turn replies into lessons) ----
+
+    public record TrainSend(String message, String model) {}
+    public record TrainDraft(String customerMessage, String agentReply, String remark) {}
+
+    private static String trainer(Authentication a) { return "admin-" + a.getPrincipal(); }
+
+    @GetMapping("/api/v1/platform/chat/train/shops")
+    @PreAuthorize("hasAuthority('platform.chat.teach')")
+    public List<Map<String, Object>> trainShops() { return chat.trainShops(); }
+
+    @GetMapping("/api/v1/platform/chat/train/{tenantId}")
+    @PreAuthorize("hasAuthority('platform.chat.teach')")
+    public Map<String, Object> trainHistory(@PathVariable UUID tenantId, Authentication a) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("messages", chat.history(tenantId, "TEST", trainer(a)));
+        m.put("model", chat.testModel(tenantId, trainer(a)) == null ? "default" : chat.testModel(tenantId, trainer(a)));
+        return m;
+    }
+
+    @PostMapping("/api/v1/platform/chat/train/{tenantId}")
+    @PreAuthorize("hasAuthority('platform.chat.teach')")
+    public Map<String, Object> trainSend(@PathVariable UUID tenantId, @RequestBody TrainSend r, Authentication a) {
+        throttle.check("chat-train|" + a.getPrincipal(), 300, Duration.ofHours(1));
+        chat.setTestModel(tenantId, trainer(a), r.model());
+        return view(chat.reply(tenantId, "TEST", trainer(a), null, r.message()));
+    }
+
+    @DeleteMapping("/api/v1/platform/chat/train/{tenantId}")
+    @PreAuthorize("hasAuthority('platform.chat.teach')")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void trainReset(@PathVariable UUID tenantId, Authentication a) { chat.reset(tenantId, "TEST", trainer(a)); }
+
+    @PostMapping("/api/v1/platform/chat/train/draft-lesson")
+    @PreAuthorize("hasAuthority('platform.chat.teach')")
+    public Map<String, Object> trainDraft(@RequestBody TrainDraft r, Authentication a) {
+        throttle.check("chat-train-draft|" + a.getPrincipal(), 120, Duration.ofHours(1));
+        return chat.draftLesson(r.customerMessage(), r.agentReply(), r.remark());
+    }
+
+    @GetMapping("/api/v1/platform/chat/train/{tenantId}/lessons")
+    @PreAuthorize("hasAuthority('platform.chat.teach')")
+    public List<Map<String, Object>> trainShopLessons(@PathVariable UUID tenantId) { return chat.lessons(tenantId); }
+
+    @PostMapping("/api/v1/platform/chat/train/{tenantId}/lessons")
+    @PreAuthorize("hasAuthority('platform.chat.teach')")
+    @ResponseStatus(HttpStatus.CREATED)
+    public Map<String, Object> trainAddShopLesson(@PathVariable UUID tenantId, @RequestBody LessonRequest r, Authentication a) {
+        return chat.addLesson(tenantId, (UUID) a.getPrincipal(), r.instruction(), r.exampleQuestion(), r.exampleAnswer());
+    }
+
+    @DeleteMapping("/api/v1/platform/chat/train/{tenantId}/lessons/{id}")
+    @PreAuthorize("hasAuthority('platform.chat.teach')")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void trainDeleteShopLesson(@PathVariable UUID tenantId, @PathVariable UUID id, Authentication a) { chat.deleteLesson(tenantId, (UUID) a.getPrincipal(), id); }
 }

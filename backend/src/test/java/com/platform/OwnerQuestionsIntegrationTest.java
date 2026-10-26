@@ -49,7 +49,7 @@ class OwnerQuestionsIntegrationTest extends IntegrationTestBase {
     void theOwnerIsToldAnswersOnOneScreenAndTheAssistantTellsTheCustomerOnWhatsApp() throws Exception {
         Tenant t = onboard("STORE");
         String inst = linkedInstance(t);
-        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("flag_unanswered", Map.of("question", "Is the kids t-shirt 100% cotton?")));
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("flag_unanswered", Map.of("question", "Does the kids t-shirt come with a one year warranty?")));
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("I asked the team, I will message you the answer here"));
         webhook(message(inst, "201055550000", "Q" + uniq(), "is the t-shirt cotton?")).andExpect(status().isOk());
 
@@ -66,7 +66,7 @@ class OwnerQuestionsIntegrationTest extends IntegrationTestBase {
         // the owner was told: in the app and on the shop's own WhatsApp number, with the link to the screen
         assertThat(jdbc.sql("SELECT count(*) FROM notifications.notifications WHERE notification_type = 'AI_QUESTION' AND tenant_id = (SELECT id FROM core.tenants WHERE slug = :s)").param("s", t.slug()).query(Long.class).single()).isEqualTo(1);
         var toOwner = texts().stream().filter(c -> "201012345678".equals(c.body().get("number"))).findFirst().orElseThrow();
-        assertThat((String) toOwner.body().get("text")).contains("Is the kids t-shirt 100% cotton?").contains("/dashboard/questions");
+        assertThat((String) toOwner.body().get("text")).contains("Does the kids t-shirt come with a one year warranty?").contains("/dashboard/questions");
 
         // the owner answers: the assistant is handed the answer and words it for the customer, who gets it on WhatsApp
         AtomicReference<String> note = new AtomicReference<>();
@@ -75,7 +75,7 @@ class OwnerQuestionsIntegrationTest extends IntegrationTestBase {
         String answered = body(onHost(t.host(), t.access(), "POST", "/api/v1/store/ai/questions/" + id + "/answer", "{\"answer\":\"Yes, 100% cotton\"}").andExpect(status().isOk()));
         assertThat((String) JsonPath.read(answered, "$.status")).isEqualTo("ANSWERED");
         assertThat((String) JsonPath.read(answered, "$.delivery")).isEqualTo("SENT");
-        assertThat(note.get()).contains("Yes, 100% cotton").contains("Is the kids t-shirt 100% cotton?").contains("NOTE FROM THE SHOP");
+        assertThat(note.get()).contains("Yes, 100% cotton").contains("Does the kids t-shirt come with a one year warranty?").contains("NOTE FROM THE SHOP");
         var toCustomer = texts().get(before);
         assertThat(toCustomer.body().get("number")).isEqualTo("201055550000");
         assertThat((String) toCustomer.body().get("text")).isEqualTo("Good news! It is 100% cotton. Shall I book size 6?");
@@ -92,7 +92,7 @@ class OwnerQuestionsIntegrationTest extends IntegrationTestBase {
     void ifTheModelCannotWordItTheOwnersAnswerGoesAsItIsAndAFailedSendCanBeRetried() throws Exception {
         Tenant t = onboard("STORE");
         String inst = linkedInstance(t);
-        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("flag_unanswered", Map.of("question", "هل القماش قطن؟")));
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("flag_unanswered", Map.of("question", "هل في ضمان على التيشيرت ده؟")));
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("هسأل الفريق وارجعلك"));
         webhook(message(inst, "201066660000", "Q" + uniq(), "القماش قطن؟")).andExpect(status().isOk());
         long id = ((Number) JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/ai/questions?status=OPEN", null)), "$[0].id")).longValue();

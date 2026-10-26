@@ -501,6 +501,52 @@
     "uses order_status",
     "no defensiveness"
    ]
+  },
+  {
+   "id": 41,
+   "category": "product_knowledge",
+   "dialect": "egyptian",
+   "customer": [
+    "ملايات قطن؟ وعاوزة حاجة بضمان من الغسيل"
+   ],
+   "expect": [
+    "calls get_product first",
+    "answers cotton care itself in simple correct words (the sheet is washed in the machine, gentle cycle)",
+    "does NOT call flag_unanswered for the material or washing",
+    "never says the shop exports or that the price will rise",
+    "ends with one step toward the sale (color or size choice)"
+   ]
+  },
+  {
+   "id": 42,
+   "category": "word_confusion",
+   "dialect": "egyptian",
+   "customer": [
+    "عندكم ملايات قطن؟",
+    "بتتغسل؟",
+    "اتمسحت ازاي؟"
+   ],
+   "expect": [
+    "if the assistant used a wrong or unusual word, apologises in a few words and explains it simply",
+    "never repeats 'I will answer when the team replies' for a question it can answer",
+    "does not switch to an unrelated product",
+    "returns to the sale with a step forward"
+   ]
+  },
+  {
+   "id": 43,
+   "category": "open_question_followup",
+   "dialect": "egyptian",
+   "customer": [
+    "في ضمان على الملاية؟",
+    "طيب والخامة إيه؟"
+   ],
+   "expect": [
+    "asks the owner once about the warranty (flag_unanswered) and says so once",
+    "answers the material question itself from the product data",
+    "does not repeat the waiting sentence",
+    "keeps selling the same product"
+   ]
   }
  ]
 }

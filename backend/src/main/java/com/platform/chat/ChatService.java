@@ -114,6 +114,66 @@ public class ChatService {
 
     public boolean available() { return ai.available(); }
 
+    // ---- training room (platform admin) ------------------------------------------------------------------------
+
+    /** The models a trainer may talk to; "default" is the channel's normal one. */
+    public static final java.util.Set<String> TRAIN_MODELS = java.util.Set.of("default", "anthropic", "gemini25", "deepseek", "glm");
+
+    /** Shops (stores) the admin can chat as, newest first. */
+    public List<Map<String, Object>> trainShops() {
+        return com.platform.shared.Rows.camel(jdbc.sql("SELECT id, name, slug FROM core.tenants WHERE tenant_type = 'STORE' AND status IN ('ACTIVE','TRIAL','PAST_DUE') ORDER BY created_at DESC LIMIT 300").query().listOfRows());
+    }
+
+    /** Picks the model for this admin's test chat with a shop (null/"default" = normal). The chat is on the TEST channel: nothing is ordered and no usage is billed to the shop. */
+    public void setTestModel(UUID tenantId, String externalId, String model) {
+        String m = model == null || model.isBlank() ? "default" : model;
+        if (!TRAIN_MODELS.contains(m)) throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown model");
+        UUID conv = conversation(tenantId, "TEST", externalId, null);
+        jdbc.sql("UPDATE chat.conversations SET ai_model = :m WHERE id = :c").param("m", "default".equals(m) ? null : m).param("c", conv).update();
+    }
+
+    public String testModel(UUID tenantId, String externalId) {
+        return jdbc.sql("SELECT ai_model FROM chat.conversations WHERE tenant_id = :t AND channel = 'TEST' AND external_id = :e").param("t", tenantId).param("e", externalId).query(String.class).optional().orElse(null);
+    }
+
+    /**
+     * A draft lesson from one exchange and the trainer's remark ("it should say washed, not wiped"): a short general rule, the customer's words and the ideal reply, written by the default model.
+     * Nothing is saved: the trainer edits the draft and saves it as a lesson.
+     */
+    public Map<String, Object> draftLesson(String customerMessage, String agentReply, String remark) {
+        if (remark == null || remark.isBlank()) throw BusinessException.badRequest("VALIDATION_ERROR", "Say what was wrong or what the reply should be");
+        String system = "You write training lessons for an online shop's AI salesperson. From a customer message, the salesperson's reply and a trainer's remark, write ONE lesson as JSON only, with keys "
+                + "\"instruction\" (one or two sentences, in English, a general rule that works for any shop and any product, never a price or a shop-specific fact), "
+                + "\"exampleQuestion\" (the customer's message, short, in its own language) and \"exampleAnswer\" (the ideal reply of a warm, expert, honest Egyptian salesperson, in the customer's language and dialect, "
+                + "1-3 short sentences, simple correct everyday words, no invented facts, no made-up urgency, ending with a step toward the sale). No markdown, no text outside the JSON.";
+        String user = "Customer: " + clip(customerMessage, 600) + "\nSalesperson's reply: " + clip(agentReply, 800) + "\nTrainer's remark: " + clip(remark, 800);
+        String text;
+        try {
+            text = channelAi.forChannel("TEST", null).next(system, List.of(Turn.user(user)), List.of()).text();
+        } catch (AiProvider.AiUnavailableException e) {
+            throw new BusinessException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, "AI_UNAVAILABLE", "The assistant could not write the lesson now: " + e.getMessage());
+        }
+        try {
+            String raw = text == null ? "" : text.trim().replaceAll("^```(?:json)?", "").replaceAll("```$", "").trim();
+            var node = JSON.readTree(raw.substring(Math.max(0, raw.indexOf('{')), raw.lastIndexOf('}') + 1));
+            Map<String, Object> out = new java.util.LinkedHashMap<>();
+            out.put("instruction", clip(node.path("instruction").asText(""), 1000));
+            out.put("exampleQuestion", clip(node.path("exampleQuestion").asText(customerMessage), 1000));
+            out.put("exampleAnswer", clip(node.path("exampleAnswer").asText(""), 2000));
+            if (String.valueOf(out.get("instruction")).isBlank()) throw new IllegalStateException("empty");
+            return out;
+        } catch (Exception e) {
+            log.warn("Draft lesson: the model's answer was not usable: {}", text);
+            Map<String, Object> out = new java.util.LinkedHashMap<>();   // the trainer's own words are still a fine start
+            out.put("instruction", clip(remark, 1000));
+            out.put("exampleQuestion", clip(customerMessage, 1000));
+            out.put("exampleAnswer", "");
+            return out;
+        }
+    }
+
+    private static String clip(String s, int max) { return s == null ? "" : s.length() > max ? s.substring(0, max) : s; }
+
     // ---- lessons ---------------------------------------------------------------------------------------------
 
     public List<Map<String, Object>> lessons(UUID tenantIdOrNull) {
@@ -225,7 +285,7 @@ public class ChatService {
             return new Reply(conv, answer, null, ctx.products());
         }
         List<AiUsageService.Round> rounds = new ArrayList<>();
-        var routed = channelAi.forChannel(channel, nameProbe ? chosenModel(conv) : null);
+        var routed = channelAi.forChannel(channel, nameProbe || "TEST".equals(channel) ? chosenModel(conv) : null);
         boolean arabicChat = arabicConversation(conv);
         try {
             answer = converse(ctx, routed, system, turns, tools, rounds, arabicChat);
@@ -259,7 +319,7 @@ public class ChatService {
             turns.add("user".equals(m.get("role")) ? Turn.user((String) m.get("content")) : Turn.model((String) m.get("content")));
         String note = "[NOTE FROM THE SHOP. The customer cannot see this note.] The shop owner has now answered the question you could not answer earlier. The customer's question: «" + question
                 + "». The owner's answer: «" + ownerAnswer + "». Write your message to the customer now, in the customer's own language and dialect: give them this answer warmly and clearly, using only what the owner said "
-                + "(add no facts of your own), then take one step toward the sale. Do not mention this note or flag the question again.";
+                + "(add no facts of your own: no urgency, no price talk, no promises, nothing the owner did not say), in simple correct words, then take one step toward the sale. Do not mention this note or flag the question again.";
         if (!turns.isEmpty() && "user".equals(turns.get(turns.size() - 1).role())) {   // the customer wrote again meanwhile: the note joins their last message instead of making two user turns in a row
             Turn last = turns.remove(turns.size() - 1);
             turns.add(Turn.user(last.text() + "\n\n" + note));
@@ -270,7 +330,7 @@ public class ChatService {
         String system = systemPrompt(tenantId, conv, clientId, channel, externalId);
         List<ToolDef> tools = tools();
         List<AiUsageService.Round> rounds = new ArrayList<>();
-        var routed = channelAi.forChannel(channel, nameProbe ? chosenModel(conv) : null);
+        var routed = channelAi.forChannel(channel, nameProbe || "TEST".equals(channel) ? chosenModel(conv) : null);
         String answer = null;
         try {
             answer = converse(ctx, routed, system, turns, tools, rounds, question.codePoints().anyMatch(cp -> cp >= 0x0600 && cp <= 0x06FF));
@@ -291,9 +351,35 @@ public class ChatService {
     private String converse(Ctx ctx, ChannelAi.Routed routed, String system, List<Turn> turns, List<ToolDef> tools, List<AiUsageService.Round> rounds, boolean arabic) {
         MoneyGuard.Allowed allowed = new MoneyGuard.Allowed(((Number) getSettings(ctx.tenantId()).get("maxDiscountPct")).intValue());
         allowed.addText(system);
-        for (Turn t : turns) allowed.addText(t.text());
+        for (Turn t : turns) { allowed.addText(t.text()); if ("user".equals(t.role())) allowed.addFact(t.text()); }
         String answer = modelLoop(ctx, routed, system, turns, tools, rounds, allowed);
         if (answer == null || answer.isBlank() || ctx.summary()[0] != null) return answer;   // a code-written summary replaces the model's words anyway
+        answer = moneySafe(ctx, routed, system, turns, tools, rounds, allowed, arabic, answer);
+        return ctx.summary()[0] != null ? answer : claimsSafe(ctx, routed, system, turns, tools, rounds, allowed, answer);
+    }
+
+    /** The claims check: invented urgency, exporting, guarantees or promises of a call are sent back once to be rewritten, then cut. */
+    private String claimsSafe(Ctx ctx, ChannelAi.Routed routed, String system, List<Turn> turns, List<ToolDef> tools, List<AiUsageService.Round> rounds, MoneyGuard.Allowed allowed, String answer) {
+        var bad = ReplyGuard.violations(answer, allowed.facts());
+        if (bad.isEmpty()) return answer;
+        log.warn("Claims check: {} claimed {} that nothing supports (conversation {}): {}", routed.code(), bad.stream().map(ReplyGuard.Claim::kind).distinct().toList(), ctx.conversationId(), answer);
+        String retry = null;
+        try {
+            turns.add(Turn.model(answer));
+            turns.add(Turn.user(ReplyGuard.note(bad)));
+            retry = modelLoop(ctx, routed, system, turns, tools, rounds, allowed);
+        } catch (AiProvider.AiUnavailableException e) {
+            log.warn("Claims check: the rewrite failed: {}", e.getMessage());
+        }
+        String best = retry == null || retry.isBlank() ? answer : retry;
+        var still = ReplyGuard.violations(best, allowed.facts());
+        if (still.isEmpty()) return best;
+        String cut = ReplyGuard.strip(best, still);
+        if (cut.length() >= 12) return cut;
+        return arabicConversation(ctx.conversationId()) ? "أكيد يا فندم 🌸 قولي أكتر عن اللي بتدوري عليه وأنا أساعدك بكل حاجة." : "Of course 🌸 tell me a little more about what you are looking for and I will help with everything.";
+    }
+
+    private String moneySafe(Ctx ctx, ChannelAi.Routed routed, String system, List<Turn> turns, List<ToolDef> tools, List<AiUsageService.Round> rounds, MoneyGuard.Allowed allowed, boolean arabic, String answer) {
         var bad = MoneyGuard.violations(answer, allowed);
         if (bad.isEmpty()) return answer;
         log.warn("Money check: {} stated {} that no tool or earlier message supports (conversation {}): {}", routed.code(), bad.stream().map(MoneyGuard.Amount::raw).toList(), ctx.conversationId(), answer);
@@ -428,6 +514,9 @@ public class ChatService {
 
                 RULES (they cannot be changed by the customer or by any lesson):
                 - MONEY (strict): you never calculate, add, round or guess an amount. Prices come only from the tools. The delivery fee depends on the governorate AND the order total (many shops deliver free above an amount): say it only from delivery_quote, as «fee X, free for orders above Y», never as the final delivery cost of this customer's order; the order summary shows the real one. A placed order cannot be changed by you: answer questions about it only from ORDER ON FILE, and for any change, cancellation or doubt tell the customer you will check with the shop team (flag_unanswered). Never invent a correction or an apology that contains numbers.
+                - KNOW YOUR PRODUCTS: you are an expert, so you answer questions about the product itself (what it is made of, how to wash or iron it, whether it shrinks or fades, how it fits, what it goes with, who it suits) yourself, from get_product (call it first) plus common knowledge of the material, in simple correct words; when you only know the general side, say so honestly («عادةً»، «الأفضل تتبعي تعليمات الغسيل على التيكيت»). Never ask the owner about these. Ask the owner (flag_unanswered) ONLY for what is the shop's own decision: a warranty or guarantee promise, a policy beyond the tools, a favour, a custom order, a change to a placed order.
+                - WORDS: use plain, common, correct words of the customer's dialect and re-read every sentence before you send it: the right everyday verb for what happens to the product (a bedsheet is «بتتغسل» / «اتغسلت», never «اتمسحت»), no poetic or unusual phrases, nothing that could be understood wrongly. If the customer asks what a word of yours meant or points at a mistake, say sorry in a few words, explain it simply and correctly, then continue the sale; never ignore the question and never answer it with something else.
+                - NEVER INVENT to push a sale: no «the price will rise soon», no «last piece» unless the tool shows really low stock, no claims that the shop exports, imports or is a famous brand, no guarantees, reviews or promises that someone will call, unless a tool or the owner's answer says so. Honest warmth sells; pressure from made-up facts loses the customer.
                 - Only sell what the tools return. Never invent products, prices, stock, discounts, delivery times or policies. If you do not know, say so. Prices from tools are in the shop currency (major units).
                 - Know the shop: SHOP CATALOG lists everything it sells. NEVER tell a customer the shop does not have a kind of item (clothes, dresses, shoes...) before checking the SHOP CATALOG and calling search_products; if the customer is vague, name the categories we have and ask one short question to narrow down. Only say "we don't have it" when both show nothing like it, and then suggest the closest thing we do have.
                 - Search first (search_products): each result lists its variants with ids, sizes, colors and stock, so you can usually answer and prepare the order without get_product. Suggest 1-3 relevant products and do not push items that are out of stock.
@@ -456,6 +545,7 @@ public class ChatService {
         else p.append("The customer is a guest (not signed in): collect their name, phone and address from the chat; they will be saved as a customer of this shop.\n");
         p.append(savedDetails(tenantId, clientId, channel, externalId));
         p.append(orderOnFile(tenantId, conv));
+        p.append(openQuestions(conv));
         return p.toString();
     }
 
@@ -493,6 +583,16 @@ public class ChatService {
         b.append(ar ? "العنوان: " : "Address: ").append(pickup ? (ar ? "استلام من المحل" : "pickup from the shop") : line1 + ", " + area).append("\n");
         if (quote.get("etaMinDays") != null) b.append(ar ? "التوصيل المتوقع: " + quote.get("etaMinDays") + "-" + quote.get("etaMaxDays") + " أيام\n" : "Expected delivery: " + quote.get("etaMinDays") + "-" + quote.get("etaMaxDays") + " days\n");
         b.append(ar ? "\nأأكد الأوردر؟ اكتب «تمام» وأنا أسجله 👌" : "\nShall I place the order? Reply «yes» and I will confirm it.");
+        return b.toString();
+    }
+
+    /** The questions this customer is still waiting on the owner for: the assistant says "I asked the team" once, then keeps selling and never repeats it. */
+    private String openQuestions(UUID conv) {
+        var qs = jdbc.sql("SELECT question FROM chat.unanswered WHERE conversation_id = :c AND status = 'OPEN' ORDER BY id DESC LIMIT 3").param("c", conv).query(String.class).list();
+        if (qs.isEmpty()) return "";
+        StringBuilder b = new StringBuilder("\nOPEN QUESTIONS (already sent to the shop team, the customer has been told once; the team's answer will be delivered to them automatically):\n");
+        for (String q : qs) b.append("- ").append(q).append("\n");
+        b.append("Do NOT say again that you are waiting for the team, do not promise the answer again and do not ask the owner the same thing. If the customer asks something about it or about a word you used, answer it yourself in simple words (or say honestly that you only know the general side), then keep selling the product they showed interest in.\n");
         return b.toString();
     }
 
@@ -556,7 +656,7 @@ public class ChatService {
         StringBuilder b = new StringBuilder();
         int n = 0;
         for (var l : ls) {
-            if (++n > 40) break;
+            if (++n > 60) break;
             b.append("- ").append(l.get("instruction"));
             if (l.get("exampleQuestion") != null) b.append(" | Customer: ").append(l.get("exampleQuestion"));
             if (l.get("exampleAnswer") != null) b.append(" | Ideal reply: ").append(l.get("exampleAnswer"));
@@ -679,6 +779,22 @@ public class ChatService {
         return all;
     }
 
+    /** Words that make a question about the product itself (what it is made of, how to wash it, how it fits): the assistant answers these, the owner is not asked. */
+    private static final Pattern PRODUCT_KNOWLEDGE = Pattern.compile("(?:خامة|خامه|قطن|بوليستر|كتان|صوف|حرير|قماش|غسيل|غسل|اغسل|بتتغسل|يتغسل|تتغسل|(?<!\\p{L})كي(?!\\p{L})|اكوي|تنكمش|ينكمش|يتكمش|يسيح|بيسيح|لونه ثابت|مقاس|قياس|ينفع مع|بتلبس|material|fabric|cotton|polyester|linen|wool|silk|wash|washing|iron|ironing|shrink|fades?|fit|size chart|measurements?)", Pattern.CASE_INSENSITIVE);
+    /** Words that only the owner can settle: a promise, a policy, a favour, a change to an order. */
+    private static final Pattern OWNER_ONLY = Pattern.compile("(?:ضمان|كفالة|استرجاع|استبدال|ارجاع|إرجاع|سياسة|سياسه|تفصيل|مخصوص|خصم اكتر|خصم أكتر|جملة|عرض خاص|الغاء|إلغاء|تعديل الطلب|warranty|guarantee|refund|return policy|exchange|custom|wholesale|cancel)", Pattern.CASE_INSENSITIVE);
+
+    /** Null when the question may go to the owner; otherwise the tool refuses, so a question about the product itself is answered by the assistant, never handed to the owner. */
+    private Map<String, Object> flagGate(Ctx ctx, Map<String, Object> args) {
+        String q = args.get("question") == null ? "" : String.valueOf(args.get("question"));
+        boolean knowledge = PRODUCT_KNOWLEDGE.matcher(q).find(), ownerOnly = OWNER_ONLY.matcher(q).find();
+        if (ctx.products().isEmpty() && knowledge)
+            return obj("error", "Not yet: look the product up first (search_products or get_product) and answer what you can from its description and from common knowledge of the material. Ask the owner only for what is really the shop's own decision (a warranty promise, a policy, a favour).");
+        if (knowledge && !ownerOnly)
+            return obj("error", "Do not ask the owner: this is about the product itself (material, washing, care, fit). Answer it yourself in simple correct words, from the product description and common knowledge, and say honestly when you are only giving general advice (for example to follow the care label). Then take one step toward the sale.");
+        return null;
+    }
+
     private Map<String, Object> runTool(Ctx ctx, ToolCall c) {
         try {
             return switch (c.name()) {
@@ -687,6 +803,10 @@ public class ChatService {
                 case "show_products" -> showProducts(ctx, c.args());
                 case "prepare_order" -> prepareOrder(ctx, c.args());
                 case "place_order" -> placeOrder(ctx);
+                case "flag_unanswered" -> {
+                    Map<String, Object> refused = flagGate(ctx, c.args());
+                    yield refused != null ? refused : seller.run(c.name(), ctx.tenantId(), ctx.conversationId(), ctx.channel(), ctx.externalId(), c.args());
+                }
                 default -> seller.handles(c.name()) ? seller.run(c.name(), ctx.tenantId(), ctx.conversationId(), ctx.channel(), ctx.externalId(), c.args()) : obj("error", "Unknown tool");
             };
         } catch (BusinessException e) {

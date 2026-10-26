@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { AiLessons } from "@/components/dashboard/ai-lessons";
+import { TrainRoom } from "@/components/admin/train-room";
 import { useApi } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Alert, PageHeader } from "@/components/ui";
@@ -10,10 +12,17 @@ type MetaInfo = { configured: boolean; loginReady?: boolean; redirectUri?: strin
 export default function AdminAi() {
   const { t } = useI18n();
   const meta = useApi<MetaInfo>("platform/chat/meta");
+  const [tab, setTab] = useState<"lessons" | "train">("lessons");
   return (
     <>
       <PageHeader title={t("admin.aiTitle")} />
-      <div className="max-w-2xl space-y-6">
+      <div className="mb-4 flex gap-1 overflow-x-auto border-b [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {([["lessons", "admin.tabLessons"], ["train", "train.tab"]] as const).map(([k, label]) => (
+          <button key={k} type="button" onClick={() => setTab(k)} className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-4 py-2 text-sm font-semibold ${tab === k ? "border-brand text-brand" : "border-transparent text-slate-500"}`}>{t(label)}</button>
+        ))}
+      </div>
+      {tab === "train" && <TrainRoom />}
+      {tab === "lessons" && <div className="max-w-2xl space-y-6">
         <Alert tone="blue">{t("admin.aiHint")}</Alert>
         <AiLessons base="platform/chat/lessons" title={t("admin.aiTitle")} canWrite prefill={null} />
         <section className="space-y-2 rounded-xl border bg-white p-4 text-sm">
@@ -29,7 +38,7 @@ export default function AdminAi() {
             </dl>
           )}
         </section>
-      </div>
+      </div>}
     </>
   );
 }

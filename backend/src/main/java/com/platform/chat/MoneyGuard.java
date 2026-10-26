@@ -65,6 +65,7 @@ final class MoneyGuard {
     /** The amounts a reply may state. Fill it with everything the assistant legitimately knows, then {@link #violations}. */
     static final class Allowed {
         private final TreeSet<Long> exact = new TreeSet<>();
+        private final StringBuilder facts = new StringBuilder();
         private final int maxDiscountPct;
 
         Allowed(int maxDiscountPct) {
@@ -82,10 +83,16 @@ final class MoneyGuard {
         /** Every number in a tool result (a number, or a number inside a text). */
         void addJson(Object o) {
             if (o instanceof Number n) exact.add(Math.round(n.doubleValue() * 100));
-            else if (o instanceof String s) addText(s);
+            else if (o instanceof String s) { addText(s); addFact(s); }
             else if (o instanceof Map<?, ?> m) for (Object v : m.values()) addJson(v);
             else if (o instanceof Iterable<?> it) for (Object v : it) addJson(v);
         }
+
+        /** Words the assistant may legitimately repeat (what the customer or the owner wrote, a tool result). The fixed rules in the prompt are not facts. */
+        void addFact(String s) { if (s != null) facts.append(s).append('\n'); }
+
+        /** Everything added with {@link #addFact} or in a tool result. */
+        String facts() { return facts.toString(); }
 
         boolean allows(long cents) {
             if (exact.contains(cents)) return true;
