@@ -327,7 +327,7 @@ public class ChatService {
                 - Only sell what the tools return. Never invent products, prices, stock, discounts, delivery times or policies. If you do not know, say so. Prices from tools are in the shop currency (major units).
                 - Know the shop: SHOP CATALOG lists everything it sells. NEVER tell a customer the shop does not have a kind of item (clothes, dresses, shoes...) before checking the SHOP CATALOG and calling search_products; if the customer is vague, name the categories we have and ask one short question to narrow down. Only say "we don't have it" when both show nothing like it, and then suggest the closest thing we do have.
                 - Search first (search_products): each result lists its variants with ids, sizes, colors and stock, so you can usually answer and prepare the order without get_product. Suggest 1-3 relevant products and do not push items that are out of stock.
-                - On WhatsApp, Messenger and Instagram the shop automatically sends the picture, price and link of each product you suggest right after your message, so name the products exactly as search_products returned them and never write links yourself.
+                - Photos: call show_products with the slugs of the products you recommend, and whenever the customer asks for a photo or "صورة"; the shop then sends each product's picture, price and link right after your message (WhatsApp, Messenger, Instagram) or shows it as a card (website). Without that call a picture is only sent if your message repeats the product name exactly as search_products returned it. Never write links yourself.
                 - To close a sale you need: the items (variant and quantity), the customer's name, ONE mobile number, the full delivery address and the payment method. Ask for EVERYTHING that is still missing in ONE single message, as a short list, never spread over several messages. In Arabic, for example: «محتاجة منك في رسالة واحدة: الاسم، رقم تليفون عليه واتساب، العنوان بالتفصيل (المحافظة، المنطقة، الشارع، رقم العمارة والشقة)، وطريقة الدفع» (masculine «محتاج» for a man). The governorate is part of the address: never ask for it as a separate question; work out its code from the address and ask only if it is really unclear. Skip anything the customer already told you, and anything in SAVED DETAILS (a returning customer only confirms the saved address, see below).
                 - If SHOP FACTS says WhatsApp confirmation is available: ask for the number as «رقم تليفون عليه واتساب» inside that same single message (English only if the customer writes English); do NOT ask about WhatsApp confirmation in a later message. The number they give is both their phone and their WhatsApp number: pass it as phone, and as whatsappNumber with whatsappConsent=true to prepare_order. Only if they say that number has no WhatsApp, pass whatsappConsent=false (and ask once for another number). Never invent a number.
                 - Then call prepare_order and show the customer the summary (items, prices, discount, delivery fee, total, payment method, address) and ask them to confirm. Only after the customer answers "yes/confirm" in a LATER message, call place_order (a plain yes is also handled for you automatically). Never call place_order in the same turn as prepare_order. NEVER say or imply that an order is placed or confirmed unless place_order returned an order number; if the customer changes anything, call prepare_order again and show the new summary once.
@@ -426,8 +426,8 @@ public class ChatService {
             }
             var top = search.topProducts(tenantId, 30);
             if (!top.isEmpty()) {
-                b.append("Examples: ");
-                for (var t : top) b.append(t.get("name")).append(t.get("minMinor") == null ? "" : " (" + price(t.get("minMinor")) + ")").append("; ");
+                b.append("Examples (name [slug] (price)): ");
+                for (var t : top) b.append(t.get("name")).append(" [").append(t.get("slug")).append("]").append(t.get("minMinor") == null ? "" : " (" + price(t.get("minMinor")) + ")").append("; ");
                 b.append("\n");
             }
             return b.toString();
@@ -484,6 +484,8 @@ public class ChatService {
                         obj("type", "OBJECT", "properties", obj("query", str("What the customer wants"), "maxPrice", num("Maximum price in the shop currency, optional")))),
                 new ToolDef("get_product", "Full details of one product: description, options and variants. Use it only when search_products did not give enough.",
                         obj("type", "OBJECT", "properties", obj("slug", str("The product slug from search_products"), "want", str("Optional: only variants matching these words, e.g. \"M black\"")), "required", List.of("slug"))),
+                new ToolDef("show_products", "Send the customer the picture, price and link of products (on WhatsApp, Messenger and Instagram they arrive right after your message; on the website they show as cards). Use it whenever you recommend a product or the customer asks to see a photo. Give the slugs (from SHOP CATALOG or search_products), or a short query when you do not know the slug. At most 3 products.",
+                        obj("type", "OBJECT", "properties", obj("slugs", obj("type", "ARRAY", "description", "Product slugs", "items", obj("type", "STRING")), "query", str("Words to find the product when you have no slug, e.g. \"black dress\"")))),
                 new ToolDef("prepare_order", "Validate the order and get the summary to show the customer. Does NOT create the order.",
                         obj("type", "OBJECT", "properties", obj(
                                 "items", obj("type", "ARRAY", "description", "Chosen variants", "items", item),
@@ -508,6 +510,7 @@ public class ChatService {
             return switch (c.name()) {
                 case "search_products" -> searchProducts(ctx, c.args());
                 case "get_product" -> getProduct(ctx, c.args());
+                case "show_products" -> showProducts(ctx, c.args());
                 case "prepare_order" -> prepareOrder(ctx, c.args());
                 case "place_order" -> placeOrder(ctx);
                 default -> seller.handles(c.name()) ? seller.run(c.name(), ctx.tenantId(), ctx.conversationId(), ctx.channel(), ctx.externalId(), c.args()) : obj("error", "Unknown tool");
@@ -584,6 +587,23 @@ public class ChatService {
             for (var v : variantsOf(catalog.detailBySlug(tenantId, slug), want, max)) out.add(obj("variantId", v.get("variantId"), "options", v.get("options"), "price", v.get("price"), "available", v.get("available")));
             return out;
         } catch (RuntimeException e) { return List.of(); }
+    }
+
+    /** The products whose picture the customer gets: flagged {@code send} so ProductShare sends them even when the reply does not repeat the name word for word. */
+    private Map<String, Object> showProducts(Ctx ctx, Map<String, Object> a) {
+        List<String> slugs = new ArrayList<>();
+        if (a.get("slugs") instanceof List<?> l) for (Object o : l) if (o != null && !String.valueOf(o).isBlank() && slugs.size() < 3) slugs.add(String.valueOf(o).trim());
+        List<Map<String, Object>> rows = search.bySlugs(ctx.tenantId(), slugs);
+        if (rows.isEmpty() && a.get("query") != null && !String.valueOf(a.get("query")).isBlank()) rows = find(ctx.tenantId(), String.valueOf(a.get("query")).trim(), null, null);
+        if (rows.isEmpty()) return obj("error", "No such product: use a slug from SHOP CATALOG or search_products, or search_products first");
+        List<String> names = new ArrayList<>();
+        for (var r : rows.stream().limit(3).toList()) {
+            ctx.products().removeIf(p -> r.get("slug").equals(p.get("slug")));
+            ctx.products().add(obj("name", r.get("name"), "slug", r.get("slug"), "priceMinor", r.get("minPriceMinor"), "compareAtMinor", r.get("compareAtMinor"),
+                    "currency", r.get("currency"), "imageUrl", r.get("imageUrl"), "imageMediaBase", r.get("imageMediaBase"), "imageMediaExt", r.get("imageMediaExt"), "send", true));
+            names.add(String.valueOf(r.get("name")));
+        }
+        return obj("shown", names, "note", "The picture, price and link of these products are sent right after your message. Do not write links or repeat the price list; talk about why they suit the customer.");
     }
 
     @SuppressWarnings("unchecked")

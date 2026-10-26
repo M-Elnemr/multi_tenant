@@ -9,7 +9,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * When the AI seller suggests products in a WhatsApp, Messenger or Instagram chat, the customer also gets each product's picture with its name, price and link,
- * the way a salesperson would send a photo. Only the products the AI actually named in its answer are shared (at most three), and a product with no picture is sent as its link alone.
+ * the way a salesperson would send a photo. Only the products the AI chose with show_products or actually named in its answer are shared (at most three), and a product with no picture is sent as its link alone.
  */
 @Service
 public class ProductShare {
@@ -37,10 +37,15 @@ public class ProductShare {
         if (host == null) return List.of();
         List<Card> out = new ArrayList<>();
         java.util.Set<Object> seen = new java.util.HashSet<>();
-        for (var p : products) {
+        // the products the AI sent on purpose (show_products) go first, then the searched ones whose name the answer repeats
+        List<Map<String, Object>> ordered = new ArrayList<>();
+        for (var p : products) if (Boolean.TRUE.equals(p.get("send"))) ordered.add(p);
+        for (var p : products) if (!Boolean.TRUE.equals(p.get("send"))) ordered.add(p);
+        for (var p : ordered) {
             if (out.size() >= MAX) break;
             String name = String.valueOf(p.get("name"));
-            if (!seen.add(p.get("slug")) || fold(name).length() < 3 || !text.contains(fold(name))) continue;
+            boolean sent = Boolean.TRUE.equals(p.get("send"));
+            if (!seen.add(p.get("slug")) || (!sent && (fold(name).length() < 3 || !text.contains(fold(name))))) continue;
             String url = urls.baseUrl(host) + "/products/" + java.net.URLEncoder.encode(String.valueOf(p.get("slug")), java.nio.charset.StandardCharsets.UTF_8);
             String price = money(p.get("priceMinor"), p.get("currency"));
             String caption = name + (price.isBlank() ? "" : "\n" + price) + "\n" + url;

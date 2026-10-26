@@ -166,5 +166,12 @@ class ShopStopsAndSharingIntegrationTest extends IntegrationTestBase {
         assertThat(cards.stream().noneMatch(c -> c.caption().contains("Green Skirt"))).isTrue();   // not mentioned, not sent
         assertThat(share.pick(t, "Nothing fits, sorry", products)).isEmpty();
         assertThat(share.pick(t, "Blue Dress", List.of())).isEmpty();
+        // a product the AI sent on purpose (show_products) goes out even when the answer does not repeat its name, and before the name-matched ones
+        var chosen = List.<Map<String, Object>>of(Map.of("name", "Blue Dress", "slug", "blue-dress", "priceMinor", 120000, "currency", "EGP"),
+                Map.of("name", "Black Coat", "slug", "black-coat", "priceMinor", 5000, "currency", "EGP", "send", true));
+        var sent = share.pick(t, "Here it is, the Blue Dress is lovely too", chosen);
+        assertThat(sent).hasSize(2);
+        assertThat(sent.get(0).caption()).contains("Black Coat").contains("/products/black-coat");
+        assertThat(share.pick(t, "Here you go", chosen)).hasSize(1);
     }
 }

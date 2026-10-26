@@ -114,6 +114,32 @@ class AiChatIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void showProductsFlagsTheProductsWhosePicturesAreSentWhateverTheAnswerSays() throws Exception {
+        Tenant t = onboard("STORE");
+        mug(t);
+        // by words: the model does not know the slug
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("show_products", Map.of("query", "mug")));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("Here is something nice"));
+        String first = send(t, UUID.randomUUID().toString(), "send me a photo");
+        assertThat(JsonPath.<Object>read(first, "$.products[0].send")).isEqualTo(true);
+        assertThat(FakeAiProvider.RESULTS.get(0).result().get("shown").toString()).contains("Mug ");
+        // by slug, as written in the SHOP CATALOG examples
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("Mug [^\\[;]*\\[([^\\]]+)\\]").matcher(FakeAiProvider.lastSystem);
+        assertThat(m.find()).as("catalog lists the slug of its examples").isTrue();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("show_products", Map.of("slugs", List.of(m.group(1), "no-such-product"))));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("Enjoy"));
+        String second = send(t, UUID.randomUUID().toString(), "photo please");
+        assertThat(JsonPath.<Object>read(second, "$.products[0].slug")).isEqualTo(m.group(1));
+        assertThat(JsonPath.<java.util.List<Object>>read(second, "$.products")).hasSize(1);
+        // nothing known: an error for the model to fix, no product flagged
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("show_products", Map.of("slugs", List.of("nope"))));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("Sorry"));
+        String third = send(t, UUID.randomUUID().toString(), "photo");
+        assertThat(JsonPath.<java.util.List<Object>>read(third, "$.products")).isEmpty();
+        assertThat(FakeAiProvider.RESULTS.get(FakeAiProvider.RESULTS.size() - 1).result().get("error").toString()).contains("No such product");
+    }
+
+    @Test
     void onlyAPlainAgreementCountsAsConfirmation() {
         for (String yes : List.of("تمام", "تمام حضرتك", "ايوه يا فندم", "أيوه", "نعم", "yes", "Yes please", "ok ✅", "اكيد", "موافق", "تمام جدا"))
             assertThat(com.platform.chat.ChatService.isConfirmation(yes)).as(yes).isTrue();

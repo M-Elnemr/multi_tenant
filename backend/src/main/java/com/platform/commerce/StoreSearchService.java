@@ -163,13 +163,28 @@ public class StoreSearchService {
     /** Names and starting prices of the shop's best sellers (in stock first), for the AI's catalog digest. */
     public List<Map<String, Object>> topProducts(UUID tenantId, int limit) {
         return Rows.camel(jdbc.sql("""
-                SELECT p.name, (SELECT min(v.price_minor) FROM commerce.product_variants v WHERE v.product_id = p.id AND v.status = 'ACTIVE') AS min_minor, p.currency
+                SELECT p.name, p.slug, (SELECT min(v.price_minor) FROM commerce.product_variants v WHERE v.product_id = p.id AND v.status = 'ACTIVE') AS min_minor, p.currency
                 FROM commerce.products p
                 WHERE p.tenant_id = :t AND p.status = 'ACTIVE'
                 ORDER BY EXISTS (SELECT 1 FROM commerce.product_variants v JOIN commerce.inventory_items i ON i.variant_id = v.id
                                  WHERE v.product_id = p.id AND v.status = 'ACTIVE' AND i.quantity_on_hand - i.quantity_reserved > 0) DESC,
                          p.sold_count DESC, p.created_at DESC LIMIT :lim
                 """).param("t", tenantId).param("lim", limit).query().listOfRows());
+    }
+
+    /** The cards' data (name, price, picture) of these products, in the same shape as {@link #list} rows, for the pictures the AI seller sends on purpose. Unknown or inactive slugs are skipped. */
+    public List<Map<String, Object>> bySlugs(UUID tenantId, List<String> slugs) {
+        if (slugs == null || slugs.isEmpty()) return List.of();
+        return Rows.camel(jdbc.sql("""
+                SELECT p.name, p.slug, p.currency,
+                  (SELECT min(v.price_minor) FROM commerce.product_variants v WHERE v.product_id = p.id AND v.status = 'ACTIVE') AS min_price_minor,
+                  (SELECT max(v.compare_at_price_minor) FROM commerce.product_variants v WHERE v.product_id = p.id AND v.status = 'ACTIVE' AND v.compare_at_price_minor > v.price_minor) AS compare_at_minor,
+                  (SELECT m.url FROM commerce.product_media m WHERE m.product_id = p.id ORDER BY m.sort_order LIMIT 1) AS image_url,
+                  (SELECT m.media_base FROM commerce.product_media m WHERE m.product_id = p.id ORDER BY m.sort_order LIMIT 1) AS image_media_base,
+                  (SELECT m.media_ext FROM commerce.product_media m WHERE m.product_id = p.id ORDER BY m.sort_order LIMIT 1) AS image_media_ext
+                FROM commerce.products p
+                WHERE p.tenant_id = :t AND p.status = 'ACTIVE' AND p.slug = ANY(string_to_array(CAST(:s AS varchar), ','))
+                """).param("t", tenantId).param("s", String.join(",", slugs)).query().listOfRows());
     }
 
     /** Slugs of the categories (with active products in this shop) whose Arabic or English name contains one of the words. */
