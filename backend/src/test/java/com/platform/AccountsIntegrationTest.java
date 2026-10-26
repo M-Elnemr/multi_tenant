@@ -184,6 +184,13 @@ class AccountsIntegrationTest extends IntegrationTestBase {
         Matcher pw = Pattern.compile("كلمة المرور المؤقتة: (\\S+)").matcher(said);
         assertThat(pw.find()).isTrue();
         assertThat(order.get("user_id")).isNotNull();   // the order is attached to the new account
+        assertThat(said).contains("/track?n=").contains("&p=" + p);   // where to follow this very order on the web, and the app to install
+        assertThat(jdbc.sql("SELECT count(*) FROM commerce.addresses a JOIN commerce.client_accounts c ON c.id = a.user_id WHERE c.phone = :p AND a.address_line1 LIKE '5 Tahrir%'").param("p", "+2" + p).query(Long.class).single()).isEqualTo(1L);   // the address they gave is in their account
+
+        // a returning customer is not asked for the name and address again: the shop shows what it saved and only asks to confirm it
+        FakeAiProvider.SCRIPT.add(turns -> com.platform.chat.AiProvider.Turn.model("نبعت على نفس العنوان؟"));
+        whatsappSays(s, p, "عايزة قميص كمان");
+        assertThat(FakeAiProvider.lastSystem).contains("SAVED DETAILS").contains("5 Tahrir St, floor 2").contains("Mona Hassan").contains("Do NOT ask for the name or the address again");
 
         // the credentials really work, on this shop and on any other
         onHost(s.t().host(), null, "POST", "/api/v1/auth/client/login", "{\"phone\":\"%s\",\"password\":\"%s\"}".formatted(p, pw.group(1))).andExpect(status().isOk());

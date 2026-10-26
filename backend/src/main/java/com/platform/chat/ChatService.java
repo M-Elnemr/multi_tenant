@@ -326,7 +326,7 @@ public class ChatService {
                 - Know the shop: SHOP CATALOG lists everything it sells. NEVER tell a customer the shop does not have a kind of item (clothes, dresses, shoes...) before checking the SHOP CATALOG and calling search_products; if the customer is vague, name the categories we have and ask one short question to narrow down. Only say "we don't have it" when both show nothing like it, and then suggest the closest thing we do have.
                 - Search first (search_products): each result lists its variants with ids, sizes, colors and stock, so you can usually answer and prepare the order without get_product. Suggest 1-3 relevant products and do not push items that are out of stock.
                 - On WhatsApp, Messenger and Instagram the shop automatically sends the picture, price and link of each product you suggest right after your message, so name the products exactly as search_products returned them and never write links yourself.
-                - To close a sale you need: the items (variant and quantity), the customer's name, ONE mobile number, the full delivery address and the payment method. Ask for EVERYTHING that is still missing in ONE single message, as a short list, never spread over several messages. In Arabic, for example: «محتاجة منك في رسالة واحدة: الاسم، رقم تليفون عليه واتساب، العنوان بالتفصيل (المحافظة، المنطقة، الشارع، رقم العمارة والشقة)، وطريقة الدفع» (masculine «محتاج» for a man). The governorate is part of the address: never ask for it as a separate question; work out its code from the address and ask only if it is really unclear. Skip anything the customer already told you.
+                - To close a sale you need: the items (variant and quantity), the customer's name, ONE mobile number, the full delivery address and the payment method. Ask for EVERYTHING that is still missing in ONE single message, as a short list, never spread over several messages. In Arabic, for example: «محتاجة منك في رسالة واحدة: الاسم، رقم تليفون عليه واتساب، العنوان بالتفصيل (المحافظة، المنطقة، الشارع، رقم العمارة والشقة)، وطريقة الدفع» (masculine «محتاج» for a man). The governorate is part of the address: never ask for it as a separate question; work out its code from the address and ask only if it is really unclear. Skip anything the customer already told you, and anything in SAVED DETAILS (a returning customer only confirms the saved address, see below).
                 - If SHOP FACTS says WhatsApp confirmation is available: ask for the number as «رقم تليفون عليه واتساب» inside that same single message (English only if the customer writes English); do NOT ask about WhatsApp confirmation in a later message. The number they give is both their phone and their WhatsApp number: pass it as phone, and as whatsappNumber with whatsappConsent=true to prepare_order. Only if they say that number has no WhatsApp, pass whatsappConsent=false (and ask once for another number). Never invent a number.
                 - Then call prepare_order and show the customer the summary (items, prices, discount, delivery fee, total, payment method, address) and ask them to confirm. Only after the customer answers "yes/confirm" in a LATER message, call place_order (a plain yes is also handled for you automatically). Never call place_order in the same turn as prepare_order. NEVER say or imply that an order is placed or confirmed unless place_order returned an order number; if the customer changes anything, call prepare_order again and show the new summary once.
                 - After place_order succeeds, thank them, give the order number and say you will keep them posted. If the payment is by card, give the payment link from the result.
@@ -345,10 +345,35 @@ public class ChatService {
         String memo = seller.memory(tenantId, channel, externalId);
         if (!memo.isBlank()) p.append("\nWHAT YOU REMEMBER ABOUT THIS CUSTOMER (use it naturally, do not recite it):\n").append(memo).append("\n");
         p.append(genderRule(tenantId, channel, externalId, clientId));
-        if ("WHATSAPP".equals(channel) && externalId != null) p.append("\nTHE CUSTOMER IS CHATTING WITH YOU ON WHATSAPP from the number +").append(externalId.replaceAll("\\D", "")).append(". NEVER ask for a phone number and NEVER ask about WhatsApp confirmation: this number is used for both and is filled in for you, and the customer's \"yes\" to the order summary is the confirmation. In your single message with the missing details ask only for the name, the full address (governorate included) and the payment method.\n");
+        if ("WHATSAPP".equals(channel) && externalId != null) p.append("\nTHE CUSTOMER IS CHATTING WITH YOU ON WHATSAPP from the number +").append(externalId.replaceAll("\\D", "")).append(". NEVER ask for a phone number and NEVER ask about WhatsApp confirmation: this number is used for both and is filled in for you, and the customer's \"yes\" to the order summary is the confirmation. In your single message with the missing details ask only for what is still missing among the name, the full address (governorate included) and the payment method: when SAVED DETAILS exist, never ask for the name or the address, only confirm the saved address.\n");
         if (clientId != null) p.append(clientFacts(clientId));
         else p.append("The customer is a guest (not signed in): collect their name, phone and address from the chat; they will be saved as a customer of this shop.\n");
+        p.append(savedDetails(tenantId, clientId, channel, externalId));
         return p.toString();
+    }
+
+    /** What the shop already knows about this customer (from earlier orders): the model must confirm it instead of asking for it again. */
+    private String savedDetails(UUID tenantId, UUID clientId, String channel, String externalId) {
+        try {
+            Map<String, Object> row = null;
+            if (clientId != null) row = jdbc.sql("SELECT name, address_json::text AS a FROM commerce.customers WHERE tenant_id = :t AND user_id = :u AND address_json IS NOT NULL").param("t", tenantId).param("u", clientId).query().listOfRows().stream().findFirst().orElse(null);
+            if (row == null && "WHATSAPP".equals(channel) && externalId != null && externalId.replaceAll("\\D", "").length() >= 8)
+                row = jdbc.sql("SELECT name, address_json::text AS a FROM commerce.customers WHERE tenant_id = :t AND phone = :p AND address_json IS NOT NULL").param("t", tenantId).param("p", PhoneNormalizer.normalize("+" + externalId.replaceAll("\\D", ""))).query().listOfRows().stream().findFirst().orElse(null);
+            if (row == null || row.get("a") == null) return "";
+            Map<String, Object> a = JSON.readValue(row.get("a").toString(), new TypeReference<LinkedHashMap<String, Object>>() {});
+            String line1 = String.valueOf(a.getOrDefault("addressLine1", "")).trim();
+            if (line1.isEmpty()) return "";
+            StringBuilder b = new StringBuilder("\nSAVED DETAILS FROM THIS CUSTOMER'S LAST ORDER (the customer is already known to the shop):\n");
+            b.append("- Name: ").append(row.get("name")).append("\n- Address: ").append(line1);
+            if (a.get("area") != null) b.append(", ").append(a.get("area"));
+            if (a.get("landmark") != null) b.append(" (landmark: ").append(a.get("landmark")).append(")");
+            if (a.get("governorateCode") != null) b.append(" [governorateCode ").append(a.get("governorateCode")).append("]");
+            b.append("\nDo NOT ask for the name or the address again. When the customer is ready to order, show this address in one short line and ask only «نبعت الأوردر على نفس العنوان؟» (or the English equivalent). If they say yes, use exactly these details for prepare_order (addressLine1, area, governorateCode, landmark, customerName) and ask only for what is still missing, such as the payment method. If they say no or give another address, take the new one instead: it is saved for next time.\n");
+            return b.toString();
+        } catch (Exception e) {
+            log.debug("Saved details skipped", e);
+            return "";
+        }
     }
 
     private static String lessonText(List<Map<String, Object>> ls) {
@@ -432,7 +457,7 @@ public class ChatService {
 
     private String clientFacts(UUID clientId) {
         var acc = jdbc.sql("SELECT name, phone, email FROM commerce.client_accounts WHERE id = :u").param("u", clientId).query().listOfRows().stream().findFirst().orElse(Map.of());
-        StringBuilder b = new StringBuilder("\nThe customer is SIGNED IN. Known details (confirm them briefly instead of asking again; ask in one message for everything still missing, e.g. the full address with its governorate):\n");
+        StringBuilder b = new StringBuilder("\nThe customer is SIGNED IN. Known details (never ask for what is known: for a saved address show it and ask «نبعت على نفس العنوان؟»; ask in one message only for what is still missing, e.g. the full address with its governorate when none is saved):\n");
         b.append("- Name: ").append(acc.get("name")).append(", phone: ").append(acc.get("phone")).append("\n");
         var addrs = shopper.addresses(clientId);
         for (int i = 0; i < Math.min(3, addrs.size()); i++) b.append("- Saved address: ").append(addrs.get(i).get("addressLine1")).append(", ").append(addrs.get(i).get("city")).append(" (name ").append(addrs.get(i).get("recipientName")).append(", phone ").append(addrs.get(i).get("phone")).append(")\n");
@@ -693,7 +718,11 @@ public class ChatService {
         if (shopWa != null) o.put("whatsappUrl", "https://wa.me/" + shopWa + "?text=" + java.net.URLEncoder.encode("تأكيد طلب #" + res.get("orderNumber"), java.nio.charset.StandardCharsets.UTF_8));
         if (viaWhatsApp) {
             o.put("whatsappConfirmed", true);
-            try { o.put("accountNotice", accountNotice.forOrder(ctx.tenantId(), (UUID) res.get("orderId"), true)); } catch (RuntimeException e) { log.debug("Account notice skipped", e); }   // confirmed on WhatsApp: the account is made now
+            try {
+                o.put("accountNotice", accountNotice.forOrder(ctx.tenantId(), (UUID) res.get("orderId"), true));
+                UUID account = ctx.clientId() == null && !pickup ? accountNotice.clientIdForPhone(waNumber) : null;
+                if (account != null) rememberAddress(account, addr);   // the app and the website show the address they gave in the chat
+            } catch (RuntimeException e) { log.debug("Account notice skipped", e); }   // confirmed on WhatsApp: the account is made now
         }
         ctx.order()[0] = o;
         return obj("orderNumber", res.get("orderNumber"), "total", major(res.get("totalMinor")), "trackingLink", track, "paymentLink", res.get("checkoutUrl"),
