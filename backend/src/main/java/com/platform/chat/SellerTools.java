@@ -28,8 +28,14 @@ public class SellerTools {
     private final StoreFulfillmentService fulfilment;
     private final EntitlementService ent;
     private final long defaultMonthlyCap;
+    private final org.springframework.context.ApplicationEventPublisher events;
 
-    public SellerTools(JdbcClient jdbc, StoreFulfillmentService fulfilment, EntitlementService ent, @Value("${app.ai.monthly-message-cap:5000}") long defaultMonthlyCap) {
+    /** Published when the assistant hands the owner a question it could not answer: {@link QuestionService} tells the owner. */
+    public record QuestionAsked(UUID tenantId, long id) {}
+
+    public SellerTools(JdbcClient jdbc, StoreFulfillmentService fulfilment, EntitlementService ent, @Value("${app.ai.monthly-message-cap:5000}") long defaultMonthlyCap,
+                       org.springframework.context.ApplicationEventPublisher events) {
+        this.events = events;
         this.jdbc = jdbc;
         this.fulfilment = fulfilment;
         this.ent = ent;
@@ -57,8 +63,8 @@ public class SellerTools {
                         obj("type", "OBJECT", "properties", obj("code", str("The coupon code the customer has")), "required", List.of("code"))),
                 new ToolDef("remember_customer", "Save one short fact about this customer for next time (name, size, taste, who they buy for). Never save phone numbers, addresses or payment details.",
                         obj("type", "OBJECT", "properties", obj("note", str("One short fact")), "required", List.of("note"))),
-                new ToolDef("flag_unanswered", "Quietly tell the shop owner about a question you could not answer from your tools. The customer does not see this.",
-                        obj("type", "OBJECT", "properties", obj("question", str("What the customer asked")), "required", List.of("question"))),
+                new ToolDef("flag_unanswered", "Ask the shop owner a question you cannot answer from your tools (material, policy, a detail only the shop knows). The owner is notified and answers in the dashboard; you then message the customer the answer yourself in this same chat. Write the question so the owner can answer it without reading the chat (name the product).",
+                        obj("type", "OBJECT", "properties", obj("question", str("What the customer asked, complete, naming the product")), "required", List.of("question"))),
                 new ToolDef("schedule_follow_up", "Promise one polite follow-up message in this same chat after some hours (only on WhatsApp, Instagram and Messenger).",
                         obj("type", "OBJECT", "properties", obj("hours", num("In how many hours, 1 to 48"), "message", str("The message to send, in the customer's language")), "required", List.of("hours", "message"))),
                 new ToolDef("notify_back_in_stock", "Tell this customer in this chat when an out-of-stock variant is available again (WhatsApp, Instagram and Messenger only).",
@@ -76,7 +82,7 @@ public class SellerTools {
             case "delivery_quote" -> delivery(tenantId, text(a, "governorateCode"));
             case "check_coupon" -> coupon(tenantId, text(a, "code"));
             case "remember_customer" -> remember(tenantId, channel, externalId, text(a, "note"));
-            case "flag_unanswered" -> flag(tenantId, conv, text(a, "question"));
+            case "flag_unanswered" -> flag(tenantId, conv, channel, text(a, "question"));
             case "schedule_follow_up" -> followUp(tenantId, conv, channel, a.get("hours") instanceof Number n ? n.intValue() : 24, text(a, "message"));
             case "notify_back_in_stock" -> backInStock(tenantId, conv, channel, text(a, "variantId"));
             default -> obj("error", "Unknown tool");
@@ -162,10 +168,20 @@ public class SellerTools {
         return obj("saved", true);
     }
 
-    private Map<String, Object> flag(UUID t, UUID conv, String q) {
+    private Map<String, Object> flag(UUID t, UUID conv, String channel, String q) {
         if (q == null) return obj("error", "Give the question");
-        jdbc.sql("INSERT INTO chat.unanswered (tenant_id, conversation_id, question) VALUES (:t, :c, :q)").param("t", t).param("c", conv).param("q", q.length() > 600 ? q.substring(0, 600) : q).update();
-        return obj("noted", true, "next", "Tell the customer plainly that you do not have that detail right now, and keep helping with what you know.");
+        String question = q.length() > 600 ? q.substring(0, 600) : q;
+        // the same question asked again while it is still open is not a second question for the owner
+        boolean again = jdbc.sql("SELECT EXISTS (SELECT 1 FROM chat.unanswered WHERE tenant_id = :t AND conversation_id = :c AND status = 'OPEN' AND lower(question) = lower(:q))")
+                .param("t", t).param("c", conv).param("q", question).query(Boolean.class).single();
+        if (!again) {
+            long id = jdbc.sql("INSERT INTO chat.unanswered (tenant_id, conversation_id, question) VALUES (:t, :c, :q) RETURNING id").param("t", t).param("c", conv).param("q", question).query(Long.class).single();
+            try { events.publishEvent(new QuestionAsked(t, id)); } catch (RuntimeException e) { /* telling the owner must never break the customer's chat */ }
+        }
+        boolean web = !META.contains(channel);
+        return obj("asked", true, "next", web
+                ? "Tell the customer you asked the shop team and the answer will appear right here in this chat when they come back to it; keep helping with what you know meanwhile. Do not invent the answer."
+                : "Tell the customer you asked the shop team and you will message them the answer right here in this chat as soon as they reply; keep helping with what you know meanwhile. Do not invent the answer and do not ask the same thing again.");
     }
 
     private Map<String, Object> followUp(UUID t, UUID conv, String channel, int hours, String message) {
@@ -213,5 +229,5 @@ public class SellerTools {
         return com.platform.shared.Rows.camel(jdbc.sql("SELECT id, question, resolved, created_at FROM chat.unanswered WHERE tenant_id = :t ORDER BY resolved, created_at DESC LIMIT 100").param("t", t).query().listOfRows());
     }
 
-    public boolean resolve(UUID t, long id) { return jdbc.sql("UPDATE chat.unanswered SET resolved = TRUE WHERE id = :i AND tenant_id = :t").param("i", id).param("t", t).update() > 0; }
+    public boolean resolve(UUID t, long id) { return jdbc.sql("UPDATE chat.unanswered SET resolved = TRUE, status = CASE WHEN status = 'OPEN' THEN 'DISMISSED' ELSE status END WHERE id = :i AND tenant_id = :t").param("i", id).param("t", t).update() > 0; }
 }

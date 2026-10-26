@@ -365,7 +365,7 @@ public class MetaChannelService {
         }
     }
 
-    private boolean deliver(UUID tenantId, String platform, String to, String text) {
+    boolean deliver(UUID tenantId, String platform, String to, String text) {
         try {
             var ch = jdbc.sql("SELECT external_id, token_enc FROM chat.channels WHERE tenant_id = :t AND platform = :p AND status = 'ACTIVE' ORDER BY created_at LIMIT 1").param("t", tenantId).param("p", platform).query().listOfRows().stream().findFirst();
             if (ch.isEmpty()) return false;

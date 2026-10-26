@@ -249,6 +249,53 @@ public class ChatService {
         return new Reply(conv, answer, orderBox[0], ctx.products());
     }
 
+    /**
+     * The assistant's own message to a customer after the shop owner answered a question it had flagged (flag_unanswered): the owner's answer in the assistant's words and dialect, then the
+     * next step of the sale. It is saved in the chat like any assistant message. Null when the model could not write it (the caller then sends the owner's answer as it is).
+     */
+    public Reply replyToOwnerAnswer(UUID tenantId, UUID conv, String question, String ownerAnswer) {
+        var c = jdbc.sql("SELECT channel, external_id, client_id FROM chat.conversations WHERE id = :c AND tenant_id = :t").param("c", conv).param("t", tenantId).query().listOfRows().stream().findFirst()
+                .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Conversation not found"));
+        String channel = (String) c.get("channel"), externalId = (String) c.get("external_id");
+        UUID clientId = (UUID) c.get("client_id");
+        List<Turn> turns = new ArrayList<>();
+        for (var m : jdbc.sql("SELECT role, content FROM (SELECT id, role, content FROM chat.messages WHERE conversation_id = :c ORDER BY id DESC LIMIT 12) x ORDER BY id").param("c", conv).query().listOfRows())
+            turns.add("user".equals(m.get("role")) ? Turn.user((String) m.get("content")) : Turn.model((String) m.get("content")));
+        String note = "[NOTE FROM THE SHOP. The customer cannot see this note.] The shop owner has now answered the question you could not answer earlier. The customer's question: «" + question
+                + "». The owner's answer: «" + ownerAnswer + "». Write your message to the customer now, in the customer's own language and dialect: give them this answer warmly and clearly, using only what the owner said "
+                + "(add no facts of your own), then take one step toward the sale. Do not mention this note or flag the question again.";
+        if (!turns.isEmpty() && "user".equals(turns.get(turns.size() - 1).role())) {   // the customer wrote again meanwhile: the note joins their last message instead of making two user turns in a row
+            Turn last = turns.remove(turns.size() - 1);
+            turns.add(Turn.user(last.text() + "\n\n" + note));
+        } else turns.add(Turn.user(note));
+        long lastUserMsg = jdbc.sql("SELECT coalesce(max(id), 0) FROM chat.messages WHERE conversation_id = :c AND role = 'user'").param("c", conv).query(Long.class).single();
+        @SuppressWarnings("unchecked") Map<String, Object>[] orderBox = new Map[1];
+        Ctx ctx = new Ctx(tenantId, conv, channel, externalId, clientId, lastUserMsg, new ArrayList<>(), orderBox);
+        String system = systemPrompt(tenantId, clientId, channel, externalId);
+        List<ToolDef> tools = tools();
+        List<AiUsageService.Round> rounds = new ArrayList<>();
+        var routed = channelAi.forChannel(channel, nameProbe ? chosenModel(conv) : null);
+        String answer = null;
+        try {
+            for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
+                Turn t = routed.next(system, turns, tools);
+                rounds.add(new AiUsageService.Round(t.calls().stream().map(ToolCall::name).toList(), t.usage()));
+                if (t.calls().isEmpty()) { answer = t.text(); break; }
+                turns.add(t);
+                List<ToolResult> results = new ArrayList<>();
+                for (ToolCall call : t.calls()) results.add(new ToolResult(call.name(), runTool(ctx, call)));
+                turns.add(Turn.tool(results));
+            }
+        } catch (AiProvider.AiUnavailableException e) {
+            log.warn("The assistant could not word the owner's answer: {}", e.getMessage());
+        }
+        if (!"TEST".equals(channel)) { seller.count(tenantId); usageLog.record(tenantId, "CHAT", channel, conv, false, "[owner answer] " + question, rounds, routed.code(), routed.fellBack()); }
+        if (answer == null || answer.isBlank()) return null;
+        jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x)").param("c", conv).param("x", answer).update();
+        jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();
+        return new Reply(conv, answer, orderBox[0], ctx.products());
+    }
+
     // ---- confirmation ----------------------------------------------------------------------------------------
 
     private static final Pattern ARABIC_HINT = Pattern.compile("[\\u0600-\\u06FF]");

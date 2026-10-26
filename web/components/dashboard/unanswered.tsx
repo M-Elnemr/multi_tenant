@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { api } from "@/lib/client";
 import { useAction, useApi } from "../hooks";
 import { useI18n } from "../i18n-provider";
@@ -19,6 +20,7 @@ export function Unanswered({ canWrite }: { canWrite: boolean }) {
     <Card className="mt-5 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-medium">{t("un.title")}</h2>{u.data && <span className="text-xs text-slate-500">{t("un.usage")}: {u.data.usedThisMonth} / {u.data.monthlyCap}</span>}</div>
       <p className="text-sm text-slate-500">{t("un.hint")}</p>
+      <p className="text-sm"><Link href="/dashboard/questions" className="font-semibold text-brand hover:underline">{t("un.answerLink")}</Link></p>
       <ErrorText error={q.error ?? done.error} />
       {open.length === 0 ? <p className="text-sm text-slate-500">{t("un.none")}</p> : open.map((x) => (
         <div key={x.id} className="flex items-start justify-between gap-3 border-t pt-2 text-sm first:border-0 first:pt-0"><span>{x.question}</span>{canWrite && <Button size="sm" variant="ghost" loading={done.loading} onClick={() => void done.run(x.id)}>{t("un.resolve")}</Button>}</div>

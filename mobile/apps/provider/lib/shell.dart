@@ -3,6 +3,7 @@ import 'package:platform_core/platform_core.dart';
 
 import 'clinic_panel.dart';
 import 'copilot.dart';
+import 'questions.dart';
 import 'dev_content.dart';
 import 'growth.dart';
 import 'retail.dart';
@@ -74,6 +75,7 @@ List<PanelSection> storeSections() => [
       PanelSection('اسأل نشاطك', 'Ask your business', Icons.auto_awesome_rounded, perm: 'copilot.use', group: 'insights', build: (c) => CopilotScreen(ctx: c)),
       PanelSection('قنوات البيع', 'Sales channels', Icons.hub_rounded, screen: 'integrations', group: 'channels', build: (c) => ChannelsScreen(ctx: c)),
       PanelSection('المساعد الذكي', 'AI assistant', Icons.smart_toy_rounded, screen: 'ai', group: 'channels', build: (c) => AiAssistantScreen(ctx: c)),
+      PanelSection('أسئلة العملاء', 'Customer questions', Icons.question_answer_rounded, screen: 'ai', group: 'channels', build: (c) => QuestionsScreen(ctx: c)),
       PanelSection('الشحن', 'Shipping', Icons.local_shipping_outlined, screen: 'shipping', group: 'channels', build: (c) => ShippingScreen(ctx: c)),
       PanelSection('الإعدادات', 'Settings', Icons.settings_rounded, screen: 'settings', group: 'setup', build: (c) => StoreSettings(ctx: c)),
       PanelSection('النطاقات', 'Domains', Icons.language_rounded, screen: 'domains', group: 'setup', build: (c) => DomainsScreen(ctx: c)),
