@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
  * Which language model answers customers on which channel, so two models can be compared on real traffic with the same prompt, tools and token rules.
  * Social channels (WhatsApp, Facebook, Instagram, and the shop's own WhatsApp number) follow {@code app.ai.route.social}, the website chat and the dashboard test chat follow
  * {@code app.ai.route.web}; "default" is the model chosen by {@code app.ai.provider}. Every other AI feature keeps using the default model.
- * The routed model is the second one this class knows (Claude); it is built here, not as a bean, so the rest of the application still sees exactly one {@link AiProvider}.
+ * The platform has two models: GLM (the default, a bean in {@link AiConfig}) and Claude Haiku (built here, not as a bean, so the rest of the application still sees exactly one {@link AiProvider}).
  */
 @Component
 public class ChannelAi {
@@ -19,7 +19,7 @@ public class ChannelAi {
     private static final List<String> SOCIAL = List.of("WHATSAPP", "FACEBOOK", "INSTAGRAM");
 
     private final AiProvider defaultAi;
-    private final AiProvider claude, gemini25, deepseek, glm;
+    private final AiProvider claude, glm;
     private final String social, web;
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -27,32 +27,18 @@ public class ChannelAi {
                      @Value("${app.ai.anthropic.api-key:}") String key, @Value("${app.ai.anthropic.model:claude-haiku-5-5}") String model, @Value("${app.ai.anthropic.effort:low}") String effort,
                      @Value("${app.ai.anthropic.base-url:https://api.anthropic.com/v1}") String baseUrl, @Value("${app.ai.anthropic.cache-ttl:1h}") String cacheTtl,
                      @Value("${app.ai.route.chat-max-output-tokens:1000}") int chatMaxOutput,
-                     @Value("${app.ai.gemini.api-key:}") String geminiKey, @Value("${app.ai.gemini25.model:gemini-2.5-flash-lite}") String gemini25Model, @Value("${app.ai.gemini.hedge-ms:10000}") long hedgeMs,
-                     @Value("${app.ai.deepseek.api-key:}") String deepseekKey, @Value("${app.ai.deepseek.model:deepseek-ai/deepseek-v4.1-flash-1017}") String deepseekModel,
-                     @Value("${app.ai.deepseek.base-url:https://api-cdn.thehive.ai/api/v3}") String deepseekUrl, @Value("${app.ai.deepseek.reasoning-effort:none}") String deepseekEffort,
-                     @Value("${app.ai.deepseek.extra-body:}") String deepseekExtra,
                      @Value("${app.ai.glm.api-key:}") String glmKey, @Value("${app.ai.glm.model:zai-org/glm-5.3-flash}") String glmModel,
                      @Value("${app.ai.glm.base-url:https://api-cdn.thehive.ai/api/v3}") String glmUrl, @Value("${app.ai.glm.reasoning-effort:low}") String glmEffort) {
-        this(defaultAi, new AnthropicProvider(key, model, effort, baseUrl, cacheTtl, chatMaxOutput), new GeminiProvider(geminiKey, gemini25Model, hedgeMs, "gemini25"),
-                new OpenAiProvider("deepseek", "DeepSeek", deepseekKey, deepseekModel, deepseekEffort, deepseekUrl, chatMaxOutput, true, deepseekExtra),
-                new OpenAiProvider("glm", "GLM", glmKey, glmModel, glmEffort, glmUrl, chatMaxOutput, true, ""), social, web);
+        this(defaultAi, new AnthropicProvider(key, model, effort, baseUrl, cacheTtl, chatMaxOutput), new OpenAiProvider("glm", "GLM", glmKey, glmModel, glmEffort, glmUrl, chatMaxOutput, true, ""), social, web);
     }
 
-    /** For tests: any two models. */
-    public ChannelAi(AiProvider defaultAi, AiProvider claude, String social, String web) { this(defaultAi, claude, null, null, null, social, web); }
+    /** For tests: the default model and Claude. */
+    public ChannelAi(AiProvider defaultAi, AiProvider claude, String social, String web) { this(defaultAi, claude, null, social, web); }
 
-    /** For tests: three models. */
-    public ChannelAi(AiProvider defaultAi, AiProvider claude, AiProvider gemini25, String social, String web) { this(defaultAi, claude, gemini25, null, null, social, web); }
-
-    /** For tests: four models. */
-    public ChannelAi(AiProvider defaultAi, AiProvider claude, AiProvider gemini25, AiProvider deepseek, String social, String web) { this(defaultAi, claude, gemini25, deepseek, null, social, web); }
-
-    /** All five models: the default (Gemini 3.1), Claude, Gemini 2.5, DeepSeek and GLM. */
-    public ChannelAi(AiProvider defaultAi, AiProvider claude, AiProvider gemini25, AiProvider deepseek, AiProvider glm, String social, String web) {
+    /** The default model, Claude and GLM (picked on its own by a chat that typed "glm": no fallback, its errors are shown). */
+    public ChannelAi(AiProvider defaultAi, AiProvider claude, AiProvider glm, String social, String web) {
         this.defaultAi = defaultAi;
         this.claude = claude;
-        this.gemini25 = gemini25;
-        this.deepseek = deepseek;
         this.glm = glm;
         this.social = social == null ? "default" : social.trim().toLowerCase(Locale.ROOT);
         this.web = web == null ? "default" : web.trim().toLowerCase(Locale.ROOT);
@@ -61,27 +47,21 @@ public class ChannelAi {
     /** The model for one reply on {@code channel}: the routed one, falling back to the default if it fails before any tool exchange has begun. */
     public Routed forChannel(String channel) { return forChannel(channel, null); }
 
-    /** Same, for a customer who picked a model with {@link #command}: {@code chosen} is "gemini", "gemini25" or "anthropic" (null = the channel's default). */
+    /** Same, for a customer who picked a model with {@link #command}: {@code chosen} is "glm" or "anthropic" (null = the channel's default). */
     public Routed forChannel(String channel, String chosen) {
         String route = chosen != null ? chosen : channel != null && SOCIAL.contains(channel) ? social : web;
-        // a customer who typed "gemini 2.5" or "deepseek" is testing that model: whatever is wrong with it (no key, not active, rejected) is shown as its error instead of quietly answering with another one
-        if ("gemini25".equals(chosen) && gemini25 != null) return new Routed(gemini25, null);
-        if ("deepseek".equals(chosen) && deepseek != null) return new Routed(deepseek, null);
+        // a chat that typed "glm" is testing that model: whatever is wrong with it (no key, not active, rejected) is shown as its error instead of quietly answering with another one
         if ("glm".equals(chosen) && glm != null) return new Routed(glm, null);
-        AiProvider primary = "anthropic".equals(route) && claude.available() ? claude : "gemini25".equals(route) && gemini25 != null && gemini25.available() ? gemini25
-                : "deepseek".equals(route) && deepseek != null && deepseek.available() ? deepseek : "glm".equals(route) && glm != null && glm.available() ? glm : defaultAi;
+        AiProvider primary = "anthropic".equals(route) && claude.available() ? claude : "glm".equals(route) && glm != null && glm.available() ? glm : defaultAi;
         return new Routed(primary, defaultAi);
     }
 
-    /** "claude", "gemini 3.1", "gemini 2.5" (optionally after "use" / "switch to" / "model"): the model code the customer asked for, or null when the text is not such a command. */
+    /** "claude" or "glm" (optionally after "use" / "switch to" / "model"): the model code the customer asked for, or null when the text is not such a command. */
     public static String command(String text) {
         if (text == null || text.length() > 40) return null;
         String n = FastAnswers.norm(text).replaceFirst("^(use|switch to|switch|change to|model|use model|talk to)\\s+", "");
         return switch (n) {
             case "claude", "claude haiku", "haiku" -> "anthropic";
-            case "gemini", "gemini 3 1", "gemini 31", "gemini 3", "gemini 3 1 flash lite" -> "gemini";
-            case "gemini 2 5", "gemini 25", "gemini 2", "gemini 2 5 flash lite" -> "gemini25";
-            case "deepseek", "deep seek", "deepseek flash", "deepseek v4", "deepseek v4 1", "deepseek v4 1 flash" -> "deepseek";
             case "glm", "glm flash", "glm 5", "glm 5 3", "glm 5 3 flash", "glm5", "glm53", "glm5 3 flash" -> "glm";
             default -> null;
         };

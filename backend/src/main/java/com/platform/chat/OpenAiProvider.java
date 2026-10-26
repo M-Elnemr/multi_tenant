@@ -14,17 +14,11 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Component;
 
 /**
- * OpenAI over its Chat Completions API (default model: gpt-6-luna). Chosen with {@code AI_PROVIDER=openai}. GPT-6 Luna only accepts function calling on this endpoint when
- * reasoning is switched off, so the request always carries {@code reasoning_effort: none}: a shop assistant needs speed and low cost, not long reasoning.
+ * Any service that speaks the OpenAI Chat Completions protocol: here GLM through Hive. Function calling needs the reasoning setting chosen per model (GLM: "low"), so it is a constructor argument.
  * The key travels in a header, never in a URL.
  */
-@Component
-@ConditionalOnProperty(name = "app.ai.provider", havingValue = "openai")
 public class OpenAiProvider implements AiProvider {
     private static final ObjectMapper JSON = new ObjectMapper();
     private final String code, name, key, model, effort, baseUrl, extraBody;
@@ -32,15 +26,8 @@ public class OpenAiProvider implements AiProvider {
     private final int maxOutput;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build();
 
-    @org.springframework.beans.factory.annotation.Autowired
-    public OpenAiProvider(@Value("${app.ai.openai.api-key:}") String key, @Value("${app.ai.openai.model:gpt-6-luna}") String model,
-                          @Value("${app.ai.openai.reasoning-effort:none}") String effort, @Value("${app.ai.openai.base-url:https://api.openai.com/v1}") String baseUrl,
-                          @Value("${app.ai.openai.max-output-tokens:1500}") int maxOutput) {
-        this("openai", "OpenAI", key, model, effort, baseUrl, maxOutput, false, "");
-    }
-
     /**
-     * Any other service that speaks the same Chat Completions protocol (DeepSeek...), under its own model code. {@code maxTokensField} sends the limit as {@code max_tokens}
+     * Under its own model code. {@code maxTokensField} sends the limit as {@code max_tokens}
      * (what those services read) instead of {@code max_completion_tokens}; {@code extraBody} is a JSON object merged into every request, e.g. a setting that switches thinking off.
      */
     public OpenAiProvider(String code, String name, String key, String model, String effort, String baseUrl, int maxOutput, boolean maxTokensField, String extraBody) {

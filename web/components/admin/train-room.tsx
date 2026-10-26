@@ -11,7 +11,7 @@ type Shop = { id: string; name: string; slug: string };
 type Msg = { role: "user" | "assistant"; content: string };
 type Draft = { instruction: string; exampleQuestion: string; exampleAnswer: string };
 
-const MODELS = [["default", "Gemini 3.1 (default)"], ["anthropic", "Claude Haiku 5.5"], ["gemini25", "Gemini 2.5"], ["deepseek", "DeepSeek V4.1 Flash"], ["glm", "GLM 5.3 Flash"]] as const;
+const MODELS = [["default", "GLM 5.3 Flash (default)"], ["anthropic", "Claude Haiku 5.5"]] as const;
 
 /** The platform admin plays a customer of any shop, on any model, and turns a bad reply into a lesson (for every shop or for that shop only). */
 export function TrainRoom() {

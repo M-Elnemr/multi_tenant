@@ -45,7 +45,7 @@ class OpenAiProviderTest {
     @AfterEach
     void stop() { server.stop(0); }
 
-    OpenAiProvider provider(String key) { return new OpenAiProvider(key, "gpt-6-luna", "none", "http://127.0.0.1:" + server.getAddress().getPort() + "/v1", 1500); }
+    OpenAiProvider provider(String key) { return new OpenAiProvider("openai", "OpenAI", key, "gpt-6-luna", "none", "http://127.0.0.1:" + server.getAddress().getPort() + "/v1", 1500, false, ""); }
 
     @Test
     void deepSeekIsTheSameProtocolUnderItsOwnCodeWithMaxTokensExtraSettingsAndItsCacheCounter() throws Exception {

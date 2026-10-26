@@ -12,27 +12,20 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Component;
 
 /**
- * Claude over the Messages API (default model: claude-haiku-5-5). Chosen with {@code AI_PROVIDER=anthropic}.
+ * Claude over the Messages API (default model: claude-haiku-5-5).
  * The part of the prompt before {@link AiProvider#CACHE_BREAK} (tools + rules + shop facts) is marked for the 1-hour prompt cache, because a shop gets a chat every few minutes
  * and the default 5-minute cache would expire in between; the per-customer part follows uncached. Thinking stays adaptive at low effort (Haiku 5.5 cannot be sampled or forced),
  * and the model's own content blocks (thinking included) are replayed unchanged inside a tool exchange. The key travels in a header only.
  */
-@Component
-@ConditionalOnProperty(name = "app.ai.provider", havingValue = "anthropic")
 public class AnthropicProvider implements AiProvider {
     private static final ObjectMapper JSON = new ObjectMapper();
     private final String key, model, effort, baseUrl, cacheTtl;
     private final int maxOutput;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build();
 
-    public AnthropicProvider(@Value("${app.ai.anthropic.api-key:}") String key, @Value("${app.ai.anthropic.model:claude-haiku-5-5}") String model,
-                             @Value("${app.ai.anthropic.effort:low}") String effort, @Value("${app.ai.anthropic.base-url:https://api.anthropic.com/v1}") String baseUrl,
-                             @Value("${app.ai.anthropic.cache-ttl:1h}") String cacheTtl, @Value("${app.ai.anthropic.max-output-tokens:1500}") int maxOutput) {
+    public AnthropicProvider(String key, String model, String effort, String baseUrl, String cacheTtl, int maxOutput) {
         this.key = key == null || key.isBlank() ? null : key.trim();
         this.model = model.trim();
         this.effort = effort == null ? "" : effort.trim();

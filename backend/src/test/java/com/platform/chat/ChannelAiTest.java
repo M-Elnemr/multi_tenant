@@ -41,68 +41,27 @@ class ChannelAiTest {
     }
 
     @Test
-    void deepSeekIsPickedByItsCommandAndShowsItsErrorsToo() {
-        Scripted g31 = new Scripted("gemini", true), claude = new Scripted("anthropic", true), g25 = new Scripted("gemini25", true), ds = new Scripted("deepseek", true);
-        for (String c : List.of("deepseek", "DeepSeek", "use deepseek", "deep seek", "DeepSeek V4.1")) assertThat(ChannelAi.command(c)).as(c).isEqualTo("deepseek");
-        ChannelAi ai = new ChannelAi(g31, claude, g25, ds, "default", "default");
-        var routed = ai.forChannel("WHATSAPP", "deepseek");
-        assertThat(routed.code()).isEqualTo("deepseek");
-        assertThat(routed.showsErrors()).isTrue();
-        // not configured or not active: the customer who picked it gets that error, not an answer from the default model
-        var off = new ChannelAi(g31, claude, g25, new Scripted("deepseek", false), "default", "default").forChannel("WHATSAPP", "deepseek");
-        assertThat(off.code()).isEqualTo("deepseek");
-        assertThat(off.showsErrors()).isTrue();
-        // not picked by anyone but routed by configuration without a key: the default model answers
-        assertThat(new ChannelAi(g31, claude, g25, new Scripted("deepseek", false), "deepseek", "default").forChannel("WHATSAPP").code()).isEqualTo("gemini");
-        // routed by configuration (not chosen by a customer) it falls back like Claude does
-        assertThat(new ChannelAi(g31, claude, g25, ds, "deepseek", "default").forChannel("WHATSAPP").showsErrors()).isFalse();
-    }
-
-    @Test
     void glmIsPickedByItsCommandAndShowsItsErrorsToo() {
-        Scripted g31 = new Scripted("gemini", true), claude = new Scripted("anthropic", true), g25 = new Scripted("gemini25", true), ds = new Scripted("deepseek", true), glm = new Scripted("glm", true);
+        Scripted def = new Scripted("glm", true), claude = new Scripted("anthropic", true), glm = new Scripted("glm", true);
         for (String c : List.of("glm", "GLM", "use glm", "GLM-5.3-Flash", "glm 5.3")) assertThat(ChannelAi.command(c)).as(c).isEqualTo("glm");
-        var routed = new ChannelAi(g31, claude, g25, ds, glm, "default", "default").forChannel("WHATSAPP", "glm");
+        var routed = new ChannelAi(def, claude, glm, "default", "default").forChannel("WHATSAPP", "glm");
         assertThat(routed.code()).isEqualTo("glm");
         assertThat(routed.showsErrors()).isTrue();
-        // not configured: the error of that model, not an answer from the default one
-        assertThat(new ChannelAi(g31, claude, g25, ds, new Scripted("glm", false), "default", "default").forChannel("WHATSAPP", "glm").showsErrors()).isTrue();
-        // routed by configuration without a key: the default model answers
-        assertThat(new ChannelAi(g31, claude, g25, ds, new Scripted("glm", false), "glm", "default").forChannel("WHATSAPP").code()).isEqualTo("gemini");
-        // the other commands still resolve to their own models
-        assertThat(ChannelAi.command("deepseek")).isEqualTo("deepseek");
-        assertThat(ChannelAi.command("gemini 2.5")).isEqualTo("gemini25");
+        // not configured: the error of that model, not a silent answer from another one
+        assertThat(new ChannelAi(def, claude, new Scripted("glm", false), "default", "default").forChannel("WHATSAPP", "glm").showsErrors()).isTrue();
+        // the removed models are no longer commands
+        for (String c : List.of("deepseek", "gemini", "gemini 2.5", "gemini 3.1")) assertThat(ChannelAi.command(c)).as(c).isNull();
     }
 
     @Test
-    void aFailingGemini25ChosenByTheCustomerShowsItsErrorInsteadOfFallingBack() {
-        Scripted g31 = new Scripted("gemini", true), g25 = new Scripted("gemini25", true), claude = new Scripted("anthropic", true);
-        g25.script.add(() -> { throw new AiUnavailableException("The AI assistant could not answer (gemini-2.5-flash-lite 404: no longer available)"); });
-        var routed = new ChannelAi(g31, claude, g25, "default", "default").forChannel("WHATSAPP", "gemini25");
-        assertThat(routed.showsErrors()).isTrue();
-        assertThatThrownBy(() -> routed.next("s", ASK, List.of())).isInstanceOf(AiUnavailableException.class).hasMessageContaining("404");
-        assertThat(g31.calls).isZero();
-        assertThat(routed.fellBack()).isFalse();
-        // the other models, and 2.5 when nobody picked it, still fall back
-        assertThat(new ChannelAi(g31, claude, g25, "default", "default").forChannel("WHATSAPP", "anthropic").showsErrors()).isFalse();
-        assertThat(new ChannelAi(g31, claude, g25, "gemini25", "default").forChannel("WHATSAPP").showsErrors()).isFalse();
-    }
-
-    @Test
-    void aCustomerCanPickAnyOfTheThreeModelsAndTheCommandsAreRecognised() {
-        Scripted g31 = new Scripted("gemini", true), g25 = new Scripted("gemini25", true), claude = new Scripted("anthropic", true);
-        ChannelAi ai = new ChannelAi(g31, claude, g25, "default", "default");
-        assertThat(ai.forChannel("WHATSAPP").code()).isEqualTo("gemini");   // default: Gemini 3.1
+    void aCustomerCanPickClaudeOrGlmAndTheCommandsAreRecognised() {
+        Scripted def = new Scripted("glm", true), claude = new Scripted("anthropic", true);
+        ChannelAi ai = new ChannelAi(def, claude, "default", "default");
+        assertThat(ai.forChannel("WHATSAPP").code()).isEqualTo("glm");   // default: GLM
         assertThat(ai.forChannel("WHATSAPP", "anthropic").code()).isEqualTo("anthropic");
-        assertThat(ai.forChannel("WHATSAPP", "gemini25").code()).isEqualTo("gemini25");
-        assertThat(ai.forChannel("WHATSAPP", "gemini").code()).isEqualTo("gemini");
-        // a model that is not configured falls back to the default instead of failing the chat
-        assertThat(new ChannelAi(g31, claude, new Scripted("gemini25", false), "default", "default").forChannel("WEB", "gemini25").code()).isEqualTo("gemini25");   // picked but not usable: its error is shown, no silent switch
+        assertThat(new ChannelAi(def, new Scripted("anthropic", false), "default", "default").forChannel("WEB", "anthropic").code()).isEqualTo("glm");   // Claude without a key: the default answers
         assertThat(ChannelAi.command("Claude")).isEqualTo("anthropic");
         assertThat(ChannelAi.command("switch to claude")).isEqualTo("anthropic");
-        assertThat(ChannelAi.command("gemini 3.1")).isEqualTo("gemini");
-        assertThat(ChannelAi.command("Gemini 2.5")).isEqualTo("gemini25");
-        assertThat(ChannelAi.command("use gemini 2.5")).isEqualTo("gemini25");
         assertThat(ChannelAi.command("do you have claude shirts")).isNull();
         assertThat(ChannelAi.command("بكام")).isNull();
     }

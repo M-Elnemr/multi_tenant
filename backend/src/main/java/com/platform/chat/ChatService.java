@@ -117,7 +117,7 @@ public class ChatService {
     // ---- training room (platform admin) ------------------------------------------------------------------------
 
     /** The models a trainer may talk to; "default" is the channel's normal one. */
-    public static final java.util.Set<String> TRAIN_MODELS = java.util.Set.of("default", "anthropic", "gemini25", "deepseek", "glm");
+    public static final java.util.Set<String> TRAIN_MODELS = java.util.Set.of("default", "anthropic", "glm");
 
     /** Shops (stores) the admin can chat as, newest first. */
     public List<Map<String, Object>> trainShops() {
@@ -256,7 +256,7 @@ public class ChatService {
             jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();
             return new Reply(conv, answer, orderBox[0], ctx.products());
         }
-        // Test words (only while app.ai.name-probe is on): "ai-name" says which model answers this chat; "claude", "gemini 3.1" or "gemini 2.5" switch this chat to that model.
+        // Test words (only while app.ai.name-probe is on): "ai-name" says which model answers this chat; "claude" or "glm" switch this chat to that model.
         if (nameProbe) {
             String pick = ChannelAi.command(text);
             boolean ask = "ai name".equals(FastAnswers.norm(text));

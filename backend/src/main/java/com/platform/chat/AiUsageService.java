@@ -34,25 +34,21 @@ public class AiUsageService {
 
     private final JdbcClient jdbc;
     private final int retentionDays;
-    private final String provider;
+    /** The code of the default model, which a row with no model (a feature without chat) counts as. */
+    private static final String DEFAULT_MODEL = "glm";
     /** USD per million tokens for one model: normal input, output, cached input, cache write. */
     public record Price(double in, double out, double cached, double write) {}
 
-    private final Price gemini, gemini25, anthropic, deepseek, glm;
+    private final Price anthropic, glm;
+    /** The models the platform used before it kept only GLM and Claude: their old rows keep their real cost (not shown as a choice any more). */
+    private static final Price GEMINI = new Price(0.25, 1.50, 0.025, 0.25), GEMINI25 = new Price(0.10, 0.40, 0.01, 0.10), DEEPSEEK = new Price(0.10, 0.35, 0.003, 0.10);
     private final String sums;
 
-    public AiUsageService(JdbcClient jdbc, @Value("${app.ai.usage-retention-days:90}") int retentionDays, @Value("${app.ai.provider:gemini}") String provider,
-                          @Value("${app.ai.price.input:0.25}") double priceIn, @Value("${app.ai.price.output:1.50}") double priceOut, @Value("${app.ai.price.cached:0.025}") double priceCached, @Value("${app.ai.price.cache-write:-1}") double priceWrite,
+    public AiUsageService(JdbcClient jdbc, @Value("${app.ai.usage-retention-days:90}") int retentionDays,
                           @Value("${app.ai.price.anthropic.input:0.10}") double aIn, @Value("${app.ai.price.anthropic.output:0.50}") double aOut, @Value("${app.ai.price.anthropic.cached:0.01}") double aCached, @Value("${app.ai.price.anthropic.cache-write:0.20}") double aWrite,
-                          @Value("${app.ai.price.gemini25.input:0.10}") double gIn, @Value("${app.ai.price.gemini25.output:0.40}") double gOut, @Value("${app.ai.price.gemini25.cached:0.01}") double gCached,
-                          @Value("${app.ai.price.deepseek.input:0.10}") double dIn, @Value("${app.ai.price.deepseek.output:0.35}") double dOut, @Value("${app.ai.price.deepseek.cached:0.003}") double dCached,
                           @Value("${app.ai.price.glm.input:0.05}") double zIn, @Value("${app.ai.price.glm.output:0.17}") double zOut, @Value("${app.ai.price.glm.cached:0.01}") double zCached) {
-        this.jdbc = jdbc; this.retentionDays = retentionDays; this.provider = provider;
-        // the default model's prices (app.ai.price.*): a cache write costs like a normal input token unless set (Anthropic 1h writes are about double)
-        this.gemini = new Price(priceIn, priceOut, priceCached, priceWrite >= 0 ? priceWrite : priceIn);
+        this.jdbc = jdbc; this.retentionDays = retentionDays;
         this.anthropic = new Price(aIn, aOut, aCached, aWrite);
-        this.gemini25 = new Price(gIn, gOut, gCached, gIn);
-        this.deepseek = new Price(dIn, dOut, dCached, dIn);
         this.glm = new Price(zIn, zOut, zCached, zIn);
         this.sums = "count(*) FILTER (WHERE NOT instant) AS requests, count(*) FILTER (WHERE instant) AS instant, coalesce(sum(model_calls),0) AS model_calls, "
                 + "coalesce(sum(input_tokens),0) AS input, coalesce(sum(output_tokens),0) AS output, coalesce(sum(cached_tokens),0) AS cached, coalesce(sum(cache_write_tokens),0) AS cache_write, "
@@ -63,8 +59,8 @@ public class AiUsageService {
 
     /** SQL for the cost in USD of one row (or one model round): each model is priced with its own prices, rows with no model with the default provider's. */
     private String cost(String in, String out, String cached, String write, String model) {
-        String m = "coalesce(" + model + ", '" + provider.replace("'", "") + "')";
-        java.util.function.Function<java.util.function.ToDoubleFunction<Price>, String> price = f -> "(CASE " + m + " WHEN 'anthropic' THEN " + f.applyAsDouble(anthropic) + " WHEN 'gemini25' THEN " + f.applyAsDouble(gemini25) + " WHEN 'deepseek' THEN " + f.applyAsDouble(deepseek) + " WHEN 'glm' THEN " + f.applyAsDouble(glm) + " ELSE " + f.applyAsDouble(gemini) + " END)";
+        String m = "coalesce(" + model + ", '" + DEFAULT_MODEL + "')";
+        java.util.function.Function<java.util.function.ToDoubleFunction<Price>, String> price = f -> "(CASE " + m + " WHEN 'anthropic' THEN " + f.applyAsDouble(anthropic) + " WHEN 'gemini25' THEN " + f.applyAsDouble(GEMINI25) + " WHEN 'deepseek' THEN " + f.applyAsDouble(DEEPSEEK) + " WHEN 'gemini' THEN " + f.applyAsDouble(GEMINI) + " ELSE " + f.applyAsDouble(glm) + " END)";
         return "((greatest(" + in + " - " + cached + " - " + write + ", 0) * " + price.apply(Price::in) + " + " + cached + " * " + price.apply(Price::cached) + " + " + write + " * " + price.apply(Price::write)
                 + " + " + out + " * " + price.apply(Price::out) + ") / 1000000.0)";
     }
@@ -121,18 +117,15 @@ public class AiUsageService {
         return model;
     }
 
-    private String mfilter(String model, String col) { return model == null ? "" : " AND coalesce(" + col + ", '" + provider.replace("'", "") + "') = :m"; }
+    private String mfilter(String model, String col) { return model == null ? "" : " AND coalesce(" + col + ", '" + DEFAULT_MODEL + "') = :m"; }
 
     private static OffsetDateTime start(LocalDate d) { return d.atStartOfDay(ZONE).toOffsetDateTime(); }
 
     private Map<String, Object> prices() {
         Map<String, Object> models = new LinkedHashMap<>();
-        models.put("gemini", Map.of("input", gemini.in(), "output", gemini.out(), "cached", gemini.cached(), "cacheWrite", gemini.write()));
-        models.put("gemini25", Map.of("input", gemini25.in(), "output", gemini25.out(), "cached", gemini25.cached(), "cacheWrite", gemini25.write()));
-        models.put("deepseek", Map.of("input", deepseek.in(), "output", deepseek.out(), "cached", deepseek.cached(), "cacheWrite", deepseek.write()));
         models.put("glm", Map.of("input", glm.in(), "output", glm.out(), "cached", glm.cached(), "cacheWrite", glm.write()));
         models.put("anthropic", Map.of("input", anthropic.in(), "output", anthropic.out(), "cached", anthropic.cached(), "cacheWrite", anthropic.write()));
-        return Map.of("provider", provider, "models", models);
+        return Map.of("provider", DEFAULT_MODEL, "models", models);
     }
 
     private List<Map<String, Object>> rows(String sql, Map<String, Object> params) {
@@ -186,7 +179,7 @@ public class AiUsageService {
         out.put("byFeature", rows("SELECT feature, " + sums + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to" + mf + " GROUP BY feature ORDER BY sum(input_tokens + output_tokens) DESC", p));
         out.put("byChannel", rows("SELECT coalesce(channel, '-') AS channel, " + sums + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to AND feature = 'CHAT'" + mf + " GROUP BY 1 ORDER BY sum(input_tokens + output_tokens) DESC", p));
         out.put("byStep", steps(day, null, model));
-        out.put("byModel", rows("SELECT coalesce(model, '" + provider.replace("'", "") + "') AS model, " + sums + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to GROUP BY 1 ORDER BY sum(input_tokens + output_tokens) DESC", allModels));
+        out.put("byModel", rows("SELECT coalesce(model, '" + DEFAULT_MODEL + "') AS model, " + sums + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to GROUP BY 1 ORDER BY sum(input_tokens + output_tokens) DESC", allModels));
         out.put("byHour", hours(day, null, model));
         out.put("shops", rows("""
                 SELECT l.tenant_id, coalesce(t.name, '—') AS name, count(DISTINCT l.conversation_id) AS conversations, """ + sums + " " + """
@@ -216,7 +209,7 @@ public class AiUsageService {
         out.put("totals", rows("SELECT " + sums + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to AND tenant_id = :t" + mf, p).get(0));
         out.put("byFeature", rows("SELECT feature, " + sums + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to AND tenant_id = :t" + mf + " GROUP BY feature ORDER BY sum(input_tokens + output_tokens) DESC", p));
         out.put("byStep", steps(day, tenantId, model));
-        out.put("byModel", rows("SELECT coalesce(model, '" + provider.replace("'", "") + "') AS model, " + sums + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to AND tenant_id = :t GROUP BY 1 ORDER BY sum(input_tokens + output_tokens) DESC", allModels));
+        out.put("byModel", rows("SELECT coalesce(model, '" + DEFAULT_MODEL + "') AS model, " + sums + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to AND tenant_id = :t GROUP BY 1 ORDER BY sum(input_tokens + output_tokens) DESC", allModels));
         out.put("byHour", hours(day, tenantId, model));
         out.put("conversations", rows("""
                 SELECT conversation_id, max(channel) AS channel, max(model) AS model, min(created_at) AS first_at, max(created_at) AS last_at, (array_agg(preview ORDER BY id) FILTER (WHERE preview IS NOT NULL))[1] AS first_message, """ + sums + " " + """

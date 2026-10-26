@@ -48,9 +48,9 @@ class ModelProbeIntegrationTest extends IntegrationTestBase {
     void aModelCommandSwitchesOnlyThatChatAndNeedsNoModelCall() throws Exception {
         Tenant shop = onboard("STORE");
         UUID id = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", shop.slug()).query(UUID.class).single();
-        var reply = chat.reply(id, "WHATSAPP", "201000000009", null, "gemini 2.5");
+        var reply = chat.reply(id, "WHATSAPP", "201000000009", null, "glm");
         assertThat(reply.text()).startsWith("✅");
-        assertThat(jdbc.sql("SELECT ai_model FROM chat.conversations WHERE id = :c").param("c", reply.conversationId()).query(String.class).single()).isEqualTo("gemini25");
+        assertThat(jdbc.sql("SELECT ai_model FROM chat.conversations WHERE id = :c").param("c", reply.conversationId()).query(String.class).single()).isEqualTo("glm");
         chat.reply(id, "WHATSAPP", "201000000009", null, "claude");
         assertThat(jdbc.sql("SELECT ai_model FROM chat.conversations WHERE id = :c").param("c", reply.conversationId()).query(String.class).single()).isEqualTo("anthropic");
         // another customer is untouched
