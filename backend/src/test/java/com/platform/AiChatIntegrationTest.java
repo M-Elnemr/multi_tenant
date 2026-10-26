@@ -139,6 +139,95 @@ class AiChatIntegrationTest extends IntegrationTestBase {
         assertThat(FakeAiProvider.RESULTS.get(FakeAiProvider.RESULTS.size() - 1).result().get("error").toString()).contains("No such product");
     }
 
+    Map<String, Object> prepareIn(String variant, int qty, String gov) {
+        return Map.of("items", List.of(Map.of("variantId", variant, "quantity", qty)), "customerName", "Nada Ali", "phone", "01011112222", "governorateCode", gov,
+                "addressLine1", "5 Tahrir St, floor 2", "area", "Mansoura", "paymentMethod", "CASH_ON_DELIVERY", "discountPercent", 0);
+    }
+
+    @Test
+    void theOrderSummaryIsWrittenByCodeWithTheDeliveryFeeOrWhyItIsFreeWhateverTheModelSays() throws Exception {
+        Tenant t = onboard("STORE");
+        String variant = mug(t);   // 100.00 each
+        onHost(t.host(), t.access(), "POST", "/api/v1/store/shipping-methods", "{\"type\":\"ZONES\",\"name\":\"Delivery\",\"feeMinor\":0}").andExpect(status().isCreated());
+        onHost(t.host(), t.access(), "POST", "/api/v1/store/shipping-zones", "{\"name\":\"Delta\",\"governorateCodes\":[\"DKH\"],\"feeMinor\":8000,\"freeAboveMinor\":30000,\"etaMinDays\":2,\"etaMaxDays\":4}").andExpect(status().isOk());
+        // one mug: delivery 80.00 is a line of the summary and part of the total, and the model's own (wrong) total never reaches the customer
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepareIn(variant, 1, "DKH")));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("Total is 9999 EGP, confirm?"));
+        String one = JsonPath.<String>read(send(t, UUID.randomUUID().toString(), "one mug please"), "$.reply");
+        assertThat(one).contains("Items: 100 EGP").contains("80 EGP").contains("Total: 180 EGP").contains("Expected delivery: 2-4 days").contains("Shall I place the order?").doesNotContain("9999").doesNotContain("free");
+        // four mugs reach the free-delivery amount: the summary says delivery is free and above what
+        FakeAiProvider.RESULTS.clear();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepareIn(variant, 4, "DKH")));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("Delivery is 80 so the total is 480"));
+        String four = JsonPath.<String>read(send(t, UUID.randomUUID().toString(), "4 mugs"), "$.reply");
+        assertThat(four).contains("free").contains("(orders above 300 EGP)").contains("Total: 400 EGP").doesNotContain("480");
+        // in Arabic the same, with the amounts in جنيه
+        FakeAiProvider.RESULTS.clear();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepareIn(variant, 4, "DKH")));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ok"));
+        String ar = JsonPath.<String>read(send(t, UUID.randomUUID().toString(), "عايز ٤ أكواب"), "$.reply");
+        assertThat(ar).contains("ده ملخص الأوردر").contains("مجاني").contains("الإجمالي: 400 جنيه").contains("أأكد الأوردر؟");
+    }
+
+    @Test
+    void anAmountTheModelMadeUpIsRewrittenOnceThenCutAndAnOrderAlreadyPlacedIsAnsweredFromTheOrderOnFile() throws Exception {
+        Tenant t = onboard("STORE");
+        String variant = mug(t);
+        String conv = UUID.randomUUID().toString();
+        // an invented total: the model is sent back once and the rewrite is what the customer reads
+        java.util.concurrent.atomic.AtomicReference<String> note = new java.util.concurrent.atomic.AtomicReference<>();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("الإجمالي ٩٩٩٩ جنيه"));
+        FakeAiProvider.SCRIPT.add(turns -> { note.set(turns.get(turns.size() - 1).text()); return Turn.model("خلينا نجهز الأوردر وأطلعلك الإجمالي بالظبط، تحب؟"); });
+        String first = JsonPath.<String>read(send(t, conv, "كام الإجمالي"), "$.reply");
+        assertThat(note.get()).contains("SYSTEM CHECK").contains("٩٩٩٩");
+        assertThat(first).isEqualTo("خلينا نجهز الأوردر وأطلعلك الإجمالي بالظبط، تحب؟");
+        // it insists: the sentence with the amount is cut, the rest stays; nothing but the amount is left: a safe text
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام. الإجمالي ٩٩٩٩ جنيه. تحب أكمل؟"));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام. الإجمالي ٩٩٩٩ جنيه. تحب أكمل؟"));
+        String cut = JsonPath.<String>read(send(t, conv, "كام الإجمالي تاني"), "$.reply");
+        assertThat(cut).doesNotContain("9999").doesNotContain("٩٩٩٩").contains("تحب أكمل");
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("الإجمالي ٩٩٩٩ جنيه"));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("الإجمالي ٩٩٩٩ جنيه"));
+        assertThat(JsonPath.<String>read(send(t, conv, "طيب والإجمالي"), "$.reply")).contains("ملخص الأوردر").doesNotContain("٩٩٩٩");
+        // a price the shop really has is not touched
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("الأكواب بـ 100 جنيه والاتنين بـ 200 جنيه"));
+        assertThat(JsonPath.<String>read(send(t, conv, "الأسعار"), "$.reply")).isEqualTo("الأكواب بـ 100 جنيه والاتنين بـ 200 جنيه");
+
+        // the order is placed (the summary comes from code, the confirmation too) ...
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepareIn(variant, 1, "CAI")));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ok"));
+        send(t, conv, "عايز كوب");
+        String done = send(t, conv, "تمام");
+        assertThat(JsonPath.<String>read(done, "$.reply")).contains("تمام تم تأكيد الأوردر").contains("الإجمالي: 150 جنيه");
+        // ... and a later question about it is answered from the ORDER ON FILE block, which says what the order really cost
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("الشحن 50 جنيه"));
+        send(t, conv, "الشحن كام في الأوردر؟");
+        assertThat(FakeAiProvider.lastSystem).contains("ORDER ON FILE").contains("TOTAL TO PAY 150 EGP").contains("delivery 50 EGP").contains("you cannot change it");
+    }
+
+    @Test
+    void pickupIsRefusedUnlessTheCustomerAskedForItAndAChangedPriceNeedsANewSummary() throws Exception {
+        Tenant t = onboard("STORE");
+        String variant = mug(t);
+        String conv = UUID.randomUUID().toString();
+        Map<String, Object> pickup = new java.util.HashMap<>(prepareIn(variant, 1, "CAI"));
+        pickup.put("pickup", true);
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", pickup));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("sorry"));
+        send(t, conv, "عايز كوب");
+        assertThat(FakeAiProvider.RESULTS.get(0).result().get("error").toString()).contains("Pickup is only for a customer who asked");
+
+        // the customer confirms the amounts they saw; the price went up meanwhile: no order, a new summary is needed
+        FakeAiProvider.RESULTS.clear();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepareIn(variant, 1, "CAI")));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ok"));
+        send(t, conv, "ماشي هاخد كوب");
+        jdbc.sql("UPDATE commerce.product_variants SET price_minor = price_minor + 2500 WHERE id = CAST(:v AS uuid)").param("v", variant).update();
+        String reply = JsonPath.<String>read(send(t, conv, "تمام"), "$.reply");
+        assertThat(reply).contains("اتغيرت");
+        assertThat(orders(t)).isZero();
+    }
+
     @Test
     void onlyAPlainAgreementCountsAsConfirmation() {
         for (String yes : List.of("تمام", "تمام حضرتك", "ايوه يا فندم", "أيوه", "نعم", "yes", "Yes please", "ok ✅", "اكيد", "موافق", "تمام جدا"))
@@ -170,7 +259,7 @@ class AiChatIntegrationTest extends IntegrationTestBase {
         // the owner's test chat: a full conversation, but no real order
         FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepare(variant, 0, "CASH_ON_DELIVERY")));
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("Confirm?"));
-        onHost(t.host(), t.access(), "POST", "/api/v1/store/ai/test", "{\"message\":\"one mug please\"}").andExpect(status().isOk()).andExpect(jsonPath("$.reply").value("Confirm?"));
+        onHost(t.host(), t.access(), "POST", "/api/v1/store/ai/test", "{\"message\":\"one mug please\"}").andExpect(status().isOk()).andExpect(jsonPath("$.reply").value(org.hamcrest.Matchers.containsString("Total: 150 EGP")));
         onHost(t.host(), t.access(), "POST", "/api/v1/store/ai/test", "{\"message\":\"yes\"}").andExpect(status().isOk()).andExpect(jsonPath("$.order.test").value(true));
         assertThat(orders(t)).isZero();
         onHost(t.host(), t.access(), "GET", "/api/v1/store/ai/test", null).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(4));

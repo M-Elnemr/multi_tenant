@@ -57,7 +57,7 @@ public class SellerTools {
                         obj("type", "OBJECT", "properties", obj("orderNumber", str("The order number the customer has"), "phone", str("The phone number used on the order")), "required", List.of("orderNumber", "phone"))),
                 new ToolDef("recommend_related", "Other in-stock products from the same category as a product: use for one honest add-on or a cheaper or better alternative.",
                         obj("type", "OBJECT", "properties", obj("slug", str("Product slug from search_products")), "required", List.of("slug"))),
-                new ToolDef("delivery_quote", "Delivery fee and days to one governorate.",
+                new ToolDef("delivery_quote", "Delivery fee, the order amount above which delivery is free, and days to one governorate. Quote the fee together with the free-delivery condition.",
                         obj("type", "OBJECT", "properties", obj("governorateCode", str("Governorate code from the SHOP FACTS list")), "required", List.of("governorateCode"))),
                 new ToolDef("check_coupon", "Whether a coupon code is valid and what it gives. Tell the customer only what this returns.",
                         obj("type", "OBJECT", "properties", obj("code", str("The coupon code the customer has")), "required", List.of("code"))),
@@ -126,13 +126,21 @@ public class SellerTools {
         return obj("related", out, "count", out.size());
     }
 
+    /** The delivery zone of this shop that serves a governorate code, or null. */
+    Map<String, Object> zoneFor(UUID t, String gov) {
+        if (gov == null) return null;
+        for (var z : fulfilment.zones(t, true)) if (z.get("governorateCodes") instanceof List<?> l && l.contains(gov.toUpperCase())) return z;
+        return null;
+    }
+
     private Map<String, Object> delivery(UUID t, String gov) {
         if (gov == null) return obj("error", "Give the governorate code");
         String code = gov.toUpperCase();
         for (var z : fulfilment.zones(t, true)) {
             if (z.get("governorateCodes") instanceof List<?> l && l.contains(code))
                 return obj("zone", z.get("name"), "fee", ChatService.major(z.get("feeMinor")), "freeAbove", z.get("freeAboveMinor") == null ? null : ChatService.major(z.get("freeAboveMinor")),
-                        "cashOnDeliveryFee", ChatService.major(z.get("codFeeMinor")), "days", z.get("etaMinDays") + "-" + z.get("etaMaxDays"));
+                        "cashOnDeliveryFee", ChatService.major(z.get("codFeeMinor")), "days", z.get("etaMinDays") + "-" + z.get("etaMaxDays"),
+                        "say", "Delivery here costs the fee above" + (z.get("freeAboveMinor") == null ? "" : " and is FREE for orders of " + ChatService.major(z.get("freeAboveMinor")) + " or more") + ". State both facts together; the real delivery cost of this customer's order is in the order summary the system sends, never add it up yourself.");
         }
         return obj("error", "The shop has no delivery zone for that governorate. Say so honestly and offer pickup if the shop has it.");
     }
