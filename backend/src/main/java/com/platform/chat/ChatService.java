@@ -238,7 +238,9 @@ public class ChatService {
             }
         } catch (AiProvider.AiUnavailableException e) {
             log.warn("AI unavailable: {} ({})", e.getMessage(), e.getCause() == null ? "no cause" : e.getCause().toString());
-            answer = "عذرًا، المساعد غير متاح الآن، حاول بعد قليل. / Sorry, the assistant is unavailable right now. Please try again shortly.";
+            answer = routed.showsErrors()
+                    ? "⚠️ " + routed.label() + ": " + e.getMessage()
+                    : "عذرًا، المساعد غير متاح الآن، حاول بعد قليل. / Sorry, the assistant is unavailable right now. Please try again shortly.";
         }
         if (!"TEST".equals(channel)) { seller.count(tenantId); usageLog.record(tenantId, "CHAT", channel, conv, false, text, rounds, routed.code(), routed.fellBack()); }
         if (answer == null || answer.isBlank()) answer = "عذرًا، لم أفهم. هل تعيد صياغة طلبك؟ / Sorry, I did not get that. Could you rephrase?";

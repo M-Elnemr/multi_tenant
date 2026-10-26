@@ -41,6 +41,20 @@ class ChannelAiTest {
     }
 
     @Test
+    void aFailingGemini25ChosenByTheCustomerShowsItsErrorInsteadOfFallingBack() {
+        Scripted g31 = new Scripted("gemini", true), g25 = new Scripted("gemini25", true), claude = new Scripted("anthropic", true);
+        g25.script.add(() -> { throw new AiUnavailableException("The AI assistant could not answer (gemini-2.5-flash-lite 404: no longer available)"); });
+        var routed = new ChannelAi(g31, claude, g25, "default", "default").forChannel("WHATSAPP", "gemini25");
+        assertThat(routed.showsErrors()).isTrue();
+        assertThatThrownBy(() -> routed.next("s", ASK, List.of())).isInstanceOf(AiUnavailableException.class).hasMessageContaining("404");
+        assertThat(g31.calls).isZero();
+        assertThat(routed.fellBack()).isFalse();
+        // the other models, and 2.5 when nobody picked it, still fall back
+        assertThat(new ChannelAi(g31, claude, g25, "default", "default").forChannel("WHATSAPP", "anthropic").showsErrors()).isFalse();
+        assertThat(new ChannelAi(g31, claude, g25, "gemini25", "default").forChannel("WHATSAPP").showsErrors()).isFalse();
+    }
+
+    @Test
     void aCustomerCanPickAnyOfTheThreeModelsAndTheCommandsAreRecognised() {
         Scripted g31 = new Scripted("gemini", true), g25 = new Scripted("gemini25", true), claude = new Scripted("anthropic", true);
         ChannelAi ai = new ChannelAi(g31, claude, g25, "default", "default");

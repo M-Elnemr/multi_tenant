@@ -126,6 +126,14 @@ public class GeminiProvider implements AiProvider {
     }
 
     /** One model, one request. Tries minimal "thinking" first (a shop assistant needs speed, not long reasoning) and repeats without it if the model refuses the setting. */
+    /** Google's own error text (": This model is no longer available…"), short, so a failure can be read without the server logs. */
+    private static String googleReason(String body) {
+        try {
+            String m = JSON.readTree(body).path("error").path("message").asText("");
+            return m.isBlank() ? "" : ": " + (m.length() > 300 ? m.substring(0, 300) + "…" : m);
+        } catch (Exception e) { return ""; }
+    }
+
     private Turn call(String model, String bodyJson) {
         try {
             AiUnavailableException failure = null;
@@ -137,8 +145,8 @@ public class GeminiProvider implements AiProvider {
                         .POST(HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(root))).build();
                 HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
                 if (res.statusCode() == 400 && thinking) continue;   // this model does not take the thinking setting
-                if (res.statusCode() == 429 || res.statusCode() == 503) throw new AiUnavailableException("The AI assistant is busy (" + model + " " + res.statusCode() + ")");
-                if (res.statusCode() != 200) throw new AiUnavailableException("The AI assistant could not answer (" + model + " " + res.statusCode() + ")");
+                if (res.statusCode() == 429 || res.statusCode() == 503) throw new AiUnavailableException("The AI assistant is busy (" + model + " " + res.statusCode() + googleReason(res.body()) + ")");
+                if (res.statusCode() != 200) throw new AiUnavailableException("The AI assistant could not answer (" + model + " " + res.statusCode() + googleReason(res.body()) + ")");
                 return parse(res.body());
             }
             throw failure != null ? failure : new AiUnavailableException("The AI assistant could not answer (" + model + ")");

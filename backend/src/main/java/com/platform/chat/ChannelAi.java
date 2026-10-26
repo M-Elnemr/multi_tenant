@@ -50,6 +50,8 @@ public class ChannelAi {
     public Routed forChannel(String channel, String chosen) {
         String route = chosen != null ? chosen : channel != null && SOCIAL.contains(channel) ? social : web;
         AiProvider primary = "anthropic".equals(route) && claude.available() ? claude : "gemini25".equals(route) && gemini25 != null && gemini25.available() ? gemini25 : defaultAi;
+        // a customer who typed "gemini 2.5" is testing that model: show its error instead of quietly answering with another one
+        if (chosen != null && primary == gemini25) return new Routed(primary, null);
         return new Routed(primary, defaultAi);
     }
 
@@ -75,16 +77,19 @@ public class ChannelAi {
 
         public boolean fellBack() { return fellBack; }
 
+        /** True when there is no fallback, so a failure of this model must be shown to the customer as it is. */
+        public boolean showsErrors() { return fallback == null; }
+
         @Override public String code() { return active.code(); }
 
         @Override public String label() { return active.label(); }
 
-        @Override public boolean available() { return active.available() || fallback.available(); }
+        @Override public boolean available() { return active.available() || (fallback != null && fallback.available()); }
 
         @Override
         public Turn next(String system, List<Turn> turns, List<ToolDef> tools) {
             boolean firstRound = turns.isEmpty() || "user".equals(turns.get(turns.size() - 1).role());
-            if (active == fallback || !firstRound) return active.next(system, turns, tools);
+            if (fallback == null || active == fallback || !firstRound) return active.next(system, turns, tools);
             AiProvider routed = active;
             try {
                 Turn t = routed.next(system, turns, tools);
