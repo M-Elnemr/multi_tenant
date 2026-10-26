@@ -48,8 +48,12 @@ class ChannelAiTest {
         var routed = ai.forChannel("WHATSAPP", "deepseek");
         assertThat(routed.code()).isEqualTo("deepseek");
         assertThat(routed.showsErrors()).isTrue();
-        // without a key it is not used at all and the chat stays on the default model
-        assertThat(new ChannelAi(g31, claude, g25, new Scripted("deepseek", false), "default", "default").forChannel("WHATSAPP", "deepseek").code()).isEqualTo("gemini");
+        // not configured or not active: the customer who picked it gets that error, not an answer from the default model
+        var off = new ChannelAi(g31, claude, g25, new Scripted("deepseek", false), "default", "default").forChannel("WHATSAPP", "deepseek");
+        assertThat(off.code()).isEqualTo("deepseek");
+        assertThat(off.showsErrors()).isTrue();
+        // not picked by anyone but routed by configuration without a key: the default model answers
+        assertThat(new ChannelAi(g31, claude, g25, new Scripted("deepseek", false), "deepseek", "default").forChannel("WHATSAPP").code()).isEqualTo("gemini");
         // routed by configuration (not chosen by a customer) it falls back like Claude does
         assertThat(new ChannelAi(g31, claude, g25, ds, "deepseek", "default").forChannel("WHATSAPP").showsErrors()).isFalse();
     }
@@ -77,7 +81,7 @@ class ChannelAiTest {
         assertThat(ai.forChannel("WHATSAPP", "gemini25").code()).isEqualTo("gemini25");
         assertThat(ai.forChannel("WHATSAPP", "gemini").code()).isEqualTo("gemini");
         // a model that is not configured falls back to the default instead of failing the chat
-        assertThat(new ChannelAi(g31, claude, new Scripted("gemini25", false), "default", "default").forChannel("WEB", "gemini25").code()).isEqualTo("gemini");
+        assertThat(new ChannelAi(g31, claude, new Scripted("gemini25", false), "default", "default").forChannel("WEB", "gemini25").code()).isEqualTo("gemini25");   // picked but not usable: its error is shown, no silent switch
         assertThat(ChannelAi.command("Claude")).isEqualTo("anthropic");
         assertThat(ChannelAi.command("switch to claude")).isEqualTo("anthropic");
         assertThat(ChannelAi.command("gemini 3.1")).isEqualTo("gemini");
