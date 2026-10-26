@@ -38,20 +38,22 @@ public class AiUsageService {
     /** USD per million tokens for one model: normal input, output, cached input, cache write. */
     public record Price(double in, double out, double cached, double write) {}
 
-    private final Price gemini, gemini25, anthropic, deepseek;
+    private final Price gemini, gemini25, anthropic, deepseek, glm;
     private final String sums;
 
     public AiUsageService(JdbcClient jdbc, @Value("${app.ai.usage-retention-days:90}") int retentionDays, @Value("${app.ai.provider:gemini}") String provider,
                           @Value("${app.ai.price.input:0.25}") double priceIn, @Value("${app.ai.price.output:1.50}") double priceOut, @Value("${app.ai.price.cached:0.025}") double priceCached, @Value("${app.ai.price.cache-write:-1}") double priceWrite,
                           @Value("${app.ai.price.anthropic.input:0.10}") double aIn, @Value("${app.ai.price.anthropic.output:0.50}") double aOut, @Value("${app.ai.price.anthropic.cached:0.01}") double aCached, @Value("${app.ai.price.anthropic.cache-write:0.20}") double aWrite,
                           @Value("${app.ai.price.gemini25.input:0.10}") double gIn, @Value("${app.ai.price.gemini25.output:0.40}") double gOut, @Value("${app.ai.price.gemini25.cached:0.01}") double gCached,
-                          @Value("${app.ai.price.deepseek.input:0.10}") double dIn, @Value("${app.ai.price.deepseek.output:0.35}") double dOut, @Value("${app.ai.price.deepseek.cached:0.003}") double dCached) {
+                          @Value("${app.ai.price.deepseek.input:0.10}") double dIn, @Value("${app.ai.price.deepseek.output:0.35}") double dOut, @Value("${app.ai.price.deepseek.cached:0.003}") double dCached,
+                          @Value("${app.ai.price.glm.input:0.05}") double zIn, @Value("${app.ai.price.glm.output:0.17}") double zOut, @Value("${app.ai.price.glm.cached:0.01}") double zCached) {
         this.jdbc = jdbc; this.retentionDays = retentionDays; this.provider = provider;
         // the default model's prices (app.ai.price.*): a cache write costs like a normal input token unless set (Anthropic 1h writes are about double)
         this.gemini = new Price(priceIn, priceOut, priceCached, priceWrite >= 0 ? priceWrite : priceIn);
         this.anthropic = new Price(aIn, aOut, aCached, aWrite);
         this.gemini25 = new Price(gIn, gOut, gCached, gIn);
         this.deepseek = new Price(dIn, dOut, dCached, dIn);
+        this.glm = new Price(zIn, zOut, zCached, zIn);
         this.sums = "count(*) FILTER (WHERE NOT instant) AS requests, count(*) FILTER (WHERE instant) AS instant, coalesce(sum(model_calls),0) AS model_calls, "
                 + "coalesce(sum(input_tokens),0) AS input, coalesce(sum(output_tokens),0) AS output, coalesce(sum(cached_tokens),0) AS cached, coalesce(sum(cache_write_tokens),0) AS cache_write, "
                 + "count(*) FILTER (WHERE fallback) AS fallbacks, coalesce(sum(" + cost("input_tokens", "output_tokens", "cached_tokens", "cache_write_tokens", "model") + "), 0) AS cost_usd";
@@ -62,7 +64,7 @@ public class AiUsageService {
     /** SQL for the cost in USD of one row (or one model round): each model is priced with its own prices, rows with no model with the default provider's. */
     private String cost(String in, String out, String cached, String write, String model) {
         String m = "coalesce(" + model + ", '" + provider.replace("'", "") + "')";
-        java.util.function.Function<java.util.function.ToDoubleFunction<Price>, String> price = f -> "(CASE " + m + " WHEN 'anthropic' THEN " + f.applyAsDouble(anthropic) + " WHEN 'gemini25' THEN " + f.applyAsDouble(gemini25) + " WHEN 'deepseek' THEN " + f.applyAsDouble(deepseek) + " ELSE " + f.applyAsDouble(gemini) + " END)";
+        java.util.function.Function<java.util.function.ToDoubleFunction<Price>, String> price = f -> "(CASE " + m + " WHEN 'anthropic' THEN " + f.applyAsDouble(anthropic) + " WHEN 'gemini25' THEN " + f.applyAsDouble(gemini25) + " WHEN 'deepseek' THEN " + f.applyAsDouble(deepseek) + " WHEN 'glm' THEN " + f.applyAsDouble(glm) + " ELSE " + f.applyAsDouble(gemini) + " END)";
         return "((greatest(" + in + " - " + cached + " - " + write + ", 0) * " + price.apply(Price::in) + " + " + cached + " * " + price.apply(Price::cached) + " + " + write + " * " + price.apply(Price::write)
                 + " + " + out + " * " + price.apply(Price::out) + ") / 1000000.0)";
     }
@@ -128,6 +130,7 @@ public class AiUsageService {
         models.put("gemini", Map.of("input", gemini.in(), "output", gemini.out(), "cached", gemini.cached(), "cacheWrite", gemini.write()));
         models.put("gemini25", Map.of("input", gemini25.in(), "output", gemini25.out(), "cached", gemini25.cached(), "cacheWrite", gemini25.write()));
         models.put("deepseek", Map.of("input", deepseek.in(), "output", deepseek.out(), "cached", deepseek.cached(), "cacheWrite", deepseek.write()));
+        models.put("glm", Map.of("input", glm.in(), "output", glm.out(), "cached", glm.cached(), "cacheWrite", glm.write()));
         models.put("anthropic", Map.of("input", anthropic.in(), "output", anthropic.out(), "cached", anthropic.cached(), "cacheWrite", anthropic.write()));
         return Map.of("provider", provider, "models", models);
     }

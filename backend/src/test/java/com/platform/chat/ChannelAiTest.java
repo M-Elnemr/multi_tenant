@@ -59,6 +59,22 @@ class ChannelAiTest {
     }
 
     @Test
+    void glmIsPickedByItsCommandAndShowsItsErrorsToo() {
+        Scripted g31 = new Scripted("gemini", true), claude = new Scripted("anthropic", true), g25 = new Scripted("gemini25", true), ds = new Scripted("deepseek", true), glm = new Scripted("glm", true);
+        for (String c : List.of("glm", "GLM", "use glm", "GLM-5.3-Flash", "glm 5.3")) assertThat(ChannelAi.command(c)).as(c).isEqualTo("glm");
+        var routed = new ChannelAi(g31, claude, g25, ds, glm, "default", "default").forChannel("WHATSAPP", "glm");
+        assertThat(routed.code()).isEqualTo("glm");
+        assertThat(routed.showsErrors()).isTrue();
+        // not configured: the error of that model, not an answer from the default one
+        assertThat(new ChannelAi(g31, claude, g25, ds, new Scripted("glm", false), "default", "default").forChannel("WHATSAPP", "glm").showsErrors()).isTrue();
+        // routed by configuration without a key: the default model answers
+        assertThat(new ChannelAi(g31, claude, g25, ds, new Scripted("glm", false), "glm", "default").forChannel("WHATSAPP").code()).isEqualTo("gemini");
+        // the other commands still resolve to their own models
+        assertThat(ChannelAi.command("deepseek")).isEqualTo("deepseek");
+        assertThat(ChannelAi.command("gemini 2.5")).isEqualTo("gemini25");
+    }
+
+    @Test
     void aFailingGemini25ChosenByTheCustomerShowsItsErrorInsteadOfFallingBack() {
         Scripted g31 = new Scripted("gemini", true), g25 = new Scripted("gemini25", true), claude = new Scripted("anthropic", true);
         g25.script.add(() -> { throw new AiUnavailableException("The AI assistant could not answer (gemini-2.5-flash-lite 404: no longer available)"); });
