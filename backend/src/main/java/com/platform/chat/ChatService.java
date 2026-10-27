@@ -394,7 +394,7 @@ public class ChatService {
     private String reviewed(Ctx ctx, ChannelAi.Routed routed, String system, List<Turn> turns, List<AiUsageService.Round> rounds, String draft) {
         if (!review) return draft;
         try {
-            Turn t = routed.next(ReplyReview.SYSTEM, List.of(Turn.user(ReplyReview.request(turns, addressing(system), draft))), List.of());
+            Turn t = routed.next(ReplyReview.SYSTEM, List.of(Turn.user(ReplyReview.request(turns, addressing(system), section(system, "SHOP FACTS:") + section(system, "SHOP CATALOG"), draft))), List.of());
             rounds.add(new AiUsageService.Round(List.of("review"), t.usage()));
             var v = ReplyReview.parse(t.text());
             if (v == null) { log.info("Review: {} gave no usable verdict (conversation {})", routed.code(), ctx.conversationId()); return draft; }
@@ -406,6 +406,15 @@ public class ChatService {
             log.warn("Review: failed, sending the draft: {}", e.getMessage());
             return draft;
         }
+    }
+
+    /** One block of the prompt, from its heading to the next blank line (at most 3000 characters); empty when it is not there. */
+    static String section(String system, String heading) {
+        int i = system == null ? -1 : system.indexOf(heading);
+        if (i < 0) return "";
+        int end = system.indexOf("\n\n", i);
+        String s = system.substring(i, end < 0 ? system.length() : end);
+        return (s.length() > 3000 ? s.substring(0, 3000) : s) + "\n";
     }
 
     /** The ADDRESSING THE CUSTOMER lines of the prompt (name, gender, how to call them), for the reviewer. */

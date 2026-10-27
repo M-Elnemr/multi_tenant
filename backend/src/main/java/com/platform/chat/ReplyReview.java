@@ -30,7 +30,7 @@ final class ReplyReview {
             4. Respect and gender: the right masculine/feminine forms for this customer; «أستاذ/أستاذة + name» only as ADDRESSING says (never the wrong gender, never a guess); otherwise «حضرتك»/«يا فندم».
             5. Words: natural, correct Egyptian Arabic (or the customer's language and dialect), simple everyday words, no odd, poetic, literal-translation or wrong words, no typos, nothing that could be understood wrongly.
             6. No invented urgency, deadline, guarantee, review, promise of a call, and no discount tied to ordering now. A discount, if any, must be one the customer asked for or a kind gift, never pressure.
-            7. Friendly and calm even if the customer is rude; never argues or lectures.
+            7. Friendly and calm even if the customer is rude; never argues or lectures. Short acknowledgements like «حقك عليا يا فندم» or «معاك حق» are good, keep them.
             8. Short (1-3 sentences per message), sounds like a real person, ends with exactly one step toward the sale, does not repeat a sentence the salesperson already sent in the chat.
 
             Answer with JSON only, no markdown:
@@ -40,7 +40,10 @@ final class ReplyReview {
             """;
 
     /** What the reviewer reads: the chat so far (short), the customer's newest words, the tool facts of this reply, how to address the customer, and the draft. */
-    static String request(List<Turn> turns, String address, String draft) {
+    static String request(List<Turn> turns, String address, String draft) { return request(turns, address, null, draft); }
+
+    /** Same, with the shop's own data from the prompt (SHOP FACTS, SHOP CATALOG): products and prices named there are facts too. */
+    static String request(List<Turn> turns, String address, String shop, String draft) {
         StringBuilder chat = new StringBuilder(), newest = new StringBuilder(), facts = new StringBuilder();
         int lastModel = -1;
         for (int i = 0; i < turns.size(); i++) if ("model".equals(turns.get(i).role()) && turns.get(i).calls().isEmpty() && turns.get(i).text() != null && !turns.get(i).text().isBlank()) lastModel = i;
@@ -58,6 +61,7 @@ final class ReplyReview {
         return "RECENT CHAT:\n" + clip(tail(chat.toString(), 2500), 2500)
                 + "\nCUSTOMER'S NEWEST MESSAGE(S):\n" + clip(newest.toString(), 1200)
                 + "\nFACTS (tool results for this reply" + (facts.length() == 0 ? "; none: the salesperson used no tool" : "") + "):\n" + clip(facts.toString(), 6000)
+                + (shop == null || shop.isBlank() ? "" : "\nSHOP DATA (also facts):\n" + clip(shop, 5000))
                 + "\nADDRESSING:" + (address == null ? " not known, use «حضرتك»" : address)
                 + "\nDRAFT:\n" + draft;
     }

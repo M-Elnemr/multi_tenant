@@ -48,4 +48,12 @@ class ReplyReviewTest {
         assertThat(ChatService.addressing(system)).isEqualTo("\n- Their name: منى.\n- The customer is a WOMAN.");
         assertThat(ChatService.addressing("no such section")).isNull();
     }
+
+    @Test
+    void theShopDataReachesTheReviewerAsFacts() {
+        String system = "RULES\n\nSHOP CATALOG (everything):\n- Pants: 3 products\nExamples: Jeans Slim [jeans-slim] (800)\n\nPLATFORM LESSONS";
+        assertThat(ChatService.section(system, "SHOP CATALOG")).contains("Jeans Slim").doesNotContain("PLATFORM LESSONS");
+        assertThat(ChatService.section(system, "SHOP FACTS:")).isEmpty();
+        assertThat(ReplyReview.request(List.of(Turn.user("عايز جينز")), null, ChatService.section(system, "SHOP CATALOG"), "عندنا Jeans Slim بـ800")).contains("SHOP DATA (also facts):").contains("Jeans Slim [jeans-slim] (800)");
+    }
 }
