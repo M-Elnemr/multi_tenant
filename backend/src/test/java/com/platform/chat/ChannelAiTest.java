@@ -41,6 +41,26 @@ class ChannelAiTest {
     }
 
     @Test
+    void qwenIsPickedByItsCommandOrTheRouteAndShowsItsErrorsWhenPicked() {
+        Scripted def = new Scripted("glm", true), claude = new Scripted("anthropic", true), glm = new Scripted("glm", true), qwen = new Scripted("qwen", true);
+        for (String c : List.of("qwen", "Qwen", "use qwen", "qwen flash", "Qwen3.7-Flash", "qwen 3.7 flash", "alibaba", "Alibaba", "use alibaba", "switch to alibaba", "alibaba qwen")) assertThat(ChannelAi.command(c)).as(c).isEqualTo("qwen");
+        // picked in a chat: no fallback, whatever is wrong with it is shown (also when it has no key)
+        var picked = new ChannelAi(def, claude, glm, qwen, "default", "default").forChannel("WHATSAPP", "qwen");
+        assertThat(picked.code()).isEqualTo("qwen");
+        assertThat(picked.showsErrors()).isTrue();
+        assertThat(new ChannelAi(def, claude, glm, new Scripted("qwen", false), "default", "default").forChannel("WHATSAPP", "qwen").showsErrors()).isTrue();
+        // by the route setting: Qwen answers, and the default model is the fallback; without a key the default answers
+        var routed = new ChannelAi(def, claude, glm, qwen, "qwen", "default").forChannel("WHATSAPP");
+        assertThat(routed.code()).isEqualTo("qwen");
+        assertThat(routed.showsErrors()).isFalse();
+        assertThat(new ChannelAi(def, claude, glm, new Scripted("qwen", false), "qwen", "default").forChannel("WHATSAPP").code()).isEqualTo("glm");
+        // thinking is switched off for Alibaba's compatible mode unless the setting says otherwise
+        assertThat(ChannelAi.qwenExtra("off")).isEqualTo("{\"enable_thinking\":false}");
+        assertThat(ChannelAi.qwenExtra("on")).isEqualTo("{\"enable_thinking\":true}");
+        assertThat(ChannelAi.qwenExtra("unset")).isEmpty();
+    }
+
+    @Test
     void glmIsPickedByItsCommandAndShowsItsErrorsToo() {
         Scripted def = new Scripted("glm", true), claude = new Scripted("anthropic", true), glm = new Scripted("glm", true);
         for (String c : List.of("glm", "GLM", "use glm", "GLM-5.3-Flash", "glm 5.3")) assertThat(ChannelAi.command(c)).as(c).isEqualTo("glm");

@@ -11,7 +11,7 @@ type Shop = { id: string; name: string; slug: string };
 type Msg = { role: "user" | "assistant"; content: string };
 type Draft = { instruction: string; exampleQuestion: string; exampleAnswer: string };
 
-const MODELS = [["default", "GLM 5.3 Flash (default)"], ["anthropic", "Claude Haiku 5.5"]] as const;
+const MODELS = [["default", "GLM 5.3 Flash (default)"], ["qwen", "Alibaba Qwen 3.7 Flash"], ["anthropic", "Claude Haiku 5.5"]] as const;
 
 /** The platform admin plays a customer of any shop, on any model, and turns a bad reply into a lesson (for every shop or for that shop only). */
 export function TrainRoom() {

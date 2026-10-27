@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Any service that speaks the OpenAI Chat Completions protocol: here GLM through Hive. Function calling needs the reasoning setting chosen per model (GLM: "low"), so it is a constructor argument.
+ * Any service that speaks the OpenAI Chat Completions protocol: here GLM through Hive and Qwen through Alibaba Cloud. Function calling needs the reasoning setting chosen per model (GLM: "low"), so it is a constructor argument.
  * The key travels in a header, never in a URL.
  */
 public class OpenAiProvider implements AiProvider {
@@ -54,14 +54,14 @@ public class OpenAiProvider implements AiProvider {
         String body;
         try { body = JSON.writeValueAsString(requestBody(system, turns, tools)); } catch (Exception e) { throw new AiUnavailableException("The AI assistant could not be reached", e); }
         AiUnavailableException last = null;
-        for (int attempt = 0; attempt < 2; attempt++) {   // one retry for a busy or failing service
+        for (int attempt = 0; attempt < 3; attempt++) {   // two retries, with a growing pause, for a busy (429) or failing service
             try {
                 HttpResponse<String> res = http.send(HttpRequest.newBuilder(URI.create(baseUrl + "/chat/completions")).timeout(Duration.ofSeconds(40))
                         .header("Authorization", "Bearer " + key).header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body)).build(), HttpResponse.BodyHandlers.ofString());
                 if (res.statusCode() / 100 == 2) return parse(JSON.readTree(res.body()));
                 last = new AiUnavailableException("The AI assistant is busy, try again (HTTP " + res.statusCode() + ")");
                 if (res.statusCode() != 429 && res.statusCode() / 100 != 5) break;
-                Thread.sleep(1000);
+                Thread.sleep(attempt == 0 ? 1000 : 2500);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new AiUnavailableException("The AI assistant was interrupted", e);

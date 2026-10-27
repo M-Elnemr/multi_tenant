@@ -26,6 +26,10 @@ services:
       GLM_MODEL: ${GLM_MODEL:-zai-org/glm-5.3-flash}
       GLM_BASE_URL: ${GLM_BASE_URL:-https://api-cdn.thehive.ai/api/v3}
       GLM_REASONING_EFFORT: ${GLM_REASONING_EFFORT:-low}
+      QWEN_API_KEY: ${QWEN_API_KEY:-}
+      QWEN_MODEL: ${QWEN_MODEL:-qwen3.7-flash}
+      QWEN_BASE_URL: ${QWEN_BASE_URL:-https://dashscope-intl.aliyuncs.com/compatible-mode/v1}
+      QWEN_THINKING: ${QWEN_THINKING:-off}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-5-5}
       ANTHROPIC_EFFORT: ${ANTHROPIC_EFFORT:-low}
       AI_PRICE_ANTHROPIC_INPUT: ${AI_PRICE_ANTHROPIC_INPUT:-0.10}

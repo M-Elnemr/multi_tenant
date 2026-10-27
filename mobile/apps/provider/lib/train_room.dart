@@ -3,7 +3,7 @@ import 'package:platform_core/platform_core.dart';
 
 import 'common.dart';
 
-// Training room (platform admin): chat as a customer of any shop with its assistant, on GLM or Claude, and turn a reply into a lesson for every shop or for that shop only.
+// Training room (platform admin): chat as a customer of any shop with its assistant, on GLM, Alibaba Qwen or Claude, and turn a reply into a lesson for every shop or for that shop only.
 
 List<Map<String, dynamic>> _maps(Object? v) => ((v as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
 
@@ -150,7 +150,7 @@ class _TrainRoomScreenState extends State<TrainRoomScreen> {
             Expanded(
               child: SegmentedButton<String>(
                 showSelectedIcon: false,
-                segments: const [ButtonSegment(value: 'default', label: Text('GLM')), ButtonSegment(value: 'anthropic', label: Text('Claude'))],
+                segments: const [ButtonSegment(value: 'default', label: Text('GLM')), ButtonSegment(value: 'qwen', label: Text('Alibaba')), ButtonSegment(value: 'anthropic', label: Text('Claude'))],
                 selected: {_model},
                 onSelectionChanged: (v) => setState(() => _model = v.first),
               ),

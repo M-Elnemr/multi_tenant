@@ -39,17 +39,19 @@ public class AiUsageService {
     /** USD per million tokens for one model: normal input, output, cached input, cache write. */
     public record Price(double in, double out, double cached, double write) {}
 
-    private final Price anthropic, glm;
+    private final Price anthropic, glm, qwen;
     /** The models the platform used before it kept only GLM and Claude: their old rows keep their real cost (not shown as a choice any more). */
     private static final Price GEMINI = new Price(0.25, 1.50, 0.025, 0.25), GEMINI25 = new Price(0.10, 0.40, 0.01, 0.10), DEEPSEEK = new Price(0.10, 0.35, 0.003, 0.10);
     private final String sums;
 
     public AiUsageService(JdbcClient jdbc, @Value("${app.ai.usage-retention-days:90}") int retentionDays,
                           @Value("${app.ai.price.anthropic.input:0.10}") double aIn, @Value("${app.ai.price.anthropic.output:0.50}") double aOut, @Value("${app.ai.price.anthropic.cached:0.01}") double aCached, @Value("${app.ai.price.anthropic.cache-write:0.20}") double aWrite,
-                          @Value("${app.ai.price.glm.input:0.05}") double zIn, @Value("${app.ai.price.glm.output:0.17}") double zOut, @Value("${app.ai.price.glm.cached:0.01}") double zCached) {
+                          @Value("${app.ai.price.glm.input:0.05}") double zIn, @Value("${app.ai.price.glm.output:0.17}") double zOut, @Value("${app.ai.price.glm.cached:0.01}") double zCached,
+                          @Value("${app.ai.price.qwen.input:0.03}") double qIn, @Value("${app.ai.price.qwen.output:0.13}") double qOut, @Value("${app.ai.price.qwen.cached:0.006}") double qCached) {
         this.jdbc = jdbc; this.retentionDays = retentionDays;
         this.anthropic = new Price(aIn, aOut, aCached, aWrite);
         this.glm = new Price(zIn, zOut, zCached, zIn);
+        this.qwen = new Price(qIn, qOut, qCached, qIn);
         this.sums = "count(*) FILTER (WHERE NOT instant) AS requests, count(*) FILTER (WHERE instant) AS instant, coalesce(sum(model_calls),0) AS model_calls, "
                 + "coalesce(sum(input_tokens),0) AS input, coalesce(sum(output_tokens),0) AS output, coalesce(sum(cached_tokens),0) AS cached, coalesce(sum(cache_write_tokens),0) AS cache_write, "
                 + "count(*) FILTER (WHERE fallback) AS fallbacks, coalesce(sum(" + cost("input_tokens", "output_tokens", "cached_tokens", "cache_write_tokens", "model") + "), 0) AS cost_usd";
@@ -60,7 +62,7 @@ public class AiUsageService {
     /** SQL for the cost in USD of one row (or one model round): each model is priced with its own prices, rows with no model with the default provider's. */
     private String cost(String in, String out, String cached, String write, String model) {
         String m = "coalesce(" + model + ", '" + DEFAULT_MODEL + "')";
-        java.util.function.Function<java.util.function.ToDoubleFunction<Price>, String> price = f -> "(CASE " + m + " WHEN 'anthropic' THEN " + f.applyAsDouble(anthropic) + " WHEN 'gemini25' THEN " + f.applyAsDouble(GEMINI25) + " WHEN 'deepseek' THEN " + f.applyAsDouble(DEEPSEEK) + " WHEN 'gemini' THEN " + f.applyAsDouble(GEMINI) + " ELSE " + f.applyAsDouble(glm) + " END)";
+        java.util.function.Function<java.util.function.ToDoubleFunction<Price>, String> price = f -> "(CASE " + m + " WHEN 'anthropic' THEN " + f.applyAsDouble(anthropic) + " WHEN 'qwen' THEN " + f.applyAsDouble(qwen) + " WHEN 'gemini25' THEN " + f.applyAsDouble(GEMINI25) + " WHEN 'deepseek' THEN " + f.applyAsDouble(DEEPSEEK) + " WHEN 'gemini' THEN " + f.applyAsDouble(GEMINI) + " ELSE " + f.applyAsDouble(glm) + " END)";
         return "((greatest(" + in + " - " + cached + " - " + write + ", 0) * " + price.apply(Price::in) + " + " + cached + " * " + price.apply(Price::cached) + " + " + write + " * " + price.apply(Price::write)
                 + " + " + out + " * " + price.apply(Price::out) + ") / 1000000.0)";
     }
@@ -124,6 +126,7 @@ public class AiUsageService {
     private Map<String, Object> prices() {
         Map<String, Object> models = new LinkedHashMap<>();
         models.put("glm", Map.of("input", glm.in(), "output", glm.out(), "cached", glm.cached(), "cacheWrite", glm.write()));
+        models.put("qwen", Map.of("input", qwen.in(), "output", qwen.out(), "cached", qwen.cached(), "cacheWrite", qwen.write()));
         models.put("anthropic", Map.of("input", anthropic.in(), "output", anthropic.out(), "cached", anthropic.cached(), "cacheWrite", anthropic.write()));
         return Map.of("provider", DEFAULT_MODEL, "models", models);
     }

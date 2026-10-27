@@ -496,7 +496,7 @@ class AiUsageScreen extends StatefulWidget {
 
 class _AiUsageScreenState extends State<AiUsageScreen> {
   DateTime _day = DateTime.now();
-  String _model = 'all';   // 'all' | 'glm' | 'anthropic': every number below counts only that model
+  String _model = 'all';   // 'all' | 'glm' | 'qwen' | 'anthropic': every number below counts only that model
 
   bool get _today => _day.year == DateTime.now().year && _day.month == DateTime.now().month && _day.day == DateTime.now().day;
 
@@ -521,7 +521,7 @@ class _AiUsageScreenState extends State<AiUsageScreen> {
           width: double.infinity,
           child: SegmentedButton<String>(
             showSelectedIcon: false,
-            segments: [ButtonSegment(value: 'all', label: Text(ar ? 'الكل' : 'All')), const ButtonSegment(value: 'glm', label: Text('GLM')), const ButtonSegment(value: 'anthropic', label: Text('Claude'))],
+            segments: [ButtonSegment(value: 'all', label: Text(ar ? 'الكل' : 'All')), const ButtonSegment(value: 'glm', label: Text('GLM')), const ButtonSegment(value: 'qwen', label: Text('Qwen')), const ButtonSegment(value: 'anthropic', label: Text('Claude'))],
             selected: {_model},
             onSelectionChanged: (v) => setState(() => _model = v.first),
           ),
@@ -543,7 +543,7 @@ class _AiUsageScreenState extends State<AiUsageScreen> {
                 const SizedBox(height: 8),
                 Text(ar ? 'كل موديل على حدة' : 'Each model', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
                 const SizedBox(height: 6),
-                for (final key in const ['glm', 'anthropic'])
+                for (final key in const ['glm', 'qwen', 'anthropic'])
                   () {
                     final m = models.cast<Map<String, dynamic>?>().firstWhere((x) => x?['model'] == key, orElse: () => null);
                     final tokens = m == null ? 0 : ((m['input'] as num?) ?? 0) + ((m['output'] as num?) ?? 0);
@@ -559,7 +559,7 @@ class _AiUsageScreenState extends State<AiUsageScreen> {
                           borderRadius: BorderRadius.circular(18),
                         ),
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text(key == 'glm' ? 'GLM' : 'Claude', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+                          Text(key == 'glm' ? 'GLM' : key == 'qwen' ? 'Qwen' : 'Claude', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
                           const SizedBox(height: 4),
                           Text('${_n(tokens)} ${ar ? 'توكن' : 'tokens'}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 22)),
                           if (m == null) Text(ar ? 'مفيش استهلاك في اليوم ده' : 'No usage on this day', style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 12.5))

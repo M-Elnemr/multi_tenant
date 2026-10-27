@@ -113,6 +113,6 @@ class OpenAiProviderTest {
         bodies.clear();
         status = 503;
         assertThatThrownBy(() -> provider("sk-test").next("s", List.of(Turn.user("x")), List.of())).isInstanceOf(AiUnavailableException.class);
-        assertThat(bodies).hasSize(2);   // a busy service is tried once more
+        assertThat(bodies).hasSize(3);   // a busy service is tried twice more, with a pause
     }
 }
