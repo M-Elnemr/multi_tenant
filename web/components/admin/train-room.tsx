@@ -10,6 +10,9 @@ import { Alert, Button, ErrorText, Field, Input, Select, Textarea } from "@/comp
 type Shop = { id: string; name: string; slug: string };
 type Msg = { role: "user" | "assistant"; content: string };
 type Draft = { instruction: string; exampleQuestion: string; exampleAnswer: string };
+type Check = { expect: string; pass: boolean; why: string };
+type EvalResult = { id: number; category: string; transcript: { customer: string; seller: string }[]; checks: Check[]; passed: number; of: number; note: string };
+type EvalRun = { status: "RUNNING" | "DONE" | "FAILED"; done: number; total: number; error?: string; results: EvalResult[]; summary?: { overallPct: number; byCategory: Record<string, number> } };
 
 const MODELS = [["default", "GLM 5.3 Flash (default)"], ["qwen", "Alibaba Qwen 3.7 Flash"], ["anthropic", "Claude Haiku 5.5"]] as const;
 
@@ -136,11 +139,81 @@ export function TrainRoom() {
             <ErrorText error={write.error ?? save.error ?? retry.error} />
           </section>
         )}
+        {shopId && <EvalPanel shopId={shopId} model={model} />}
         <div>
           <h3 className="mb-2 font-semibold">{scope === "shop" && shopId ? t("train.shopLessons") : t("train.allLessons")}</h3>
           <AiLessons key={`${scope}-${shopId}-${lessonsKey}`} base={scope === "shop" && shopId ? `platform/chat/train/${shopId}/lessons` : "platform/chat/lessons"} title={t("admin.aiTitle")} canWrite={false} prefill={null} />
         </div>
       </div>
     </div>
+  );
+}
+
+/** Scores the assistant on the golden test conversations for this shop and model; a judge model grades each one. */
+function EvalPanel({ shopId, model }: { shopId: string; model: string }) {
+  const { t } = useI18n();
+  const [run, setRun] = useState<EvalRun | null>(null);
+  const [runId, setRunId] = useState<string | null>(null);
+  const start = useAction(async () => {
+    setRun(null);
+    const r = await api<{ id: string }>(`platform/chat/train/${shopId}/eval`, { body: { model } });
+    setRunId(r.id);
+  });
+  useEffect(() => {
+    if (!runId) return;
+    let stop = false;
+    const tick = async () => {
+      try {
+        const r = await api<EvalRun>(`platform/chat/train/eval/${runId}`);
+        if (stop) return;
+        setRun(r);
+        if (r.status === "RUNNING") setTimeout(tick, 4000);
+      } catch { if (!stop) setTimeout(tick, 8000); }
+    };
+    void tick();
+    return () => { stop = true; };
+  }, [runId]);
+  const running = run?.status === "RUNNING" || (start.loading);
+  const failed = (run?.results ?? []).filter((r) => r.checks.some((c) => !c.pass) || r.passed < r.of);
+
+  return (
+    <section className="space-y-3 rounded-xl border bg-white p-4 text-sm">
+      <h3 className="font-semibold">{t("train.evalTitle")}</h3>
+      <p className="text-slate-600">{t("train.evalHint")}</p>
+      <Button type="button" variant="secondary" loading={running} disabled={running} onClick={() => void start.run()}>{t("train.evalRun")}</Button>
+      {run?.status === "RUNNING" && <p className="text-slate-500">{t("train.evalRunning", { done: run.done, total: run.total })}</p>}
+      {run?.status === "FAILED" && <Alert tone="red">{run.error}</Alert>}
+      {run?.summary && (
+        <div className="space-y-2">
+          <p className="font-semibold">{t("train.evalOverall", { pct: run.summary.overallPct })}</p>
+          <div className="flex flex-wrap gap-1.5">
+            {Object.entries(run.summary.byCategory).map(([k, v]) => (
+              <span key={k} className={`rounded-full px-2 py-0.5 text-xs ${v >= 80 ? "bg-emerald-50 text-emerald-700" : v >= 50 ? "bg-amber-50 text-amber-700" : "bg-rose-50 text-rose-700"}`}>{k} {v}%</span>
+            ))}
+          </div>
+        </div>
+      )}
+      {run?.summary && failed.length > 0 && (
+        <details className="rounded-lg border p-2">
+          <summary className="cursor-pointer font-semibold">{t("train.evalFailed")} ({failed.length})</summary>
+          <div className="mt-2 space-y-3">
+            {failed.map((r) => (
+              <div key={r.id} className="space-y-1 border-t pt-2">
+                <p className="text-xs font-semibold text-slate-500">#{r.id} · {r.category} · {r.passed}/{r.of}</p>
+                {r.transcript.map((x, i) => (
+                  <div key={i} className="space-y-0.5">
+                    <p className="whitespace-pre-wrap">👤 {x.customer}</p>
+                    <p className="whitespace-pre-wrap text-slate-700">🤖 {x.seller}</p>
+                  </div>
+                ))}
+                {r.checks.filter((c) => !c.pass).map((c, i) => <p key={i} className="text-xs text-rose-700">✗ {c.expect} — {c.why}</p>)}
+                {r.note && <p className="text-xs text-slate-500">{r.note}</p>}
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+      <ErrorText error={start.error} />
+    </section>
   );
 }

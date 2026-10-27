@@ -53,7 +53,7 @@ public class MetaChannelService {
     private final InboundBurst burst;
 
     public MetaChannelService(JdbcClient jdbc, MetaGraph graph, TokenCrypto crypto, ChatService chat, LoginThrottle throttle, AuditService audit, WhatsAppConfirmService waConfirm, WaReportService waReport, ProductShare share, com.platform.commerce.GenderService genders,
-                              @Value("${app.meta.app-secret:}") String appSecret, @Value("${app.meta.verify-token:}") String verifyToken, @Value("${app.meta.async:true}") boolean async, @Value("${app.chat.burst-ms:3000}") long burstMs) {
+                              @Value("${app.meta.app-secret:}") String appSecret, @Value("${app.meta.verify-token:}") String verifyToken, @Value("${app.meta.async:true}") boolean async, @Value("${app.chat.burst-ms:5000}") long burstMs) {
         this.jdbc = jdbc;
         this.graph = graph;
         this.crypto = crypto;
@@ -67,7 +67,7 @@ public class MetaChannelService {
         this.appSecret = appSecret == null || appSecret.isBlank() ? null : appSecret.trim();
         this.verifyToken = verifyToken == null || verifyToken.isBlank() ? null : verifyToken.trim();
         this.pool = async ? Executors.newFixedThreadPool(4) : null;
-        this.burst = pool == null ? new InboundBurst(holder, Runnable::run, 0, 0) : new InboundBurst(holder, pool, burstMs, 10_000);
+        this.burst = pool == null ? new InboundBurst(holder, Runnable::run, 0, 0) : new InboundBurst(holder, pool, burstMs, 15_000);
     }
 
     public boolean configured() { return appSecret != null && verifyToken != null; }
@@ -166,8 +166,11 @@ public class MetaChannelService {
                         }
                         continue;
                     }
-                    for (JsonNode m : v.path("messages"))
-                        inbound("WHATSAPP", pnid, m.path("from").asText(""), m.path("id").asText(""), whatsappText(m));
+                    for (JsonNode m : v.path("messages")) {
+                        String from = m.path("from").asText(""), name = null;
+                        for (JsonNode c : v.path("contacts")) if (from.equals(c.path("wa_id").asText())) name = c.path("profile").path("name").asText(null);   // the customer's WhatsApp profile name
+                        inbound("WHATSAPP", pnid, from, m.path("id").asText(""), whatsappText(m), name);
+                    }
                 }
             } else if ("page".equals(object) || "instagram".equals(object)) {
                 String platform = "page".equals(object) ? "FACEBOOK" : "INSTAGRAM";
@@ -176,7 +179,7 @@ public class MetaChannelService {
                     JsonNode msg = ev.path("message");
                     String sender = ev.path("sender").path("id").asText("");
                     if (msg.isMissingNode() || msg.path("is_echo").asBoolean(false) || sender.equals(accountId)) continue;
-                    inbound(platform, accountId, sender, msg.path("mid").asText(""), msg.hasNonNull("text") ? msg.path("text").asText("") : null);
+                    inbound(platform, accountId, sender, msg.path("mid").asText(""), msg.hasNonNull("text") ? msg.path("text").asText("") : null, null);
                 }
             }
         }
@@ -241,17 +244,17 @@ public class MetaChannelService {
 
     private boolean running(UUID tenantId) { return jdbc.sql("SELECT " + com.platform.shared.TenantState.running("CAST(:t AS uuid)")).param("t", tenantId).query(Boolean.class).single(); }
 
-    private void inbound(String platform, String accountId, String sender, String mid, String text) {
+    private void inbound(String platform, String accountId, String sender, String mid, String text, String name) {
         if (accountId.isEmpty() || sender.isEmpty() || mid.isEmpty()) return;
         var ch = jdbc.sql("SELECT tenant_id, token_enc, status FROM chat.channels WHERE platform = :p AND external_id = :e").param("p", platform).param("e", accountId).query().listOfRows().stream().findFirst();
         if (ch.isEmpty() || !"ACTIVE".equals(ch.get().get("status"))) return;
         if (jdbc.sql("INSERT INTO chat.meta_events (mid) VALUES (:m) ON CONFLICT DO NOTHING").param("m", mid).update() == 0) return;   // already handled
         // a customer's quick lines are joined and answered once (see InboundBurst); media and empty messages go straight on
-        if (burst.enabled() && text != null && !text.isBlank()) { var row = ch.get(); burst.add(platform + "|" + accountId + "|" + sender, text, joined -> respond(platform, accountId, sender, joined, row)); return; }
-        respond(platform, accountId, sender, text, ch.get());
+        if (burst.enabled() && text != null && !text.isBlank()) { var row = ch.get(); burst.add(platform + "|" + accountId + "|" + sender, text, joined -> respond(platform, accountId, sender, joined, row, name)); return; }
+        respond(platform, accountId, sender, text, ch.get(), name);
     }
 
-    private void respond(String platform, String accountId, String sender, String text, Map<String, Object> chRow) {
+    private void respond(String platform, String accountId, String sender, String text, Map<String, Object> chRow, String name) {
         UUID tenantId = (UUID) chRow.get("tenant_id");
         if (!running(tenantId)) return;   // a suspended, cancelled or archived shop does not answer customers
         String token = crypto.decrypt((String) chRow.get("token_enc"));
@@ -278,7 +281,7 @@ public class MetaChannelService {
                         try { send(platform, accountId, sender, token, arabic ? "لحظات معايا... 🌸" : "One moment, I am checking for you... 🌸"); } catch (RuntimeException ignored) { /* best effort */ }
                     }, 5, java.util.concurrent.TimeUnit.SECONDS);
                     try {
-                        var reply = chat.reply(tenantId, platform, sender, null, text.length() > 1000 ? text.substring(0, 1000) : text);
+                        var reply = chat.reply(tenantId, platform, sender, null, text.length() > 1000 ? text.substring(0, 1000) : text, name);
                         answer = reply.text();
                         cards = share.pick(tenantId, answer, reply.products());
                         if (reply.order() != null && reply.order().get("accountNotice") instanceof String n && !n.isBlank()) answer += "\n\n" + n;
@@ -293,7 +296,9 @@ public class MetaChannelService {
             }
         }
         try {
-            for (String part : chunks("WHATSAPP".equals(platform) ? genders.forPhone(tenantId, sender).apply(answer) : com.platform.shared.Gender.MALE.apply(answer), "INSTAGRAM".equals(platform) ? 900 : "WHATSAPP".equals(platform) ? 3500 : 1900)) send(platform, accountId, sender, token, part);
+            String gendered = "WHATSAPP".equals(platform) ? genders.forPhone(tenantId, sender).apply(answer) : com.platform.shared.Gender.MALE.apply(answer);
+            for (String message : ChatService.messages(gendered))   // the assistant may answer two separate topics in two messages
+                for (String part : chunks(message, "INSTAGRAM".equals(platform) ? 900 : "WHATSAPP".equals(platform) ? 3500 : 1900)) send(platform, accountId, sender, token, part);
         } catch (MetaGraph.MetaException e) {
             log.warn("Could not send the {} reply: {}", platform, e.getMessage());
         }

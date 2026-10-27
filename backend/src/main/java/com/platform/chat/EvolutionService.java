@@ -48,7 +48,7 @@ public class EvolutionService {
 
     public EvolutionService(JdbcClient jdbc, EvolutionApi api, @Lazy ChatService chat, @Lazy WhatsAppConfirmService waConfirm, LoginThrottle throttle, AuditService audit, com.platform.commerce.GenderService genders, ProductShare share,
                             @Value("${app.evolution.base-url:}") String baseUrl, @Value("${app.evolution.webhook-secret:}") String secret, @Value("${app.evolution.backend-url:http://backend:8080}") String backendUrl,
-                            @Value("${app.evolution.typing-delay-ms:1500}") int typingDelayMs, @Value("${app.evolution.async:true}") boolean async, @Value("${app.chat.burst-ms:3000}") long burstMs) {
+                            @Value("${app.evolution.typing-delay-ms:1500}") int typingDelayMs, @Value("${app.evolution.async:true}") boolean async, @Value("${app.chat.burst-ms:5000}") long burstMs) {
         this.jdbc = jdbc;
         this.api = api;
         this.chat = chat;
@@ -62,7 +62,7 @@ public class EvolutionService {
         this.backendUrl = backendUrl == null ? "" : backendUrl.trim().replaceAll("/+$", "");
         this.typingDelayMs = Math.max(0, typingDelayMs);
         this.pool = async ? Executors.newFixedThreadPool(2) : null;
-        this.burst = pool == null ? new InboundBurst(timers, Runnable::run, 0, 0) : new InboundBurst(timers, pool, burstMs, 10_000);
+        this.burst = pool == null ? new InboundBurst(timers, Runnable::run, 0, 0) : new InboundBurst(timers, pool, burstMs, 15_000);
     }
 
     /** True when this server runs an Evolution API; without one the switch in Settings is hidden. */
@@ -333,7 +333,7 @@ public class EvolutionService {
                 if (special.isPresent()) answer = special.get();
                 else if (!aiOn) return;
                 else {
-                    var reply = chat.reply(tenantId, "WHATSAPP", sender, null, text.length() > 1000 ? text.substring(0, 1000) : text);
+                    var reply = chat.reply(tenantId, "WHATSAPP", sender, null, text.length() > 1000 ? text.substring(0, 1000) : text, pushName);
                     answer = reply.text();
                     if (reply.order() != null && reply.order().get("accountNotice") instanceof String n && !n.isBlank()) answer += "\n\n" + n;   // confirmed on WhatsApp: the account message follows
                     cards = share.pick(tenantId, answer, reply.products());
@@ -346,7 +346,8 @@ public class EvolutionService {
         // the customer's gender from our records, else from the name WhatsApp shows for them
         com.platform.shared.Gender g = genders.forPhone(tenantId, sender);
         if (g == com.platform.shared.Gender.UNKNOWN) g = com.platform.commerce.GenderService.forName(pushName);
-        for (String part : MetaChannelService.chunks(g.apply(answer), 3000)) sendFree(tenantId, sender, part);
+        for (String message : ChatService.messages(g.apply(answer)))   // the assistant may answer two separate topics in two messages
+            for (String part : MetaChannelService.chunks(message, 3000)) sendFree(tenantId, sender, part);
         for (var card : cards) {   // the picture, price and link of each product the assistant suggested; a product without a picture goes as its link alone
             if (deliver(tenantId, sender, card.caption(), card.imageUrl()) == Delivery.FAILED && card.imageUrl() != null) deliver(tenantId, sender, card.caption(), null);
         }

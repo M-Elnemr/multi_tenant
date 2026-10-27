@@ -36,4 +36,16 @@ class ReplyGuardTest {
         var bad = ReplyGuard.violations("الملاية قطن طبيعي. السعر هيغلي قريب. تحبي أبيض ولا بيج؟", "");
         assertThat(ReplyGuard.strip("الملاية قطن طبيعي. السعر هيغلي قريب. تحبي أبيض ولا بيج؟", bad)).contains("قطن طبيعي").contains("أبيض ولا بيج").doesNotContain("هيغلي");
     }
+
+    @Test
+    void aDiscountTiedToOrderingNowAndInventedProductClaimsAreCaught() {
+        assertThat(kinds("ممكن أظبطلك سعر أحسن لو اختارتي الأوردر دلوقتي، تحبي أوريك الطقم؟", "")).contains("a discount tied to ordering now");
+        assertThat(kinds("لو طلبت النهارده هعملك خصم", "")).contains("a discount tied to ordering now");
+        assertThat(kinds("I can give you a better price if you order now.", "")).contains("a discount tied to ordering now");
+        assertThat(kinds("العرض ده النهارده بس", "")).contains("a limited-time offer");
+        assertThat(kinds("عندنا قطن مصري أصلي ١٠٠٪ بيقاوم الغسيل", "")).contains("an unbacked product claim");
+        // a discount as a kind gift, and a claim the product description makes, are fine
+        assertThat(kinds("عشان خاطرك هعملك خصم ٥٪، تحب مقاس إيه؟", "")).isEmpty();
+        assertThat(kinds("الملاية قطن مصري", "description: ملاية قطن مصري 200 فتلة")).isEmpty();
+    }
 }

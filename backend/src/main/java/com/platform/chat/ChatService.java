@@ -43,6 +43,24 @@ public class ChatService {
 
     public record Reply(UUID conversationId, String text, Map<String, Object> order, List<Map<String, Object>> products) {}
 
+    /** A line holding only this mark separates two messages: the assistant answers two unrelated topics in two short messages on WhatsApp, Messenger and Instagram. */
+    static final String SPLIT = "⸻";
+    private static final Pattern SPLIT_LINE = Pattern.compile("\\s*\\n?\\s*" + SPLIT + "+\\s*\\n?\\s*");
+
+    /** The messages to send for one reply: one, or two when the assistant split two separate topics (anything after a second mark stays in the second message). */
+    public static List<String> messages(String answer) {
+        if (answer == null) return List.of();
+        List<String> parts = new ArrayList<>();
+        for (String p : SPLIT_LINE.split(answer)) if (!p.isBlank()) parts.add(p.trim());
+        if (parts.size() > 2) parts = List.of(parts.get(0), String.join("\n\n", parts.subList(1, parts.size())));
+        return parts.isEmpty() ? List.of(answer.replace(SPLIT, "").trim()) : parts;
+    }
+
+    /** The reply as one message (the website chat, the owner's answer). */
+    static String oneMessage(String answer) { return answer == null ? null : String.join("\n\n", messages(answer)); }
+
+    private static boolean messaging(String channel) { return "WHATSAPP".equals(channel) || "FACEBOOK".equals(channel) || "INSTAGRAM".equals(channel); }
+
     private record Ctx(UUID tenantId, UUID conversationId, String channel, String externalId, UUID clientId, long userMsgId, List<Map<String, Object>> products, Map<String, Object>[] order, String[] summary) {}
 
     private final JdbcClient jdbc;
@@ -62,10 +80,13 @@ public class ChatService {
     private final AiUsageService usageLog;
     private final ChannelAi channelAi;
     private final boolean nameProbe;
+    private final boolean review;
 
     public ChatService(JdbcClient jdbc, AiProvider ai, CatalogService catalog, StoreSearchService search, CheckoutService checkout, StoreSettingsService settings,
                        StoreFulfillmentService fulfilment, ShopperService shopper, PaymentPolicy policy, AuditService audit, SellerTools seller, com.platform.commerce.GenderService genders, @org.springframework.context.annotation.Lazy AccountNotice accountNotice, AiUsageService usageLog, ChannelAi channelAi,
-                       @org.springframework.beans.factory.annotation.Value("${app.ai.name-probe:false}") boolean nameProbe) {
+                       @org.springframework.beans.factory.annotation.Value("${app.ai.name-probe:false}") boolean nameProbe,
+                       @org.springframework.beans.factory.annotation.Value("${app.ai.review.enabled:true}") boolean review) {
+        this.review = review;
         this.usageLog = usageLog;
         this.channelAi = channelAi;
         this.nameProbe = nameProbe;
@@ -231,11 +252,16 @@ public class ChatService {
     }
 
     /** One customer message in, one assistant reply out. Never holds a database transaction while the model is thinking. */
-    public Reply reply(UUID tenantId, String channel, String externalId, UUID clientId, String message) {
+    public Reply reply(UUID tenantId, String channel, String externalId, UUID clientId, String message) { return reply(tenantId, channel, externalId, clientId, message, null); }
+
+    /** Same, with the name the customer's chat app shows for them (WhatsApp profile name), kept on the conversation so the assistant can greet them by name. */
+    public Reply reply(UUID tenantId, String channel, String externalId, UUID clientId, String message, String displayName) {
         String text = message == null ? "" : message.trim();
         if (text.isEmpty()) throw BusinessException.badRequest("VALIDATION_ERROR", "Write a message");
         if (text.length() > 1000) throw BusinessException.badRequest("VALIDATION_ERROR", "The message is too long");
         UUID conv = conversation(tenantId, channel, externalId, clientId);
+        String shown = firstName(displayName);
+        if (shown != null) jdbc.sql("UPDATE chat.conversations SET display_name = :n WHERE id = :c AND display_name IS DISTINCT FROM :n").param("n", shown).param("c", conv).update();
         long userMsgId = jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'user', :x) RETURNING id").param("c", conv).param("x", text).query(Long.class).single();
 
         List<Turn> turns = new ArrayList<>();
@@ -300,6 +326,7 @@ public class ChatService {
         else if (orderBox[0] != null) answer = confirmedText(arabicChat, orderBox[0], Map.of());
         if (!"TEST".equals(channel)) { seller.count(tenantId); usageLog.record(tenantId, "CHAT", channel, conv, false, text, rounds, routed.code(), routed.fellBack()); }
         if (answer == null || answer.isBlank()) answer = "عذرًا، لم أفهم. هل تعيد صياغة طلبك؟ / Sorry, I did not get that. Could you rephrase?";
+        if (!messaging(channel)) answer = oneMessage(answer);
         jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x)").param("c", conv).param("x", answer).update();
         jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();
         return new Reply(conv, answer, orderBox[0], ctx.products());
@@ -339,6 +366,7 @@ public class ChatService {
         }
         if (!"TEST".equals(channel)) { seller.count(tenantId); usageLog.record(tenantId, "CHAT", channel, conv, false, "[owner answer] " + question, rounds, routed.code(), routed.fellBack()); }
         if (answer == null || answer.isBlank()) return null;
+        answer = oneMessage(answer);
         jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x)").param("c", conv).param("x", answer).update();
         jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();
         return new Reply(conv, answer, orderBox[0], ctx.products());
@@ -354,8 +382,40 @@ public class ChatService {
         for (Turn t : turns) { allowed.addText(t.text()); if ("user".equals(t.role())) allowed.addFact(t.text()); }
         String answer = modelLoop(ctx, routed, system, turns, tools, rounds, allowed);
         if (answer == null || answer.isBlank() || ctx.summary()[0] != null) return answer;   // a code-written summary replaces the model's words anyway
+        answer = reviewed(ctx, routed, system, turns, rounds, answer);
         answer = moneySafe(ctx, routed, system, turns, tools, rounds, allowed, arabic, answer);
         return ctx.summary()[0] != null ? answer : claimsSafe(ctx, routed, system, turns, tools, rounds, allowed, answer);
+    }
+
+    /**
+     * The second look before sending (see {@link ReplyReview}): the same model, as a strict reviewer, checks the draft against the customer's words and the tool facts and returns it or a corrected
+     * reply. Any failure sends the draft; the money and claims checks run after it either way.
+     */
+    private String reviewed(Ctx ctx, ChannelAi.Routed routed, String system, List<Turn> turns, List<AiUsageService.Round> rounds, String draft) {
+        if (!review) return draft;
+        try {
+            Turn t = routed.next(ReplyReview.SYSTEM, List.of(Turn.user(ReplyReview.request(turns, addressing(system), draft))), List.of());
+            rounds.add(new AiUsageService.Round(List.of("review"), t.usage()));
+            var v = ReplyReview.parse(t.text());
+            if (v == null) { log.info("Review: {} gave no usable verdict (conversation {})", routed.code(), ctx.conversationId()); return draft; }
+            if (v.ok()) return draft;
+            if (v.reply().length() > draft.length() * 3 + 300) { log.info("Review: {} rewrote far too much, keeping the draft (conversation {})", routed.code(), ctx.conversationId()); return draft; }
+            log.info("Review: {} corrected the reply (conversation {}) {}: «{}» -> «{}»", routed.code(), ctx.conversationId(), v.problems(), draft, v.reply());
+            return v.reply();
+        } catch (AiProvider.AiUnavailableException e) {
+            log.warn("Review: failed, sending the draft: {}", e.getMessage());
+            return draft;
+        }
+    }
+
+    /** The ADDRESSING THE CUSTOMER lines of the prompt (name, gender, how to call them), for the reviewer. */
+    static String addressing(String system) {
+        int i = system == null ? -1 : system.indexOf("ADDRESSING THE CUSTOMER");
+        if (i < 0) return null;
+        String[] lines = system.substring(i).split("\n");
+        StringBuilder b = new StringBuilder();
+        for (int k = 1; k < lines.length && lines[k].startsWith("- "); k++) b.append('\n').append(lines[k]);
+        return b.length() == 0 ? null : b.toString();
     }
 
     /** The claims check: invented urgency, exporting, guarantees or promises of a call are sent back once to be rewritten, then cut. */
@@ -520,6 +580,7 @@ public class ChatService {
                 - Only sell what the tools return. Never invent products, prices, stock, discounts, delivery times or policies. If you do not know, say so. Prices from tools are in the shop currency (major units).
                 - Know the shop: SHOP CATALOG lists everything it sells. NEVER tell a customer the shop does not have a kind of item (clothes, dresses, shoes...) before checking the SHOP CATALOG and calling search_products; if the customer is vague, name the categories we have and ask one short question to narrow down. Only say "we don't have it" when both show nothing like it, and then suggest the closest thing we do have.
                 - Search first (search_products): each result lists its variants with ids, sizes, colors and stock, so you can usually answer and prepare the order without get_product. Suggest 1-3 relevant products and do not push items that are out of stock.
+                - WHO IS IT FOR (strict): each product says who it is "for" (men, women, boys, girls, babies, everyone) and its category. Before suggesting anything, know who the customer is buying for. If the words or the chat already tell («بنطلون رجالي»، «لابني ٥ سنين»، «ليا»، a woman asking for a dress), or the shop sells that kind of item for only one group, go ahead: pass audience to search_products (MEN, WOMEN, BOYS, GIRLS or BABY). If the shop has that item for several groups and nothing tells, ask ONE short question first («ليك ولا لحد تاني؟») — or, when the customer clearly speaks about themself, assume it is for them (their own gender, adult). Ask a child's age only when the item is for a child, and only if the size depends on it. NEVER show a kids' product to an adult buying for themself, and never ask about gender or age when it is not needed.
                 - Photos: call show_products with the slugs of the products you recommend, and whenever the customer asks for a photo or "صورة"; the shop then sends each product's picture, price and link right after your message (WhatsApp, Messenger, Instagram) or shows it as a card (website). Without that call a picture is only sent if your message repeats the product name exactly as search_products returned it. Never write links yourself.
                 - To close a sale you need: the items (variant and quantity), the customer's name, ONE mobile number, the full delivery address and the payment method. Ask for EVERYTHING that is still missing in ONE single message, as a short list, never spread over several messages. In Arabic, for example: «محتاجة منك في رسالة واحدة: الاسم، رقم تليفون عليه واتساب، العنوان بالتفصيل (المحافظة، المنطقة، الشارع، رقم العمارة والشقة)، وطريقة الدفع» (masculine «محتاج» for a man). The governorate is part of the address: never ask for it as a separate question; work out its code from the address and ask only if it is really unclear. Skip anything the customer already told you, and anything in SAVED DETAILS (a returning customer only confirms the saved address, see below).
                 - If SHOP FACTS says WhatsApp confirmation is available: ask for the number as «رقم تليفون عليه واتساب» inside that same single message (English only if the customer writes English); do NOT ask about WhatsApp confirmation in a later message. The number they give is both their phone and their WhatsApp number: pass it as phone, and as whatsappNumber with whatsappConsent=true to prepare_order. Only if they say that number has no WhatsApp, pass whatsappConsent=false (and ask once for another number). Never invent a number.
@@ -539,7 +600,7 @@ public class ChatService {
         p.append(AiProvider.CACHE_BREAK);
         String memo = seller.memory(tenantId, channel, externalId);
         if (!memo.isBlank()) p.append("\nWHAT YOU REMEMBER ABOUT THIS CUSTOMER (use it naturally, do not recite it):\n").append(memo).append("\n");
-        p.append(genderRule(tenantId, channel, externalId, clientId));
+        p.append(addressRule(tenantId, conv, channel, externalId, clientId));
         if ("WHATSAPP".equals(channel) && externalId != null) p.append("\nTHE CUSTOMER IS CHATTING WITH YOU ON WHATSAPP from the number +").append(externalId.replaceAll("\\D", "")).append(". NEVER ask for a phone number and NEVER ask about WhatsApp confirmation: this number is used for both and is filled in for you, and the customer's \"yes\" to the order summary is the confirmation. In your single message with the missing details ask only for what is still missing among the name, the full address (governorate included) and the payment method: when SAVED DETAILS exist, never ask for the name or the address, only confirm the saved address.\n");
         if (clientId != null) p.append(clientFacts(clientId));
         else p.append("The customer is a guest (not signed in): collect their name, phone and address from the chat; they will be saved as a customer of this shop.\n");
@@ -695,6 +756,7 @@ public class ChatService {
                 b.append("- ").append(c.get("nameAr")).append(" / ").append(c.get("nameEn"));
                 if (c.get("parentAr") != null) b.append(" (").append(c.get("parentAr")).append(")");
                 b.append(": ").append(c.get("n")).append(" products");
+                if (c.get("audiences") != null) b.append(", for ").append(audienceWords(String.valueOf(c.get("audiences"))));
                 if (c.get("minMinor") != null) b.append(", ").append(price(c.get("minMinor"))).append(c.get("maxMinor") != null && !c.get("maxMinor").equals(c.get("minMinor")) ? "-" + price(c.get("maxMinor")) : "");
                 b.append("\n");
             }
@@ -716,18 +778,57 @@ public class ChatService {
         return v == Math.rint(v) ? String.valueOf((long) v) : String.format(java.util.Locale.ROOT, "%.2f", v);
     }
 
-    /** Arabic is gendered: tell the model who it is talking to (from our records when we have them) and how to find out when we do not. */
-    private String genderRule(UUID tenantId, String channel, String externalId, UUID clientId) {
+    private static final java.util.Set<String> NOT_A_NAME = java.util.Set.of("ماما", "بابا", "مامي", "عمو", "طنط", "محل", "متجر", "شركة", "مكتب", "معرض", "الحمد", "سبحان", "لا", "يا", "mom", "mama", "dad", "baba",
+            "shop", "store", "official", "company", "office", "boutique", "me", "unknown", "user", "admin", "whatsapp", "business", "the", "mr", "mrs", "miss", "dr");
+
+    /** A first name from a chat-app profile name («🌸 Mona Ali 🌸» -> «Mona», «م/ أحمد» -> «أحمد»), or null when it does not look like a person's name. */
+    static String firstName(String raw) {
+        if (raw == null) return null;
+        String s = raw.replaceAll("[^\\p{IsArabic}\\p{IsLatin}\\s/.\\-]", " ").replaceAll("(?i)^\\s*(?:م|د|أ|ا|eng|dr|mr|mrs|ms)\\s*[/.]\\s*", " ").replaceAll("[/.\\-]", " ").trim();
+        if (s.isEmpty()) return null;
+        String first = s.split("\\s+")[0];
+        if (first.length() < 2 || first.length() > 20 || NOT_A_NAME.contains(first.toLowerCase(java.util.Locale.ROOT))) return null;
+        if (first.chars().anyMatch(ch -> ch >= 'A' && ch <= 'z') && first.chars().anyMatch(ch -> ch >= 0x0600 && ch <= 0x06FF)) return null;   // mixed scripts: a handle, not a name
+        return first.chars().allMatch(ch -> ch < 128) ? Character.toUpperCase(first.charAt(0)) + first.substring(1).toLowerCase(java.util.Locale.ROOT) : first;
+    }
+
+    /** The customer's name as the shop knows it: the signed-in account, else the shop's customer record for this WhatsApp number, else the chat-app profile name. */
+    private String customerName(UUID tenantId, UUID conv, String channel, String externalId, UUID clientId) {
+        String n = null;
+        if (clientId != null) n = jdbc.sql("SELECT name FROM commerce.client_accounts WHERE id = :u").param("u", clientId).query(String.class).optional().orElse(null);
+        if (firstName(n) == null && "WHATSAPP".equals(channel) && externalId != null && externalId.replaceAll("\\D", "").length() >= 8) {
+            String d = externalId.replaceAll("\\D", "");
+            n = jdbc.sql("SELECT name FROM commerce.customers WHERE tenant_id = :t AND right(regexp_replace(coalesce(phone, ''), '\\D', '', 'g'), 9) = :p ORDER BY created_at LIMIT 1")
+                    .param("t", tenantId).param("p", d.substring(Math.max(0, d.length() - 9))).query(String.class).optional().orElse(null);
+        }
+        if (firstName(n) == null) n = jdbc.sql("SELECT display_name FROM chat.conversations WHERE id = :c").param("c", conv).query(String.class).optional().orElse(null);
+        return firstName(n);
+    }
+
+    /**
+     * Arabic is gendered and Egyptians address each other with respect: tell the model who it is talking to (gender from our records, else from the name) and how to call them
+     * («أستاذ محمد», «أستاذة منى», «حضرتك»); when nothing tells, it stays neutral and never guesses.
+     */
+    private String addressRule(UUID tenantId, UUID conv, String channel, String externalId, UUID clientId) {
         com.platform.shared.Gender known = com.platform.shared.Gender.UNKNOWN;
         if (clientId != null) {
             String g = jdbc.sql("SELECT coalesce(c.gender, a.gender) FROM commerce.client_accounts a LEFT JOIN commerce.customers c ON c.user_id = a.id AND c.tenant_id = :t WHERE a.id = :u").param("t", tenantId).param("u", clientId).query(String.class).optional().orElse(null);
             known = com.platform.shared.Gender.of(g);
         }
         if (known == com.platform.shared.Gender.UNKNOWN && "WHATSAPP".equals(channel) && externalId != null) known = genders.forPhone(tenantId, externalId);
-        StringBuilder b = new StringBuilder("\nSPEAKING TO THE CUSTOMER (Arabic is gendered): ");
-        if (known == com.platform.shared.Gender.FEMALE) b.append("our records say the customer is a WOMAN: address her in the feminine (أهلاً بيكي، تحبي، اتفضلي، ليكي).\n");
-        else if (known == com.platform.shared.Gender.MALE) b.append("our records say the customer is a MAN: address him in the masculine (أهلاً بيك، تحب، اتفضل، ليك).\n");
-        else b.append("we do not know yet. Work it out from the customer's name (for example منى or سارة are women, محمد or أحمد are men) or from how they write, and then address them correctly. If the name does not tell, stay neutral until it is clear. Never ask for their gender directly.\n");
+        String name = customerName(tenantId, conv, channel, externalId, clientId);
+        boolean fromName = false;
+        if (known == com.platform.shared.Gender.UNKNOWN && name != null) { known = com.platform.commerce.GenderService.forName(name); fromName = known != com.platform.shared.Gender.UNKNOWN; }
+        StringBuilder b = new StringBuilder("\nADDRESSING THE CUSTOMER (respect always; Arabic is gendered):\n");
+        if (name != null) b.append("- Their name: ").append(name).append(".\n");
+        if (known == com.platform.shared.Gender.FEMALE) b.append("- The customer is a WOMAN").append(fromName ? " (from her name)" : " (our records)").append(": feminine forms (أهلاً بيكي، تحبي، اتفضلي، ليكي)")
+                .append(name != null ? "; call her «أستاذة " + name + "»" : "").append(".\n");
+        else if (known == com.platform.shared.Gender.MALE) b.append("- The customer is a MAN").append(fromName ? " (from his name)" : " (our records)").append(": masculine forms (أهلاً بيك، تحب، اتفضل، ليك)")
+                .append(name != null ? "; call him «أستاذ " + name + "»" : "").append(".\n");
+        else if (name != null) b.append("- Gender not known: if «").append(name).append("» is clearly a man's name (محمد، أحمد، كريم، عمر) use «أستاذ ").append(name).append("» and masculine forms; if clearly a woman's name use «أستاذة ")
+                .append(name).append("» and feminine forms; if you are not sure, do not use أستاذ/أستاذة: say «حضرتك» and keep the wording neutral. Never guess and never ask for their gender.\n");
+        else b.append("- Name and gender not known: say «حضرتك» / «يا فندم» with neutral wording. If they tell you their name (or it shows in the chat), use it as below. Never ask for their gender.\n");
+        b.append("- Use the name with أستاذ/أستاذة naturally: in the greeting, when you recommend, and when you thank or confirm; not in every message (about once every three messages). Otherwise «حضرتك» / «يا فندم». In English use the first name politely (\"Sure, Mona\").\n");
         return b.toString();
     }
 
@@ -755,7 +856,8 @@ public class ChatService {
         Map<String, Object> item = obj("type", "OBJECT", "properties", obj("variantId", str("Variant id from get_product"), "quantity", num("How many")), "required", List.of("variantId", "quantity"));
         List<ToolDef> base = List.of(
                 new ToolDef("search_products", "Search the shop's products by words (Arabic or English). Leave query empty to see popular products. Each hit lists its variants (id, options such as size and color, price, availability).",
-                        obj("type", "OBJECT", "properties", obj("query", str("What the customer wants"), "maxPrice", num("Maximum price in the shop currency, optional")))),
+                        obj("type", "OBJECT", "properties", obj("query", str("What the customer wants"), "maxPrice", num("Maximum price in the shop currency, optional"),
+                                "audience", str("Who the item is for, when known: MEN, WOMEN, BOYS, GIRLS or BABY (optional)")))),
                 new ToolDef("get_product", "Full details of one product: description, options and variants. Use it only when search_products did not give enough.",
                         obj("type", "OBJECT", "properties", obj("slug", str("The product slug from search_products"), "want", str("Optional: only variants matching these words, e.g. \"M black\"")), "required", List.of("slug"))),
                 new ToolDef("show_products", "Send the customer the picture, price and link of products (on WhatsApp, Messenger and Instagram they arrive right after your message; on the website they show as cards). Use it whenever you recommend a product or the customer asks to see a photo. Give the slugs (from SHOP CATALOG or search_products), or a short query when you do not know the slug. At most 3 products.",
@@ -821,7 +923,10 @@ public class ChatService {
     private Map<String, Object> searchProducts(Ctx ctx, Map<String, Object> a) {
         String q = a.get("query") == null || String.valueOf(a.get("query")).isBlank() ? null : String.valueOf(a.get("query")).trim();
         Long max = a.get("maxPrice") instanceof Number n ? Math.round(n.doubleValue() * 100) : null;
-        List<Map<String, Object>> rows = find(ctx.tenantId(), q, null, max);
+        String aud = a.get("audience") == null ? null : String.valueOf(a.get("audience")).trim().toUpperCase(java.util.Locale.ROOT);
+        if (aud != null && !AUDIENCES.containsKey(aud)) aud = null;
+        List<Map<String, Object>> rows = aud == null ? List.of() : find(ctx.tenantId(), q, null, max, aud);
+        if (rows.isEmpty()) rows = find(ctx.tenantId(), q, null, max);   // products without an audience set still count
         boolean exact = !rows.isEmpty() || q == null;
         if (rows.isEmpty() && q != null) {
             // the customer's words matched no product name: try each word, then a category whose name contains a word, then the best sellers
@@ -835,6 +940,7 @@ public class ChatService {
         List<Map<String, Object>> out = new ArrayList<>();
         for (var r : rows) {
             Map<String, Object> m = obj("name", r.get("name"), "slug", r.get("slug"), "brand", r.get("brand"), "price", major(r.get("minPriceMinor")), "inStock", r.get("inStock"));
+            describe(m, r.get("audience"), r.get("taxonomyId"), r.get("shortDescription"));
             if (r.get("compareAtMinor") != null) m.put("priceBeforeDiscount", major(r.get("compareAtMinor")));
             m.put("variants", compactVariants(ctx.tenantId(), String.valueOf(r.get("slug")), null, 8));
             out.add(m);
@@ -848,10 +954,27 @@ public class ChatService {
         return res;
     }
 
+    private List<Map<String, Object>> find(UUID tenantId, String q, String category, Long maxMinor) { return find(tenantId, q, category, maxMinor, null); }
+
     @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> find(UUID tenantId, String q, String category, Long maxMinor) {
-        var page = search.list(tenantId, Page.of(1, 3), new StoreSearchService.Filter(q, category, null, maxMinor, null, true, null, null, category == null && q == null ? "popular" : "newest"));
+    private List<Map<String, Object>> find(UUID tenantId, String q, String category, Long maxMinor, String audience) {
+        var page = search.list(tenantId, Page.of(1, 3), new StoreSearchService.Filter(q, category, null, maxMinor, null, true, null, null, category == null && q == null ? "popular" : "newest",
+                audience, null, null, null));
         return (List<Map<String, Object>>) page.get("data");
+    }
+
+    /** Who a product is for, in the model's words; the codes come from commerce.products.audience. */
+    static final Map<String, String> AUDIENCES = Map.of("MEN", "men", "WOMEN", "women", "BOYS", "boys (kids)", "GIRLS", "girls (kids)", "BABY", "babies", "ALL", "everyone");
+
+    static String audienceWords(String csv) {
+        return java.util.Arrays.stream(csv.split(",")).map(String::trim).filter(AUDIENCES::containsKey).map(AUDIENCES::get).collect(java.util.stream.Collectors.joining(", "));
+    }
+
+    /** Adds who the product is for, its category and its short description, so the model never offers a kids' item to an adult or describes a product from imagination. */
+    private void describe(Map<String, Object> m, Object audience, Object taxonomyId, Object shortDescription) {
+        if (audience != null && AUDIENCES.containsKey(String.valueOf(audience))) m.put("for", AUDIENCES.get(String.valueOf(audience)));
+        if (taxonomyId != null) jdbc.sql("SELECT name_ar || ' / ' || name_en FROM commerce.taxonomy WHERE id = :i").param("i", taxonomyId).query(String.class).optional().ifPresent(c -> m.put("category", c));
+        if (shortDescription != null && !String.valueOf(shortDescription).isBlank()) m.put("about", clip(String.valueOf(shortDescription), 200));
     }
 
     /** Variants of a product for the model: the ones matching {@code want} (e.g. "M black") first when given, available ones before sold-out ones, at most {@code max}. */
@@ -907,7 +1030,9 @@ public class ChatService {
         List<Map<String, Object>> options = new ArrayList<>();
         for (var o : (List<Map<String, Object>>) p.get("options")) options.add(obj("name", o.get("name"), "values", o.get("values")));
         String desc = p.get("description") == null ? "" : String.valueOf(p.get("description"));
-        return obj("name", p.get("name"), "brand", p.get("brand"), "description", desc.length() > 700 ? desc.substring(0, 700) : desc, "options", options, "variants", variants, "currency", p.get("currency"));
+        Map<String, Object> out = obj("name", p.get("name"), "brand", p.get("brand"), "description", desc.length() > 700 ? desc.substring(0, 700) : desc, "options", options, "variants", variants, "currency", p.get("currency"));
+        describe(out, p.get("audience"), p.get("taxonomyId"), null);
+        return out;
     }
 
     @SuppressWarnings("unchecked")

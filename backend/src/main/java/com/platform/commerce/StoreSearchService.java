@@ -152,6 +152,7 @@ public class StoreSearchService {
     public List<Map<String, Object>> categoryCounts(UUID tenantId, int limit) {
         return Rows.camel(jdbc.sql("""
                 SELECT c.name_ar, c.name_en, c.slug, par.name_ar AS parent_ar, par.name_en AS parent_en, count(*) AS n,
+                       string_agg(DISTINCT nullif(p.audience, ''), ',') AS audiences,
                        min((SELECT min(v.price_minor) FROM commerce.product_variants v WHERE v.product_id = p.id AND v.status = 'ACTIVE')) AS min_minor,
                        max((SELECT min(v.price_minor) FROM commerce.product_variants v WHERE v.product_id = p.id AND v.status = 'ACTIVE')) AS max_minor
                 FROM commerce.products p JOIN commerce.taxonomy c ON c.id = p.taxonomy_id LEFT JOIN commerce.taxonomy par ON par.id = c.parent_id

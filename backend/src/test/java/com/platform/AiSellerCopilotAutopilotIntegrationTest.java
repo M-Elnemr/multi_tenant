@@ -125,14 +125,14 @@ class AiSellerCopilotAutopilotIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void theEvaluationSetHasFortyThreeConversationsWithRubrics() throws Exception {
+    void theEvaluationSetHasFiftyFiveConversationsWithRubrics() throws Exception {
         JsonNode set = JSON.readTree(getClass().getResourceAsStream("/ai-eval.json"));
-        assertThat(set.path("conversations")).hasSize(43);
+        assertThat(set.path("conversations")).hasSize(55);
         for (JsonNode c : set.path("conversations")) {
             assertThat(c.path("customer").size()).as("customer turns of #" + c.path("id")).isGreaterThan(0);
             assertThat(c.path("expect").size()).as("rubric of #" + c.path("id")).isGreaterThan(0);
         }
-        assertThat(set.toString()).contains("injection").contains("out_of_stock").contains("order_status").contains("cod_fear");
+        assertThat(set.toString()).contains("injection").contains("out_of_stock").contains("order_status").contains("cod_fear").contains("who_is_it_for").contains("respect_name").contains("burst");
     }
 
     // ---- Phase 3: WhatsApp daily report ----------------------------------------------------------------------------------------

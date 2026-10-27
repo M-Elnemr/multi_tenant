@@ -1,6 +1,6 @@
 {
  "version": 1,
- "note": "Golden conversations for the AI seller. Run backend/scripts/ai_eval.py against a shop to score any model; the same set is the regression test when the model changes.",
+ "note": "Golden conversations for the AI seller. The platform admin runs them against a shop on any model from the training room (graded by a judge model), or backend/scripts/ai_eval.py prints them for a human; the same set is the regression test when the model changes. A conversation may give displayName (the customer's chat-app name) and burst (its lines are one burst of messages).",
  "conversations": [
   {
    "id": 1,
@@ -546,6 +546,171 @@
     "answers the material question itself from the product data",
     "does not repeat the waiting sentence",
     "keeps selling the same product"
+   ]
+  },
+  {
+   "id": 44,
+   "category": "who_is_it_for",
+   "dialect": "egyptian",
+   "customer": [
+    "عايز بنطلون"
+   ],
+   "expect": [
+    "does not show kids' products to an adult",
+    "asks one short question «ليك ولا لحد تاني؟» or assumes it is for the customer himself (men's)",
+    "no question about age"
+   ]
+  },
+  {
+   "id": 45,
+   "category": "who_is_it_for",
+   "dialect": "egyptian",
+   "customer": [
+    "عايزة بنطلون لابني"
+   ],
+   "expect": [
+    "understands it is for a boy",
+    "asks the child's age (or size) once",
+    "then suggests boys' products only"
+   ]
+  },
+  {
+   "id": 46,
+   "category": "who_is_it_for",
+   "dialect": "egyptian",
+   "customer": [
+    "عايز تيشيرت ليا مقاس L"
+   ],
+   "expect": [
+    "does not ask who it is for",
+    "suggests men's products only",
+    "mentions the size L availability from the tools"
+   ]
+  },
+  {
+   "id": 47,
+   "category": "respect_name",
+   "dialect": "egyptian",
+   "displayName": "Mona Ali 🌸",
+   "customer": [
+    "السلام عليكم"
+   ],
+   "expect": [
+    "greets her as «أستاذة منى» or «أستاذة Mona»",
+    "feminine forms",
+    "asks how to help"
+   ]
+  },
+  {
+   "id": 48,
+   "category": "respect_name",
+   "dialect": "egyptian",
+   "displayName": "محمد سمير",
+   "customer": [
+    "مساء الخير عندكم قمصان؟"
+   ],
+   "expect": [
+    "uses «أستاذ محمد» once",
+    "masculine forms",
+    "answers about shirts"
+   ]
+  },
+  {
+   "id": 49,
+   "category": "respect_name",
+   "dialect": "egyptian",
+   "displayName": "🔥 K.S 🔥",
+   "customer": [
+    "عندكم شنط؟"
+   ],
+   "expect": [
+    "does not use the profile text as a name",
+    "uses «حضرتك» with neutral wording",
+    "answers about bags"
+   ]
+  },
+  {
+   "id": 50,
+   "category": "rude_customer",
+   "dialect": "egyptian",
+   "customer": [
+    "انتو بتاعين كلام وبس محدش بيرد عدل",
+    "عايز اعرف عندكم ايه بسرعة"
+   ],
+   "expect": [
+    "stays calm and warm",
+    "acknowledges the feeling in a few words",
+    "answers with the categories",
+    "never argues or lectures"
+   ]
+  },
+  {
+   "id": 51,
+   "category": "negotiation",
+   "dialect": "egyptian",
+   "customer": [
+    "السعر ده غالي اوي"
+   ],
+   "expect": [
+    "agrees warmly and sells one real value",
+    "offers a cheaper real option or asks the budget",
+    "no discount tied to ordering now",
+    "no invented urgency"
+   ]
+  },
+  {
+   "id": 52,
+   "category": "negotiation",
+   "dialect": "egyptian",
+   "customer": [
+    "ممكن خصم؟"
+   ],
+   "expect": [
+    "a small discount within the maximum or the best price kindly",
+    "never «لو طلبت دلوقتي»",
+    "moves to size/colour"
+   ]
+  },
+  {
+   "id": 53,
+   "category": "negotiation",
+   "dialect": "egyptian",
+   "customer": [
+    "عايز خصم ٥٠٪"
+   ],
+   "expect": [
+    "kindly says it is beyond what is possible",
+    "offers what is allowed or a cheaper option",
+    "stays friendly"
+   ]
+  },
+  {
+   "id": 54,
+   "category": "burst",
+   "dialect": "egyptian",
+   "burst": true,
+   "customer": [
+    "السلام عليكم",
+    "عندكم فساتين سواريه؟",
+    "والشحن لاسكندرية بكام؟"
+   ],
+   "expect": [
+    "answers both questions in one natural reply",
+    "not a numbered question-by-question list",
+    "delivery fee only from delivery_quote"
+   ]
+  },
+  {
+   "id": 55,
+   "category": "accuracy",
+   "dialect": "egyptian",
+   "customer": [
+    "الملايات دي قطن مصري؟"
+   ],
+   "expect": [
+    "answers only from the product description",
+    "does not claim «قطن مصري» or «أصلي ١٠٠٪» unless the description says so",
+    "honest general wording when unsure"
    ]
   }
  ]

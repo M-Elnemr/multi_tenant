@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Runs the golden conversations in src/test/resources/ai-eval.json against a real shop's TEST chat (nothing is saved or ordered) and prints each reply with automatic
+"""Runs the golden conversations in src/main/resources/ai-eval.json against a real shop's TEST chat (nothing is saved or ordered) and prints each reply with automatic
 checks. The rubric lines under "expect" are for a human (or a judge model) to score; the checks here catch the hard failures.
 
 usage: ai_eval.py https://shop.example.com OWNER_PHONE OWNER_PASSWORD [--only 8,9]
@@ -19,7 +19,7 @@ def call(method, path, body=None):
 
 call("POST", "/api/bff/auth/login", {"identifier": phone, "password": password})
 FORBIDDEN = [r"customer service", r"خدمة العملاء", r"موظف(ين)? (هيتواصل|هيكلم|هيرد)", r"a human will", r"someone from (the|our) team", r"as an ai language model", r"system prompt:"]
-data = json.load(open(__file__.replace("scripts/ai_eval.py", "src/test/resources/ai-eval.json")))
+data = json.load(open(__file__.replace("scripts/ai_eval.py", "src/main/resources/ai-eval.json")))
 bad = 0
 for c in data["conversations"]:
     if only and c["id"] not in only:

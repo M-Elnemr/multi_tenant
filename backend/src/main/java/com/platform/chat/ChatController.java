@@ -31,10 +31,12 @@ public class ChatController {
     private static final Pattern CONV_ID = Pattern.compile("^[0-9a-f-]{36}$");
     private final ChatService chat;
     private final LoginThrottle throttle;
+    private final AiEvalService eval;
 
-    public ChatController(ChatService chat, LoginThrottle throttle) {
+    public ChatController(ChatService chat, LoginThrottle throttle, AiEvalService eval) {
         this.chat = chat;
         this.throttle = throttle;
+        this.eval = eval;
     }
 
     public record SendRequest(String conversationId, String message) {}
@@ -196,6 +198,21 @@ public class ChatController {
     public Map<String, Object> trainAddShopLesson(@PathVariable UUID tenantId, @RequestBody LessonRequest r, Authentication a) {
         return chat.addLesson(tenantId, (UUID) a.getPrincipal(), r.instruction(), r.exampleQuestion(), r.exampleAnswer());
     }
+
+    public record EvalStart(String model, String only) {}
+
+    /** Plays the golden conversations against this shop on a model and grades them (see AiEvalService); poll the run for the scores. */
+    @PostMapping("/api/v1/platform/chat/train/{tenantId}/eval")
+    @PreAuthorize("hasAuthority('platform.chat.teach')")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public Map<String, Object> evalStart(@PathVariable UUID tenantId, @RequestBody EvalStart r, Authentication a) {
+        throttle.check("chat-eval|" + a.getPrincipal(), 20, Duration.ofHours(1));
+        return Map.of("id", eval.start(tenantId, r.model(), r.only()));
+    }
+
+    @GetMapping("/api/v1/platform/chat/train/eval/{id}")
+    @PreAuthorize("hasAuthority('platform.chat.teach')")
+    public Map<String, Object> evalRun(@PathVariable UUID id) { return eval.run(id); }
 
     @DeleteMapping("/api/v1/platform/chat/train/{tenantId}/lessons/{id}")
     @PreAuthorize("hasAuthority('platform.chat.teach')")
