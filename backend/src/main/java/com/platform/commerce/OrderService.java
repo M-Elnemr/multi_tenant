@@ -59,6 +59,27 @@ public class OrderService {
         return get(tenantId, orderId);
     }
 
+    /** Whether the customer may still change this order in the chat: nothing has been prepared yet. */
+    public static boolean changeable(String status) { return "PENDING".equals(status) || "REQUESTED".equals(status); }
+
+    /**
+     * The customer changed a placed order in the chat (added, removed or swapped items): the new order is already placed, so the old one is closed as replaced. Its stock goes back, it is not counted as
+     * a cancellation against the customer's phone and the customer is not told "cancelled" (they asked for the change and got the new order number).
+     */
+    @Transactional
+    public void replaceByChat(UUID tenantId, UUID orderId, String newOrderNumber) {
+        var o = lock(tenantId, orderId);
+        if (!changeable((String) o.get("status")))
+            throw new BusinessException(org.springframework.http.HttpStatus.CONFLICT, "INVALID_STATUS_TRANSITION", "The shop has already started this order");
+        for (var it : jdbc.sql("SELECT variant_id, branch_id, quantity FROM commerce.order_items WHERE order_id = :o AND tenant_id = :t").param("o", orderId).param("t", tenantId).query().listOfRows())
+            inventory.release(tenantId, (UUID) it.get("branch_id"), (UUID) it.get("variant_id"), ((Number) it.get("quantity")).intValue(), orderId);
+        jdbc.sql("UPDATE commerce.order_payments SET status = 'FAILED', updated_at = now() WHERE order_id = :o AND kind = 'PAYMENT' AND status = 'PENDING'").param("o", orderId).update();
+        jdbc.sql("UPDATE commerce.orders SET status = 'CANCELLED', reservation_expires_at = NULL, updated_at = now() WHERE id = :o").param("o", orderId).update();
+        jdbc.sql("INSERT INTO commerce.order_status_history (order_id, tenant_id, from_status, new_status, changed_by, reason) VALUES (:o, :t, :f, 'CANCELLED', NULL, :r)")
+                .param("o", orderId).param("t", tenantId).param("f", o.get("status")).param("r", "Changed by the customer in the chat: replaced by order " + newOrderNumber).update();
+        audit.record(null, tenantId, "ORDER_REPLACED_IN_CHAT", "order", orderId, "{\"by\":\"" + newOrderNumber + "\"}");
+    }
+
     /** Core transition. Caller already holds the row lock. */
     void apply(UUID tenantId, Map<String, Object> o, String newStatus, UUID changedBy, String reason) {
         UUID orderId = (UUID) o.get("id");

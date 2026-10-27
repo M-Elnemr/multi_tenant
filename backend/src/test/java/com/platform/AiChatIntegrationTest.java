@@ -202,7 +202,7 @@ class AiChatIntegrationTest extends IntegrationTestBase {
         // ... and a later question about it is answered from the ORDER ON FILE block, which says what the order really cost
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("الشحن 50 جنيه"));
         send(t, conv, "الشحن كام في الأوردر؟");
-        assertThat(FakeAiProvider.lastSystem).contains("ORDER ON FILE").contains("TOTAL TO PAY 150 EGP").contains("delivery 50 EGP").contains("you cannot change it");
+        assertThat(FakeAiProvider.lastSystem).contains("ORDER ON FILE").contains("TOTAL TO PAY 150 EGP").contains("delivery 50 EGP").contains("CAN STILL BE CHANGED");
     }
 
     @Test
