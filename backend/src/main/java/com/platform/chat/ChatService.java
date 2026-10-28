@@ -276,6 +276,8 @@ public class ChatService {
         UUID conv = conversation(tenantId, channel, externalId, clientId);
         String shown = firstName(displayName);
         if (shown != null) jdbc.sql("UPDATE chat.conversations SET display_name = :n WHERE id = :c AND display_name IS DISTINCT FROM :n").param("n", shown).param("c", conv).update();
+        String named = statedName(text);
+        if (named != null) jdbc.sql("UPDATE chat.conversations SET display_name = :n WHERE id = :c").param("n", named).param("c", conv).update();
         String said = statedGender(text);
         if (said != null) jdbc.sql("UPDATE chat.conversations SET gender = :g WHERE id = :c").param("g", said).param("c", conv).update();
         long userMsgId = jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'user', :x) RETURNING id").param("c", conv).param("x", text).query(Long.class).single();
@@ -398,6 +400,7 @@ public class ChatService {
     private String converse(Ctx ctx, ChannelAi.Routed routed, String system, List<Turn> turns, List<ToolDef> tools, List<AiUsageService.Round> rounds, boolean arabic) {
         MoneyGuard.Allowed allowed = new MoneyGuard.Allowed(((Number) getSettings(ctx.tenantId()).get("maxDiscountPct")).intValue());
         allowed.addText(system);
+        allowed.addFact(section(system, "SHOP FACTS:") + section(system, "SHOP CATALOG"));   // product names like «طقم ملايات قطن مصري» are the shop's own words
         for (Turn t : turns) { allowed.addText(t.text()); if ("user".equals(t.role())) allowed.addFact(t.text()); }
         String answer = modelLoop(ctx, routed, system, turns, tools, rounds, allowed);
         if (answer == null || answer.isBlank() || ctx.summary()[0] != null) return answer;   // a code-written summary replaces the model's words anyway
@@ -454,7 +457,7 @@ public class ChatService {
         String retry = null;
         try {
             turns.add(Turn.model(answer));
-            turns.add(Turn.user(ReplyGuard.note(bad)));
+            turns.add(Turn.user(ReplyGuard.note(bad) + lastCustomerWords(turns)));
             retry = modelLoop(ctx, routed, system, turns, tools, rounds, allowed);
         } catch (AiProvider.AiUnavailableException e) {
             log.warn("Claims check: the rewrite failed: {}", e.getMessage());
@@ -467,6 +470,15 @@ public class ChatService {
         return arabicConversation(ctx.conversationId()) ? "أكيد يا فندم 🌸 قولي أكتر عن اللي بتدوري عليه وأنا أساعدك بكل حاجة." : "Of course 🌸 tell me a little more about what you are looking for and I will help with everything.";
     }
 
+    /** Reminds the model, after a system check, what the customer actually said, so the rewrite answers it instead of starting over. */
+    private static String lastCustomerWords(List<Turn> turns) {
+        for (int i = turns.size() - 1; i >= 0; i--) {
+            Turn t = turns.get(i);
+            if ("user".equals(t.role()) && t.text() != null && !t.text().startsWith("[SYSTEM CHECK")) return " The customer's last message, which your reply must answer: «" + clip(t.text(), 500) + "».";
+        }
+        return "";
+    }
+
     private String moneySafe(Ctx ctx, ChannelAi.Routed routed, String system, List<Turn> turns, List<ToolDef> tools, List<AiUsageService.Round> rounds, MoneyGuard.Allowed allowed, boolean arabic, String answer) {
         var bad = MoneyGuard.violations(answer, allowed);
         if (bad.isEmpty()) return answer;
@@ -476,7 +488,7 @@ public class ChatService {
             turns.add(Turn.model(answer));
             turns.add(Turn.user("[SYSTEM CHECK, not from the customer] Your draft states the amount(s) " + bad.stream().map(MoneyGuard.Amount::raw).toList() + " that no tool returned and that are not in the shop data or the chat. "
                     + "Never calculate, add, round or guess money. Use the right tool (search_products or get_product for prices, delivery_quote for delivery, prepare_order for an order total) and quote exactly what it returns, or leave the amount out. "
-                    + "If this is about an order that is already placed, answer only from ORDER ON FILE. Write your reply to the customer again now."));
+                    + "If this is about an order that is already placed, answer only from ORDER ON FILE. Write your reply to the customer again now." + lastCustomerWords(turns)));
             retry = modelLoop(ctx, routed, system, turns, tools, rounds, allowed);
         } catch (AiProvider.AiUnavailableException e) {
             log.warn("Money check: the rewrite failed: {}", e.getMessage());
@@ -778,6 +790,10 @@ public class ChatService {
         for (var z : fulfilment.zones(tenantId, true)) b.append("- Delivery zone \"").append(z.get("name")).append("\": governorates ").append(z.get("governorateCodes")).append(", fee ").append(major(((Number) z.get("feeMinor")).longValue()))
                 .append(", ETA ").append(z.get("etaMinDays")).append("-").append(z.get("etaMaxDays")).append(" days").append(z.get("codFeeMinor") instanceof Number c && c.longValue() > 0 ? ", cash-on-delivery fee " + major(c.longValue()) : "").append("\n");
         if (shopWhatsapp(tenantId) != null) b.append("- WhatsApp confirmation is available (free): ask the customer for the WhatsApp number as described in the rules.\n");
+        Integer days = jdbc.sql("SELECT return_window_days FROM commerce.store_profiles WHERE tenant_id = :t").param("t", tenantId).query(Integer.class).optional().orElse(null);
+        b.append(days != null && days > 0
+                ? "- Returns and exchanges: the customer may return or exchange within " + days + " days of delivery (the shop's rule; for conditions beyond this, ask the team with flag_unanswered).\n"
+                : "- Returns, exchanges and warranties: the shop has NOT set a policy. Never promise a return, an exchange or a warranty and never describe one; say you will confirm it with the team (flag_unanswered, once) and that they pay only on delivery (cash on delivery).\n");
         var served = new java.util.HashSet<String>();
         for (var z : fulfilment.zones(tenantId, true)) if (z.get("governorateCodes") instanceof Iterable<?> it) for (Object c : it) served.add(String.valueOf(c));
         b.append("- Governorate codes").append(served.isEmpty() ? "" : " (only these are delivered to)").append(": ");
@@ -802,7 +818,7 @@ public class ChatService {
             }
             var top = search.topProducts(tenantId, 30);
             if (!top.isEmpty()) {
-                b.append("Examples (name [slug] (price)): ");
+                b.append("Best sellers, الأكثر طلباً (name [slug] (price)): ");
                 for (var t : top) b.append(t.get("name")).append(" [").append(t.get("slug")).append("]").append(t.get("minMinor") == null ? "" : " (" + price(t.get("minMinor")) + ")").append("; ");
                 b.append("\n");
             }
@@ -837,6 +853,15 @@ public class ChatService {
 
     private static String fold(String s) {
         return s == null ? "" : s.replaceAll("[\\u064B-\\u065F\\u0670\\u0640]", "").replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا').replace('ى', 'ي').replace('ة', 'ه').toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private static final Pattern MY_NAME = Pattern.compile("(?:اسمي|إسمي|my name is)\\s+([\\p{IsArabic}\\p{IsLatin}]{2,20})", Pattern.CASE_INSENSITIVE);
+
+    /** The first name the customer gives in the chat («اسمي منى وعايزة...» -> «منى»), or null. */
+    static String statedName(String text) {
+        if (text == null) return null;
+        var m = MY_NAME.matcher(text);
+        return m.find() ? firstName(m.group(1)) : null;
     }
 
     /** MALE / FEMALE when the customer says it about themself («أنا راجل مش بنت», «انا ست»), else null. */
@@ -1009,8 +1034,10 @@ public class ChatService {
             for (String slug : search.categoriesMatching(ctx.tenantId(), words)) for (var r : find(ctx.tenantId(), null, slug, max)) seen.putIfAbsent(r.get("slug"), r);
             if (seen.size() < 3 && words.size() > 1) for (String w : words) for (var r : find(ctx.tenantId(), w, null, max)) seen.putIfAbsent(r.get("slug"), r);
             rows = seen.values().stream().limit(3).toList();
-            if (rows.isEmpty()) rows = find(ctx.tenantId(), null, null, max);
         }
+        if (rows.isEmpty() && q != null)   // nothing like it: no unrelated products to push, the catalog tells the model what the shop does have
+            return obj("products", List.of(), "count", 0, "note", "The shop has nothing matching «" + q + "». Say honestly and kindly that we do not have it. Then, only if the SHOP CATALOG has a RELATED kind of item "
+                    + "(for shoes or jackets: clothes for the same person; for a kitchen item: other kitchen items), offer it in one line; never offer unrelated things (pillows or bedsheets to someone asking for a jacket). If nothing is related, ask what else they are looking for.");
         List<Map<String, Object>> out = new ArrayList<>();
         for (var r : rows) {
             Map<String, Object> m = obj("name", r.get("name"), "slug", r.get("slug"), "brand", r.get("brand"), "price", major(r.get("minPriceMinor")), "inStock", r.get("inStock"));

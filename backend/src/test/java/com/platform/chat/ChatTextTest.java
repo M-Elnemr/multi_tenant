@@ -35,4 +35,17 @@ class ChatTextTest {
         assertThat(m.get("allOptions").toString()).contains("أزرق / أبيض").contains("L / M");
         assertThat(m.get("inStockOptions").toString()).contains("أزرق").doesNotContain("أبيض");
     }
+
+    @Test
+    void aNameTheCustomerGivesIsKept() {
+        assertThat(ChatService.statedName("اسمي منى وعايزة عباية")).isEqualTo("منى");
+        assertThat(ChatService.statedName("my name is sara")).isEqualTo("Sara");
+        assertThat(ChatService.statedName("معاك حق")).isNull();
+    }
+
+    @Test
+    void inventedPopularityIsCaughtUnlessTheShopDataSaysIt() {
+        assertThat(ReplyGuard.violations("كتير من العملاء بيطلبوها لنفس السبب", "")).isNotEmpty();
+        assertThat(ReplyGuard.violations("دي من الأكثر طلباً عندنا", "Best sellers, الأكثر طلباً (name): مخدة")).isEmpty();
+    }
 }

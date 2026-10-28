@@ -107,10 +107,10 @@ class AiChatIntegrationTest extends IntegrationTestBase {
         var byCategory = FakeAiProvider.RESULTS.get(0).result();
         assertThat(byCategory.get("count")).isEqualTo(1);
         assertThat(byCategory.get("products").toString()).contains("Mug ");
-        // nothing matches at all: the shop's own products come back with a note that says they are the closest, not an empty answer
+        // nothing matches at all: no unrelated products to push, a note to say so kindly and offer only a related kind from the catalog
         var nothing = FakeAiProvider.RESULTS.get(1).result();
-        assertThat(nothing.get("count")).isEqualTo(1);
-        assertThat(nothing.get("note").toString()).contains("closest").contains("Never claim we have something");
+        assertThat(nothing.get("count")).isEqualTo(0);
+        assertThat(nothing.get("note").toString()).contains("we do not have it").contains("RELATED").contains("never offer unrelated");
     }
 
     @Test

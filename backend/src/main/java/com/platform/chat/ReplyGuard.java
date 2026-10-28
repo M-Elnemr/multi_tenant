@@ -26,6 +26,8 @@ final class ReplyGuard {
                     + "|(?:لو|إذا|اذا)\\s+(?:طلبت|طلبتي|اكدت|أكدت|أكدتي|اكدتي|اخترت|اخترتي|حجزت|حجزتي)[^.!؟?\\n]{0,15}(?:دلوقتي|حالا|حالاً|النهارده|النهاردة)[^.!؟?\\n]{0,45}(?:سعر|خصم)"
                     + "|(?:better price|discount|deal)[^.!?\\n]{0,40}if you (?:order|buy|confirm|book)[^.!?\\n]{0,15}(?:now|today|right away)"),
             new Rule("a limited-time offer", "(?:النهارده بس|النهاردة بس|لفترة محدودة|لمدة محدودة|العرض هيخلص|آخر يوم|اخر يوم|today only|limited time|offer ends)"),
+            // invented social proof
+            new Rule("invented popularity or reviews", "(?:كتير من العملاء|العملاء بيحبو|العملاء بيطلبو|عليه طلب كبير|الأكثر طلب|الأكتر طلب|بيخلص بسرعة|كل اللي اشتروه|customers love|many customers|best ?seller|sells out fast)"),
             // product claims a seller must not make up: they are fine only when the product description itself says so
             new Rule("an unbacked product claim", "(?:أصلي\\s*(?:١٠٠|100)|اصلي\\s*(?:١٠٠|100)|(?:١٠٠|100)\\s*[٪%]\\s*(?:قطن|كتان|حرير|صوف|جلد)|(?:قطن|كتان|حرير|صوف|جلد)\\s*(?:١٠٠|100)\\s*[٪%]|قطن مصري|مستورد|أحسن خامة|احسن خامة|أفضل خامة|افضل خامة|"
                     + "100\\s*% (?:cotton|linen|silk|wool|leather)|egyptian cotton|imported|best (?:quality|material) in)"));
