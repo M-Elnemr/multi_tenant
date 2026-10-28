@@ -82,4 +82,11 @@ class ChatTextTest {
         allowed.addJson(java.util.Map.of("price", 800, "priceBeforeDiscount", 1000));
         assertThat(MoneyGuard.violations("يعني وفرت 200 جنيه", allowed)).isEmpty();
     }
+
+    @Test
+    void everyWayOfSayingIllCheckIsCaught() {
+        for (String t : List.of("لو سمحت استنى ثواني يا فندم، هشوف الموجود عندنا من أحذية رجالية وأقولك فوراً", "وبالنسبة للعبايات، هتشيك على المتاح حالًا", "قولّي ميزانيتك وأنا أرجعلك ببدائل تناسبك"))
+            assertThat(ReplyGuard.violations(t, "")).as(t).isNotEmpty();
+        assertThat(ReplyGuard.violations("الشحن بيوصل في ٣ أيام، تحب أشوف لك مقاسك؟", "")).isEmpty();
+    }
 }
