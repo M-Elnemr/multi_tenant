@@ -585,6 +585,8 @@ public class ChatService {
             problems.add("You said there is no information without looking: call get_product for that product and answer from its details (ingredients, calories, material, size guide...); say it is not listed only if get_product has nothing.");
         if (ORDER_CLAIM.matcher(answer).find() && ctx.order()[0] == null && !hasOrderOnFile(ctx))
             problems.add("You said the order is recorded, but no order exists yet: an order exists only after the customer confirms the summary from prepare_order. Call prepare_order with the details you have (or ask for what is missing) and never say it is recorded before.");
+        if (CLOSED_STOP.matcher(answer).find())
+            problems.add("Being outside opening hours does not stop you: answer the customer's question now and keep selling; only mention once that the order is prepared when the shop opens.");
         if (CARD_OFFER.matcher(answer).find() && !cardAccepted(ctx.tenantId()))
             problems.add("This shop takes cash on delivery only: never offer card, Visa or wallet payment.");
         boolean falseCancel = CANCEL_CLAIM.matcher(answer).find() && !orderCancelled(ctx);
@@ -613,6 +615,9 @@ public class ChatService {
     private boolean hasOrderOnFile(Ctx ctx) {
         return jdbc.sql("SELECT last_order IS NOT NULL FROM chat.conversations WHERE id = :c").param("c", ctx.conversationId()).query(Boolean.class).optional().orElse(false);
     }
+
+    /** A reply that stops helping because the shop is closed («المحل مغلق، هنرد عليك أول ما يفتحوا»). */
+    static final Pattern CLOSED_STOP = Pattern.compile("(?:مغلق|مقفول|مقفل|قافلين)[^.؟?!\\n]{0,40}(?:هنرد|هيرد|هيردوا|نرد\\s+عليك|يرد\\s+عليك|هنكلمك|هيكلموك|هنتواصل|هنرجعلك)", Pattern.CASE_INSENSITIVE);
 
     /** A reply offering card or wallet payment («كاش أو كارت», «تدفع بالفيزا»). */
     static final Pattern CARD_OFFER = Pattern.compile("(?:كاش\\s+(?:أو|او|ولا)\\s+(?:كارت|بطاقة|بطاقه|فيزا|فودافون كاش)|(?:بالكارت|بالفيزا|بالبطاقة|بالبطاقه|فيزا\\s+أو|كارت\\s+أو)|cash\\s+or\\s+card|pay\\s+(?:by|with)\\s+card)", Pattern.CASE_INSENSITIVE);
@@ -1137,7 +1142,7 @@ public class ChatService {
                     openNow = close.isAfter(open) ? !time.isBefore(open) && time.isBefore(close) : !time.isBefore(open) || time.isBefore(close);   // hours that run past midnight
                 }
                 b.append("- Opening hours: ").append(String.join(", ", week)).append(". Right now (Cairo ").append(now.toLocalTime().withSecond(0).withNano(0)).append(", ").append(today).append(") the shop is ")
-                        .append(openNow ? "OPEN" : "CLOSED: orders can still be taken and are handled when it opens; say so").append(".\n");
+                        .append(openNow ? "OPEN" : "CLOSED right now (outside opening hours). Keep helping and selling exactly as usual: answer every question and take the order; it is prepared when the shop opens (say that once). Never stop the chat or say the team will reply later").append(".\n");
             }
         } catch (Exception e) { log.debug("Opening hours skipped", e); }
         return b.toString();

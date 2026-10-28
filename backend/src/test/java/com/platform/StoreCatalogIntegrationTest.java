@@ -131,6 +131,7 @@ class StoreCatalogIntegrationTest extends IntegrationTestBase {
         UUID tenant = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", t.slug()).query(UUID.class).single();
         assertThat(search.tokens(tenant, "runner zzqx")).containsExactly("runner");   // a word no product has does not empty the results
         assertThat(search.tokens(tenant, "الرانر")).containsExactly("رانر");   // the Arabic article is dropped
+        assertThat(search.tokens(tenant, "one two")).hasSize(1);   // each word exists, no product has both: the blocking word is left out
         onHost(t.host(), t.access(), "PATCH", "/api/v1/store/products/" + p1 + "/extras", "{\"tags\":[]}")   // removing every tag (was a 500)
                 .andExpect(status().isOk()).andExpect(jsonPath("$.tags.length()").value(0));
         onHost(t.host(), null, "GET", "/api/v1/shop/home", null).andExpect(jsonPath("$.featured.length()").value(1));

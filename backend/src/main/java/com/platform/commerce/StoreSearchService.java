@@ -90,7 +90,23 @@ public class StoreSearchService {
                 if (jdbc.sql("SELECT EXISTS (SELECT 1 FROM commerce.products WHERE tenant_id = :t AND status = 'ACTIVE' AND search_text ILIKE '%' || :w || '%')").param("t", t).param("w", w).query(Boolean.class).single()) kept.add(w);
             if (kept.isEmpty()) kept = words;
         }
-        return kept.size() > 3 ? kept.subList(0, 3) : kept;
+        if (kept.size() > 3) kept = new ArrayList<>(kept.subList(0, 3));
+        // every word exists, but no product has them all («بنطلون جينز رجالي»: the jeans are not called «بنطلون»): leave out the word that blocks, keeping as many as possible
+        while (kept.size() > 1 && !anyHasAll(t, kept)) {
+            List<String> best = null;
+            for (int i = 0; i < kept.size() && best == null; i++) {
+                List<String> fewer = new ArrayList<>(kept);
+                fewer.remove(i);
+                if (anyHasAll(t, fewer)) best = fewer;
+            }
+            kept = best != null ? best : new ArrayList<>(kept.subList(1, kept.size()));
+        }
+        return kept;
+    }
+
+    private boolean anyHasAll(UUID t, List<String> words) {
+        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM commerce.products WHERE tenant_id = :t AND status = 'ACTIVE' AND search_text ILIKE ALL (CAST(:p AS text[])))")
+                .param("t", t).param("p", words.stream().map(w -> "%" + w + "%").toArray(String[]::new)).query(Boolean.class).single();
     }
 
     private static final String FILTER_WHERE = """

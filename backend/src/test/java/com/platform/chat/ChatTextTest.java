@@ -213,4 +213,11 @@ class ChatTextTest {
     void englishWordsFindAnArabicCatalog() {
         assertThat(ChatService.synonyms("Do you have women's wide leg jeans in size L?")).isEqualTo("جينز");
     }
+
+    @Test
+    void stoppingBecauseTheShopIsClosedIsRecognised() {
+        assertThat(ChatService.CLOSED_STOP.matcher("أنا آسف يا فندم، لسه المحل مغلق، هنرد عليك أول ما يفتحوا.").find()).isTrue();
+        assertThat(ChatService.CLOSED_STOP.matcher("المحل مقفول دلوقتي بس الأوردر بيتجهز أول ما نفتح، تحب مقاس إيه؟").find()).isFalse();
+        assertThat(ChatService.CLOSED_STOP.matcher("الجينز السليم بـ890 جنيه").find()).isFalse();
+    }
 }
