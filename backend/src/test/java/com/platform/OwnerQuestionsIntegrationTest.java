@@ -98,7 +98,7 @@ class OwnerQuestionsIntegrationTest extends IntegrationTestBase {
         long id = ((Number) JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/ai/questions?status=OPEN", null)), "$[0].id")).longValue();
 
         // the model answers nothing: the owner's own words reach the customer, and a failed send is reported with a note
-        FakeAiProvider.SCRIPT.add(turns -> Turn.model(""));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("")); FakeAiProvider.SCRIPT.add(turns -> Turn.model(""));   // empty twice: the retry also gets nothing
         FakeEvolutionApi.FAIL_SEND = true;
         String failed = body(onHost(t.host(), t.access(), "POST", "/api/v1/store/ai/questions/" + id + "/answer", "{\"answer\":\"قطن ١٠٠٪\"}").andExpect(status().isOk()));
         assertThat((String) JsonPath.read(failed, "$.delivery")).isEqualTo("FAILED");

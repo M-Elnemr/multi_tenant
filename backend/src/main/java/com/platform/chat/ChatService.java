@@ -78,7 +78,7 @@ public class ChatService {
     private String polish(String text, UUID conv, UUID tenantId, String channel, String externalId, UUID clientId) {
         if (text == null || text.isBlank()) return text;
         String t = text.replaceAll("[\\p{IsHan}\\p{IsHiragana}\\p{IsKatakana}\\p{IsHangul}\\p{IsCyrillic}]", "")
-                .replaceAll("(?<=\\p{IsArabic})[A-Za-z]+(?=\\s|$|\\p{IsArabic})", "");   // Latin letters glued to an Arabic word («أursic») are a slip
+                .replaceAll("(?<=\\p{IsArabic})[a-z]{3,}(?=\\s|$|\\p{IsArabic})", "");   // lowercase Latin glued to an Arabic word («أursic») is a slip; sizes after «و» («وXL») stay
         t = t.replace("محتاجة منك", "محتاج منك").replace("محتاجة أعرف", "محتاج أعرف").replace("محتاجة اعرف", "محتاج اعرف").replace("فاهماك", "فاهمك").replace("فاهماكي", "فاهمك")
                 .replace("مش متابعة", "مش متابع").replace("متأكدة إن", "متأكد إن");
         String name = customerName(tenantId, conv, channel, externalId, clientId);
@@ -544,9 +544,11 @@ public class ChatService {
     }
 
     private String modelLoop(Ctx ctx, ChannelAi.Routed routed, String system, List<Turn> turns, List<ToolDef> tools, List<AiUsageService.Round> rounds, MoneyGuard.Allowed allowed) {
+        boolean retried = false;
         for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
             Turn t = routed.next(system, turns, tools);
             rounds.add(new AiUsageService.Round(t.calls().stream().map(ToolCall::name).toList(), t.usage()));
+            if (t.calls().isEmpty() && (t.text() == null || t.text().isBlank()) && !retried) { retried = true; round--; continue; }   // an empty answer now and then: ask once more before giving up
             if (t.calls().isEmpty()) return t.text();
             turns.add(t);
             List<ToolResult> results = new ArrayList<>();

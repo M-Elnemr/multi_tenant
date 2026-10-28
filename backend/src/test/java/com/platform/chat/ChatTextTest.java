@@ -98,4 +98,11 @@ class ChatTextTest {
         assertThat(MoneyGuard.violations("يبقى الاتنين مع بعض بـ1250 جنيه", allowed)).isNotEmpty();
         assertThat(MoneyGuard.violations("القميصين بـ900 جنيه", allowed)).isEmpty();
     }
+
+    @Test
+    void sizesAfterWawStayAndGluedLatinSlipsGo() {
+        String t = "متاح M وL وXL".replaceAll("(?<=\\p{IsArabic})[a-z]{3,}(?=\\s|$|\\p{IsArabic})", "");
+        assertThat(t).isEqualTo("متاح M وL وXL");
+        assertThat("تحب أursic أوريك".replaceAll("(?<=\\p{IsArabic})[a-z]{3,}(?=\\s|$|\\p{IsArabic})", "")).isEqualTo("تحب أ أوريك");
+    }
 }
