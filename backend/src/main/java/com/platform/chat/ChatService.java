@@ -576,9 +576,10 @@ public class ChatService {
             problems.add("The customer asked for " + asked.group(1) + " pieces: check the stock count of that exact option (in ALL PRODUCTS or the search result) and never promise more than is in stock; if fewer are available, say how many.");
         if (PHONE_DOUBT.matcher(answer).find() && customerGaveMobile(turns))
             problems.add("The mobile number the customer wrote is valid: never say it is wrong or count its digits; if needed, ask only «الرقم ده عليه واتساب؟».");
-        if (vagueAboutProducts(ctx.tenantId(), last, answer))
-            problems.add(searched ? "The customer asked about a kind of product and your reply names none of the matching products (" + relatedNames(ctx.tenantId(), last) + "): answer with those, by name and price."
-                                  : "The customer asked about a kind of product and your reply names none: call search_products and name the real products with their price, colors and sizes (or say honestly we do not have it).");
+        if (!searched && vagueAboutProducts(ctx.tenantId(), last, answer))
+            problems.add("The customer asked about a kind of product and your reply names none: call search_products and name the real products with their price, colors and sizes (or say honestly we do not have it).");
+        String unrelated = cardsUnrelated(ctx, last);
+        if (unrelated != null) problems.add(unrelated);
         boolean lookedUp = rounds.stream().anyMatch(r -> r.tools().stream().anyMatch(t -> t.equals("get_product") || t.equals("search_products")));
         if (NO_INFO.matcher(answer).find() && !lookedUp)
             problems.add("You said there is no information without looking: call get_product for that product and answer from its details (ingredients, calories, material, size guide...); say it is not listed only if get_product has nothing.");
@@ -660,8 +661,15 @@ public class ChatService {
     /** A reply saying the shop has no information about something («مفيش معلومات عن السعرات», «مش مكتوب في الوصف»). */
     static final Pattern NO_INFO = Pattern.compile("(?:(?:مفيش|معنديش|مش\\s+عندي|مالقيتش|ملقيتش)\\s+(?:أي\\s+|اي\\s+)?(?:معلومات|معلومة|معلومه|بيانات|تفاصيل)|مش\\s+(?:مكتوب|مذكور|مذكوره|مذكورة)\\s+(?:في|ف)\\s+(?:الوصف|البيانات)|no\\s+(?:information|details)\\s+(?:about|on))", Pattern.CASE_INSENSITIVE);
 
-    private String relatedNames(UUID tenantId, String customer) {
-        return String.join("، ", relatedProducts(tenantId, customer).stream().map(r -> String.valueOf(r.get("name"))).toList());
+    /** The product cards of this reply have nothing to do with what the customer asked about («عندكم شاورما ايه؟» answered with desserts); null when they fit or nothing is known. */
+    private String cardsUnrelated(Ctx ctx, String customer) {
+        if (ctx.products().isEmpty()) return null;
+        List<Map<String, Object>> related = relatedProducts(ctx.tenantId(), customer);
+        if (related.isEmpty()) return null;
+        var slugs = related.stream().map(r -> String.valueOf(r.get("slug"))).collect(java.util.stream.Collectors.toSet());
+        if (ctx.products().stream().anyMatch(p -> slugs.contains(String.valueOf(p.get("slug"))))) return null;
+        return "The products you showed (" + String.join("، ", ctx.products().stream().map(p -> String.valueOf(p.get("name"))).toList()) + ") are not what the customer asked about; the matching products are: "
+                + String.join("، ", related.stream().map(r -> String.valueOf(r.get("name"))).toList()) + ". Answer about those.";
     }
 
     private boolean vagueAboutProducts(UUID tenantId, String customer, String answer) {
@@ -1683,7 +1691,7 @@ public class ChatService {
                     "currency", r.get("currency"), "imageUrl", r.get("imageUrl"), "imageMediaBase", r.get("imageMediaBase"), "imageMediaExt", r.get("imageMediaExt"), "send", true));
             names.add(String.valueOf(r.get("name")));
         }
-        return obj("shown", names, "note", "The picture, price and link of these products reach the customer with your message. Do not mention pictures being sent, do not write links and do not repeat the price list: talk naturally about why they suit the customer.");
+        return obj("shown", names, "note", "The picture and link of these products reach the customer with your message. Do not mention pictures being sent and do not write links. Still answer the customer's question in words: name the product, its price and the colors/sizes that matter, and any size advice they asked for.");
     }
 
     @SuppressWarnings("unchecked")

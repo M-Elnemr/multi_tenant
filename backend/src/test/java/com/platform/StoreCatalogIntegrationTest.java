@@ -1,5 +1,7 @@
 package com.platform;
 
+import java.util.UUID;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -10,6 +12,9 @@ import org.junit.jupiter.api.Test;
 
 /** Category tree, Arabic-aware search, filters, facets, branches and the public store profile. */
 class StoreCatalogIntegrationTest extends IntegrationTestBase {
+    @org.springframework.beans.factory.annotation.Autowired com.platform.commerce.StoreSearchService search;
+    @org.springframework.beans.factory.annotation.Autowired org.springframework.jdbc.core.simple.JdbcClient jdbc;
+
     String ok(org.springframework.test.web.servlet.ResultActions r) throws Exception { return r.andReturn().getResponse().getContentAsString(); }
 
     /** A product filed under a standard category (slug; default "shirts-tops"). */
@@ -123,6 +128,9 @@ class StoreCatalogIntegrationTest extends IntegrationTestBase {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.badge").value("NEW")).andExpect(jsonPath("$.tags.length()").value(2)).andExpect(jsonPath("$.specs[0].k").value("Weight"));
         onHost(t.host(), t.access(), "PATCH", "/api/v1/store/products/" + p1 + "/extras", "{\"badge\":\"nonsense\"}").andExpect(status().isBadRequest());
         onHost(t.host(), null, "GET", "/api/v1/shop/products?q=sport", null).andExpect(jsonPath("$.meta.total").value(1));   // tags are searchable
+        UUID tenant = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", t.slug()).query(UUID.class).single();
+        assertThat(search.tokens(tenant, "runner zzqx")).containsExactly("runner");   // a word no product has does not empty the results
+        assertThat(search.tokens(tenant, "الرانر")).containsExactly("رانر");   // the Arabic article is dropped
         onHost(t.host(), t.access(), "PATCH", "/api/v1/store/products/" + p1 + "/extras", "{\"tags\":[]}")   // removing every tag (was a 500)
                 .andExpect(status().isOk()).andExpect(jsonPath("$.tags.length()").value(0));
         onHost(t.host(), null, "GET", "/api/v1/shop/home", null).andExpect(jsonPath("$.featured.length()").value(1));

@@ -66,11 +66,31 @@ public class StoreSearchService {
             "name", "name ASC");
 
     private JdbcClient.StatementSpec bind(JdbcClient.StatementSpec st, UUID t, Filter f) {
-        List<String> tokens = new ArrayList<>();
-        for (String w : norm(f.q()).split("\\s+")) if (!w.isBlank() && tokens.size() < 3) tokens.add(w);
+        List<String> tokens = tokens(t, f.q());
         String c = f.category() == null || f.category().isBlank() ? null : f.category();
         return st.param("t", t).param("c", c)
                 .param("q1", tokens.size() > 0 ? tokens.get(0) : null).param("q2", tokens.size() > 1 ? tokens.get(1) : null).param("q3", tokens.size() > 2 ? tokens.get(2) : null);
+    }
+
+    /**
+     * The words every result must contain (at most 3): the Arabic article is dropped («الجينز» finds «جينز سليم»), and when the query has several words, a word no product of
+     * the shop contains is left out instead of emptying the results («جينز رجالي وسطي» finds the men's jeans).
+     */
+    public List<String> tokens(UUID t, String q) {
+        List<String> words = new ArrayList<>();
+        for (String w : norm(q).split("\\s+")) {
+            if (w.isBlank()) continue;
+            words.add(w.length() >= 5 && (w.startsWith("ال") || w.startsWith("لل")) ? w.substring(2) : w.length() >= 6 && (w.startsWith("وال") || w.startsWith("بال")) ? w.substring(3) : w);
+            if (words.size() >= 6) break;
+        }
+        List<String> kept = words;
+        if (words.size() > 1) {
+            kept = new ArrayList<>();
+            for (String w : words)
+                if (jdbc.sql("SELECT EXISTS (SELECT 1 FROM commerce.products WHERE tenant_id = :t AND status = 'ACTIVE' AND search_text ILIKE '%' || :w || '%')").param("t", t).param("w", w).query(Boolean.class).single()) kept.add(w);
+            if (kept.isEmpty()) kept = words;
+        }
+        return kept.size() > 3 ? kept.subList(0, 3) : kept;
     }
 
     private static final String FILTER_WHERE = """
