@@ -539,7 +539,7 @@ public class ChatService {
 
     private static final Pattern WHO_QUESTION = Pattern.compile("(?:ليك|ليكي|لحضرتك|لنفسك)\\s+(?:ولا|و\\s*لا)\\s+(?:لحد|ل\\s*حد)|(?:بتطلب|بتشتري|بتدور)\\s+(?:ل|لـ)?\\s*(?:حد|نفسك)|ليك\\s+ولا\\s+هدية|(?:for you|for yourself)\\s+or\\s+(?:someone|a gift)", Pattern.CASE_INSENSITIVE);
     private static final Pattern FOR_ME = Pattern.compile("(?<![\\p{L}])(?:ليا|ليّا|لنفسي|عشاني|علشاني|لي انا|ليه انا|for me|for myself)(?![\\p{L}])", Pattern.CASE_INSENSITIVE);
-    private static final Pattern NOT_HAVE = Pattern.compile("(?:مفيش\\s+(?:لبس|ملابس|منتج|منتجات|حاجة|حاجه|موديل|موديلات|أنواع|انواع)|عندنا\\s+مفيش|مش\\s+(?:موجود|موجوده|موجودة|متوفر|متوفره|متوفرة|متاح|متاحه|متاحة)|معندناش|ماعندناش|مش\\s+عندنا|مفيش\\s+عندنا|مش\\s+عندهم|we\\s+(?:don't|do not)\\s+have|not\\s+available)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern NOT_HAVE = Pattern.compile("(?:مفيش\\s+(?:لبس|ملابس|منتج|منتجات|حاجة|حاجه|حاجات|موديل|موديلات|أنواع|انواع|أصناف|اصناف|صنف|اختيارات)|عندنا\\s+مفيش|مش\\s+(?:موجود|موجوده|موجودة|متوفر|متوفره|متوفرة|متاح|متاحه|متاحة)|معندناش|ماعندناش|مش\\s+عندنا|مفيش\\s+عندنا|مش\\s+عندهم|we\\s+(?:don't|do not)\\s+have|not\\s+available)", Pattern.CASE_INSENSITIVE);
     private static final java.util.List<String> EXAMPLE_LINES = examples();
     private static final Pattern ONLY_OPTIONS = Pattern.compile("(?:الألوان|الالوان|المقاسات|اللون)\\s+(?:المتاحة|المتاحه|المتوفرة|المتوفره|الموجودة|الموجوده)[^.؟?!\\n]{0,40}(?:فقط|بس)|(?:لونه|لونها|متاح|متاحة|متوفر|موجود)\\s+[^.؟?!\\n]{0,15}(?:بس|فقط)|(?:بقطعة|بقطعه)\\s+واحدة|معنديش\\s+معلومات\\s+(?:دقيقة\\s+)?عن\\s+(?:المقاسات|الألوان|المخزون)");
 
@@ -576,8 +576,14 @@ public class ChatService {
             problems.add("The customer asked for " + asked.group(1) + " pieces: check the stock count of that exact option (in ALL PRODUCTS or the search result) and never promise more than is in stock; if fewer are available, say how many.");
         if (PHONE_DOUBT.matcher(answer).find() && customerGaveMobile(turns))
             problems.add("The mobile number the customer wrote is valid: never say it is wrong or count its digits; if needed, ask only «الرقم ده عليه واتساب؟».");
-        if (!searched && vagueAboutProducts(ctx.tenantId(), last, answer))
-            problems.add("The customer asked about a kind of product and your reply names none: call search_products and name the real products with their price, colors and sizes (or say honestly we do not have it).");
+        if (vagueAboutProducts(ctx.tenantId(), last, answer))
+            problems.add(searched ? "The customer asked about a kind of product and your reply names none of the matching products (" + relatedNames(ctx.tenantId(), last) + "): answer with those, by name and price."
+                                  : "The customer asked about a kind of product and your reply names none: call search_products and name the real products with their price, colors and sizes (or say honestly we do not have it).");
+        boolean lookedUp = rounds.stream().anyMatch(r -> r.tools().stream().anyMatch(t -> t.equals("get_product") || t.equals("search_products")));
+        if (NO_INFO.matcher(answer).find() && !lookedUp)
+            problems.add("You said there is no information without looking: call get_product for that product and answer from its details (ingredients, calories, material, size guide...); say it is not listed only if get_product has nothing.");
+        if (ORDER_CLAIM.matcher(answer).find() && ctx.order()[0] == null && !hasOrderOnFile(ctx))
+            problems.add("You said the order is recorded, but no order exists yet: an order exists only after the customer confirms the summary from prepare_order. Call prepare_order with the details you have (or ask for what is missing) and never say it is recorded before.");
         boolean falseCancel = CANCEL_CLAIM.matcher(answer).find() && !orderCancelled(ctx);
         if (falseCancel) problems.add("You told the customer the order is cancelled, but it is NOT cancelled: only cancel_order cancels. Ask kindly why they want to cancel, then call cancel_order with the reason (or noReason=true if they will not say), and tell them only what the tool answered.");
         if (problems.isEmpty()) return answer;
@@ -597,6 +603,13 @@ public class ChatService {
 
     /** A reply that tells the customer an order is cancelled («اتلغى», «تم إلغاء الطلب», «cancelled»); a request («طلب الإلغاء اتبعت») is not a claim. */
     static final Pattern CANCEL_CLAIM = Pattern.compile("(?:(?<!\\p{L})اتلغ[ىيا]|تم\\s+(?:ال)?[إا]لغا[ءئ]|(?<!\\p{L})(?:أ|ا)?لغيت(?:ه|هولك|لك|ها)?(?!\\p{L})|(?<!\\p{L})(?:has been|is|was)\\s+cancell?ed)", Pattern.CASE_INSENSITIVE);
+
+    /** A reply that says the order is already recorded («سجلت طلبك», «تم تسجيل الطلب», "your order is placed"). */
+    static final Pattern ORDER_CLAIM = Pattern.compile("(?:سجلت\\s+(?:لك\\s+)?(?:طلبك|الطلب|الأوردر|الاوردر)|تم\\s+تسجيل\\s+(?:طلبك|الطلب|الأوردر|الاوردر)|(?:طلبك|الطلب|الأوردر|الاوردر)\\s+اتسجل|(?:has been|is)\\s+placed|placed your order)", Pattern.CASE_INSENSITIVE);
+
+    private boolean hasOrderOnFile(Ctx ctx) {
+        return jdbc.sql("SELECT last_order IS NOT NULL FROM chat.conversations WHERE id = :c").param("c", ctx.conversationId()).query(Boolean.class).optional().orElse(false);
+    }
 
     /** Whether this chat's order really is cancelled in the shop's system. */
     private boolean orderCancelled(Ctx ctx) {
@@ -643,6 +656,13 @@ public class ChatService {
 
     /** The customer named a kind of product we sell, and the reply names none of the matching products: a vague «عندنا أنواع كتير» instead of an answer. */
     private static final Pattern RANGE_TALK = Pattern.compile("(?:عندنا|عندي|متاح|متوفر|موجود|بنطلونات|قمصان|فساتين|عبايات|ملابس|تشكيلة|أنواع|انواع|موديلات|we have|available|options)", Pattern.CASE_INSENSITIVE);
+
+    /** A reply saying the shop has no information about something («مفيش معلومات عن السعرات», «مش مكتوب في الوصف»). */
+    static final Pattern NO_INFO = Pattern.compile("(?:(?:مفيش|معنديش|مش\\s+عندي|مالقيتش|ملقيتش)\\s+(?:أي\\s+|اي\\s+)?(?:معلومات|معلومة|معلومه|بيانات|تفاصيل)|مش\\s+(?:مكتوب|مذكور|مذكوره|مذكورة)\\s+(?:في|ف)\\s+(?:الوصف|البيانات)|no\\s+(?:information|details)\\s+(?:about|on))", Pattern.CASE_INSENSITIVE);
+
+    private String relatedNames(UUID tenantId, String customer) {
+        return String.join("، ", relatedProducts(tenantId, customer).stream().map(r -> String.valueOf(r.get("name"))).toList());
+    }
 
     private boolean vagueAboutProducts(UUID tenantId, String customer, String answer) {
         if (!RANGE_TALK.matcher(answer).find()) return false;   // only a reply that talks about what the shop has
@@ -1074,6 +1094,13 @@ public class ChatService {
         if (notBlank(r.get("short_description"))) b.append("- About the shop: ").append(clip(r.get("short_description").toString(), 300)).append("\n");
         if (notBlank(r.get("shipping_policy"))) b.append("- Delivery policy (the shop's words): ").append(clip(r.get("shipping_policy").toString().replaceAll("\\s+", " "), 600)).append("\n");
         if (notBlank(r.get("return_policy"))) b.append("- Return and exchange policy (the shop's words): ").append(clip(r.get("return_policy").toString().replaceAll("\\s+", " "), 600)).append("\n");
+        // where the shop is: pickup branches (the customer may collect the order there) and the other branches
+        for (var br : jdbc.sql("SELECT name, address_line1, area, city, landmark, phone, maps_url, is_pickup FROM commerce.branches WHERE tenant_id = :t AND is_active ORDER BY is_pickup DESC, sort_order LIMIT 5")
+                .param("t", tenantId).query().listOfRows())
+            b.append("- Branch «").append(br.get("name")).append("»: ").append(String.join("، ", java.util.stream.Stream.of(br.get("address_line1"), br.get("area"), br.get("city"), br.get("landmark"))
+                    .filter(ChatService::notBlank).map(String::valueOf).toList()))
+                    .append(notBlank(br.get("maps_url")) ? ", map " + br.get("maps_url") : "")
+                    .append(Boolean.TRUE.equals(br.get("is_pickup")) ? " — customers can PICK UP their order here (no delivery fee)" : "").append("\n");
         try {
             if (notBlank(r.get("hours")) && !r.get("hours").toString().equals("{}")) {
                 var hours = JSON.readTree(r.get("hours").toString());
@@ -1171,6 +1198,8 @@ public class ChatService {
         b.append(", price ").append(price(r.get("minPriceMinor")));
         if (r.get("compareAtMinor") != null) b.append(" (before ").append(price(r.get("compareAtMinor"))).append(")");
         if (m.get("allOptions") != null) b.append(", options ").append(m.get("allOptions"));
+        String byOption = priceByOption(vs);
+        if (!byOption.isEmpty()) b.append(", PRICE BY OPTION ").append(byOption);
         String details = productDetails(tenantId, String.valueOf(r.get("slug")));
         if (!details.isEmpty()) b.append(", details: ").append(details);
         int total = vs.stream().mapToInt(v -> v.get("available") instanceof Number n ? n.intValue() : 0).sum();
@@ -1578,6 +1607,32 @@ public class ChatService {
      * variants it is shown.
      */
     @SuppressWarnings("unchecked")
+    /** For options that change the price (size, piece count...): each value with its own price and old price («الحجم: عادي 85, كبير 110 (before 135)»), so no price is guessed. */
+    static String priceByOption(List<Map<String, Object>> variants) {
+        java.util.Map<String, java.util.LinkedHashMap<String, double[]>> by = new java.util.LinkedHashMap<>();   // option -> value -> {min price, min before (0 = none)}
+        for (var v : variants) {
+            String opts = String.valueOf(v.get("options"));
+            if ("default".equals(opts) || !(v.get("price") instanceof Number p)) continue;
+            double before = v.get("priceBeforeDiscount") instanceof Number n ? n.doubleValue() : 0;
+            for (String kv : opts.split(",\\s*")) {
+                int i = kv.indexOf(':');
+                if (i < 0) continue;
+                var vals = by.computeIfAbsent(kv.substring(0, i).trim(), x -> new java.util.LinkedHashMap<>());
+                vals.merge(kv.substring(i + 1).trim(), new double[]{p.doubleValue(), before}, (x, y) -> new double[]{Math.min(x[0], y[0]), x[1] == 0 ? y[1] : y[1] == 0 ? x[1] : Math.min(x[1], y[1])});
+            }
+        }
+        List<String> parts = new ArrayList<>();
+        for (var e : by.entrySet()) {
+            if (e.getValue().values().stream().map(x -> x[0]).distinct().count() < 2) continue;   // this option does not change the price
+            List<String> vs = new ArrayList<>();
+            for (var val : e.getValue().entrySet()) vs.add(val.getKey() + " " + plain(val.getValue()[0]) + (val.getValue()[1] > val.getValue()[0] ? " (before " + plain(val.getValue()[1]) + ")" : ""));
+            parts.add(e.getKey() + ": " + String.join(", ", vs));
+        }
+        return String.join("; ", parts);
+    }
+
+    private static String plain(double d) { return d == Math.rint(d) ? String.valueOf((long) d) : String.valueOf(d); }
+
     static void optionSummary(Map<String, Object> m, List<Map<String, Object>> variants) {
         java.util.Map<String, java.util.LinkedHashSet<String>> all = new java.util.LinkedHashMap<>();
         java.util.Map<String, java.util.LinkedHashMap<String, Integer>> inStock = new java.util.LinkedHashMap<>();
@@ -1605,7 +1660,11 @@ public class ChatService {
     private List<Map<String, Object>> compactVariants(UUID tenantId, String slug, String want, int max) {
         try {
             List<Map<String, Object>> out = new ArrayList<>();
-            for (var v : variantsOf(catalog.detailBySlug(tenantId, slug), want, max)) out.add(obj("variantId", v.get("variantId"), "options", v.get("options"), "price", v.get("price"), "available", v.get("available")));
+            for (var v : variantsOf(catalog.detailBySlug(tenantId, slug), want, max)) {
+                Map<String, Object> c = obj("variantId", v.get("variantId"), "options", v.get("options"), "price", v.get("price"), "available", v.get("available"));
+                if (v.get("priceBeforeDiscount") != null) c.put("priceBeforeDiscount", v.get("priceBeforeDiscount"));
+                out.add(c);
+            }
             return out;
         } catch (RuntimeException e) { return List.of(); }
     }

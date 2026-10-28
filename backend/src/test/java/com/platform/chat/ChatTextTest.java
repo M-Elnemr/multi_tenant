@@ -3,6 +3,7 @@ package com.platform.chat;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class ChatTextTest {
@@ -150,6 +151,10 @@ class ChatTextTest {
     @Test
     void searchAndTellYouLaterIsCaught() {
         assertThat(ReplyGuard.violations("أنا هبحثلك على المتاح عندنا دلوقتي وأقولك السعر والتفاصيل", "")).isNotEmpty();
+        assertThat(ReplyGuard.violations("معلش يا فندم، محتاج أتأكد من بيانات الساندوتش نفسه الأول — لحظة واحدة وأقوله لك بالظبط.", "")).isNotEmpty();
+        assertThat(ReplyGuard.violations("هأكّدلك على توافر أم علي وأبعتهالك مع الطلب", "")).isNotEmpty();
+        assertThat(ReplyGuard.violations("خليني أتأكد من الأصناف اللي تناسب الأطفال وأقولك", "")).isNotEmpty();
+        assertThat(ReplyGuard.violations("محتاج أتأكد من العنوان: مدينة نصر شارع مكرم عبيد؟", "")).isEmpty();
     }
 
     @Test
@@ -174,5 +179,27 @@ class ChatTextTest {
         assertThat(ChatService.CANCEL_CLAIM.matcher("Your order has been cancelled").find()).isTrue();
         assertThat(ChatService.CANCEL_CLAIM.matcher("وصلت طلب الإلغاء للمحل وهيكلموك").find()).isFalse();
         assertThat(ChatService.CANCEL_CLAIM.matcher("ممكن أعرف عايز تلغي ليه؟").find()).isFalse();
+    }
+
+    @Test
+    void optionsThatChangeThePriceAreListedWithTheirOwnPrice() {
+        var vs = List.<Map<String, Object>>of(
+                Map.of("options", "الحجم: صغير", "price", 10.0, "available", 5),
+                Map.of("options", "الحجم: كبير", "price", 25.0, "priceBeforeDiscount", 30.0, "available", 5));
+        assertThat(ChatService.priceByOption(vs)).isEqualTo("الحجم: صغير 10, كبير 25 (before 30)");
+        assertThat(ChatService.priceByOption(List.of(Map.of("options", "اللون: أسود", "price", 10.0), Map.of("options", "اللون: أبيض", "price", 10.0)))).isEmpty();
+    }
+
+    @Test
+    void sayingTheOrderIsRecordedIsRecognised() {
+        assertThat(ChatService.ORDER_CLAIM.matcher("تمام يا فندم، سجلت طلبك (٢ شاورما فراخ كبير)").find()).isTrue();
+        assertThat(ChatService.ORDER_CLAIM.matcher("تم تسجيل الطلب برقم ST-1").find()).isTrue();
+        assertThat(ChatService.ORDER_CLAIM.matcher("هسجلها كلها، باقي محتاج الاسم").find()).isFalse();
+    }
+
+    @Test
+    void sayingThereIsNoInformationIsRecognised() {
+        assertThat(ChatService.NO_INFO.matcher("مفيش معلومات عن السعرات الحرارية في الوصف").find()).isTrue();
+        assertThat(ChatService.NO_INFO.matcher("الكفتة من لحم بقري مفروم").find()).isFalse();
     }
 }
