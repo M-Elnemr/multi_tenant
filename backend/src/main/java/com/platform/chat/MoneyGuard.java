@@ -24,9 +24,9 @@ final class MoneyGuard {
     private static final String CUR = "(?:جنيه|جنية|جنيهات|ج\\.\\s?م|ريال|درهم|دينار|دولار|EGP|SAR|AED|USD|KWD|LE|L\\.E|pounds?|riyals?|dirhams?|dollars?|\\$)";
     private static final Pattern NUM_THEN_CUR = Pattern.compile("(?<![\\w.])(" + NUM + ")\\s*(?:" + CUR + "(?![\\p{L}])|ج(?![\\p{L}\\p{N}]))", Pattern.CASE_INSENSITIVE);
     private static final Pattern CUR_THEN_NUM = Pattern.compile("(?<![\\p{L}])(?:EGP|SAR|AED|USD|KWD|LE|L\\.E|\\$)\\s*(" + NUM + ")", Pattern.CASE_INSENSITIVE);
-    private static final Pattern WORD_THEN_NUM = Pattern.compile("(?:الإجمالي|الاجمالي|إجمالي|اجمالي|المجموع|مجموع|الشحن|شحن|التوصيل|الدليفري|الديلفري|بسعر|السعر|سعره|سعرها|total|subtotal|shipping|delivery|price|cost|=)[^0-9٠-٩۰-۹\\n]{0,6}(" + NUM + ")"
+    private static final Pattern WORD_THEN_NUM = Pattern.compile("(?:الشحن|شحن|التوصيل|الدليفري|الديلفري|بسعر|السعر|سعره|سعرها|shipping|delivery|price|cost|=)[^0-9٠-٩۰-۹\\n]{0,6}(" + NUM + ")"
             // a sum written by the model («يعني الاتنين 1250», «يبقى 1750»): only a sum a tool returned is allowed
-            + "|(?:يعني|يبقى|هيبقى|بيبقى|الاتنين|التلاتة|مع بعض|كلهم|كله|كلها|خالص|يوصل|هيوصل|altogether|in total)[^0-9٠-٩۰-۹\\n.؟?!]{0,12}(" + NUM + ")", Pattern.CASE_INSENSITIVE);
+            + "|(?:الإجمالي|الاجمالي|إجمالي|اجمالي|المجموع|مجموع|total|subtotal|يعني|يبقى|هيبقى|بيبقى|الاتنين|التلاتة|مع بعض|كلهم|كله|كلها|خالص|يوصل|هيوصل|altogether|in total)[^0-9٠-٩۰-۹\\n.؟?!]{0,12}(" + NUM + ")", Pattern.CASE_INSENSITIVE);
     /** A number the keyword path found is not money when it is a count, a size, a number of days or a range ("delivery 2-4 days", "shipping 3 pieces"). */
     private static final Pattern NOT_MONEY_AFTER = Pattern.compile("^\\s*(?:[-\u2013]\\s*[0-9\u0660-\u0669]|أيام|ايام|يوم|days?|hours?|ساع|قطع|piece|pcs|%|مقاس|size|سنة|سنين|years?)", Pattern.CASE_INSENSITIVE);
     private static final Pattern ANY_NUM = Pattern.compile("(?<![\\w.])(" + NUM + ")");

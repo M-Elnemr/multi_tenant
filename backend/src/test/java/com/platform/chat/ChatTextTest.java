@@ -105,4 +105,16 @@ class ChatTextTest {
         assertThat(t).isEqualTo("متاح M وL وXL");
         assertThat("تحب أursic أوريك".replaceAll("(?<=\\p{IsArabic})[a-z]{3,}(?=\\s|$|\\p{IsArabic})", "")).isEqualTo("تحب أ أوريك");
     }
+
+    @Test
+    void englishIsToldFromFrancoArabicAndTotalsAfterTotalWordsMustBeExact() {
+        assertThat(ChatService.english("Hi, do you have summer dresses?")).isTrue();
+        assertThat(ChatService.english("3ayez amis abyad")).isFalse();
+        assertThat(ChatService.english("bkam?")).isFalse();
+        assertThat(ChatService.arabicShare("أهلاً حضرتك! عندنا فساتين")).isGreaterThan(0.9);
+        var allowed = new MoneyGuard.Allowed(0);
+        allowed.addPrices("Kids T-shirt [t] (250); Shirt [s] (450); Jeans [j] (800); Pillow [p] (650)");
+        assertThat(MoneyGuard.violations("المجموع: 1250 جنيه", allowed)).isNotEmpty();
+        assertThat(MoneyGuard.violations("يعني الإجمالي النهائي ١٣٠٠ جنيه كاش", allowed)).isNotEmpty();
+    }
 }

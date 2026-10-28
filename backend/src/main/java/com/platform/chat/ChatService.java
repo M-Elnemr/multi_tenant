@@ -437,6 +437,8 @@ public class ChatService {
         String answer = modelLoop(ctx, routed, system, turns, tools, rounds, allowed);
         if (answer == null || answer.isBlank() || ctx.summary()[0] != null) return answer;   // a code-written summary replaces the model's words anyway
         answer = reviewed(ctx, routed, system, turns, rounds, answer);
+        answer = ruleChecks(ctx, routed, system, turns, tools, rounds, allowed, answer);
+        if (ctx.summary()[0] != null) return answer;
         answer = moneySafe(ctx, routed, system, turns, tools, rounds, allowed, arabic, answer);
         return ctx.summary()[0] != null ? answer : claimsSafe(ctx, routed, system, turns, tools, rounds, allowed, answer);
     }
@@ -509,6 +511,65 @@ public class ChatService {
         String cut = ReplyGuard.strip(best, still);
         if (cut.length() >= 12) return cut;
         return arabicConversation(ctx.conversationId()) ? "أكيد يا فندم 🌸 قولي أكتر عن اللي بتدوري عليه وأنا أساعدك بكل حاجة." : "Of course 🌸 tell me a little more about what you are looking for and I will help with everything.";
+    }
+
+    private static final Pattern WHO_QUESTION = Pattern.compile("(?:ليك|ليكي|لحضرتك|لنفسك)\\s+(?:ولا|و\\s*لا)\\s+(?:لحد|ل\\s*حد)|(?:بتطلب|بتشتري|بتدور)\\s+(?:ل|لـ)?\\s*(?:حد|نفسك)|ليك\\s+ولا\\s+هدية|(?:for you|for yourself)\\s+or\\s+(?:someone|a gift)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern FOR_ME = Pattern.compile("(?<![\\p{L}])(?:ليا|ليّا|لنفسي|عشاني|علشاني|لي انا|ليه انا|for me|for myself)(?![\\p{L}])", Pattern.CASE_INSENSITIVE);
+    private static final Pattern NOT_HAVE = Pattern.compile("(?:مش\\s+(?:موجود|موجوده|موجودة|متوفر|متوفره|متوفرة|متاح|متاحه|متاحة)|معندناش|ماعندناش|مش\\s+عندنا|مفيش\\s+عندنا|مش\\s+عندهم|we\\s+(?:don't|do not)\\s+have|not\\s+available)", Pattern.CASE_INSENSITIVE);
+    private static final java.util.List<String> EXAMPLE_LINES = examples();
+
+    private static java.util.List<String> examples() {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        var m = Pattern.compile("«([^»]{25,})»").matcher(SalesPlaybook.TEXT);
+        while (m.find()) out.add(FastAnswers.norm(m.group(1)).substring(0, 22));
+        return out;
+    }
+
+    /**
+     * Checks no prompt can guarantee, in code, for every model: a "who is it for?" question or a "we do not have it" before the shop was searched in this turn (or after the customer said it is
+     * for them), an example sentence of the playbook copied word for word, and a reply in Arabic to a customer who writes English. One rewrite with what is wrong; the reply that comes back is used.
+     */
+    private String ruleChecks(Ctx ctx, ChannelAi.Routed routed, String system, List<Turn> turns, List<ToolDef> tools, List<AiUsageService.Round> rounds, MoneyGuard.Allowed allowed, String answer) {
+        if (answer == null || answer.isBlank()) return answer;
+        boolean searched = rounds.stream().anyMatch(r -> r.tools().stream().anyMatch(t -> t.equals("search_products") || t.equals("get_product") || t.equals("show_products")));
+        String last = lastCustomerText(turns);
+        List<String> problems = new ArrayList<>();
+        if (WHO_QUESTION.matcher(answer).find()) {
+            if (FOR_ME.matcher(last).find()) problems.add("The customer already said it is for themself: never ask who it is for; recommend for them.");
+            else if (!searched) problems.add("You asked who it is for before searching: call search_products now; ask only if the results are for several groups (men, women, kids) and nothing tells.");
+        }
+        if (!searched && NOT_HAVE.matcher(answer).find()) problems.add("You said we do not have something without searching in this turn: call search_products for exactly what the customer asked (also by color and size) and answer from the result.");
+        String norm = FastAnswers.norm(answer);
+        if (EXAMPLE_LINES.stream().anyMatch(norm::contains)) problems.add("You copied an example sentence from your instructions word for word; it may not fit. Answer THIS customer's message in your own words.");
+        if (english(last) && arabicShare(answer) > 0.5) problems.add("The customer writes English: reply in English.");
+        if (problems.isEmpty()) return answer;
+        log.warn("Rule check: {} (conversation {}): {}", problems, ctx.conversationId(), answer);
+        try {
+            turns.add(Turn.model(answer));
+            turns.add(Turn.user("[SYSTEM CHECK, not from the customer] " + String.join(" ", problems) + " Write your reply again." + lastCustomerWords(turns)));
+            String retry = modelLoop(ctx, routed, system, turns, tools, rounds, allowed);
+            return retry == null || retry.isBlank() ? answer : retry;
+        } catch (AiProvider.AiUnavailableException e) {
+            log.warn("Rule check: the rewrite failed: {}", e.getMessage());
+            return answer;
+        }
+    }
+
+    private static String lastCustomerText(List<Turn> turns) {
+        for (int i = turns.size() - 1; i >= 0; i--) if ("user".equals(turns.get(i).role()) && turns.get(i).text() != null && !turns.get(i).text().startsWith("[SYSTEM CHECK")) return turns.get(i).text();
+        return "";
+    }
+
+    static boolean english(String text) {
+        int latin = 0, ar = 0;
+        for (int cp : text.codePoints().toArray()) { if (cp >= 0x0600 && cp <= 0x06FF) ar++; else if (Character.isLetter(cp)) latin++; }
+        return ar == 0 && latin >= 8 && !text.matches("(?is).*\\b(?:3|7|2)[a-z].*|.*\\b(?:ana|enta|3ayez|3ayz|bkam|kam|feh|fe|mesh|msh|ezay)\\b.*");   // Franco-Arabic is not English
+    }
+
+    static double arabicShare(String text) {
+        int ar = 0, letters = 0;
+        for (int cp : text.codePoints().toArray()) if (Character.isLetter(cp)) { letters++; if (cp >= 0x0600 && cp <= 0x06FF) ar++; }
+        return letters == 0 ? 0 : (double) ar / letters;
     }
 
     /** Reminds the model, after a system check, what the customer actually said, so the rewrite answers it instead of starting over. */
@@ -832,6 +893,7 @@ public class ChatService {
         for (var sm : settings.shippingMethods(tenantId, true)) b.append("- Delivery option: ").append(sm.get("name")).append(" (").append(sm.get("type")).append(")")
                 .append(sm.get("feeMinor") instanceof Number f && f.longValue() > 0 && !"ZONES".equals(sm.get("type")) ? ", fee " + major(f.longValue()) : "").append("\n");
         for (var z : fulfilment.zones(tenantId, true)) b.append("- Delivery zone \"").append(z.get("name")).append("\": governorates ").append(z.get("governorateCodes")).append(", fee ").append(major(((Number) z.get("feeMinor")).longValue()))
+                .append(z.get("freeAboveMinor") instanceof Number fa && fa.longValue() > 0 ? ", FREE for orders of " + major(fa.longValue()) + " or more" : "")
                 .append(", ETA ").append(z.get("etaMinDays")).append("-").append(z.get("etaMaxDays")).append(" days").append(z.get("codFeeMinor") instanceof Number c && c.longValue() > 0 ? ", cash-on-delivery fee " + major(c.longValue()) : "").append("\n");
         if (shopWhatsapp(tenantId) != null) b.append("- WhatsApp confirmation is available (free): ask the customer for the WhatsApp number as described in the rules.\n");
         Integer days = jdbc.sql("SELECT return_window_days FROM commerce.store_profiles WHERE tenant_id = :t").param("t", tenantId).query(Integer.class).optional().orElse(null);
@@ -1124,6 +1186,9 @@ public class ChatService {
                     "currency", r.get("currency"), "imageUrl", r.get("imageUrl"), "imageMediaBase", r.get("imageMediaBase"), "imageMediaExt", r.get("imageMediaExt")));
         }
         var res = obj("products", out, "count", out.size());
+        var groups = out.stream().map(m -> m.get("for")).filter(java.util.Objects::nonNull).distinct().toList();
+        if (q != null && groups.size() == 1 && out.stream().allMatch(m -> m.get("for") != null))
+            res.put("audienceNote", "All these are for " + groups.get(0) + " only: do not ask who it is for (unless it is clearly a gift); recommend them.");
         if (!exact) res.put("note", out.isEmpty()
                 ? "The shop has no products right now."
                 : "No product matched these words, so these are only other products of the shop. If the SHOP CATALOG has this kind of item, offer it; if it has nothing like it (for example shoes or jackets in a shop without them), say honestly and kindly that we do not have it, then suggest the closest RELATED kind of item we do have (for shoes: men's or women's clothes; never unrelated things like kitchen tools or pillows). Never claim we have something these results do not show.");

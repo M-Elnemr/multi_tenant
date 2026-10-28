@@ -31,8 +31,8 @@ class AiReplyReviewIntegrationTest extends IntegrationTestBase {
         UUID id = shop();
 
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("عندنا بنطلون أطفال حلو جداً، تحب أوريك؟"));
-        FakeAiProvider.SCRIPT.add(turns -> Turn.model("{\"ok\":false,\"problems\":[\"kids product for an adult\"],\"reply\":\"تمام يا فندم، البنطلون ليك ولا لحد تاني؟\"}"));
-        assertThat(chat.reply(id, "WEB", "r1-" + uniq(), null, "عايز بنطلون").text()).isEqualTo("تمام يا فندم، البنطلون ليك ولا لحد تاني؟");
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("{\"ok\":false,\"problems\":[\"kids product for an adult\"],\"reply\":\"تمام يا فندم، تحب مقاس إيه في البنطلون؟\"}"));
+        assertThat(chat.reply(id, "WEB", "r1-" + uniq(), null, "عايز بنطلون").text()).isEqualTo("تمام يا فندم، تحب مقاس إيه في البنطلون؟");
         assertThat(FakeAiProvider.lastSystem).contains("senior sales manager");
 
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("أكيد يا فندم، تحب مقاس إيه؟"));
