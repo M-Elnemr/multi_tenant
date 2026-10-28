@@ -80,6 +80,9 @@ public class ChatService {
         String t = text.replaceAll("[\\p{IsHan}\\p{IsHiragana}\\p{IsKatakana}\\p{IsHangul}\\p{IsCyrillic}]", "")
                 .replaceAll("\\s*\\[[\\p{L}\\p{N}-]{3,}\\]", "")   // a catalog slug («[بنطلون-جينز-سليم]») is never for the customer
                 .replaceAll("(?<=\\p{IsArabic})[a-z]{3,}(?=\\s|$|\\p{IsArabic})", "");   // lowercase Latin glued to an Arabic word («أursic») is a slip; sizes after «و» («وXL») stay
+        for (var fix : WORD_FIXES.entrySet()) t = t.replace(fix.getKey(), fix.getValue());
+        t = t.replaceAll("وبتاع\\s+(?=[0-9٠-٩])", "وبـ");
+        t = t.replaceAll("(?<=\\p{IsArabic})(?!(?:XL|XXL|XS|S|M|L)(?![A-Za-z]))[A-Za-z]{2,}(?=\\s|$|[.،,؟?!]|\\p{IsArabic})", "");   // «للمen»: Latin glued to an Arabic word, sizes after «و» stay
         t = t.replace("محتاجة منك", "محتاج منك").replace("محتاجة أعرف", "محتاج أعرف").replace("محتاجة اعرف", "محتاج اعرف").replace("فاهماك", "فاهمك").replace("فاهماكي", "فاهمك")
                 .replace("مش متابعة", "مش متابع").replace("متأكدة إن", "متأكد إن");
         String name = customerName(tenantId, conv, channel, externalId, clientId);
@@ -93,6 +96,14 @@ public class ChatService {
         }
         return t;
     }
+
+    /** Misspellings and odd words the models were seen to write, with what a Cairo shop assistant says. Add to it whenever a test run shows a new one. */
+    static final Map<String, String> WORD_FIXES = Map.ofEntries(
+            Map.entry("لميراتك", "لمراتك"), Map.entry("لميراته", "لمراته"), Map.entry("القمصص", "القمصان"), Map.entry("بييك", "بيك"), Map.entry("بييكي", "بيكي"),
+            Map.entry(" للملوك", ""), Map.entry(" قيصرة", ""), Map.entry(" قاطع ممتاز", " ممتاز"), Map.entry("جينز سليم قاطع", "جينز سليم"),
+            Map.entry("أحجزهاولك", "أحجزهالك"), Map.entry("احجزهاولك", "احجزهالك"), Map.entry("أحجزهمولك", "أحجزهملك"), Map.entry("للأسفل", "للأسف"), Map.entry("ومتصدئة", "ومبتصدّيش"),
+            Map.entry("منيحة", "كويسة"), Map.entry("هيديبق", "هيليق"), Map.entry("هيدب", "هيبقى"), Map.entry("استلزمنا", "استلمنا"), Map.entry("وألونه", "وألوانه"), Map.entry("يارتني", "يا رب"),
+            Map.entry("نفاعتك", "في بالك"), Map.entry("خسّان", "مخفّض"), Map.entry("الرقيمة", "السعر"), Map.entry("حقتك", "حقك"), Map.entry("مجربدة", "مجرّبة"));
 
     /** A professional seller does not laugh at a customer: «هههه» and laughing emoji are taken out. */
     static String noLaughter(String text) {
@@ -321,6 +332,7 @@ public class ChatService {
         @SuppressWarnings("unchecked") Map<String, Object>[] orderBox = new Map[1];
         Ctx ctx = new Ctx(tenantId, conv, channel, externalId, clientId, userMsgId, new ArrayList<>(), orderBox, new String[1]);
         String system = systemPrompt(tenantId, conv, clientId, channel, externalId);
+        if (!system.contains("ALL PRODUCTS (")) system += productsForMessage(tenantId, text);
         List<ToolDef> tools = tools();
         String answer = null;
         // A plain "yes / تمام / ok" to the summary places the order right here: the model is never trusted to remember to do it, or to say it was done.
@@ -537,7 +549,9 @@ public class ChatService {
      */
     private String ruleChecks(Ctx ctx, ChannelAi.Routed routed, String system, List<Turn> turns, List<ToolDef> tools, List<AiUsageService.Round> rounds, MoneyGuard.Allowed allowed, String answer) {
         if (answer == null || answer.isBlank()) return answer;
-        boolean searched = rounds.stream().anyMatch(r -> r.tools().stream().anyMatch(t -> t.equals("search_products") || t.equals("get_product") || t.equals("show_products")));
+        // the full product list in the prompt counts as having looked: the facts are in front of the model
+        boolean searched = system.contains("ALL PRODUCTS (") || system.contains("PRODUCTS FOR THE CUSTOMER'S NEWEST MESSAGE")
+                || rounds.stream().anyMatch(r -> r.tools().stream().anyMatch(t -> t.equals("search_products") || t.equals("get_product") || t.equals("show_products")));
         String last = lastCustomerText(turns);
         List<String> problems = new ArrayList<>();
         if (WHO_QUESTION.matcher(answer).find()) {
@@ -551,6 +565,11 @@ public class ChatService {
         String norm = FastAnswers.norm(answer);
         if (EXAMPLE_LINES.stream().anyMatch(norm::contains)) problems.add("You copied an example sentence from your instructions word for word; it may not fit. Answer THIS customer's message in your own words.");
         if (english(last) && arabicShare(answer) > 0.5) problems.add("The customer writes English: reply in English.");
+        var asked = QUANTITY.matcher(MoneyGuard.digits(last));
+        if (asked.find() && Integer.parseInt(asked.group(1)) >= 5 && MoneyGuard.digits(answer).contains(asked.group(1)) && PROMISE.matcher(answer).find() && !LIMIT_WORDS.matcher(answer).find())
+            problems.add("The customer asked for " + asked.group(1) + " pieces: check the stock count of that exact option (in ALL PRODUCTS or the search result) and never promise more than is in stock; if fewer are available, say how many.");
+        if (PHONE_DOUBT.matcher(answer).find() && customerGaveMobile(turns))
+            problems.add("The mobile number the customer wrote is valid: never say it is wrong or count its digits; if needed, ask only «الرقم ده عليه واتساب؟».");
         if (problems.isEmpty()) return answer;
         log.warn("Rule check: {} (conversation {}): {}", problems, ctx.conversationId(), answer);
         try {
@@ -562,6 +581,17 @@ public class ChatService {
             log.warn("Rule check: the rewrite failed: {}", e.getMessage());
             return answer;
         }
+    }
+
+    private static final Pattern QUANTITY = Pattern.compile("(?<![\\d])(\\d{1,3})\\s*(?:طقم|اطقم|أطقم|قطعة|قطعه|قطع|قميص|قمصان|حتة|حته|حتت|عباية|عبايات|بنطلون|بناطيل|فستان|فساتين|pieces?|pcs|sets?)");
+    private static final Pattern PROMISE = Pattern.compile("(?:نجهزلك|هنجهز|هجهز|أجهزلك|اجهزلك|أحجزلك|احجزلك|نحجزلك|متوفر|متوفرة|متاح|متاحة|موجود)");
+    private static final Pattern LIMIT_WORDS = Pattern.compile("(?:بس|فقط|المتاح|المتوفر|متبقي|الموجود\\s+حاليا|only|left)");
+    private static final Pattern PHONE_DOUBT = Pattern.compile("(?:الرقم|رقم)[^.؟?!\\n]{0,35}(?:مش\\s+صح|غلط|ناقص|زيادة|مش\\s+مظبوط|مشو[ّ]?ش|مش\\s+شكله\\s+صح|فيه\\s*[0-9٠-٩]+\\s*رقم|بصيغة\\s+صحيحة)");
+
+    private static boolean customerGaveMobile(List<Turn> turns) {
+        for (Turn t : turns)
+            if ("user".equals(t.role()) && t.text() != null && MoneyGuard.digits(t.text()).replaceAll("[\\s-]", "").matches("(?s).*(?<!\\d)(?:\\+?20)?01[0125]\\d{8}(?!\\d).*")) return true;
+        return false;
     }
 
     private static final Pattern AVAILABLE_WORDS = Pattern.compile("(?:متاح|متاحة|متاحه|متوفر|متوفرة|متوفره|موجود|موجودة|موجوده|available|in stock)", Pattern.CASE_INSENSITIVE);
@@ -969,7 +999,12 @@ public class ChatService {
                 if (c.get("minMinor") != null) b.append(", ").append(price(c.get("minMinor"))).append(c.get("maxMinor") != null && !c.get("maxMinor").equals(c.get("minMinor")) ? "-" + price(c.get("maxMinor")) : "");
                 b.append("\n");
             }
-            var top = search.topProducts(tenantId, 30);
+            String all = allProducts(tenantId);
+            if (!all.isEmpty()) b.append(all);
+            var top = all.isEmpty() ? search.topProducts(tenantId, 30) : List.<Map<String, Object>>of();
+            if (!all.isEmpty() && jdbc.sql("SELECT coalesce(max(sold_count), 0) > 0 FROM commerce.products WHERE tenant_id = :t AND status = 'ACTIVE'").param("t", tenantId).query(Boolean.class).single())
+                b.append("Best sellers, الأكثر طلباً, most sold first: ").append(String.join("; ", search.topProducts(tenantId, 5).stream().map(t -> String.valueOf(t.get("name"))).toList())).append("\n");
+            else if (!all.isEmpty()) b.append("There is no sales record yet: if asked what sells most, say honestly these are the shop's picks and recommend by what the customer needs.\n");
             if (!top.isEmpty()) {
                 boolean sales = jdbc.sql("SELECT coalesce(max(sold_count), 0) > 0 FROM commerce.products WHERE tenant_id = :t AND status = 'ACTIVE'").param("t", tenantId).query(Boolean.class).single();
                 b.append(sales ? "Best sellers, الأكثر طلباً, most sold first (name [slug] (price)): "
@@ -982,6 +1017,53 @@ public class ChatService {
             log.warn("Shop catalog digest failed", e);
             return "";
         }
+    }
+
+    static final int FULL_CATALOG_MAX = 60;
+
+    /**
+     * Every product of a small shop on one line, straight from the shop's data: who it is for, its category, price (and the price before a discount), every color and size, and how many of
+     * each are in stock. With this in front of it, no model needs to remember or guess what exists («الجينز أسود؟», «عندكم ٢٠ طقم؟»). Empty for shops with more products (they search).
+     */
+    String allProducts(UUID tenantId) {
+        long count = jdbc.sql("SELECT count(*) FROM commerce.products WHERE tenant_id = :t AND status = 'ACTIVE'").param("t", tenantId).query(Long.class).single();
+        if (count == 0 || count > FULL_CATALOG_MAX) return "";
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) search.list(tenantId, Page.of(1, FULL_CATALOG_MAX), new StoreSearchService.Filter(null, null, null, null, null, null, null, null, "name")).get("data");
+        StringBuilder b = new StringBuilder("ALL PRODUCTS (the complete list, with every color, size and the stock of each; this is the truth, trust it over memory; a product not here does not exist in this shop):\n");
+        for (var r : rows) b.append(productLine(tenantId, r));
+        return b.toString();
+    }
+
+    /** One product as the model should know it: name, who it is for, category, price, every option and the stock of each. */
+    private String productLine(UUID tenantId, Map<String, Object> r) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        describe(m, r.get("audience"), r.get("taxonomyId"), null);
+        List<Map<String, Object>> vs = compactVariants(tenantId, String.valueOf(r.get("slug")), null, 40);
+        optionSummary(m, vs);
+        StringBuilder b = new StringBuilder("- ").append(r.get("name")).append(" [").append(r.get("slug")).append("]");
+        if (m.get("for") != null) b.append(", for ").append(m.get("for"));
+        if (m.get("category") != null) b.append(", category ").append(m.get("category"));
+        b.append(", price ").append(price(r.get("minPriceMinor")));
+        if (r.get("compareAtMinor") != null) b.append(" (before ").append(price(r.get("compareAtMinor"))).append(")");
+        if (m.get("allOptions") != null) b.append(", options ").append(m.get("allOptions"));
+        int total = vs.stream().mapToInt(v -> v.get("available") instanceof Number n ? n.intValue() : 0).sum();
+        if (m.get("inStockOptions") instanceof Map<?, ?> st && !st.isEmpty()) b.append(", in stock ").append(st);
+        else b.append(total > 0 ? ", " + total + " in stock" : Boolean.TRUE.equals(r.get("inStock")) ? ", in stock" : ", OUT OF STOCK");
+        return b.append("\n").toString();
+    }
+
+    /** For a shop too big to list in full: the products matching the customer's newest message, found in code, so a model that forgets to search still sees the right ones. */
+    private String productsForMessage(UUID tenantId, String text) {
+        if (text == null || text.isBlank()) return "";
+        String q = withoutOptions(text);
+        if (q == null) return "";
+        List<Map<String, Object>> rows = find(tenantId, q, null, null);
+        if (rows.isEmpty() && synonyms(q) != null) rows = find(tenantId, synonyms(q), null, null);
+        if (rows.isEmpty()) return "";
+        StringBuilder b = new StringBuilder("\nPRODUCTS FOR THE CUSTOMER'S NEWEST MESSAGE (found for you; use them, and search for anything else):\n");
+        for (var r : rows) b.append(productLine(tenantId, r));
+        return b.toString();
     }
 
     private static String price(Object minor) {
@@ -1319,7 +1401,8 @@ public class ChatService {
      */
     @SuppressWarnings("unchecked")
     static void optionSummary(Map<String, Object> m, List<Map<String, Object>> variants) {
-        java.util.Map<String, java.util.LinkedHashSet<String>> all = new java.util.LinkedHashMap<>(), inStock = new java.util.LinkedHashMap<>();
+        java.util.Map<String, java.util.LinkedHashSet<String>> all = new java.util.LinkedHashMap<>();
+        java.util.Map<String, java.util.LinkedHashMap<String, Integer>> inStock = new java.util.LinkedHashMap<>();
         for (var v : variants) {
             String opts = String.valueOf(v.get("options"));
             if ("default".equals(opts)) continue;
@@ -1328,7 +1411,7 @@ public class ChatService {
                 if (i < 0) continue;
                 String k = kv.substring(0, i).trim(), val = kv.substring(i + 1).trim();
                 all.computeIfAbsent(k, x -> new java.util.LinkedHashSet<>()).add(val);
-                if (isAvailable(v.get("available"))) inStock.computeIfAbsent(k, x -> new java.util.LinkedHashSet<>()).add(val);
+                if (isAvailable(v.get("available"))) inStock.computeIfAbsent(k, x -> new java.util.LinkedHashMap<>()).merge(val, v.get("available") instanceof Number n ? n.intValue() : 1, Integer::sum);
             }
         }
         if (all.isEmpty()) return;
@@ -1336,7 +1419,7 @@ public class ChatService {
         all.forEach((k, vals) -> o.put(k, String.join(" / ", vals)));
         m.put("allOptions", o);
         Map<String, Object> s = new LinkedHashMap<>();
-        inStock.forEach((k, vals) -> s.put(k, String.join(" / ", vals)));
+        inStock.forEach((k, vals) -> { List<String> parts = new ArrayList<>(); vals.forEach((val, n) -> parts.add(val + " (" + n + " in stock)")); s.put(k, String.join(" / ", parts)); });
         m.put("inStockOptions", s);
     }
 

@@ -87,4 +87,13 @@ class AiHumanSellerIntegrationTest extends IntegrationTestBase {
         assertThat(ChatService.messages("one\n⸻\ntwo\n⸻\nthree")).hasSize(2);
         assertThat(ChatService.messages("just one")).containsExactly("just one");
     }
+
+    @Test
+    void aSmallShopsWholeCatalogWithStockIsInFrontOfTheModel() throws Exception {
+        Tenant t = onboard("STORE");
+        jeans(t, "Jeans Classic Navy", "MEN");
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("متاح يا فندم"));
+        chat.reply(tenantId(t), "WEB", "cat-" + uniq(), null, "عندكم جينز؟");
+        assertThat(FakeAiProvider.lastSystem).contains("ALL PRODUCTS (").contains("Jeans Classic Navy").contains("for men").contains("5 in stock");
+    }
 }

@@ -9,7 +9,8 @@ import org.springframework.context.annotation.Configuration;
 class AiConfig {
     @Bean
     AiProvider defaultAi(@Value("${app.ai.glm.api-key:}") String key, @Value("${app.ai.glm.model:zai-org/glm-5.3-flash}") String model, @Value("${app.ai.glm.base-url:https://api-cdn.thehive.ai/api/v3}") String baseUrl,
-                         @Value("${app.ai.glm.reasoning-effort:low}") String effort, @Value("${app.ai.glm.max-output-tokens:3000}") int maxOutput) {
-        return new OpenAiProvider("glm", "GLM", key, model, effort, baseUrl, maxOutput, true, "");
+                         @Value("${app.ai.glm.reasoning-effort:low}") String effort, @Value("${app.ai.glm.max-output-tokens:3000}") int maxOutput,
+                         @Value("${app.ai.glm.temperature:}") String temperature) {
+        return new OpenAiProvider("glm", "GLM", key, model, effort, baseUrl, maxOutput, true, ChannelAi.withTemperature("", temperature));
     }
 }

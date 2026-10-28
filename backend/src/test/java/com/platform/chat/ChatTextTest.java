@@ -131,4 +131,19 @@ class ChatTextTest {
         assertThat(ReplyGuard.violations("أنا مساعد افتراضي وليست لدي صلاحية الدخول لنظام المتابعة", "")).isNotEmpty();
         assertThat(ReplyGuard.violations("الفستان ده هدية حلوة لمراتك", "")).isEmpty();
     }
+
+    @Test
+    void temperatureIsMergedIntoTheExtraSettings() {
+        assertThat(ChannelAi.withTemperature("", "0.3")).isEqualTo("{\"temperature\":0.3}");
+        assertThat(ChannelAi.withTemperature("{\"enable_thinking\":false}", "0.4")).isEqualTo("{\"enable_thinking\":false,\"temperature\":0.4}");
+        assertThat(ChannelAi.withTemperature("{\"enable_thinking\":false}", "")).isEqualTo("{\"enable_thinking\":false}");
+        assertThat(ChannelAi.withTemperature("", "abc")).isEmpty();
+    }
+
+    @Test
+    void stockCountsAreListedPerOption() {
+        var m = new java.util.LinkedHashMap<String, Object>();
+        ChatService.optionSummary(m, List.of(java.util.Map.of("options", "اللون: أبيض", "available", 6), java.util.Map.of("options", "اللون: بيج", "available", 8)));
+        assertThat(m.get("inStockOptions").toString()).contains("أبيض (6 in stock)").contains("بيج (8 in stock)");
+    }
 }

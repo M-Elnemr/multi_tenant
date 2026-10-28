@@ -30,15 +30,28 @@ public class ChannelAi {
                      @Value("${app.ai.glm.api-key:}") String glmKey, @Value("${app.ai.glm.model:zai-org/glm-5.3-flash}") String glmModel,
                      @Value("${app.ai.glm.base-url:https://api-cdn.thehive.ai/api/v3}") String glmUrl, @Value("${app.ai.glm.reasoning-effort:low}") String glmEffort,
                      @Value("${app.ai.qwen.api-key:}") String qwenKey, @Value("${app.ai.qwen.model:qwen3.7-flash}") String qwenModel,
-                     @Value("${app.ai.qwen.base-url:https://dashscope-intl.aliyuncs.com/compatible-mode/v1}") String qwenUrl, @Value("${app.ai.qwen.thinking:off}") String qwenThinking) {
-        this(defaultAi, new AnthropicProvider(key, model, effort, baseUrl, cacheTtl, chatMaxOutput), new OpenAiProvider("glm", "GLM", glmKey, glmModel, glmEffort, glmUrl, chatMaxOutput, true, ""),
-                new OpenAiProvider("qwen", "Alibaba Qwen", qwenKey, qwenModel, "", qwenUrl, chatMaxOutput, true, qwenExtra(qwenThinking)), social, web);
+                     @Value("${app.ai.qwen.base-url:https://dashscope-intl.aliyuncs.com/compatible-mode/v1}") String qwenUrl, @Value("${app.ai.qwen.thinking:off}") String qwenThinking,
+                     @Value("${app.ai.glm.temperature:}") String glmTemperature, @Value("${app.ai.qwen.temperature:}") String qwenTemperature) {
+        this(defaultAi, new AnthropicProvider(key, model, effort, baseUrl, cacheTtl, chatMaxOutput), new OpenAiProvider("glm", "GLM", glmKey, glmModel, glmEffort, glmUrl, chatMaxOutput, true, withTemperature("", glmTemperature)),
+                new OpenAiProvider("qwen", "Alibaba Qwen", qwenKey, qwenModel, "", qwenUrl, chatMaxOutput, true, withTemperature(qwenExtra(qwenThinking), qwenTemperature)), social, web);
     }
 
     /** Alibaba's compatible mode reads {@code enable_thinking}: "off" (default) and "on" set it, anything else ("unset") sends nothing, for a host that rejects the field. */
     static String qwenExtra(String thinking) {
         String t = thinking == null ? "" : thinking.trim().toLowerCase(Locale.ROOT);
         return "off".equals(t) ? "{\"enable_thinking\":false}" : "on".equals(t) ? "{\"enable_thinking\":true}" : "";
+    }
+
+    /** Adds {@code "temperature"} to a model's extra request settings when one is configured (empty = the service's own default). Lower means steadier answers that stick to the facts. */
+    static String withTemperature(String extraJson, String temperature) {
+        String t = temperature == null ? "" : temperature.trim();
+        if (t.isEmpty()) return extraJson == null ? "" : extraJson;
+        double v;
+        try { v = Double.parseDouble(t); } catch (NumberFormatException e) { return extraJson == null ? "" : extraJson; }
+        String field = "\"temperature\":" + v;
+        if (extraJson == null || extraJson.isBlank()) return "{" + field + "}";
+        String e = extraJson.trim();
+        return e.substring(0, e.lastIndexOf('}')) + (e.replaceAll("\\s", "").equals("{}") ? "" : ",") + field + "}";
     }
 
     /** For tests: the default model and Claude. */
