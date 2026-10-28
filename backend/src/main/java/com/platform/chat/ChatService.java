@@ -532,7 +532,7 @@ public class ChatService {
 
     private static final Pattern WHO_QUESTION = Pattern.compile("(?:ليك|ليكي|لحضرتك|لنفسك)\\s+(?:ولا|و\\s*لا)\\s+(?:لحد|ل\\s*حد)|(?:بتطلب|بتشتري|بتدور)\\s+(?:ل|لـ)?\\s*(?:حد|نفسك)|ليك\\s+ولا\\s+هدية|(?:for you|for yourself)\\s+or\\s+(?:someone|a gift)", Pattern.CASE_INSENSITIVE);
     private static final Pattern FOR_ME = Pattern.compile("(?<![\\p{L}])(?:ليا|ليّا|لنفسي|عشاني|علشاني|لي انا|ليه انا|for me|for myself)(?![\\p{L}])", Pattern.CASE_INSENSITIVE);
-    private static final Pattern NOT_HAVE = Pattern.compile("(?:مش\\s+(?:موجود|موجوده|موجودة|متوفر|متوفره|متوفرة|متاح|متاحه|متاحة)|معندناش|ماعندناش|مش\\s+عندنا|مفيش\\s+عندنا|مش\\s+عندهم|we\\s+(?:don't|do not)\\s+have|not\\s+available)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern NOT_HAVE = Pattern.compile("(?:مفيش\\s+(?:لبس|ملابس|منتج|منتجات|حاجة|حاجه|موديل|موديلات|أنواع|انواع)|عندنا\\s+مفيش|مش\\s+(?:موجود|موجوده|موجودة|متوفر|متوفره|متوفرة|متاح|متاحه|متاحة)|معندناش|ماعندناش|مش\\s+عندنا|مفيش\\s+عندنا|مش\\s+عندهم|we\\s+(?:don't|do not)\\s+have|not\\s+available)", Pattern.CASE_INSENSITIVE);
     private static final java.util.List<String> EXAMPLE_LINES = examples();
     private static final Pattern ONLY_OPTIONS = Pattern.compile("(?:الألوان|الالوان|المقاسات|اللون)\\s+(?:المتاحة|المتاحه|المتوفرة|المتوفره|الموجودة|الموجوده)[^.؟?!\\n]{0,40}(?:فقط|بس)|(?:لونه|لونها|متاح|متاحة|متوفر|موجود)\\s+[^.؟?!\\n]{0,15}(?:بس|فقط)|(?:بقطعة|بقطعه)\\s+واحدة|معنديش\\s+معلومات\\s+(?:دقيقة\\s+)?عن\\s+(?:المقاسات|الألوان|المخزون)");
 
@@ -595,12 +595,31 @@ public class ChatService {
         return false;
     }
 
+    private static final java.util.Set<String> CHAT_WORDS = java.util.Set.of("عايز", "عايزه", "عاوز", "عاوزه", "عندكم", "عندك", "عندكو", "ليا", "ليه", "لي", "ممكن", "لو", "سمحت", "بكام", "كام", "فيه", "في",
+            "عشان", "علشان", "انا", "انت", "حضرتك", "يا", "فندم", "اشوف", "شوف", "وريني", "ورينى", "محتاج", "محتاجه", "حاجه", "حلوه", "ابني", "لابني", "بنتي", "لبنتي", "لمراتي", "مراتي", "هديه",
+            "ده", "دي", "دا", "اللي", "الي", "مع", "من", "على", "عن", "و", "او", "ولا", "بس", "كمان", "طيب", "تمام", "اوي", "خالص", "متاح", "متوفر", "موجود", "سنين", "سنه", "عنده", "عمره");
+
+    /** The products matching the meaningful words of a customer message (chat words, colors and sizes left out, everyday synonyms swapped), each word on its own; at most 4. */
+    List<Map<String, Object>> relatedProducts(UUID tenantId, String text) {
+        if (text == null || text.isBlank()) return List.of();
+        var found = new LinkedHashMap<Object, Map<String, Object>>();
+        String q = withoutOptions(text);
+        if (q == null) return List.of();
+        List<String> words = java.util.Arrays.stream(q.split("\\s+")).filter(w -> w.length() >= 3 && !CHAT_WORDS.contains(w)).toList();
+        for (String w : words) {
+            String term = SYNONYMS.getOrDefault(w, w);
+            for (var r : find(tenantId, term, null, null)) found.putIfAbsent(r.get("slug"), r);
+            if (found.size() >= 4) break;
+        }
+        return found.values().stream().limit(4).toList();
+    }
+
     /** The customer named a kind of product we sell, and the reply names none of the matching products: a vague «عندنا أنواع كتير» instead of an answer. */
+    private static final Pattern RANGE_TALK = Pattern.compile("(?:عندنا|عندي|متاح|متوفر|موجود|بنطلونات|قمصان|فساتين|عبايات|ملابس|تشكيلة|أنواع|انواع|موديلات|we have|available|options)", Pattern.CASE_INSENSITIVE);
+
     private boolean vagueAboutProducts(UUID tenantId, String customer, String answer) {
-        String q = customer == null ? null : withoutOptions(customer);
-        if (q == null) return false;
-        List<Map<String, Object>> rows = find(tenantId, q, null, null);
-        if (rows.isEmpty() && synonyms(q) != null) rows = find(tenantId, synonyms(q), null, null);
+        if (!RANGE_TALK.matcher(answer).find()) return false;   // only a reply that talks about what the shop has
+        List<Map<String, Object>> rows = relatedProducts(tenantId, customer);
         if (rows.isEmpty()) return false;
         String said = FastAnswers.norm(answer);
         for (var r : rows) {
@@ -1072,11 +1091,7 @@ public class ChatService {
 
     /** For a shop too big to list in full: the products matching the customer's newest message, found in code, so a model that forgets to search still sees the right ones. */
     private String productsForMessage(UUID tenantId, String text) {
-        if (text == null || text.isBlank()) return "";
-        String q = withoutOptions(text);
-        if (q == null) return "";
-        List<Map<String, Object>> rows = find(tenantId, q, null, null);
-        if (rows.isEmpty() && synonyms(q) != null) rows = find(tenantId, synonyms(q), null, null);
+        List<Map<String, Object>> rows = relatedProducts(tenantId, text);
         if (rows.isEmpty()) return "";
         StringBuilder b = new StringBuilder("\nPRODUCTS FOR THE CUSTOMER'S NEWEST MESSAGE (found for you; use them, and search for anything else):\n");
         for (var r : rows) b.append(productLine(tenantId, r));
