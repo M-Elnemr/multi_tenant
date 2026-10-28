@@ -202,4 +202,15 @@ class ChatTextTest {
         assertThat(ChatService.NO_INFO.matcher("مفيش معلومات عن السعرات الحرارية في الوصف").find()).isTrue();
         assertThat(ChatService.NO_INFO.matcher("الكفتة من لحم بقري مفروم").find()).isFalse();
     }
+
+    @Test
+    void offeringCardPaymentIsRecognised() {
+        assertThat(ChatService.CARD_OFFER.matcher("وطريقة الدفع (كاش أو كارت)").find()).isTrue();
+        assertThat(ChatService.CARD_OFFER.matcher("الدفع كاش عند الاستلام").find()).isFalse();
+    }
+
+    @Test
+    void englishWordsFindAnArabicCatalog() {
+        assertThat(ChatService.synonyms("Do you have women's wide leg jeans in size L?")).isEqualTo("جينز");
+    }
 }

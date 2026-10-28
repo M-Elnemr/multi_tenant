@@ -585,6 +585,8 @@ public class ChatService {
             problems.add("You said there is no information without looking: call get_product for that product and answer from its details (ingredients, calories, material, size guide...); say it is not listed only if get_product has nothing.");
         if (ORDER_CLAIM.matcher(answer).find() && ctx.order()[0] == null && !hasOrderOnFile(ctx))
             problems.add("You said the order is recorded, but no order exists yet: an order exists only after the customer confirms the summary from prepare_order. Call prepare_order with the details you have (or ask for what is missing) and never say it is recorded before.");
+        if (CARD_OFFER.matcher(answer).find() && !cardAccepted(ctx.tenantId()))
+            problems.add("This shop takes cash on delivery only: never offer card, Visa or wallet payment.");
         boolean falseCancel = CANCEL_CLAIM.matcher(answer).find() && !orderCancelled(ctx);
         if (falseCancel) problems.add("You told the customer the order is cancelled, but it is NOT cancelled: only cancel_order cancels. Ask kindly why they want to cancel, then call cancel_order with the reason (or noReason=true if they will not say), and tell them only what the tool answered.");
         if (problems.isEmpty()) return answer;
@@ -610,6 +612,14 @@ public class ChatService {
 
     private boolean hasOrderOnFile(Ctx ctx) {
         return jdbc.sql("SELECT last_order IS NOT NULL FROM chat.conversations WHERE id = :c").param("c", ctx.conversationId()).query(Boolean.class).optional().orElse(false);
+    }
+
+    /** A reply offering card or wallet payment («كاش أو كارت», «تدفع بالفيزا»). */
+    static final Pattern CARD_OFFER = Pattern.compile("(?:كاش\\s+(?:أو|او|ولا)\\s+(?:كارت|بطاقة|بطاقه|فيزا|فودافون كاش)|(?:بالكارت|بالفيزا|بالبطاقة|بالبطاقه|فيزا\\s+أو|كارت\\s+أو)|cash\\s+or\\s+card|pay\\s+(?:by|with)\\s+card)", Pattern.CASE_INSENSITIVE);
+
+    private boolean cardAccepted(UUID tenantId) {
+        if (!policy.cardEnabled()) return false;
+        return settings.paymentMethods(tenantId).stream().anyMatch(m -> "CARD".equals(m.get("method")) && Boolean.TRUE.equals(m.get("enabled")));
     }
 
     /** Whether this chat's order really is cancelled in the shop's system. */
@@ -1368,7 +1378,8 @@ public class ChatService {
         List<ToolDef> base = List.of(
                 new ToolDef("search_products", "Search the shop's products by words (Arabic or English). Leave query empty to see popular products. Each hit lists its variants (id, options such as size and color, price, availability).",
                         obj("type", "OBJECT", "properties", obj("query", str("What the customer wants"), "maxPrice", num("Maximum price in the shop currency, optional"),
-                                "audience", str("Who the item is for, when known: MEN, WOMEN, BOYS, GIRLS or BABY (optional)")))),
+                                "audience", str("Who the item is for, when known: MEN, WOMEN, BOYS, GIRLS or BABY (optional)"),
+                                "onSale", obj("type", "BOOLEAN", "description", "true when the customer asks what is on sale or discounted: only discounted products, biggest discount first")))),
                 new ToolDef("get_product", "Full details of one product: description, options and variants. Use it only when search_products did not give enough.",
                         obj("type", "OBJECT", "properties", obj("slug", str("The product slug from search_products"), "want", str("Optional: only variants matching these words, e.g. \"M black\"")), "required", List.of("slug"))),
                 new ToolDef("show_products", "Send the customer the picture, price and link of products (on WhatsApp, Messenger and Instagram they arrive right after your message; on the website they show as cards). Use it whenever you recommend a product or the customer asks to see a photo. Give the slugs (from SHOP CATALOG or search_products), or a short query when you do not know the slug. At most 3 products.",
@@ -1477,9 +1488,16 @@ public class ChatService {
         Long max = a.get("maxPrice") instanceof Number n ? Math.round(n.doubleValue() * 100) : null;
         String aud = a.get("audience") == null ? null : String.valueOf(a.get("audience")).trim().toUpperCase(java.util.Locale.ROOT);
         if (aud != null && !AUDIENCES.containsKey(aud)) aud = null;
-        List<Map<String, Object>> rows = aud == null ? List.of() : find(ctx.tenantId(), q, null, max, aud);
+        List<Map<String, Object>> onSale = null;
+        if (Boolean.TRUE.equals(a.get("onSale"))) {   // «ايه اللي عليه خصم؟»: only products with a real old price, never a guess
+            var sale = (List<Map<String, Object>>) search.list(ctx.tenantId(), Page.of(1, 6), new StoreSearchService.Filter(q, null, null, max, null, true, true, null, "discount", aud, null, null, null)).get("data");
+            if (sale.isEmpty() && q != null) sale = (List<Map<String, Object>>) search.list(ctx.tenantId(), Page.of(1, 6), new StoreSearchService.Filter(null, null, null, max, null, true, true, null, "discount", aud, null, null, null)).get("data");
+            if (sale.isEmpty()) return obj("products", List.of(), "count", 0, "note", "Nothing is on sale right now: say so honestly (a coupon in the shop facts may still apply).");
+            onSale = sale;
+        }
+        List<Map<String, Object>> rows = onSale != null ? onSale : aud == null ? List.of() : find(ctx.tenantId(), q, null, max, aud);
         if (rows.isEmpty()) rows = find(ctx.tenantId(), q, null, max);   // products without an audience set still count
-        String broad = q == null ? null : withoutOptions(q);
+        String broad = q == null || onSale != null ? null : withoutOptions(q);
         if (broad != null && !broad.isBlank() && !broad.equals(FastAnswers.norm(q))) {
             // colors and sizes live in the variants, not in the product's name («قميص قطن ابيض» is the «قميص قطن أزرق كلاسيك» in white): search without them too
             var seenSlugs = new java.util.LinkedHashMap<Object, Map<String, Object>>();
@@ -1541,7 +1559,12 @@ public class ChatService {
     private static final Map<String, String> SYNONYMS = Map.ofEntries(Map.entry("حلل", "اواني"), Map.entry("حله", "اواني"), Map.entry("طاسات", "اواني"), Map.entry("طاسه", "اواني"), Map.entry("حلة", "اواني"),
             Map.entry("ملايه", "ملايات"), Map.entry("ملايات", "ملايات"), Map.entry("مفارش", "ملايات"), Map.entry("مخده", "مخدة"), Map.entry("مخدات", "مخدة"), Map.entry("سكينه", "سكين"), Map.entry("سكاكين", "سكين"),
             Map.entry("تيشرت", "تيشيرت"), Map.entry("تشيرت", "تيشيرت"), Map.entry("بنطلون", "بنطلون"), Map.entry("بناطيل", "بنطلون"), Map.entry("فساتين", "فستان"), Map.entry("عبايات", "عباية"), Map.entry("عبايه", "عباية"),
-            Map.entry("قمصان", "قميص"), Map.entry("جزمه", "حذاء"), Map.entry("جزم", "حذاء"), Map.entry("كوتشي", "حذاء"), Map.entry("شنطه", "حقيبة"), Map.entry("شنط", "حقيبة"));
+            Map.entry("قمصان", "قميص"), Map.entry("جزمه", "حذاء"), Map.entry("جزم", "حذاء"), Map.entry("كوتشي", "حذاء"), Map.entry("شنطه", "حقيبة"), Map.entry("شنط", "حقيبة"),
+            // English words for an Arabic catalog
+            Map.entry("jeans", "جينز"), Map.entry("shirt", "قميص"), Map.entry("shirts", "قميص"), Map.entry("t-shirt", "تيشيرت"), Map.entry("tshirt", "تيشيرت"), Map.entry("dress", "فستان"),
+            Map.entry("dresses", "فستان"), Map.entry("pants", "بنطلون"), Map.entry("trousers", "بنطلون"), Map.entry("shoes", "حذاء"), Map.entry("sneakers", "سنيكرز"), Map.entry("bag", "شنطة"),
+            Map.entry("bags", "شنطة"), Map.entry("hoodie", "هودي"), Map.entry("jacket", "جاكيت"), Map.entry("abaya", "عباية"), Map.entry("skirt", "جيبة"), Map.entry("shawarma", "شاورما"),
+            Map.entry("burger", "برجر"), Map.entry("chicken", "فراخ"), Map.entry("fries", "بطاطس"), Map.entry("juice", "عصير"), Map.entry("dessert", "حلويات"));
 
     /** The customer's words with everyday synonyms swapped for the catalog's words, or null when none applies. */
     static String synonyms(String q) {

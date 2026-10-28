@@ -144,8 +144,14 @@ class PatientAccountsIntegrationTest extends IntegrationTestBase {
         List<String> pushed = jdbc.sql("SELECT to_address FROM notifications.outbox WHERE channel = 'PUSH' AND tenant_id = (SELECT id FROM core.tenants WHERE slug = :s)").param("s", c.slug()).query(String.class).list();
         assertThat(pushed).containsExactly(tokSecond);
         // without Firebase configured the sender only logs, and the message is marked sent
-        notifications.dispatchOutbox();
-        assertThat(jdbc.sql("SELECT status FROM notifications.outbox WHERE channel = 'PUSH' AND to_address = :t").param("t", tokSecond).query(String.class).single()).isEqualTo("SENT");
+        // a background dispatch may hold the row for a moment, so send and look again until it settles
+        String sent = "";
+        for (int i = 0; i < 25 && !"SENT".equals(sent); i++) {
+            notifications.dispatchOutbox();
+            sent = jdbc.sql("SELECT status FROM notifications.outbox WHERE channel = 'PUSH' AND to_address = :t").param("t", tokSecond).query(String.class).single();
+            if (!"SENT".equals(sent)) Thread.sleep(200);
+        }
+        assertThat(sent).isEqualTo("SENT");
         onHost(h, second.token(), "GET", "/api/v1/portal/queue", null).andExpect(jsonPath("$[0].called").value(true));
         // unregistering removes the device
         onHost(h, second.token(), "DELETE", "/api/v1/portal/devices", "{\"token\":\"%s\"}".formatted(tokSecond)).andExpect(status().isOk());
