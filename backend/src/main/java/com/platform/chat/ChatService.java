@@ -592,14 +592,16 @@ public class ChatService {
         boolean falseCancel = CANCEL_CLAIM.matcher(answer).find() && !orderCancelled(ctx);
         if (falseCancel) problems.add("You told the customer the order is cancelled, but it is NOT cancelled: only cancel_order cancels. Ask kindly why they want to cancel, then call cancel_order with the reason (or noReason=true if they will not say), and tell them only what the tool answered.");
         if (problems.isEmpty()) return answer;
-        if (!canRewrite(rounds)) return falseCancel ? cancelFallback(answer) : answer;
+        boolean phoneDoubt = PHONE_DOUBT.matcher(answer).find() && customerGaveMobile(turns);
+        if (!canRewrite(rounds)) return falseCancel ? cancelFallback(answer) : phoneDoubt ? phoneFallback(answer) : answer;
         log.warn("Rule check: {} (conversation {}): {}", problems, ctx.conversationId(), answer);
         try {
             turns.add(Turn.model(answer));
             turns.add(Turn.user("[SYSTEM CHECK, not from the customer] " + String.join(" ", problems) + " Write your reply again." + lastCustomerWords(turns)));
             String retry = modelLoop(ctx, routed, system, turns, tools, rounds, allowed);
-            if (retry == null || retry.isBlank()) return falseCancel ? cancelFallback(answer) : answer;
-            return CANCEL_CLAIM.matcher(retry).find() && !orderCancelled(ctx) ? cancelFallback(retry) : retry;
+            if (retry == null || retry.isBlank()) return falseCancel ? cancelFallback(answer) : phoneDoubt ? phoneFallback(answer) : answer;
+            if (CANCEL_CLAIM.matcher(retry).find() && !orderCancelled(ctx)) return cancelFallback(retry);
+            return PHONE_DOUBT.matcher(retry).find() && customerGaveMobile(turns) ? phoneFallback(retry) : retry;
         } catch (AiProvider.AiUnavailableException e) {
             log.warn("Rule check: the rewrite failed: {}", e.getMessage());
             return falseCancel ? cancelFallback(answer) : answer;
@@ -633,6 +635,11 @@ public class ChatService {
                 .param("t", ctx.tenantId()).param("c", ctx.conversationId()).query(Boolean.class).single();
     }
 
+    /** The model doubted a valid mobile number and had no rewrite left: ask only the WhatsApp question («الرقم ده عليه واتساب؟»), never that the number is wrong. */
+    private static String phoneFallback(String answer) {
+        return english(answer) && arabicShare(answer) < 0.5 ? "Thank you! Is this number on WhatsApp, so we can confirm your order there?" : "تمام يا فندم 🙏 الرقم ده عليه واتساب عشان نأكدلك الأوردر عليه؟";
+    }
+
     /** The model kept saying "cancelled" when nothing was: ask the reason instead (the next turn goes through cancel_order). */
     private static String cancelFallback(String answer) {
         return english(answer) && arabicShare(answer) < 0.5
@@ -663,8 +670,9 @@ public class ChatService {
         if (q == null) return List.of();
         List<String> words = java.util.Arrays.stream(q.split("\\s+")).filter(w -> w.length() >= 3 && !CHAT_WORDS.contains(w)).toList();
         for (String w : words) {
-            String term = SYNONYMS.getOrDefault(w, w);
-            for (var r : find(tenantId, term, null, null)) found.putIfAbsent(r.get("slug"), r);
+            var hits = find(tenantId, w, null, null);
+            if (hits.isEmpty() && SYNONYMS.containsKey(w)) hits = find(tenantId, SYNONYMS.get(w), null, null);
+            for (var r : hits) found.putIfAbsent(r.get("slug"), r);
             if (found.size() >= 4) break;
         }
         return found.values().stream().limit(4).toList();
@@ -683,6 +691,14 @@ public class ChatService {
         if (related.isEmpty()) return null;
         var slugs = related.stream().map(r -> String.valueOf(r.get("slug"))).collect(java.util.stream.Collectors.toSet());
         if (ctx.products().stream().anyMatch(p -> slugs.contains(String.valueOf(p.get("slug"))))) return null;
+        String q = withoutOptions(customer);
+        if (q != null) {
+            List<String> words = java.util.Arrays.stream(q.split("\\s+")).filter(w -> w.length() >= 3 && !CHAT_WORDS.contains(w)).toList();
+            for (var p : ctx.products()) {
+                String name = FastAnswers.norm(String.valueOf(p.get("name")));
+                if (words.stream().anyMatch(w -> name.contains(w) || (SYNONYMS.containsKey(w) && name.contains(SYNONYMS.get(w))))) return null;
+            }
+        }
         return "The products you showed (" + String.join("، ", ctx.products().stream().map(p -> String.valueOf(p.get("name"))).toList()) + ") are not what the customer asked about; the matching products are: "
                 + String.join("، ", related.stream().map(r -> String.valueOf(r.get("name"))).toList()) + ". Answer about those.";
     }
@@ -1508,7 +1524,7 @@ public class ChatService {
             var seenSlugs = new java.util.LinkedHashMap<Object, Map<String, Object>>();
             for (var r : rows) seenSlugs.putIfAbsent(r.get("slug"), r);
             for (var r : find(ctx.tenantId(), broad, null, max)) seenSlugs.putIfAbsent(r.get("slug"), r);
-            rows = seenSlugs.values().stream().limit(4).toList();
+            rows = seenSlugs.values().stream().limit(6).toList();
         }
         if (rows.isEmpty() && q != null) {   // everyday Egyptian words for what the catalog names differently («حلل» are «أواني»)
             String alt = synonyms(q);
@@ -1566,7 +1582,7 @@ public class ChatService {
             Map.entry("تيشرت", "تيشيرت"), Map.entry("تشيرت", "تيشيرت"), Map.entry("بنطلون", "بنطلون"), Map.entry("بناطيل", "بنطلون"), Map.entry("فساتين", "فستان"), Map.entry("عبايات", "عباية"), Map.entry("عبايه", "عباية"),
             Map.entry("قمصان", "قميص"), Map.entry("جزمه", "حذاء"), Map.entry("جزم", "حذاء"), Map.entry("كوتشي", "حذاء"), Map.entry("شنطه", "حقيبة"), Map.entry("شنط", "حقيبة"),
             // English words for an Arabic catalog
-            Map.entry("jeans", "جينز"), Map.entry("shirt", "قميص"), Map.entry("shirts", "قميص"), Map.entry("t-shirt", "تيشيرت"), Map.entry("tshirt", "تيشيرت"), Map.entry("dress", "فستان"),
+            Map.entry("wide", "وايد"), Map.entry("jeans", "جينز"), Map.entry("shirt", "قميص"), Map.entry("shirts", "قميص"), Map.entry("t-shirt", "تيشيرت"), Map.entry("tshirt", "تيشيرت"), Map.entry("dress", "فستان"),
             Map.entry("dresses", "فستان"), Map.entry("pants", "بنطلون"), Map.entry("trousers", "بنطلون"), Map.entry("shoes", "حذاء"), Map.entry("sneakers", "سنيكرز"), Map.entry("bag", "شنطة"),
             Map.entry("bags", "شنطة"), Map.entry("hoodie", "هودي"), Map.entry("jacket", "جاكيت"), Map.entry("abaya", "عباية"), Map.entry("skirt", "جيبة"), Map.entry("shawarma", "شاورما"),
             Map.entry("burger", "برجر"), Map.entry("chicken", "فراخ"), Map.entry("fries", "بطاطس"), Map.entry("juice", "عصير"), Map.entry("dessert", "حلويات"));
@@ -1596,7 +1612,7 @@ public class ChatService {
 
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> find(UUID tenantId, String q, String category, Long maxMinor, String audience) {
-        var page = search.list(tenantId, Page.of(1, 3), new StoreSearchService.Filter(q, category, null, maxMinor, null, true, null, null, category == null && q == null ? "popular" : "newest",
+        var page = search.list(tenantId, Page.of(1, q == null ? 3 : 6), new StoreSearchService.Filter(q, category, null, maxMinor, null, true, null, null, category == null && q == null ? "popular" : "newest",
                 audience, null, null, null));
         return (List<Map<String, Object>>) page.get("data");
     }

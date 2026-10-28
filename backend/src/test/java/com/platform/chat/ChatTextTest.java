@@ -211,7 +211,8 @@ class ChatTextTest {
 
     @Test
     void englishWordsFindAnArabicCatalog() {
-        assertThat(ChatService.synonyms("Do you have women's wide leg jeans in size L?")).isEqualTo("جينز");
+        assertThat(ChatService.synonyms("Do you have women's wide leg jeans in size L?")).isEqualTo("وايد");
+        assertThat(ChatService.synonyms("blue jeans please")).isEqualTo("جينز");
     }
 
     @Test
