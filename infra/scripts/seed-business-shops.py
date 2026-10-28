@@ -255,8 +255,18 @@ def credit(meta):
 def seed(shop):
     s = SHOPS[shop]
     base = shop_base(s["slug"])
-    tok = call("POST", base, "/api/v1/auth/login", {"identifier": phone(), "password": a.password})["accessToken"]
-    api = lambda m, path, body=None: call(m, base, "/api/v1" + path, body, tok)
+    tok = [None]
+
+    def api(m, path, body=None):   # logs in again when the access token runs out during a long run
+        for attempt in (0, 1):
+            if tok[0] is None:
+                tok[0] = call("POST", base, "/api/v1/auth/login", {"identifier": phone(), "password": a.password})["accessToken"]
+            try:
+                return call(m, base, "/api/v1" + path, body, tok[0])
+            except RuntimeError as e:
+                if " -> 401:" not in str(e) or attempt:
+                    raise
+                tok[0] = None
     got = load(PHOTOS, {})
     manifest_path = os.path.join(a.cache, f"manifest-{s['slug']}.json")
     manifest = load(manifest_path, {"products": {}})
@@ -358,7 +368,6 @@ def seed(shop):
             short = f"{who} · " + "، ".join(v for k, v in D.SPECS.get(cat, [])[:1])
             tags = [who] + (["تخفيضات"] if sale else []) + (["شتوي"] if cat in ("jackets-coats", "knitwear-hoodies", "boots") else [])
             brand = "نايل ستايل"
-            audience = None if audience == "ALL" else audience
         media = []
         meta = got.get(key)
         if not restaurant:   # a drawn picture per colour; choosing a colour shows its picture
