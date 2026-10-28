@@ -159,4 +159,10 @@ class ChatTextTest {
         assertThat(ChatService.dualOf("عبايه")).isEqualTo("عبايتين");
         assertThat(ChatService.dualOf("Mug")).isNull();
     }
+
+    @Test
+    void sameDayDeliveryIsNotZeroDays() {
+        assertThat(ChatService.etaText(0, 0)).isEqualTo("same day");
+        assertThat(ChatService.etaText(1, 2)).isEqualTo("1-2 days");
+    }
 }

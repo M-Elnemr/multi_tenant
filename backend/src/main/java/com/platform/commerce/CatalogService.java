@@ -61,7 +61,7 @@ public class CatalogService {
         try { if (f.get("specs") instanceof List<?> l) specs = mapper.writeValueAsString(l.size() > 40 ? l.subList(0, 40) : l); }
         catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid specs"); }
         jdbc.sql("""
-                UPDATE commerce.products SET badge = coalesce(:b, badge), tags = CASE WHEN CAST(:tg AS varchar) IS NULL THEN tags ELSE string_to_array(NULLIF(CAST(:tg AS varchar), ''), ',') END,
+                UPDATE commerce.products SET badge = coalesce(:b, badge), tags = CASE WHEN CAST(:tg AS varchar) IS NULL THEN tags ELSE coalesce(string_to_array(NULLIF(CAST(:tg AS varchar), ''), ','), '{}') END,
                   specs = coalesce(CAST(:sp AS jsonb), specs), size_guide = coalesce(:sg, size_guide), is_featured = coalesce(:ft, is_featured),
                   sort_order = coalesce(:so, sort_order), updated_at = now()
                 WHERE id = :i AND tenant_id = :t

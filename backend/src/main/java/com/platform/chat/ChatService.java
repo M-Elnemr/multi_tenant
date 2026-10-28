@@ -923,7 +923,8 @@ public class ChatService {
         b.append(ar ? "الإجمالي: " : "Total: ").append(moneyIn(ar, total, cur)).append("\n\n");
         b.append(ar ? "الدفع: " + ("CARD".equals(pm) ? "بطاقة" : "كاش عند الاستلام") + "\n" : "Payment: " + ("CARD".equals(pm) ? "card" : "cash on delivery") + "\n");
         b.append(ar ? "العنوان: " : "Address: ").append(pickup ? (ar ? "استلام من المحل" : "pickup from the shop") : line1 + ", " + area).append("\n");
-        if (quote.get("etaMinDays") != null) b.append(ar ? "التوصيل المتوقع: " + quote.get("etaMinDays") + "-" + quote.get("etaMaxDays") + " أيام\n" : "Expected delivery: " + quote.get("etaMinDays") + "-" + quote.get("etaMaxDays") + " days\n");
+        if (quote.get("etaMinDays") != null && Integer.valueOf(0).equals(quote.get("etaMaxDays"))) b.append(ar ? "التوصيل: في نفس اليوم\n" : "Delivery: same day\n");
+        else if (quote.get("etaMinDays") != null) b.append(ar ? "التوصيل المتوقع: " + quote.get("etaMinDays") + "-" + quote.get("etaMaxDays") + " أيام\n" : "Expected delivery: " + quote.get("etaMinDays") + "-" + quote.get("etaMaxDays") + " days\n");
         b.append(ar ? "\nأأكد الأوردر؟ اكتب «تمام» وأنا أسجله 👌" : "\nShall I place the order? Reply «yes» and I will confirm it.");
         return b.toString();
     }
@@ -966,7 +967,7 @@ public class ChatService {
             }
             if (((Number) o.get("cod_fee_minor")).longValue() > 0) b.append(", cash-on-delivery fee ").append(moneyIn(false, o.get("cod_fee_minor"), cur));
             b.append(", TOTAL TO PAY ").append(moneyIn(false, o.get("total_minor"), cur)).append("\n");
-            if (o.get("eta_min_days") != null) b.append("- Expected delivery ").append(o.get("eta_min_days")).append("-").append(o.get("eta_max_days")).append(" days\n");
+            if (o.get("eta_min_days") != null) b.append("- Expected delivery ").append(etaText(o.get("eta_min_days"), o.get("eta_max_days"))).append("\n");
             return b.toString();
         } catch (RuntimeException e) {
             log.debug("Order on file skipped", e);
@@ -1022,7 +1023,7 @@ public class ChatService {
                 .append(sm.get("feeMinor") instanceof Number f && f.longValue() > 0 && !"ZONES".equals(sm.get("type")) ? ", fee " + major(f.longValue()) : "").append("\n");
         for (var z : fulfilment.zones(tenantId, true)) b.append("- Delivery zone \"").append(z.get("name")).append("\": governorates ").append(z.get("governorateCodes")).append(", fee ").append(major(((Number) z.get("feeMinor")).longValue()))
                 .append(z.get("freeAboveMinor") instanceof Number fa && fa.longValue() > 0 ? ", FREE for orders of " + major(fa.longValue()) + " or more" : "")
-                .append(", ETA ").append(z.get("etaMinDays")).append("-").append(z.get("etaMaxDays")).append(" days").append(z.get("codFeeMinor") instanceof Number c && c.longValue() > 0 ? ", cash-on-delivery fee " + major(c.longValue()) : "").append("\n");
+                .append(", ETA ").append(etaText(z.get("etaMinDays"), z.get("etaMaxDays"))).append(z.get("codFeeMinor") instanceof Number c && c.longValue() > 0 ? ", cash-on-delivery fee " + major(c.longValue()) : "").append("\n");
         if (shopWhatsapp(tenantId) != null) b.append("- WhatsApp confirmation is available (free): ask the customer for the WhatsApp number as described in the rules.\n");
         b.append(shopPolicies(tenantId));
         Integer days = jdbc.sql("SELECT return_window_days FROM commerce.store_profiles WHERE tenant_id = :t").param("t", tenantId).query(Integer.class).optional().orElse(null);
@@ -1704,7 +1705,7 @@ public class ChatService {
         for (var ln : (List<Map<String, Object>>) quote.get("lines")) lines.add(obj("product", ln.get("productName"), "quantity", ln.get("quantity"), "unitPrice", major(ln.get("unitPriceMinor"))));
         ctx.summary()[0] = orderSummaryText(ctx, name, quote, extra, total, pm, pickup, line1, area, gov, change == null ? null : String.valueOf(onFile.get("number")));
         return obj("summary", obj("items", lines, "subtotal", major(subtotal), "discount", major(((Number) quote.get("discountMinor")).longValue() + extra), "delivery", major(quote.get("shippingMinor")),
-                "cashOnDeliveryFee", major(quote.get("codFeeMinor")), "total", major(total), "currency", quote.get("currency"), "deliveryDays", quote.get("etaMinDays") == null ? null : quote.get("etaMinDays") + "-" + quote.get("etaMaxDays"),
+                "cashOnDeliveryFee", major(quote.get("codFeeMinor")), "total", major(total), "currency", quote.get("currency"), "deliveryDays", quote.get("etaMinDays") == null ? null : etaText(quote.get("etaMinDays"), quote.get("etaMaxDays")),
                 "paymentMethod", pm, "deliverTo", pickup ? "Pickup from the shop" : line1 + ", " + area, "customer", name + " " + phone, "whatsappConfirmation", waNumber == null ? "no" : waNumber),
                 "next", "The system sends the customer this exact summary and asks them to confirm: do not write a summary or any amount yourself; just reply with one short friendly line. Do not call place_order until they reply.");
     }
@@ -1906,6 +1907,10 @@ public class ChatService {
         return s.isEmpty() || s.length() > 500 ? null : s;
     }
 
+    /** "1-2 days", or "same day" for a zone that delivers today (a restaurant, max 0 days). */
+    static String etaText(Object min, Object max) {
+        return max instanceof Number m && m.intValue() == 0 ? "same day" : min + "-" + max + " days";
+    }
     static double major(Object minor) { return minor instanceof Number n ? n.longValue() / 100.0 : 0; }
 
     private static String json(Object o) {

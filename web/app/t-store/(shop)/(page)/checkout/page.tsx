@@ -151,7 +151,7 @@ export default function Checkout() {
               </div>
             )}
             {zonesMode && addr.governorateCode && !zone && <p className="rounded-2xl bg-red-50 p-3 text-sm font-bold text-[#e5484d]">{t("error.NO_DELIVERY_TO_GOVERNORATE")}</p>}
-            {zone && quote?.etaMinDays != null && <p className="rounded-2xl bg-emerald-50 p-3 text-sm font-bold text-emerald-800">🚚 {t("checkout.eta", { min: quote.etaMinDays, max: quote.etaMaxDays ?? quote.etaMinDays })}</p>}
+            {zone && quote?.etaMinDays != null && <p className="rounded-2xl bg-emerald-50 p-3 text-sm font-bold text-emerald-800">🚚 {t(quote.etaMaxDays === 0 ? "checkout.etaToday" : "checkout.eta", { min: quote.etaMinDays, max: quote.etaMaxDays ?? quote.etaMinDays })}</p>}
             <Field label={t("checkout.notes")}><input className="s-input" value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
           </Section>
           <Section n={3} title={t("checkout.payment")}>

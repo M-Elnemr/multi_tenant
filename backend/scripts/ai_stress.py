@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Plays many customer scenarios against a shop's website chat on one model (never confirms an order) and writes the transcripts for review.
 
-usage: ai_stress.py MODEL_WORD OUT_FILE [scenario,names] [--host https://shop.example.com]
+usage: ai_stress.py MODEL_WORD OUT_FILE [scenario,names] [--host https://shop.example.com] [--pack general|restaurant|fashion]
+  --pack restaurant runs against beit-elshawarma and --pack fashion against nile-style unless --host is given.
   MODEL_WORD is the chat word that switches the model while AI_NAME_PROBE is on: glm, alibaba, claude.
   Paced to the shop chat's limit (40 messages per 10 minutes from one address): a full run takes about 40 minutes.
 """
 import json, sys, uuid, urllib.request, concurrent.futures, time
 
-HOST = (sys.argv[sys.argv.index("--host") + 1].rstrip("/") if "--host" in sys.argv else "https://layan-store.elmanassa.shop") + "/api/v1/shop/chat"
+PACK = sys.argv[sys.argv.index("--pack") + 1] if "--pack" in sys.argv else "general"
+DEFAULT_HOST = {"general": "https://layan-store.elmanassa.shop", "restaurant": "https://beit-elshawarma.elmanassa.shop", "fashion": "https://nile-style.elmanassa.shop"}[PACK]
+HOST = (sys.argv[sys.argv.index("--host") + 1].rstrip("/") if "--host" in sys.argv else DEFAULT_HOST) + "/api/v1/shop/chat"
 MODEL = sys.argv[1] if len(sys.argv) > 1 else "glm"
 OUT = sys.argv[2] if len(sys.argv) > 2 else "transcripts.txt"
 ONLY = set(sys.argv[3].split(",")) if len(sys.argv) > 3 and not sys.argv[3].startswith("--") else None
@@ -74,8 +77,79 @@ S = {
  "long_ramble": ["بص يا سيدي انا بدور على حاجة لبيتي الجديد لسه متجوز وعايز ملايات حلوة ومخدات وكمان حاجات للمطبخ بس الميزانية مش كبيرة اوي يعني حوالي ٣٠٠٠ جنيه تقترح عليا ايه؟"],
 }
 
+RESTAURANT = {
+ "r_broad_food": ["عايز آكل", "حاجة فراخ"],
+ "r_shawarma_kinds": ["عندكم شاورما ايه؟"],
+ "r_shawarma_pick": ["عايز ساندوتش شاورما فراخ", "كبير", "صاج"],
+ "r_shawarma_one_go": ["عايز ٢ ساندوتش شاورما لحمة سوبر عيش سوري"],
+ "r_no_onion": ["عايز ساندوتش شاورما لحمة عادي صاج بس من غير بصل"],
+ "r_two_notes": ["عايز ٢ شاورما فراخ كبير صاج، واحدة من غير ثومية والتانية زيادة مخلل", "انا عمر، مدينة نصر شارع مكرم عبيد عمارة ٤ شقة ٧، ٠١٠٢٣٤٥٦٧٨٩، كاش"],
+ "r_broasted_spicy": ["عايز بروستد", "٤ قطع"],
+ "r_meal_drink": ["عايز وجبة شاورما فراخ", "كبيرة"],
+ "r_family": ["احنا ٥ افراد عايزين ناكل بحوالي ٧٠٠ جنيه تقترح ايه؟"],
+ "r_kids": ["عندكم حاجة للأطفال مش حراقة؟"],
+ "r_vegetarian": ["انا نباتي في حاجة اكلها؟"],
+ "r_delivery_time": ["الاوردر بيوصل في قد ايه للمعادي؟"],
+ "r_delivery_fee": ["التوصيل بكام؟", "ولو طلبت ب٤٥٠؟"],
+ "r_far_area": ["بتوصلوا اسكندرية؟"],
+ "r_hours": ["انتو فاتحين لحد امتى؟", "ينفع اطلب الساعة ٣ الفجر؟"],
+ "r_coupon": ["في عروض النهارده؟"],
+ "r_coupon_use": ["عندي كود SHAWARMA15 اطلب ازاي؟"],
+ "r_min_order": ["عايز ثومية بس"],
+ "r_calories": ["كام سعر حراري في ساندوتش الشاورما الفراخ؟"],
+ "r_ingredients": ["الكفتة فيها ايه؟ لحمة بلدي؟"],
+ "r_refund": ["الاكل وصل بارد ومش مظبوط اعمل ايه؟"],
+ "r_cancel": ["عايز الغي الاوردر اللي لسه طالبه"],
+ "r_halal": ["اللحمة حلال؟"],
+ "r_grill_weight": ["عايز كفتة", "نص كيلو تكفي كام واحد؟"],
+ "r_dessert_add": ["عايز ساندوتش زنجر حار", "وضيف ام علي"],
+ "r_random": ["ايه احسن مطعم شاورما في مصر غيركم؟"],
+ "r_rude": ["الشاورما بتاعتكم وحشة اوي امبارح"],
+ "r_pickup": ["ينفع استلم من الفرع؟ فين مكانه؟"],
+ "r_english": ["Hi, I want a chicken shawarma sandwich, large", "How long is delivery to Zamalek?"],
+}
+
+FASHION = {
+ "f_broad": ["عايز لبس"],
+ "f_who": ["عايز تيشيرت", "ليا", "اسود L"],
+ "f_kid_age": ["عايزة طقم لابني ٥ سنين"],
+ "f_baby": ["عندكم لبس بيبي حديث الولادة؟"],
+ "f_girl_dress": ["فستان لبنتي ٦ سنين لفرح"],
+ "f_women_dress": ["عايزة فستان سهرة احمر مقاس M"],
+ "f_abaya": ["عندكم عبايات؟", "الكريب السادة بيج XL"],
+ "f_jeans_size": ["عايز جينز رجالي وسطي ٣٤ اخد ايه؟"],
+ "f_shoes_size": ["عايز سنيكرز ابيض رجالي مقاس ٤٣"],
+ "f_shoes_women": ["حذاء كعب للسهرة مقاس ٣٨"],
+ "f_bag": ["عايزة شنطة يد جلد"],
+ "f_bag_options": ["شنطة السفر الهارد بكام؟ وفي احجام ايه؟"],
+ "f_out_of_stock": ["الجاكيت البافر الرجالي زيتي XXL متاح؟"],
+ "f_full_outfit": ["عايز طقم كامل لخروجة: قميص وبنطلون وجزمة، ميزانيتي ٢٥٠٠"],
+ "f_winter": ["ايه الجديد في الشتوي؟"],
+ "f_sale": ["ايه اللي عليه خصم دلوقتي؟"],
+ "f_coupon": ["في كود خصم؟", "ولو طلبي ب٨٠٠؟"],
+ "f_material": ["الهودي قطن ولا بوليستر؟ بيوبر؟"],
+ "f_size_guide": ["طولي ١٧٥ ووزني ٨٥ اخد ايه في الهودي؟"],
+ "f_size_women": ["انا لابسة ٤٢ عادة اخد ايه في الجينز المام فيت؟"],
+ "f_return": ["لو المقاس طلع صغير ابدله ازاي؟", "والمايوه ينفع يترجع؟"],
+ "f_inspect": ["ينفع اقيس قبل ما ادفع؟"],
+ "f_ship_upper": ["الشحن لسوهاج بكام وبياخد قد ايه؟"],
+ "f_free_ship": ["امتى الشحن يبقى ببلاش؟"],
+ "f_order_multi": ["عايز ٢ تيشيرت قطن سادة رجالي اسود L وهودي رمادي XL", "انا مصطفى، الجيزة فيصل شارع العشرين عمارة ٩ شقة ٤، ٠١١٥٥٥٥٥٥٥٥، كاش"],
+ "f_missing_option": ["عايز جينز سليم فيت", "ضيفه للاوردر"],
+ "f_gift": ["عايز هدية لمراتي في حدود ١٥٠٠"],
+ "f_compare": ["ايه الفرق بين الجينز السليم والريجولار؟"],
+ "f_kids_shoes": ["كوتشي لابني مقاس ٣٠"],
+ "f_random": ["هو الموضة السنة دي ايه؟"],
+ "f_rude": ["انتو بتبيعوا صيني وبتقولوا مصري"],
+ "f_english": ["Do you have women's wide leg jeans in size L?"],
+}
+
+if PACK == "restaurant": S = RESTAURANT
+elif PACK == "fashion": S = FASHION
+
 import threading
 _lock = threading.Lock(); _last = [0.0]
+TIMES = []
 GAP = 15.5   # the shop chat allows 40 messages per 10 minutes from one address
 
 def send(conv, msg):
@@ -99,6 +173,7 @@ def run(name):
     out = [f"### {name}"]
     for m in S[name]:
         reply, prods, sec = send(conv, m)
+        TIMES.append(sec)
         out.append(f"👤 {m}\n🤖 ({sec}s){' [cards: ' + ', '.join(map(str, prods)) + ']' if prods else ''} {reply}")
     return "\n".join(out)
 
@@ -106,4 +181,5 @@ names = [n for n in S if not ONLY or n in ONLY]
 with concurrent.futures.ThreadPoolExecutor(4) as ex:
     res = list(ex.map(run, names))
 open(OUT, "w").write("\n\n".join(res) + "\n")
-print("done", len(res))
+t = sorted(TIMES)
+print("done", len(res), "scenarios;", len(t), "replies; avg %.1fs p90 %.1fs max %.1fs" % (sum(t) / max(1, len(t)), t[int(len(t) * .9)] if t else 0, t[-1] if t else 0))

@@ -123,6 +123,8 @@ class StoreCatalogIntegrationTest extends IntegrationTestBase {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.badge").value("NEW")).andExpect(jsonPath("$.tags.length()").value(2)).andExpect(jsonPath("$.specs[0].k").value("Weight"));
         onHost(t.host(), t.access(), "PATCH", "/api/v1/store/products/" + p1 + "/extras", "{\"badge\":\"nonsense\"}").andExpect(status().isBadRequest());
         onHost(t.host(), null, "GET", "/api/v1/shop/products?q=sport", null).andExpect(jsonPath("$.meta.total").value(1));   // tags are searchable
+        onHost(t.host(), t.access(), "PATCH", "/api/v1/store/products/" + p1 + "/extras", "{\"tags\":[]}")   // removing every tag (was a 500)
+                .andExpect(status().isOk()).andExpect(jsonPath("$.tags.length()").value(0));
         onHost(t.host(), null, "GET", "/api/v1/shop/home", null).andExpect(jsonPath("$.featured.length()").value(1));
         onHost(t.host(), null, "GET", "/api/v1/shop/products/" + slug + "/related", null).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1)).andExpect(jsonPath("$[0].name").value("Runner Two"));
     }

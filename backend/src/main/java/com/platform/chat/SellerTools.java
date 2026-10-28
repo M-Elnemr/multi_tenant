@@ -139,7 +139,7 @@ public class SellerTools {
         for (var z : fulfilment.zones(t, true)) {
             if (z.get("governorateCodes") instanceof List<?> l && l.contains(code))
                 return obj("zone", z.get("name"), "fee", ChatService.major(z.get("feeMinor")), "freeAbove", z.get("freeAboveMinor") == null ? null : ChatService.major(z.get("freeAboveMinor")),
-                        "cashOnDeliveryFee", ChatService.major(z.get("codFeeMinor")), "days", z.get("etaMinDays") + "-" + z.get("etaMaxDays"),
+                        "cashOnDeliveryFee", ChatService.major(z.get("codFeeMinor")), "days", ChatService.etaText(z.get("etaMinDays"), z.get("etaMaxDays")),
                         "say", "Delivery here costs the fee above" + (z.get("freeAboveMinor") == null ? "" : " and is FREE for orders of " + ChatService.major(z.get("freeAboveMinor")) + " or more") + ". State both facts together; the real delivery cost of this customer's order is in the order summary the system sends, never add it up yourself.");
         }
         return obj("error", "The shop has no delivery zone for that governorate. Say so honestly and offer pickup if the shop has it.");

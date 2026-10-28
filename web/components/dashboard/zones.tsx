@@ -40,7 +40,7 @@ export function ZonesCard() {
             <div className="min-w-0">
               <p className="font-semibold">{z.name} {!z.isActive && <Badge tone="slate">{t("common.hidden")}</Badge>}</p>
               <p className="text-slate-600">{z.governorateCodes.map(gname).join("، ") || "—"}</p>
-              <p className="mt-0.5 text-xs text-slate-500">{money(z.feeMinor, currency, locale)}{z.freeAboveMinor ? ` · ${t("ship.freeAboveShort")} ${money(z.freeAboveMinor, currency, locale)}` : ""}{z.codFeeMinor ? ` · ${t("checkout.codFee")} ${money(z.codFeeMinor, currency, locale)}` : ""} · {t("checkout.eta", { min: z.etaMinDays, max: z.etaMaxDays })}</p>
+              <p className="mt-0.5 text-xs text-slate-500">{money(z.feeMinor, currency, locale)}{z.freeAboveMinor ? ` · ${t("ship.freeAboveShort")} ${money(z.freeAboveMinor, currency, locale)}` : ""}{z.codFeeMinor ? ` · ${t("checkout.codFee")} ${money(z.codFeeMinor, currency, locale)}` : ""} · {t(z.etaMaxDays === 0 ? "checkout.etaToday" : "checkout.eta", { min: z.etaMinDays, max: z.etaMaxDays })}</p>
             </div>
             <div className="flex gap-1"><Button size="sm" variant="secondary" onClick={() => setF({ ...z, fee: fromMinor(z.feeMinor), free: z.freeAboveMinor ? fromMinor(z.freeAboveMinor) : "", cod: z.codFeeMinor ? fromMinor(z.codFeeMinor) : "" })}>{t("common.edit")}</Button><Button size="sm" variant="ghost" onClick={() => toggle.run(z)}>{z.isActive ? t("common.hide") : t("common.show")}</Button><Button size="sm" variant="ghost" onClick={() => del.run(z)}>{t("common.delete")}</Button></div>
           </li>
