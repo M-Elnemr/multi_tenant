@@ -82,8 +82,10 @@ public class InventoryService {
         for (var r : rows) {
             if (((Number) r.get("available")).intValue() >= qty) {
                 UUID branch = (UUID) r.get("branch_id");
-                jdbc.sql("UPDATE commerce.inventory_items SET quantity_reserved = quantity_reserved + :q, updated_at = now() WHERE id = :i")
+                // the stock is checked again in the update itself: two checkouts racing for the last unit can never both get it
+                int done = jdbc.sql("UPDATE commerce.inventory_items SET quantity_reserved = quantity_reserved + :q, updated_at = now() WHERE id = :i AND quantity_on_hand - quantity_reserved >= :q")
                         .param("q", qty).param("i", r.get("id")).update();
+                if (done == 0) continue;
                 movement(tenantId, branch, variantId, "RESERVATION", -qty, "order", orderId, null, null);
                 int before = ((Number) r.get("available")).intValue();
                 int threshold = ((Number) r.get("low_stock_threshold")).intValue();
