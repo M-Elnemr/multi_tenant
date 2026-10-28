@@ -117,4 +117,11 @@ class ChatTextTest {
         assertThat(MoneyGuard.violations("المجموع: 1250 جنيه", allowed)).isNotEmpty();
         assertThat(MoneyGuard.violations("يعني الإجمالي النهائي ١٣٠٠ جنيه كاش", allowed)).isNotEmpty();
     }
+
+    @Test
+    void availabilityWithColorsCountsAsProductFacts() {
+        assertThat(ChatService.productFacts("عندنا بنطلون جينز سليم متاح باللون الكحلي والأسود")).isTrue();
+        assertThat(ChatService.productFacts("الشحن للجيزة 50 جنيه")).isFalse();
+        assertThat(ChatService.productFacts("تحب أي لون؟")).isFalse();
+    }
 }

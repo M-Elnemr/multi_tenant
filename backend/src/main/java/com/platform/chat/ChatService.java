@@ -88,6 +88,8 @@ public class ChatService {
             com.platform.shared.Gender g = said != null ? com.platform.shared.Gender.of(said) : com.platform.commerce.GenderService.forName(name);
             String title = g == com.platform.shared.Gender.FEMALE ? "أستاذة " : g == com.platform.shared.Gender.MALE ? "أستاذ " : null;
             t = t.replaceAll("(?<![\\p{L}])يا\\s+" + Pattern.quote(name) + "(?![\\p{L}])", title != null ? "يا " + title + name : "يا فندم");
+            if (g == com.platform.shared.Gender.FEMALE) t = t.replaceAll("أستاذ\\s+" + Pattern.quote(name) + "(?![\\p{L}])", "أستاذة " + name);   // «أستاذ منى» -> «أستاذة منى»
+            if (g == com.platform.shared.Gender.MALE) t = t.replaceAll("أستاذة\\s+" + Pattern.quote(name) + "(?![\\p{L}])", "أستاذ " + name);
         }
         return t;
     }
@@ -374,7 +376,7 @@ public class ChatService {
         if (ctx.summary()[0] != null) answer = ctx.summary()[0];
         else if (orderBox[0] != null) answer = confirmedText(arabicChat, orderBox[0], Map.of());
         if (!"TEST".equals(channel)) { seller.count(tenantId); usageLog.record(tenantId, "CHAT", channel, conv, false, text, rounds, routed.code(), routed.fellBack()); }
-        if (answer == null || answer.isBlank()) answer = "عذرًا، لم أفهم. هل تعيد صياغة طلبك؟ / Sorry, I did not get that. Could you rephrase?";
+        if (answer == null || answer.isBlank()) answer = arabicChat ? "معلش يا فندم، ممكن توضحلي أكتر حضرتك محتاج إيه؟ وأنا أساعدك على طول 🌸" : "Sorry, could you tell me a little more about what you need? I will help right away.";
         answer = polish(noLaughter(messaging(channel) ? forChannel(channel, answer) : forChannel("WEB", oneMessage(answer))), conv, tenantId, channel, externalId, clientId);
         var seenCards = new java.util.HashSet<Object>();
         ctx.products().removeIf(p -> !seenCards.add(p.get("slug")));   // one card per product
@@ -542,6 +544,8 @@ public class ChatService {
             if (FOR_ME.matcher(last).find()) problems.add("The customer already said it is for themself: never ask who it is for; recommend for them.");
             else if (!searched) problems.add("You asked who it is for before searching: call search_products now; ask only if the results are for several groups (men, women, kids) and nothing tells.");
         }
+        if (!searched && !NOT_HAVE.matcher(answer).find() && !ONLY_OPTIONS.matcher(answer).find() && productFacts(answer) && !alreadySaid(answer, turns))
+            problems.add("You described which colors, sizes or items are available without checking in this turn: call search_products (or get_product) now and answer only from the result.");
         if (!searched && !NOT_HAVE.matcher(answer).find() && ONLY_OPTIONS.matcher(answer).find()) problems.add("You stated which colors, sizes or quantities exist without checking in this turn: call search_products or get_product and answer from allOptions and inStockOptions.");
         if (!searched && NOT_HAVE.matcher(answer).find()) problems.add("You said we do not have something without searching in this turn: call search_products for exactly what the customer asked (also by color and size) and answer from the result.");
         String norm = FastAnswers.norm(answer);
@@ -558,6 +562,31 @@ public class ChatService {
             log.warn("Rule check: the rewrite failed: {}", e.getMessage());
             return answer;
         }
+    }
+
+    private static final Pattern AVAILABLE_WORDS = Pattern.compile("(?:متاح|متاحة|متاحه|متوفر|متوفرة|متوفره|موجود|موجودة|موجوده|available|in stock)", Pattern.CASE_INSENSITIVE);
+
+    /** Does the reply state which colors, sizes or items are available? */
+    static boolean productFacts(String answer) {
+        if (!AVAILABLE_WORDS.matcher(answer).find()) return false;
+        for (String w : FastAnswers.norm(answer).split("[^\\p{L}]+")) if (optionWord(w) != null && w.length() > 1) return true;
+        return false;
+    }
+
+    /** A color or size word with its prefixes taken off («والأسود» -> «اسود», «بالكحلي» -> «كحلي»), or null. */
+    static String optionWord(String w) {
+        for (String p : List.of("", "و", "ب", "ال", "بال", "وال", "وب", "وبال", "لل"))
+            if (w.startsWith(p) && OPTION_WORDS.contains(w.substring(p.length()))) return w.substring(p.length());
+        return null;
+    }
+
+    /** Every color the reply names was already in this chat (an earlier answer that came from a tool, or the customer's words): repeating it needs no new search. */
+    private static boolean alreadySaid(String answer, List<Turn> turns) {
+        StringBuilder before = new StringBuilder();
+        for (Turn t : turns) if (t.text() != null) before.append(FastAnswers.norm(t.text())).append(' ');
+        String chat = before.toString();
+        for (String w : FastAnswers.norm(answer).split("[^\\p{L}]+")) { String o = optionWord(w); if (o != null && o.length() > 2 && !chat.contains(o)) return false; }
+        return true;
     }
 
     private static String lastCustomerText(List<Turn> turns) {
