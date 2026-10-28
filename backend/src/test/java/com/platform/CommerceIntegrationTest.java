@@ -41,7 +41,9 @@ class CommerceIntegrationTest extends IntegrationTestBase {
                   {"sku":"TS-M-%1$s","priceMinor":10000,"optionValues":{"Size":"M"},"stock":[{"branchId":"%2$s","quantity":%4$d}]}]}
                 """.formatted(uniq(), branch, stockS, stockM, uniq());
         String res = ok(onHost(t.host(), t.access(), "POST", "/api/v1/store/products", body).andExpect(status().isCreated()));
-        return new Shop(t, branch, read(res, "$.id"), read(res, "$.slug"), read(res, "$.variants[0].id"), read(res, "$.variants[1].id"));
+        // the variants come back in no fixed order: pick each size by its SKU
+        String vS = JsonPath.<List<String>>read(res, "$.variants[?(@.sku =~ /TS-S-.*/)].id").get(0), vM = JsonPath.<List<String>>read(res, "$.variants[?(@.sku =~ /TS-M-.*/)].id").get(0);
+        return new Shop(t, branch, read(res, "$.id"), read(res, "$.slug"), vS, vM);
     }
 
     String customerToken(Shop s) throws Exception { return googleClient(s.tenant().host()); }
