@@ -145,7 +145,8 @@ class Wave2GrowthIntegrationTest extends IntegrationTestBase {
         assertThat(((Number) JsonPath.read(feed, "$.items[0].stock")).intValue()).isEqualTo(50);
 
         // server-side events need a pixel and a token, and stay off until switched on
-        String id = order(s, phone(), null, s.variantA(), "1");
+        String buyer = phone();
+        String id = order(s, buyer, null, s.variantA(), "1");
         assertThat(capi.send(s.id(), UUID.fromString(id))).isFalse();
         onHost(h, owner, "PUT", "/api/v1/store/tracking", "{\"enabled\":true,\"token\":\"EAAG-capi-token-0123456789\"}").andExpect(status().isBadRequest());   // no pixel yet
         jdbc.sql("UPDATE commerce.store_profiles SET meta_pixel_id = '123456789012345' WHERE tenant_id = :t").param("t", s.id()).update();
@@ -156,7 +157,7 @@ class Wave2GrowthIntegrationTest extends IntegrationTestBase {
         var sent = FakeMetaGraph.SENT.stream().filter(x -> x.path().equals("123456789012345/events")).findFirst().orElseThrow();
         assertThat(sent.token()).isEqualTo("EAAG-capi-token-0123456789");
         String body = String.valueOf(sent.body());
-        assertThat(body).contains("Purchase").contains("EGP").doesNotContain("010");   // the phone number is only sent hashed
+        assertThat(body).contains("Purchase").contains("EGP").doesNotContain(buyer).doesNotContain(buyer.replaceFirst("^0", ""));   // the phone number is only sent hashed
         onHost(h, owner, "GET", "/api/v1/store/tracking", null).andExpect(jsonPath("$.lastStatus").value("OK"));
         onHost(h, owner, "PUT", "/api/v1/store/tracking", "{\"enabled\":false}").andExpect(status().isOk());
         assertThat(capi.send(s.id(), UUID.fromString(id))).isFalse();
