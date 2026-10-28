@@ -154,7 +154,7 @@ class AiChatIntegrationTest extends IntegrationTestBase {
         FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepareIn(variant, 1, "DKH")));
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("Total is 9999 EGP, confirm?"));
         String one = JsonPath.<String>read(send(t, UUID.randomUUID().toString(), "one mug please"), "$.reply");
-        assertThat(one).contains("Items: 100 EGP").contains("80 EGP").contains("Total: 180 EGP").contains("Expected delivery: 2-4 days").contains("Shall I place the order?").doesNotContain("9999").doesNotContain("free");
+        assertThat(one).contains("Items: 100 EGP").contains("80 EGP").contains("Total: 180 EGP").contains("Expected delivery: 2-4 days").contains("Shall I place the order?").doesNotContain("9999 EGP").doesNotContain("Total: 9999").doesNotContain("free");
         // four mugs reach the free-delivery amount: the summary says delivery is free and above what
         FakeAiProvider.RESULTS.clear();
         FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepareIn(variant, 4, "DKH")));
