@@ -27,12 +27,14 @@ public class AiEvalService {
 
     private final ChatService chat;
     private final ChannelAi channelAi;
+    private final org.springframework.jdbc.core.simple.JdbcClient jdbc;
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> { Thread t = new Thread(r, "ai-eval"); t.setDaemon(true); return t; });
     private final Map<UUID, Map<String, Object>> runs = new ConcurrentHashMap<>();
 
-    public AiEvalService(ChatService chat, ChannelAi channelAi) {
+    public AiEvalService(ChatService chat, ChannelAi channelAi, org.springframework.jdbc.core.simple.JdbcClient jdbc) {
         this.chat = chat;
         this.channelAi = channelAi;
+        this.jdbc = jdbc;
     }
 
     static final String JUDGE = """
@@ -50,9 +52,12 @@ public class AiEvalService {
         List<JsonNode> set = new ArrayList<>();
         java.util.Set<Integer> ids = new java.util.HashSet<>();
         if (only != null && !only.isBlank()) for (String s : only.split(",")) try { ids.add(Integer.parseInt(s.trim())); } catch (NumberFormatException ignored) { /* skipped */ }
+        // a conversation written for one demo shop ("shop": its address) is only played on that shop
+        String slug = jdbc.sql("SELECT slug FROM core.tenants WHERE id = :t").param("t", tenantId).query(String.class).optional().orElse("");
         try {
             for (JsonNode c : JSON.readTree(getClass().getResourceAsStream("/ai-eval.json")).path("conversations"))
-                if (ids.isEmpty() || ids.contains(c.path("id").asInt()) || c.path("category").asText().equals(only)) set.add(c);
+                if (c.hasNonNull("shop") && !c.path("shop").asText().equals(slug)) continue;
+                else if (ids.isEmpty() || ids.contains(c.path("id").asInt()) || c.path("category").asText().equals(only)) set.add(c);
         } catch (Exception e) {
             throw new IllegalStateException("The evaluation set could not be read", e);
         }

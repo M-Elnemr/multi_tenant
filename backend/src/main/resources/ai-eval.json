@@ -1,6 +1,6 @@
 {
  "version": 1,
- "note": "Golden conversations for the AI seller. The platform admin runs them against a shop on any model from the training room (graded by a judge model), or backend/scripts/ai_eval.py prints them for a human; the same set is the regression test when the model changes. A conversation may give displayName (the customer's chat-app name) and burst (its lines are one burst of messages).",
+ "note": "Golden conversations for the AI seller. The platform admin runs them against a shop on any model from the training room (graded by a judge model), or backend/scripts/ai_eval.py prints them for a human; the same set is the regression test when the model changes. A conversation may give displayName (the customer's chat-app name) and burst (its lines are one burst of messages). A conversation with \"shop\" (a shop address, e.g. beit-elshawarma or nile-style, the seeded demo shops) is played only on that shop.",
  "conversations": [
   {
    "id": 1,
@@ -711,6 +711,274 @@
     "answers only from the product description",
     "does not claim «قطن مصري» or «أصلي ١٠٠٪» unless the description says so",
     "honest general wording when unsure"
+   ]
+  },
+  {
+   "id": 56,
+   "shop": "beit-elshawarma",
+   "category": "need_first",
+   "dialect": "egyptian",
+   "customer": [
+    "عايز آكل"
+   ],
+   "expect": [
+    "asks one short question about what kind of food (shawarma, broasted, burgers, grills...)",
+    "does not list the whole menu",
+    "no prices invented"
+   ]
+  },
+  {
+   "id": 57,
+   "shop": "beit-elshawarma",
+   "category": "options",
+   "dialect": "egyptian",
+   "customer": [
+    "عايز ساندوتش شاورما فراخ"
+   ],
+   "expect": [
+    "asks for the size (عادي/كبير/سوبر) and the bread (صاج/عيش سوري/فينو) in one message",
+    "states the price only from the menu",
+    "does not ask for name or address yet"
+   ]
+  },
+  {
+   "id": 58,
+   "shop": "beit-elshawarma",
+   "category": "item_note",
+   "dialect": "egyptian",
+   "customer": [
+    "عايز ٢ ساندوتش شاورما لحمة عادي صاج، واحد من غير بصل"
+   ],
+   "expect": [
+    "keeps the note «من غير بصل» on one of the two sandwiches",
+    "quantity 2 is understood",
+    "asks for the delivery details or offers to complete the order"
+   ]
+  },
+  {
+   "id": 59,
+   "shop": "beit-elshawarma",
+   "category": "delivery_time",
+   "dialect": "egyptian",
+   "customer": [
+    "الاوردر بيوصل في قد ايه؟"
+   ],
+   "expect": [
+    "answers 30-50 minutes delivery and 20-30 minutes preparation from the shop policy",
+    "does not say days"
+   ]
+  },
+  {
+   "id": 60,
+   "shop": "beit-elshawarma",
+   "category": "no_returns",
+   "dialect": "egyptian",
+   "customer": [
+    "لو الاكل وصل بارد ينفع ارجعه؟"
+   ],
+   "expect": [
+    "explains food is not returned but a wrong or bad order is replaced or refunded if reported within an hour",
+    "apologetic, not defensive"
+   ]
+  },
+  {
+   "id": 61,
+   "shop": "beit-elshawarma",
+   "category": "hours",
+   "dialect": "egyptian",
+   "customer": [
+    "انتو فاتحين لحد امتى؟"
+   ],
+   "expect": [
+    "answers 12 noon to 2 am from the opening hours",
+    "says whether the shop is open now"
+   ]
+  },
+  {
+   "id": 62,
+   "shop": "beit-elshawarma",
+   "category": "budget_family",
+   "dialect": "egyptian",
+   "customer": [
+    "احنا ٥ افراد ومعانا ٧٠٠ جنيه نطلب ايه؟"
+   ],
+   "expect": [
+    "suggests family items or meals whose catalog prices fit 700",
+    "every price is the catalog price",
+    "asks a short follow-up (spicy or not, drinks)"
+   ]
+  },
+  {
+   "id": 63,
+   "shop": "beit-elshawarma",
+   "category": "coupon",
+   "dialect": "egyptian",
+   "customer": [
+    "في عروض؟"
+   ],
+   "expect": [
+    "mentions the SHAWARMA15 code (15% from 300) and/or the combo meals with their real prices",
+    "no invented discount"
+   ]
+  },
+  {
+   "id": 64,
+   "shop": "beit-elshawarma",
+   "category": "vegetarian",
+   "dialect": "egyptian",
+   "customer": [
+    "انا نباتي ينفع اكل ايه عندكم؟"
+   ],
+   "expect": [
+    "suggests vegetarian items (falafel, fries, hummus, salads...) by name",
+    "does not suggest meat or chicken"
+   ]
+  },
+  {
+   "id": 65,
+   "shop": "beit-elshawarma",
+   "category": "out_of_area",
+   "dialect": "egyptian",
+   "customer": [
+    "بتوصلوا اسكندرية؟"
+   ],
+   "expect": [
+    "says delivery is Cairo and Giza only",
+    "offers pickup from the branch or nothing false"
+   ]
+  },
+  {
+   "id": 66,
+   "shop": "nile-style",
+   "category": "need_first",
+   "dialect": "egyptian",
+   "customer": [
+    "عايز لبس"
+   ],
+   "expect": [
+    "asks who it is for (men, women, kids) and/or what kind of piece",
+    "does not list random products"
+   ]
+  },
+  {
+   "id": 67,
+   "shop": "nile-style",
+   "category": "who_is_it_for",
+   "dialect": "egyptian",
+   "customer": [
+    "عايزة طقم لابني ٥ سنين"
+   ],
+   "expect": [
+    "suggests boys' sets in kids sizes",
+    "picks or offers the 4 or 6 years size and explains",
+    "asks for the colour"
+   ]
+  },
+  {
+   "id": 68,
+   "shop": "nile-style",
+   "category": "options",
+   "dialect": "egyptian",
+   "customer": [
+    "عايز جينز سليم فيت"
+   ],
+   "expect": [
+    "asks for both the colour and the size",
+    "may ask for waist or weight to help with size",
+    "states the real price"
+   ]
+  },
+  {
+   "id": 69,
+   "shop": "nile-style",
+   "category": "size_advice",
+   "dialect": "egyptian",
+   "customer": [
+    "طولي ١٧٥ ووزني ٨٥ اخد ايه في الهودي؟"
+   ],
+   "expect": [
+    "recommends L from the size guide (80-90 kg)",
+    "asks for the colour or offers to reserve"
+   ]
+  },
+  {
+   "id": 70,
+   "shop": "nile-style",
+   "category": "out_of_stock",
+   "dialect": "egyptian",
+   "customer": [
+    "الجاكيت البافر الرجالي زيتي XXL متاح؟"
+   ],
+   "expect": [
+    "answers from the real stock of that exact colour and size",
+    "if it is out of stock, offers another size or colour that is in stock"
+   ]
+  },
+  {
+   "id": 71,
+   "shop": "nile-style",
+   "category": "shoes",
+   "dialect": "egyptian",
+   "customer": [
+    "عايز سنيكرز ابيض رجالي مقاس ٤٣"
+   ],
+   "expect": [
+    "finds the white men's sneakers",
+    "confirms size 43 from stock and the price"
+   ]
+  },
+  {
+   "id": 72,
+   "shop": "nile-style",
+   "category": "returns",
+   "dialect": "egyptian",
+   "customer": [
+    "لو المقاس طلع صغير ابدله ازاي؟",
+    "والمايوه ينفع يترجع؟"
+   ],
+   "expect": [
+    "explains 14 days and the first size exchange is free",
+    "says swimwear and underwear are not returned"
+   ]
+  },
+  {
+   "id": 73,
+   "shop": "nile-style",
+   "category": "shipping",
+   "dialect": "egyptian",
+   "customer": [
+    "الشحن لسوهاج بكام وبياخد قد ايه؟"
+   ],
+   "expect": [
+    "answers 85 EGP and 3-5 days for Upper Egypt",
+    "mentions free shipping from 1500 if relevant"
+   ]
+  },
+  {
+   "id": 74,
+   "shop": "nile-style",
+   "category": "full_outfit",
+   "dialect": "egyptian",
+   "customer": [
+    "عايز طقم كامل لخروجة قميص وبنطلون وجزمة بميزانية ٢٥٠٠"
+   ],
+   "expect": [
+    "suggests a shirt, trousers and shoes whose catalog prices add up to 2500 or less",
+    "every price is the catalog price",
+    "asks for sizes"
+   ]
+  },
+  {
+   "id": 75,
+   "shop": "nile-style",
+   "category": "sale",
+   "dialect": "egyptian",
+   "customer": [
+    "ايه اللي عليه خصم؟"
+   ],
+   "expect": [
+    "names real items on sale with the old and new price",
+    "mentions NILE10 only as 10% from 1000"
    ]
   }
  ]
