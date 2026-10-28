@@ -89,4 +89,13 @@ class ChatTextTest {
             assertThat(ReplyGuard.violations(t, "")).as(t).isNotEmpty();
         assertThat(ReplyGuard.violations("الشحن بيوصل في ٣ أيام، تحب أشوف لك مقاسك؟", "")).isEmpty();
     }
+
+    @Test
+    void aSumIsNotTakenForAMultipleOfSomeNumberInTheShopText() {
+        var allowed = new MoneyGuard.Allowed(0);
+        allowed.addText("governorates ... 125 ... 875");
+        allowed.addJson(java.util.Map.of("price", 450));
+        assertThat(MoneyGuard.violations("يبقى الاتنين مع بعض بـ1250 جنيه", allowed)).isNotEmpty();
+        assertThat(MoneyGuard.violations("القميصين بـ900 جنيه", allowed)).isEmpty();
+    }
 }

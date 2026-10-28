@@ -77,7 +77,8 @@ public class ChatService {
      */
     private String polish(String text, UUID conv, UUID tenantId, String channel, String externalId, UUID clientId) {
         if (text == null || text.isBlank()) return text;
-        String t = text.replaceAll("[\\p{IsHan}\\p{IsHiragana}\\p{IsKatakana}\\p{IsHangul}\\p{IsCyrillic}]", "");
+        String t = text.replaceAll("[\\p{IsHan}\\p{IsHiragana}\\p{IsKatakana}\\p{IsHangul}\\p{IsCyrillic}]", "")
+                .replaceAll("(?<=\\p{IsArabic})[A-Za-z]+(?=\\s|$|\\p{IsArabic})", "");   // Latin letters glued to an Arabic word («أursic») are a slip
         t = t.replace("محتاجة منك", "محتاج منك").replace("محتاجة أعرف", "محتاج أعرف").replace("محتاجة اعرف", "محتاج اعرف").replace("فاهماك", "فاهمك").replace("فاهماكي", "فاهمك")
                 .replace("مش متابعة", "مش متابع").replace("متأكدة إن", "متأكد إن");
         String name = customerName(tenantId, conv, channel, externalId, clientId);
@@ -430,7 +431,8 @@ public class ChatService {
     private String converse(Ctx ctx, ChannelAi.Routed routed, String system, List<Turn> turns, List<ToolDef> tools, List<AiUsageService.Round> rounds, boolean arabic) {
         MoneyGuard.Allowed allowed = new MoneyGuard.Allowed(((Number) getSettings(ctx.tenantId()).get("maxDiscountPct")).intValue());
         allowed.addText(system);
-        allowed.addFact(section(system, "SHOP FACTS:") + section(system, "SHOP CATALOG"));   // product names like «طقم ملايات قطن مصري» are the shop's own words
+        allowed.addFact(section(system, "SHOP FACTS:", 20_000) + section(system, CATALOG_HEADING, 20_000));
+        allowed.addPrices(section(system, CATALOG_HEADING, 20_000));   // product names like «طقم ملايات قطن مصري» are the shop's own words
         for (Turn t : turns) { allowed.addText(t.text()); if ("user".equals(t.role())) allowed.addFact(t.text()); }
         String answer = modelLoop(ctx, routed, system, turns, tools, rounds, allowed);
         if (answer == null || answer.isBlank() || ctx.summary()[0] != null) return answer;   // a code-written summary replaces the model's words anyway
@@ -448,7 +450,7 @@ public class ChatService {
         try {
             // the review runs on the answering model, or on the model set in app.ai.review.model (its cost is then logged under that model)
             ChannelAi.Routed reviewer = reviewModel == null || reviewModel.equals(routed.code()) ? routed : channelAi.forChannel(ctx.channel(), reviewModel);
-            Turn t = reviewer.next(ReplyReview.SYSTEM, List.of(Turn.user(ReplyReview.request(turns, addressing(system), section(system, "SHOP FACTS:") + section(system, "SHOP CATALOG"), draft))), List.of());
+            Turn t = reviewer.next(ReplyReview.SYSTEM, List.of(Turn.user(ReplyReview.request(turns, addressing(system), section(system, "SHOP FACTS:", 6000) + section(system, CATALOG_HEADING, 6000), draft))), List.of());
             var round = new AiUsageService.Round(List.of("review"), t.usage());
             if (reviewer == routed) rounds.add(round);
             else if (!"TEST".equals(ctx.channel())) usageLog.record(ctx.tenantId(), "CHAT_REVIEW", ctx.channel(), ctx.conversationId(), false, "[review]", List.of(round), reviewer.code(), false);
@@ -464,13 +466,18 @@ public class ChatService {
         }
     }
 
+    /** The catalog block's heading: the rules also mention "SHOP CATALOG", so lookups use this exact line start. */
+    static final String CATALOG_HEADING = "SHOP CATALOG LIST";
+
     /** One block of the prompt, from its heading to the next blank line (at most 3000 characters); empty when it is not there. */
-    static String section(String system, String heading) {
+    static String section(String system, String heading) { return section(system, heading, 3000); }
+
+    static String section(String system, String heading, int max) {
         int i = system == null ? -1 : system.indexOf(heading);
         if (i < 0) return "";
         int end = system.indexOf("\n\n", i);
         String s = system.substring(i, end < 0 ? system.length() : end);
-        return (s.length() > 3000 ? s.substring(0, 3000) : s) + "\n";
+        return (s.length() > max ? s.substring(0, max) : s) + "\n";
     }
 
     /** The ADDRESSING THE CUSTOMER lines of the prompt (name, gender, how to call them), for the reviewer. */
@@ -842,7 +849,7 @@ public class ChatService {
         try {
             var cats = search.categoryCounts(tenantId, 25);
             if (cats.isEmpty()) return "";
-            StringBuilder b = new StringBuilder("\nSHOP CATALOG (everything this shop sells; if a customer asks for any of it, we HAVE it: search_products to show the products):\n");
+            StringBuilder b = new StringBuilder("\n" + CATALOG_HEADING + " (everything this shop sells; if a customer asks for any of it, we HAVE it: search_products to show the products):\n");
             for (var c : cats) {
                 b.append("- ").append(c.get("nameAr")).append(" / ").append(c.get("nameEn"));
                 if (c.get("parentAr") != null) b.append(" (").append(c.get("parentAr")).append(")");

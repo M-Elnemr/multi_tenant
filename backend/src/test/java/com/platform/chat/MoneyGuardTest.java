@@ -71,6 +71,7 @@ class MoneyGuardTest {
         allowed.addText("Jeans 800 (before 1000), shirt 450, delivery 50");
         assertThat(MoneyGuard.violations("القميصين 900 + الجينز 800 + الشحن 50 = 1,750 جنيه", allowed)).extracting(MoneyGuard.Amount::raw).contains("1,750");
         assertThat(MoneyGuard.violations("يعني الاتنين 1250 قبل الشحن", allowed)).extracting(MoneyGuard.Amount::raw).contains("1250");
+        allowed.addJson(java.util.Map.of("price", 800, "priceBeforeDiscount", 1000));
         assertThat(MoneyGuard.violations("ده سعره 800 بدل 1000 يعني بخصم 200 جنيه", allowed)).isEmpty();
     }
 }

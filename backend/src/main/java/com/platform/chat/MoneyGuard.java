@@ -67,7 +67,8 @@ final class MoneyGuard {
     /** The amounts a reply may state. Fill it with everything the assistant legitimately knows, then {@link #violations}. */
     static final class Allowed {
         private final TreeSet<Long> exact = new TreeSet<>();
-        private final TreeSet<Long> fromTools = new TreeSet<>();   // amounts a tool returned: only their differences count as a saving
+        private final TreeSet<Long> fromTools = new TreeSet<>();   // prices a tool or the catalog gave: their quantities (x2, x3...) are fine
+        private final TreeSet<Long> savings = new TreeSet<>();     // "before" minus "now" of the same product
         private final StringBuilder facts = new StringBuilder();
         private final int maxDiscountPct;
 
@@ -83,9 +84,18 @@ final class MoneyGuard {
             while (m.find()) { long c = cents(m.group(1)); if (c >= 0) exact.add(c); }
         }
 
+        /** The prices in the shop catalog of the prompt («Name [slug] (450)»): quantities of them are fine. */
+        void addPrices(String catalog) {
+            if (catalog == null) return;
+            Matcher m = Pattern.compile("\\((" + NUM + ")\\)").matcher(catalog);
+            while (m.find()) { long c = cents(m.group(1)); if (c > 0) fromTools.add(c); }
+        }
+
         /** Every number in a tool result (a number, or a number inside a text). */
         void addJson(Object o) {
             if (o instanceof Number n) { exact.add(Math.round(n.doubleValue() * 100)); fromTools.add(Math.round(n.doubleValue() * 100)); }
+            if (o instanceof Map<?, ?> m && m.get("price") instanceof Number now && m.get("priceBeforeDiscount") instanceof Number before)
+                savings.add(Math.round((before.doubleValue() - now.doubleValue()) * 100));
             else if (o instanceof String s) { addText(s); addFact(s); }
             else if (o instanceof Map<?, ?> m) for (Object v : m.values()) addJson(v);
             else if (o instanceof Iterable<?> it) for (Object v : it) addJson(v);
@@ -101,8 +111,8 @@ final class MoneyGuard {
             if (exact.contains(cents)) return true;
             // a price times a quantity, or a price with the discount the shop allows: the system itself says these are fine, within one pound for rounding
             var known = exact.subSet(100L, 100_000_00L);
-            for (long a : fromTools) if (cents > 0 && fromTools.contains(a + cents)) return true;   // a saving: the price before minus the price now, both from a tool
-            for (long base : known) {
+            if (savings.contains(cents)) return true;   // a saving: the price before minus the price now of the same product
+            for (long base : fromTools.subSet(100L, 100_000_00L)) {   // a quantity or an allowed discount of a price a tool returned, never of any number in the shop text
                 for (int q = 2; q <= 10; q++) if (Math.abs(base * q - cents) <= 50) return true;
                 for (int d = 1; d <= maxDiscountPct; d++) if (Math.abs(base * (100 - d) / 100 - cents) <= 100) return true;
             }
