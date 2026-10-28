@@ -24,7 +24,7 @@ final class MoneyGuard {
     private static final Pattern CUR_THEN_NUM = Pattern.compile("(?<![\\p{L}])(?:EGP|SAR|AED|USD|KWD|LE|L\\.E|\\$)\\s*(" + NUM + ")", Pattern.CASE_INSENSITIVE);
     private static final Pattern WORD_THEN_NUM = Pattern.compile("(?:الإجمالي|الاجمالي|إجمالي|اجمالي|المجموع|مجموع|الشحن|شحن|التوصيل|الدليفري|الديلفري|بسعر|السعر|سعره|سعرها|total|subtotal|shipping|delivery|price|cost|=)[^0-9٠-٩۰-۹\\n]{0,6}(" + NUM + ")"
             // a sum written by the model («يعني الاتنين 1250», «يبقى 1750»): only a sum a tool returned is allowed
-            + "|(?:يعني|يبقى|هيبقى|بيبقى|الاتنين|التلاتة|مع بعض|كلهم|altogether|in total)[^0-9٠-٩۰-۹\\n.؟?!]{0,12}(" + NUM + ")", Pattern.CASE_INSENSITIVE);
+            + "|(?:يعني|يبقى|هيبقى|بيبقى|الاتنين|التلاتة|مع بعض|كلهم|كله|كلها|خالص|يوصل|هيوصل|altogether|in total)[^0-9٠-٩۰-۹\\n.؟?!]{0,12}(" + NUM + ")", Pattern.CASE_INSENSITIVE);
     /** A number the keyword path found is not money when it is a count, a size, a number of days or a range ("delivery 2-4 days", "shipping 3 pieces"). */
     private static final Pattern NOT_MONEY_AFTER = Pattern.compile("^\\s*(?:[-\u2013]\\s*[0-9\u0660-\u0669]|أيام|ايام|يوم|days?|hours?|ساع|قطع|piece|pcs|%|مقاس|size|سنة|سنين|years?)", Pattern.CASE_INSENSITIVE);
     private static final Pattern ANY_NUM = Pattern.compile("(?<![\\w.])(" + NUM + ")");
@@ -67,6 +67,7 @@ final class MoneyGuard {
     /** The amounts a reply may state. Fill it with everything the assistant legitimately knows, then {@link #violations}. */
     static final class Allowed {
         private final TreeSet<Long> exact = new TreeSet<>();
+        private final TreeSet<Long> fromTools = new TreeSet<>();   // amounts a tool returned: only their differences count as a saving
         private final StringBuilder facts = new StringBuilder();
         private final int maxDiscountPct;
 
@@ -84,7 +85,7 @@ final class MoneyGuard {
 
         /** Every number in a tool result (a number, or a number inside a text). */
         void addJson(Object o) {
-            if (o instanceof Number n) exact.add(Math.round(n.doubleValue() * 100));
+            if (o instanceof Number n) { exact.add(Math.round(n.doubleValue() * 100)); fromTools.add(Math.round(n.doubleValue() * 100)); }
             else if (o instanceof String s) { addText(s); addFact(s); }
             else if (o instanceof Map<?, ?> m) for (Object v : m.values()) addJson(v);
             else if (o instanceof Iterable<?> it) for (Object v : it) addJson(v);
@@ -100,7 +101,7 @@ final class MoneyGuard {
             if (exact.contains(cents)) return true;
             // a price times a quantity, or a price with the discount the shop allows: the system itself says these are fine, within one pound for rounding
             var known = exact.subSet(100L, 100_000_00L);
-            if (known.size() <= 400) for (long a : known) if (exact.contains(a + cents) && cents > 0) return true;   // a saving: the price before minus the price now
+            for (long a : fromTools) if (cents > 0 && fromTools.contains(a + cents)) return true;   // a saving: the price before minus the price now, both from a tool
             for (long base : known) {
                 for (int q = 2; q <= 10; q++) if (Math.abs(base * q - cents) <= 50) return true;
                 for (int d = 1; d <= maxDiscountPct; d++) if (Math.abs(base * (100 - d) / 100 - cents) <= 100) return true;

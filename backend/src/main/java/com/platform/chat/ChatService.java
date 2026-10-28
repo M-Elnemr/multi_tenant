@@ -71,6 +71,25 @@ public class ChatService {
         return t.replaceAll("\\*\\*(.+?)\\*\\*", "*$1*");
     }
 
+    /**
+     * Last fixes in code, whatever the model wrote: the customer is never called by the bare name («يا منى» -> «يا أستاذة منى», or «يا فندم» when we cannot tell), the seller speaks of itself in the
+     * masculine, and characters of other scripts that slip into Arabic text are taken out.
+     */
+    private String polish(String text, UUID conv, UUID tenantId, String channel, String externalId, UUID clientId) {
+        if (text == null || text.isBlank()) return text;
+        String t = text.replaceAll("[\\p{IsHan}\\p{IsHiragana}\\p{IsKatakana}\\p{IsHangul}\\p{IsCyrillic}]", "");
+        t = t.replace("محتاجة منك", "محتاج منك").replace("محتاجة أعرف", "محتاج أعرف").replace("محتاجة اعرف", "محتاج اعرف").replace("فاهماك", "فاهمك").replace("فاهماكي", "فاهمك")
+                .replace("مش متابعة", "مش متابع").replace("متأكدة إن", "متأكد إن");
+        String name = customerName(tenantId, conv, channel, externalId, clientId);
+        String said = jdbc.sql("SELECT gender FROM chat.conversations WHERE id = :c").param("c", conv).query(String.class).optional().orElse(null);
+        if (name != null) {
+            com.platform.shared.Gender g = said != null ? com.platform.shared.Gender.of(said) : com.platform.commerce.GenderService.forName(name);
+            String title = g == com.platform.shared.Gender.FEMALE ? "أستاذة " : g == com.platform.shared.Gender.MALE ? "أستاذ " : null;
+            t = t.replaceAll("(?<![\\p{L}])يا\\s+" + Pattern.quote(name) + "(?![\\p{L}])", title != null ? "يا " + title + name : "يا فندم");
+        }
+        return t;
+    }
+
     /** A professional seller does not laugh at a customer: «هههه» and laughing emoji are taken out. */
     static String noLaughter(String text) {
         if (text == null) return null;
@@ -354,7 +373,9 @@ public class ChatService {
         else if (orderBox[0] != null) answer = confirmedText(arabicChat, orderBox[0], Map.of());
         if (!"TEST".equals(channel)) { seller.count(tenantId); usageLog.record(tenantId, "CHAT", channel, conv, false, text, rounds, routed.code(), routed.fellBack()); }
         if (answer == null || answer.isBlank()) answer = "عذرًا، لم أفهم. هل تعيد صياغة طلبك؟ / Sorry, I did not get that. Could you rephrase?";
-        answer = noLaughter(messaging(channel) ? forChannel(channel, answer) : forChannel("WEB", oneMessage(answer)));
+        answer = polish(noLaughter(messaging(channel) ? forChannel(channel, answer) : forChannel("WEB", oneMessage(answer))), conv, tenantId, channel, externalId, clientId);
+        var seenCards = new java.util.HashSet<Object>();
+        ctx.products().removeIf(p -> !seenCards.add(p.get("slug")));   // one card per product
         String replyWords = FastAnswers.norm(answer);
         if (!messaging(channel)) ctx.products().removeIf(p -> !Boolean.TRUE.equals(p.get("send")) && !replyWords.contains(FastAnswers.norm(String.valueOf(p.get("name")))));   // the website shows cards only for what the reply is about
         jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x)").param("c", conv).param("x", answer).update();
@@ -874,10 +895,14 @@ public class ChatService {
     private static final Pattern MY_NAME = Pattern.compile("(?:اسمي|إسمي|my name is)\\s+([\\p{IsArabic}\\p{IsLatin}]{2,20})", Pattern.CASE_INSENSITIVE);
 
     /** The first name the customer gives in the chat («اسمي منى وعايزة...» -> «منى»), or null. */
+    private static final Pattern I_AM_NAME = Pattern.compile("^\\s*(?:انا|أنا)\\s+(\\p{IsArabic}{2,15})\\s*[،,]");
+
     static String statedName(String text) {
         if (text == null) return null;
         var m = MY_NAME.matcher(text);
-        return m.find() ? firstName(m.group(1)) : null;
+        if (m.find()) return firstName(m.group(1));
+        var i = I_AM_NAME.matcher(text);   // «انا منى، الإسكندرية...» (a name, then the details)
+        return i.find() && !java.util.Set.of("عايز", "عاوز", "عايزة", "عاوزة", "محتاج", "محتاجة", "مش", "جاي", "هنا").contains(i.group(1)) ? firstName(i.group(1)) : null;
     }
 
     /** MALE / FEMALE when the customer says it about themself («أنا راجل مش بنت», «انا ست»), else null. */
@@ -1050,6 +1075,11 @@ public class ChatService {
             for (var r : find(ctx.tenantId(), broad, null, max)) seenSlugs.putIfAbsent(r.get("slug"), r);
             rows = seenSlugs.values().stream().limit(4).toList();
         }
+        if (rows.isEmpty() && q != null) {   // everyday Egyptian words for what the catalog names differently («حلل» are «أواني»)
+            String alt = synonyms(q);
+            if (alt != null) rows = find(ctx.tenantId(), alt, null, max);
+            if (rows.isEmpty() && alt != null) for (String slug : search.categoriesMatching(ctx.tenantId(), List.of(alt.split("\\s+")))) for (var r : find(ctx.tenantId(), null, slug, max)) if (rows.size() < 3) { rows = new ArrayList<>(rows); rows.add(r); }
+        }
         boolean exact = !rows.isEmpty() || q == null;
         if (rows.isEmpty() && q != null) {
             // the customer's words matched no product name: try each word, then a category whose name contains a word, then the best sellers
@@ -1092,6 +1122,25 @@ public class ChatService {
     }
 
     private List<Map<String, Object>> find(UUID tenantId, String q, String category, Long maxMinor) { return find(tenantId, q, category, maxMinor, null); }
+
+    private static final Map<String, String> SYNONYMS = Map.ofEntries(Map.entry("حلل", "اواني"), Map.entry("حله", "اواني"), Map.entry("طاسات", "اواني"), Map.entry("طاسه", "اواني"), Map.entry("حلة", "اواني"),
+            Map.entry("ملايه", "ملايات"), Map.entry("ملايات", "ملايات"), Map.entry("مفارش", "ملايات"), Map.entry("مخده", "مخدة"), Map.entry("مخدات", "مخدة"), Map.entry("سكينه", "سكين"), Map.entry("سكاكين", "سكين"),
+            Map.entry("تيشرت", "تيشيرت"), Map.entry("تشيرت", "تيشيرت"), Map.entry("بنطلون", "بنطلون"), Map.entry("بناطيل", "بنطلون"), Map.entry("فساتين", "فستان"), Map.entry("عبايات", "عباية"), Map.entry("عبايه", "عباية"),
+            Map.entry("قمصان", "قميص"), Map.entry("جزمه", "حذاء"), Map.entry("جزم", "حذاء"), Map.entry("كوتشي", "حذاء"), Map.entry("شنطه", "حقيبة"), Map.entry("شنط", "حقيبة"));
+
+    /** The customer's words with everyday synonyms swapped for the catalog's words, or null when none applies. */
+    static String synonyms(String q) {
+        boolean changed = false;
+        List<String> out = new ArrayList<>();
+        for (String w : FastAnswers.norm(q).split("\\s+")) {
+            String to = SYNONYMS.get(w);
+            if (to != null && !to.equals(w)) { out.add(to); changed = true; } else out.add(w);
+        }
+        if (!changed) return null;
+        String core = withoutOptions(String.join(" ", out));
+        String only = out.stream().filter(w -> SYNONYMS.containsValue(w)).findFirst().orElse(null);
+        return only != null ? only : core;
+    }
 
     private static final java.util.Set<String> OPTION_WORDS = java.util.Set.of("ابيض", "بيضا", "بيضاء", "اسود", "سودا", "سوداء", "ازرق", "زرقا", "كحلي", "بيج", "احمر", "حمرا", "اخضر", "خضرا", "اصفر", "صفرا", "وردي", "بمبي", "رمادي", "رصاصي",
             "بني", "لبني", "مقاس", "مقاسي", "s", "m", "l", "xl", "xxl", "white", "black", "blue", "navy", "beige", "red", "green", "yellow", "pink", "grey", "gray", "brown", "size", "small", "medium", "large");

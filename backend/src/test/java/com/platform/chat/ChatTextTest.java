@@ -63,4 +63,23 @@ class ChatTextTest {
         assertThat(ReplyGuard.violations("تقدر تدفع كاش أو بطاقة", "- Payment methods: CASH_ON_DELIVERY, CARD. The customer may pay كاش أو بطاقة (cash or card).")).isEmpty();
         assertThat(ReplyGuard.violations("للأسف الفيزا مش متاحة، الدفع كاش عند الاستلام", "")).isEmpty();
     }
+
+    @Test
+    void everydayWordsFindTheCatalogsWordsAndDeferralsAreCaught() {
+        assertThat(ChatService.synonyms("عندكم حلل ارخص")).isEqualTo("اواني");
+        assertThat(ChatService.synonyms("عايز قميص")).isNull();
+        assertThat(ChatService.statedName("انا منى، الاسكندرية سموحة")).isEqualTo("منى");
+        assertThat(ChatService.statedName("انا عايز، حاجة")).isNull();
+        assertThat(ReplyGuard.violations("ثواني وأنا أشوف لك الجاكيتات وأرجعلك بالأحسن", "")).isNotEmpty();
+        assertThat(ReplyGuard.violations("هديك رقم التواصل مع فريق خدمة العملاء", "")).isNotEmpty();
+    }
+
+    @Test
+    void aSumIsNotTakenForASavingBecauseOfOtherCatalogPrices() {
+        var allowed = new MoneyGuard.Allowed(0);
+        allowed.addText("catalog: 2100, 3800, 450, 800");
+        assertThat(MoneyGuard.violations("إجمالي 1700 يا فندم", allowed)).isNotEmpty();
+        allowed.addJson(java.util.Map.of("price", 800, "priceBeforeDiscount", 1000));
+        assertThat(MoneyGuard.violations("يعني وفرت 200 جنيه", allowed)).isEmpty();
+    }
 }

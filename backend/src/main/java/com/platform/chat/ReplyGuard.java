@@ -26,7 +26,11 @@ final class ReplyGuard {
                     + "|(?:لو|إذا|اذا)\\s+(?:طلبت|طلبتي|اكدت|أكدت|أكدتي|اكدتي|اخترت|اخترتي|حجزت|حجزتي)[^.!؟?\\n]{0,15}(?:دلوقتي|حالا|حالاً|النهارده|النهاردة)[^.!؟?\\n]{0,45}(?:سعر|خصم)"
                     + "|(?:better price|discount|deal)[^.!?\\n]{0,40}if you (?:order|buy|confirm|book)[^.!?\\n]{0,15}(?:now|today|right away)"),
             new Rule("a limited-time offer", "(?:النهارده بس|النهاردة بس|لفترة محدودة|لمدة محدودة|العرض هيخلص|آخر يوم|اخر يوم|today only|limited time|offer ends)"),
-            // a payment method offered that the shop data does not list (card when only cash on delivery is enabled)
+            // "wait, I'll check and come back" instead of calling the tool now
+            new Rule("a promise to check and come back", "(?:ثواني\\s+و|استنى\\s+شوية|استناني|هشوف\\s*لك\\s+و|هشوفلك\\s+و|وأرجعلك|وارجعلك|وهرجعلك|هرجعلك\\s+ب|let me check and get back|i'll check and get back)"),
+            // a contact the assistant does not have
+            new Rule("a promised contact number", "(?:هديك|هبعتلك|هديلك)\\s+(?:رقم|نمرة)\\s+(?:التواصل|خدمة العملاء|الفريق|المسؤول)|i(?:'ll| will) give you (?:the|a) (?:number|contact)"),
+                        // a payment method offered that the shop data does not list (card when only cash on delivery is enabled)
             new Rule("a payment method the shop does not offer", "(?:أو|او|ولا)\\s*(?:بال)?(?:بطاقة|بطاقه|كارت|فيزا|visa|card|credit card)|(?:or|and)\\s+(?:by\\s+)?(?:card|visa)"),
             // invented social proof
             new Rule("invented popularity or reviews", "(?:كتير من العملاء|العملاء بيحبو|العملاء بيطلبو|عليه طلب كبير|الأكثر طلب|الأكتر طلب|بيخلص بسرعة|كل اللي اشتروه|customers love|many customers|best ?seller|sells out fast)"),
