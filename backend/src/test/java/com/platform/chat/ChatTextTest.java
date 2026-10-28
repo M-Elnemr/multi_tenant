@@ -27,4 +27,12 @@ class ChatTextTest {
         assertThat(ChatService.forChannel("WHATSAPP", "رقم الأوردر: ST-1")).isEqualTo("رقم الأوردر: ST-1");
         assertThat(ChatService.forChannel("WEB", "الاسم، رقم تليفون عليه واتساب، العنوان")).contains("رقم تليفون");
     }
+
+    @Test
+    void everyColorAndSizeIsListedSoTheNameNeverMisleads() {
+        var m = new java.util.LinkedHashMap<String, Object>();
+        ChatService.optionSummary(m, List.of(java.util.Map.of("options", "اللون: أزرق, المقاس: L", "available", 3), java.util.Map.of("options", "اللون: أبيض, المقاس: M", "available", 0)));
+        assertThat(m.get("allOptions").toString()).contains("أزرق / أبيض").contains("L / M");
+        assertThat(m.get("inStockOptions").toString()).contains("أزرق").doesNotContain("أبيض");
+    }
 }

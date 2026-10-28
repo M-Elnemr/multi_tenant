@@ -343,7 +343,9 @@ public class ChatService {
         else if (orderBox[0] != null) answer = confirmedText(arabicChat, orderBox[0], Map.of());
         if (!"TEST".equals(channel)) { seller.count(tenantId); usageLog.record(tenantId, "CHAT", channel, conv, false, text, rounds, routed.code(), routed.fellBack()); }
         if (answer == null || answer.isBlank()) answer = "عذرًا، لم أفهم. هل تعيد صياغة طلبك؟ / Sorry, I did not get that. Could you rephrase?";
-        answer = messaging(channel) ? forChannel(channel, answer) : oneMessage(answer);
+        answer = messaging(channel) ? forChannel(channel, answer) : forChannel("WEB", oneMessage(answer));
+        String replyWords = FastAnswers.norm(answer);
+        if (!messaging(channel)) ctx.products().removeIf(p -> !Boolean.TRUE.equals(p.get("send")) && !replyWords.contains(FastAnswers.norm(String.valueOf(p.get("name")))));   // the website shows cards only for what the reply is about
         jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x)").param("c", conv).param("x", answer).update();
         jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();
         return new Reply(conv, answer, orderBox[0], ctx.products());
@@ -609,11 +611,13 @@ public class ChatService {
                 - WORDS: use plain, common, correct words of the customer's dialect and re-read every sentence before you send it: the right everyday verb for what happens to the product (a bedsheet is «بتتغسل» / «اتغسلت», never «اتمسحت»), no poetic or unusual phrases, nothing that could be understood wrongly. If the customer asks what a word of yours meant or points at a mistake, say sorry in a few words, explain it simply and correctly, then continue the sale; never ignore the question and never answer it with something else.
                 - NEVER INVENT to push a sale: no «the price will rise soon», no «last piece» unless the tool shows really low stock, no claims that the shop exports, imports or is a famous brand, no guarantees, reviews or promises that someone will call, unless a tool or the owner's answer says so. Honest warmth sells; pressure from made-up facts loses the customer.
                 - Only sell what the tools return. Never invent products, prices, stock, discounts, delivery times or policies. If you do not know, say so. Prices from tools are in the shop currency (major units).
+                - NEVER say the shop has, sells or offers something (a kind of item, a color, a size, an offer) before SHOP CATALOG or a tool result shows it, and never say it lacks a color or size that a result lists in allOptions. Search first; ask who it is for only after you know what the shop has.
                 - Know the shop: SHOP CATALOG lists everything it sells. NEVER tell a customer the shop does not have a kind of item (clothes, dresses, shoes...) before checking the SHOP CATALOG and calling search_products; if the customer is vague, name the categories we have and ask one short question to narrow down. Only say "we don't have it" when both show nothing like it, and then suggest the closest thing we do have.
                 - Search first (search_products): each result lists its variants with ids, sizes, colors and stock, so you can usually answer and prepare the order without get_product. Suggest 1-3 relevant products and do not push items that are out of stock.
                 - WHO IS IT FOR (strict): each product says who it is "for" (men, women, boys, girls, babies, everyone) and its category. Before suggesting anything, know who the customer is buying for. If the words or the chat already tell («بنطلون رجالي»، «لابني ٥ سنين»، «ليا»، a woman asking for a dress), or the shop sells that kind of item for only one group, go ahead: pass audience to search_products (MEN, WOMEN, BOYS, GIRLS or BABY). If the shop has that item for several groups and nothing tells, ask ONE short question first («ليك ولا لحد تاني؟») — or, when the customer clearly speaks about themself, assume it is for them (their own gender, adult). Ask a child's age only when the item is for a child, and only if the size depends on it. NEVER show a kids' product to an adult buying for themself, and never ask about gender or age when it is not needed.
                 - Photos: call show_products with the slugs of the products you recommend, and whenever the customer asks for a photo or "صورة"; the shop then sends each product's picture, price and link right after your message (WhatsApp, Messenger, Instagram) or shows it as a card (website). Without that call a picture is only sent if your message repeats the product name exactly as search_products returned it. Never write links yourself.
                 - To close a sale you need: the items (variant and quantity), the customer's name, ONE mobile number, the full delivery address and the payment method. Ask for EVERYTHING that is still missing in ONE single message, as a short list, never spread over several messages. In Arabic, for example: «محتاجة منك في رسالة واحدة: الاسم، رقم تليفون عليه واتساب، العنوان بالتفصيل (المحافظة، المنطقة، الشارع، رقم العمارة والشقة)، وطريقة الدفع» (masculine «محتاج» for a man). The governorate is part of the address: never ask for it as a separate question; work out its code from the address and ask only if it is really unclear. Skip anything the customer already told you, and anything in SAVED DETAILS (a returning customer only confirms the saved address, see below).
+                - If the customer already gave a mobile number but did not say it has WhatsApp, ask only «الرقم ده عليه واتساب؟» (one short line), not the whole list again.
                 - If SHOP FACTS says WhatsApp confirmation is available: ask for the number as «رقم تليفون عليه واتساب» inside that same single message (English only if the customer writes English); do NOT ask about WhatsApp confirmation in a later message. The number they give is both their phone and their WhatsApp number: pass it as phone, and as whatsappNumber with whatsappConsent=true to prepare_order. Only if they say that number has no WhatsApp, pass whatsappConsent=false (and ask once for another number). Never invent a number.
                 - prepare_order always takes the COMPLETE list of everything the customer wants in this order: when they add an item, the earlier items stay in the list; never send only the newest item. Then the system itself writes and sends the customer the exact summary (items, discount, delivery fee or «free», total, payment, address) and asks them to confirm, so you never write a summary or a total. Only after the customer answers "yes/confirm" in a LATER message, call place_order (a plain yes is also handled for you automatically). Never call place_order in the same turn as prepare_order. NEVER say or imply that an order is placed or confirmed unless place_order returned an order number; if the customer changes anything, call prepare_order again and show the new summary once.
                 - After place_order succeeds, thank them, give the order number and say you will keep them posted. If the payment is by card, give the payment link from the result.
@@ -1012,7 +1016,9 @@ public class ChatService {
             Map<String, Object> m = obj("name", r.get("name"), "slug", r.get("slug"), "brand", r.get("brand"), "price", major(r.get("minPriceMinor")), "inStock", r.get("inStock"));
             describe(m, r.get("audience"), r.get("taxonomyId"), r.get("shortDescription"));
             if (r.get("compareAtMinor") != null) m.put("priceBeforeDiscount", major(r.get("compareAtMinor")));
-            m.put("variants", compactVariants(ctx.tenantId(), String.valueOf(r.get("slug")), null, 8));
+            List<Map<String, Object>> vs = compactVariants(ctx.tenantId(), String.valueOf(r.get("slug")), null, 24);
+            optionSummary(m, vs);
+            m.put("variants", vs.size() > 12 ? vs.subList(0, 12) : vs);
             out.add(m);
             ctx.products().add(obj("name", r.get("name"), "slug", r.get("slug"), "priceMinor", r.get("minPriceMinor"), "compareAtMinor", r.get("compareAtMinor"),
                     "currency", r.get("currency"), "imageUrl", r.get("imageUrl"), "imageMediaBase", r.get("imageMediaBase"), "imageMediaExt", r.get("imageMediaExt")));
@@ -1020,7 +1026,7 @@ public class ChatService {
         var res = obj("products", out, "count", out.size());
         if (!exact) res.put("note", out.isEmpty()
                 ? "The shop has no products right now."
-                : "No product name matched these exact words, so these are the closest products of the shop (see SHOP CATALOG). Offer them as options; never tell the customer the shop does not have this kind of item unless the SHOP CATALOG has nothing like it.");
+                : "No product matched these words, so these are only other products of the shop. If the SHOP CATALOG has this kind of item, offer it; if it has nothing like it (for example shoes or jackets in a shop without them), say honestly and kindly that we do not have it, then suggest the closest RELATED kind of item we do have (for shoes: men's or women's clothes; never unrelated things like kitchen tools or pillows). Never claim we have something these results do not show.");
         return res;
     }
 
@@ -1067,6 +1073,33 @@ public class ChatService {
 
     private static boolean isAvailable(Object a) { return a instanceof Number n ? n.intValue() > 0 : !Boolean.FALSE.equals(a); }
 
+    /**
+     * Every color and size the product has (and the ones in stock), so the model never judges by the product's name («قميص قطن أزرق» also comes in white) or misses an option beyond the
+     * variants it is shown.
+     */
+    @SuppressWarnings("unchecked")
+    static void optionSummary(Map<String, Object> m, List<Map<String, Object>> variants) {
+        java.util.Map<String, java.util.LinkedHashSet<String>> all = new java.util.LinkedHashMap<>(), inStock = new java.util.LinkedHashMap<>();
+        for (var v : variants) {
+            String opts = String.valueOf(v.get("options"));
+            if ("default".equals(opts)) continue;
+            for (String kv : opts.split(",\\s*")) {
+                int i = kv.indexOf(':');
+                if (i < 0) continue;
+                String k = kv.substring(0, i).trim(), val = kv.substring(i + 1).trim();
+                all.computeIfAbsent(k, x -> new java.util.LinkedHashSet<>()).add(val);
+                if (isAvailable(v.get("available"))) inStock.computeIfAbsent(k, x -> new java.util.LinkedHashSet<>()).add(val);
+            }
+        }
+        if (all.isEmpty()) return;
+        Map<String, Object> o = new LinkedHashMap<>();
+        all.forEach((k, vals) -> o.put(k, String.join(" / ", vals)));
+        m.put("allOptions", o);
+        Map<String, Object> s = new LinkedHashMap<>();
+        inStock.forEach((k, vals) -> s.put(k, String.join(" / ", vals)));
+        m.put("inStockOptions", s);
+    }
+
     /** Short variant list shown with each search hit: id, options, availability (price only when it differs from the product's own price is left to get_product). */
     private List<Map<String, Object>> compactVariants(UUID tenantId, String slug, String want, int max) {
         try {
@@ -1090,7 +1123,7 @@ public class ChatService {
                     "currency", r.get("currency"), "imageUrl", r.get("imageUrl"), "imageMediaBase", r.get("imageMediaBase"), "imageMediaExt", r.get("imageMediaExt"), "send", true));
             names.add(String.valueOf(r.get("name")));
         }
-        return obj("shown", names, "note", "The picture, price and link of these products are sent right after your message. Do not write links or repeat the price list; talk about why they suit the customer.");
+        return obj("shown", names, "note", "The picture, price and link of these products reach the customer with your message. Do not mention pictures being sent, do not write links and do not repeat the price list: talk naturally about why they suit the customer.");
     }
 
     @SuppressWarnings("unchecked")

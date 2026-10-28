@@ -110,7 +110,7 @@ class AiChatIntegrationTest extends IntegrationTestBase {
         // nothing matches at all: the shop's own products come back with a note that says they are the closest, not an empty answer
         var nothing = FakeAiProvider.RESULTS.get(1).result();
         assertThat(nothing.get("count")).isEqualTo(1);
-        assertThat(nothing.get("note").toString()).contains("closest").contains("never tell the customer");
+        assertThat(nothing.get("note").toString()).contains("closest").contains("Never claim we have something");
     }
 
     @Test
