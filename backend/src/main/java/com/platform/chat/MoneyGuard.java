@@ -58,9 +58,11 @@ final class MoneyGuard {
                 if (p == WORD_THEN_NUM && NOT_MONEY_AFTER.matcher(text.substring(e)).find()) continue;
                 long c = cents(m.group(g));
                 if (c < 0) continue;
-                boolean dup = false;
-                for (Amount a : out) if (a.start == s) { dup = true; break; }
-                if (!dup) out.add(new Amount(c, m.group(g), s, e, p == WORD_THEN_NUM && g == 2));   // after «يعني الاتنين…»: a sum, which must match exactly
+                boolean sum = p == WORD_THEN_NUM && g == 2;   // after «يعني الاتنين…»: a sum, which must match exactly
+                int dup = -1;
+                for (int k = 0; k < out.size(); k++) if (out.get(k).start == s) { dup = k; break; }
+                if (dup < 0) out.add(new Amount(c, m.group(g), s, e, sum));
+                else if (sum) out.set(dup, new Amount(out.get(dup).cents(), out.get(dup).raw(), s, out.get(dup).end(), true));   // «يعني الاتنين 1250 جنيه»: the stricter reading wins
             }
         }
         return out;
@@ -128,7 +130,14 @@ final class MoneyGuard {
     /** The amounts in {@code text} that are not allowed. */
     static List<Amount> violations(String text, Allowed allowed) {
         List<Amount> bad = new ArrayList<>();
-        for (Amount a : amountsIn(text)) if (a.sum() ? !allowed.allowsExactly(a.cents()) : !allowed.allows(a.cents())) bad.add(a);
+        List<Amount> all = amountsIn(text);
+        for (Amount a : all) {
+            if (!a.sum()) { if (!allowed.allows(a.cents())) bad.add(a); continue; }
+            // a sum is fine when it is exact, or a quantity of ONE price the same reply states («الأكواب بـ100… والاتنين بـ200»), never two different prices added up
+            boolean ok = allowed.allowsExactly(a.cents());
+            for (Amount p : all) if (!ok && !p.sum() && p.cents() > 0 && allowed.allows(p.cents())) for (int q = 2; q <= 10 && !ok; q++) ok = Math.abs(p.cents() * q - a.cents()) <= 50;
+            if (!ok) bad.add(a);
+        }
         return bad;
     }
 
