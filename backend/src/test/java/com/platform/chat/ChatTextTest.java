@@ -165,4 +165,14 @@ class ChatTextTest {
         assertThat(ChatService.etaText(0, 0)).isEqualTo("same day");
         assertThat(ChatService.etaText(1, 2)).isEqualTo("1-2 days");
     }
+
+    @Test
+    void aCancelledClaimIsToldApartFromACancellationRequest() {
+        assertThat(ChatService.CANCEL_CLAIM.matcher("تمام يا فندم، تم إلغاء الطلب").find()).isTrue();
+        assertThat(ChatService.CANCEL_CLAIM.matcher("خلاص الأوردر اتلغى").find()).isTrue();
+        assertThat(ChatService.CANCEL_CLAIM.matcher("لغيتهولك يا فندم").find()).isTrue();
+        assertThat(ChatService.CANCEL_CLAIM.matcher("Your order has been cancelled").find()).isTrue();
+        assertThat(ChatService.CANCEL_CLAIM.matcher("وصلت طلب الإلغاء للمحل وهيكلموك").find()).isFalse();
+        assertThat(ChatService.CANCEL_CLAIM.matcher("ممكن أعرف عايز تلغي ليه؟").find()).isFalse();
+    }
 }

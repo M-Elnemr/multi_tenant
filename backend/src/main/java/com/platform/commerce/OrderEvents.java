@@ -11,4 +11,6 @@ public final class OrderEvents {
 
     /** The customer themselves cancelled the order (not staff, not the payment-expiry job). */
     public record OrderCancelledByCustomer(UUID tenantId, UUID orderId, String orderNumber) {}
+    /** The customer asked to cancel in the chat and gave a reason: the order is kept until the shop talks to them. */
+    public record OrderCancelRequested(UUID tenantId, UUID orderId, String orderNumber, String reason) {}
 }

@@ -84,6 +84,25 @@ public class NotificationListeners {
         });
     }
 
+    /** The customer asked to cancel in the chat and said why: the people who handle orders get the reason, so they can call the customer and solve it. */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void onOrderCancelRequested(OrderEvents.OrderCancelRequested e) {
+        safely("OrderCancelRequested", () -> {
+            boolean ar = ar(e.tenantId());
+            String title = ar ? "طلب إلغاء أوردر" : "Cancellation request";
+            String body = (ar ? "العميل عايز يلغي الطلب رقم " + e.orderNumber() + " — السبب: " : "The customer wants to cancel order " + e.orderNumber() + " — reason: ") + e.reason()
+                    + (ar ? ". كلم العميل وشوف الحل." : ". Call the customer to sort it out.");
+            String payload = "{\"type\":\"ORDER_CANCEL_REQUESTED\",\"orderId\":\"" + e.orderId() + "\"}";
+            List<UUID> owners = staffWith(e.tenantId(), "order.update_status");
+            for (UUID staff : owners) {
+                notifications.notify(staff, e.tenantId(), "ORDER_CANCEL_REQUESTED", title, body, json("orderId", e.orderId()), true);
+                notifications.push(staff, e.tenantId(), title, body, payload);
+            }
+            if (!owners.isEmpty()) notifications.dispatchSoon();
+        });
+    }
+
     /** A new shop or clinic signed up: every platform operator is told, in the app and on the phone (no tenant on the notification). */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     @Transactional(propagation = Propagation.REQUIRES_NEW)

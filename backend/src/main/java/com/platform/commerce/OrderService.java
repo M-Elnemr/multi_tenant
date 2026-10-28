@@ -59,6 +59,28 @@ public class OrderService {
         return get(tenantId, orderId);
     }
 
+    /** The customer cancelled in the chat without giving a reason: the order is cancelled (stock back) and the shop is told. */
+    @Transactional
+    public void cancelByChat(UUID tenantId, UUID orderId) {
+        var o = lock(tenantId, orderId);
+        if (!changeable((String) o.get("status")))
+            throw new BusinessException(org.springframework.http.HttpStatus.CONFLICT, "INVALID_STATUS_TRANSITION", "The shop has already started this order");
+        apply(tenantId, o, "CANCELLED", null, "Cancelled by the customer in the chat (no reason given)");
+        audit.record(null, tenantId, "ORDER_STATUS_CHANGED", "order", orderId, "{\"to\":\"CANCELLED\",\"by\":\"chat\"}");
+        events.publishEvent(new OrderEvents.OrderCancelledByCustomer(tenantId, orderId, (String) o.get("order_number")));
+    }
+
+    /** The customer wants to cancel and said why: the order stays, the reason is written on it and the shop is told, so they can call the customer and solve it. */
+    @Transactional
+    public void requestCancelByChat(UUID tenantId, UUID orderId, String reason) {
+        var o = lock(tenantId, orderId);
+        String r = reason.length() > 500 ? reason.substring(0, 500) : reason;
+        jdbc.sql("UPDATE commerce.orders SET notes = concat_ws(E'\\n', NULLIF(notes, ''), :n), updated_at = now() WHERE id = :o")
+                .param("n", "⚠️ طلب إلغاء من العميل — السبب: " + r).param("o", orderId).update();
+        audit.record(null, tenantId, "ORDER_CANCEL_REQUESTED", "order", orderId, null);
+        events.publishEvent(new OrderEvents.OrderCancelRequested(tenantId, orderId, (String) o.get("order_number"), r));
+    }
+
     /** Whether the customer may still change this order in the chat: nothing has been prepared yet. */
     public static boolean changeable(String status) { return "PENDING".equals(status) || "REQUESTED".equals(status); }
 

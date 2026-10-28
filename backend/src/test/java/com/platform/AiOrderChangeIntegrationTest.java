@@ -180,4 +180,43 @@ class AiOrderChangeIntegrationTest extends IntegrationTestBase {
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("ok"));
         assertThat(chat.reply(tenant, "WEB", ext, null, "مقاس M").text()).contains("ملخص الأوردر");
     }
+
+    @Test
+    void cancellingAsksTheReasonSendsAReasonToTheShopAndOnlySaysCancelledWhenItIs() throws Exception {
+        Tenant t = onboard("STORE");
+        String shirt = product(t, "Shirt");
+        UUID tenant = id(t);
+        String ext = "cancel-" + uniq();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepare(List.of(shirt), Map.of())));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ok"));
+        chat.reply(tenant, "WEB", ext, null, "احجزلي القميص");
+        String no = chat.reply(tenant, "WEB", ext, null, "تمام").order().get("orderNumber").toString();
+
+        // the model claims "cancelled" without cancelling, twice: the customer is asked the reason instead and the order stays
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام يا فندم، تم إلغاء الطلب"));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("خلاص الطلب اتلغى"));
+        String claimed = chat.reply(tenant, "WEB", ext, null, "الغي الاوردر").text();
+        assertThat(claimed).contains("تلغي ليه").doesNotContain("اتلغى");
+        assertThat(orders(tenant).get(0).get("status")).isEqualTo("REQUESTED");
+
+        // no reason yet: the tool asks for it; with a reason the shop gets a request and the order stays
+        FakeAiProvider.RESULTS.clear();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("cancel_order", Map.of()));
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("cancel_order", Map.of("reason", "التوصيل اتأخر")));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("وصلت طلبك للمحل وهيكلموك"));
+        chat.reply(tenant, "WEB", ext, null, "عشان التوصيل اتأخر");
+        assertThat(FakeAiProvider.RESULTS.get(0).result().get("error").toString()).contains("why");
+        assertThat(FakeAiProvider.RESULTS.get(1).result()).containsEntry("requested", true).containsEntry("cancelled", false);
+        assertThat(orders(tenant).get(0).get("status")).isEqualTo("REQUESTED");
+        assertThat(jdbc.sql("SELECT notes FROM commerce.orders WHERE tenant_id = :t AND order_number = :n").param("t", tenant).param("n", no).query(String.class).single()).contains("التوصيل اتأخر");
+        assertThat(jdbc.sql("SELECT count(*) FROM notifications.notifications WHERE tenant_id = :t AND notification_type = 'ORDER_CANCEL_REQUESTED' AND body LIKE '%التوصيل اتأخر%'").param("t", tenant).query(Long.class).single()).isPositive();
+
+        // the customer will not say why: the order is cancelled for real
+        FakeAiProvider.RESULTS.clear();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("cancel_order", Map.of("noReason", true)));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("تم إلغاء الطلب يا فندم"));
+        assertThat(chat.reply(tenant, "WEB", ext, null, "مش عايز اقول، الغيه وخلاص").text()).contains("تم إلغاء");
+        assertThat(FakeAiProvider.RESULTS.get(0).result()).containsEntry("cancelled", true);
+        assertThat(orders(tenant).get(0).get("status")).isEqualTo("CANCELLED");
+    }
 }

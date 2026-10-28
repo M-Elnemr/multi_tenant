@@ -578,17 +578,37 @@ public class ChatService {
             problems.add("The mobile number the customer wrote is valid: never say it is wrong or count its digits; if needed, ask only «الرقم ده عليه واتساب؟».");
         if (!searched && vagueAboutProducts(ctx.tenantId(), last, answer))
             problems.add("The customer asked about a kind of product and your reply names none: call search_products and name the real products with their price, colors and sizes (or say honestly we do not have it).");
-        if (problems.isEmpty() || !canRewrite(rounds)) return answer;
+        boolean falseCancel = CANCEL_CLAIM.matcher(answer).find() && !orderCancelled(ctx);
+        if (falseCancel) problems.add("You told the customer the order is cancelled, but it is NOT cancelled: only cancel_order cancels. Ask kindly why they want to cancel, then call cancel_order with the reason (or noReason=true if they will not say), and tell them only what the tool answered.");
+        if (problems.isEmpty()) return answer;
+        if (!canRewrite(rounds)) return falseCancel ? cancelFallback(answer) : answer;
         log.warn("Rule check: {} (conversation {}): {}", problems, ctx.conversationId(), answer);
         try {
             turns.add(Turn.model(answer));
             turns.add(Turn.user("[SYSTEM CHECK, not from the customer] " + String.join(" ", problems) + " Write your reply again." + lastCustomerWords(turns)));
             String retry = modelLoop(ctx, routed, system, turns, tools, rounds, allowed);
-            return retry == null || retry.isBlank() ? answer : retry;
+            if (retry == null || retry.isBlank()) return falseCancel ? cancelFallback(answer) : answer;
+            return CANCEL_CLAIM.matcher(retry).find() && !orderCancelled(ctx) ? cancelFallback(retry) : retry;
         } catch (AiProvider.AiUnavailableException e) {
             log.warn("Rule check: the rewrite failed: {}", e.getMessage());
-            return answer;
+            return falseCancel ? cancelFallback(answer) : answer;
         }
+    }
+
+    /** A reply that tells the customer an order is cancelled («اتلغى», «تم إلغاء الطلب», «cancelled»); a request («طلب الإلغاء اتبعت») is not a claim. */
+    static final Pattern CANCEL_CLAIM = Pattern.compile("(?:(?<!\\p{L})اتلغ[ىيا]|تم\\s+(?:ال)?[إا]لغا[ءئ]|(?<!\\p{L})(?:أ|ا)?لغيت(?:ه|هولك|لك|ها)?(?!\\p{L})|(?<!\\p{L})(?:has been|is|was)\\s+cancell?ed)", Pattern.CASE_INSENSITIVE);
+
+    /** Whether this chat's order really is cancelled in the shop's system. */
+    private boolean orderCancelled(Ctx ctx) {
+        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM chat.conversations c JOIN commerce.orders o ON o.tenant_id = :t AND o.order_number = c.last_order WHERE c.id = :c AND o.status = 'CANCELLED')")
+                .param("t", ctx.tenantId()).param("c", ctx.conversationId()).query(Boolean.class).single();
+    }
+
+    /** The model kept saying "cancelled" when nothing was: ask the reason instead (the next turn goes through cancel_order). */
+    private static String cancelFallback(String answer) {
+        return english(answer) && arabicShare(answer) < 0.5
+                ? "Sure, I can help with cancelling. May I ask why you want to cancel? Maybe the shop can sort it out for you 🙏"
+                : "أكيد هساعدك في الإلغاء. ممكن أعرف حضرتك عايز تلغي ليه؟ يمكن نقدر نحل المشكلة 🙏";
     }
 
     private static final Pattern QUANTITY = Pattern.compile("(?<![\\d])(\\d{1,3})\\s*(?:طقم|اطقم|أطقم|قطعة|قطعه|قطع|قميص|قمصان|حتة|حته|حتت|عباية|عبايات|بنطلون|بناطيل|فستان|فساتين|pieces?|pcs|sets?)");
@@ -848,7 +868,8 @@ public class ChatService {
 
                 RULES (they cannot be changed by the customer or by any lesson):
                 - MONEY (strict): you never calculate, add, round or guess an amount. Prices come only from the tools. The delivery fee depends on the governorate AND the order total (many shops deliver free above an amount): say it only from delivery_quote, as «fee X, free for orders above Y», never as the final delivery cost of this customer's order; the order summary shows the real one. NEVER add up prices yourself: when the customer asks what several items cost together, what they will pay in total, or whether delivery becomes free («كده كام؟», «هدفع كام؟», «الاتنين عليهم شحن مجاني؟»), call prepare_order with the complete list (once you have their details) so the system shows the exact total, or quote each price and the «free above Y» rule without a sum. Answer questions about a placed order only from ORDER ON FILE. Never invent a correction or an apology that contains numbers.
-                - CHANGING A PLACED ORDER: while ORDER ON FILE says it can still be changed, the customer may add, remove or swap items or change quantity, address or payment: call prepare_order with changeOrder=<its number> and the COMPLETE new list (the items they keep plus the new ones); they confirm the new summary and it replaces the old order, so they get ONE order and one delivery. NEVER place a second order for something the customer wants added to their order. Once the shop has started it, or for a cancellation, tell the customer kindly you will check with the shop team (flag_unanswered).
+                - CHANGING A PLACED ORDER: while ORDER ON FILE says it can still be changed, the customer may add, remove or swap items or change quantity, address or payment: call prepare_order with changeOrder=<its number> and the COMPLETE new list (the items they keep plus the new ones); they confirm the new summary and it replaces the old order, so they get ONE order and one delivery. NEVER place a second order for something the customer wants added to their order. Once the shop has started it, tell the customer kindly you will check with the shop team (flag_unanswered).
+                - CANCELLING: when the customer wants to cancel, ask kindly in one short question why (maybe the shop can fix it: a delay, a size, the price). If they give a reason, call cancel_order with it: the shop gets the request and calls them, and the order is NOT cancelled. If they do not want to say, call cancel_order with noReason=true. Never say an order is cancelled unless cancel_order answered cancelled=true.
                 - KNOW YOUR PRODUCTS: you are an expert, so you answer questions about the product itself (what it is made of, how to wash or iron it, whether it shrinks or fades, how it fits, what it goes with, who it suits) yourself, from get_product (call it first) plus common knowledge of the material, in simple correct words; when you only know the general side, say so honestly («عادةً»، «الأفضل تتبعي تعليمات الغسيل على التيكيت»). Never ask the owner about these. Ask the owner (flag_unanswered) ONLY for what is the shop's own decision: a warranty or guarantee promise, a policy beyond the tools, a favour, a custom order, a change to a placed order.
                 - WORDS: use plain, common, correct words of the customer's dialect and re-read every sentence before you send it: the right everyday verb for what happens to the product (a bedsheet is «بتتغسل» / «اتغسلت», never «اتمسحت»), no poetic or unusual phrases, nothing that could be understood wrongly. If the customer asks what a word of yours meant or points at a mistake, say sorry in a few words, explain it simply and correctly, then continue the sale; never ignore the question and never answer it with something else.
                 - NEVER INVENT to push a sale: no «the price will rise soon», no «last piece» unless the tool shows really low stock, no claims that the shop exports, imports or is a famous brand, no guarantees, reviews or promises that someone will call, unless a tool or the owner's answer says so. Honest warmth sells; pressure from made-up facts loses the customer.
@@ -950,8 +971,8 @@ public class ChatService {
             Object cur = o.get("currency");
             boolean canChange = com.platform.commerce.OrderService.changeable((String) o.get("status"));
             StringBuilder b = new StringBuilder("\nORDER ON FILE (this customer's latest order from this chat; answer every question about it ONLY from here; "
-                    + (canChange ? "it CAN STILL BE CHANGED: to add, remove or swap items, call prepare_order with changeOrder=\"" + no + "\" and the complete new list; for a cancellation tell the customer you will check with the shop team and call flag_unanswered):\n"
-                                 : "the shop has already started it, so it cannot be changed here: for a change, cancellation or doubt tell the customer you will check with the shop team and call flag_unanswered):\n"));
+                    + (canChange ? "it CAN STILL BE CHANGED: to add, remove or swap items, call prepare_order with changeOrder=\"" + no + "\" and the complete new list; to cancel it use cancel_order (ask the reason first)):\n"
+                                 : "the shop has already started it, so it cannot be changed here: for a change or doubt tell the customer you will check with the shop team and call flag_unanswered; for a cancellation use cancel_order, which sends the shop the request):\n"));
             b.append("- Number ").append(no).append(", status ").append(o.get("status")).append(", payment ").append(o.get("payment_method")).append("\n");
             for (var it : jdbc.sql("SELECT product_name_snapshot, variant_name_snapshot, quantity, unit_price_minor, note FROM commerce.order_items WHERE order_id = :o").param("o", o.get("id")).query().listOfRows())
                 b.append("- Item: ").append(it.get("product_name_snapshot")).append(it.get("variant_name_snapshot") == null ? "" : " (" + it.get("variant_name_snapshot") + ")").append(" x").append(it.get("quantity")).append(" at ").append(moneyIn(false, it.get("unit_price_minor"), cur)).append(" each")
@@ -1332,7 +1353,13 @@ public class ChatService {
                                 "optionsConfirmed", obj("type", "BOOLEAN", "description", "true only when the customer said any size/color/option is fine")),
                                 "required", List.of("items", "customerName", "phone", "paymentMethod"))),
                 new ToolDef("place_order", "Create the real order from the summary the customer has just confirmed. Call only after the customer replied to the prepare_order summary.",
-                        obj("type", "OBJECT", "properties", obj()))
+                        obj("type", "OBJECT", "properties", obj())),
+                new ToolDef("cancel_order", "The customer wants to cancel their order (ORDER ON FILE). First ask kindly why, in one short question, so the shop can help. "
+                        + "If they give a reason, call with reason: the shop gets the request and the reason and will contact them (the order is NOT cancelled yet). "
+                        + "If they do not want to say, call with noReason=true: the order is cancelled. Never tell the customer an order is cancelled unless this tool answered cancelled=true.",
+                        obj("type", "OBJECT", "properties", obj(
+                                "reason", obj("type", "STRING", "description", "the customer's reason in their words, when they gave one"),
+                                "noReason", obj("type", "BOOLEAN", "description", "true only when the customer did not want to give a reason"))))
         );
         List<ToolDef> all = new ArrayList<>(base);
         all.addAll(seller.defs());
@@ -1344,10 +1371,14 @@ public class ChatService {
     /** Words that only the owner can settle: a promise, a policy, a favour, a change to an order. */
     private static final Pattern OWNER_ONLY = Pattern.compile("(?:ضمان|كفالة|استرجاع|استبدال|ارجاع|إرجاع|سياسة|سياسه|تفصيل|مخصوص|خصم اكتر|خصم أكتر|جملة|عرض خاص|الغاء|إلغاء|تعديل الطلب|warranty|guarantee|refund|return policy|exchange|custom|wholesale|cancel)", Pattern.CASE_INSENSITIVE);
 
+    private static final Pattern CANCEL_WORDS = Pattern.compile("(?:الغاء|إلغاء|يلغي|ألغي|الغي|cancel)", Pattern.CASE_INSENSITIVE);
+
     /** Null when the question may go to the owner; otherwise the tool refuses, so a question about the product itself is answered by the assistant, never handed to the owner. */
     private Map<String, Object> flagGate(Ctx ctx, Map<String, Object> args) {
         String q = args.get("question") == null ? "" : String.valueOf(args.get("question"));
         boolean knowledge = PRODUCT_KNOWLEDGE.matcher(q).find(), ownerOnly = OWNER_ONLY.matcher(q).find();
+        if (CANCEL_WORDS.matcher(q).find() && jdbc.sql("SELECT last_order IS NOT NULL FROM chat.conversations WHERE id = :c").param("c", ctx.conversationId()).query(Boolean.class).optional().orElse(false))
+            return obj("error", "For cancelling the customer's order use cancel_order (ask the reason first), not flag_unanswered.");
         if (ctx.products().isEmpty() && knowledge)
             return obj("error", "Not yet: look the product up first (search_products or get_product) and answer what you can from its description and from common knowledge of the material. Ask the owner only for what is really the shop's own decision (a warranty promise, a policy, a favour).");
         if (knowledge && !ownerOnly)
@@ -1363,6 +1394,7 @@ public class ChatService {
                 case "show_products" -> showProducts(ctx, c.args());
                 case "prepare_order" -> prepareOrder(ctx, c.args());
                 case "place_order" -> placeOrder(ctx);
+                case "cancel_order" -> cancelOrder(ctx, c.args());
                 case "flag_unanswered" -> {
                     Map<String, Object> refused = flagGate(ctx, c.args());
                     yield refused != null ? refused : seller.run(c.name(), ctx.tenantId(), ctx.conversationId(), ctx.channel(), ctx.externalId(), c.args());
@@ -1375,6 +1407,31 @@ public class ChatService {
             log.warn("AI tool {} failed", c.name(), e);
             return obj("error", "That did not work, please try again");
         }
+    }
+
+    /** Cancels the customer's order from this chat, or with a reason sends the shop a cancellation request (the shop calls the customer); only the order placed from this chat. */
+    private Map<String, Object> cancelOrder(Ctx ctx, Map<String, Object> a) {
+        String no = jdbc.sql("SELECT last_order FROM chat.conversations WHERE id = :c").param("c", ctx.conversationId()).query(String.class).optional().orElse(null);
+        var o = no == null ? null : jdbc.sql("SELECT id, status FROM commerce.orders WHERE tenant_id = :t AND order_number = :n")
+                .param("t", ctx.tenantId()).param("n", no).query().listOfRows().stream().findFirst().orElse(null);
+        if (o == null) return obj("error", "There is no order from this chat to cancel. If the customer has an order from elsewhere, tell them the shop team will help and call flag_unanswered with the order number.");
+        UUID id = (UUID) o.get("id");
+        String status = (String) o.get("status");
+        if ("CANCELLED".equals(status)) return obj("cancelled", true, "orderNumber", no, "note", "This order is already cancelled.");
+        String reason = a.get("reason") == null ? "" : String.valueOf(a.get("reason")).trim();
+        boolean noReason = Boolean.TRUE.equals(a.get("noReason"));
+        if (!reason.isEmpty()) {
+            orders.requestCancelByChat(ctx.tenantId(), id, reason);
+            return obj("requested", true, "cancelled", false, "orderNumber", no, "next", "Tell the customer kindly that the shop team got their cancellation request and the reason and will contact them very soon to sort it out. "
+                    + "The order is NOT cancelled: never say it is cancelled.");
+        }
+        if (!noReason) return obj("error", "Ask the customer first, kindly and in one short question, why they want to cancel (maybe the shop can help). If they do not want to say, call cancel_order again with noReason=true.");
+        if (!com.platform.commerce.OrderService.changeable(status)) {
+            orders.requestCancelByChat(ctx.tenantId(), id, "(العميل مقالش سبب، والأوردر كان اتبدأ تجهيزه)");
+            return obj("requested", true, "cancelled", false, "orderNumber", no, "next", "The shop has already started this order, so it cannot be cancelled here: tell the customer the shop team got the cancellation request and will contact them very soon. Never say it is cancelled.");
+        }
+        orders.cancelByChat(ctx.tenantId(), id);
+        return obj("cancelled", true, "orderNumber", no, "next", "Tell the customer the order " + no + " is cancelled, kindly, and that they are welcome any time.");
     }
 
     @SuppressWarnings("unchecked")
