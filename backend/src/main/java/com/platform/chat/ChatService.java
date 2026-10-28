@@ -1228,7 +1228,8 @@ public class ChatService {
                                 "whatsappConsent", obj("type", "BOOLEAN", "description", "true if the customer agreed to re-confirm the order on WhatsApp, false if they declined"),
                                 "changeOrder", str("The number of the customer's placed order (ORDER ON FILE) when this summary CHANGES it (items added, removed or swapped): give the complete new list; it replaces that order"),
                                 "newOrder", obj("type", "BOOLEAN", "description", "true only when the customer clearly wants a separate second order while ORDER ON FILE can still be changed"),
-                                "dropsEarlierItems", obj("type", "BOOLEAN", "description", "true only when the customer asked to remove or swap an item of the earlier summary or order")),
+                                "dropsEarlierItems", obj("type", "BOOLEAN", "description", "true only when the customer asked to remove or swap an item of the earlier summary or order"),
+                                "quantityConfirmed", obj("type", "BOOLEAN", "description", "true only when the customer confirmed a quantity that differs from what they first wrote")),
                                 "required", List.of("items", "customerName", "phone", "paymentMethod"))),
                 new ToolDef("place_order", "Create the real order from the summary the customer has just confirmed. Call only after the customer replied to the prepare_order summary.",
                         obj("type", "OBJECT", "properties", obj()))
@@ -1491,6 +1492,15 @@ public class ChatService {
             if (q < 1 || q > 50) return obj("error", "Quantity must be between 1 and 50");
             items.add(new CheckoutService.Item(vid, q));
         }
+        // «قميصين» is two shirts: a quantity of 1 for a product the customer asked for in the dual is sent back
+        for (CheckoutService.Item it : items) {
+            if (it.quantity() != 1) continue;
+            String noun = jdbc.sql("SELECT split_part(p.name, ' ', 1) FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE v.id = :v").param("v", it.variantId()).query(String.class).optional().orElse("");
+            String dual = dualOf(FastAnswers.norm(noun));
+            if (dual != null && jdbc.sql("SELECT EXISTS (SELECT 1 FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u AND content ILIKE '%' || :d || '%')")
+                    .param("c", ctx.conversationId()).param("u", ctx.userMsgId()).param("d", dual).query(Boolean.class).single() && !Boolean.TRUE.equals(a.get("quantityConfirmed")))
+                return obj("error", "The customer wrote «" + dual + "» (two of them) but this item has quantity 1: use quantity 2, or pass quantityConfirmed=true if they really want one.");
+        }
         // A change to a placed order replaces it (one order, one delivery), and a new summary never silently drops what the customer chose before.
         String change = text(a, "changeOrder");
         Map<String, Object> onFile = changeableOrder(ctx);
@@ -1516,7 +1526,7 @@ public class ChatService {
         }
         String name = text(a, "customerName");
         boolean onWa = "WHATSAPP".equals(ctx.channel()) && ctx.externalId() != null && ctx.externalId().replaceAll("\\D", "").length() >= 8;
-        String phone = onWa ? "+" + ctx.externalId().replaceAll("\\D", "") : text(a, "phone");   // chatting on WhatsApp: that is their number, we never ask for one
+        String phone = onWa ? "+" + ctx.externalId().replaceAll("\\D", "") : westernDigits(text(a, "phone"));   // chatting on WhatsApp: that is their number, we never ask for one
         if (name == null || name.length() < 2) return obj("error", "Ask for the customer's name");
         if (phone == null || !MOBILE.matcher(phone.replace(" ", "")).matches()) return obj("error", "Ask for a valid mobile number (like 01012345678)");
         boolean pickup = Boolean.TRUE.equals(a.get("pickup"));
@@ -1542,7 +1552,7 @@ public class ChatService {
                 return obj("error", "First ask the customer for the number «رقم تليفون عليه واتساب» (in the same single message as the name and address) and wait for their answer, then call prepare_order again with whatsappConsent=true and whatsappNumber, or whatsappConsent=false if they say they have no WhatsApp.");
         }
         if (!onWa && Boolean.TRUE.equals(a.get("whatsappConsent"))) {
-            String raw = text(a, "whatsappNumber");
+            String raw = westernDigits(text(a, "whatsappNumber"));
             if (raw == null || !MOBILE.matcher(raw.replace(" ", "")).matches()) return obj("error", "Ask for a valid WhatsApp mobile number (like 01012345678)");
             waNumber = PhoneNormalizer.normalize(raw.replace(" ", ""));
             String last9 = waNumber.replaceAll("\\D", "");
@@ -1583,6 +1593,16 @@ public class ChatService {
                 "cashOnDeliveryFee", major(quote.get("codFeeMinor")), "total", major(total), "currency", quote.get("currency"), "deliveryDays", quote.get("etaMinDays") == null ? null : quote.get("etaMinDays") + "-" + quote.get("etaMaxDays"),
                 "paymentMethod", pm, "deliverTo", pickup ? "Pickup from the shop" : line1 + ", " + area, "customer", name + " " + phone, "whatsappConfirmation", waNumber == null ? "no" : waNumber),
                 "next", "The system sends the customer this exact summary and asks them to confirm: do not write a summary or any amount yourself; just reply with one short friendly line. Do not call place_order until they reply.");
+    }
+
+    /** Arabic and Persian digits as 0-9, so «٠١٠١٢٣٤٥٦٧٨» is a valid mobile number. */
+    static String westernDigits(String s) { return s == null ? null : MoneyGuard.digits(s); }
+
+    /** The Arabic dual of a product noun («قميص» -> «قميصين», «طقم» -> «طقمين», «عباية» -> «عبايتين»), or null for words that do not take one. */
+    static String dualOf(String noun) {
+        if (noun == null || noun.length() < 3 || !noun.codePoints().allMatch(cp -> cp >= 0x0600 && cp <= 0x06FF)) return null;
+        if (noun.endsWith("ه")) return noun.substring(0, noun.length() - 1) + "تين";   // folded taa marbuta
+        return noun + "ين";
     }
 
     /** This chat's latest order while the customer may still change it (placed in the last three days, nothing prepared yet): id, number, its variants and a short summary; null otherwise. */

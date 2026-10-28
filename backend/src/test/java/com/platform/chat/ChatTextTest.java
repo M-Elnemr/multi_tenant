@@ -151,4 +151,12 @@ class ChatTextTest {
     void searchAndTellYouLaterIsCaught() {
         assertThat(ReplyGuard.violations("أنا هبحثلك على المتاح عندنا دلوقتي وأقولك السعر والتفاصيل", "")).isNotEmpty();
     }
+
+    @Test
+    void arabicDigitsAndDualsAreUnderstood() {
+        assertThat(ChatService.westernDigits("٠١١١١١١١١١١")).isEqualTo("01111111111");
+        assertThat(ChatService.dualOf("قميص")).isEqualTo("قميصين");
+        assertThat(ChatService.dualOf("عبايه")).isEqualTo("عبايتين");
+        assertThat(ChatService.dualOf("Mug")).isNull();
+    }
 }
