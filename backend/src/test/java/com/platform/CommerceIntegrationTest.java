@@ -142,7 +142,10 @@ class CommerceIntegrationTest extends IntegrationTestBase {
                     () -> onHost(s.tenant().host(), c2, "POST", "/api/v1/shop/checkout", body).andReturn().getResponse().getStatus());
             List<Integer> codes = new java.util.ArrayList<>();
             for (Future<Integer> f : pool.invokeAll(jobs)) codes.add(f.get());
-            assertThat(codes).containsExactlyInAnyOrder(201, 409);
+            String state = jdbc.sql("SELECT 'on_hand=' || sum(quantity_on_hand) || ' reserved=' || sum(quantity_reserved) || ' rows=' || count(*) FROM commerce.inventory_items WHERE variant_id = :v")
+                    .param("v", UUID.fromString(s.variantS())).query(String.class).single()
+                    + " orders=" + jdbc.sql("SELECT count(DISTINCT order_id) FROM commerce.order_items WHERE variant_id = :v").param("v", UUID.fromString(s.variantS())).query(Long.class).single();
+            assertThat(codes).as("two buyers for the last unit (" + state + ")").containsExactlyInAnyOrder(201, 409);
         } finally {
             pool.shutdown();
         }
