@@ -157,4 +157,27 @@ class AiOrderChangeIntegrationTest extends IntegrationTestBase {
         assertThat(lines).hasSize(3);
         assertThat(lines.stream().map(l -> l.get("note")).toList()).containsExactly("بدون بصل", "حار جداً", null);
     }
+
+    @Test
+    void anOptionTheCustomerNeverChoseIsAskedFirst() throws Exception {
+        Tenant t = onboard("STORE");
+        String branch = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
+        String res = body(onHost(t.host(), t.access(), "POST", "/api/v1/store/products", """
+                {"taxonomySlug":"shirts-tops","audience":"MEN","name":"Tee %1$s","options":[{"name":"Size","values":["S","M"]}],
+                 "variants":[{"sku":"TS-S-%1$s","priceMinor":10000,"optionValues":{"Size":"S"},"stock":[{"branchId":"%2$s","quantity":5}]},
+                             {"sku":"TS-M-%1$s","priceMinor":10000,"optionValues":{"Size":"M"},"stock":[{"branchId":"%2$s","quantity":5}]}]}
+                """.formatted(uniq(), branch)).andExpect(status().isCreated()));
+        String m = JsonPath.<List<String>>read(res, "$.variants[?(@.sku =~ /TS-M-.*/)].id").get(0);
+        UUID tenant = id(t);
+        String ext = "opts-" + uniq();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepare(List.of(m), Map.of())));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("مقاس إيه؟"));
+        chat.reply(tenant, "WEB", ext, null, "عايز التيشيرت ده");
+        assertThat(FakeAiProvider.RESULTS.get(0).result().get("error").toString()).contains("«المقاس»");
+        // once the customer says the size, the summary goes through
+        FakeAiProvider.RESULTS.clear();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepare(List.of(m), Map.of())));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ok"));
+        assertThat(chat.reply(tenant, "WEB", ext, null, "مقاس M").text()).contains("ملخص الأوردر");
+    }
 }

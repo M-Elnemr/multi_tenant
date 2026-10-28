@@ -376,6 +376,7 @@ public class ChatService {
         List<AiUsageService.Round> rounds = new ArrayList<>();
         var routed = channelAi.forChannel(channel, nameProbe || "TEST".equals(channel) ? chosenModel(conv) : null);
         boolean arabicChat = arabicConversation(conv);
+        long started = System.nanoTime();
         try {
             answer = converse(ctx, routed, system, turns, tools, rounds, arabicChat);
         } catch (AiProvider.AiUnavailableException e) {
@@ -387,6 +388,7 @@ public class ChatService {
         // Money is never the model's words: the order summary and the confirmation are written by code from the real order, whatever the model said around them.
         if (ctx.summary()[0] != null) answer = ctx.summary()[0];
         else if (orderBox[0] != null) answer = confirmedText(arabicChat, orderBox[0], Map.of());
+        log.info("Reply timing: model={} calls={} ms={} conversation={}", routed.code(), rounds.size(), (System.nanoTime() - started) / 1_000_000, conv);
         if (!"TEST".equals(channel)) { seller.count(tenantId); usageLog.record(tenantId, "CHAT", channel, conv, false, text, rounds, routed.code(), routed.fellBack()); }
         if (answer == null || answer.isBlank()) answer = arabicChat ? "معلش يا فندم، ممكن توضحلي أكتر حضرتك محتاج إيه؟ وأنا أساعدك على طول 🌸" : "Sorry, could you tell me a little more about what you need? I will help right away.";
         answer = polish(noLaughter(messaging(channel) ? forChannel(channel, answer) : forChannel("WEB", oneMessage(answer))), conv, tenantId, channel, externalId, clientId);
@@ -465,11 +467,11 @@ public class ChatService {
      * reply. Any failure sends the draft; the money and claims checks run after it either way.
      */
     private String reviewed(Ctx ctx, ChannelAi.Routed routed, String system, List<Turn> turns, List<AiUsageService.Round> rounds, String draft) {
-        if (!review) return draft;
+        if (!review || trivial(draft)) return draft;
         try {
             // the review runs on the answering model, or on the model set in app.ai.review.model (its cost is then logged under that model)
             ChannelAi.Routed reviewer = reviewModel == null || reviewModel.equals(routed.code()) ? routed : channelAi.forChannel(ctx.channel(), reviewModel);
-            Turn t = reviewer.next(ReplyReview.SYSTEM, List.of(Turn.user(ReplyReview.request(turns, addressing(system), section(system, "SHOP FACTS:", 6000) + section(system, CATALOG_HEADING, 6000), draft))), List.of());
+            Turn t = reviewer.next(ReplyReview.SYSTEM, List.of(Turn.user(ReplyReview.request(turns, addressing(system), section(system, "SHOP FACTS:", 2500) + section(system, CATALOG_HEADING, 4000), draft))), List.of());
             var round = new AiUsageService.Round(List.of("review"), t.usage());
             if (reviewer == routed) rounds.add(round);
             else if (!"TEST".equals(ctx.channel())) usageLog.record(ctx.tenantId(), "CHAT_REVIEW", ctx.channel(), ctx.conversationId(), false, "[review]", List.of(round), reviewer.code(), false);
@@ -499,6 +501,11 @@ public class ChatService {
         return (s.length() > max ? s.substring(0, max) : s) + "\n";
     }
 
+    /** A short reply with no amount, no number and no product facts (a greeting, thanks, one question): reviewing it would only cost the customer time. */
+    static boolean trivial(String draft) {
+        return draft.length() <= 160 && !MoneyGuard.digits(draft).matches("(?s).*\\d.*") && !productFacts(draft) && !AVAILABLE_WORDS.matcher(draft).find() && !RANGE_TALK.matcher(draft).find();
+    }
+
     /** The ADDRESSING THE CUSTOMER lines of the prompt (name, gender, how to call them), for the reviewer. */
     static String addressing(String system) {
         int i = system == null ? -1 : system.indexOf("ADDRESSING THE CUSTOMER");
@@ -515,7 +522,7 @@ public class ChatService {
         if (bad.isEmpty()) return answer;
         log.warn("Claims check: {} claimed {} that nothing supports (conversation {}): {}", routed.code(), bad.stream().map(ReplyGuard.Claim::kind).distinct().toList(), ctx.conversationId(), answer);
         String retry = null;
-        try {
+        if (canRewrite(rounds)) try {
             turns.add(Turn.model(answer));
             turns.add(Turn.user(ReplyGuard.note(bad) + lastCustomerWords(turns)));
             retry = modelLoop(ctx, routed, system, turns, tools, rounds, allowed);
@@ -571,7 +578,7 @@ public class ChatService {
             problems.add("The mobile number the customer wrote is valid: never say it is wrong or count its digits; if needed, ask only «الرقم ده عليه واتساب؟».");
         if (!searched && vagueAboutProducts(ctx.tenantId(), last, answer))
             problems.add("The customer asked about a kind of product and your reply names none: call search_products and name the real products with their price, colors and sizes (or say honestly we do not have it).");
-        if (problems.isEmpty()) return answer;
+        if (problems.isEmpty() || !canRewrite(rounds)) return answer;
         log.warn("Rule check: {} (conversation {}): {}", problems, ctx.conversationId(), answer);
         try {
             turns.add(Turn.model(answer));
@@ -672,6 +679,12 @@ public class ChatService {
         return letters == 0 ? 0 : (double) ar / letters;
     }
 
+    /**
+     * Each extra model call costs the customer a few seconds: a reply may be rewritten by the checks only while it has made fewer than five calls (tool rounds, the answer and the review
+     * included). After that, a money or claims problem is cut from the text instead of asking again.
+     */
+    static boolean canRewrite(List<AiUsageService.Round> rounds) { return rounds.size() < 5; }
+
     /** Reminds the model, after a system check, what the customer actually said, so the rewrite answers it instead of starting over. */
     private static String lastCustomerWords(List<Turn> turns) {
         for (int i = turns.size() - 1; i >= 0; i--) {
@@ -686,7 +699,7 @@ public class ChatService {
         if (bad.isEmpty()) return answer;
         log.warn("Money check: {} stated {} that no tool or earlier message supports (conversation {}): {}", routed.code(), bad.stream().map(MoneyGuard.Amount::raw).toList(), ctx.conversationId(), answer);
         String retry = null;
-        try {
+        if (canRewrite(rounds)) try {
             turns.add(Turn.model(answer));
             turns.add(Turn.user("[SYSTEM CHECK, not from the customer] Your draft states the amount(s) " + bad.stream().map(MoneyGuard.Amount::raw).toList() + " that no tool returned and that are not in the shop data or the chat. "
                     + "Never calculate, add, round or guess money. Use the right tool (search_products or get_product for prices, delivery_quote for delivery, prepare_order for an order total) and quote exactly what it returns, or leave the amount out. "
@@ -1011,10 +1024,11 @@ public class ChatService {
                 .append(z.get("freeAboveMinor") instanceof Number fa && fa.longValue() > 0 ? ", FREE for orders of " + major(fa.longValue()) + " or more" : "")
                 .append(", ETA ").append(z.get("etaMinDays")).append("-").append(z.get("etaMaxDays")).append(" days").append(z.get("codFeeMinor") instanceof Number c && c.longValue() > 0 ? ", cash-on-delivery fee " + major(c.longValue()) : "").append("\n");
         if (shopWhatsapp(tenantId) != null) b.append("- WhatsApp confirmation is available (free): ask the customer for the WhatsApp number as described in the rules.\n");
+        b.append(shopPolicies(tenantId));
         Integer days = jdbc.sql("SELECT return_window_days FROM commerce.store_profiles WHERE tenant_id = :t").param("t", tenantId).query(Integer.class).optional().orElse(null);
-        b.append(days != null && days > 0
-                ? "- Returns and exchanges: the customer may return or exchange within " + days + " days of delivery (the shop's rule; for conditions beyond this, ask the team with flag_unanswered).\n"
-                : "- Returns, exchanges and warranties: the shop has NOT set a policy. Never promise a return, an exchange or a warranty and never describe one; say you will confirm it with the team (flag_unanswered, once) and that they pay only on delivery (cash on delivery).\n");
+        boolean policyText = jdbc.sql("SELECT coalesce(return_policy, '') <> '' FROM commerce.store_profiles WHERE tenant_id = :t").param("t", tenantId).query(Boolean.class).optional().orElse(false);
+        if (days != null && days > 0) b.append("- Returns and exchanges: the customer may return or exchange within ").append(days).append(" days of delivery").append(policyText ? " (and the policy text above)" : " (the shop's rule; for conditions beyond this, ask the team with flag_unanswered)").append(".\n");
+        else if (!policyText) b.append("- Returns, exchanges and warranties: the shop has NOT set a policy. Never promise a return, an exchange or a warranty and never describe one; say you will confirm it with the team (flag_unanswered, once) and that they pay only on delivery (cash on delivery).\n");
         var served = new java.util.HashSet<String>();
         for (var z : fulfilment.zones(tenantId, true)) if (z.get("governorateCodes") instanceof Iterable<?> it) for (Object c : it) served.add(String.valueOf(c));
         b.append("- Governorate codes").append(served.isEmpty() ? "" : " (only these are delivered to)").append(": ");
@@ -1023,17 +1037,67 @@ public class ChatService {
         return b.toString();
     }
 
+    private static final java.util.List<String> WEEK = java.util.List.of("mon", "tue", "wed", "thu", "fri", "sat", "sun");
+
+    /**
+     * The shop's own words the customer may ask about: its announcement (an offer, a notice), its delivery and return policy texts, a short "about", and its opening hours with
+     * whether it is open right now (Cairo time). Answered from here, never invented.
+     */
+    String shopPolicies(UUID tenantId) {
+        var r = jdbc.sql("SELECT announcement, shipping_policy, return_policy, short_description, working_hours::text AS hours FROM commerce.store_profiles WHERE tenant_id = :t")
+                .param("t", tenantId).query().listOfRows().stream().findFirst().orElse(null);
+        if (r == null) return "";
+        StringBuilder b = new StringBuilder();
+        if (notBlank(r.get("announcement"))) b.append("- The shop's announcement (offers, notices): ").append(clip(r.get("announcement").toString(), 300)).append("\n");
+        if (notBlank(r.get("short_description"))) b.append("- About the shop: ").append(clip(r.get("short_description").toString(), 300)).append("\n");
+        if (notBlank(r.get("shipping_policy"))) b.append("- Delivery policy (the shop's words): ").append(clip(r.get("shipping_policy").toString().replaceAll("\\s+", " "), 600)).append("\n");
+        if (notBlank(r.get("return_policy"))) b.append("- Return and exchange policy (the shop's words): ").append(clip(r.get("return_policy").toString().replaceAll("\\s+", " "), 600)).append("\n");
+        try {
+            if (notBlank(r.get("hours")) && !r.get("hours").toString().equals("{}")) {
+                var hours = JSON.readTree(r.get("hours").toString());
+                var now = java.time.ZonedDateTime.now(java.time.ZoneId.of("Africa/Cairo"));
+                String today = WEEK.get(now.getDayOfWeek().getValue() - 1);
+                List<String> week = new ArrayList<>();
+                for (String d : WEEK) {
+                    var h = hours.path(d);
+                    if (h.isMissingNode()) continue;
+                    week.add(d + " " + (h.path("closed").asBoolean(false) ? "closed" : h.path("open").asText() + "-" + h.path("close").asText()));
+                }
+                var t = hours.path(today);
+                boolean openNow = false;
+                if (!t.isMissingNode() && !t.path("closed").asBoolean(false)) {
+                    var open = java.time.LocalTime.parse(t.path("open").asText("00:00")); var close = java.time.LocalTime.parse(t.path("close").asText("23:59")); var time = now.toLocalTime();
+                    openNow = close.isAfter(open) ? !time.isBefore(open) && time.isBefore(close) : !time.isBefore(open) || time.isBefore(close);   // hours that run past midnight
+                }
+                b.append("- Opening hours: ").append(String.join(", ", week)).append(". Right now (Cairo ").append(now.toLocalTime().withSecond(0).withNano(0)).append(", ").append(today).append(") the shop is ")
+                        .append(openNow ? "OPEN" : "CLOSED: orders can still be taken and are handled when it opens; say so").append(".\n");
+            }
+        } catch (Exception e) { log.debug("Opening hours skipped", e); }
+        return b.toString();
+    }
+
+    private static boolean notBlank(Object o) { return o != null && !o.toString().isBlank(); }
+
     /** What the shop sells, in a few lines (categories with counts and price range, best sellers): without it the model only knows what its last search returned and may say "we do not have clothes". Stable text, so it stays in the prompt cache. */
     String shopCatalog(UUID tenantId) {
         try {
-            var cats = search.categoryCounts(tenantId, 25);
+            var cats = search.categoryCounts(tenantId, 40);
             if (cats.isEmpty()) return "";
+            Map<String, String> optionsBySlug = new LinkedHashMap<>();   // the colors and sizes each category comes in, so the model asks for the right options
+            for (var o : jdbc.sql("""
+                    SELECT tx.slug, coalesce(op.attribute_code, op.name) AS opt, string_agg(DISTINCT ov.value, ' / ') AS vals
+                    FROM commerce.products p JOIN commerce.taxonomy tx ON tx.id = p.taxonomy_id
+                    JOIN commerce.product_options op ON op.product_id = p.id JOIN commerce.product_option_values ov ON ov.option_id = op.id
+                    WHERE p.tenant_id = :t AND p.status = 'ACTIVE' GROUP BY tx.slug, coalesce(op.attribute_code, op.name)
+                    """).param("t", tenantId).query().listOfRows())
+                optionsBySlug.merge(String.valueOf(o.get("slug")), o.get("opt") + ": " + clip(String.valueOf(o.get("vals")), 160), (x, y) -> x + "; " + y);
             StringBuilder b = new StringBuilder("\n" + CATALOG_HEADING + " (everything this shop sells; if a customer asks for any of it, we HAVE it: search_products to show the products):\n");
             for (var c : cats) {
                 b.append("- ").append(c.get("nameAr")).append(" / ").append(c.get("nameEn"));
                 if (c.get("parentAr") != null) b.append(" (").append(c.get("parentAr")).append(")");
                 b.append(": ").append(c.get("n")).append(" products");
                 if (c.get("audiences") != null) b.append(", for ").append(audienceWords(String.valueOf(c.get("audiences"))));
+                if (optionsBySlug.containsKey(String.valueOf(c.get("slug")))) b.append(", ").append(optionsBySlug.get(String.valueOf(c.get("slug"))));
                 if (c.get("minMinor") != null) b.append(", ").append(price(c.get("minMinor"))).append(c.get("maxMinor") != null && !c.get("maxMinor").equals(c.get("minMinor")) ? "-" + price(c.get("maxMinor")) : "");
                 b.append("\n");
             }
@@ -1085,10 +1149,26 @@ public class ChatService {
         b.append(", price ").append(price(r.get("minPriceMinor")));
         if (r.get("compareAtMinor") != null) b.append(" (before ").append(price(r.get("compareAtMinor"))).append(")");
         if (m.get("allOptions") != null) b.append(", options ").append(m.get("allOptions"));
+        String details = productDetails(tenantId, String.valueOf(r.get("slug")));
+        if (!details.isEmpty()) b.append(", details: ").append(details);
         int total = vs.stream().mapToInt(v -> v.get("available") instanceof Number n ? n.intValue() : 0).sum();
         if (m.get("inStockOptions") instanceof Map<?, ?> st && !st.isEmpty()) b.append(", in stock ").append(st);
         else b.append(total > 0 ? ", " + total + " in stock" : Boolean.TRUE.equals(r.get("inStock")) ? ", in stock" : ", OUT OF STOCK");
         return b.append("\n").toString();
+    }
+
+    /** The product's own classification from the shop: specs («خامة: قطن 100%», «المكونات: ...», «السعرات: ...»), tags and the size guide, in one short line. */
+    String productDetails(UUID tenantId, String slug) {
+        var row = jdbc.sql("SELECT specs::text AS specs, array_to_string(tags, ', ') AS tags, size_guide FROM commerce.products WHERE tenant_id = :t AND slug = :s").param("t", tenantId).param("s", slug)
+                .query().listOfRows().stream().findFirst().orElse(null);
+        if (row == null) return "";
+        List<String> parts = new ArrayList<>();
+        try {
+            if (row.get("specs") != null) for (var n : JSON.readTree(row.get("specs").toString())) if (parts.size() < 8) parts.add(n.path("k").asText() + ": " + n.path("v").asText());
+        } catch (Exception e) { log.debug("Specs skipped", e); }
+        if (row.get("tags") != null && !row.get("tags").toString().isBlank()) parts.add("tags: " + row.get("tags"));
+        if (row.get("size_guide") != null && !row.get("size_guide").toString().isBlank()) parts.add("size guide: " + clip(row.get("size_guide").toString().replaceAll("\\s+", " "), 160));
+        return String.join("; ", parts);
     }
 
     /** For a shop too big to list in full: the products matching the customer's newest message, found in code, so a model that forgets to search still sees the right ones. */
@@ -1247,7 +1327,8 @@ public class ChatService {
                                 "changeOrder", str("The number of the customer's placed order (ORDER ON FILE) when this summary CHANGES it (items added, removed or swapped): give the complete new list; it replaces that order"),
                                 "newOrder", obj("type", "BOOLEAN", "description", "true only when the customer clearly wants a separate second order while ORDER ON FILE can still be changed"),
                                 "dropsEarlierItems", obj("type", "BOOLEAN", "description", "true only when the customer asked to remove or swap an item of the earlier summary or order"),
-                                "quantityConfirmed", obj("type", "BOOLEAN", "description", "true only when the customer confirmed a quantity that differs from what they first wrote")),
+                                "quantityConfirmed", obj("type", "BOOLEAN", "description", "true only when the customer confirmed a quantity that differs from what they first wrote"),
+                                "optionsConfirmed", obj("type", "BOOLEAN", "description", "true only when the customer said any size/color/option is fine")),
                                 "required", List.of("items", "customerName", "phone", "paymentMethod"))),
                 new ToolDef("place_order", "Create the real order from the summary the customer has just confirmed. Call only after the customer replied to the prepare_order summary.",
                         obj("type", "OBJECT", "properties", obj()))
@@ -1407,7 +1488,10 @@ public class ChatService {
     /** Adds who the product is for, its category and its short description, so the model never offers a kids' item to an adult or describes a product from imagination. */
     private void describe(Map<String, Object> m, Object audience, Object taxonomyId, Object shortDescription) {
         if (audience != null && AUDIENCES.containsKey(String.valueOf(audience))) m.put("for", AUDIENCES.get(String.valueOf(audience)));
-        if (taxonomyId != null) jdbc.sql("SELECT name_ar || ' / ' || name_en FROM commerce.taxonomy WHERE id = :i").param("i", taxonomyId).query(String.class).optional().ifPresent(c -> m.put("category", c));
+        if (taxonomyId != null) jdbc.sql("""
+                SELECT (SELECT string_agg(a.name_ar, ' › ' ORDER BY a.level) FROM commerce.taxonomy a WHERE t.path LIKE a.path || '%') || ' / ' || t.name_en
+                FROM commerce.taxonomy t WHERE t.id = :i
+                """).param("i", taxonomyId).query(String.class).optional().ifPresent(c -> m.put("category", c));
         if (shortDescription != null && !String.valueOf(shortDescription).isBlank()) m.put("about", clip(String.valueOf(shortDescription), 200));
     }
 
@@ -1494,6 +1578,8 @@ public class ChatService {
         String desc = p.get("description") == null ? "" : String.valueOf(p.get("description"));
         Map<String, Object> out = obj("name", p.get("name"), "brand", p.get("brand"), "description", desc.length() > 700 ? desc.substring(0, 700) : desc, "options", options, "variants", variants, "currency", p.get("currency"));
         describe(out, p.get("audience"), p.get("taxonomyId"), null);
+        String details = productDetails(ctx.tenantId(), String.valueOf(a.get("slug")));
+        if (!details.isEmpty()) out.put("details", details);
         return out;
     }
 
@@ -1509,6 +1595,16 @@ public class ChatService {
             int q = m.get("quantity") instanceof Number n ? n.intValue() : 1;
             if (q < 1 || q > 50) return obj("error", "Quantity must be between 1 and 50");
             items.add(new CheckoutService.Item(vid, q, m.get("note") == null ? null : String.valueOf(m.get("note"))));
+        }
+        // every option the customer has to choose (size, color, spice, bread...) must come from them: an item whose option they never mentioned is sent back so the model asks
+        if (!Boolean.TRUE.equals(a.get("optionsConfirmed"))) {
+            String said = FastAnswers.norm(String.join(" ", jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u").param("c", ctx.conversationId()).param("u", ctx.userMsgId()).query(String.class).list()));
+            for (CheckoutService.Item it : items) {
+                List<String> missing = unchosenOptions(it.variantId(), said);
+                if (!missing.isEmpty())
+                    return obj("error", "The customer has not chosen " + String.join(" and ", missing) + " for " + variantNames(List.of(it.variantId())) + ". Ask them in one short message (offer the available values), then call prepare_order again; "
+                            + "pass optionsConfirmed=true only if they said any choice is fine.");
+            }
         }
         // «قميصين» is two shirts: a quantity of 1 for a product the customer asked for in the dual is sent back
         for (CheckoutService.Item it : items) {
@@ -1611,6 +1707,37 @@ public class ChatService {
                 "cashOnDeliveryFee", major(quote.get("codFeeMinor")), "total", major(total), "currency", quote.get("currency"), "deliveryDays", quote.get("etaMinDays") == null ? null : quote.get("etaMinDays") + "-" + quote.get("etaMaxDays"),
                 "paymentMethod", pm, "deliverTo", pickup ? "Pickup from the shop" : line1 + ", " + area, "customer", name + " " + phone, "whatsappConfirmation", waNumber == null ? "no" : waNumber),
                 "next", "The system sends the customer this exact summary and asks them to confirm: do not write a summary or any amount yourself; just reply with one short friendly line. Do not call place_order until they reply.");
+    }
+
+    private static final Map<String, List<String>> SAID_AS = Map.ofEntries(
+            Map.entry("s", List.of("سمول", "صغير", "small")), Map.entry("m", List.of("ميديم", "مديم", "وسط", "medium")), Map.entry("l", List.of("لارج", "large", "كبير")),
+            Map.entry("xl", List.of("اكس لارج", "اكسلارج", "x large", "xlarge")), Map.entry("xxl", List.of("دبل اكس", "2xl", "xxlarge")),
+            Map.entry("ازرق", List.of("زرقا", "زرقاء", "blue")), Map.entry("ابيض", List.of("بيضا", "بيضاء", "white")), Map.entry("اسود", List.of("سودا", "سوداء", "black")),
+            Map.entry("احمر", List.of("حمرا", "حمراء", "red")), Map.entry("اخضر", List.of("خضرا", "خضراء", "green")), Map.entry("اصفر", List.of("صفرا", "صفراء", "yellow")),
+            Map.entry("كحلي", List.of("navy")), Map.entry("بيج", List.of("beige")), Map.entry("وردي", List.of("بمبي", "pink")), Map.entry("رمادي", List.of("رصاصي", "grey", "gray")));
+
+    /**
+     * The options of this variant that the customer has to choose (its product offers more than one value) but never mentioned: «المقاس», «اللون», «درجة الحرارة»... A value counts as said
+     * when the customer wrote it, or a common way of saying it («لارج» for L, «زرقا» for أزرق).
+     */
+    List<String> unchosenOptions(UUID variantId, String customerWords) {
+        var v = jdbc.sql("SELECT combo_key, product_id FROM commerce.product_variants WHERE id = :v").param("v", variantId).query().listOfRows().stream().findFirst().orElse(null);
+        if (v == null || v.get("combo_key") == null || String.valueOf(v.get("combo_key")).isBlank() || "default".equals(v.get("combo_key"))) return List.of();
+        Map<String, Long> choices = new java.util.HashMap<>();
+        for (var o : jdbc.sql("SELECT o.name, count(ov.id) AS n FROM commerce.product_options o JOIN commerce.product_option_values ov ON ov.option_id = o.id WHERE o.product_id = :p GROUP BY o.name")
+                .param("p", v.get("product_id")).query().listOfRows()) choices.put(String.valueOf(o.get("name")), ((Number) o.get("n")).longValue());
+        String words = " " + customerWords + " ";
+        List<String> missing = new ArrayList<>();
+        for (String kv : String.valueOf(v.get("combo_key")).split("\\|")) {
+            int i = kv.indexOf('=');
+            if (i < 0) continue;
+            String name = kv.substring(0, i), value = FastAnswers.norm(kv.substring(i + 1));
+            if (choices.getOrDefault(name, 1L) < 2) continue;   // nothing to choose
+            boolean said = value.length() <= 3 ? Pattern.compile("(?<![\\p{L}\\p{N}])" + Pattern.quote(value) + "(?![\\p{L}\\p{N}])").matcher(words).find() : words.contains(value);
+            for (String alt : SAID_AS.getOrDefault(value, List.of())) said = said || words.contains(alt);
+            if (!said) missing.add("«" + name + "»");
+        }
+        return missing;
     }
 
     /** Arabic and Persian digits as 0-9, so «٠١٠١٢٣٤٥٦٧٨» is a valid mobile number. */

@@ -35,8 +35,7 @@ class AiReplyReviewIntegrationTest extends IntegrationTestBase {
         assertThat(chat.reply(id, "WEB", "r1-" + uniq(), null, "عايز بنطلون").text()).isEqualTo("تمام يا فندم، تحب مقاس إيه في البنطلون؟");
         assertThat(FakeAiProvider.lastSystem).contains("senior sales manager");
 
-        FakeAiProvider.SCRIPT.add(turns -> Turn.model("أكيد يا فندم، تحب مقاس إيه؟"));
-        FakeAiProvider.SCRIPT.add(turns -> Turn.model("{\"ok\": true}"));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("أكيد يا فندم، تحب مقاس إيه؟"));   // a short question with no facts is not reviewed at all
         assertThat(chat.reply(id, "WEB", "r2-" + uniq(), null, "عايز تيشيرت ليا").text()).isEqualTo("أكيد يا فندم، تحب مقاس إيه؟");
 
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("عندنا شنط جلد حلوة، تحبي أوريكي؟"));
