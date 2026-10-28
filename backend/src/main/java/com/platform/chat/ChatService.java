@@ -71,6 +71,12 @@ public class ChatService {
         return t.replaceAll("\\*\\*(.+?)\\*\\*", "*$1*");
     }
 
+    /** A professional seller does not laugh at a customer: «هههه» and laughing emoji are taken out. */
+    static String noLaughter(String text) {
+        if (text == null) return null;
+        return text.replaceAll("(?<![\\p{L}])ه{3,}(?![\\p{L}])\\s*", "").replaceAll("[😂🤣😆😹]", "").replaceAll("[ \\t]{2,}", " ").trim();
+    }
+
     private static boolean messaging(String channel) { return "WHATSAPP".equals(channel) || "FACEBOOK".equals(channel) || "INSTAGRAM".equals(channel); }
 
     private record Ctx(UUID tenantId, UUID conversationId, String channel, String externalId, UUID clientId, long userMsgId, List<Map<String, Object>> products, Map<String, Object>[] order, String[] summary) {}
@@ -94,12 +100,15 @@ public class ChatService {
     private final ChannelAi channelAi;
     private final boolean nameProbe;
     private final boolean review;
+    private final String reviewModel;
 
     public ChatService(JdbcClient jdbc, AiProvider ai, CatalogService catalog, StoreSearchService search, CheckoutService checkout, StoreSettingsService settings,
                        StoreFulfillmentService fulfilment, ShopperService shopper, PaymentPolicy policy, AuditService audit, SellerTools seller, com.platform.commerce.GenderService genders, com.platform.commerce.OrderService orders, @org.springframework.context.annotation.Lazy AccountNotice accountNotice, AiUsageService usageLog, ChannelAi channelAi,
                        @org.springframework.beans.factory.annotation.Value("${app.ai.name-probe:false}") boolean nameProbe,
-                       @org.springframework.beans.factory.annotation.Value("${app.ai.review.enabled:true}") boolean review) {
+                       @org.springframework.beans.factory.annotation.Value("${app.ai.review.enabled:true}") boolean review,
+                       @org.springframework.beans.factory.annotation.Value("${app.ai.review.model:}") String reviewModel) {
         this.review = review;
+        this.reviewModel = reviewModel == null || reviewModel.isBlank() ? null : reviewModel.trim();
         this.usageLog = usageLog;
         this.channelAi = channelAi;
         this.nameProbe = nameProbe;
@@ -345,7 +354,7 @@ public class ChatService {
         else if (orderBox[0] != null) answer = confirmedText(arabicChat, orderBox[0], Map.of());
         if (!"TEST".equals(channel)) { seller.count(tenantId); usageLog.record(tenantId, "CHAT", channel, conv, false, text, rounds, routed.code(), routed.fellBack()); }
         if (answer == null || answer.isBlank()) answer = "عذرًا، لم أفهم. هل تعيد صياغة طلبك؟ / Sorry, I did not get that. Could you rephrase?";
-        answer = messaging(channel) ? forChannel(channel, answer) : forChannel("WEB", oneMessage(answer));
+        answer = noLaughter(messaging(channel) ? forChannel(channel, answer) : forChannel("WEB", oneMessage(answer)));
         String replyWords = FastAnswers.norm(answer);
         if (!messaging(channel)) ctx.products().removeIf(p -> !Boolean.TRUE.equals(p.get("send")) && !replyWords.contains(FastAnswers.norm(String.valueOf(p.get("name")))));   // the website shows cards only for what the reply is about
         jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x)").param("c", conv).param("x", answer).update();
@@ -416,8 +425,12 @@ public class ChatService {
     private String reviewed(Ctx ctx, ChannelAi.Routed routed, String system, List<Turn> turns, List<AiUsageService.Round> rounds, String draft) {
         if (!review) return draft;
         try {
-            Turn t = routed.next(ReplyReview.SYSTEM, List.of(Turn.user(ReplyReview.request(turns, addressing(system), section(system, "SHOP FACTS:") + section(system, "SHOP CATALOG"), draft))), List.of());
-            rounds.add(new AiUsageService.Round(List.of("review"), t.usage()));
+            // the review runs on the answering model, or on the model set in app.ai.review.model (its cost is then logged under that model)
+            ChannelAi.Routed reviewer = reviewModel == null || reviewModel.equals(routed.code()) ? routed : channelAi.forChannel(ctx.channel(), reviewModel);
+            Turn t = reviewer.next(ReplyReview.SYSTEM, List.of(Turn.user(ReplyReview.request(turns, addressing(system), section(system, "SHOP FACTS:") + section(system, "SHOP CATALOG"), draft))), List.of());
+            var round = new AiUsageService.Round(List.of("review"), t.usage());
+            if (reviewer == routed) rounds.add(round);
+            else if (!"TEST".equals(ctx.channel())) usageLog.record(ctx.tenantId(), "CHAT_REVIEW", ctx.channel(), ctx.conversationId(), false, "[review]", List.of(round), reviewer.code(), false);
             var v = ReplyReview.parse(t.text());
             if (v == null) { log.info("Review: {} gave no usable verdict (conversation {})", routed.code(), ctx.conversationId()); return draft; }
             if (v.ok()) return draft;
@@ -1026,6 +1039,14 @@ public class ChatService {
         if (aud != null && !AUDIENCES.containsKey(aud)) aud = null;
         List<Map<String, Object>> rows = aud == null ? List.of() : find(ctx.tenantId(), q, null, max, aud);
         if (rows.isEmpty()) rows = find(ctx.tenantId(), q, null, max);   // products without an audience set still count
+        String broad = q == null ? null : withoutOptions(q);
+        if (broad != null && !broad.isBlank() && !broad.equals(FastAnswers.norm(q))) {
+            // colors and sizes live in the variants, not in the product's name («قميص قطن ابيض» is the «قميص قطن أزرق كلاسيك» in white): search without them too
+            var seenSlugs = new java.util.LinkedHashMap<Object, Map<String, Object>>();
+            for (var r : rows) seenSlugs.putIfAbsent(r.get("slug"), r);
+            for (var r : find(ctx.tenantId(), broad, null, max)) seenSlugs.putIfAbsent(r.get("slug"), r);
+            rows = seenSlugs.values().stream().limit(4).toList();
+        }
         boolean exact = !rows.isEmpty() || q == null;
         if (rows.isEmpty() && q != null) {
             // the customer's words matched no product name: try each word, then a category whose name contains a word, then the best sellers
@@ -1058,6 +1079,15 @@ public class ChatService {
     }
 
     private List<Map<String, Object>> find(UUID tenantId, String q, String category, Long maxMinor) { return find(tenantId, q, category, maxMinor, null); }
+
+    private static final java.util.Set<String> OPTION_WORDS = java.util.Set.of("ابيض", "بيضا", "بيضاء", "اسود", "سودا", "سوداء", "ازرق", "زرقا", "كحلي", "بيج", "احمر", "حمرا", "اخضر", "خضرا", "اصفر", "صفرا", "وردي", "بمبي", "رمادي", "رصاصي",
+            "بني", "لبني", "مقاس", "مقاسي", "s", "m", "l", "xl", "xxl", "white", "black", "blue", "navy", "beige", "red", "green", "yellow", "pink", "grey", "gray", "brown", "size", "small", "medium", "large");
+
+    /** The search words without colors and sizes, or null when nothing is left. */
+    static String withoutOptions(String q) {
+        String out = java.util.Arrays.stream(FastAnswers.norm(q).split("\\s+")).filter(w -> !w.isBlank() && !OPTION_WORDS.contains(w) && !w.matches("\\d+|[٠-٩]+")).collect(java.util.stream.Collectors.joining(" "));
+        return out.isBlank() ? null : out;
+    }
 
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> find(UUID tenantId, String q, String category, Long maxMinor, String audience) {

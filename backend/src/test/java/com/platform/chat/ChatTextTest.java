@@ -48,4 +48,12 @@ class ChatTextTest {
         assertThat(ReplyGuard.violations("كتير من العملاء بيطلبوها لنفس السبب", "")).isNotEmpty();
         assertThat(ReplyGuard.violations("دي من الأكثر طلباً عندنا", "Best sellers, الأكثر طلباً (name): مخدة")).isEmpty();
     }
+
+    @Test
+    void colorsAndSizesAreDroppedForTheBroadSearchAndLaughterIsTakenOut() {
+        assertThat(ChatService.withoutOptions("قميص قطن ابيض مقاس M")).isEqualTo("قميص قطن");
+        assertThat(ChatService.withoutOptions("ابيض")).isNull();
+        assertThat(ChatService.noLaughter("هههه لأ يا فندم مش دهب 😄😂")).isEqualTo("لأ يا فندم مش دهب 😄");
+        assertThat(ChatService.noLaughter("وجه الشبه")).isEqualTo("وجه الشبه");
+    }
 }
