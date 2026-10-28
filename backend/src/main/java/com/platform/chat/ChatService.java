@@ -549,9 +549,8 @@ public class ChatService {
      */
     private String ruleChecks(Ctx ctx, ChannelAi.Routed routed, String system, List<Turn> turns, List<ToolDef> tools, List<AiUsageService.Round> rounds, MoneyGuard.Allowed allowed, String answer) {
         if (answer == null || answer.isBlank()) return answer;
-        // the full product list in the prompt counts as having looked: the facts are in front of the model
-        boolean searched = system.contains("ALL PRODUCTS (") || system.contains("PRODUCTS FOR THE CUSTOMER'S NEWEST MESSAGE")
-                || rounds.stream().anyMatch(r -> r.tools().stream().anyMatch(t -> t.equals("search_products") || t.equals("get_product") || t.equals("show_products")));
+        // only a real tool call counts as having looked (a model with the catalog in its prompt still skimmed it and answered vaguely)
+        boolean searched = rounds.stream().anyMatch(r -> r.tools().stream().anyMatch(t -> t.equals("search_products") || t.equals("get_product") || t.equals("show_products")));
         String last = lastCustomerText(turns);
         List<String> problems = new ArrayList<>();
         if (WHO_QUESTION.matcher(answer).find()) {
@@ -570,6 +569,8 @@ public class ChatService {
             problems.add("The customer asked for " + asked.group(1) + " pieces: check the stock count of that exact option (in ALL PRODUCTS or the search result) and never promise more than is in stock; if fewer are available, say how many.");
         if (PHONE_DOUBT.matcher(answer).find() && customerGaveMobile(turns))
             problems.add("The mobile number the customer wrote is valid: never say it is wrong or count its digits; if needed, ask only «الرقم ده عليه واتساب؟».");
+        if (!searched && vagueAboutProducts(ctx.tenantId(), last, answer))
+            problems.add("The customer asked about a kind of product and your reply names none: call search_products and name the real products with their price, colors and sizes (or say honestly we do not have it).");
         if (problems.isEmpty()) return answer;
         log.warn("Rule check: {} (conversation {}): {}", problems, ctx.conversationId(), answer);
         try {
@@ -586,12 +587,28 @@ public class ChatService {
     private static final Pattern QUANTITY = Pattern.compile("(?<![\\d])(\\d{1,3})\\s*(?:طقم|اطقم|أطقم|قطعة|قطعه|قطع|قميص|قمصان|حتة|حته|حتت|عباية|عبايات|بنطلون|بناطيل|فستان|فساتين|pieces?|pcs|sets?)");
     private static final Pattern PROMISE = Pattern.compile("(?:نجهزلك|هنجهز|هجهز|أجهزلك|اجهزلك|أحجزلك|احجزلك|نحجزلك|متوفر|متوفرة|متاح|متاحة|موجود)");
     private static final Pattern LIMIT_WORDS = Pattern.compile("(?:بس|فقط|المتاح|المتوفر|متبقي|الموجود\\s+حاليا|only|left)");
-    private static final Pattern PHONE_DOUBT = Pattern.compile("(?:الرقم|رقم)[^.؟?!\\n]{0,35}(?:مش\\s+صح|غلط|ناقص|زيادة|مش\\s+مظبوط|مشو[ّ]?ش|مش\\s+شكله\\s+صح|فيه\\s*[0-9٠-٩]+\\s*رقم|بصيغة\\s+صحيحة)");
+    private static final Pattern PHONE_DOUBT = Pattern.compile("(?:الرقم|رقم)[^.؟?!\\n]{0,35}(?:مش\\s+صح|غلط|ناقص|زيادة|مش\\s+مظبوط|مشو[ّ]?ش|مش\\s+شكله\\s+صح|فيه\\s*[0-9٠-٩]+\\s*رقم|بصيغة\\s+صحيحة|مش\\s+مطابق|مكو[ّ]?ن\\s+من\\s+[0-9٠-٩]+)");
 
     private static boolean customerGaveMobile(List<Turn> turns) {
         for (Turn t : turns)
             if ("user".equals(t.role()) && t.text() != null && MoneyGuard.digits(t.text()).replaceAll("[\\s-]", "").matches("(?s).*(?<!\\d)(?:\\+?20)?01[0125]\\d{8}(?!\\d).*")) return true;
         return false;
+    }
+
+    /** The customer named a kind of product we sell, and the reply names none of the matching products: a vague «عندنا أنواع كتير» instead of an answer. */
+    private boolean vagueAboutProducts(UUID tenantId, String customer, String answer) {
+        String q = customer == null ? null : withoutOptions(customer);
+        if (q == null) return false;
+        List<Map<String, Object>> rows = find(tenantId, q, null, null);
+        if (rows.isEmpty() && synonyms(q) != null) rows = find(tenantId, synonyms(q), null, null);
+        if (rows.isEmpty()) return false;
+        String said = FastAnswers.norm(answer);
+        for (var r : rows) {
+            String name = FastAnswers.norm(String.valueOf(r.get("name")));
+            String[] words = name.split("\\s+");
+            if (said.contains(name) || (words.length >= 2 && said.contains(words[0] + " " + words[1]))) return false;
+        }
+        return true;
     }
 
     private static final Pattern AVAILABLE_WORDS = Pattern.compile("(?:متاح|متاحة|متاحه|متوفر|متوفرة|متوفره|موجود|موجودة|موجوده|available|in stock)", Pattern.CASE_INSENSITIVE);

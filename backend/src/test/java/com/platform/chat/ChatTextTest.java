@@ -146,4 +146,9 @@ class ChatTextTest {
         ChatService.optionSummary(m, List.of(java.util.Map.of("options", "اللون: أبيض", "available", 6), java.util.Map.of("options", "اللون: بيج", "available", 8)));
         assertThat(m.get("inStockOptions").toString()).contains("أبيض (6 in stock)").contains("بيج (8 in stock)");
     }
+
+    @Test
+    void searchAndTellYouLaterIsCaught() {
+        assertThat(ReplyGuard.violations("أنا هبحثلك على المتاح عندنا دلوقتي وأقولك السعر والتفاصيل", "")).isNotEmpty();
+    }
 }
