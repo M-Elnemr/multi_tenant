@@ -221,4 +221,9 @@ class ChatTextTest {
         assertThat(ChatService.CLOSED_STOP.matcher("المحل مقفول دلوقتي بس الأوردر بيتجهز أول ما نفتح، تحب مقاس إيه؟").find()).isFalse();
         assertThat(ChatService.CLOSED_STOP.matcher("الجينز السليم بـ890 جنيه").find()).isFalse();
     }
+
+    @Test
+    void theReviewerGetsToolResultsWithoutIdsAndLinks() {
+        assertThat(ReplyReview.lean("{\"variantId\":\"0f8f-11\",\"name\":\"جينز\",\"imageUrl\":\"/api/x\",\"price\":890}")).isEqualTo("{\"name\":\"جينز\",\"price\":890}");
+    }
 }

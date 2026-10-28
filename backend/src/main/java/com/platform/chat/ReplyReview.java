@@ -56,7 +56,7 @@ final class ReplyReview {
         for (int i = 0; i < turns.size(); i++) {
             Turn t = turns.get(i);
             if ("tool".equals(t.role())) {
-                for (ToolResult r : t.results()) facts.append("- ").append(r.name()).append(": ").append(clip(json(r.result()), 1500)).append('\n');
+                for (ToolResult r : t.results()) facts.append("- ").append(r.name()).append(": ").append(clip(lean(json(r.result())), 4000)).append('\n');
                 continue;
             }
             if (t.text() == null || t.text().isBlank() || t.text().startsWith("[SYSTEM CHECK")) continue;
@@ -66,10 +66,15 @@ final class ReplyReview {
         }
         return "RECENT CHAT:\n" + clip(tail(chat.toString(), 2500), 2500)
                 + "\nCUSTOMER'S NEWEST MESSAGE(S):\n" + clip(newest.toString(), 1200)
-                + "\nFACTS (tool results for this reply" + (facts.length() == 0 ? "; none: the salesperson used no tool" : "") + "):\n" + clip(facts.toString(), 6000)
+                + "\nFACTS (tool results for this reply" + (facts.length() == 0 ? "; none: the salesperson used no tool" : "") + "):\n" + clip(facts.toString(), 10000)
                 + (shop == null || shop.isBlank() ? "" : "\nSHOP DATA (also facts):\n" + clip(shop, 5000))
                 + "\nADDRESSING:" + (address == null ? " not known, use «حضرتك»" : address)
                 + "\nDRAFT:\n" + draft;
+    }
+
+    /** A tool result without what the reviewer never needs (ids, picture links), so every product of a long search result fits («the jeans do not exist» came from a cut-off list). */
+    static String lean(String json) {
+        return json.replaceAll("\"(?:variantId|productId|id|imageUrl|imageMediaBase|imageMediaExt|url|link)\"\\s*:\\s*(?:\"[^\"]*\"|null)\\s*,?", "");
     }
 
     /** The reviewer's answer; null when it is not usable (the draft is then sent as it is). */
