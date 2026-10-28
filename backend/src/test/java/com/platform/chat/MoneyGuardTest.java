@@ -74,4 +74,12 @@ class MoneyGuardTest {
         allowed.addJson(java.util.Map.of("price", 800, "priceBeforeDiscount", 1000));
         assertThat(MoneyGuard.violations("ده سعره 800 بدل 1000 يعني بخصم 200 جنيه", allowed)).isEmpty();
     }
+
+    @Test
+    void aSumAfterSumWordsMustMatchExactlyNotAsAMultipleOfSomePrice() {
+        var allowed = new MoneyGuard.Allowed(0);
+        allowed.addPrices("Kids T-shirt [t] (250); Shirt [s] (450); Jeans [j] (800)");
+        assertThat(MoneyGuard.violations("القميص بـ450 والجينز بـ800، يعني الاتنين 1250 قبل الشحن", allowed)).extracting(MoneyGuard.Amount::raw).containsExactly("1250");
+        assertThat(MoneyGuard.violations("التيشيرتين بـ500 جنيه", allowed)).isEmpty();   // 2 x 250, a plain quantity
+    }
 }

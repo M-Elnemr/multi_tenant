@@ -16,7 +16,9 @@ final class MoneyGuard {
     private MoneyGuard() {}
 
     /** One money amount found in a text, with the exact text it was written as. */
-    record Amount(long cents, String raw, int start, int end) {}
+    record Amount(long cents, String raw, int start, int end, boolean sum) {
+        Amount(long cents, String raw, int start, int end) { this(cents, raw, start, end, false); }
+    }
 
     private static final String NUM = "[0-9٠-٩۰-۹]+(?:[.,٫٬][0-9٠-٩۰-۹]+)*";
     private static final String CUR = "(?:جنيه|جنية|جنيهات|ج\\.\\s?م|ريال|درهم|دينار|دولار|EGP|SAR|AED|USD|KWD|LE|L\\.E|pounds?|riyals?|dirhams?|dollars?|\\$)";
@@ -58,7 +60,7 @@ final class MoneyGuard {
                 if (c < 0) continue;
                 boolean dup = false;
                 for (Amount a : out) if (a.start == s) { dup = true; break; }
-                if (!dup) out.add(new Amount(c, m.group(g), s, e));
+                if (!dup) out.add(new Amount(c, m.group(g), s, e, p == WORD_THEN_NUM && g == 2));   // after «يعني الاتنين…»: a sum, which must match exactly
             }
         }
         return out;
@@ -107,6 +109,9 @@ final class MoneyGuard {
         /** Everything added with {@link #addFact} or in a tool result. */
         String facts() { return facts.toString(); }
 
+        /** A sum the reply states: only an amount a tool, the shop data or the chat gave, or a real saving; never a quantity of some price. */
+        boolean allowsExactly(long cents) { return exact.contains(cents) || savings.contains(cents); }
+
         boolean allows(long cents) {
             if (exact.contains(cents)) return true;
             // a price times a quantity, or a price with the discount the shop allows: the system itself says these are fine, within one pound for rounding
@@ -123,7 +128,7 @@ final class MoneyGuard {
     /** The amounts in {@code text} that are not allowed. */
     static List<Amount> violations(String text, Allowed allowed) {
         List<Amount> bad = new ArrayList<>();
-        for (Amount a : amountsIn(text)) if (!allowed.allows(a.cents())) bad.add(a);
+        for (Amount a : amountsIn(text)) if (a.sum() ? !allowed.allowsExactly(a.cents()) : !allowed.allows(a.cents())) bad.add(a);
         return bad;
     }
 
