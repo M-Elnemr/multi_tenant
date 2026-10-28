@@ -32,7 +32,11 @@ final class ReplyGuard {
             new Rule("a promised contact number", "(?:هديك|هبعتلك|هديلك)\\s+(?:رقم|نمرة)\\s+(?:التواصل|خدمة العملاء|الفريق|المسؤول)|i(?:'ll| will) give you (?:the|a) (?:number|contact)"),
                         // a payment method offered that the shop data does not list (card when only cash on delivery is enabled)
             new Rule("a payment method the shop does not offer", "(?:أو|او|ولا)\\s*(?:بال)?(?:بطاقة|بطاقه|كارت|فيزا|visa|card|credit card)|(?:or|and)\\s+(?:by\\s+)?(?:card|visa)"),
-            // invented social proof
+            // a gift, extra or service the shop never offered
+            new Rule("an invented gift or extra", "(?:هدية\\s+(?:منّ?ا|من\\s+المحل|مننا)|تغليف\\s+(?:فاخر|هدايا|مجاني)|أكياس\\s+تغليف|اكياس\\s+تغليف|free gift|gift wrap)"),
+            // refusing a job its tools do («I have no access to track orders»)
+            new Rule("a false \"I have no access\"", "(?:معنديش|ماعنديش|مش\\s+عندي|ليس\\s+لدي|ليست\\s+لدي)\\s+(?:أي\\s+)?صلاحي|i (?:don't|do not) have access"),
+                        // invented social proof
             new Rule("invented popularity or reviews", "(?:كتير من العملاء|العملاء بيحبو|العملاء بيطلبو|عليه طلب كبير|الأكثر طلب|الأكتر طلب|بيخلص بسرعة|كل اللي اشتروه|customers love|many customers|best ?seller|sells out fast)"),
             // product claims a seller must not make up: they are fine only when the product description itself says so
             new Rule("an unbacked product claim", "(?:أصلي\\s*(?:١٠٠|100)|اصلي\\s*(?:١٠٠|100)|(?:١٠٠|100)\\s*[٪%]\\s*(?:قطن|كتان|حرير|صوف|جلد)|(?:قطن|كتان|حرير|صوف|جلد)\\s*(?:١٠٠|100)\\s*[٪%]|قطن مصري|مستورد|أحسن خامة|احسن خامة|أفضل خامة|افضل خامة|"

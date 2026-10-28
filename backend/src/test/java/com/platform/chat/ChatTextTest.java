@@ -124,4 +124,11 @@ class ChatTextTest {
         assertThat(ChatService.productFacts("الشحن للجيزة 50 جنيه")).isFalse();
         assertThat(ChatService.productFacts("تحب أي لون؟")).isFalse();
     }
+
+    @Test
+    void inventedGiftsAndFalseNoAccessAreCaught() {
+        assertThat(ReplyGuard.violations("بس ممكن نرسلها معاك بأكياس تغليف فاخرة هدية منّا", "")).isNotEmpty();
+        assertThat(ReplyGuard.violations("أنا مساعد افتراضي وليست لدي صلاحية الدخول لنظام المتابعة", "")).isNotEmpty();
+        assertThat(ReplyGuard.violations("الفستان ده هدية حلوة لمراتك", "")).isEmpty();
+    }
 }
