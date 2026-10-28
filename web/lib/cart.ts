@@ -2,7 +2,10 @@
 
 import { useSyncExternalStore } from "react";
 
-export type CartLine = { variantId: string; productId: string; slug: string; name: string; variantLabel: string; unitPriceMinor: number; quantity: number; imageUrl?: string | null };
+export type CartLine = { variantId: string; productId: string; slug: string; name: string; variantLabel: string; unitPriceMinor: number; quantity: number; imageUrl?: string | null; note?: string };
+
+/** A cart line is a variant plus its note: the same item with another note («بدون بصل») is its own line. */
+export const lineKey = (l: { variantId: string; note?: string }) => `${l.variantId}|${(l.note ?? "").trim()}`;
 
 const KEY = "cart:v1";
 const EVENT = "cart:changed";
@@ -32,17 +35,21 @@ function write(lines: CartLine[]) {
 
 export function addToCart(line: CartLine) {
   const lines = [...read()];
-  const i = lines.findIndex((l) => l.variantId === line.variantId);
+  const i = lines.findIndex((l) => lineKey(l) === lineKey(line));
   if (i >= 0) lines[i] = { ...lines[i], quantity: Math.min(lines[i].quantity + line.quantity, 99), unitPriceMinor: line.unitPriceMinor };
   else lines.push(line);
   write(lines);
 }
 
-export function setQuantity(variantId: string, quantity: number) {
-  write(read().map((l) => (l.variantId === variantId ? { ...l, quantity: Math.max(1, Math.min(quantity, 99)) } : l)));
+export function setQuantity(key: string, quantity: number) {
+  write(read().map((l) => (lineKey(l) === key ? { ...l, quantity: Math.max(1, Math.min(quantity, 99)) } : l)));
 }
 
-export function removeLine(variantId: string) { write(read().filter((l) => l.variantId !== variantId)); }
+export function setNote(key: string, note: string) {
+  write(read().map((l) => (lineKey(l) === key ? { ...l, note: note.slice(0, 200) || undefined } : l)));
+}
+
+export function removeLine(key: string) { write(read().filter((l) => lineKey(l) !== key)); }
 
 export function clearCart() { write(EMPTY); }
 

@@ -26,7 +26,10 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class PosService {
-    public record Line(UUID variantId, int quantity) {}
+    /** A till line; {@code note} is the customer's request on it («بدون ثلج»). */
+    public record Line(UUID variantId, int quantity, String note) {
+        public Line(UUID variantId, int quantity) { this(variantId, quantity, null); }
+    }
     public record SaleReq(List<Line> items, UUID branchId, String paymentMethod, Long discountMinor, String customerName, String phone) {}
 
     static final Set<String> METHODS = Set.of("CASH", "CARD_POS", "TRANSFER");
@@ -140,9 +143,11 @@ public class PosService {
                 .orElseThrow(() -> BusinessException.badRequest("NO_BRANCH", "Add a branch first"));
         if (jdbc.sql("SELECT count(*) FROM commerce.branches WHERE id = :b AND tenant_id = :t AND is_active").param("b", branch).param("t", t).query(Long.class).single() == 0) throw BusinessException.notFound("RESOURCE_NOT_FOUND", "Branch not found");
         TreeMap<UUID, Integer> wanted = new TreeMap<>();
+        Map<UUID, List<String>> notes = new java.util.HashMap<>();
         for (Line l : r.items()) {
             if (l.variantId() == null || l.quantity() < 1 || l.quantity() > 1000) throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid quantity");
             wanted.merge(l.variantId(), l.quantity(), Integer::sum);
+            if (l.note() != null && !l.note().isBlank()) notes.computeIfAbsent(l.variantId(), k -> new ArrayList<>()).add(l.note().trim());
         }
         var rows = jdbc.sql("SELECT v.id, v.product_id, v.sku, v.price_minor, v.currency, v.combo_key, p.name FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE v.tenant_id = :t AND v.id IN (:ids) AND v.status = 'ACTIVE' AND p.status = 'ACTIVE'")
                 .param("t", t).param("ids", wanted.keySet()).query().listOfRows();
@@ -180,9 +185,10 @@ public class PosService {
             int q = wanted.get((UUID) row.get("id"));
             long price = ((Number) row.get("price_minor")).longValue();
             String combo = (String) row.get("combo_key");
-            jdbc.sql("INSERT INTO commerce.order_items (order_id, tenant_id, product_id, variant_id, branch_id, sku_snapshot, product_name_snapshot, variant_name_snapshot, unit_price_minor, quantity, line_total_minor) VALUES (:o, :t, :p, :v, :b, :sku, :pn, :vn, :up, :q, :lt)")
+            String note = notes.containsKey((UUID) row.get("id")) ? String.join("، ", notes.get((UUID) row.get("id"))) : null;
+            jdbc.sql("INSERT INTO commerce.order_items (order_id, tenant_id, product_id, variant_id, branch_id, sku_snapshot, product_name_snapshot, variant_name_snapshot, unit_price_minor, quantity, line_total_minor, note) VALUES (:o, :t, :p, :v, :b, :sku, :pn, :vn, :up, :q, :lt, :note)")
                     .param("o", orderId).param("t", t).param("p", row.get("product_id")).param("v", row.get("id")).param("b", branch).param("sku", row.get("sku")).param("pn", row.get("name"))
-                    .param("vn", combo == null || combo.isEmpty() ? null : combo.replace("|", ", ").replace("=", ": ")).param("up", price).param("q", q).param("lt", price * q).update();
+                    .param("vn", combo == null || combo.isEmpty() ? null : combo.replace("|", ", ").replace("=", ": ")).param("up", price).param("q", q).param("lt", price * q).param("note", note == null || note.length() <= 200 ? note : note.substring(0, 200)).update();
         }
         jdbc.sql("INSERT INTO commerce.order_payments (order_id, tenant_id, method, amount_minor, currency, status, paid_at, idempotency_key) VALUES (:o, :t, :m, :a, :c, 'SUCCEEDED', now(), :k)")
                 .param("o", orderId).param("t", t).param("m", method).param("a", total).param("c", currency).param("k", "pos-" + orderId).update();

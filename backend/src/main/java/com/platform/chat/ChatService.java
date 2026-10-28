@@ -890,6 +890,7 @@ public class ChatService {
             String opts = combo.isBlank() || "default".equalsIgnoreCase(combo) ? "" : " (" + combo.replace("|", ", ").replace("=", ": ") + ")";
             long unit = ((Number) ln.get("unitPriceMinor")).longValue(), qty = ((Number) ln.get("quantity")).longValue();
             b.append("• ").append(ln.get("productName")).append(opts).append(" × ").append(qty).append(" = ").append(moneyIn(ar, unit * qty, cur)).append("\n");
+            if (ln.get("note") != null) b.append(ar ? "   ملاحظة: " : "   Note: ").append(ln.get("note")).append("\n");
         }
         b.append("\n").append(ar ? "المنتجات: " : "Items: ").append(moneyIn(ar, subtotal, cur)).append("\n");
         if (discount > 0) b.append(ar ? "الخصم: -" : "Discount: -").append(moneyIn(ar, discount, cur)).append("\n");
@@ -938,8 +939,9 @@ public class ChatService {
                     + (canChange ? "it CAN STILL BE CHANGED: to add, remove or swap items, call prepare_order with changeOrder=\"" + no + "\" and the complete new list; for a cancellation tell the customer you will check with the shop team and call flag_unanswered):\n"
                                  : "the shop has already started it, so it cannot be changed here: for a change, cancellation or doubt tell the customer you will check with the shop team and call flag_unanswered):\n"));
             b.append("- Number ").append(no).append(", status ").append(o.get("status")).append(", payment ").append(o.get("payment_method")).append("\n");
-            for (var it : jdbc.sql("SELECT product_name_snapshot, variant_name_snapshot, quantity, unit_price_minor FROM commerce.order_items WHERE order_id = :o").param("o", o.get("id")).query().listOfRows())
-                b.append("- Item: ").append(it.get("product_name_snapshot")).append(it.get("variant_name_snapshot") == null ? "" : " (" + it.get("variant_name_snapshot") + ")").append(" x").append(it.get("quantity")).append(" at ").append(moneyIn(false, it.get("unit_price_minor"), cur)).append(" each\n");
+            for (var it : jdbc.sql("SELECT product_name_snapshot, variant_name_snapshot, quantity, unit_price_minor, note FROM commerce.order_items WHERE order_id = :o").param("o", o.get("id")).query().listOfRows())
+                b.append("- Item: ").append(it.get("product_name_snapshot")).append(it.get("variant_name_snapshot") == null ? "" : " (" + it.get("variant_name_snapshot") + ")").append(" x").append(it.get("quantity")).append(" at ").append(moneyIn(false, it.get("unit_price_minor"), cur)).append(" each")
+                        .append(it.get("note") == null ? "" : ", note: «" + it.get("note") + "»").append("\n");
             b.append("- Items total ").append(moneyIn(false, o.get("subtotal_minor"), cur));
             if (((Number) o.get("discount_minor")).longValue() > 0) b.append(", discount -").append(moneyIn(false, o.get("discount_minor"), cur));
             long ship = ((Number) o.get("shipping_minor")).longValue();
@@ -1222,7 +1224,8 @@ public class ChatService {
     private static Map<String, Object> num(String d) { return obj("type", "NUMBER", "description", d); }
 
     private List<ToolDef> tools() {
-        Map<String, Object> item = obj("type", "OBJECT", "properties", obj("variantId", str("Variant id from get_product"), "quantity", num("How many")), "required", List.of("variantId", "quantity"));
+        Map<String, Object> item = obj("type", "OBJECT", "properties", obj("variantId", str("Variant id from get_product"), "quantity", num("How many"),
+                "note", str("The customer's request on this item, in their words («بدون بصل», «حار», «مقاس واسع شوية»); omit when none")), "required", List.of("variantId", "quantity"));
         List<ToolDef> base = List.of(
                 new ToolDef("search_products", "Search the shop's products by words (Arabic or English). Leave query empty to see popular products. Each hit lists its variants (id, options such as size and color, price, availability).",
                         obj("type", "OBJECT", "properties", obj("query", str("What the customer wants"), "maxPrice", num("Maximum price in the shop currency, optional"),
@@ -1505,7 +1508,7 @@ public class ChatService {
             try { vid = UUID.fromString(String.valueOf(m.get("variantId"))); } catch (IllegalArgumentException e) { return obj("error", "Invalid variantId: use get_product to get it"); }
             int q = m.get("quantity") instanceof Number n ? n.intValue() : 1;
             if (q < 1 || q > 50) return obj("error", "Quantity must be between 1 and 50");
-            items.add(new CheckoutService.Item(vid, q));
+            items.add(new CheckoutService.Item(vid, q, m.get("note") == null ? null : String.valueOf(m.get("note"))));
         }
         // «قميصين» is two shirts: a quantity of 1 for a product the customer asked for in the dual is sent back
         for (CheckoutService.Item it : items) {
@@ -1595,7 +1598,7 @@ public class ChatService {
         long extra = base * pct / 100;
         long total = Math.max(0, ((Number) quote.get("totalMinor")).longValue() - extra);
 
-        Map<String, Object> pending = obj("items", items.stream().map(i -> obj("variantId", i.variantId().toString(), "quantity", i.quantity())).toList(), "shippingMethodId", shippingId.toString(),
+        Map<String, Object> pending = obj("items", items.stream().map(i -> obj("variantId", i.variantId().toString(), "quantity", i.quantity(), "note", i.note())).toList(), "shippingMethodId", shippingId.toString(),
                 "name", name, "phone", phone.replace(" ", ""), "pickup", pickup, "governorate", pickup ? "" : gov, "line1", line1, "area", area, "landmark", text(a, "landmark"),
                 "replaces", change == null ? null : String.valueOf(onFile.get("id")), "replacesNumber", change == null ? null : onFile.get("number"),
                 "paymentMethod", pm, "extraDiscountMinor", extra, "discountPct", pct, "notes", text(a, "notes"), "totalMinor", total, "currency", quote.get("currency"), "whatsapp", waNumber, "coupon", text(a, "couponCode"), "userMsgId", ctx.userMsgId());
@@ -1629,9 +1632,9 @@ public class ChatService {
         if (o == null || !com.platform.commerce.OrderService.changeable((String) o.get("status"))) return null;
         List<UUID> variants = new ArrayList<>();
         List<String> lines = new ArrayList<>();
-        for (var it : jdbc.sql("SELECT variant_id, product_name_snapshot, variant_name_snapshot, quantity FROM commerce.order_items WHERE order_id = :o").param("o", o.get("id")).query().listOfRows()) {
+        for (var it : jdbc.sql("SELECT variant_id, product_name_snapshot, variant_name_snapshot, quantity, note FROM commerce.order_items WHERE order_id = :o").param("o", o.get("id")).query().listOfRows()) {
             variants.add((UUID) it.get("variant_id"));
-            lines.add(it.get("product_name_snapshot") + (it.get("variant_name_snapshot") == null ? "" : " (" + it.get("variant_name_snapshot") + ")") + " x" + it.get("quantity"));
+            lines.add(it.get("product_name_snapshot") + (it.get("variant_name_snapshot") == null ? "" : " (" + it.get("variant_name_snapshot") + ")") + " x" + it.get("quantity") + (it.get("note") == null ? "" : " note «" + it.get("note") + "»"));
         }
         return obj("id", o.get("id"), "number", no, "variants", variants, "summary", String.join(", ", lines));
     }
@@ -1682,7 +1685,7 @@ public class ChatService {
             return obj("orderNumber", "TEST-0001", "message", "TEST MODE: no real order was created. Act as if it was.");
         }
         @SuppressWarnings("unchecked") List<Map<String, Object>> its = (List<Map<String, Object>>) p.get("items");
-        var items = its.stream().map(i -> new CheckoutService.Item(UUID.fromString((String) i.get("variantId")), ((Number) i.get("quantity")).intValue())).toList();
+        var items = its.stream().map(i -> new CheckoutService.Item(UUID.fromString((String) i.get("variantId")), ((Number) i.get("quantity")).intValue(), i.get("note") == null ? null : String.valueOf(i.get("note")))).toList();
         boolean pickup = Boolean.TRUE.equals(p.get("pickup"));
         var addr = new CheckoutService.AddressReq((String) p.get("name"), (String) p.get("phone"), pickup ? "Pickup from the shop" : (String) p.get("line1"), null, (String) p.get("area"), null, null, null,
                 pickup ? null : (String) p.get("governorate"), (String) p.get("area"), (String) p.get("landmark"), null);

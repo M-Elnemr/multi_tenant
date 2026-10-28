@@ -139,4 +139,22 @@ class AiOrderChangeIntegrationTest extends IntegrationTestBase {
         assertThat(FakeAiProvider.RESULTS.get(0).result().get("error").toString()).contains("latest summary");
         assertThat(orders(tenant)).isEmpty();
     }
+
+    @Test
+    void eachItemCanCarryItsOwnNoteAndTheSameItemWithAnotherNoteIsItsOwnLine() throws Exception {
+        Tenant t = onboard("STORE");
+        String shawarma = product(t, "Shawarma");
+        UUID tenant = id(t);
+        String ext = "notes-" + uniq();
+        Map<String, Object> order = new java.util.HashMap<>(prepare(List.of(shawarma), Map.of()));
+        order.put("items", List.of(Map.of("variantId", shawarma, "quantity", 1, "note", "بدون بصل"), Map.of("variantId", shawarma, "quantity", 1, "note", "حار جداً"), Map.of("variantId", shawarma, "quantity", 1)));
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", order));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ok"));
+        String summary = chat.reply(tenant, "WEB", ext, null, "عايز ٣ شاورما واحدة بدون بصل وواحدة حار جداً").text();
+        assertThat(summary).contains("ملاحظة: بدون بصل").contains("ملاحظة: حار جداً");
+        chat.reply(tenant, "WEB", ext, null, "تمام");
+        var lines = jdbc.sql("SELECT i.quantity, i.note FROM commerce.order_items i JOIN commerce.orders o ON o.id = i.order_id WHERE o.tenant_id = :t ORDER BY i.note NULLS LAST").param("t", tenant).query().listOfRows();
+        assertThat(lines).hasSize(3);
+        assertThat(lines.stream().map(l -> l.get("note")).toList()).containsExactly("بدون بصل", "حار جداً", null);
+    }
 }

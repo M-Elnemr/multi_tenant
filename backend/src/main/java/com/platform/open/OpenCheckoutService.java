@@ -24,7 +24,9 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class OpenCheckoutService {
-    public record CartItem(UUID variantId, int quantity) {}
+    public record CartItem(UUID variantId, int quantity, String note) {
+        public CartItem(UUID variantId, int quantity) { this(variantId, quantity, null); }
+    }
     public record CartReq(List<CartItem> items, String couponCode, UUID shippingMethodId, CheckoutService.AddressReq address, String notes) {}
 
     private final JdbcClient jdbc;
@@ -111,7 +113,7 @@ public class OpenCheckoutService {
 
     private static List<CheckoutService.Item> items(CartReq r) {
         List<CheckoutService.Item> out = new ArrayList<>();
-        for (CartItem i : r.items()) out.add(new CheckoutService.Item(i.variantId(), i.quantity()));
+        for (CartItem i : r.items()) out.add(new CheckoutService.Item(i.variantId(), i.quantity(), i.note()));
         return out;
     }
 

@@ -12,7 +12,7 @@ type Order = {
   id: string; orderNumber: string; status: string; paymentMethod: string; currency: string; subtotalMinor: number; discountMinor: number; shippingMinor: number; codFeeMinor?: number; totalMinor: number;
   customerNameSnapshot: string; customerPhoneSnapshot: string; phone2?: string; notes?: string; createdAt: string; governorateCode?: string; area?: string; landmark?: string;
   shippingAddress: Record<string, string>; courierName?: string; trackingNumber?: string;
-  items: { productNameSnapshot: string; variantNameSnapshot?: string; skuSnapshot?: string; unitPriceMinor: number; quantity: number; lineTotalMinor: number }[];
+  items: { productNameSnapshot: string; variantNameSnapshot?: string; skuSnapshot?: string; unitPriceMinor: number; quantity: number; lineTotalMinor: number; note?: string }[];
 };
 type Shop = { storeName: string; addressText?: string; supportPhone?: string; taxId?: string; vatIncluded?: boolean; vatPercent?: number; supportEmail?: string };
 
@@ -55,7 +55,7 @@ export default function PrintOrder({ params }: { params: Promise<{ id: string }>
       )}
       <table className="w-full text-sm">
         <thead><tr className="border-b-2 border-slate-900 text-start text-xs uppercase"><th className="py-2 text-start">{t("products.name")}</th><th className="py-2 text-center">{t("print.qty")}</th>{doc === "invoice" && <><th className="py-2 text-end">{t("print.price")}</th><th className="py-2 text-end">{t("checkout.total")}</th></>}</tr></thead>
-        <tbody>{o.items.map((i, k) => <tr key={k} className="border-b border-slate-200"><td className="py-2">{i.productNameSnapshot} {i.variantNameSnapshot && <span className="text-slate-500">({i.variantNameSnapshot})</span>}<span className="block font-mono text-[10px] text-slate-400">{i.skuSnapshot}</span></td><td className="py-2 text-center font-bold">{i.quantity}</td>{doc === "invoice" && <><td className="py-2 text-end">{money(i.unitPriceMinor, o.currency, locale)}</td><td className="py-2 text-end font-bold">{money(i.lineTotalMinor, o.currency, locale)}</td></>}</tr>)}</tbody>
+        <tbody>{o.items.map((i, k) => <tr key={k} className="border-b border-slate-200"><td className="py-2">{i.productNameSnapshot} {i.variantNameSnapshot && <span className="text-slate-500">({i.variantNameSnapshot})</span>}<span className="block font-mono text-[10px] text-slate-400">{i.skuSnapshot}</span>{i.note && <span className="block text-xs font-bold">📝 {i.note}</span>}</td><td className="py-2 text-center font-bold">{i.quantity}</td>{doc === "invoice" && <><td className="py-2 text-end">{money(i.unitPriceMinor, o.currency, locale)}</td><td className="py-2 text-end font-bold">{money(i.lineTotalMinor, o.currency, locale)}</td></>}</tr>)}</tbody>
       </table>
       {doc === "invoice" && (
         <dl className="ms-auto mt-4 w-64 space-y-1 text-sm">

@@ -53,9 +53,10 @@ public class InvoiceService {
         long total = ((Number) o.get("total_minor")).longValue();
         long vat = pct > 0 && included ? Math.round(total * pct / (100 + pct)) : 0;
         List<Map<String, Object>> lines = new ArrayList<>();
-        for (var i : jdbc.sql("SELECT product_name_snapshot, variant_name_snapshot, sku_snapshot, quantity, unit_price_minor, line_total_minor FROM commerce.order_items WHERE order_id = :o ORDER BY created_at").param("o", orderId).query().listOfRows()) {
+        for (var i : jdbc.sql("SELECT product_name_snapshot, variant_name_snapshot, sku_snapshot, quantity, unit_price_minor, line_total_minor, note FROM commerce.order_items WHERE order_id = :o ORDER BY created_at").param("o", orderId).query().listOfRows()) {
             Map<String, Object> l = new LinkedHashMap<>();
             l.put("name", i.get("product_name_snapshot")); l.put("variant", i.get("variant_name_snapshot")); l.put("sku", i.get("sku_snapshot")); l.put("quantity", i.get("quantity")); l.put("unitMinor", i.get("unit_price_minor")); l.put("totalMinor", i.get("line_total_minor"));
+            if (i.get("note") != null) l.put("note", i.get("note"));
             lines.add(l);
         }
         String addr = buyerAddress(o);

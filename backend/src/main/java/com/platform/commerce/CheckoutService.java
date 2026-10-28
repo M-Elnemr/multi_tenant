@@ -29,7 +29,13 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class CheckoutService {
-    public record Item(UUID variantId, int quantity) {}
+    /** One cart line: a variant, how many, and the customer's note on it («بدون بصل»); lines of the same variant with different notes stay separate. */
+    public record Item(UUID variantId, int quantity, String note) {
+        public Item(UUID variantId, int quantity) { this(variantId, quantity, null); }
+        public Item {
+            note = note == null || note.isBlank() ? null : note.trim().length() > 200 ? note.trim().substring(0, 200) : note.trim();
+        }
+    }
     public record AddressReq(String recipientName, String phone, String addressLine1, String addressLine2, String city,
                              String state, String district, String postalCode,
                              String governorateCode, String area, String landmark, String phone2) {}
@@ -97,8 +103,10 @@ public class CheckoutService {
 
         // Reserve stock. Variants are processed in id order so concurrent checkouts lock rows in the same order.
         Map<UUID, UUID> branchByVariant = new LinkedHashMap<>();
-        for (QuoteLine l : q.lines().stream().sorted(Comparator.comparing(QuoteLine::variantId)).toList())
-            branchByVariant.put(l.variantId(), inventory.reserve(tenantId, l.variantId(), l.quantity(), orderId));
+        Map<UUID, Integer> perVariant = new TreeMap<>();
+        for (QuoteLine l : q.lines()) perVariant.merge(l.variantId(), l.quantity(), Integer::sum);   // two lines of one variant (different notes) reserve together
+        for (var e : perVariant.entrySet())
+            branchByVariant.put(e.getKey(), inventory.reserve(tenantId, e.getKey(), e.getValue(), orderId));
 
         boolean card = "CARD".equals(r.paymentMethod());
         var risk = codRisk.assess(tenantId, phoneNorm, r.address().recipientName(), r.address().addressLine1(), r.address().governorateCode(), q.total(), q.lines().stream().mapToInt(QuoteLine::quantity).sum(), !card);
@@ -126,11 +134,11 @@ public class CheckoutService {
         for (QuoteLine l : q.lines())
             jdbc.sql("""
                     INSERT INTO commerce.order_items (order_id, tenant_id, product_id, variant_id, branch_id, sku_snapshot, product_name_snapshot, variant_name_snapshot,
-                        unit_price_minor, quantity, line_total_minor)
-                    VALUES (:o, :t, :p, :v, :b, :sku, :pn, :vn, :up, :q, :lt)
+                        unit_price_minor, quantity, line_total_minor, note)
+                    VALUES (:o, :t, :p, :v, :b, :sku, :pn, :vn, :up, :q, :lt, :note)
                     """).param("o", orderId).param("t", tenantId).param("p", l.productId()).param("v", l.variantId()).param("b", branchByVariant.get(l.variantId()))
                     .param("sku", l.sku()).param("pn", l.productName()).param("vn", l.variantName()).param("up", l.unitPrice()).param("q", l.quantity())
-                    .param("lt", l.unitPrice() * l.quantity()).update();
+                    .param("lt", l.unitPrice() * l.quantity()).param("note", l.note()).update();
 
         if (q.couponId() != null) {
             jdbc.sql("UPDATE commerce.coupons SET redemptions = redemptions + 1 WHERE id = :c").param("c", q.couponId()).update();
@@ -164,7 +172,7 @@ public class CheckoutService {
 
     // ---- pricing ------------------------------------------------------------------------------------------
 
-    record QuoteLine(UUID productId, UUID variantId, String sku, String productName, String variantName, long unitPrice, int quantity) {}
+    record QuoteLine(UUID productId, UUID variantId, String sku, String productName, String variantName, long unitPrice, int quantity, String note) {}
 
     record Quote(List<QuoteLine> lines, String currency, long subtotal, long discount, long shipping, long total, UUID couponId, String couponCode, long codFee, Integer etaMin, Integer etaMax) {}
 
@@ -173,9 +181,11 @@ public class CheckoutService {
         if (r.items() == null || r.items().isEmpty()) throw BusinessException.badRequest("CART_EMPTY", "Cart is empty");
         if (r.items().size() > 50) throw BusinessException.badRequest("CART_TOO_LARGE", "Too many items");
         TreeMap<UUID, Integer> wanted = new TreeMap<>();
+        LinkedHashMap<String, Item> byLine = new LinkedHashMap<>();   // a line is a variant plus its note: the same variant with another note is its own line
         for (Item i : r.items()) {
             if (i.variantId() == null || i.quantity() < 1 || i.quantity() > 1000) throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid quantity");
             wanted.merge(i.variantId(), i.quantity(), Integer::sum);
+            byLine.merge(i.variantId() + "|" + (i.note() == null ? "" : i.note()), i, (a, b) -> new Item(a.variantId(), a.quantity() + b.quantity(), a.note()));
         }
         if (lock) {
             if (!Set.of("CARD", "CASH_ON_DELIVERY").contains(r.paymentMethod()) || ("CARD".equals(r.paymentMethod()) && !policy.cardEnabled())) throw BusinessException.badRequest("PAYMENT_METHOD_DISABLED", "Unsupported payment method");
@@ -194,16 +204,19 @@ public class CheckoutService {
         List<QuoteLine> lines = new ArrayList<>();
         String currency = null;
         long subtotal = 0;
+        Map<UUID, Map<String, Object>> byVariant = new java.util.HashMap<>();
         for (var row : rows) {
-            UUID vid = (UUID) row.get("variant_id");
-            long price = ((Number) row.get("price_minor")).longValue();
-            int qty = wanted.get(vid);
             String cur = (String) row.get("currency");
             if (currency != null && !currency.equals(cur)) throw BusinessException.badRequest("MIXED_CURRENCY", "Items use different currencies");
             currency = cur;
+            byVariant.put((UUID) row.get("variant_id"), row);
+        }
+        for (Item i : byLine.values()) {
+            var row = byVariant.get(i.variantId());
+            long price = ((Number) row.get("price_minor")).longValue();
             String combo = (String) row.get("combo_key");
-            lines.add(new QuoteLine((UUID) row.get("product_id"), vid, (String) row.get("sku"), (String) row.get("name"), combo.isEmpty() ? null : combo.replace("|", ", ").replace("=", ": "), price, qty));
-            subtotal += price * qty;
+            lines.add(new QuoteLine((UUID) row.get("product_id"), i.variantId(), (String) row.get("sku"), (String) row.get("name"), combo.isEmpty() ? null : combo.replace("|", ", ").replace("=", ": "), price, i.quantity(), i.note()));
+            subtotal += price * i.quantity();
         }
 
         long shipping = 0, codFee = 0;
@@ -276,7 +289,7 @@ public class CheckoutService {
         out.put("etaMinDays", q.etaMin());
         out.put("etaMaxDays", q.etaMax());
         out.put("totalMinor", q.total());
-        out.put("lines", q.lines().stream().map(l -> Map.of("variantId", l.variantId(), "productName", l.productName(), "unitPriceMinor", l.unitPrice(), "quantity", l.quantity())).toList());
+        out.put("lines", q.lines().stream().map(l -> { Map<String, Object> m = new LinkedHashMap<>(Map.of("variantId", l.variantId(), "productName", l.productName(), "unitPriceMinor", l.unitPrice(), "quantity", l.quantity())); if (l.note() != null) m.put("note", l.note()); return (Map<String, Object>) m; }).toList());
         return out;
     }
 

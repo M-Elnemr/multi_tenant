@@ -227,7 +227,7 @@ public class OrderService {
                 .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Order not found"));
         Map<String, Object> out = Rows.camel(o);
         out.put("shippingAddress", Rows.json(o.get("shipping_address")));
-        out.put("items", Rows.camel(jdbc.sql("SELECT product_id, variant_id, sku_snapshot, product_name_snapshot, variant_name_snapshot, unit_price_minor, quantity, discount_minor, line_total_minor FROM commerce.order_items WHERE order_id = :o ORDER BY created_at, id")
+        out.put("items", Rows.camel(jdbc.sql("SELECT product_id, variant_id, sku_snapshot, product_name_snapshot, variant_name_snapshot, unit_price_minor, quantity, discount_minor, line_total_minor, note FROM commerce.order_items WHERE order_id = :o ORDER BY created_at, id")
                 .param("o", orderId).query().listOfRows()));
         out.put("history", Rows.camel(jdbc.sql("SELECT from_status, new_status, reason, created_at FROM commerce.order_status_history WHERE order_id = :o ORDER BY created_at, id").param("o", orderId).query().listOfRows()));
         out.put("customerHistory", phoneFlags.stats(tenantId, (String) o.get("customer_phone_snapshot")));

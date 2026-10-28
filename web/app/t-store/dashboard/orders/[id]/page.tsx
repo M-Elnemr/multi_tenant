@@ -19,7 +19,7 @@ import { dateTime, money } from "@/lib/format";
 type Detail = {
   channel?: string;
   id: string; orderNumber: string; status: string; paymentStatus: string; paymentMethod: string; currency: string; subtotalMinor: number; discountMinor: number; shippingMinor: number; totalMinor: number; customerNameSnapshot: string; customerPhoneSnapshot: string; whatsappNumber?: string | null; whatsappConfirmedAt?: string | null; notes?: string; createdAt: string;
-  items: { productNameSnapshot: string; variantNameSnapshot?: string; sku_snapshot?: string; skuSnapshot?: string; unitPriceMinor: number; quantity: number; lineTotalMinor: number }[];
+  items: { productNameSnapshot: string; variantNameSnapshot?: string; sku_snapshot?: string; skuSnapshot?: string; unitPriceMinor: number; quantity: number; lineTotalMinor: number; note?: string }[];
   history: { newStatus: string; reason?: string; createdAt: string }[];
   payments: { id: string; kind: string; method: string; amountMinor: number; status: string }[];
   shippingAddress: Record<string, string>;
@@ -80,7 +80,7 @@ export default function StoreOrder({ params }: { params: Promise<{ id: string }>
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <ul className="divide-y text-sm">{data.items.map((i, k) => (
-            <li key={k} className="flex justify-between gap-3 py-3"><div><p className="font-medium">{i.productNameSnapshot}</p><p className="text-slate-500">{i.variantNameSnapshot} · {i.skuSnapshot ?? i.sku_snapshot}</p><p className="text-slate-500">{i.quantity} × {money(i.unitPriceMinor, data.currency, locale)}</p></div><b>{money(i.lineTotalMinor, data.currency, locale)}</b></li>
+            <li key={k} className="flex justify-between gap-3 py-3"><div><p className="font-medium">{i.productNameSnapshot}</p><p className="text-slate-500">{i.variantNameSnapshot} · {i.skuSnapshot ?? i.sku_snapshot}</p><p className="text-slate-500">{i.quantity} × {money(i.unitPriceMinor, data.currency, locale)}</p>{i.note && <p className="mt-1 rounded-lg bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800">📝 {i.note}</p>}</div><b>{money(i.lineTotalMinor, data.currency, locale)}</b></li>
           ))}</ul>
           <dl className="mt-3 space-y-1 border-t pt-3 text-sm">
             <div className="flex justify-between"><dt>{t("checkout.subtotal")}</dt><dd>{money(data.subtotalMinor, data.currency, locale)}</dd></div>

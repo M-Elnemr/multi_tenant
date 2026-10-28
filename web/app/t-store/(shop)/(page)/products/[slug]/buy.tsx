@@ -30,6 +30,7 @@ export function ProductBuy({ product, whatsapp, storeName, isOpen, returnDays }:
   const { me } = useMe();
   const [choice, setChoice] = useState<Record<string, string>>(() => Object.fromEntries(product.options.map((o) => [o.name, o.values[0]])));
   const [qty, setQty] = useState(1);
+  const [note, setNote] = useState("");
   const [added, setAdded] = useState(false);
   const [tab, setTab] = useState<"details" | "specs" | "size" | "delivery">("details");
 
@@ -52,7 +53,8 @@ export function ProductBuy({ product, whatsapp, storeName, isOpen, returnDays }:
 
   const add = (go?: boolean) => {
     if (!variant || !isOpen) return;
-    addToCart({ variantId: variant.id, productId: product.id, slug: product.slug, name: product.name, variantLabel: label, unitPriceMinor: variant.priceMinor, quantity: qty, imageUrl: mediaUrl(shown[0], "thumb") });
+    addToCart({ variantId: variant.id, productId: product.id, slug: product.slug, name: product.name, variantLabel: label, unitPriceMinor: variant.priceMinor, quantity: qty, imageUrl: mediaUrl(shown[0], "thumb"), note: note.trim() || undefined });
+    setNote("");
     if (go) { router.push("/checkout"); return; }
     setAdded(true);
     setTimeout(() => setAdded(false), 2500);
@@ -107,6 +109,7 @@ export function ProductBuy({ product, whatsapp, storeName, isOpen, returnDays }:
             <button onClick={() => add()} disabled={!inStock || !isOpen} className="s-btn min-w-48 flex-1 !py-3.5">{!isOpen ? t("shop.closedNow") : inStock ? `🛒 ${t("shop.addToCart")}` : t("shop.outOfStock")}</button>
             <button onClick={() => wish.run()} aria-label={t("shop.wishlist")} className="s-btn s-btn-ghost !h-12 !w-12 !p-0 text-lg">♡</button>
           </div>
+          {inStock && isOpen && <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} placeholder={t("shop.itemNote")} aria-label={t("shop.itemNote")} className="w-full rounded-2xl border border-[var(--s-line)] bg-white px-4 py-3 text-sm outline-none focus:border-[var(--brand)]" />}
           {inStock && isOpen && <button onClick={() => add(true)} className="s-btn s-btn-dark w-full !py-3.5">{t("shop.buyNow")}</button>}
           {variant && inStock && variant.available <= 5 && <p className="text-sm font-bold text-amber-700">🔥 {t("shop.onlyLeft", { n: variant.available })}</p>}
           {added && <div className="animate-pop rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">✓ {t("shop.added")}</div>}

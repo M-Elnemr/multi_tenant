@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { api, newKey } from "@/lib/client";
 import { reportOrder } from "@/lib/ab";
-import { clearCart, useCart } from "@/lib/cart";
+import { clearCart, lineKey, useCart } from "@/lib/cart";
 import { money } from "@/lib/format";
 import { GOVERNORATES } from "@/lib/governorates";
 import { useAction, useApi, useMe } from "@/components/hooks";
@@ -67,7 +67,7 @@ export default function Checkout() {
   const codOk = (profile.data?.paymentMethods ?? []).some((m) => m.method === "CASH_ON_DELIVERY");
   const zone = zonesMode ? profile.data?.shippingZones.find((z) => z.governorateCodes.includes(addr.governorateCode)) : undefined;
 
-  const items = useMemo(() => lines.map((l) => ({ variantId: l.variantId, quantity: l.quantity })), [lines]);
+  const items = useMemo(() => lines.map((l) => ({ variantId: l.variantId, quantity: l.quantity, note: l.note || undefined })), [lines]);
   const body = { items, shippingMethodId: shippingId, paymentMethod: "CASH_ON_DELIVERY", whatsappConsent: waConsent || undefined, couponCode: coupon.trim() || undefined, notes: notes || undefined,
     address: needsAddress ? addr : { recipientName: addr.recipientName, phone: addr.phone, phone2: addr.phone2 } };
 
@@ -166,7 +166,7 @@ export default function Checkout() {
           <h2 className="text-lg font-extrabold">{t("checkout.summary")}</h2>
           <ul className="max-h-56 space-y-3 overflow-y-auto">
             {lines.map((l) => (
-              <li key={l.variantId} className="flex items-center gap-3 text-sm">
+              <li key={lineKey(l)} className="flex items-center gap-3 text-sm">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 {l.imageUrl ? <img src={l.imageUrl} alt="" className="h-12 w-12 rounded-xl bg-[var(--s-soft)] object-cover" /> : <span className="h-12 w-12 rounded-xl bg-[var(--s-soft)]" />}
                 <span className="min-w-0 flex-1"><span className="line-clamp-1 font-bold">{l.name}</span><span className="text-xs text-[var(--s-mute)]">{l.variantLabel} × {l.quantity}</span></span>

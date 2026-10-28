@@ -163,7 +163,7 @@ class OrderDetail extends StatelessWidget {
                 ]),
               ),
             Padding(padding: const EdgeInsets.fromLTRB(4, 18, 4, 6), child: Text(ar ? 'المنتجات' : 'Items', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16))),
-            for (final it in items) Card(child: ListTile(title: Text('${it['productNameSnapshot']}${(it['variantNameSnapshot'] as String?)?.isNotEmpty == true ? ' · ${it['variantNameSnapshot']}' : ''}', style: const TextStyle(fontWeight: FontWeight.w700)), subtitle: Text('${it['quantity']} × ${s.money(it['unitPriceMinor'] as num, cur)}'), trailing: Text(s.money(it['lineTotalMinor'] as num, cur), style: const TextStyle(fontWeight: FontWeight.w900)))),
+            for (final it in items) Card(child: ListTile(title: Text('${it['productNameSnapshot']}${(it['variantNameSnapshot'] as String?)?.isNotEmpty == true ? ' · ${it['variantNameSnapshot']}' : ''}', style: const TextStyle(fontWeight: FontWeight.w700)), subtitle: Text('${it['quantity']} × ${s.money(it['unitPriceMinor'] as num, cur)}${(it['note'] as String?)?.isNotEmpty == true ? '\n📝 ${it['note']}' : ''}'), trailing: Text(s.money(it['lineTotalMinor'] as num, cur), style: const TextStyle(fontWeight: FontWeight.w900)))),
             Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(children: [
               kv(ar ? 'المجموع' : 'Subtotal', s.money(o['subtotalMinor'] as num, cur)),
               if ((o['discountMinor'] as num? ?? 0) > 0) kv(ar ? 'الخصم' : 'Discount', s.money(o['discountMinor'] as num, cur)),
