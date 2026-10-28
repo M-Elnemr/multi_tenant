@@ -56,4 +56,11 @@ class ChatTextTest {
         assertThat(ChatService.noLaughter("هههه لأ يا فندم مش دهب 😄😂")).isEqualTo("لأ يا فندم مش دهب 😄");
         assertThat(ChatService.noLaughter("وجه الشبه")).isEqualTo("وجه الشبه");
     }
+
+    @Test
+    void cardIsNotOfferedWhenTheShopTakesOnlyCash() {
+        assertThat(ReplyGuard.violations("طريقة الدفع كاش عند الاستلام أو بطاقة", "- Payment methods: CASH_ON_DELIVERY. Card payment is NOT available.")).isNotEmpty();
+        assertThat(ReplyGuard.violations("تقدر تدفع كاش أو بطاقة", "- Payment methods: CASH_ON_DELIVERY, CARD. The customer may pay كاش أو بطاقة (cash or card).")).isEmpty();
+        assertThat(ReplyGuard.violations("للأسف الفيزا مش متاحة، الدفع كاش عند الاستلام", "")).isEmpty();
+    }
 }

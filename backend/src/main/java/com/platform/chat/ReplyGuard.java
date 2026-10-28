@@ -26,6 +26,8 @@ final class ReplyGuard {
                     + "|(?:لو|إذا|اذا)\\s+(?:طلبت|طلبتي|اكدت|أكدت|أكدتي|اكدتي|اخترت|اخترتي|حجزت|حجزتي)[^.!؟?\\n]{0,15}(?:دلوقتي|حالا|حالاً|النهارده|النهاردة)[^.!؟?\\n]{0,45}(?:سعر|خصم)"
                     + "|(?:better price|discount|deal)[^.!?\\n]{0,40}if you (?:order|buy|confirm|book)[^.!?\\n]{0,15}(?:now|today|right away)"),
             new Rule("a limited-time offer", "(?:النهارده بس|النهاردة بس|لفترة محدودة|لمدة محدودة|العرض هيخلص|آخر يوم|اخر يوم|today only|limited time|offer ends)"),
+            // a payment method offered that the shop data does not list (card when only cash on delivery is enabled)
+            new Rule("a payment method the shop does not offer", "(?:أو|او|ولا)\\s*(?:بال)?(?:بطاقة|بطاقه|كارت|فيزا|visa|card|credit card)|(?:or|and)\\s+(?:by\\s+)?(?:card|visa)"),
             // invented social proof
             new Rule("invented popularity or reviews", "(?:كتير من العملاء|العملاء بيحبو|العملاء بيطلبو|عليه طلب كبير|الأكثر طلب|الأكتر طلب|بيخلص بسرعة|كل اللي اشتروه|customers love|many customers|best ?seller|sells out fast)"),
             // product claims a seller must not make up: they are fine only when the product description itself says so

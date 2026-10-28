@@ -650,7 +650,8 @@ public class ChatService {
                 - If the customer asks for something outside shopping from this shop, politely steer back. Never ask for card numbers or passwords.
                 """);
         p.append(SalesPlaybook.TEXT);
-        p.append("MAXIMUM DISCOUNT YOU MAY GIVE: ").append(s.get("maxDiscountPct")).append("%.\n\n");
+        int maxPct = ((Number) s.get("maxDiscountPct")).intValue();
+        p.append("MAXIMUM DISCOUNT YOU MAY GIVE: ").append(maxPct).append("%.").append(maxPct == 0 ? " This shop gives NO discounts: never offer, promise or hint at one (not for quantity either); say kindly the price is final and offer value or a cheaper option." : "").append("\n\n");
         p.append(shopFacts(tenantId, profile));
         p.append(shopCatalog(tenantId));
         var global = lessons(null);
@@ -797,7 +798,7 @@ public class ChatService {
         if (profile.get("minOrderMinor") instanceof Number n && n.longValue() > 0) b.append("- Minimum order: ").append(major(n.longValue())).append("\n");
         var pay = new ArrayList<String>();
         for (var m : settings.paymentMethods(tenantId)) if (Boolean.TRUE.equals(m.get("enabled")) && (!"CARD".equals(m.get("method")) || policy.cardEnabled())) pay.add(String.valueOf(m.get("method")));
-        b.append("- Payment methods you can offer (use these exact codes): ").append(pay.isEmpty() ? "none" : String.join(", ", pay)).append(". CASH_ON_DELIVERY means pay the courier on delivery.\n");
+        b.append("- Payment methods you can offer (use these exact codes): ").append(pay.isEmpty() ? "none" : String.join(", ", pay)).append(". CASH_ON_DELIVERY means pay the courier on delivery.").append(pay.contains("CARD") ? " The customer may pay كاش أو بطاقة (cash or card)." : " Card payment is NOT available.").append("\n");
         for (var sm : settings.shippingMethods(tenantId, true)) b.append("- Delivery option: ").append(sm.get("name")).append(" (").append(sm.get("type")).append(")")
                 .append(sm.get("feeMinor") instanceof Number f && f.longValue() > 0 && !"ZONES".equals(sm.get("type")) ? ", fee " + major(f.longValue()) : "").append("\n");
         for (var z : fulfilment.zones(tenantId, true)) b.append("- Delivery zone \"").append(z.get("name")).append("\": governorates ").append(z.get("governorateCodes")).append(", fee ").append(major(((Number) z.get("feeMinor")).longValue()))
@@ -831,7 +832,9 @@ public class ChatService {
             }
             var top = search.topProducts(tenantId, 30);
             if (!top.isEmpty()) {
-                b.append("Best sellers, الأكثر طلباً (name [slug] (price)): ");
+                boolean sales = jdbc.sql("SELECT coalesce(max(sold_count), 0) > 0 FROM commerce.products WHERE tenant_id = :t AND status = 'ACTIVE'").param("t", tenantId).query(Boolean.class).single();
+                b.append(sales ? "Best sellers, الأكثر طلباً, most sold first (name [slug] (price)): "
+                               : "Some products (name [slug] (price)); there is no sales record yet, so if asked what sells most, say honestly these are the shop's picks and recommend by what the customer needs: ");
                 for (var t : top) b.append(t.get("name")).append(" [").append(t.get("slug")).append("]").append(t.get("minMinor") == null ? "" : " (" + price(t.get("minMinor")) + ")").append("; ");
                 b.append("\n");
             }
