@@ -1056,6 +1056,16 @@ public class ChatService {
             if (seen.size() < 3 && words.size() > 1) for (String w : words) for (var r : find(ctx.tenantId(), w, null, max)) seen.putIfAbsent(r.get("slug"), r);
             rows = seen.values().stream().limit(3).toList();
         }
+        if (rows.isEmpty() && max != null) {   // «أرخص من ٣٨٠٠»: nothing at that price is not "we have none" — show the cheapest of that kind
+            var any = find(ctx.tenantId(), q, null, null);
+            if (any.isEmpty() && broad != null) any = find(ctx.tenantId(), broad, null, null);
+            if (!any.isEmpty()) {
+                List<Map<String, Object>> out2 = new ArrayList<>();
+                for (var r : any) { Map<String, Object> m = obj("name", r.get("name"), "slug", r.get("slug"), "price", major(r.get("minPriceMinor")), "inStock", r.get("inStock")); describe(m, r.get("audience"), r.get("taxonomyId"), r.get("shortDescription")); out2.add(m);
+                    ctx.products().add(obj("name", r.get("name"), "slug", r.get("slug"), "priceMinor", r.get("minPriceMinor"), "compareAtMinor", r.get("compareAtMinor"), "currency", r.get("currency"), "imageUrl", r.get("imageUrl"), "imageMediaBase", r.get("imageMediaBase"), "imageMediaExt", r.get("imageMediaExt"))); }
+                return obj("products", out2, "count", out2.size(), "note", "We DO have this kind of item, but nothing at or under that price: say so honestly, give the price of what we have, and offer it (or a discount within your maximum if the customer hesitates).");
+            }
+        }
         if (rows.isEmpty() && q != null)   // nothing like it: no unrelated products to push, the catalog tells the model what the shop does have
             return obj("products", List.of(), "count", 0, "note", "The shop has nothing matching «" + q + "». Say honestly and kindly that we do not have it. Then, only if the SHOP CATALOG has a RELATED kind of item "
                     + "(for shoes or jackets: clothes for the same person; for a kitchen item: other kitchen items), offer it in one line; never offer unrelated things (pillows or bedsheets to someone asking for a jacket). If nothing is related, ask what else they are looking for.");

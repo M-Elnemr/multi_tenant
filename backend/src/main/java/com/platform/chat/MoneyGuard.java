@@ -22,8 +22,9 @@ final class MoneyGuard {
     private static final String CUR = "(?:جنيه|جنية|جنيهات|ج\\.\\s?م|ريال|درهم|دينار|دولار|EGP|SAR|AED|USD|KWD|LE|L\\.E|pounds?|riyals?|dirhams?|dollars?|\\$)";
     private static final Pattern NUM_THEN_CUR = Pattern.compile("(?<![\\w.])(" + NUM + ")\\s*(?:" + CUR + "(?![\\p{L}])|ج(?![\\p{L}\\p{N}]))", Pattern.CASE_INSENSITIVE);
     private static final Pattern CUR_THEN_NUM = Pattern.compile("(?<![\\p{L}])(?:EGP|SAR|AED|USD|KWD|LE|L\\.E|\\$)\\s*(" + NUM + ")", Pattern.CASE_INSENSITIVE);
-    private static final Pattern WORD_THEN_NUM = Pattern.compile("(?:الإجمالي|الاجمالي|إجمالي|اجمالي|المجموع|مجموع|الشحن|شحن|التوصيل|الدليفري|الديلفري|بسعر|السعر|سعره|سعرها|total|subtotal|shipping|delivery|price|cost)[^0-9٠-٩۰-۹\\n]{0,6}(" + NUM + ")",
-            Pattern.CASE_INSENSITIVE);
+    private static final Pattern WORD_THEN_NUM = Pattern.compile("(?:الإجمالي|الاجمالي|إجمالي|اجمالي|المجموع|مجموع|الشحن|شحن|التوصيل|الدليفري|الديلفري|بسعر|السعر|سعره|سعرها|total|subtotal|shipping|delivery|price|cost|=)[^0-9٠-٩۰-۹\\n]{0,6}(" + NUM + ")"
+            // a sum written by the model («يعني الاتنين 1250», «يبقى 1750»): only a sum a tool returned is allowed
+            + "|(?:يعني|يبقى|هيبقى|بيبقى|الاتنين|التلاتة|مع بعض|كلهم|altogether|in total)[^0-9٠-٩۰-۹\\n.؟?!]{0,12}(" + NUM + ")", Pattern.CASE_INSENSITIVE);
     /** A number the keyword path found is not money when it is a count, a size, a number of days or a range ("delivery 2-4 days", "shipping 3 pieces"). */
     private static final Pattern NOT_MONEY_AFTER = Pattern.compile("^\\s*(?:[-\u2013]\\s*[0-9\u0660-\u0669]|أيام|ايام|يوم|days?|hours?|ساع|قطع|piece|pcs|%|مقاس|size|سنة|سنين|years?)", Pattern.CASE_INSENSITIVE);
     private static final Pattern ANY_NUM = Pattern.compile("(?<![\\w.])(" + NUM + ")");
@@ -49,14 +50,15 @@ final class MoneyGuard {
         for (Pattern p : List.of(NUM_THEN_CUR, CUR_THEN_NUM, WORD_THEN_NUM)) {
             Matcher m = p.matcher(text);
             while (m.find()) {
-                int s = m.start(1), e = m.end(1);
+                int g = m.group(1) != null ? 1 : 2;
+                int s = m.start(g), e = m.end(g);
                 if (text.substring(e).stripLeading().startsWith("%")) continue;
                 if (p == WORD_THEN_NUM && NOT_MONEY_AFTER.matcher(text.substring(e)).find()) continue;
-                long c = cents(m.group(1));
+                long c = cents(m.group(g));
                 if (c < 0) continue;
                 boolean dup = false;
                 for (Amount a : out) if (a.start == s) { dup = true; break; }
-                if (!dup) out.add(new Amount(c, m.group(1), s, e));
+                if (!dup) out.add(new Amount(c, m.group(g), s, e));
             }
         }
         return out;
@@ -97,7 +99,9 @@ final class MoneyGuard {
         boolean allows(long cents) {
             if (exact.contains(cents)) return true;
             // a price times a quantity, or a price with the discount the shop allows: the system itself says these are fine, within one pound for rounding
-            for (long base : exact.subSet(100L, 100_000_00L)) {
+            var known = exact.subSet(100L, 100_000_00L);
+            if (known.size() <= 400) for (long a : known) if (exact.contains(a + cents) && cents > 0) return true;   // a saving: the price before minus the price now
+            for (long base : known) {
                 for (int q = 2; q <= 10; q++) if (Math.abs(base * q - cents) <= 50) return true;
                 for (int d = 1; d <= maxDiscountPct; d++) if (Math.abs(base * (100 - d) / 100 - cents) <= 100) return true;
             }
