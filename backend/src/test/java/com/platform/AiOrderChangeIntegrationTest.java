@@ -118,4 +118,25 @@ class AiOrderChangeIntegrationTest extends IntegrationTestBase {
         chat.reply(tenant, "WEB", other, null, "انا عاوز بنطلون");
         assertThat(FakeAiProvider.lastSystem).contains("MAN (how they speak of themselves)");
     }
+
+    @Test
+    void aSummaryTheModelWritesItselfIsNeverConfirmedByAYes() throws Exception {
+        Tenant t = onboard("STORE");
+        String shirt = product(t, "Shirt");
+        UUID tenant = id(t);
+        String ext = "own-summary-" + uniq();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepare(List.of(shirt), Map.of())));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ok"));
+        chat.reply(tenant, "WEB", ext, null, "احجز القميص");
+        // the customer changes the address; the model writes its own "final summary" with the confirmation question instead of calling prepare_order
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام، عدلت العنوان.\nملخص الأوردر النهائي: قميص × 1\nأأكد الأوردر؟"));
+        chat.reply(tenant, "WEB", ext, null, "غير العنوان لشارع فوزي معاذ");
+        FakeAiProvider.RESULTS.clear();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("place_order", Map.of()));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("هجهزلك الملخص بالعنوان الجديد"));
+        var r = chat.reply(tenant, "WEB", ext, null, "تمام");
+        assertThat(r.order()).isNull();
+        assertThat(FakeAiProvider.RESULTS.get(0).result().get("error").toString()).contains("latest summary");
+        assertThat(orders(tenant)).isEmpty();
+    }
 }

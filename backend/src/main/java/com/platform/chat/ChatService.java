@@ -78,6 +78,7 @@ public class ChatService {
     private String polish(String text, UUID conv, UUID tenantId, String channel, String externalId, UUID clientId) {
         if (text == null || text.isBlank()) return text;
         String t = text.replaceAll("[\\p{IsHan}\\p{IsHiragana}\\p{IsKatakana}\\p{IsHangul}\\p{IsCyrillic}]", "")
+                .replaceAll("\\s*\\[[\\p{L}\\p{N}-]{3,}\\]", "")   // a catalog slug («[بنطلون-جينز-سليم]») is never for the customer
                 .replaceAll("(?<=\\p{IsArabic})[a-z]{3,}(?=\\s|$|\\p{IsArabic})", "");   // lowercase Latin glued to an Arabic word («أursic») is a slip; sizes after «و» («وXL») stay
         t = t.replace("محتاجة منك", "محتاج منك").replace("محتاجة أعرف", "محتاج أعرف").replace("محتاجة اعرف", "محتاج اعرف").replace("فاهماك", "فاهمك").replace("فاهماكي", "فاهمك")
                 .replace("مش متابعة", "مش متابع").replace("متأكدة إن", "متأكد إن");
@@ -322,7 +323,7 @@ public class ChatService {
         String answer = null;
         // A plain "yes / تمام / ok" to the summary places the order right here: the model is never trusted to remember to do it, or to say it was done.
         // ...but only when the customer is answering the summary itself: after any other message the summary may be out of date, and the model shows a new one first
-        if (isConfirmation(text) && isSummary(lastAssistant(conv)) && jdbc.sql("SELECT pending -> 'items' IS NOT NULL FROM chat.conversations WHERE id = :c").param("c", conv).query(Boolean.class).single()) {
+        if (isConfirmation(text) && summaryIsLast(conv) && jdbc.sql("SELECT pending -> 'items' IS NOT NULL FROM chat.conversations WHERE id = :c").param("c", conv).query(Boolean.class).single()) {
             Map<String, Object> placed = runTool(ctx, new ToolCall("place_order", Map.of()));
             boolean arabic = arabicConversation(conv);
             answer = placed.get("error") != null ? failedText(arabic, String.valueOf(placed.get("error"))) : confirmedText(arabic, orderBox[0], placed);
@@ -379,7 +380,8 @@ public class ChatService {
         ctx.products().removeIf(p -> !seenCards.add(p.get("slug")));   // one card per product
         String replyWords = FastAnswers.norm(answer);
         if (!messaging(channel)) ctx.products().removeIf(p -> !Boolean.TRUE.equals(p.get("send")) && !replyWords.contains(FastAnswers.norm(String.valueOf(p.get("name")))));   // the website shows cards only for what the reply is about
-        jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x)").param("c", conv).param("x", answer).update();
+        long saved = jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x) RETURNING id").param("c", conv).param("x", answer).query(Long.class).single();
+        if (ctx.summary()[0] != null) markSummary(conv, saved);
         jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();
         return new Reply(conv, answer, orderBox[0], ctx.products());
     }
@@ -419,7 +421,8 @@ public class ChatService {
         if (!"TEST".equals(channel)) { seller.count(tenantId); usageLog.record(tenantId, "CHAT", channel, conv, false, "[owner answer] " + question, rounds, routed.code(), routed.fellBack()); }
         if (answer == null || answer.isBlank()) return null;
         answer = oneMessage(answer);
-        jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x)").param("c", conv).param("x", answer).update();
+        long saved = jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x) RETURNING id").param("c", conv).param("x", answer).query(Long.class).single();
+        if (ctx.summary()[0] != null) markSummary(conv, saved);
         jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();
         return new Reply(conv, answer, orderBox[0], ctx.products());
     }
@@ -517,6 +520,7 @@ public class ChatService {
     private static final Pattern FOR_ME = Pattern.compile("(?<![\\p{L}])(?:ليا|ليّا|لنفسي|عشاني|علشاني|لي انا|ليه انا|for me|for myself)(?![\\p{L}])", Pattern.CASE_INSENSITIVE);
     private static final Pattern NOT_HAVE = Pattern.compile("(?:مش\\s+(?:موجود|موجوده|موجودة|متوفر|متوفره|متوفرة|متاح|متاحه|متاحة)|معندناش|ماعندناش|مش\\s+عندنا|مفيش\\s+عندنا|مش\\s+عندهم|we\\s+(?:don't|do not)\\s+have|not\\s+available)", Pattern.CASE_INSENSITIVE);
     private static final java.util.List<String> EXAMPLE_LINES = examples();
+    private static final Pattern ONLY_OPTIONS = Pattern.compile("(?:الألوان|الالوان|المقاسات|اللون)\\s+(?:المتاحة|المتاحه|المتوفرة|المتوفره|الموجودة|الموجوده)[^.؟?!\\n]{0,40}(?:فقط|بس)|(?:لونه|لونها|متاح|متاحة|متوفر|موجود)\\s+[^.؟?!\\n]{0,15}(?:بس|فقط)|(?:بقطعة|بقطعه)\\s+واحدة|معنديش\\s+معلومات\\s+(?:دقيقة\\s+)?عن\\s+(?:المقاسات|الألوان|المخزون)");
 
     private static java.util.List<String> examples() {
         java.util.List<String> out = new java.util.ArrayList<>();
@@ -538,6 +542,7 @@ public class ChatService {
             if (FOR_ME.matcher(last).find()) problems.add("The customer already said it is for themself: never ask who it is for; recommend for them.");
             else if (!searched) problems.add("You asked who it is for before searching: call search_products now; ask only if the results are for several groups (men, women, kids) and nothing tells.");
         }
+        if (!searched && !NOT_HAVE.matcher(answer).find() && ONLY_OPTIONS.matcher(answer).find()) problems.add("You stated which colors, sizes or quantities exist without checking in this turn: call search_products or get_product and answer from allOptions and inStockOptions.");
         if (!searched && NOT_HAVE.matcher(answer).find()) problems.add("You said we do not have something without searching in this turn: call search_products for exactly what the customer asked (also by color and size) and answer from the result.");
         String norm = FastAnswers.norm(answer);
         if (EXAMPLE_LINES.stream().anyMatch(norm::contains)) problems.add("You copied an example sentence from your instructions word for word; it may not fit. Answer THIS customer's message in your own words.");
@@ -642,6 +647,19 @@ public class ChatService {
             else if (!FILLER.contains(w)) return false;
         }
         return yes;
+    }
+
+    /** Remembers which message is the code-written summary of the pending order: only a "yes" right after THAT message confirms it (a summary the model wrote itself never does). */
+    private void markSummary(UUID conv, long messageId) {
+        jdbc.sql("UPDATE chat.conversations SET pending = jsonb_set(pending, '{summaryMsgId}', to_jsonb(CAST(:m AS bigint))) WHERE id = :c AND pending IS NOT NULL").param("m", messageId).param("c", conv).update();
+    }
+
+    /** Is the newest assistant message the code-written summary of the pending order? */
+    private boolean summaryIsLast(UUID conv) {
+        return jdbc.sql("""
+                SELECT coalesce(c.pending ->> 'summaryMsgId' = (SELECT max(m.id)::text FROM chat.messages m WHERE m.conversation_id = c.id AND m.role = 'assistant'), FALSE)
+                FROM chat.conversations c WHERE c.id = :c
+                """).param("c", conv).query(Boolean.class).optional().orElse(false);
     }
 
     /** Is this assistant message the code-written order summary (the one a "yes" confirms)? */
@@ -1480,7 +1498,7 @@ public class ChatService {
         Map<String, Object> p;
         try { p = JSON.readValue(row.get("pending").toString(), new TypeReference<LinkedHashMap<String, Object>>() {}); } catch (Exception e) { return obj("error", "Please prepare the order again"); }
         if (((Number) p.get("userMsgId")).longValue() >= ctx.userMsgId()) return obj("error", "The customer has not confirmed yet. Show the summary and wait for their reply.");
-        if (!isSummary(lastAssistant(ctx.conversationId())))
+        if (!summaryIsLast(ctx.conversationId()))
             return obj("error", "The customer is not answering the latest summary (other messages came after it, so it may be out of date). Call prepare_order with the COMPLETE list of everything they want and let them confirm that summary.");
         UUID replaces = p.get("replaces") == null ? null : UUID.fromString(String.valueOf(p.get("replaces")));
         String replacesNo = p.get("replacesNumber") == null ? null : String.valueOf(p.get("replacesNumber"));
