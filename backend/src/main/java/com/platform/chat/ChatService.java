@@ -709,7 +709,7 @@ public class ChatService {
             problems.put("ADD_WITHOUT_OPTIONS", "The customer wants to order the product you just talked about: ask in one message for every option they have not chosen yet (size, colour, bread, spice...), exactly as the product has them; ask for the delivery details only after that.");
         if (ADD_IT.matcher(FastAnswers.norm(last)).matches() && GUEST.matcher(FastAnswers.norm(answer)).find())
             problems.put("ADD_READ_AS_GUEST", "«ضيفه» means \"add it to my order\" (the product you just talked about), not a guest: ask for the options they did not choose yet, then add it.");
-        if (!prepared && ctx.summary()[0] == null && FAKE_SUMMARY.matcher(FastAnswers.norm(answer)).find())
+        if (!prepared && ctx.summary()[0] == null && looksLikeSummary(answer))
             problems.put("FAKE_SUMMARY", "Never write an order summary or ask to confirm the order yourself: call prepare_order with the items and details, and the customer gets the real summary from it (ask only for what is missing).");
         if (detailsGivenNoSummary(ctx, turns, rounds, last, answer))
             problems.put("NO_SUMMARY", "The customer has just given their name, address and phone: call prepare_order now with the items they chose and these details, so they get the order summary (ask only for something really missing, such as a size or color).");
@@ -722,7 +722,7 @@ public class ChatService {
         if (problems.isEmpty()) return answer;
         for (String kind : problems.keySet()) events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:" + kind, problems.get(kind), null);
         boolean phoneDoubt = PHONE_DOUBT.matcher(answer).find() && customerGaveMobile(turns);
-        if (!canRewrite(rounds)) return factsFixed(last, falseCancel ? cancelFallback(answer) : phoneDoubt ? phoneFallback(answer) : answer, shopData, touched);
+        if (!canRewrite(rounds)) return factsFixed(last, falseCancel ? cancelFallback(answer) : phoneDoubt ? phoneFallback(answer) : problems.containsKey("FAKE_SUMMARY") ? withoutSelfSummary(answer) : answer, shopData, touched);
         log.warn("Rule check: {} (conversation {}): {}", problems.values(), ctx.conversationId(), answer);
         try {
             turns.add(Turn.model(answer));
@@ -732,6 +732,7 @@ public class ChatService {
             if (retry == null || retry.isBlank()) return factsFixed(last, falseCancel ? cancelFallback(answer) : phoneDoubt ? phoneFallback(answer) : answer, shopData, touched);
             if (CANCEL_CLAIM.matcher(retry).find() && !orderCancelled(ctx)) return cancelFallback(retry);
             if (PHONE_DOUBT.matcher(retry).find() && customerGaveMobile(turns)) return phoneFallback(retry);
+            if (ctx.summary()[0] == null && !rounds.stream().anyMatch(r -> r.tools().contains("prepare_order")) && looksLikeSummary(retry)) retry = withoutSelfSummary(retry);
             // still «سجلت طلبك» with no order: the words go, the rest of the reply stays
             if (ctx.order()[0] == null && !hasOrderOnFile(ctx)) retry = ORDER_CLAIM.matcher(retry).replaceAll(english(retry) ? "noted" : "تمام،");
             List<String> touchedNow = ctx.products().stream().map(p -> String.valueOf(p.get("slug"))).distinct().toList();
@@ -769,6 +770,24 @@ public class ChatService {
     static final Pattern OPTION_ASK = Pattern.compile("(?:مقاس|المقاس|لون|اللون|حجم|الحجم|عيش|الخبز|خبز|السعه|الرامات|الطعم|انهي|size|colou?r|which)");
     /** A model-written summary or confirmation request («الطلب جاهز للتأكيد», «نبدأ التحضير؟»). */
     static final Pattern FAKE_SUMMARY = Pattern.compile("(?:الطلب\\s+جاهز|جاهز\\s+للتاكيد|نبدا\\s+التحضير|ناكد\\s+الطلب|اكد\\s+الطلب|اكد\\s+الاوردر|اكد\\s+التعديل|ااكد|اكدلك\\s+الطلب\\s+كده|ملخص\\s+(?:الاوردر|الطلب)|اكتب\\s+تمام|confirm\\s+(?:your|the)\\s+(?:order|change)|order\\s+(?:is\\s+ready|summary))");
+
+    private static final Pattern TOTAL_LINE = Pattern.compile("(?m)^\\s*(?:الإجمالي|الاجمالي|الإجمالى|المجموع|Total)\\s*[:：]", Pattern.CASE_INSENSITIVE);
+    private static final Pattern ITEM_LINE = Pattern.compile("(?m)^\\s*[•\\-*]\\s*.+(?:×|x\\s*\\d|=\\s*[0-9٠-٩])");
+
+    /** A summary the model wrote itself: confirmation words, or the shape of one (item lines and a total line), whatever it is called. */
+    static boolean looksLikeSummary(String answer) {
+        if (answer == null) return false;
+        return FAKE_SUMMARY.matcher(FastAnswers.norm(answer)).find() || (TOTAL_LINE.matcher(answer).find() && ITEM_LINE.matcher(answer).find());
+    }
+
+    /** Still a self-written summary after the rewrite: its first line stays, the rest goes, and the customer is asked to answer so the real summary follows. */
+    static String withoutSelfSummary(String answer) {
+        String first = answer.strip().split("\\n")[0].strip();
+        if (looksLikeSummary(first) || first.length() > 160) first = "";
+        boolean en = english(answer) && arabicShare(answer) < 0.5;
+        String ask = en ? "Reply «ok» and I will send you the final order summary to confirm 👌" : "ابعتلي «تمام» وأبعتلك ملخص الأوردر النهائي للتأكيد 👌";
+        return first.isEmpty() ? ask : first + "\n\n" + ask;
+    }
 
     private static final Pattern ADDRESS_WORDS = Pattern.compile("(?:شارع|ش\\.|عماره|عمارة|برج|شقه|شقة|دور|الدور|حي|منطقه|منطقة|مدينه|مدينة|street|st\\.|building|apt|apartment|floor)", Pattern.CASE_INSENSITIVE);
 

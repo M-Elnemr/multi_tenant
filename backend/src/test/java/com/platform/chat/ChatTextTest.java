@@ -269,4 +269,12 @@ class ChatTextTest {
     void arabicDigitsOfAPhoneAreTheSameNumber() {
         org.assertj.core.api.Assertions.assertThat(MoneyGuard.digits("انا سامي، الدقي، ٠١٠٥٥٥٤٤٣٣٢، كاش").replaceAll("\\D", "")).contains("055544332");
     }
+
+    @Test
+    void aSelfWrittenSummaryIsKnownByItsShape() {
+        String fake = "تمام يا فندم، هغير الطعم لعادي.\n\nإيه ده الملخص الجديد:\n• وجبة بروستد ٤ قطع (الطعم: عادي) × 1 = 235 جنيه\nالإجمالي: 260 جنيه\n\nأوافق على الأوردر؟";
+        org.assertj.core.api.Assertions.assertThat(ChatService.looksLikeSummary(fake)).isTrue();
+        org.assertj.core.api.Assertions.assertThat(ChatService.looksLikeSummary("عندنا ساندوتش شاورما فراخ: عادي ٨٥، كبير ١١٠، سوبر ١٤٠.")).isFalse();
+        org.assertj.core.api.Assertions.assertThat(ChatService.withoutSelfSummary(fake)).startsWith("تمام يا فندم، هغير الطعم لعادي.").contains("ملخص الأوردر النهائي").doesNotContain("260");
+    }
 }
