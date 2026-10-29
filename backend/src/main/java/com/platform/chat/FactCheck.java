@@ -84,7 +84,7 @@ final class FactCheck {
     }
 
     /** Letters and digits are separate words («لـ٣» is «ل» and «3»). */
-    private static final Pattern WORD = Pattern.compile("[\\p{L}\\u200C]+|\\p{N}+");
+    private static final Pattern WORD = Pattern.compile("[\\p{L}\\u200C]+|\\p{N}{1,3}(?:[,٬]\\p{N}{3})+(?!\\p{N})|\\p{N}+");   // «14,999» is one number
 
     /** A word without the Arabic article and the joined و/ب/ل/ف («والأسود» -> «اسود», «للولاد» -> «ولاد»). */
     static String bare(String w) {
@@ -111,7 +111,7 @@ final class FactCheck {
     static List<Tok> tokens(String lightText, int from, int to) {
         List<Tok> out = new ArrayList<>();
         Matcher m = WORD.matcher(lightText).region(from, to);
-        while (m.find()) out.add(new Tok(bare(m.group()), m.start(), m.end(), m.group().replace("\u200C", "")));
+        while (m.find()) out.add(new Tok(bare(m.group().replaceAll("[,٬]", "")), m.start(), m.end(), m.group().replace("\u200C", "")));
         return out;
     }
 
@@ -247,10 +247,12 @@ final class FactCheck {
         hours(answer, shop, out);
         sale(customer, answer, ms, load, out);
         offTopic(customer, answer, ms, shop, out);
-        wrongKind(customer, ms, shop, out);
+        wrongKind(customer, answer, ms, shop, out);
         inventedValue(answer, ms, only, load, out);
         quantity(customer, answer, ms, only, shop, load, out);
         inventedProducts(answer, shop, out);
+        if (out.stream().noneMatch(x -> x.kind().equals("INVENTED_PRODUCTS"))) inventedBrands(answer, shop, out);
+        betterMatch(customer, ms, shop, out);
         return out;
     }
 
@@ -387,6 +389,7 @@ final class FactCheck {
             Object[] v = valueAt(toks, i, values);
             if (v != null) {
                 String matched = (String) v[0];
+                if (i > 0 && RANGE_WORDS.contains(toks.get(i - 1).word())) { i += (int) v[1] - 1; continue; }   // «تخزين لحد 2 تيرا»: the top of a range, not the option priced
                 if (matched.equals(aheadTaken)) { seen.clear(); seen.add(matched); priced = true; aheadTaken = null; i += (int) v[1] - 1; continue; }
                 if (priced) { seen.clear(); priced = false; }
                 // «(ربع/نص كيلو)»: the bare first word of another value just before this one counts as that value too
@@ -400,9 +403,14 @@ final class FactCheck {
             if (!NUMBER.matcher(t.word()).matches()) continue;
             if (UNIT_AFTER.matcher(l.substring(t.end(), Math.min(l.length(), t.end() + 14))).find()) continue;
             if (l.substring(Math.max(from, t.start() - 3), t.start()).matches(".*[x×]\\s*$")) continue;
-            String ahead = (seen.isEmpty() || priced) ? valueAhead(toks, i + 1, values) : null;
-            if (ahead == null && seen.isEmpty()) continue;
-            Set<String> context = ahead != null ? Set.of(ahead) : new LinkedHashSet<>(seen);
+            // «٥٥ بوصة بـ ٢٠٤٩٩ (بدون تركيب)»: a value right after the amount is that amount's, with the other options said before it
+            String ahead = valueAhead(answer, toks, i + 1, values);
+            if (ahead == null && (seen.isEmpty() || priced)) continue;   // «… أو ٢٠٩٤٩ (مع التركيب)»: a second amount is not the same option's price
+            Set<String> context = new LinkedHashSet<>(seen);
+            if (ahead != null) {
+                context.removeIf(c -> p.variants().stream().noneMatch(x -> x.options().values().containsAll(new java.util.HashSet<>(List.of(c, ahead)))));
+                context.add(ahead);
+            }
             if (ahead != null) aheadTaken = ahead;
             priced = true;
             double amount = Double.parseDouble(t.word());
@@ -412,9 +420,13 @@ final class FactCheck {
             for (Variant x : fit) { ok.add(x.price()); if (x.before() > 0) ok.add(x.before()); for (int k = 2; k <= 10; k++) ok.add(x.price() * k); }
             for (Product r : alsoMeant) for (Variant x : r.variants()) { ok.add(x.price()); if (x.before() > 0) ok.add(x.before()); }
             if (ok.contains(amount)) continue;
-            Set<Double> real = new java.util.TreeSet<>();
+            java.util.TreeSet<Double> real = new java.util.TreeSet<>();
             for (Variant x : fit) real.add(x.price());
-            if (real.size() != 1) continue;   // the values said do not pin one price: nothing exact to say
+            if (amount < real.first() * 0.3 || amount > real.last() * 3) continue;   // «15.6 بوصة», «120 هرتز»: not a price
+            if (real.size() != 1) {   // the values said do not pin one price: name the real ones, the rewrite picks
+                if (real.size() <= 4) out.add(new Problem("OPTION_PRICE", "«" + p.name() + "» " + String.join(" ", context) + " costs " + String.join(" or ", real.stream().map(r -> num(r, false)).toList()) + " (by the other options), never " + num(amount, false) + ".", null));
+                return;
+            }
             double right = real.iterator().next();
             String what = "«" + p.name() + "» " + String.join(" ", context);
             String fixed = answer.substring(0, t.start()) + num(right, arabicDigits(answer.substring(t.start(), t.end()))) + answer.substring(t.end());
@@ -423,20 +435,23 @@ final class FactCheck {
         }
     }
 
-    private static final Set<String> FILLER_AHEAD = Set.of("جنيه", "ج", "جم", "egp", "le", "pounds", "pound", "ل", "لل", "for", "each", "the", "a");
+    private static final Set<String> RANGE_WORDS = Set.of("لحد", "حتي", "لغايه", "ل", "لـ", "up", "to");
+
+    private static final Set<String> FILLER_AHEAD = Set.of("جنيه", "ج", "جم", "egp", "le", "pounds", "pound", "ل", "لل", "for", "each", "the", "a", "سعه", "السعه", "مقاس", "المقاس", "حجم", "الحجم", "لون", "اللون", "نسخه", "النسخه", "size", "storage");
 
     /**
      * The option value a price is for when it comes right after it, past «جنيه» or «لـ» («90 جنيه لـ٣ قطع», «70 جنيه (٦ قطع)»), or null. With nothing between, the next value starts
      * the next pair («عادي ١٢٥ / كبير ١٦٠»).
      */
-    private static String valueAhead(List<Tok> toks, int from, Map<List<String>, String> values) {
+    private static String valueAhead(String answer, List<Tok> toks, int from, Map<List<String>, String> values) {
         int fillers = 0;
         for (int i = from; i < Math.min(toks.size(), from + 4); i++) {
             Object[] v = valueAt(toks, i, values);
             if (v != null) {
                 int after = i + (int) v[1];
                 boolean ownPrice = after < toks.size() && NUMBER.matcher(toks.get(after).word()).matches();   // «٨٥ ج (كبير ١١٠)»: that value has its own price
-                return fillers > 0 && !ownPrice ? (String) v[0] : null;
+                boolean inBrackets = fillers == 0 && from > 0 && answer.substring(toks.get(from - 1).end(), toks.get(i).start()).contains("(");   // «10999 (256 جيجا)»
+                return (fillers > 0 || inBrackets) && !ownPrice ? (String) v[0] : null;
             }
             if (!FILLER_AHEAD.contains(toks.get(i).word())) return null;
             fillers++;
@@ -629,7 +644,7 @@ final class FactCheck {
 
     // ---- 3. "we do not have it" when we do --------------------------------------------------------------------------------
 
-    private static final Pattern DENY = Pattern.compile("(?:مفيش|معندناش|ماعندناش|محدش|مش\\s+عندنا|مش\\s+موجود|مش\\s+متوفر|مش\\s+متاح|غير\\s+(?:متاح|متوفر|موجود)|مش\\s+في\\s+(?:القائمه|القايمه|المنيو)|مبنبيعش|مش\\s+بنبيع|مش\\s+ببيع|لا\\s+يوجد|لا\\s+نبيع|(?:بس|لكن)\\s+مش|we\\s+(?:don'?t|do\\s+not)\\s+(?:have|sell|carry)|there\\s+(?:is|are)\\s+no|we\\s+have\\s+no)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
+    private static final Pattern DENY = Pattern.compile("(?:مفيش|معندناش|ماعندناش|محدش|مش\\s+عندنا|مش\\s+موجود|مش\\s+متوفر|مش\\s+متاح|غير\\s+(?:متاح|متوفر|موجود)|مش\\s+في\\s+(?:القائمه|القايمه|المنيو)|مش\\s+(?:من\\s+)?ضمن|مش\\s+بنتعامل|مش\\s+بنوفر|مبنبيعش|مش\\s+بنبيع|مش\\s+ببيع|لا\\s+يوجد|لا\\s+نبيع|(?:بس|لكن)\\s+مش|we\\s+(?:don'?t|do\\s+not)\\s+(?:have|sell|carry)|there\\s+(?:is|are)\\s+no|we\\s+have\\s+no)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
     /** Words that say nothing about which product: negations, chat words, time words, vague nouns. */
     private static final Set<String> STOP = Set.of("مش", "مفيش", "معندناش", "ماعندناش", "عندنا", "عندي", "بنبيع", "ببيع", "نبيع", "مبنبيعش", "موجود", "موجوده", "متوفر", "متوفره", "متاح", "متاحه", "يوجد",
             "حاليا", "دلوقتي", "النهارده", "النهاردة", "كامل", "كامله", "خالص", "للاسف", "بس", "لكن", "غير", "ابدا", "تاني", "نوع", "انواع", "اصناف", "صنف", "خيارات", "اختيارات", "موديلات", "موديل", "حاجه", "حاجات",
@@ -651,6 +666,9 @@ final class FactCheck {
             for (String clause : whole.split("[،,؛;]")) { Matcher m = DENY.matcher(clause); if (m.find()) { sentence = clause; d = m; break; } }
             if (sentence == null || POLICY.matcher(sentence).find()) continue;
             if (!valuesInAny(sentence)) {
+                // «ومفيش أي خدش عليه»: what is denied is a flaw or a thing already said, not a product
+                var next = tokens(sentence, d.end(), sentence.length()).stream().map(Tok::word).filter(w -> !STOP.contains(w) && w.length() >= 3).findFirst();
+                if (next.isPresent() && NOT_A_THING.contains(next.get())) continue;
                 List<String> after = content(sentence.substring(d.end()), 4);
                 List<String> beforeKinds = content(sentence.substring(0, d.start()), 6).stream().filter(w -> !AUDIENCE.contains(w)).toList();
                 boolean butNot = d.group().startsWith("بس") || d.group().startsWith("لكن");
@@ -670,9 +688,10 @@ final class FactCheck {
                         Product p = shop.product(h.slug());
                         shown.add(h.name() + (p != null && !p.variants().isEmpty() ? " (" + num(p.variants().stream().mapToDouble(Variant::price).min().orElse(0), false) + (arabic(answer) ? " جنيه)" : " EGP)") : ""));
                     }
-                    String replacement = arabic(answer) ? "عندنا: " + String.join("، ", shown) + "." : "We have: " + String.join(", ", shown) + ".";
+                    // still denied after the rewrite: the wrong sentence goes (a list pasted in its place read badly), the rest of the reply stays
+                    String without = (answer.substring(0, s[0]) + answer.substring(s[1])).replaceAll("\\n{3,}", "\n\n").trim();
                     out.add(new Problem("FALSE_DENIAL", "You said we do not have «" + String.join(" ", q) + "», but the shop HAS: " + String.join("; ", shown) + ". Never deny it; offer these with their prices.",
-                            replaceSentence(answer, s[0], s[1], replacement)));
+                            without.length() >= 25 ? without : null));
                     return;
                 }
             }
@@ -688,11 +707,15 @@ final class FactCheck {
             "black", "white", "grey", "gray", "beige", "brown", "red", "pink", "orange", "yellow", "green", "olive", "blue", "navy", "purple", "gold", "silver");
 
     /** Up to {@code max} words that could name a product (no stop words, no numbers). */
+    /** Words that point at something already said («مفيش خدش عليه») and never name a product. */
+    private static final Set<String> NOT_A_THING = Set.of("عليه", "عليها", "عليهم", "فيه", "فيها", "فيهم", "منه", "منها", "منهم", "ليه", "ليها", "ليهم", "بيه", "بيها", "معاه", "معاها",
+            "خدش", "خدوش", "عيب", "عيوب", "مشكله", "مشاكل");
+
     private static List<String> content(String lightPart, int max) {
         List<String> out = new ArrayList<>();
         for (Tok t : tokens(lightPart, 0, lightPart.length())) {
             String w = t.word();
-            if (w.length() < 3 || STOP.contains(w) || w.chars().allMatch(Character::isDigit)) continue;
+            if (w.length() < 3 || STOP.contains(w) || NOT_A_THING.contains(w) || w.chars().allMatch(Character::isDigit)) continue;
             out.add(w);
             if (out.size() >= max) break;
         }
@@ -893,7 +916,7 @@ final class FactCheck {
      * «عندكم أكل نباتي؟» answered with desserts only: the customer's word is a kind the shop's products carry (a tag, a category, a word of their names: «نباتي», «للأطفال», «شتوي»),
      * the reply names products, and none of them is of that kind. Null-safe; one problem at most.
      */
-    private static void wrongKind(String customer, List<Mention> ms, Shop shop, List<Problem> out) {
+    private static void wrongKind(String customer, String answer, List<Mention> ms, Shop shop, List<Problem> out) {
         if (customer == null || ms.isEmpty() || !mentions(customer, shop.names()).isEmpty()) return;   // a product asked for by name is the other checks' business
         Set<String> tags = shop.tags();
         if (tags.isEmpty()) return;
@@ -903,6 +926,7 @@ final class FactCheck {
             if (w.length() < 4 || AUDIENCE.contains(w) || POLICY.matcher(w).find()) continue;
             String st = stem(w);
             if (tags.stream().noneMatch(t -> t.equals(w) || stem(t).equals(st))) continue;   // only a kind the shop itself tags its products with
+            if (tokens(light(answer), 0, answer.length()).stream().anyMatch(t -> stem(t.word()).equals(st))) return;   // «عندنا جراب مخصوص لنوفا X12 برو»: the reply is about that kind
             List<Named> kind = shop.searchAll(List.of(stem(w)));
             if (kind.size() < 2) continue;
             if (kind.stream().anyMatch(k -> named.contains(k.slug()))) return;   // it named at least one of them: fine
@@ -945,13 +969,17 @@ final class FactCheck {
      * «عايز ١٠ موبايلات نوفا ميني 8» answered «متوفر بالكمية»: the customer asked for more pieces than the product has in stock (all its options together) and the reply offers them.
      * Works for any product: the number comes before a word that is not a unit or a price.
      */
+    private static final Pattern ADDRESS_BEFORE = Pattern.compile("(?:شارع|ش|عماره|عمارة|شقه|دور|الدور|بلوك|برج|مبني|رقم|منطقه|مربع|مجاوره|الحي|حي|street|st|apt|floor|building|block)\\.?\\s*$", Pattern.CASE_INSENSITIVE);
+
     private static void quantity(String customer, String answer, List<Mention> ms, String only, Shop shop, java.util.function.Function<String, Product> load, List<Problem> out) {
         if (customer == null) return;
         // a number inside a product's name («موبايل نوفا ميني 8», a code) is not a quantity: the names the customer wrote are taken out first
         String lc = light(customer);
         for (Mention mn : mentions(customer, shop.names())) lc = lc.substring(0, mn.start()) + " ".repeat(mn.end() - mn.start()) + lc.substring(mn.end());
         Matcher m = ASKED_QTY.matcher(lc);
-        if (!m.find()) return;
+        boolean found = false;
+        while (m.find()) if (!ADDRESS_BEFORE.matcher(lc.substring(0, m.start())).find()) { found = true; break; }   // «شارع ٩ عمارة ١٢» is an address
+        if (!found) return;
         int asked = Integer.parseInt(m.group(1));
         if (asked < 3) return;
         String slug = ms.size() == 1 ? ms.get(0).slug() : only;
@@ -959,10 +987,15 @@ final class FactCheck {
         if (slug == null) return;
         Product p = load.apply(slug);
         if (p.variants().isEmpty()) return;
+        String n = String.valueOf(asked);   // «٥١٢ ذهبي» is the 512 GB option, not 512 pieces
+        if (p.variants().stream().flatMap(v -> v.options().values().stream()).anyMatch(v -> light(v).matches(n + "(?!\\d).*"))) return;
         String l = light(answer);
         if (!OFFER.matcher(l).find() || NEG.matcher(l).find() || l.contains(String.valueOf(asked)) && Pattern.compile("(?:بس|فقط|only|المتاح|متبقي|فاضل)").matcher(l).find()) return;
         Map<String, String> want = wanted(p, l, customer);
-        int stock = p.variants().stream().filter(v -> v.options().values().containsAll(want.keySet())).mapToInt(Variant::available).sum();
+        // «أبيض ووردي ١٢٨ جيجا»: two values of one option are either of them
+        Map<String, Set<String>> byOption = new LinkedHashMap<>();
+        for (var e : want.entrySet()) byOption.computeIfAbsent(e.getValue(), k -> new java.util.HashSet<>()).add(e.getKey());
+        int stock = p.variants().stream().filter(v -> byOption.entrySet().stream().allMatch(e -> e.getValue().contains(v.options().get(e.getKey())))).mapToInt(Variant::available).sum();
         if (stock >= asked) return;
         out.add(new Problem("STOCK_QUANTITY", "The customer asked for " + asked + " of «" + p.name() + "»" + (want.isEmpty() ? "" : " (" + String.join(" ", want.keySet()) + ")") + " but only " + stock
                 + " are in stock: " + stockLine(p, want) + ". Say how many are available; never promise more.", null));
@@ -972,6 +1005,8 @@ final class FactCheck {
 
     /** A list line about a service, not an item (a coupon, delivery, payment, returns). */
     private static final Pattern SERVICE_LINE = Pattern.compile("(?:كود|كوبون|خصم|توصيل|شحن|دليفري|تقسيط|كاش|فيزا|استرجاع|استبدال|ضمان|coupon|code|delivery|shipping|payment|return|warranty)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern SPEC = Pattern.compile("\\d\\s*(?:gb|tb|mb|\"|”|inch|hz|mah|w(?![a-z])|جيجا|تيرا|بوصه|انش|هرتز|وات|مللي)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern OPTION_WORD = Pattern.compile("^(?:ال)?(?:لون|مقاس|سعه|حجم|حاله|نسخه|مساحه|خامه)(?!\\p{L})|^(?:colou?r|size|storage)\\b", Pattern.CASE_INSENSITIVE);   // «اللون الأسود (متاح)»
     private static final Pattern PRICE_OR_OFFER = Pattern.compile("(?:\\d{2,}|متاح|متوفر|موجود|بالوان|الوان|available|EGP|جنيه)", Pattern.CASE_INSENSITIVE);
 
     /**
@@ -987,11 +1022,75 @@ final class FactCheck {
             Matcher sep = Pattern.compile("[–—:(،,]").matcher(rest);
             String item = sep.find() ? rest.substring(0, sep.start()).trim() : rest.trim();
             if (sep.hitEnd() || (sep.start() < rest.length() && rest.charAt(sep.start()) == ':')) continue;   // «البطارية: 6000» is a detail, not an item
+            if (SPEC.matcher(light(item)).find() || OPTION_WORD.matcher(light(item)).find()) continue;   // «32GB RAM / 1TB SSD», «16" OLED»: a detail of a product, not a product
             if (item.split("\\s+").length < 2 || item.matches(".*\\d.*") && item.split("\\s+").length < 3) continue;   // «128 جيجا», «20 بوصة»: an option
             invented.add(item);
         }
         if (invented.size() < 2) return;
         out.add(new Problem("INVENTED_PRODUCTS", "These are not products of this shop: " + String.join("، ", invented.stream().limit(4).toList())
                 + ". Offer only the shop's own products from search_products, with their real names and prices.", null));
+    }
+
+    // ---- 12. another product matches what the customer asked better ---------------------------------------------------------
+
+    /**
+     * «عايز جراب لنوفا X12 برو» answered with «جراب جلد قلاب نوفا X12» while «جراب نوفا X12 برو ضد الصدمات» exists: products whose name holds every meaningful word the customer
+     * wrote exist, and the reply names products but none of them.
+     */
+    // ---- 13. brands the shop does not sell ---------------------------------------------------------------------------------
+
+    /** Well-known brands, as {@link #light} writes them: a model offers them from memory. */
+    private static final Set<String> BRANDS = Set.of("سامسونج", "شاومي", "ريدمي", "هونور", "هواوي", "ايفون", "ابل", "اوبو", "ريلمي", "فيفو", "نوكيا", "انفينكس", "تكنو", "لينوفو", "ديل", "اسوس",
+            "ايسر", "سوني", "توشيبا", "شارب", "بيكسل", "انكر", "جي بي ال", "نايك", "اديداس", "زارا", "بوما", "ديفاكتو", "ال سي وايكيكي",
+            "samsung", "xiaomi", "redmi", "honor", "huawei", "iphone", "apple", "oppo", "realme", "vivo", "nokia", "infinix", "tecno", "lenovo", "dell", "asus", "acer", "sony", "toshiba",
+            "pixel", "anker", "jbl", "nike", "adidas", "zara", "puma", "defacto", "lc waikiki");
+    private static final Pattern OFFERED = Pattern.compile("(?:عندنا|عندي|متاح|متوفر|موجود|بسعر|جنيه|نوفرلك|اوريك|we\\s+have|available|egp)", Pattern.CASE_INSENSITIVE);
+
+    /** «لكن عندنا تاني موديلات من هونور أو شاومي» in a shop that has no such brand: a brand offered that no product of the shop is. A sentence that denies it is fine. */
+    private static void inventedBrands(String answer, Shop shop, List<Problem> out) {
+        String l = light(answer).toLowerCase(java.util.Locale.ROOT);
+        Set<String> invented = new LinkedHashSet<>();
+        for (int[] s : sentences(answer)) {
+            String sentence = l.substring(s[0], s[1]);
+            if (!OFFERED.matcher(sentence).find() || NEG.matcher(sentence).find()) continue;
+            for (String b : BRANDS) {
+                if (!Pattern.compile("(?<![\\p{L}])(?:ب|و|من\\s+|لـ?)?" + Pattern.quote(b) + "(?![\\p{L}])").matcher(sentence).find()) continue;
+                if (shop.searchAll(List.of(b)).isEmpty()) invented.add(b);
+            }
+        }
+        if (invented.isEmpty()) return;
+        out.add(new Problem("INVENTED_PRODUCTS", "This shop does not sell " + String.join("، ", invented) + ": never offer or name brands it does not have; offer only the shop's own products from search_products, with their real names and prices.", null));
+    }
+
+    private static final Set<String> WANT_WORDS = Set.of("عايز", "عايزه", "عاوز", "عاوزه", "محتاج", "محتاجه", "اطلب", "هاخد", "خد", "want", "need", "order");
+    private static final Pattern BUDGET_AFTER = Pattern.compile("\\s*(?:الف|الاف|k|جنيه|ج(?!\\p{L})|egp)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern BUDGET_BEFORE = Pattern.compile("(?:حدود|حوالي|تحت|اقل\\s+من|لحد|ميزانيه|ميزانيتي|budget|under)\\s*$", Pattern.CASE_INSENSITIVE);
+
+    private static void betterMatch(String customer, List<Mention> ms, Shop shop, List<Problem> out) {
+        if (customer == null || ms.isEmpty()) return;
+        List<String> words = new ArrayList<>();
+        String lcust = light(customer);
+        for (Tok t : tokens(lcust, 0, lcust.length())) {
+            String w = t.word();
+            if (w.chars().allMatch(Character::isDigit) && (BUDGET_AFTER.matcher(lcust.substring(t.end())).lookingAt() || BUDGET_BEFORE.matcher(lcust.substring(0, t.start())).find())) continue;   // «في حدود ١٠ آلاف»
+            if (words.contains(w)) continue;
+            String prev = lcust.substring(0, t.start()).trim().replaceAll(".*[\\s]", "");
+            if (w.chars().allMatch(Character::isDigit) && (prev.isEmpty() || WANT_WORDS.contains(prev))) continue;   // «عايز ١٠ موبايلات»: how many, not which
+            if (w.length() >= 4 && w.startsWith("ل") && !w.startsWith("لل")) w = w.substring(1);   // «لنوفا» is «نوفا»
+            boolean number = w.chars().allMatch(Character::isDigit);
+            if (number && w.length() < 2) continue;   // «X12» keeps its 12; a lone digit says little
+            if (w.length() >= 2 && !STOP.contains(w) && !AUDIENCE.contains(w) && !COLORS.contains(w) && !SIZE_CODES.contains(w)
+                    && !List.of("عايز", "عايزه", "عاوز", "محتاج", "بكام", "سعر", "كام", "لو", "سمحت", "تمام", "ينفع", "عليه", "بتاع").contains(w)) words.add(w);
+        }
+        // a word in no product name («للشركة», the quantity) says nothing about which product
+        words.removeIf(w -> shop.names().stream().noneMatch(n -> n.words().stream().anyMatch(nw -> same(nw, w) || stem(nw).equals(stem(w)))));
+        if (words.size() < 2) return;
+        Set<String> named = new java.util.HashSet<>();
+        for (Mention m : ms) named.add(m.slug());
+        List<Named> exact = new ArrayList<>();
+        for (Named n : shop.names()) if (words.stream().allMatch(w -> n.words().stream().anyMatch(nw -> same(nw, w) || stem(nw).equals(stem(w))))) exact.add(n);
+        if (exact.isEmpty() || exact.size() > 2 || exact.stream().anyMatch(e -> named.contains(e.slug()))) return;
+        out.add(new Problem("BETTER_MATCH", "The customer asked for «" + String.join(" ", words) + "»: the product that is exactly that is " + String.join("، ", exact.stream().map(Named::name).toList())
+                + ". Offer it (search_products for it) instead of a near one.", null));
     }
 }

@@ -100,9 +100,10 @@ class FactCheckTest {
     void debugOnce() {
         if (System.getProperty("factcheck.corpus", "").isEmpty()) return;
         FactCheck.Shop TECH = fixture("tech-zone");
-        String reply = "عندنا موبايلات من عدة ماركات عالمية:\n\n- سامسونج جالاكسي A16 – متوفر بألوان أسود، فضي، بنفسجي\n- آيفون 15 – متوفر بعدة ألوان\n- شاومي ريدمي نوت 13 برو – متوفر بألوان أخضر، أسود\n\nحضرتك عايز ميزانية معينة؟";
-        System.out.println("DBG mentions " + FactCheck.mentions(reply, TECH.names()));
-        for (var p : FactCheck.check("عايز موبايل", reply, TECH, List.of())) System.out.println("DBG " + p);
+        for (String[] c : new String[][]{
+                {"تلفزيون ٥٥ بوصة 4K بكام؟", "عندنا تلفزيون فيستا 4K سمارت مقاس 55 بوصة بسعر 20,499 جنيه (بدون تركيب) أو 20,949 جنيه (مع التركيب على الحائط)."},
+                {"تابلت نوفا تاب 10 بشريحة بكام؟", "تابلت نوفا تاب 10 بشريحة متوفر بـ 10,499 جنيه (سعة 64 جيجا) أو 11,499 جنيه (سعة 128 جيجا)."}})
+            for (var p : FactCheck.check(c[0], c[1], TECH, List.of())) System.out.println("DBG " + p);
     }
 
     @Test
@@ -232,6 +233,44 @@ class FactCheckTest {
         String reply = "عندنا موبايلات من عدة ماركات عالمية:\n\n- سامسونج جالاكسي A16 – متوفر بألوان أسود، فضي، بنفسجي\n- آيفون 15 – متوفر بعدة ألوان\n- شاومي ريدمي نوت 13 برو – متوفر بألوان أخضر، أسود\n\nحضرتك عايز ميزانية معينة؟";
         assertThat(kinds(TECH, "عايز موبايل", reply)).contains("INVENTED_PRODUCTS");
         assertThat(kinds(TECH, "عايز موبايل", "عندنا:\n- موبايل نوفا A5 — 5499 جنيه\n- موبايل نوفا A7 — 7499 جنيه\n- موبايل نوفا X12 — 14999 جنيه")).doesNotContain("INVENTED_PRODUCTS");
+    }
+
+    @Test
+    void aNearProductInsteadOfTheExactOneIsCaught() {
+        FactCheck.Shop TECH = fixture("tech-zone");
+        assertThat(kinds(TECH, "عايز جراب لنوفا X12 برو", "عندنا جراب جلد قلاب نوفا X12 بـ ٣٤٩ جنيه، جيب كروت. تحب أنهي لون؟")).contains("BETTER_MATCH");
+        assertThat(kinds(TECH, "عايز جراب لنوفا X12 برو", "عندنا جراب نوفا X12 برو ضد الصدمات بـ ٢٩٩ جنيه. تحب أنهي لون؟")).doesNotContain("BETTER_MATCH");
+    }
+
+    @Test
+    void aPriceWithItsOptionInBracketsIsChecked() {
+        FactCheck.Shop TECH = fixture("tech-zone");
+        assertThat(kinds(TECH, "نوفا ميني 8 بكام؟", "موبايل نوفا ميني 8 بـ 10999 جنيه (256 جيجا).")).contains("OPTION_PRICE");
+        assertThat(kinds(TECH, "نوفا ميني 8 بكام؟", "موبايل نوفا ميني 8 بـ 12499 جنيه (256 جيجا).")).doesNotContain("OPTION_PRICE");
+        assertThat(kinds(TECH, "نوفا X12 بكام؟", "موبايل نوفا X12 بـ 12999 (256 جيجا).")).contains("OPTION_PRICE");
+        assertThat(kinds(TECH, "نوفا X12 بكام؟", "موبايل نوفا X12 بـ 15499 (256 جيجا) أوبن بوكس.")).doesNotContain("OPTION_PRICE");
+    }
+
+    @Test
+    void brandsTheShopDoesNotSellAreCaught() {
+        FactCheck.Shop TECH = fixture("tech-zone");
+        assertThat(kinds(TECH, "عايز موبايل", "عندنا موبايل نوفا A5 بـ 5499 جنيه. لكن عندنا تاني موديلات من هونور أو شاومي لو تحب.")).contains("INVENTED_PRODUCTS");
+        assertThat(kinds(TECH, "عندكم سامسونج؟", "مش بنبيع سامسونج، بس عندنا موبايل نوفا A5 بـ 5499 جنيه.")).doesNotContain("INVENTED_PRODUCTS");
+        assertThat(kinds(TECH, "جراب آيفون 15 برو ماكس بكام؟", "عندنا جراب آيفون 15 شفاف ماج سيف بـ 379 جنيه.")).doesNotContain("INVENTED_PRODUCTS");
+    }
+
+    @Test
+    void rightRepliesOfABigShopAreNotFlagged() {
+        assertThat(kinds(fixture("tech-zone"), "يعني ايه أوبن بوكس؟", "أوبن بوكس يعني إن العلبة فاتحة بس سليم ١٠٠٪ ومفيش أي خدش عليه.")).doesNotContain("FALSE_DENIAL");
+        assertThat(kinds(fixture("tech-zone"), "عندكم تلفزيون؟", "مفيش أي تلفزيونات عندنا حالياً.")).contains("FALSE_DENIAL");
+        FactCheck.Shop TECH = fixture("tech-zone");
+        assertThat(kinds(TECH, "يعني ايه أوبن بوكس؟ وفرقه في السعر قد ايه في X12؟", "في X12:\n- جديد: 14,999 جنيه\n- أوبن بوكس: 13,499 جنيه")).isEmpty();
+        assertThat(kinds(TECH, "تلفزيون ٥٥ بوصة 4K بكام؟", "عندنا تلفزيون فيستا 4K سمارت مقاس 55 بوصة بسعر 20,499 جنيه (بدون تركيب) أو 20,949 جنيه (مع التركيب على الحائط).")).doesNotContain("OPTION_PRICE");
+        assertThat(kinds(TECH, "تابلت نوفا تاب 10 بشريحة بكام؟", "تابلت نوفا تاب 10 بشريحة متوفر بـ 10,499 جنيه (سعة 64 جيجا) أو 11,499 جنيه (سعة 128 جيجا).")).doesNotContain("OPTION_PRICE");
+        assertThat(kinds(TECH, "عايز نوفا X12 برو ٥١٢ ذهبي", "تمام يا فندم، نوفا X12 برو ٥١٢ جيجا ذهبي متوفرة ✅\n- جديد: ٢٤٩٩٩ جنيه\n- أوبن بوكس: ٢٢٩٩٩ جنيه")).doesNotContain("STOCK_QUANTITY");
+        assertThat(kinds(TECH, "جراب آيفون 15 برو ماكس بكام؟", "الجراب لآيفون 15 برو ماكس بـ 379 جنيه.\n\nالموجود عندنا:\n- اللون الأسود (متاح)\n- اللون الأزرق (متاح)\n- اللون البنفسجي (متاح)")).doesNotContain("INVENTED_PRODUCTS");
+        assertThat(kinds(TECH, "عايز ١٠ موبايلات نوفا ميني 8 للشركة", "موبايل نوفا ميني 8 متاح: أبيض ووردي وأسود 128 جيجا بـ 10999 جنيه.")).doesNotContain("STOCK_QUANTITY");
+        assertThat(kinds(TECH, "عايز ١٠ موبايلات نوفا ميني 8 للشركة", "عندنا: موبايل نوفا A5 (5499 جنيه)، موبايل نوفا A7 (7499 جنيه)، موبايل نوفا X12 (13499 جنيه).")).contains("BETTER_MATCH");
     }
 
     // ---- every reply of the recorded test chats: what the checks say ------------------------------------------------

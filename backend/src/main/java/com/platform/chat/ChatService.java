@@ -85,6 +85,7 @@ public class ChatService {
                 .replaceAll("[\\p{L}]*[\\u06D5\\u0695\\u06CE\\u06C6\\u06B5][\\p{L}]*[؟?]?", "")   // a word in Kurdish letters («سەە») never belongs in an Egyptian reply
                 .replaceAll("(?<![\\d٠-٩-])(?:\\+?2)?[0٠][1١][0-9٠-٩]{8,10}(?![\\d٠-٩])", "الرقم ده");   // the customer's phone is never written back (a copy can be wrong)
         for (var fix : WORD_FIXES.entrySet()) t = t.replace(fix.getKey(), fix.getValue());
+        t = t.replaceAll("[^\\n.؟?!]*?(\\p{L}{1,2})\\1{7,}[^\\n]*", "").replaceAll("\\n{3,}", "\n\n").trim();   // a broken run of letters goes with the rest of its sentence
         t = t.replaceAll("(?m)^\\s*(?:\\d+\\s*[.)\\-]|[-•*])\\s*$\\n?", "");   // a list line left empty («2.») by a cut or a slip
         t = t.replaceAll("وبتاع\\s+(?=[0-9٠-٩])", "وبـ");
         t = t.replaceAll("(?<=\\p{IsArabic})(?!(?:XL|XXL|XS|S|M|L)(?![A-Za-z]))[A-Za-z]{2,}(?=\\s|$|[.،,؟?!]|\\p{IsArabic})", "");   // «للمen»: Latin glued to an Arabic word, sizes after «و» stay
@@ -425,6 +426,8 @@ public class ChatService {
         rounds.addAll(0, failedRounds);   // the failed model's calls are billed too
         String human = needsHuman(text, answer, arabicChat);
         if (human != null) flagForHuman(tenantId, conv, channel, human, text, routed.code());
+        if (human != null && !"TEST".equals(channel) && ctx.summary()[0] == null && orderBox[0] == null && answer != null && !answer.equals(unavailableText(arabicChat)) && !TEAM_TOLD.matcher(answer).find())
+            answer = answer.strip() + "\n\n" + (arabicChat ? "بلّغت فريق المحل وهيتابعوا معاك هنا في أقرب وقت 🙏" : "I've told the shop team; they will follow up with you here shortly 🙏");   // the team really was told: the customer hears it
         // Money is never the model's words: the order summary and the confirmation are written by code from the real order, whatever the model said around them.
         if (ctx.summary()[0] != null) answer = ctx.summary()[0];
         else if (orderBox[0] != null) answer = confirmedText(arabicChat, orderBox[0], Map.of());
@@ -463,6 +466,9 @@ public class ChatService {
         jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x)").param("c", conv).param("x", note).update();
         return new Reply(conv, note, null, List.of());
     }
+
+    /** The reply already says the shop team was told («همرر طلبك لفريق العمل», «هيكلمك حد»). */
+    static final Pattern TEAM_TOLD = Pattern.compile("(?:(?:بلغت|بلّغت|هبلغ|هبلّغ|حولت|هحول|همرر|مررت|وصلت|هوصل|بعت)[^.؟?!\\n]{0,30}(?:فريق|المحل|المدير|الإدارة|الاداره|المسؤول)|هيكلمك|هيتواصل|هيرد\\s+عليك|هيتابع|told\\s+the\\s+(?:shop\\s+)?team|will\\s+(?:contact|call|reply\\s+to)\\s+you)", Pattern.CASE_INSENSITIVE);
 
     private static final Pattern HUMAN_ASK = Pattern.compile("(?:(?:عايز|عايزه|عاوز|عاوزه|محتاج|محتاجه|ممكن|عايزين|نفسي)\\s+(?:ا|أ)?(?:كلم|تكلم\\s+مع|اتكلم\\s+مع|أتكلم\\s+مع|اكلم|نكلم)\\s+(?:حد|حضرتك|بني\\s*ادم|بني\\s*آدم|انسان|إنسان|موظف|المدير|مدير|صاحب\\s+المحل|المسؤول|خدمه\\s+العملاء|خدمة\\s+العملاء)|(?:talk|speak)\\s+to\\s+(?:a\\s+)?(?:human|person|manager|agent|someone|real)|customer\\s+service|real\\s+person)", Pattern.CASE_INSENSITIVE);
     private static final Pattern ANGRY = Pattern.compile("(?:نصابين|نصاب|حرامي|حراميه|حرامية|نصب|سرقه|سرقة|هشتكي|اشتكي|شكوي|شكوى|بلاغ|حمايه\\s+المستهلك|حماية\\s+المستهلك|زباله|زبالة|مقرف|مش\\s+بتردوا|محدش\\s+بيرد|اتأخر\\s+(?:ساعه|ساعة|ساعتين|يوم)|مش\\s+طبيعي|عايز\\s+فلوسي|رجعولي\\s+فلوسي|scam|fraud|worst|terrible|disgusting|refund\\s+now|complaint)", Pattern.CASE_INSENSITIVE);
@@ -545,6 +551,8 @@ public class ChatService {
         allowed.addText(system);
         allowed.addFact(section(system, "SHOP FACTS:", 20_000) + section(system, CATALOG_HEADING, 20_000));
         allowed.addPrices(section(system, CATALOG_HEADING, 20_000));   // product names like «طقم ملايات قطن مصري» are the shop's own words
+        var real = shopPrices(ctx.tenantId());
+        allowed.addShopPrices(real.prices(), real.steps());
         for (Turn t : turns) { allowed.addText(t.text()); if ("user".equals(t.role())) allowed.addFact(t.text()); }
         String answer = modelLoop(ctx, routed, system, turns, tools, rounds, allowed);
         if (answer == null || answer.isBlank() || ctx.summary()[0] != null) return answer;   // a code-written summary replaces the model's words anyway
@@ -677,6 +685,8 @@ public class ChatService {
         if (!searched && !NOT_HAVE.matcher(answer).find() && ONLY_OPTIONS.matcher(answer).find()) problems.put("UNCHECKED_OPTIONS", "You stated which colors, sizes or quantities exist without checking in this turn: call search_products or get_product and answer from allOptions and inStockOptions.");
         if (!searched && NOT_HAVE.matcher(answer).find()) problems.put("UNSEARCHED_DENIAL", "You said we do not have something without searching in this turn: call search_products for exactly what the customer asked (also by color and size) and answer from the result.");
         String norm = FastAnswers.norm(answer);
+        if (BROKEN_RUN.matcher(answer).find())
+            problems.put("BROKEN_TEXT", "Your reply broke off into a run of repeated letters («لجماااا…»): write the whole reply again, short and complete.");
         if (EXAMPLE_LINES.stream().anyMatch(norm::contains)) problems.put("COPIED_EXAMPLE", "You copied an example sentence from your instructions word for word; it may not fit. Answer THIS customer's message in your own words.");
         if (english(last) && arabicShare(answer) > 0.5) problems.put("LANGUAGE", "The customer writes English: reply in English.");
         var asked = QUANTITY.matcher(MoneyGuard.digits(last));
@@ -688,7 +698,7 @@ public class ChatService {
             problems.put("VAGUE", "The customer asked about a kind of product and your reply names none: call search_products and name the real products with their price, colors and sizes (or say honestly we do not have it).");
         String unrelated = cardsUnrelated(ctx, last);
         if (unrelated != null) problems.put("UNRELATED_CARDS", unrelated);
-        boolean lookedUp = rounds.stream().anyMatch(r -> r.tools().stream().anyMatch(t -> t.equals("get_product") || t.equals("search_products")));
+        boolean lookedUp = rounds.stream().anyMatch(r -> r.tools().stream().anyMatch(t -> t.equals("get_product")));   // a search lists products; their specs are read with get_product
         if (NO_INFO.matcher(answer).find() && !lookedUp)
             problems.put("NO_INFO", "You said there is no information without looking: call get_product for that product and answer from its details (ingredients, calories, material, size guide...); say it is not listed only if get_product has nothing.");
         if (ORDER_CLAIM.matcher(FastAnswers.norm(answer)).find() && ctx.order()[0] == null && !hasOrderOnFile(ctx))
@@ -705,6 +715,9 @@ public class ChatService {
         if (falseCancel) problems.put("CANCEL_CLAIM", "You told the customer the order is cancelled, but it is NOT cancelled: only cancel_order cancels. Ask kindly why they want to cancel, then call cancel_order with the reason (or noReason=true if they will not say), and tell them only what the tool answered.");
         if (PRICE_ASKED.matcher(FastAnswers.norm(last)).find() && !MoneyGuard.digits(answer).matches("(?s).*\\d{2,}.*") && !NOT_HAVE.matcher(answer).find())
             problems.put("PRICE_MISSING", "The customer asked the price: give the real price (by option when the price changes by option) from search_products or get_product, in this message.");
+        if (!ctx.products().isEmpty() && answer.length() < 90 && !MoneyGuard.digits(answer).matches("(?s).*\\d{2,}.*") && relatedProducts(ctx.tenantId(), last).size() > 0
+                && FactCheck.mentions(answer, shopView(ctx.tenantId()).names()).isEmpty())
+            problems.put("THIN_REPLY", "You found products but the reply names none: name the best 2-3 with their prices and the options that matter, then one short question.");
         if (TOOL_TALK.matcher(answer).find())
             problems.put("TOOL_TALK", "Never talk about your tools, the system, the catalog data or searches to the customer («أداة البحث», «النظام», «الكتالوج مش راجع»): answer like a person in the shop, from what the search found (search again with fewer words if it found nothing).");
         if (!lookedUp && STALL.matcher(answer).find())
@@ -767,7 +780,7 @@ public class ChatService {
     }
 
     /** «هتأكد وأرجعلك», «لازم نتأكد من المخزون الأول», "let me confirm the price": a promise to look instead of looking. */
-    static final Pattern STALL = Pattern.compile("(?:(?:ه|هـ)(?:تاكد|تأكد|شوف|بحث|راجع|سال|سأل)(?:لك|لك)?\\s|لازم\\s+(?:ا|أ|ن)?(?:تاكد|تأكد)|ثواني\\s+و|هرجعلك|هرد\\s+عليك|هبلغك|(?:ا|أ)?رجع\\s*لك|وارجعلك|(?:ا|أ)راجع\\s+(?:المخزون|الكتالوج|السيستم)|اتاكد\\s+من\\s+المخزون|let\\s+me\\s+(?:check|confirm|look)|i\\s*(?:'ll|\\s+will)\\s+(?:check|confirm|look)|one\\s+moment)", Pattern.CASE_INSENSITIVE);
+    static final Pattern STALL = Pattern.compile("(?:(?:ه|هـ)(?:تاكد|تأكد|شوف|بحث|راجع|سال|سأل)(?:لك|لك)?\\s|لازم\\s+(?:ا|أ|ن)?(?:تاكد|تأكد)|ثواني\\s+و|هرجعلك|هرد\\s+عليك|هبلغك|(?:ا|أ)?رجع\\s*لك|وارجعلك|لحظه\\s+(?:ا|أ)?(?:تاكد|تأكد|شوف|راجع)|(?:ا|أ)تاكدلك|(?:ا|أ)تأكدلك|(?:ا|أ)راجع\\s+تاني|وارد\\s+عليك|وأرد\\s+عليك|(?:ا|أ)راجع\\s+(?:المخزون|الكتالوج|السيستم)|اتاكد\\s+من\\s+المخزون|let\\s+me\\s+(?:check|confirm|look)|i\\s*(?:'ll|\\s+will)\\s+(?:check|confirm|look)|one\\s+moment)", Pattern.CASE_INSENSITIVE);
     /** The model talking about its own machinery to the customer. */
     static final Pattern TOOL_TALK = Pattern.compile("(?:اداه\\s+البحث|أداة\\s+البحث|اداة\\s+البحث|نتايج\\s+البحث|نتائج\\s+البحث|البحث\\s+(?:مرجعش|لم\\s+يرجع|مارجعش)|في\\s+نظامنا|السيستم\\s+بتاعنا|قاعده\\s+البيانات|قاعدة\\s+البيانات|the\\s+(?:search\\s+)?tool|my\\s+tools|the\\s+database|in\\s+our\\s+system)", Pattern.CASE_INSENSITIVE);
 
@@ -837,6 +850,32 @@ public class ChatService {
     }
 
     private record NamesAt(List<FactCheck.Named> names, long at) {}
+
+    /** Every real price of a shop (cents) and the differences between the options of one product, kept two minutes. */
+    record ShopPrices(java.util.Set<Long> prices, java.util.Set<Long> steps, long at) {}
+
+    private static final Map<UUID, ShopPrices> PRICES_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+
+    ShopPrices shopPrices(UUID tenantId) {
+        var cached = PRICES_CACHE.get(tenantId);
+        if (cached != null && cached.at() > System.currentTimeMillis() - 120_000) return cached;
+        java.util.Set<Long> prices = new java.util.HashSet<>(), steps = new java.util.HashSet<>();
+        Map<Object, List<Long>> byProduct = new java.util.HashMap<>();
+        for (var r : jdbc.sql("SELECT v.product_id, v.price_minor, v.compare_at_price_minor FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE p.tenant_id = :t AND p.status = 'ACTIVE' AND v.status = 'ACTIVE'")
+                .param("t", tenantId).query().listOfRows()) {
+            long now = ((Number) r.get("price_minor")).longValue();
+            prices.add(now);
+            if (r.get("compare_at_price_minor") instanceof Number b) prices.add(b.longValue());
+            byProduct.computeIfAbsent(r.get("product_id"), k -> new ArrayList<>()).add(now);
+        }
+        for (var ps : byProduct.values()) {
+            List<Long> distinct = ps.stream().distinct().sorted().limit(20).toList();
+            for (int i = 0; i < distinct.size(); i++) for (int j = i + 1; j < distinct.size(); j++) steps.add(distinct.get(j) - distinct.get(i));
+        }
+        var out = new ShopPrices(prices, steps, System.currentTimeMillis());
+        PRICES_CACHE.put(tenantId, out);
+        return out;
+    }
 
     /** Product names per shop for the fact checks, kept two minutes: a shop with thousands of products is not read again on every reply. */
     private static final Map<UUID, NamesAt> NAMES_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
@@ -1060,7 +1099,10 @@ public class ChatService {
     private static final Pattern RANGE_TALK = Pattern.compile("(?:عندنا|عندي|متاح|متوفر|موجود|بنطلونات|قمصان|فساتين|عبايات|ملابس|تشكيلة|أنواع|انواع|موديلات|we have|available|options)", Pattern.CASE_INSENSITIVE);
 
     /** A reply saying the shop has no information about something («مفيش معلومات عن السعرات», «مش مكتوب في الوصف»). */
-    static final Pattern NO_INFO = Pattern.compile("(?:(?:مفيش|معنديش|مش\\s+عندي|مالقيتش|ملقيتش)\\s+(?:أي\\s+|اي\\s+)?(?:معلومات|معلومة|معلومه|بيانات|تفاصيل)|مش\\s+(?:مكتوب|مذكور|مذكوره|مذكورة)\\s+(?:في|ف)\\s+(?:الوصف|البيانات)|no\\s+(?:information|details)\\s+(?:about|on))", Pattern.CASE_INSENSITIVE);
+    /** One letter (or two) repeated on and on: the model's output broke. */
+    static final Pattern BROKEN_RUN = Pattern.compile("(\\p{L}{1,2})\\1{7,}");
+
+    static final Pattern NO_INFO = Pattern.compile("(?:(?:مفيش|معنديش|مش\\s+عندي|محدش\\s+عنده|معندناش|ماعندناش|مالقيتش|ملقيتش)\\s+(?:أي\\s+|اي\\s+)?(?:معلومات|معلومة|معلومه|بيانات|تفاصيل|مواصفات)|مش\\s+(?:مكتوب|مذكور|مذكوره|مذكورة)\\s+(?:في|ف)\\s+(?:الوصف|البيانات)|خارج\\s+عن\\s+(?:معلوماتنا|المعلومات)|(?:no|don'?t\\s+have)\\s+(?:detailed\\s+)?(?:information|details|specs|specifications))", Pattern.CASE_INSENSITIVE);
 
     /** The product cards of this reply have nothing to do with what the customer asked about («عندكم شاورما ايه؟» answered with desserts); null when they fit or nothing is known. */
     private String cardsUnrelated(Ctx ctx, String customer) {

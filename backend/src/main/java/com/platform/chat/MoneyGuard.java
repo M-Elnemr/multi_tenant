@@ -95,6 +95,15 @@ final class MoneyGuard {
             while (m.find()) { long c = cents(m.group(1)); if (c > 0) fromTools.add(c); }
         }
 
+        /**
+         * Every real price of the shop's products (now and before a discount) and the price an option adds within one product (an installation, a bigger size): a big shop's
+         * prices are not all in the prompt, and a right price from an earlier search must not be cut as made up.
+         */
+        void addShopPrices(java.util.Collection<Long> pricesCents, java.util.Collection<Long> optionStepsCents) {
+            for (long c : pricesCents) if (c > 0) { exact.add(c); fromTools.add(c); }
+            for (long c : optionStepsCents) if (c > 0) exact.add(c);
+        }
+
         /** Every number in a tool result (a number, or a number inside a text). */
         void addJson(Object o) {
             if (o instanceof Number n) { exact.add(Math.round(n.doubleValue() * 100)); fromTools.add(Math.round(n.doubleValue() * 100)); }

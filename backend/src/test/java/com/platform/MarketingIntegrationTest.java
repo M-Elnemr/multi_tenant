@@ -104,7 +104,8 @@ class MarketingIntegrationTest extends IntegrationTestBase {
         onHost(s.t().host(), s.t().access(), "POST", "/api/v1/store/marketing/posts/" + id + "/schedule", "{\"at\":\"" + Instant.now().minusSeconds(3600) + "\"}").andExpect(status().isBadRequest());
         onHost(s.t().host(), s.t().access(), "POST", "/api/v1/store/marketing/posts/" + id + "/schedule", "{\"at\":\"" + Instant.now().plusSeconds(3600) + "\"}").andExpect(status().isOk()).andExpect(jsonPath("$.status").value("SCHEDULED"));
         jdbc.sql("UPDATE marketing.posts SET scheduled_at = now() - interval '1 minute' WHERE id = CAST(:i AS uuid)").param("i", id).update();   // the time comes
-        social.runDueNow();
+        for (int i = 0; i < 20 && jdbc.sql("SELECT status FROM marketing.posts WHERE id = CAST(:i AS uuid)").param("i", id).query(String.class).single().equals("SCHEDULED"); i++)
+            social.runDueNow();   // a reused test database may hold older due posts: each run takes 10
         onHost(s.t().host(), s.t().access(), "GET", "/api/v1/store/marketing/posts/" + id, null).andExpect(jsonPath("$.status").value("POSTED"));
         assertThat(FakeMetaGraph.SENT.stream().anyMatch(x -> x.path().endsWith("/feed"))).isTrue();   // no picture: a text post
 
