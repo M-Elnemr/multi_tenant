@@ -1332,6 +1332,39 @@ public class ChatService {
         return b.toString();
     }
 
+    private static final Pattern WRITTEN_MOBILE = Pattern.compile("(?<!\\d)(?:\\+?20)?(01[0125]\\d{8})(?!\\d)");
+
+    /** The newest Egyptian mobile number in the customer's own messages (Arabic digits read as Western), or null. */
+    private String mobileTheCustomerWrote(Ctx ctx) {
+        var msgs = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u ORDER BY id DESC LIMIT 12").param("c", ctx.conversationId()).param("u", ctx.userMsgId())
+                .query(String.class).list();
+        for (String m : msgs) {
+            var hit = WRITTEN_MOBILE.matcher(MoneyGuard.digits(m).replaceAll("[\\s-]", ""));
+            if (hit.find()) return hit.group(1);
+        }
+        return null;
+    }
+
+    /** Whether the last 9 digits of {@code number} are in one of the customer's messages (Arabic digits read as Western). */
+    private boolean customerWrote(Ctx ctx, String number) {
+        String d = MoneyGuard.digits(number).replaceAll("\\D", "");
+        if (d.length() < 9) return false;
+        String tail = d.substring(d.length() - 9);
+        return jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u").param("c", ctx.conversationId()).param("u", ctx.userMsgId())
+                .query(String.class).list().stream().anyMatch(m -> MoneyGuard.digits(m).replaceAll("\\D", "").contains(tail));
+    }
+
+    /** The WhatsApp number the model passed is the customer's own number, possibly mis-copied by a digit or two: then the number they wrote is the one meant. */
+    private static boolean assumedOrSame(String passed, String written) {
+        String p = passed == null ? "" : MoneyGuard.digits(passed).replaceAll("\\D", "");
+        if (p.isEmpty()) return true;
+        String w = written.substring(written.length() - 9);
+        p = p.length() >= 9 ? p.substring(p.length() - 9) : p;
+        int diff = 0;
+        for (int i = 0; i < Math.min(p.length(), w.length()); i++) if (p.charAt(i) != w.charAt(i)) diff++;
+        return p.length() < 9 || diff <= 2;
+    }
+
     /** The summary tells the customer the confirmation comes on WhatsApp to the number they gave, and to say so if it has none (instead of a question of its own before the summary). */
     static String withWhatsAppNote(String summary) {
         boolean ar = summary.contains("أأكد الأوردر؟");
@@ -2154,6 +2187,9 @@ public class ChatService {
         String name = text(a, "customerName");
         boolean onWa = "WHATSAPP".equals(ctx.channel()) && ctx.externalId() != null && ctx.externalId().replaceAll("\\D", "").length() >= 8;
         String phone = onWa ? "+" + ctx.externalId().replaceAll("\\D", "") : westernDigits(text(a, "phone"));   // chatting on WhatsApp: that is their number, we never ask for one
+        String written = onWa ? null : mobileTheCustomerWrote(ctx);
+        // a number the model mis-copied (a digit dropped or doubled) is replaced by the one the customer actually wrote
+        if (!onWa && written != null && (phone == null || !MOBILE.matcher(phone.replace(" ", "")).matches() || !customerWrote(ctx, phone))) phone = written;
         if (name == null || name.length() < 2) return obj("error", "Ask for the customer's name");
         if (phone == null || !MOBILE.matcher(phone.replace(" ", "")).matches()) return obj("error", "Ask for a valid mobile number (like 01012345678)");
         boolean pickup = Boolean.TRUE.equals(a.get("pickup"));
@@ -2198,6 +2234,7 @@ public class ChatService {
             final String tail = last9;
             boolean said = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u").param("c", ctx.conversationId()).param("u", ctx.userMsgId())
                     .query(String.class).list().stream().anyMatch(m -> MoneyGuard.digits(m).replaceAll("\\D", "").contains(tail));
+            if (!said && written != null && assumedOrSame(waRaw, written)) { waNumber = PhoneNormalizer.normalize(written); said = true; }
             if (!said) return obj("error", "That WhatsApp number was not given by the customer. Ask them for it and use exactly what they wrote.");
         }
 
