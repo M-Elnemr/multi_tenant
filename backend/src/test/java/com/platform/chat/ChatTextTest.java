@@ -251,6 +251,7 @@ class ChatTextTest {
         org.assertj.core.api.Assertions.assertThat(ChatService.ADD_IT.matcher(FastAnswers.norm("ضيفه للاوردر")).matches()).isTrue();
         org.assertj.core.api.Assertions.assertThat(ChatService.ADD_IT.matcher(FastAnswers.norm("ضيف معاه بطاطس")).matches()).isFalse();
         org.assertj.core.api.Assertions.assertThat(ChatService.FAKE_SUMMARY.matcher(FastAnswers.norm("تمام يا فندم هاني، الطلب جاهز للتأكيد:")).find()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(ChatService.FAKE_SUMMARY.matcher(FastAnswers.norm("ملخص الأوردر الجديد:\n• وجبة بروستد\nأأكد التعديل؟ اكتب «تمام» 👌")).find()).isTrue();
         org.assertj.core.api.Assertions.assertThat(ChatService.ORDER_CLAIM.matcher("أهلاً بحضرتك 🙌 سجلت: ٣ زنجر حار وبطاطس كبير").find()).isTrue();
         org.assertj.core.api.Assertions.assertThat(ChatService.withoutDraftApology("آسف جداً يا فندم على الغلط السابق 🙏\n\nعندنا خيارات نباتية ممتازة")).startsWith("عندنا");
     }

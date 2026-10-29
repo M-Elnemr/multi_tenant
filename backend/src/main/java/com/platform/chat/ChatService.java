@@ -768,7 +768,7 @@ public class ChatService {
     /** The reply asks about an option (size, colour, bread...). */
     static final Pattern OPTION_ASK = Pattern.compile("(?:مقاس|المقاس|لون|اللون|حجم|الحجم|عيش|الخبز|خبز|السعه|الرامات|الطعم|انهي|size|colou?r|which)");
     /** A model-written summary or confirmation request («الطلب جاهز للتأكيد», «نبدأ التحضير؟»). */
-    static final Pattern FAKE_SUMMARY = Pattern.compile("(?:الطلب\\s+جاهز|جاهز\\s+للتاكيد|نبدا\\s+التحضير|ناكد\\s+الطلب|اكد\\s+الطلب|اكدلك\\s+الطلب\\s+كده|confirm\\s+(?:your|the)\\s+order|order\\s+is\\s+ready)");
+    static final Pattern FAKE_SUMMARY = Pattern.compile("(?:الطلب\\s+جاهز|جاهز\\s+للتاكيد|نبدا\\s+التحضير|ناكد\\s+الطلب|اكد\\s+الطلب|اكد\\s+الاوردر|اكد\\s+التعديل|ااكد|اكدلك\\s+الطلب\\s+كده|ملخص\\s+(?:الاوردر|الطلب)|اكتب\\s+تمام|confirm\\s+(?:your|the)\\s+(?:order|change)|order\\s+(?:is\\s+ready|summary))");
 
     private static final Pattern ADDRESS_WORDS = Pattern.compile("(?:شارع|ش\\.|عماره|عمارة|برج|شقه|شقة|دور|الدور|حي|منطقه|منطقة|مدينه|مدينة|street|st\\.|building|apt|apartment|floor)", Pattern.CASE_INSENSITIVE);
 
