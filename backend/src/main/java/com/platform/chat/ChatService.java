@@ -707,6 +707,8 @@ public class ChatService {
         boolean prepared = rounds.stream().anyMatch(r -> r.tools().contains("prepare_order"));
         if (!prepared && ADD_IT.matcher(FastAnswers.norm(last)).matches() && !OPTION_ASK.matcher(FastAnswers.norm(answer)).find())
             problems.put("ADD_WITHOUT_OPTIONS", "The customer wants to order the product you just talked about: ask in one message for every option they have not chosen yet (size, colour, bread, spice...), exactly as the product has them; ask for the delivery details only after that.");
+        if (ADD_IT.matcher(FastAnswers.norm(last)).matches() && GUEST.matcher(FastAnswers.norm(answer)).find())
+            problems.put("ADD_READ_AS_GUEST", "«ضيفه» means \"add it to my order\" (the product you just talked about), not a guest: ask for the options they did not choose yet, then add it.");
         if (!prepared && ctx.summary()[0] == null && FAKE_SUMMARY.matcher(FastAnswers.norm(answer)).find())
             problems.put("FAKE_SUMMARY", "Never write an order summary or ask to confirm the order yourself: call prepare_order with the items and details, and the customer gets the real summary from it (ask only for what is missing).");
         if (detailsGivenNoSummary(ctx, turns, rounds, last, answer))
@@ -760,6 +762,9 @@ public class ChatService {
     static final Pattern STALL = Pattern.compile("(?:(?:ه|هـ)(?:تاكد|تأكد|شوف|بحث|راجع|سال|سأل)(?:لك|لك)?\\s|لازم\\s+(?:ا|أ|ن)?(?:تاكد|تأكد)|ثواني\\s+و|هرجعلك|هرد\\s+عليك|هبلغك|let\\s+me\\s+(?:check|confirm|look)|i\\s*(?:'ll|\\s+will)\\s+(?:check|confirm|look)|one\\s+moment)", Pattern.CASE_INSENSITIVE);
     /** A short «ضيفه» / «احجزه» / «add it»: the customer wants the product just discussed. */
     static final Pattern ADD_IT = Pattern.compile("^(?:تمام\\s+|طيب\\s+|اوك\\s+)?(?:ضيفه|ضيفها|ضيفهم|ضيف|احجزه|احجزها|احجز|اطلبه|اطلبها|خده|خدها|عايزه|عايزاه|عايزها|هاخده|هاخدها|add it|add|book it|i ll take it|ill take it)(?:\\s+(?:للاوردر|للطلب|لو سمحت|بقي|بقى|please))?$");
+    /** A reply that took «ضيفه» for a guest («لضيف», «للضيوف», "a guest"). */
+    static final Pattern GUEST = Pattern.compile("(?:(?<!\\p{L})(?:ل|لل|ال|و)?(?:ضيف|ضيوف|ضيفك|ضيوفك)(?!\\p{L})|guests?)");
+
     /** The reply asks about an option (size, colour, bread...). */
     static final Pattern OPTION_ASK = Pattern.compile("(?:مقاس|المقاس|لون|اللون|حجم|الحجم|عيش|الخبز|خبز|السعه|الرامات|الطعم|انهي|size|colou?r|which)");
     /** A model-written summary or confirmation request («الطلب جاهز للتأكيد», «نبدأ التحضير؟»). */
@@ -828,7 +833,7 @@ public class ChatService {
             public List<FactCheck.Named> searchAll(List<String> words) {
                 if (words.isEmpty()) return List.of();
                 List<FactCheck.Named> out = new ArrayList<>();
-                for (var r : jdbc.sql("SELECT slug, name FROM commerce.products WHERE tenant_id = :t AND status = 'ACTIVE' AND search_text ILIKE ALL (CAST(:p AS text[])) ORDER BY sold_count DESC, name LIMIT 8")
+                for (var r : jdbc.sql("SELECT slug, name FROM commerce.products WHERE tenant_id = :t AND status = 'ACTIVE' AND search_text ILIKE ALL (CAST(:p AS text[])) ORDER BY sold_count DESC, name LIMIT 60")
                         .param("t", tenantId).param("p", words.stream().map(w -> "%" + FastAnswers.norm(SYNONYMS.getOrDefault(w.toLowerCase(java.util.Locale.ROOT), w)) + "%").toArray(String[]::new)).query().listOfRows())
                     out.add(new FactCheck.Named((String) r.get("slug"), (String) r.get("name")));
                 return out;
@@ -869,6 +874,17 @@ public class ChatService {
                     }
                 } catch (Exception e) { log.debug("Hours skipped", e); }
                 return out;
+            }
+
+            private Set<String> tags;
+
+            public Set<String> tags() {
+                if (tags == null) {
+                    tags = new java.util.HashSet<>();
+                    for (String t : jdbc.sql("SELECT DISTINCT unnest(tags) FROM commerce.products WHERE tenant_id = :t AND status = 'ACTIVE'").param("t", tenantId).query(String.class).list())
+                        for (String w : FastAnswers.norm(t).split("\\s+")) if (w.length() >= 3) tags.add(FactCheck.bare(w));
+                }
+                return tags;
             }
 
             public String pickup() {
@@ -1245,7 +1261,9 @@ public class ChatService {
                 - WHO IS IT FOR (strict): each product says who it is "for" and its category. When the words or the chat tell («رجالي»، «لابني ٥ سنين»، «ليا», a woman asking for a dress) or the shop sells it for one group, go ahead and pass audience (MEN, WOMEN, BOYS, GIRLS, BABY) to search_products. If several groups and nothing tells, ask ONE short question («ليك ولا لحد تاني؟»), or assume it is for them when they speak about themself. Ask a child's age only when the size depends on it. NEVER show a kids' product to an adult buying for themself.
                 - Photos: call show_products with the slugs you recommend, and whenever they ask for a photo; the shop sends each picture, price and link after your message (or a card on the website). Never write links.
                 - To close a sale you need the items (variant, quantity), the name, ONE mobile number, the full address and the payment method. Ask for EVERYTHING still missing in ONE single message as a short list, e.g. «محتاجة منك في رسالة واحدة: الاسم، رقم تليفون عليه واتساب، العنوان بالتفصيل (المحافظة، المنطقة، الشارع، رقم العمارة والشقة)، وطريقة الدفع» («محتاج» for a man). The governorate is part of the address: never ask for it as a separate question. Skip what they already told you and what SAVED DETAILS has (a returning customer only confirms the saved address).
-                - A mobile number without a word about WhatsApp: ask only «الرقم ده عليه واتساب؟». If SHOP FACTS says WhatsApp confirmation is available, ask for «رقم تليفون عليه واتساب» in that single message; that number is phone and whatsappNumber (whatsappConsent=true) for prepare_order; only if they say it has no WhatsApp pass whatsappConsent=false. Never invent a number.
+                - Once you have the items, name, mobile number, address and payment, call prepare_order RIGHT AWAY: never ask «الرقم ده عليه واتساب؟» as a message of its own. Leave whatsappConsent out: the summary itself tells them the confirmation comes on WhatsApp to that number and asks them to say if it has no WhatsApp. If they then say it has none, call prepare_order again with whatsappConsent=false (or with whatsappConsent=true and the other WhatsApp number they give). Never invent a number.
+                - WORDS: «ضيفه / ضيفها / ضيفهم / ضيف ده» always means "add it to my order" (the product just discussed), never «ضيف» = a guest. Answer by asking for the options they did not choose yet (size, colour, bread...), then add it.
+                - «نباتي / vegetarian / vegan»: food with no meat, chicken or fish. Name the real vegetarian dishes from the catalog first (main dishes, sandwiches, salads, sides: those tagged «نباتي»), not only desserts or drinks.
                 - prepare_order always takes the COMPLETE list (earlier items stay when they add one). The system then writes and sends the exact summary and asks them to confirm, so you never write a summary or a total. Call place_order only after their "yes" in a LATER message (a plain yes is handled automatically), never in the same turn as prepare_order. NEVER say an order is placed or confirmed unless place_order returned an order number; after a change, call prepare_order again.
                 - After place_order: thank them, give the order number, say you will keep them posted (card payment: give the payment link from the result).
                 - A discount goes to prepare_order as discountPercent, within your maximum; if the tool refuses it, say kindly it is the best price.
@@ -1312,6 +1330,15 @@ public class ChatService {
         else if (quote.get("etaMinDays") != null) b.append(ar ? "التوصيل المتوقع: " + quote.get("etaMinDays") + "-" + quote.get("etaMaxDays") + " أيام\n" : "Expected delivery: " + quote.get("etaMinDays") + "-" + quote.get("etaMaxDays") + " days\n");
         b.append(ar ? "\nأأكد الأوردر؟ اكتب «تمام» وأنا أسجله 👌" : "\nShall I place the order? Reply «yes» and I will confirm it.");
         return b.toString();
+    }
+
+    /** The summary tells the customer the confirmation comes on WhatsApp to the number they gave, and to say so if it has none (instead of a question of its own before the summary). */
+    static String withWhatsAppNote(String summary) {
+        boolean ar = summary.contains("أأكد الأوردر؟");
+        String note = ar ? "📲 هنبعتلك تأكيد الأوردر على واتساب على نفس الرقم، ولو الرقم ده مش عليه واتساب قولّي.\n"
+                         : "📲 We will send the order confirmation on WhatsApp to this number; if it has no WhatsApp, just tell me.\n";
+        int at = summary.lastIndexOf(ar ? "\nأأكد الأوردر؟" : "\nShall I place the order?");
+        return at < 0 ? summary + "\n" + note : summary.substring(0, at) + "\n" + note + summary.substring(at);
     }
 
     /** The questions this customer is still waiting on the owner for: the assistant says "I asked the team" once, then keeps selling and never repeats it. */
@@ -2135,17 +2162,26 @@ public class ChatService {
         if ("CARD".equals(pm) && !policy.cardEnabled()) return obj("error", "Card payment is not available; only cash on delivery. Tell the customer that.");
 
         String waNumber = onWa ? phone : null;   // on WhatsApp the same number is used for the confirmation, and the customer's "yes" is the confirmation
-        if (!onWa && shopWhatsapp(tenantId) != null) {
-            // The model must really ask in a message and the customer must answer in a later one: it cannot just tick "no" to get past this step.
+        Object consent = a.get("whatsappConsent");
+        String waRaw = text(a, "whatsappNumber");
+        boolean assumedWa = false;
+        if (!onWa && shopWhatsapp(tenantId) != null && !(consent instanceof Boolean)) {
+            // no separate «الرقم ده عليه واتساب؟» message: the summary goes out now, says the confirmation comes on WhatsApp to this number, and asks them to say if it has none
+            consent = Boolean.TRUE;
+            waRaw = phone;
+            assumedWa = true;
+        }
+        if (!onWa && shopWhatsapp(tenantId) != null && Boolean.FALSE.equals(consent)) {
+            // "no WhatsApp" only when the customer said so, after being asked: the model cannot tick "no" to get past this step
             boolean asked = jdbc.sql("""
                     SELECT EXISTS (SELECT 1 FROM chat.messages q WHERE q.conversation_id = :c AND q.role = 'assistant' AND (q.content ILIKE '%واتساب%' OR q.content ILIKE '%whatsapp%' OR q.content ILIKE '%واتس%')
                       AND EXISTS (SELECT 1 FROM chat.messages r WHERE r.conversation_id = :c AND r.role = 'user' AND r.id > q.id AND r.id <= :u))
                     """).param("c", ctx.conversationId()).param("u", ctx.userMsgId()).query(Boolean.class).single();
-            if (!asked || !(a.get("whatsappConsent") instanceof Boolean))
-                return obj("error", "First ask the customer for the number «رقم تليفون عليه واتساب» (in the same single message as the name and address) and wait for their answer, then call prepare_order again with whatsappConsent=true and whatsappNumber, or whatsappConsent=false if they say they have no WhatsApp.");
+            if (!asked)
+                return obj("error", "First ask the customer about WhatsApp, or leave whatsappConsent out: the summary then tells them the confirmation comes on WhatsApp to their number and asks them to say if it has none. Pass whatsappConsent=false only after they say their number has no WhatsApp.");
         }
-        if (!onWa && Boolean.TRUE.equals(a.get("whatsappConsent"))) {
-            String raw = westernDigits(text(a, "whatsappNumber"));
+        if (!onWa && Boolean.TRUE.equals(consent)) {
+            String raw = westernDigits(waRaw);
             if (raw == null || !MOBILE.matcher(raw.replace(" ", "")).matches()) return obj("error", "Ask for a valid WhatsApp mobile number (like 01012345678)");
             waNumber = PhoneNormalizer.normalize(raw.replace(" ", ""));
             String last9 = waNumber.replaceAll("\\D", "");
@@ -2182,6 +2218,7 @@ public class ChatService {
         List<Map<String, Object>> lines = new ArrayList<>();
         for (var ln : (List<Map<String, Object>>) quote.get("lines")) lines.add(obj("product", ln.get("productName"), "quantity", ln.get("quantity"), "unitPrice", major(ln.get("unitPriceMinor"))));
         ctx.summary()[0] = orderSummaryText(ctx, name, quote, extra, total, pm, pickup, line1, area, gov, change == null ? null : String.valueOf(onFile.get("number")));
+        if (assumedWa) ctx.summary()[0] = withWhatsAppNote(ctx.summary()[0]);
         return obj("summary", obj("items", lines, "subtotal", major(subtotal), "discount", major(((Number) quote.get("discountMinor")).longValue() + extra), "delivery", major(quote.get("shippingMinor")),
                 "cashOnDeliveryFee", major(quote.get("codFeeMinor")), "total", major(total), "currency", quote.get("currency"), "deliveryDays", quote.get("etaMinDays") == null ? null : etaText(quote.get("etaMinDays"), quote.get("etaMaxDays")),
                 "paymentMethod", pm, "deliverTo", pickup ? "Pickup from the shop" : line1 + ", " + area, "customer", name + " " + phone, "whatsappConfirmation", waNumber == null ? "no" : waNumber),

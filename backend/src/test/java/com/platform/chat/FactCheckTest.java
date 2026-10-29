@@ -43,6 +43,8 @@ class FactCheckTest {
             List<int[]> hours = new ArrayList<>();
             for (JsonNode h : root.path("hours")) hours.add(new int[]{h.get(0).asInt(), h.get(1).asInt()});
             String pickup = root.path("pickup").isNull() ? null : root.path("pickup").asText();
+            Set<String> tags = new java.util.HashSet<>();
+            for (JsonNode p : root.path("products")) for (JsonNode t : p.path("tags")) for (String w : FastAnswers.norm(t.asText()).split("\\s+")) if (w.length() >= 3) tags.add(FactCheck.bare(w));
             JsonNode zones = root.path("zones");
             return new FactCheck.Shop() {
                 public List<FactCheck.Named> names() { return names; }
@@ -59,6 +61,7 @@ class FactCheckTest {
                 }
                 public List<int[]> hours() { return hours; }
                 public String pickup() { return pickup; }
+                public Set<String> tags() { return tags; }
             };
         } catch (Exception e) {
             throw new IllegalStateException(e);
@@ -196,6 +199,13 @@ class FactCheckTest {
         assertThat(kinds(FASH, "الجاكيت البافر الشتوي الرجالي زيتي XXL موجود؟", "موجود يا فندم! جاكيت البافر الشتوي الرجالي باللون الزيتي ومقاس XXL متوفر (16 قطعة في المخزن).")).contains("OPTION_STOCK");
         assertThat(kinds(FASH, "تيشيرت القطن السادة الرجالي متاح بكل المقاسات؟", "أيوة يا فندم، تيشيرت قطن سادة رجالي بسعر ٢٩٠ جنيه متاح بكل المقاسات من S لحد XXL.")).contains("OPTION_STOCK");
         assertThat(kinds(FASH, "تيشيرت القطن السادة الرجالي متاح بكل المقاسات؟", "تيشيرت قطن سادة رجالي متاح بكل المقاسات يا فندم (S, M, L, XL, XXL) وبالألوان: أسود، أبيض، رمادي، كحلي، زيتي.")).contains("OPTION_STOCK");
+    }
+
+    @Test
+    void dessertsForAVegetarianAreTheWrongKind() {
+        assertThat(kinds(REST, "عندكم أكل نباتي؟", "عندنا حلويات نباتية، بسبوسة بالقشطة بـ 50 جنيه، تشيز كيك فراولة بـ 85 جنيه، براونيز بالشوكولاتة بـ 60 جنيه. تحب نجهزلك حاجة منها؟")).contains("WRONG_KIND");
+        assertThat(kinds(REST, "عندكم أكل نباتي؟", "أيوة عندنا: ساندوتش فلافل سوري ٣٥ جنيه، حمص بالطحينة ٤٠ جنيه، سلطة فتوش ٥٥ جنيه.")).doesNotContain("WRONG_KIND");
+        assertThat(kinds(REST, "عايز ساندوتش شاورما فراخ", "عندنا ساندوتش شاورما فراخ: عادي ٨٥، كبير ١١٠، سوبر ١٤٠.")).doesNotContain("WRONG_KIND");
     }
 
     // ---- every reply of the recorded test chats: what the checks say ------------------------------------------------

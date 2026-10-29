@@ -254,4 +254,13 @@ class ChatTextTest {
         org.assertj.core.api.Assertions.assertThat(ChatService.ORDER_CLAIM.matcher("أهلاً بحضرتك 🙌 سجلت: ٣ زنجر حار وبطاطس كبير").find()).isTrue();
         org.assertj.core.api.Assertions.assertThat(ChatService.withoutDraftApology("آسف جداً يا فندم على الغلط السابق 🙏\n\nعندنا خيارات نباتية ممتازة")).startsWith("عندنا");
     }
+
+    @Test
+    void aSummaryTellsTheConfirmationComesOnWhatsAppAndGuestIsRecognised() {
+        String out = ChatService.withWhatsAppNote("ده ملخص الأوردر يا فندم:\nالإجمالي: 260 جنيه\n\nأأكد الأوردر؟ اكتب «تمام» وأنا أسجله 👌");
+        org.assertj.core.api.Assertions.assertThat(out).contains("واتساب على نفس الرقم").endsWith("أأكد الأوردر؟ اكتب «تمام» وأنا أسجله 👌");
+        org.assertj.core.api.Assertions.assertThat(out.indexOf("واتساب")).isLessThan(out.indexOf("أأكد"));
+        org.assertj.core.api.Assertions.assertThat(ChatService.GUEST.matcher(FastAnswers.norm("حضرتك بتقصد إن القميص هدية أو إنك بتشتريه لضيف؟")).find()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(ChatService.GUEST.matcher(FastAnswers.norm("تمام، ضفنالك القميص، تحب أي لون ومقاس؟")).find()).isFalse();
+    }
 }

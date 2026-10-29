@@ -51,6 +51,8 @@ final class FactCheck {
         List<int[]> hours();
         /** The pickup branch's name and area, or null. */
         default String pickup() { return null; }
+        /** The tags the shop gives its products («نباتي», «للأطفال», «شتوي»), as bare words. */
+        default Set<String> tags() { return Set.of(); }
     }
 
     record Problem(String kind, String note, String fixed) {}
@@ -234,6 +236,7 @@ final class FactCheck {
         hours(answer, shop, out);
         sale(customer, answer, ms, load, out);
         offTopic(customer, answer, ms, shop, out);
+        wrongKind(customer, ms, shop, out);
         return out;
     }
 
@@ -867,5 +870,30 @@ final class FactCheck {
         boolean asked = !mentions(customer, shop.names()).isEmpty() || (WANT.matcher(lc).find() && !words.isEmpty()) || words.size() >= 3;
         if (!asked) return;
         out.add(new Problem("OFF_TOPIC", "Your reply ignores what the customer asked («" + customer.trim() + "»): answer exactly that (search_products for the product, then give its price and options, or go on with the order).", null));
+    }
+
+    // ---- 8. products of another kind than the one asked for ---------------------------------------------------------------
+
+    /**
+     * «عندكم أكل نباتي؟» answered with desserts only: the customer's word is a kind the shop's products carry (a tag, a category, a word of their names: «نباتي», «للأطفال», «شتوي»),
+     * the reply names products, and none of them is of that kind. Null-safe; one problem at most.
+     */
+    private static void wrongKind(String customer, List<Mention> ms, Shop shop, List<Problem> out) {
+        if (customer == null || ms.isEmpty() || !mentions(customer, shop.names()).isEmpty()) return;   // a product asked for by name is the other checks' business
+        Set<String> tags = shop.tags();
+        if (tags.isEmpty()) return;
+        Set<String> named = new java.util.HashSet<>();
+        for (Mention m : ms) named.add(m.slug());
+        for (String w : content(light(customer), 4)) {
+            if (w.length() < 4 || AUDIENCE.contains(w) || POLICY.matcher(w).find()) continue;
+            String st = stem(w);
+            if (tags.stream().noneMatch(t -> t.equals(w) || stem(t).equals(st))) continue;   // only a kind the shop itself tags its products with
+            List<Named> kind = shop.searchAll(List.of(stem(w)));
+            if (kind.size() < 2) continue;
+            if (kind.stream().anyMatch(k -> named.contains(k.slug()))) return;   // it named at least one of them: fine
+            List<String> shown = kind.stream().limit(5).map(Named::name).toList();
+            out.add(new Problem("WRONG_KIND", "The customer asked for «" + w + "»; the products you named are not that. The shop's «" + w + "» products: " + String.join("، ", shown) + ". Answer with these.", null));
+            return;
+        }
     }
 }
