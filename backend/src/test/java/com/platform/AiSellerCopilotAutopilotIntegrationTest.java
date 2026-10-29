@@ -125,13 +125,13 @@ class AiSellerCopilotAutopilotIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void theEvaluationSetHasSeventyFiveConversationsWithRubrics() throws Exception {
+    void theEvaluationSetHasItsConversationsWithRubrics() throws Exception {
         JsonNode set = JSON.readTree(getClass().getResourceAsStream("/ai-eval.json"));
-        assertThat(set.path("conversations")).hasSize(75);
+        assertThat(set.path("conversations")).hasSize(87);
         for (JsonNode c : set.path("conversations")) {
             assertThat(c.path("customer").size()).as("customer turns of #" + c.path("id")).isGreaterThan(0);
             assertThat(c.path("expect").size()).as("rubric of #" + c.path("id")).isGreaterThan(0);
-            if (c.has("shop")) assertThat(c.path("shop").asText()).isIn("beit-elshawarma", "nile-style");
+            if (c.has("shop")) assertThat(c.path("shop").asText()).isIn("beit-elshawarma", "nile-style", "tech-zone");
         }
         assertThat(set.toString()).contains("injection").contains("out_of_stock").contains("order_status").contains("cod_fear").contains("who_is_it_for").contains("respect_name").contains("burst");
     }
