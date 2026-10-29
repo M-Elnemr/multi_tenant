@@ -1793,7 +1793,14 @@ public class ChatService {
                 case "search_products" -> searchProducts(ctx, c.args());
                 case "get_product" -> getProduct(ctx, c.args());
                 case "show_products" -> showProducts(ctx, c.args());
-                case "prepare_order" -> prepareOrder(ctx, c.args());
+                case "prepare_order" -> {
+                    Map<String, Object> r = prepareOrder(ctx, c.args());
+                    if (r.get("error") != null) {   // a refused summary is why a customer gets none: worth seeing in the log and on the AI health page
+                        log.info("prepare_order refused (conversation {}): {}", ctx.conversationId(), r.get("error"));
+                        events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), null, "ORDER_REFUSED", String.valueOf(r.get("error")), null);
+                    }
+                    yield r;
+                }
                 case "place_order" -> placeOrder(ctx);
                 case "cancel_order" -> cancelOrder(ctx, c.args());
                 case "flag_unanswered" -> {
@@ -2181,6 +2188,7 @@ public class ChatService {
                 return obj("error", "First ask the customer about WhatsApp, or leave whatsappConsent out: the summary then tells them the confirmation comes on WhatsApp to their number and asks them to say if it has none. Pass whatsappConsent=false only after they say their number has no WhatsApp.");
         }
         if (!onWa && Boolean.TRUE.equals(consent)) {
+            if (waRaw == null || waRaw.isBlank()) waRaw = phone;   // "yes, WhatsApp" without a second number: the number they gave
             String raw = westernDigits(waRaw);
             if (raw == null || !MOBILE.matcher(raw.replace(" ", "")).matches()) return obj("error", "Ask for a valid WhatsApp mobile number (like 01012345678)");
             waNumber = PhoneNormalizer.normalize(raw.replace(" ", ""));
