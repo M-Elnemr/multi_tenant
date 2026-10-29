@@ -156,4 +156,15 @@ class TaxonomyIntegrationTest extends IntegrationTestBase {
         assertThat(jdbc.sql("SELECT slug FROM commerce.taxonomy WHERE id = :i").param("i", exact).query(String.class).single()).isEqualTo("dresses");
         assertThat(jdbc.sql("SELECT slug FROM commerce.taxonomy WHERE id = :i").param("i", contains).query(String.class).single()).isEqualTo("abayas-modest");
     }
+
+    @Test
+    void anOptionNamedSizeOrColourOutsideClothesKeepsTheShopsOwnValues() throws Exception {
+        Tenant t = onboard("STORE");
+        String branch = com.jayway.jsonpath.JsonPath.read(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null).andReturn().getResponse().getContentAsString(), "$[0].id");
+        String res = create(t, ("{\"name\":\"TV\",\"taxonomySlug\":\"tvs\",\"options\":[{\"name\":\"المقاس\",\"values\":[\"43 بوصة\",\"55 بوصة\"]},{\"name\":\"اللون\",\"values\":[\"تيتانيوم\"]}],"
+                + "\"variants\":[{\"sku\":\"TV-%s\",\"priceMinor\":1000000,\"optionValues\":{\"المقاس\":\"43 بوصة\",\"اللون\":\"تيتانيوم\"},\"stock\":[{\"branchId\":\"%s\",\"quantity\":2}]},"
+                + "{\"sku\":\"TV-%s\",\"priceMinor\":1500000,\"optionValues\":{\"المقاس\":\"55 بوصة\",\"اللون\":\"تيتانيوم\"},\"stock\":[{\"branchId\":\"%s\",\"quantity\":2}]}]}").formatted(uniq(), branch, uniq(), branch))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        assertThat(com.jayway.jsonpath.JsonPath.<String>read(res, "$.variants[0].comboKey")).contains("المقاس=43 بوصة");
+    }
 }

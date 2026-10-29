@@ -244,6 +244,13 @@ public class CatalogService {
     private static final Map<String, String> STANDARD_OPTION_NAMES = Map.ofEntries(Map.entry("اللون", "COLOR"), Map.entry("لون", "COLOR"), Map.entry("color", "COLOR"), Map.entry("colour", "COLOR"),
             Map.entry("المقاس", "SIZE"), Map.entry("مقاس", "SIZE"), Map.entry("size", "SIZE"));
 
+    /** Every value is a standard colour, or every value is in one standard size list. */
+    private boolean fitsStandard(String attr, List<String> values, Map<String, Object> node) {
+        if (attr.equals("COLOR")) return values.stream().allMatch(v -> taxonomy.standardValue("COLOR", "", v) != null);
+        for (String sc : List.of("APPAREL", "KIDS", "SHOE", "BED")) if (values.stream().allMatch(v -> taxonomy.standardValue("SIZE", sc, v) != null)) return true;
+        return false;
+    }
+
     /**
      * Colour and size are standard: whatever the client wrote (a code, Arabic or English name, odd spelling) becomes the standard value, or the request is refused.
      * Variants' option values are rewritten the same way so they keep matching their options. Other (custom) options are left as they are.
@@ -256,9 +263,14 @@ public class CatalogService {
         for (OptionReq o : options) {
             String sent = o.name() == null ? "" : o.name().trim();
             String attr = o.attribute() == null ? "" : o.attribute().trim().toUpperCase(Locale.ROOT);
+            boolean guessed = attr.isEmpty();   // only the option's name says colour or size: values outside the standard lists keep it a custom option
             if (attr.isEmpty()) attr = STANDARD_OPTION_NAMES.getOrDefault(StoreSearchService.norm(sent), "");
             if (!attr.isEmpty() && !Set.of("COLOR", "SIZE").contains(attr)) throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown option type");
             if (attr.isEmpty() || o.values() == null) { outOptions.add(o); continue; }
+            // «المقاس: 43 بوصة / 55 بوصة» (a TV), «المقاس: 41 مم» (a watch), «اللون: تيتانيوم»: named like the standard option but not standard values, so it stays the shop's own option
+            // (clothes, shoes and bedding keep the standard lists strictly, so a typo such as «Rd» is caught there)
+            boolean sizedCategory = node != null && node.get("size_scales") instanceof String sc && !sc.isBlank();
+            if (guessed && !sizedCategory && !fitsStandard(attr, o.values(), node)) { outOptions.add(o); continue; }
             String scale = "";
             if (attr.equals("SIZE")) {
                 scale = o.sizeScale() == null ? "" : o.sizeScale().trim().toUpperCase(Locale.ROOT);
