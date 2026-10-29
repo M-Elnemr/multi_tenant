@@ -219,4 +219,22 @@ class AiOrderChangeIntegrationTest extends IntegrationTestBase {
         assertThat(FakeAiProvider.RESULTS.get(0).result()).containsEntry("cancelled", true);
         assertThat(orders(tenant).get(0).get("status")).isEqualTo("CANCELLED");
     }
+
+    @Test
+    void aColourTheProductDoesNotComeInIsSentBack() throws Exception {
+        Tenant t = onboard("STORE");
+        String branch = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
+        String name = "Bag " + uniq();
+        onHost(t.host(), t.access(), "POST", "/api/v1/store/products", """
+                {"taxonomySlug":"handbags","audience":"WOMEN","name":"%1$s","options":[{"name":"اللون","values":["أسود","بني"]}],
+                 "variants":[{"sku":"BG-1-%2$s","priceMinor":100000,"optionValues":{"اللون":"أسود"},"stock":[{"branchId":"%3$s","quantity":5}]},
+                             {"sku":"BG-2-%2$s","priceMinor":100000,"optionValues":{"اللون":"بني"},"stock":[{"branchId":"%3$s","quantity":5}]}]}
+                """.formatted(name, uniq(), branch)).andExpect(status().isCreated());
+        UUID tenant = id(t);
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("search_products", Map.of("query", name)));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("عندنا " + name + " بـ1000 جنيه، متاحة بالأسود والوردي. تحبي أنهي لون؟"));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("عندنا " + name + " بـ1000 جنيه، متاحة بالأسود والبني. تحبي أنهي لون؟"));
+        String reply = chat.reply(tenant, "WEB", "colour-" + uniq(), null, "عايزة " + name).text();
+        assertThat(reply).contains("البني").doesNotContain("الوردي");
+    }
 }
