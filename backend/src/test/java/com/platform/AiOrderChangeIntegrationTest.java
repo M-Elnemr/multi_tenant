@@ -237,4 +237,21 @@ class AiOrderChangeIntegrationTest extends IntegrationTestBase {
         String reply = chat.reply(tenant, "WEB", "colour-" + uniq(), null, "عايزة " + name).text();
         assertThat(reply).contains("البني").doesNotContain("الوردي");
     }
+
+    @Test
+    void aRightAnswerAboutAProductNamedWithTheArticleIsKeptAndStrayLettersAreCleaned() throws Exception {
+        Tenant t = onboard("STORE");
+        String branch = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
+        String tag = uniq();
+        onHost(t.host(), t.access(), "POST", "/api/v1/store/products", """
+                {"taxonomySlug":"jackets-coats","audience":"MEN","name":"جاكيت بافر رجالي %1$s","options":[{"name":"اللون","values":["زيتي"]}],
+                 "variants":[{"sku":"PF-%1$s","priceMinor":185000,"optionValues":{"اللون":"زيتي"},"stock":[{"branchId":"%2$s","quantity":3}]}]}
+                """.formatted(tag, branch)).andExpect(status().isCreated());
+        UUID tenant = id(t);
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("search_products", Map.of("query", "جاكيت بافر رجالي " + tag)));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("أيوه يا فندم، جاكيت بافر رجالي " + tag + " الزيتي متاح بـ1850 جنيه. تحب أحجزهولك؟ سەە"));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("WRONG REWRITE"));
+        String reply = chat.reply(tenant, "WEB", "puffer-" + uniq(), null, "الجاكيت البافر الرجالي " + tag + " زيتي متاح؟").text();
+        assertThat(reply).contains("1850").doesNotContain("WRONG").doesNotContain("سەە");
+    }
 }

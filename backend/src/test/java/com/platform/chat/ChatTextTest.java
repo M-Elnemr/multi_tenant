@@ -194,6 +194,7 @@ class ChatTextTest {
     void sayingTheOrderIsRecordedIsRecognised() {
         assertThat(ChatService.ORDER_CLAIM.matcher("تمام يا فندم، سجلت طلبك (٢ شاورما فراخ كبير)").find()).isTrue();
         assertThat(ChatService.ORDER_CLAIM.matcher("تم تسجيل الطلب برقم ST-1").find()).isTrue();
+        assertThat(ChatService.ORDER_CLAIM.matcher(com.platform.chat.FastAnswers.norm("تمام، سجّلنا طلبك وجبة شاورما فراخ")).find()).isTrue();
         assertThat(ChatService.ORDER_CLAIM.matcher("هسجلها كلها، باقي محتاج الاسم").find()).isFalse();
     }
 

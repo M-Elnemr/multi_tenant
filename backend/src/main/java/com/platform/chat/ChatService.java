@@ -79,7 +79,9 @@ public class ChatService {
         if (text == null || text.isBlank()) return text;
         String t = text.replaceAll("[\\p{IsHan}\\p{IsHiragana}\\p{IsKatakana}\\p{IsHangul}\\p{IsCyrillic}]", "")
                 .replaceAll("\\s*\\[[\\p{L}\\p{N}-]{3,}\\]", "")   // a catalog slug («[بنطلون-جينز-سليم]») is never for the customer
-                .replaceAll("(?<=\\p{IsArabic})[a-z]{3,}(?=\\s|$|\\p{IsArabic})", "");   // lowercase Latin glued to an Arabic word («أursic») is a slip; sizes after «و» («وXL») stay
+                .replaceAll("(?<=\\p{IsArabic})[a-z]{3,}(?=\\s|$|\\p{IsArabic})", "")   // lowercase Latin glued to an Arabic word («أursic») is a slip; sizes after «و» («وXL») stay
+                .replaceAll("(?<=\\p{IsArabic})[A-Z][a-z]{2,}(?=\\p{IsArabic})", "")   // a capitalised Latin piece inside an Arabic word («أفCoreة»)
+                .replaceAll("[\\p{L}]*[\\u06D5\\u0695\\u06CE\\u06C6\\u06B5][\\p{L}]*[؟?]?", "");   // a word in Kurdish letters («سەە») never belongs in an Egyptian reply
         for (var fix : WORD_FIXES.entrySet()) t = t.replace(fix.getKey(), fix.getValue());
         t = t.replaceAll("وبتاع\\s+(?=[0-9٠-٩])", "وبـ");
         t = t.replaceAll("(?<=\\p{IsArabic})(?!(?:XL|XXL|XS|S|M|L)(?![A-Za-z]))[A-Za-z]{2,}(?=\\s|$|[.،,؟?!]|\\p{IsArabic})", "");   // «للمen»: Latin glued to an Arabic word, sizes after «و» stay
@@ -597,7 +599,7 @@ public class ChatService {
         boolean lookedUp = rounds.stream().anyMatch(r -> r.tools().stream().anyMatch(t -> t.equals("get_product") || t.equals("search_products")));
         if (NO_INFO.matcher(answer).find() && !lookedUp)
             problems.add("You said there is no information without looking: call get_product for that product and answer from its details (ingredients, calories, material, size guide...); say it is not listed only if get_product has nothing.");
-        if (ORDER_CLAIM.matcher(answer).find() && ctx.order()[0] == null && !hasOrderOnFile(ctx))
+        if (ORDER_CLAIM.matcher(FastAnswers.norm(answer)).find() && ctx.order()[0] == null && !hasOrderOnFile(ctx))
             problems.add("You said the order is recorded, but no order exists yet: an order exists only after the customer confirms the summary from prepare_order. Call prepare_order with the details you have (or ask for what is missing) and never say it is recorded before.");
         String colorProblem = inventedColors(ctx, answer);
         if (colorProblem != null) problems.add(colorProblem);
@@ -630,7 +632,7 @@ public class ChatService {
     static final Pattern CANCEL_CLAIM = Pattern.compile("(?:(?<!\\p{L})اتلغ[ىيا]|تم\\s+(?:ال)?[إا]لغا[ءئ]|(?<!\\p{L})(?:أ|ا)?لغيت(?:ه|هولك|لك|ها)?(?!\\p{L})|(?<!\\p{L})(?:has been|is|was)\\s+cancell?ed)", Pattern.CASE_INSENSITIVE);
 
     /** A reply that says the order is already recorded («سجلت طلبك», «تم تسجيل الطلب», "your order is placed"). */
-    static final Pattern ORDER_CLAIM = Pattern.compile("(?:سجلت\\s+(?:لك\\s+)?(?:طلبك|الطلب|الأوردر|الاوردر)|تم\\s+تسجيل\\s+(?:طلبك|الطلب|الأوردر|الاوردر)|(?:طلبك|الطلب|الأوردر|الاوردر)\\s+اتسجل|(?:has been|is)\\s+placed|placed your order)", Pattern.CASE_INSENSITIVE);
+    static final Pattern ORDER_CLAIM = Pattern.compile("(?:(?:سجلت|سجلنا|سجلتلك|سجلنالك)\\s+(?:لك\\s+)?(?:طلبك|الطلب|الأوردر|الاوردر|طلب)|تم\\s+تسجيل\\s+(?:طلبك|الطلب|الأوردر|الاوردر)|(?:طلبك|الطلب|الأوردر|الاوردر)\\s+اتسجل|(?:has been|is)\\s+placed|placed your order)", Pattern.CASE_INSENSITIVE);
 
     private boolean hasOrderOnFile(Ctx ctx) {
         return jdbc.sql("SELECT last_order IS NOT NULL FROM chat.conversations WHERE id = :c").param("c", ctx.conversationId()).query(Boolean.class).optional().orElse(false);
@@ -736,7 +738,8 @@ public class ChatService {
         if (ctx.products().stream().anyMatch(p -> slugs.contains(String.valueOf(p.get("slug"))))) return null;
         String q = withoutOptions(customer);
         if (q != null) {
-            List<String> words = java.util.Arrays.stream(q.split("\\s+")).filter(w -> w.length() >= 3 && !CHAT_WORDS.contains(w)).toList();
+            List<String> words = java.util.Arrays.stream(q.split("\\s+")).map(w -> w.length() >= 5 && w.startsWith("ال") ? w.substring(2) : w)
+                    .filter(w -> w.length() >= 3 && !CHAT_WORDS.contains(w)).toList();
             for (var p : ctx.products()) {
                 String name = FastAnswers.norm(String.valueOf(p.get("name")));
                 if (words.stream().anyMatch(w -> name.contains(w) || (SYNONYMS.containsKey(w) && name.contains(SYNONYMS.get(w))))) return null;
