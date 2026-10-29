@@ -277,4 +277,11 @@ class ChatTextTest {
         org.assertj.core.api.Assertions.assertThat(ChatService.looksLikeSummary("عندنا ساندوتش شاورما فراخ: عادي ٨٥، كبير ١١٠، سوبر ١٤٠.")).isFalse();
         org.assertj.core.api.Assertions.assertThat(ChatService.withoutSelfSummary(fake)).startsWith("تمام يا فندم، هغير الطعم لعادي.").contains("ملخص الأوردر النهائي").doesNotContain("260");
     }
+
+    @Test
+    void aChangeToTheOrderIsRecognised() {
+        org.assertj.core.api.Assertions.assertThat(ChatService.CHANGE_WORDS.matcher(FastAnswers.norm("لا خليها عادي مش حار")).find()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(ChatService.CHANGE_WORDS.matcher(FastAnswers.norm("بدل البيبسي ميرندا")).find()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(ChatService.CHANGE_WORDS.matcher(FastAnswers.norm("تمام")).find()).isFalse();
+    }
 }

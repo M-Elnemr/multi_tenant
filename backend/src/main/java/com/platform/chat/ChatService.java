@@ -709,6 +709,8 @@ public class ChatService {
             problems.put("ADD_WITHOUT_OPTIONS", "The customer wants to order the product you just talked about: ask in one message for every option they have not chosen yet (size, colour, bread, spice...), exactly as the product has them; ask for the delivery details only after that.");
         if (ADD_IT.matcher(FastAnswers.norm(last)).matches() && GUEST.matcher(FastAnswers.norm(answer)).find())
             problems.put("ADD_READ_AS_GUEST", "«ضيفه» means \"add it to my order\" (the product you just talked about), not a guest: ask for the options they did not choose yet, then add it.");
+        if (!prepared && ctx.summary()[0] == null && CHANGE_WORDS.matcher(FastAnswers.norm(last)).find() && summaryWasShown(ctx))
+            problems.put("CHANGE_NOT_APPLIED", "The customer changed the order you just summarised: call prepare_order now with the complete changed list (and the same details), so they get the updated summary. Never only say you will change it.");
         if (!prepared && ctx.summary()[0] == null && looksLikeSummary(answer))
             problems.put("FAKE_SUMMARY", "Never write an order summary or ask to confirm the order yourself: call prepare_order with the items and details, and the customer gets the real summary from it (ask only for what is missing).");
         if (detailsGivenNoSummary(ctx, turns, rounds, last, answer))
@@ -770,6 +772,16 @@ public class ChatService {
     static final Pattern OPTION_ASK = Pattern.compile("(?:مقاس|المقاس|لون|اللون|حجم|الحجم|عيش|الخبز|خبز|السعه|الرامات|الطعم|انهي|size|colou?r|which)");
     /** A model-written summary or confirmation request («الطلب جاهز للتأكيد», «نبدأ التحضير؟»). */
     static final Pattern FAKE_SUMMARY = Pattern.compile("(?:الطلب\\s+جاهز|جاهز\\s+للتاكيد|نبدا\\s+التحضير|ناكد\\s+الطلب|اكد\\s+الطلب|اكد\\s+الاوردر|اكد\\s+التعديل|ااكد|اكدلك\\s+الطلب\\s+كده|ملخص\\s+(?:الاوردر|الطلب)|اكتب\\s+تمام|confirm\\s+(?:your|the)\\s+(?:order|change)|order\\s+(?:is\\s+ready|summary))");
+
+    /** «خليها عادي», «غيّر», «بدل», «شيل», «زوّد», «خليهم ٣»: a change to the order. */
+    static final Pattern CHANGE_WORDS = Pattern.compile("(?:(?<!\\p{L})(?:خليها|خليه|خليهم|خليني|غير|غيرها|غيره|بدل|بدلها|شيل|شيلها|شيله|زود|زودها|نقص|قلل|مش\\s+عايز|عايزها|عايزه)(?!\\p{L})|\\b(?:change|instead|remove|make\\s+it)\\b)");
+
+    /** The last assistant message before this customer message was the code-written summary (pending order not yet placed). */
+    private boolean summaryWasShown(Ctx ctx) {
+        return jdbc.sql("SELECT pending -> 'items' IS NOT NULL FROM chat.conversations WHERE id = :c").param("c", ctx.conversationId()).query(Boolean.class).optional().orElse(false)
+                && isSummary(jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'assistant' AND id < :u ORDER BY id DESC LIMIT 1").param("c", ctx.conversationId()).param("u", ctx.userMsgId())
+                        .query(String.class).optional().orElse(null));
+    }
 
     private static final Pattern TOTAL_LINE = Pattern.compile("(?m)^\\s*(?:الإجمالي|الاجمالي|الإجمالى|المجموع|Total)\\s*[:：]", Pattern.CASE_INSENSITIVE);
     private static final Pattern ITEM_LINE = Pattern.compile("(?m)^\\s*[•\\-*]\\s*.+(?:×|x\\s*\\d|=\\s*[0-9٠-٩])");
