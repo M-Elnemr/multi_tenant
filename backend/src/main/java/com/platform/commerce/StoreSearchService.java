@@ -47,7 +47,18 @@ public class StoreSearchService {
                 (SELECT count(*) FROM commerce.reviews r WHERE r.product_id = p.id AND r.status = 'APPROVED') AS rating_count,
                 EXISTS (SELECT 1 FROM commerce.product_variants v JOIN commerce.inventory_items i ON i.variant_id = v.id
                         JOIN commerce.branches b ON b.id = i.branch_id AND b.is_active
-                        WHERE v.product_id = p.id AND v.status = 'ACTIVE' AND i.quantity_on_hand - i.quantity_reserved > 0) AS in_stock
+                        WHERE v.product_id = p.id AND v.status = 'ACTIVE' AND i.quantity_on_hand - i.quantity_reserved > 0) AS in_stock,
+                -- how well the product answers the words searched: its own category is that kind of thing («موبايل» → phones, not phone stands), its name starts with the
+                -- first word, its name holds every word, and a shorter name is closer («نوفا X12» → the phone before the X12's case and screen guard)
+                CASE WHEN CAST(:q1 AS varchar) IS NULL THEN 0 ELSE
+                  4 * (CASE WHEN EXISTS (SELECT 1 FROM commerce.taxonomy tx WHERE tx.id = p.taxonomy_id
+                          AND commerce.norm_ar(tx.name_ar || ' ' || tx.name_en) ILIKE ANY (ARRAY['%' || CAST(:q1 AS varchar) || '%', '%' || coalesce(CAST(:q2 AS varchar), CAST(:q1 AS varchar)) || '%',
+                                                                                          '%' || coalesce(CAST(:q3 AS varchar), CAST(:q1 AS varchar)) || '%'])) THEN 1 ELSE 0 END)
+                  + 3 * (CASE WHEN commerce.norm_ar(p.name) ILIKE CAST(:q1 AS varchar) || '%' THEN 1 ELSE 0 END)
+                  + 2 * (CASE WHEN commerce.norm_ar(p.name) ILIKE '%' || CAST(:q1 AS varchar) || '%' AND commerce.norm_ar(p.name) ILIKE '%' || coalesce(CAST(:q2 AS varchar), '') || '%'
+                              AND commerce.norm_ar(p.name) ILIKE '%' || coalesce(CAST(:q3 AS varchar), '') || '%' THEN 1 ELSE 0 END)
+                  - 0.15 * coalesce(array_length(regexp_split_to_array(trim(p.name), '\\s+'), 1), 1)
+                END AS relevance
               FROM commerce.products p
               WHERE p.tenant_id = :t AND p.status = 'ACTIVE'
                 AND (CAST(:c AS varchar) IS NULL OR p.taxonomy_id IN (SELECT id FROM cat))
@@ -63,7 +74,8 @@ public class StoreSearchService {
             "price_desc", "min_price_minor DESC NULLS LAST, created_at DESC",
             "popular", "sold_count DESC, created_at DESC",
             "discount", "discount_pct DESC NULLS LAST, created_at DESC",
-            "name", "name ASC");
+            "name", "name ASC",
+            "relevance", "relevance DESC, in_stock DESC, sold_count DESC, created_at DESC");
 
     private JdbcClient.StatementSpec bind(JdbcClient.StatementSpec st, UUID t, Filter f) {
         List<String> tokens = tokens(t, f.q());
@@ -133,7 +145,9 @@ public class StoreSearchService {
     private static String csv(String v) { return v == null || v.isBlank() ? null : v.trim(); }
 
     public Map<String, Object> list(UUID tenantId, Page page, Filter f) {
-        String order = SORTS.getOrDefault(f.sort() == null ? "newest" : f.sort(), SORTS.get("newest"));
+        // a search with no sort chosen shows the best matches first
+        String sort = f.sort() == null || f.sort().isBlank() ? (f.q() != null && !f.q().isBlank() ? "relevance" : "newest") : f.sort();
+        String order = SORTS.getOrDefault(sort, SORTS.get("newest"));
         long total = bindFilters(bind(jdbc.sql(CTE + "SELECT count(*) FROM base WHERE " + FILTER_WHERE), tenantId, f), f).query(Long.class).single();
         var rows = bindFilters(bind(jdbc.sql(CTE + "SELECT * FROM base WHERE " + FILTER_WHERE + " ORDER BY " + order + " LIMIT :lim OFFSET :off"), tenantId, f), f)
                 .param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows();

@@ -251,6 +251,7 @@ def send(conv, msg):
 def run(name):
     conv = str(uuid.uuid4())
     send(conv, MODEL)
+    time.sleep(6)   # past the shop's 5-second burst window, so the model word and the first message are not read as one
     out = [f"### {name}"]
     for m in S[name]:
         reply, prods, sec = send(conv, m)

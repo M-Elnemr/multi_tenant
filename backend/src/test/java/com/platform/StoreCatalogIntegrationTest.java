@@ -177,4 +177,23 @@ class StoreCatalogIntegrationTest extends IntegrationTestBase {
         onHost(t.host(), t.access(), "DELETE", "/api/v1/store/products/" + pid + "/media/" + second, null).andExpect(jsonPath("$.media.length()").value(1));
         onHost(t.host(), null, "GET", "/api/v1/shop/products?pageSize=5", null).andExpect(jsonPath("$.data[0].imageUrl").isNotEmpty());
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void searchShowsTheBestMatchesFirst() throws Exception {
+        Tenant t = onboard("STORE");
+        String br = branch(t);
+        // accessories made first, so "newest first" would put them on top
+        product(t, br, "جراب نوفا X12 سيليكون", "آرمر", "phone-cases", 19900, null, 5);
+        product(t, br, "اسكرينة جلاس نوفا X12", "آرمر", "screen-protectors", 9900, null, 5);
+        product(t, br, "ستاند موبايل وتابلت للمكتب", "آرمر", "phone-holders", 19900, null, 5);
+        product(t, br, "موبايل نوفا X12", "نوفا", "phones", 1499900, null, 5);
+        product(t, br, "موبايل نوفا A5", "نوفا", "phones", 549900, null, 5);
+        java.util.UUID tenant = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", t.slug()).query(java.util.UUID.class).single();
+        java.util.function.Function<String, List<String>> names = q -> ((List<java.util.Map<String, Object>>) search.list(tenant, com.platform.shared.Page.of(1, 5),
+                new com.platform.commerce.StoreSearchService.Filter(q, null, null, null, null, null, null, null, null)).get("data")).stream().map(r -> String.valueOf(r.get("name"))).toList();
+        assertThat(names.apply("نوفا X12").get(0)).isEqualTo("موبايل نوفا X12");
+        // «موبايل»: the phones (their category is phones) before a phone stand whose name says «موبايل»
+        assertThat(names.apply("موبايل").subList(0, 2)).allMatch(n -> n.startsWith("موبايل نوفا"));
+    }
 }

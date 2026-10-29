@@ -99,7 +99,10 @@ class FactCheckTest {
     @Test
     void debugOnce() {
         if (System.getProperty("factcheck.corpus", "").isEmpty()) return;
-        for (var p : FactCheck.check("عايز طقم كامل لخروجة: قميص وبنطلون وجزمة، ميزانيتي ٢٥٠٠", "حقك عليا يا فندم، للأسف عندنا أحذية للولاد أو حريمي بس مش رجالي، فمش هقدر أظبطلك الجزمة مع الطقم.", FASH, List.of())) System.out.println("DBG " + p);
+        FactCheck.Shop TECH = fixture("tech-zone");
+        String reply = "عندنا موبايلات من عدة ماركات عالمية:\n\n- سامسونج جالاكسي A16 – متوفر بألوان أسود، فضي، بنفسجي\n- آيفون 15 – متوفر بعدة ألوان\n- شاومي ريدمي نوت 13 برو – متوفر بألوان أخضر، أسود\n\nحضرتك عايز ميزانية معينة؟";
+        System.out.println("DBG mentions " + FactCheck.mentions(reply, TECH.names()));
+        for (var p : FactCheck.check("عايز موبايل", reply, TECH, List.of())) System.out.println("DBG " + p);
     }
 
     @Test
@@ -212,6 +215,23 @@ class FactCheckTest {
     void aSizeTheProductDoesNotHaveIsCaught() {
         assertThat(kinds(REST, "ضيفه", "تمام! ساندوتش شاورما فراخ دبل بفينو.")).contains("OPTION_STOCK");
         assertThat(kinds(REST, "ضيفه", "تمام! ساندوتش شاورما فراخ كبير بفينو بـ ١١٠ جنيه.")).doesNotContain("OPTION_STOCK");
+    }
+
+    @Test
+    void moreThanTheStockIsCaughtForAnyProduct() {
+        FactCheck.Shop TECH = fixture("tech-zone");
+        int stock = TECH.product(slugOf(TECH, "موبايل نوفا ميني 8")).variants().stream().mapToInt(FactCheck.Variant::available).sum();
+        String reply = "موبايل نوفا ميني 8 متوفر بالكمية اللي محتاجها: 128 جيجا 10999 جنيه.";
+        if (stock < 10) assertThat(kinds(TECH, "عايز ١٠ موبايلات نوفا ميني 8 للشركة", reply)).contains("STOCK_QUANTITY");
+        assertThat(kinds(TECH, "عايز ٢ موبايل نوفا ميني 8", reply)).doesNotContain("STOCK_QUANTITY");
+    }
+
+    @Test
+    void productsTheShopDoesNotSellAreCaught() {
+        FactCheck.Shop TECH = fixture("tech-zone");
+        String reply = "عندنا موبايلات من عدة ماركات عالمية:\n\n- سامسونج جالاكسي A16 – متوفر بألوان أسود، فضي، بنفسجي\n- آيفون 15 – متوفر بعدة ألوان\n- شاومي ريدمي نوت 13 برو – متوفر بألوان أخضر، أسود\n\nحضرتك عايز ميزانية معينة؟";
+        assertThat(kinds(TECH, "عايز موبايل", reply)).contains("INVENTED_PRODUCTS");
+        assertThat(kinds(TECH, "عايز موبايل", "عندنا:\n- موبايل نوفا A5 — 5499 جنيه\n- موبايل نوفا A7 — 7499 جنيه\n- موبايل نوفا X12 — 14999 جنيه")).doesNotContain("INVENTED_PRODUCTS");
     }
 
     // ---- every reply of the recorded test chats: what the checks say ------------------------------------------------

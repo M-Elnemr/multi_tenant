@@ -85,6 +85,7 @@ public class ChatService {
                 .replaceAll("[\\p{L}]*[\\u06D5\\u0695\\u06CE\\u06C6\\u06B5][\\p{L}]*[؟?]?", "")   // a word in Kurdish letters («سەە») never belongs in an Egyptian reply
                 .replaceAll("(?<![\\d٠-٩-])(?:\\+?2)?[0٠][1١][0-9٠-٩]{8,10}(?![\\d٠-٩])", "الرقم ده");   // the customer's phone is never written back (a copy can be wrong)
         for (var fix : WORD_FIXES.entrySet()) t = t.replace(fix.getKey(), fix.getValue());
+        t = t.replaceAll("(?m)^\\s*(?:\\d+\\s*[.)\\-]|[-•*])\\s*$\\n?", "");   // a list line left empty («2.») by a cut or a slip
         t = t.replaceAll("وبتاع\\s+(?=[0-9٠-٩])", "وبـ");
         t = t.replaceAll("(?<=\\p{IsArabic})(?!(?:XL|XXL|XS|S|M|L)(?![A-Za-z]))[A-Za-z]{2,}(?=\\s|$|[.،,؟?!]|\\p{IsArabic})", "");   // «للمen»: Latin glued to an Arabic word, sizes after «و» stay
         t = t.replace("محتاجة منك", "محتاج منك").replace("محتاجة أعرف", "محتاج أعرف").replace("محتاجة اعرف", "محتاج اعرف").replace("فاهماك", "فاهمك").replace("فاهماكي", "فاهمك")
@@ -702,6 +703,10 @@ public class ChatService {
             problems.put("CARD_OFFER", "This shop takes cash on delivery only: never offer card, Visa or wallet payment.");
         boolean falseCancel = CANCEL_CLAIM.matcher(answer).find() && !orderCancelled(ctx);
         if (falseCancel) problems.put("CANCEL_CLAIM", "You told the customer the order is cancelled, but it is NOT cancelled: only cancel_order cancels. Ask kindly why they want to cancel, then call cancel_order with the reason (or noReason=true if they will not say), and tell them only what the tool answered.");
+        if (PRICE_ASKED.matcher(FastAnswers.norm(last)).find() && !MoneyGuard.digits(answer).matches("(?s).*\\d{2,}.*") && !NOT_HAVE.matcher(answer).find())
+            problems.put("PRICE_MISSING", "The customer asked the price: give the real price (by option when the price changes by option) from search_products or get_product, in this message.");
+        if (TOOL_TALK.matcher(answer).find())
+            problems.put("TOOL_TALK", "Never talk about your tools, the system, the catalog data or searches to the customer («أداة البحث», «النظام», «الكتالوج مش راجع»): answer like a person in the shop, from what the search found (search again with fewer words if it found nothing).");
         if (!lookedUp && STALL.matcher(answer).find())
             problems.put("STALL", "Do not tell the customer you will check or confirm later: look it up now (search_products or get_product) and answer in this message.");
         boolean prepared = rounds.stream().anyMatch(r -> r.tools().contains("prepare_order"));
@@ -724,7 +729,7 @@ public class ChatService {
         if (problems.isEmpty()) return answer;
         for (String kind : problems.keySet()) events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:" + kind, problems.get(kind), null);
         boolean phoneDoubt = PHONE_DOUBT.matcher(answer).find() && customerGaveMobile(turns);
-        if (!canRewrite(rounds)) return factsFixed(last, falseCancel ? cancelFallback(answer) : phoneDoubt ? phoneFallback(answer) : problems.containsKey("FAKE_SUMMARY") ? withoutSelfSummary(answer) : answer, shopData, touched);
+        if (!canRewrite(rounds)) return factsFixed(last, falseCancel ? cancelFallback(answer) : phoneDoubt ? phoneFallback(answer) : problems.containsKey("FAKE_SUMMARY") && summaryShaped(answer) ? withoutSelfSummary(answer) : answer, shopData, touched);
         log.warn("Rule check: {} (conversation {}): {}", problems.values(), ctx.conversationId(), answer);
         try {
             turns.add(Turn.model(answer));
@@ -734,7 +739,7 @@ public class ChatService {
             if (retry == null || retry.isBlank()) return factsFixed(last, falseCancel ? cancelFallback(answer) : phoneDoubt ? phoneFallback(answer) : answer, shopData, touched);
             if (CANCEL_CLAIM.matcher(retry).find() && !orderCancelled(ctx)) return cancelFallback(retry);
             if (PHONE_DOUBT.matcher(retry).find() && customerGaveMobile(turns)) return phoneFallback(retry);
-            if (ctx.summary()[0] == null && !rounds.stream().anyMatch(r -> r.tools().contains("prepare_order")) && looksLikeSummary(retry)) retry = withoutSelfSummary(retry);
+            if (ctx.summary()[0] == null && !rounds.stream().anyMatch(r -> r.tools().contains("prepare_order")) && summaryShaped(retry)) retry = withoutSelfSummary(retry);
             // still «سجلت طلبك» with no order: the words go, the rest of the reply stays
             if (ctx.order()[0] == null && !hasOrderOnFile(ctx)) retry = ORDER_CLAIM.matcher(retry).replaceAll(english(retry) ? "noted" : "تمام،");
             List<String> touchedNow = ctx.products().stream().map(p -> String.valueOf(p.get("slug"))).distinct().toList();
@@ -762,7 +767,13 @@ public class ChatService {
     }
 
     /** «هتأكد وأرجعلك», «لازم نتأكد من المخزون الأول», "let me confirm the price": a promise to look instead of looking. */
-    static final Pattern STALL = Pattern.compile("(?:(?:ه|هـ)(?:تاكد|تأكد|شوف|بحث|راجع|سال|سأل)(?:لك|لك)?\\s|لازم\\s+(?:ا|أ|ن)?(?:تاكد|تأكد)|ثواني\\s+و|هرجعلك|هرد\\s+عليك|هبلغك|let\\s+me\\s+(?:check|confirm|look)|i\\s*(?:'ll|\\s+will)\\s+(?:check|confirm|look)|one\\s+moment)", Pattern.CASE_INSENSITIVE);
+    static final Pattern STALL = Pattern.compile("(?:(?:ه|هـ)(?:تاكد|تأكد|شوف|بحث|راجع|سال|سأل)(?:لك|لك)?\\s|لازم\\s+(?:ا|أ|ن)?(?:تاكد|تأكد)|ثواني\\s+و|هرجعلك|هرد\\s+عليك|هبلغك|(?:ا|أ)?رجع\\s*لك|وارجعلك|(?:ا|أ)راجع\\s+(?:المخزون|الكتالوج|السيستم)|اتاكد\\s+من\\s+المخزون|let\\s+me\\s+(?:check|confirm|look)|i\\s*(?:'ll|\\s+will)\\s+(?:check|confirm|look)|one\\s+moment)", Pattern.CASE_INSENSITIVE);
+    /** The model talking about its own machinery to the customer. */
+    static final Pattern TOOL_TALK = Pattern.compile("(?:اداه\\s+البحث|أداة\\s+البحث|اداة\\s+البحث|نتايج\\s+البحث|نتائج\\s+البحث|البحث\\s+(?:مرجعش|لم\\s+يرجع|مارجعش)|في\\s+نظامنا|السيستم\\s+بتاعنا|قاعده\\s+البيانات|قاعدة\\s+البيانات|the\\s+(?:search\\s+)?tool|my\\s+tools|the\\s+database|in\\s+our\\s+system)", Pattern.CASE_INSENSITIVE);
+
+    /** «بكام», «سعره كام», «how much»: the customer asks a price. */
+    static final Pattern PRICE_ASKED = Pattern.compile("(?:(?<!\\p{L})بكام(?!\\p{L})|سعر(?:ه|ها|هم)?\\s+(?:كام|ايه)|ب\\s*كام|كام\\s+سعر|how\\s+much|what\\s*(?:'s|\\s+is)\\s+the\\s+price|price\\s+of)", Pattern.CASE_INSENSITIVE);
+
     /** A short «ضيفه» / «احجزه» / «add it»: the customer wants the product just discussed. */
     static final Pattern ADD_IT = Pattern.compile("^(?:تمام\\s+|طيب\\s+|اوك\\s+)?(?:ضيفه|ضيفها|ضيفهم|ضيف|احجزه|احجزها|احجز|اطلبه|اطلبها|خده|خدها|عايزه|عايزاه|عايزها|هاخده|هاخدها|add it|add|book it|i ll take it|ill take it)(?:\\s+(?:للاوردر|للطلب|لو سمحت|بقي|بقى|please))?$");
     /** A reply that took «ضيفه» for a guest («لضيف», «للضيوف», "a guest"). */
@@ -791,6 +802,9 @@ public class ChatService {
         if (answer == null) return false;
         return FAKE_SUMMARY.matcher(FastAnswers.norm(answer)).find() || (TOTAL_LINE.matcher(answer).find() && ITEM_LINE.matcher(answer).find());
     }
+
+    /** Item lines with a total line: a summary by its shape (the words alone are not enough to cut a reply). */
+    static boolean summaryShaped(String answer) { return answer != null && TOTAL_LINE.matcher(answer).find() && ITEM_LINE.matcher(answer).find(); }
 
     /** Still a self-written summary after the rewrite: its first line stays, the rest goes, and the customer is asked to answer so the real summary follows. */
     static String withoutSelfSummary(String answer) {
@@ -822,6 +836,11 @@ public class ChatService {
         return turns.stream().anyMatch(t -> "model".equals(t.role()) && t.text() != null && MoneyGuard.digits(t.text()).matches("(?s).*\\d{2,}.*(?:جنيه|ج|EGP).*"));
     }
 
+    private record NamesAt(List<FactCheck.Named> names, long at) {}
+
+    /** Product names per shop for the fact checks, kept two minutes: a shop with thousands of products is not read again on every reply. */
+    private static final Map<UUID, NamesAt> NAMES_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+
     /** The shop's data for the fact checks, read once per reply. */
     private FactCheck.Shop shopView(UUID tenantId) {
         return new FactCheck.Shop() {
@@ -832,11 +851,14 @@ public class ChatService {
 
             public List<FactCheck.Named> names() {
                 if (names == null) {
+                    var cached = NAMES_CACHE.get(tenantId);
+                    if (cached != null && cached.at() > System.currentTimeMillis() - 120_000) return names = cached.names();
                     names = new ArrayList<>();
                     for (var r : jdbc.sql("SELECT slug, name FROM commerce.products WHERE tenant_id = :t AND status = 'ACTIVE'").param("t", tenantId).query().listOfRows())
                         names.add(new FactCheck.Named((String) r.get("slug"), (String) r.get("name")));
                     for (var r : jdbc.sql("SELECT p.slug, tr.name FROM commerce.product_translations tr JOIN commerce.products p ON p.id = tr.product_id WHERE p.tenant_id = :t AND p.status = 'ACTIVE'").param("t", tenantId).query().listOfRows())
                         names.add(new FactCheck.Named((String) r.get("slug"), (String) r.get("name")));
+                    NAMES_CACHE.put(tenantId, new NamesAt(names, System.currentTimeMillis()));
                 }
                 return names;
             }
@@ -864,7 +886,10 @@ public class ChatService {
             public List<FactCheck.Named> searchAll(List<String> words) {
                 if (words.isEmpty()) return List.of();
                 List<FactCheck.Named> out = new ArrayList<>();
-                for (var r : jdbc.sql("SELECT slug, name FROM commerce.products WHERE tenant_id = :t AND status = 'ACTIVE' AND search_text ILIKE ALL (CAST(:p AS text[])) ORDER BY sold_count DESC, name LIMIT 60")
+                for (var r : jdbc.sql("SELECT slug, name FROM commerce.products WHERE tenant_id = :t AND status = 'ACTIVE' AND search_text ILIKE ALL (CAST(:p AS text[])) "
+                        // the products that ARE that kind of thing first (their own category, or a name that starts with the word), shorter names before longer ones
+                        + "ORDER BY EXISTS (SELECT 1 FROM commerce.taxonomy tx WHERE tx.id = taxonomy_id AND commerce.norm_ar(tx.name_ar || ' ' || tx.name_en) ILIKE (CAST(:p AS text[]))[1]) DESC, "
+                        + "commerce.norm_ar(name) ILIKE substr((CAST(:p AS text[]))[1], 2) DESC, length(name), sold_count DESC LIMIT 60")
                         .param("t", tenantId).param("p", words.stream().map(w -> "%" + FastAnswers.norm(SYNONYMS.getOrDefault(w.toLowerCase(java.util.Locale.ROOT), w)) + "%").toArray(String[]::new)).query().listOfRows())
                     out.add(new FactCheck.Named((String) r.get("slug"), (String) r.get("name")));
                 return out;
@@ -1167,6 +1192,12 @@ public class ChatService {
                 results.add(new ToolResult(c.name(), r));
             }
             turns.add(Turn.tool(results));
+        }
+        // the tool rounds ran out without an answer: one last call with no tools, so the customer gets a reply from what was found instead of «ممكن توضحلي»
+        if (AiBudget.hasLeft(8_000)) {
+            Turn last = routed.next(system, turns, List.of());
+            rounds.add(new AiUsageService.Round(List.of(), last.usage()));
+            if (last.text() != null && !last.text().isBlank()) return last.text();
         }
         return null;
     }
@@ -2020,7 +2051,7 @@ public class ChatService {
 
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> find(UUID tenantId, String q, String category, Long maxMinor, String audience) {
-        var page = search.list(tenantId, Page.of(1, q == null ? 3 : 6), new StoreSearchService.Filter(q, category, null, maxMinor, null, true, null, null, category == null && q == null ? "popular" : "newest",
+        var page = search.list(tenantId, Page.of(1, q == null ? 3 : 6), new StoreSearchService.Filter(q, category, null, maxMinor, null, true, null, null, category == null && q == null ? "popular" : q != null ? "relevance" : "newest",
                 audience, null, null, null));
         return (List<Map<String, Object>>) page.get("data");
     }
@@ -2175,7 +2206,8 @@ public class ChatService {
         }
         // every option the customer has to choose (size, color, spice, bread...) must come from them: an item whose option they never mentioned is sent back so the model asks
         if (!Boolean.TRUE.equals(a.get("optionsConfirmed"))) {
-            String said = FastAnswers.norm(String.join(" ", jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u").param("c", ctx.conversationId()).param("u", ctx.userMsgId()).query(String.class).list()));
+            // Western digits first: «١٢٨ جيجا» is the option «128 جيجا»
+            String said = FastAnswers.norm(MoneyGuard.digits(String.join(" ", jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u").param("c", ctx.conversationId()).param("u", ctx.userMsgId()).query(String.class).list())));
             for (CheckoutService.Item it : items) {
                 List<String> missing = unchosenOptions(it.variantId(), said);
                 if (!missing.isEmpty())
@@ -2327,6 +2359,12 @@ public class ChatService {
             if (choices.getOrDefault(name, 1L) < 2) continue;   // nothing to choose
             boolean said = value.length() <= 3 ? Pattern.compile("(?<![\\p{L}\\p{N}])" + Pattern.quote(value) + "(?![\\p{L}\\p{N}])").matcher(words).find() : words.contains(value);
             for (String alt : SAID_AS.getOrDefault(value, List.of())) said = said || words.contains(alt);
+            // a value that starts with a number («128 جيجا», «1 تيرا SSD», «43 بوصة»): the number with its unit, or a number of two digits or more on its own («عايز ٥١٢»)
+            String[] parts = value.split("\\s+");
+            if (!said && parts.length >= 2 && parts[0].matches("\\d+(?:\\.\\d+)?")) {
+                said = words.contains(" " + parts[0] + " " + parts[1]) || words.contains(" " + parts[0] + parts[1])
+                        || (parts[0].length() >= 2 && Pattern.compile("(?<![\\p{L}\\p{N}])" + Pattern.quote(parts[0]) + "(?![\\p{N}])(?!\\s*(?:الف|جنيه|ج(?!\\p{L})|مليون))").matcher(words).find());   // not a budget («في حدود ١٦ ألف»)
+            }
             if (!said) missing.add("«" + name + "»");
         }
         return missing;

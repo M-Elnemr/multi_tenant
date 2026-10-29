@@ -33,7 +33,16 @@ final class FactCheck {
         boolean onSale() { return before > 0 || variants.stream().anyMatch(v -> v.before() > v.price()); }
     }
 
-    record Named(String slug, String name) {}
+    /** A product's slug and name, with the name's words worked out once (a shop with thousands of products is matched on every reply). */
+    record Named(String slug, String name, List<String> words) {
+        Named(String slug, String name) { this(slug, name, nameWords(name)); }
+    }
+
+    static List<String> nameWords(String name) {
+        List<String> nw = new ArrayList<>();
+        for (Tok t : tokens(light(name), 0, name.length())) nw.add(t.word());
+        return List.copyOf(nw);
+    }
 
     /** The shop data the checks need; the chat service reads it from the database, tests from fixtures. */
     interface Shop {
@@ -144,10 +153,12 @@ final class FactCheck {
         List<Tok> toks = tokens(l, 0, l.length());
         List<Mention> found = new ArrayList<>();
         Map<String, List<String>> nameWords = new LinkedHashMap<>();
+        // only names that share a word with the text can match: the rest of a big catalog is skipped at once
+        Set<String> textWords = new java.util.HashSet<>();
+        for (Tok t : toks) { textWords.add(t.word()); if (t.word().length() > 1 && (t.word().charAt(0) == 'و' || t.word().charAt(0) == 'ب')) textWords.add(t.word().substring(1)); }
         for (Named n : names) {
-            List<String> nw = new ArrayList<>();
-            for (Tok t : tokens(light(n.name()), 0, n.name().length())) nw.add(t.word());
-            if (nw.isEmpty()) continue;
+            List<String> nw = n.words();
+            if (nw.isEmpty() || nw.stream().noneMatch(textWords::contains)) continue;
             nameWords.put(n.slug(), nw);
             for (int i = 0; i + nw.size() <= toks.size(); i++) {
                 boolean all = true;
@@ -238,6 +249,8 @@ final class FactCheck {
         offTopic(customer, answer, ms, shop, out);
         wrongKind(customer, ms, shop, out);
         inventedValue(answer, ms, only, load, out);
+        quantity(customer, answer, ms, only, shop, load, out);
+        inventedProducts(answer, shop, out);
         return out;
     }
 
@@ -621,7 +634,7 @@ final class FactCheck {
     private static final Set<String> STOP = Set.of("مش", "مفيش", "معندناش", "ماعندناش", "عندنا", "عندي", "بنبيع", "ببيع", "نبيع", "مبنبيعش", "موجود", "موجوده", "متوفر", "متوفره", "متاح", "متاحه", "يوجد",
             "حاليا", "دلوقتي", "النهارده", "النهاردة", "كامل", "كامله", "خالص", "للاسف", "بس", "لكن", "غير", "ابدا", "تاني", "نوع", "انواع", "اصناف", "صنف", "خيارات", "اختيارات", "موديلات", "موديل", "حاجه", "حاجات",
             "اكل", "منتج", "منتجات", "اي", "ايه", "كده", "كدا", "ده", "دي", "دا", "لوحده", "لوحدها", "فيه", "في", "من", "على", "علي", "عن", "مع", "او", "ولا", "و", "يا", "فندم", "حضرتك", "ان", "انه", "انها",
-            "مشكله", "مشاكل", "مشكلة", "specifically", "exactly", "really",
+            "مشكله", "مشاكل", "مشكلة", "specifically", "كتالوجنا", "الكتالوج", "كتالوج", "بالنسبه", "المخزن", "مخزن", "exactly", "really",
             "بتاعنا", "بتاعتنا", "عندهم", "فيها", "فيهم", "القائمه", "قائمه", "المنيو", "منيو", "كل", "جميع", "حد", "طلب", "الطلب", "لك", "ليك", "ليكي", "كمان", "برضه", "معاك", "حق", "حقك", "معلش", "اسفين", "اسف",
             "we", "don't", "dont", "do", "not", "have", "sell", "carry", "any", "there", "is", "are", "no", "the", "a", "an", "right", "now", "currently", "at", "moment", "sorry", "unfortunately", "for", "of", "in", "but");
     /** A denial about a service, not a product (instalments, cards, branches, delivery...): out of this check. */
@@ -644,7 +657,8 @@ final class FactCheck {
                 List<List<String>> queries = new ArrayList<>();
                 if (butNot && !after.isEmpty()) for (String k : beforeKinds) queries.add(List.of(k, after.get(0)));   // «عندنا أحذية للولاد بس مش رجالي» -> أحذية رجالي
                 else if (!after.isEmpty()) { queries.add(after); if (after.size() > 1) for (String w : after) if (!AUDIENCE.contains(w)) queries.add(List.of(w)); }
-                else for (String k : beforeKinds) queries.add(List.of(k));   // «الثومية ... مش ببيعها لوحدها»
+                // «الثومية ... مش ببيعها لوحدها», «بالنسبة لـ X12، مفيش في كتالوجنا»: the product named before the denial
+                if (!butNot) for (String k : beforeKinds) queries.add(List.of(k));
                 for (List<String> q : queries) {
                     if (q.isEmpty() || q.stream().anyMatch(w -> w.length() < 3)) continue;
                     List<String> stems = q.stream().map(FactCheck::stem).toList();
@@ -654,7 +668,7 @@ final class FactCheck {
                     List<String> shown = new ArrayList<>();
                     for (Named h : hits.stream().limit(5).toList()) {
                         Product p = shop.product(h.slug());
-                        shown.add(h.name() + (p != null && !p.variants().isEmpty() ? " (" + num(p.variants().stream().mapToDouble(Variant::price).min().orElse(0), false) + ")" : ""));
+                        shown.add(h.name() + (p != null && !p.variants().isEmpty() ? " (" + num(p.variants().stream().mapToDouble(Variant::price).min().orElse(0), false) + (arabic(answer) ? " جنيه)" : " EGP)") : ""));
                     }
                     String replacement = arabic(answer) ? "عندنا: " + String.join("، ", shown) + "." : "We have: " + String.join(", ", shown) + ".";
                     out.add(new Problem("FALSE_DENIAL", "You said we do not have «" + String.join(" ", q) + "», but the shop HAS: " + String.join("; ", shown) + ". Never deny it; offer these with their prices.",
@@ -921,5 +935,60 @@ final class FactCheck {
                 return;
             }
         }
+    }
+
+    // ---- 10. more pieces than the stock -------------------------------------------------------------------------------------
+
+    private static final Pattern ASKED_QTY = Pattern.compile("(?<![\\d.])(\\d{1,4})\\s+(?!جنيه|ج(?!\\p{L})|egp|le(?![a-z])|%|جيجا|gb|tb|بوصه|سم|متر|مم|سنه|سنين|شهر|يوم|ايام|وات|w(?![a-z])|مللي|الف)\\p{L}");
+
+    /**
+     * «عايز ١٠ موبايلات نوفا ميني 8» answered «متوفر بالكمية»: the customer asked for more pieces than the product has in stock (all its options together) and the reply offers them.
+     * Works for any product: the number comes before a word that is not a unit or a price.
+     */
+    private static void quantity(String customer, String answer, List<Mention> ms, String only, Shop shop, java.util.function.Function<String, Product> load, List<Problem> out) {
+        if (customer == null) return;
+        Matcher m = ASKED_QTY.matcher(light(customer));
+        if (!m.find()) return;
+        int asked = Integer.parseInt(m.group(1));
+        if (asked < 3) return;
+        String slug = ms.size() == 1 ? ms.get(0).slug() : only;
+        if (slug == null) { var c = mentions(customer, shop.names()); if (c.size() == 1) slug = c.get(0).slug(); }
+        if (slug == null) return;
+        Product p = load.apply(slug);
+        if (p.variants().isEmpty()) return;
+        String l = light(answer);
+        if (!OFFER.matcher(l).find() || NEG.matcher(l).find() || l.contains(String.valueOf(asked)) && Pattern.compile("(?:بس|فقط|only|المتاح|متبقي|فاضل)").matcher(l).find()) return;
+        Map<String, String> want = wanted(p, l, customer);
+        int stock = p.variants().stream().filter(v -> v.options().values().containsAll(want.keySet())).mapToInt(Variant::available).sum();
+        if (stock >= asked) return;
+        out.add(new Problem("STOCK_QUANTITY", "The customer asked for " + asked + " of «" + p.name() + "»" + (want.isEmpty() ? "" : " (" + String.join(" ", want.keySet()) + ")") + " but only " + stock
+                + " are in stock: " + stockLine(p, want) + ". Say how many are available; never promise more.", null));
+    }
+
+    // ---- 11. products the shop does not sell ------------------------------------------------------------------------------
+
+    /** A list line about a service, not an item (a coupon, delivery, payment, returns). */
+    private static final Pattern SERVICE_LINE = Pattern.compile("(?:كود|كوبون|خصم|توصيل|شحن|دليفري|تقسيط|كاش|فيزا|استرجاع|استبدال|ضمان|coupon|code|delivery|shipping|payment|return|warranty)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PRICE_OR_OFFER = Pattern.compile("(?:\\d{2,}|متاح|متوفر|موجود|بالوان|الوان|available|EGP|جنيه)", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * «- سامسونج جالاكسي A16 – متوفر بألوان…» in a shop that has no such phone: two or more list lines offering items (a price, "available", colours) and naming no product
+     * of the shop. The model listed things from memory instead of from the shop.
+     */
+    private static void inventedProducts(String answer, Shop shop, List<Problem> out) {
+        if (!mentions(answer, shop.names()).isEmpty()) return;   // a reply about a real product lists its options and details, not other products
+        List<String> invented = new ArrayList<>();
+        for (String line : answer.split("\\n")) {
+            if (!LIST_LINE.matcher(line).find() || !PRICE_OR_OFFER.matcher(light(line)).find() || SERVICE_LINE.matcher(light(line)).find()) continue;
+            String rest = line.replaceFirst("^\\s*(?:[-•*▪✅🔸🔹]|\\d+\\s*[-.)]|[٠-٩]+\\s*[-.)])\\s*", "");
+            Matcher sep = Pattern.compile("[–—:(،,]").matcher(rest);
+            String item = sep.find() ? rest.substring(0, sep.start()).trim() : rest.trim();
+            if (sep.hitEnd() || (sep.start() < rest.length() && rest.charAt(sep.start()) == ':')) continue;   // «البطارية: 6000» is a detail, not an item
+            if (item.split("\\s+").length < 2 || item.matches(".*\\d.*") && item.split("\\s+").length < 3) continue;   // «128 جيجا», «20 بوصة»: an option
+            invented.add(item);
+        }
+        if (invented.size() < 2) return;
+        out.add(new Problem("INVENTED_PRODUCTS", "These are not products of this shop: " + String.join("، ", invented.stream().limit(4).toList())
+                + ". Offer only the shop's own products from search_products, with their real names and prices.", null));
     }
 }
