@@ -226,4 +226,10 @@ class ChatTextTest {
     void theReviewerGetsToolResultsWithoutIdsAndLinks() {
         assertThat(ReplyReview.lean("{\"variantId\":\"0f8f-11\",\"name\":\"جينز\",\"imageUrl\":\"/api/x\",\"price\":890}")).isEqualTo("{\"name\":\"جينز\",\"price\":890}");
     }
+
+    @Test
+    void aReplyThatOnlyPointsAtThePicturesIsRecognised() {
+        assertThat(ChatService.PICTURE_ONLY.matcher("دي الصور يا فندم 👆 راجعها وقولي أي واحد عجبك").find()).isTrue();
+        assertThat(ChatService.PICTURE_ONLY.matcher("عندنا جينز سليم فيت بـ890 جنيه").find()).isFalse();
+    }
 }

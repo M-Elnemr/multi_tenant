@@ -599,6 +599,8 @@ public class ChatService {
             problems.add("You said there is no information without looking: call get_product for that product and answer from its details (ingredients, calories, material, size guide...); say it is not listed only if get_product has nothing.");
         if (ORDER_CLAIM.matcher(answer).find() && ctx.order()[0] == null && !hasOrderOnFile(ctx))
             problems.add("You said the order is recorded, but no order exists yet: an order exists only after the customer confirms the summary from prepare_order. Call prepare_order with the details you have (or ask for what is missing) and never say it is recorded before.");
+        if (PICTURE_ONLY.matcher(answer).find() && !MoneyGuard.digits(answer).matches("(?s).*\\d.*"))
+            problems.add("Do not just point at the pictures: name the products in words with their price and the colors/sizes that matter (and any size advice asked for), then one short question.");
         if (CLOSED_STOP.matcher(answer).find())
             problems.add("Being outside opening hours does not stop you: answer the customer's question now and keep selling; only mention once that the order is prepared when the shop opens.");
         if (CARD_OFFER.matcher(answer).find() && !cardAccepted(ctx.tenantId()))
@@ -631,6 +633,9 @@ public class ChatService {
     private boolean hasOrderOnFile(Ctx ctx) {
         return jdbc.sql("SELECT last_order IS NOT NULL FROM chat.conversations WHERE id = :c").param("c", ctx.conversationId()).query(Boolean.class).optional().orElse(false);
     }
+
+    /** A reply that only points at the product pictures («دي الصور 👆», «الصور قدامك»). */
+    static final Pattern PICTURE_ONLY = Pattern.compile("(?:دي\\s+(?:الصور|صوره|صورته|صورتها|صورهم)|الصور\\s+(?:فوق|قدامك)|صور(?:ه|ته|تها|هم)\\s+فوق|👆)");
 
     /** A reply that stops helping because the shop is closed («المحل مغلق، هنرد عليك أول ما يفتحوا»). */
     static final Pattern CLOSED_STOP = Pattern.compile("(?:مغلق|مقفول|مقفل|قافلين)[^.؟?!\\n]{0,40}(?:هنرد|هيرد|هيردوا|نرد\\s+عليك|يرد\\s+عليك|هنكلمك|هيكلموك|هنتواصل|هنرجعلك)", Pattern.CASE_INSENSITIVE);
