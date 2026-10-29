@@ -471,7 +471,7 @@ public class ChatService {
         try {
             // the review runs on the answering model, or on the model set in app.ai.review.model (its cost is then logged under that model)
             ChannelAi.Routed reviewer = reviewModel == null || reviewModel.equals(routed.code()) ? routed : channelAi.forChannel(ctx.channel(), reviewModel);
-            Turn t = reviewer.next(ReplyReview.SYSTEM, List.of(Turn.user(ReplyReview.request(turns, addressing(system), section(system, "SHOP FACTS:", 2500) + section(system, CATALOG_HEADING, 4000), draft))), List.of());
+            Turn t = reviewer.next(ReplyReview.SYSTEM, List.of(Turn.user(ReplyReview.request(turns, addressing(system), foundProducts(ctx) + section(system, "SHOP FACTS:", 2500) + section(system, CATALOG_HEADING, 4000), draft))), List.of());
             var round = new AiUsageService.Round(List.of("review"), t.usage());
             if (reviewer == routed) rounds.add(round);
             else if (!"TEST".equals(ctx.channel())) usageLog.record(ctx.tenantId(), "CHAT_REVIEW", ctx.channel(), ctx.conversationId(), false, "[review]", List.of(round), reviewer.code(), false);
@@ -499,6 +499,20 @@ public class ChatService {
         int end = system.indexOf("\n\n", i);
         String s = system.substring(i, end < 0 ? system.length() : end);
         return (s.length() > max ? s.substring(0, max) : s) + "\n";
+    }
+
+    /** Every product the tools found for this reply, one compact line each (price, price by option, colors, sizes, stock): the reviewer's raw tool results can be cut short on a big search. */
+    private String foundProducts(Ctx ctx) {
+        List<String> slugs = ctx.products().stream().map(p -> String.valueOf(p.get("slug"))).distinct().limit(10).toList();
+        if (slugs.isEmpty()) return "";
+        StringBuilder b = new StringBuilder("PRODUCTS THE TOOLS FOUND FOR THIS REPLY (real, with their real prices):\n");
+        try {
+            for (var r : search.bySlugs(ctx.tenantId(), slugs)) b.append(productLine(ctx.tenantId(), r));
+        } catch (RuntimeException e) {
+            log.debug("Found products skipped", e);
+            return "";
+        }
+        return b.append("\n").toString();
     }
 
     /** A short reply with no amount, no number and no product facts (a greeting, thanks, one question): reviewing it would only cost the customer time. */
