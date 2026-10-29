@@ -939,7 +939,7 @@ final class FactCheck {
 
     // ---- 10. more pieces than the stock -------------------------------------------------------------------------------------
 
-    private static final Pattern ASKED_QTY = Pattern.compile("(?<![\\d.])(\\d{1,4})\\s+(?!جنيه|ج(?!\\p{L})|egp|le(?![a-z])|%|جيجا|gb|tb|بوصه|سم|متر|مم|سنه|سنين|شهر|يوم|ايام|وات|w(?![a-z])|مللي|الف)\\p{L}");
+    private static final Pattern ASKED_QTY = Pattern.compile("(?<![\\p{L}\\d.])(\\d{1,4})\\s+(?!جنيه|ج(?!\\p{L})|egp|le(?![a-z])|%|جيجا|gb|tb|بوصه|سم|متر|مم|سنه|سنين|شهر|يوم|ايام|وات|w(?![a-z])|مللي|الف)\\p{L}");
 
     /**
      * «عايز ١٠ موبايلات نوفا ميني 8» answered «متوفر بالكمية»: the customer asked for more pieces than the product has in stock (all its options together) and the reply offers them.
@@ -947,7 +947,10 @@ final class FactCheck {
      */
     private static void quantity(String customer, String answer, List<Mention> ms, String only, Shop shop, java.util.function.Function<String, Product> load, List<Problem> out) {
         if (customer == null) return;
-        Matcher m = ASKED_QTY.matcher(light(customer));
+        // a number inside a product's name («موبايل نوفا ميني 8», a code) is not a quantity: the names the customer wrote are taken out first
+        String lc = light(customer);
+        for (Mention mn : mentions(customer, shop.names())) lc = lc.substring(0, mn.start()) + " ".repeat(mn.end() - mn.start()) + lc.substring(mn.end());
+        Matcher m = ASKED_QTY.matcher(lc);
         if (!m.find()) return;
         int asked = Integer.parseInt(m.group(1));
         if (asked < 3) return;
