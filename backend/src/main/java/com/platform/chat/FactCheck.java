@@ -218,7 +218,15 @@ final class FactCheck {
         var ms = mentions(answer, names);
         Map<String, Product> cache = new LinkedHashMap<>();
         java.util.function.Function<String, Product> load = slug -> cache.computeIfAbsent(slug, s -> { Product p = shop.product(s); return p == null ? new Product(s, "", 0, List.of()) : p; });
-        String only = ms.isEmpty() && touched != null && touched.size() == 1 ? touched.get(0) : null;
+        // a reply that names no product («ده الجاكيت، ٨٩٠ جنيه») is about the one the tools returned, or the one the customer named
+        String only = null;
+        if (ms.isEmpty()) {
+            if (touched != null && touched.size() == 1) only = touched.get(0);
+            else if (customer != null) {
+                var asked = mentions(customer, names).stream().map(Mention::slug).distinct().toList();
+                if (asked.size() == 1) only = asked.get(0);
+            }
+        }
         optionPrices(answer, ms, only, shop, load, out);
         optionStock(customer, answer, ms, only, load, out);
         falseDenial(answer, shop, out);
@@ -423,7 +431,7 @@ final class FactCheck {
 
     static final Pattern NEG = Pattern.compile("(?:(?<!\\p{L})مش(?!\\p{L})|مفيش|معندناش|ماعندناش|مبقاش|خلص|خلصان|خلصت|نفذ|نفذت|غير\\s+(?:متاح|متوفر|موجود)|للاسف|ليس|لا\\s+يوجد|not\\s+available|out\\s+of\\s+stock|sold\\s+out|unavailable|don'?t\\s+have|do\\s+not\\s+have|isn'?t|aren'?t|no\\s+longer)", Pattern.CASE_INSENSITIVE);
     private static final Pattern AVAIL = Pattern.compile("(?:متاح|متاحه|متوفر|متوفره|موجود|موجوده|عندنا|بالوان|الوان|الالوان|المقاسات|مقاسات|available|in\\s+stock|comes?\\s+in|colou?rs|sizes)", Pattern.CASE_INSENSITIVE);
-    private static final Pattern ALL_SIZES = Pattern.compile("(?<!\\p{L})(?:ب|في\\s+|ف)?(?:كل|جميع)\\s+(?:ال)?(?:مقاسات|المقاسات|الالوان|الوان)|all\\s+(?:the\\s+)?(?:sizes|colou?rs)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern ALL_SIZES = Pattern.compile("(?<!\\p{L})(?:ب|في\\s+|ف)?(?:كل|جميع)\\s+(?:ال)?(?:مقاسات|المقاسات|الالوان|الوان)|(?:ال)?(?:مقاسات|الوان)\\s+(?:كلها|كلهم)|all\\s+(?:the\\s+)?(?:sizes|colou?rs)|every\\s+size", Pattern.CASE_INSENSITIVE);
     /** Words that offer the item as ready to sell («تحب أحجزهولك؟», «موجود», "available"). */
     private static final Pattern OFFER = Pattern.compile("(?:احجز|أحجز|نحجز|اجهز|أجهز|نجهز|ابعتهولك|متاح|متاحه|متوفر|متوفره|موجود|موجوده|available|in\\s+stock|shall\\s+i\\s+(?:book|reserve|order))", Pattern.CASE_INSENSITIVE);
     /** A stock count («١٦ قطعة في المخزن», «فاضل ٣ بس», "6 left"); a number that is part of a name or option («وجبة بروستد ٤ قطع») is not one. */
@@ -603,11 +611,12 @@ final class FactCheck {
 
     // ---- 3. "we do not have it" when we do --------------------------------------------------------------------------------
 
-    private static final Pattern DENY = Pattern.compile("(?:مفيش|معندناش|ماعندناش|مش\\s+عندنا|مش\\s+موجود|مش\\s+متوفر|مش\\s+متاح|مبنبيعش|مش\\s+بنبيع|مش\\s+ببيع|لا\\s+يوجد|لا\\s+نبيع|(?:بس|لكن)\\s+مش|we\\s+(?:don'?t|do\\s+not)\\s+(?:have|sell|carry)|there\\s+(?:is|are)\\s+no|we\\s+have\\s+no)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
+    private static final Pattern DENY = Pattern.compile("(?:مفيش|معندناش|ماعندناش|محدش|مش\\s+عندنا|مش\\s+موجود|مش\\s+متوفر|مش\\s+متاح|غير\\s+(?:متاح|متوفر|موجود)|مش\\s+في\\s+(?:القائمه|القايمه|المنيو)|مبنبيعش|مش\\s+بنبيع|مش\\s+ببيع|لا\\s+يوجد|لا\\s+نبيع|(?:بس|لكن)\\s+مش|we\\s+(?:don'?t|do\\s+not)\\s+(?:have|sell|carry)|there\\s+(?:is|are)\\s+no|we\\s+have\\s+no)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
     /** Words that say nothing about which product: negations, chat words, time words, vague nouns. */
     private static final Set<String> STOP = Set.of("مش", "مفيش", "معندناش", "ماعندناش", "عندنا", "عندي", "بنبيع", "ببيع", "نبيع", "مبنبيعش", "موجود", "موجوده", "متوفر", "متوفره", "متاح", "متاحه", "يوجد",
             "حاليا", "دلوقتي", "النهارده", "النهاردة", "كامل", "كامله", "خالص", "للاسف", "بس", "لكن", "غير", "ابدا", "تاني", "نوع", "انواع", "اصناف", "صنف", "خيارات", "اختيارات", "موديلات", "موديل", "حاجه", "حاجات",
             "اكل", "منتج", "منتجات", "اي", "ايه", "كده", "كدا", "ده", "دي", "دا", "لوحده", "لوحدها", "فيه", "في", "من", "على", "علي", "عن", "مع", "او", "ولا", "و", "يا", "فندم", "حضرتك", "ان", "انه", "انها",
+            "مشكله", "مشاكل", "مشكلة", "specifically", "exactly", "really",
             "بتاعنا", "بتاعتنا", "عندهم", "فيها", "فيهم", "القائمه", "قائمه", "المنيو", "منيو", "كل", "جميع", "حد", "طلب", "الطلب", "لك", "ليك", "ليكي", "كمان", "برضه", "معاك", "حق", "حقك", "معلش", "اسفين", "اسف",
             "we", "don't", "dont", "do", "not", "have", "sell", "carry", "any", "there", "is", "are", "no", "the", "a", "an", "right", "now", "currently", "at", "moment", "sorry", "unfortunately", "for", "of", "in", "but");
     /** A denial about a service, not a product (instalments, cards, branches, delivery...): out of this check. */
@@ -617,9 +626,12 @@ final class FactCheck {
     private static void falseDenial(String answer, Shop shop, List<Problem> out) {
         String l = light(answer);
         for (int[] s : sentences(answer)) {
-            String sentence = l.substring(s[0], s[1]);
-            Matcher d = DENY.matcher(sentence);
-            if (!d.find() || POLICY.matcher(sentence).find()) continue;
+            String whole = l.substring(s[0], s[1]);
+            // the clause that denies («الجينز غير متاح عندنا حالياً»), not the alternative offered after it («وأقرب حاجة بنطلون كحلي»)
+            String sentence = null;
+            Matcher d = null;
+            for (String clause : whole.split("[،,؛;]")) { Matcher m = DENY.matcher(clause); if (m.find()) { sentence = clause; d = m; break; } }
+            if (sentence == null || POLICY.matcher(sentence).find()) continue;
             if (!valuesInAny(sentence)) {
                 List<String> after = content(sentence.substring(d.end()), 4);
                 List<String> beforeKinds = content(sentence.substring(0, d.start()), 6).stream().filter(w -> !AUDIENCE.contains(w)).toList();

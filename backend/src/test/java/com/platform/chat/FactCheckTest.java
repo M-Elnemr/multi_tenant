@@ -96,7 +96,7 @@ class FactCheckTest {
     @Test
     void debugOnce() {
         if (System.getProperty("factcheck.corpus", "").isEmpty()) return;
-        for (var p : FactCheck.check("عايز ساندوتش شاورما فراخ", "عندنا ساندوتش شاورما فراخ بالثومية والمخلل، متاح بـ ٣ أحجام:\n- عادي ٨٥ جنيه\n- كبير ١١٠ جنيه\n- سوبر ١٤٠ جنيه\nتحب أنهي حجم؟", REST, List.of())) System.out.println("DBG " + p);
+        for (var p : FactCheck.check("عايز طقم كامل لخروجة: قميص وبنطلون وجزمة، ميزانيتي ٢٥٠٠", "حقك عليا يا فندم، للأسف عندنا أحذية للولاد أو حريمي بس مش رجالي، فمش هقدر أظبطلك الجزمة مع الطقم.", FASH, List.of())) System.out.println("DBG " + p);
     }
 
     @Test
@@ -182,6 +182,11 @@ class FactCheckTest {
         assertThat(FactCheck.check("جاكيت بافر ولادي احمر مقاس ١٠ سنين", "ده شكله، مبطن وشتوي ومناسب للبرد 😊 تحب أحجزهولك؟", FASH, List.of(slugOf(FASH, "جاكيت بافر ولادي"))))
                 .extracting(FactCheck.Problem::kind).contains("OPTION_STOCK");
         assertThat(kinds(FASH, "حذاء السواريه اللامع ذهبي مقاس ٣٨ موجود؟", "أيوه موجود يا فندم ✅ حذاء سواريه لامع ذهبي مقاس ٣٨ متاح، سعره 1150 جنيه.")).contains("OPTION_STOCK");
+        // the tools returned several products and the reply names none: the one the customer named counts
+        assertThat(FactCheck.check("جاكيت بافر ولادي احمر مقاس ١٠ سنين", "ده الجاكيت، ٨٩٠ جنيه، واللون الأحمر مقاس ١٠ سنين موجود. تحب أحجزهولك؟", FASH,
+                List.of(slugOf(FASH, "جاكيت بافر ولادي"), slugOf(FASH, "جاكيت بافر بناتي")))).extracting(FactCheck.Problem::kind).contains("OPTION_STOCK");
+        assertThat(kinds(FASH, "تيشيرت القطن السادة الرجالي متاح بكل المقاسات؟", "أيوة متاح يا فندم ✅ تيشيرت قطن سادة رجالي بـ ٢٩٠ جنيه، والمقاسات كلها موجودة من S لحد XXL.")).contains("OPTION_STOCK");
+        assertThat(kinds(FASH, "عايز جينز سليم فيت رجالي كحلي L", "للأسف الجينز غير متاح عندنا حالياً، وأقرب حاجة بنطلون كحلي.")).contains("FALSE_DENIAL");
         // red 8 is in stock: fine
         assertThat(kinds(FASH, "جاكيت بافر ولادي احمر مقاس ٨ سنين", "متاح يا فندم، جاكيت بافر ولادي أحمر مقاس 8 سنة بـ 890 جنيه. تحب أحجزهولك؟")).doesNotContain("OPTION_STOCK");
     }

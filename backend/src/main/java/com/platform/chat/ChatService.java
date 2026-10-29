@@ -827,7 +827,7 @@ public class ChatService {
                 if (words.isEmpty()) return List.of();
                 List<FactCheck.Named> out = new ArrayList<>();
                 for (var r : jdbc.sql("SELECT slug, name FROM commerce.products WHERE tenant_id = :t AND status = 'ACTIVE' AND search_text ILIKE ALL (CAST(:p AS text[])) ORDER BY sold_count DESC, name LIMIT 8")
-                        .param("t", tenantId).param("p", words.stream().map(w -> "%" + FastAnswers.norm(w) + "%").toArray(String[]::new)).query().listOfRows())
+                        .param("t", tenantId).param("p", words.stream().map(w -> "%" + FastAnswers.norm(SYNONYMS.getOrDefault(w.toLowerCase(java.util.Locale.ROOT), w)) + "%").toArray(String[]::new)).query().listOfRows())
                     out.add(new FactCheck.Named((String) r.get("slug"), (String) r.get("name")));
                 return out;
             }
@@ -879,7 +879,7 @@ public class ChatService {
     static final Pattern CANCEL_CLAIM = Pattern.compile("(?:(?<!\\p{L})اتلغ[ىيا]|تم\\s+(?:ال)?[إا]لغا[ءئ]|(?<!\\p{L})(?:أ|ا)?لغيت(?:ه|هولك|لك|ها)?(?!\\p{L})|(?<!\\p{L})(?:has been|is|was)\\s+cancell?ed)", Pattern.CASE_INSENSITIVE);
 
     /** A reply that says the order is already recorded («سجلت طلبك», «تم تسجيل الطلب», "your order is placed"). */
-    static final Pattern ORDER_CLAIM = Pattern.compile("(?:(?:سجلت|سجلنا|سجلتلك|سجلنالك)\\s*[:：]|(?:سجلت|سجلنا|سجلتلك|سجلنالك)\\s+(?:لك\\s+)?(?:طلبك|الطلب|الأوردر|الاوردر|طلب)|تم\\s+تسجيل\\s+(?:طلبك|الطلب|الأوردر|الاوردر)|(?:طلبك|الطلب|الأوردر|الاوردر)\\s+اتسجل|(?:has been|is)\\s+placed|placed your order)", Pattern.CASE_INSENSITIVE);
+    static final Pattern ORDER_CLAIM = Pattern.compile("(?:(?:سجلت|سجلنا|سجلتلك|سجلنالك)(?:ه|ها|هولك|هالك)?\\s*[:：]|(?:سجلت|سجلنا|سجلتلك|سجلنالك)\\s+(?:لك\\s+)?(?:طلبك|الطلب|الأوردر|الاوردر|طلب)|تم\\s+تسجيل\\s+(?:طلبك|الطلب|الأوردر|الاوردر)|(?:طلبك|الطلب|الأوردر|الاوردر)\\s+اتسجل|(?:has been|is)\\s+placed|placed your order)", Pattern.CASE_INSENSITIVE);
 
     private boolean hasOrderOnFile(Ctx ctx) {
         return jdbc.sql("SELECT last_order IS NOT NULL FROM chat.conversations WHERE id = :c").param("c", ctx.conversationId()).query(Boolean.class).optional().orElse(false);
@@ -1888,7 +1888,12 @@ public class ChatService {
             Map.entry("wide", "وايد"), Map.entry("jeans", "جينز"), Map.entry("shirt", "قميص"), Map.entry("shirts", "قميص"), Map.entry("t-shirt", "تيشيرت"), Map.entry("tshirt", "تيشيرت"), Map.entry("dress", "فستان"),
             Map.entry("dresses", "فستان"), Map.entry("pants", "بنطلون"), Map.entry("trousers", "بنطلون"), Map.entry("shoes", "حذاء"), Map.entry("sneakers", "سنيكرز"), Map.entry("bag", "شنطة"),
             Map.entry("bags", "شنطة"), Map.entry("hoodie", "هودي"), Map.entry("jacket", "جاكيت"), Map.entry("abaya", "عباية"), Map.entry("skirt", "جيبة"), Map.entry("shawarma", "شاورما"),
-            Map.entry("burger", "برجر"), Map.entry("chicken", "فراخ"), Map.entry("fries", "بطاطس"), Map.entry("juice", "عصير"), Map.entry("dessert", "حلويات"));
+            Map.entry("burger", "برجر"), Map.entry("chicken", "فراخ"), Map.entry("fries", "بطاطس"), Map.entry("juice", "عصير"), Map.entry("dessert", "حلويات"),
+            Map.entry("oxford", "اكسفورد"), Map.entry("polo", "بولو"), Map.entry("chino", "تشينو"), Map.entry("chinos", "تشينو"), Map.entry("cargo", "كارجو"), Map.entry("jogger", "جوجر"),
+            Map.entry("joggers", "جوجر"), Map.entry("linen", "كتان"), Map.entry("blazer", "بليزر"), Map.entry("puffer", "بافر"), Map.entry("coat", "بالطو"), Map.entry("boots", "بوت"),
+            Map.entry("phone", "موبايل"), Map.entry("mobile", "موبايل"), Map.entry("laptop", "لاب"), Map.entry("charger", "شاحن"), Map.entry("cable", "كابل"), Map.entry("case", "جراب"),
+            Map.entry("earbuds", "سماعه"), Map.entry("headphones", "سماعه"), Map.entry("watch", "ساعه"), Map.entry("tv", "تلفزيون"), Map.entry("tablet", "تابلت"), Map.entry("mouse", "ماوس"),
+            Map.entry("keyboard", "كيبورد"), Map.entry("router", "راوتر"), Map.entry("speaker", "سبيكر"));
 
     /** The customer's words with everyday synonyms swapped for the catalog's words, or null when none applies. */
     static String synonyms(String q) {
