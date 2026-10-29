@@ -175,6 +175,23 @@ class FactCheckTest {
         assertThat(kinds(REST, "شكرا جدا", "العفو يا فندم 🌸 إزاي أقدر أساعدك تاني؟")).doesNotContain("OFF_TOPIC");
     }
 
+    @Test
+    void aSoldOutColourAndSizeOfferedTogetherIsCaught() {
+        // the kids' puffer has red, but red 10 is sold out; the gold evening shoe has 38 sold out
+        assertThat(kinds(FASH, "جاكيت بافر ولادي احمر مقاس ١٠ سنين", "اللون الأحمر والمقاس 10 سنين متوفرين بالظبط يا فندم. الجاكيت بافر ولادي أحمر مقاس 10 سنة سعره 890 جنيه.")).contains("OPTION_STOCK");
+        assertThat(FactCheck.check("جاكيت بافر ولادي احمر مقاس ١٠ سنين", "ده شكله، مبطن وشتوي ومناسب للبرد 😊 تحب أحجزهولك؟", FASH, List.of(slugOf(FASH, "جاكيت بافر ولادي"))))
+                .extracting(FactCheck.Problem::kind).contains("OPTION_STOCK");
+        assertThat(kinds(FASH, "حذاء السواريه اللامع ذهبي مقاس ٣٨ موجود؟", "أيوه موجود يا فندم ✅ حذاء سواريه لامع ذهبي مقاس ٣٨ متاح، سعره 1150 جنيه.")).contains("OPTION_STOCK");
+        // red 8 is in stock: fine
+        assertThat(kinds(FASH, "جاكيت بافر ولادي احمر مقاس ٨ سنين", "متاح يا فندم، جاكيت بافر ولادي أحمر مقاس 8 سنة بـ 890 جنيه. تحب أحجزهولك؟")).doesNotContain("OPTION_STOCK");
+    }
+
+    @Test
+    void aWrongStockCountAndAWrongAllSizesAreCaught() {
+        assertThat(kinds(FASH, "الجاكيت البافر الشتوي الرجالي زيتي XXL موجود؟", "موجود يا فندم! جاكيت البافر الشتوي الرجالي باللون الزيتي ومقاس XXL متوفر (16 قطعة في المخزن).")).contains("OPTION_STOCK");
+        assertThat(kinds(FASH, "تيشيرت القطن السادة الرجالي متاح بكل المقاسات؟", "أيوة يا فندم، تيشيرت قطن سادة رجالي بسعر ٢٩٠ جنيه متاح بكل المقاسات من S لحد XXL.")).contains("OPTION_STOCK");
+    }
+
     // ---- every reply of the recorded test chats: what the checks say ------------------------------------------------
 
     /** Run with -Dfactcheck.corpus=<transcript.txt>,<shop slug>[;...] to print what the checks say about a recorded test run. */

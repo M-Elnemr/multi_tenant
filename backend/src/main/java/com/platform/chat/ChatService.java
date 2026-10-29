@@ -702,6 +702,13 @@ public class ChatService {
             problems.put("CARD_OFFER", "This shop takes cash on delivery only: never offer card, Visa or wallet payment.");
         boolean falseCancel = CANCEL_CLAIM.matcher(answer).find() && !orderCancelled(ctx);
         if (falseCancel) problems.put("CANCEL_CLAIM", "You told the customer the order is cancelled, but it is NOT cancelled: only cancel_order cancels. Ask kindly why they want to cancel, then call cancel_order with the reason (or noReason=true if they will not say), and tell them only what the tool answered.");
+        if (!lookedUp && STALL.matcher(answer).find())
+            problems.put("STALL", "Do not tell the customer you will check or confirm later: look it up now (search_products or get_product) and answer in this message.");
+        boolean prepared = rounds.stream().anyMatch(r -> r.tools().contains("prepare_order"));
+        if (!prepared && ADD_IT.matcher(FastAnswers.norm(last)).matches() && !OPTION_ASK.matcher(FastAnswers.norm(answer)).find())
+            problems.put("ADD_WITHOUT_OPTIONS", "The customer wants to order the product you just talked about: ask in one message for every option they have not chosen yet (size, colour, bread, spice...), exactly as the product has them; ask for the delivery details only after that.");
+        if (!prepared && ctx.summary()[0] == null && FAKE_SUMMARY.matcher(FastAnswers.norm(answer)).find())
+            problems.put("FAKE_SUMMARY", "Never write an order summary or ask to confirm the order yourself: call prepare_order with the items and details, and the customer gets the real summary from it (ask only for what is missing).");
         if (detailsGivenNoSummary(ctx, turns, rounds, last, answer))
             problems.put("NO_SUMMARY", "The customer has just given their name, address and phone: call prepare_order now with the items they chose and these details, so they get the order summary (ask only for something really missing, such as a size or color).");
         // the facts of the reply against the shop's own data (prices of options, stock, what we sell, delivery areas, hours, discounts)
@@ -717,8 +724,9 @@ public class ChatService {
         log.warn("Rule check: {} (conversation {}): {}", problems.values(), ctx.conversationId(), answer);
         try {
             turns.add(Turn.model(answer));
-            turns.add(Turn.user("[SYSTEM CHECK, not from the customer] " + String.join(" ", problems.values()) + " Write your reply again." + lastCustomerWords(turns)));
-            String retry = modelLoop(ctx, routed, system, turns, tools, rounds, allowed);
+            turns.add(Turn.user("[SYSTEM CHECK, not from the customer] " + String.join(" ", problems.values())
+                    + " Write your reply again. The customer has NOT seen your draft: never apologise for it or mention a mistake." + lastCustomerWords(turns)));
+            String retry = withoutDraftApology(modelLoop(ctx, routed, system, turns, tools, rounds, allowed));
             if (retry == null || retry.isBlank()) return factsFixed(last, falseCancel ? cancelFallback(answer) : phoneDoubt ? phoneFallback(answer) : answer, shopData, touched);
             if (CANCEL_CLAIM.matcher(retry).find() && !orderCancelled(ctx)) return cancelFallback(retry);
             if (PHONE_DOUBT.matcher(retry).find() && customerGaveMobile(turns)) return phoneFallback(retry);
@@ -732,10 +740,28 @@ public class ChatService {
         }
     }
 
+    private static final Pattern DRAFT_APOLOGY = Pattern.compile("^[^\\n.!؟?]{0,40}(?:اسف|آسف|أسف|معلش|اعتذر|أعتذر|sorry|apologi[sz]e)[^\\n.!؟?]{0,40}(?:الغلط|الخطا|الخطأ|اللخبطه|اللخبطة|اللبس|السابق|mistake|confusion|earlier)[^\\n.!؟?]*[.!؟?]?\\s*", Pattern.CASE_INSENSITIVE);
+
+    /** A rewrite that opens by apologising for "the earlier mistake" (a draft the customer never saw) loses that sentence. */
+    static String withoutDraftApology(String retry) {
+        if (retry == null) return null;
+        String out = DRAFT_APOLOGY.matcher(retry).replaceFirst("");
+        return out.isBlank() ? retry : out;
+    }
+
     /** The reply with every fact the code can put right exactly (a wrong option price, a promised area we do not deliver to, wrong hours...) put right. */
     private String factsFixed(String customer, String answer, FactCheck.Shop shop, List<String> touched) {
         try { return FactCheck.fix(customer, answer, shop, touched); } catch (RuntimeException e) { log.warn("Fact fix skipped", e); return answer; }
     }
+
+    /** «هتأكد وأرجعلك», «لازم نتأكد من المخزون الأول», "let me confirm the price": a promise to look instead of looking. */
+    static final Pattern STALL = Pattern.compile("(?:(?:ه|هـ)(?:تاكد|تأكد|شوف|بحث|راجع|سال|سأل)(?:لك|لك)?\\s|لازم\\s+(?:ا|أ|ن)?(?:تاكد|تأكد)|ثواني\\s+و|هرجعلك|هرد\\s+عليك|هبلغك|let\\s+me\\s+(?:check|confirm|look)|i\\s*(?:'ll|\\s+will)\\s+(?:check|confirm|look)|one\\s+moment)", Pattern.CASE_INSENSITIVE);
+    /** A short «ضيفه» / «احجزه» / «add it»: the customer wants the product just discussed. */
+    static final Pattern ADD_IT = Pattern.compile("^(?:تمام\\s+|طيب\\s+|اوك\\s+)?(?:ضيفه|ضيفها|ضيفهم|ضيف|احجزه|احجزها|احجز|اطلبه|اطلبها|خده|خدها|عايزه|عايزاه|عايزها|هاخده|هاخدها|add it|add|book it|i ll take it|ill take it)(?:\\s+(?:للاوردر|للطلب|لو سمحت|بقي|بقى|please))?$");
+    /** The reply asks about an option (size, colour, bread...). */
+    static final Pattern OPTION_ASK = Pattern.compile("(?:مقاس|المقاس|لون|اللون|حجم|الحجم|عيش|الخبز|خبز|نوع|السعه|الرامات|الطعم|حار|انهي|size|colou?r|which)");
+    /** A model-written summary or confirmation request («الطلب جاهز للتأكيد», «نبدأ التحضير؟»). */
+    static final Pattern FAKE_SUMMARY = Pattern.compile("(?:الطلب\\s+جاهز|جاهز\\s+للتاكيد|نبدا\\s+التحضير|ناكد\\s+الطلب|اكد\\s+الطلب|اكدلك\\s+الطلب\\s+كده|confirm\\s+(?:your|the)\\s+order|order\\s+is\\s+ready)");
 
     private static final Pattern ADDRESS_WORDS = Pattern.compile("(?:شارع|ش\\.|عماره|عمارة|برج|شقه|شقة|دور|الدور|حي|منطقه|منطقة|مدينه|مدينة|street|st\\.|building|apt|apartment|floor)", Pattern.CASE_INSENSITIVE);
 
@@ -753,7 +779,8 @@ public class ChatService {
             String q = FastAnswers.norm(answer);
             if (q.matches("(?s).*(?:مقاس|لون|حجم|انهي|اي نوع|الكميه|كام واحد|size|colou?r|which).*")) return false;
         }
-        // there must be something chosen earlier in the chat (a product the assistant talked about)
+        // there must be something chosen: a product named in this very message, or one the assistant talked about earlier in the chat
+        if (!FactCheck.mentions(last, shopView(ctx.tenantId()).names()).isEmpty()) return true;
         return turns.stream().anyMatch(t -> "model".equals(t.role()) && t.text() != null && MoneyGuard.digits(t.text()).matches("(?s).*\\d{2,}.*(?:جنيه|ج|EGP).*"));
     }
 
@@ -852,7 +879,7 @@ public class ChatService {
     static final Pattern CANCEL_CLAIM = Pattern.compile("(?:(?<!\\p{L})اتلغ[ىيا]|تم\\s+(?:ال)?[إا]لغا[ءئ]|(?<!\\p{L})(?:أ|ا)?لغيت(?:ه|هولك|لك|ها)?(?!\\p{L})|(?<!\\p{L})(?:has been|is|was)\\s+cancell?ed)", Pattern.CASE_INSENSITIVE);
 
     /** A reply that says the order is already recorded («سجلت طلبك», «تم تسجيل الطلب», "your order is placed"). */
-    static final Pattern ORDER_CLAIM = Pattern.compile("(?:(?:سجلت|سجلنا|سجلتلك|سجلنالك)\\s+(?:لك\\s+)?(?:طلبك|الطلب|الأوردر|الاوردر|طلب)|تم\\s+تسجيل\\s+(?:طلبك|الطلب|الأوردر|الاوردر)|(?:طلبك|الطلب|الأوردر|الاوردر)\\s+اتسجل|(?:has been|is)\\s+placed|placed your order)", Pattern.CASE_INSENSITIVE);
+    static final Pattern ORDER_CLAIM = Pattern.compile("(?:(?:سجلت|سجلنا|سجلتلك|سجلنالك)\\s*[:：]|(?:سجلت|سجلنا|سجلتلك|سجلنالك)\\s+(?:لك\\s+)?(?:طلبك|الطلب|الأوردر|الاوردر|طلب)|تم\\s+تسجيل\\s+(?:طلبك|الطلب|الأوردر|الاوردر)|(?:طلبك|الطلب|الأوردر|الاوردر)\\s+اتسجل|(?:has been|is)\\s+placed|placed your order)", Pattern.CASE_INSENSITIVE);
 
     private boolean hasOrderOnFile(Ctx ctx) {
         return jdbc.sql("SELECT last_order IS NOT NULL FROM chat.conversations WHERE id = :c").param("c", ctx.conversationId()).query(Boolean.class).optional().orElse(false);
@@ -983,6 +1010,8 @@ public class ChatService {
 
     private boolean vagueAboutProducts(UUID tenantId, String customer, String answer) {
         if (!RANGE_TALK.matcher(answer).find()) return false;   // only a reply that talks about what the shop has
+        // a reply that names a real product (also loosely or with «الـ»: «ساندوتش شاورما الفراخ») is not vague
+        if (!FactCheck.mentions(answer, shopView(tenantId).names()).isEmpty()) return false;
         List<Map<String, Object>> rows = relatedProducts(tenantId, customer);
         if (rows.isEmpty()) return false;
         String said = FastAnswers.norm(answer);

@@ -325,7 +325,13 @@ final class FactCheck {
 
     /** A word of the text is this word, also with a joined «و» or «ب» in front («وكبير», «بصاج»). */
     static boolean same(String tok, String w) {
-        return tok.equals(w) || (tok.length() == w.length() + 1 && (tok.charAt(0) == 'و' || tok.charAt(0) == 'ب') && tok.endsWith(w));
+        String a = unit(tok), b = unit(w);
+        return a.equals(b) || (a.length() == b.length() + 1 && (a.charAt(0) == 'و' || a.charAt(0) == 'ب') && a.endsWith(b));
+    }
+
+    /** Singular and plural of the units sizes are written in: «١٠ سنين» is the size «10 سنة». */
+    private static String unit(String w) {
+        return switch (w) { case "سنين", "سنوات", "سنه" -> "سنه"; case "شهور", "اشهر", "شهر" -> "شهر"; case "بوصات" -> "بوصه"; default -> w; };
     }
 
     /** The option value starting at token {@code i} (the longest one), as {value, number of words}, or null. */
@@ -417,7 +423,11 @@ final class FactCheck {
 
     static final Pattern NEG = Pattern.compile("(?:(?<!\\p{L})مش(?!\\p{L})|مفيش|معندناش|ماعندناش|مبقاش|خلص|خلصان|خلصت|نفذ|نفذت|غير\\s+(?:متاح|متوفر|موجود)|للاسف|ليس|لا\\s+يوجد|not\\s+available|out\\s+of\\s+stock|sold\\s+out|unavailable|don'?t\\s+have|do\\s+not\\s+have|isn'?t|aren'?t|no\\s+longer)", Pattern.CASE_INSENSITIVE);
     private static final Pattern AVAIL = Pattern.compile("(?:متاح|متاحه|متوفر|متوفره|موجود|موجوده|عندنا|بالوان|الوان|الالوان|المقاسات|مقاسات|available|in\\s+stock|comes?\\s+in|colou?rs|sizes)", Pattern.CASE_INSENSITIVE);
-    private static final Pattern ALL_SIZES = Pattern.compile("(?:كل|جميع)\\s+(?:ال)?(?:مقاسات|المقاسات|الالوان|الوان)|all\\s+(?:the\\s+)?(?:sizes|colou?rs)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern ALL_SIZES = Pattern.compile("(?<!\\p{L})(?:ب|في\\s+|ف)?(?:كل|جميع)\\s+(?:ال)?(?:مقاسات|المقاسات|الالوان|الوان)|all\\s+(?:the\\s+)?(?:sizes|colou?rs)", Pattern.CASE_INSENSITIVE);
+    /** Words that offer the item as ready to sell («تحب أحجزهولك؟», «موجود», "available"). */
+    private static final Pattern OFFER = Pattern.compile("(?:احجز|أحجز|نحجز|اجهز|أجهز|نجهز|ابعتهولك|متاح|متاحه|متوفر|متوفره|موجود|موجوده|available|in\\s+stock|shall\\s+i\\s+(?:book|reserve|order))", Pattern.CASE_INSENSITIVE);
+    /** A stock count («١٦ قطعة في المخزن», «فاضل ٣ بس», "6 left"); a number that is part of a name or option («وجبة بروستد ٤ قطع») is not one. */
+    private static final Pattern COUNT = Pattern.compile("(?:(\\d{1,4})\\s*(?:قطعه|قطع|حته|حتت)\\s*(?:في\\s+المخزن|بالمخزن|متاحه|متاحين|متوفره|متوفرين|موجوده|موجودين|متبقيه|باقيه|فاضله)|(?:فاضل|باقي|متبقي|فيه|في)\\s+(\\d{1,4})\\s*(?:قطعه|قطع|حته|حتت|بس)|(\\d{1,4})\\s*(?:pieces?\\s+)?(?:in\\s+stock|left|available))", Pattern.CASE_INSENSITIVE);
     private static final Set<String> SIZE_CODES = Set.of("xs", "s", "m", "l", "xl", "xxl", "3xl", "xxxl");
 
     private static void optionStock(String customer, String answer, List<Mention> ms, String only, java.util.function.Function<String, Product> load, List<Problem> out) {
@@ -436,6 +446,12 @@ final class FactCheck {
             if (neg && (!carried || only != null)) {
                 String problem = deniedButInStock(p, sentence, customer);
                 if (problem != null) { out.add(new Problem("OPTION_STOCK", problem, null)); continue; }
+            }
+            if (!neg) {
+                String combo = soldOutCombo(p, sentence, customer, l);
+                if (combo != null) { out.add(new Problem("OPTION_STOCK", combo, null)); continue; }
+                String count = wrongCount(p, sentence, customer);
+                if (count != null) { out.add(new Problem("OPTION_STOCK", count, null)); continue; }
             }
             if (!neg && ALL_SIZES.matcher(sentence).find()) {
                 String missing = missingCombos(p, said);
@@ -462,6 +478,38 @@ final class FactCheck {
                 else if (!soldOut.isEmpty() && said.size() == soldOut.size()) out.add(new Problem("OPTION_STOCK", "«" + p.name() + "» " + String.join(" ", soldOut) + " is SOLD OUT right now: " + stockLine(p, Map.of()) + ".", null));
             }
         }
+    }
+
+    /** The values of {@code p} said in the sentence, with a colour or size it leaves out taken from the customer's message («جاكيت بافر ولادي احمر مقاس ١٠» → «تحب أحجزهولك؟»). */
+    private static Map<String, String> wanted(Product p, String sentence, String customer) {
+        Map<String, String> want = new LinkedHashMap<>(valuesIn(sentence, p));
+        if (customer != null) for (var e : valuesIn(light(customer), p).entrySet()) if (!want.containsValue(e.getValue())) want.put(e.getKey(), e.getValue());
+        return want;
+    }
+
+    /** A colour and a size (or two options) offered together that are sold out together: the red size 10 offered when only other sizes of red are left. Null when fine. */
+    private static String soldOutCombo(Product p, String sentence, String customer, String reply) {
+        if (!OFFER.matcher(reply).find()) return null;   // «متوفرين» may sit in the sentence before the one naming the product
+        Map<String, String> want = wanted(p, sentence, customer);
+        if (new java.util.HashSet<>(want.values()).size() < 2) return null;   // one option alone is the simpler check below
+        List<Variant> exact = p.variants().stream().filter(v -> v.options().values().containsAll(want.keySet())).toList();
+        if (exact.isEmpty() || exact.stream().anyMatch(v -> v.available() > 0)) return null;
+        if (NEG.matcher(reply).find()) return null;   // the reply says something is not available: the denial checks look at that
+        return "«" + p.name() + "» " + String.join(" ", want.keySet()) + " is SOLD OUT (0 in stock). Never offer it; in stock: " + stockLine(p, want) + ". Say it is not available in that and offer what is.";
+    }
+
+    /** «فيه ١٦ قطعة» when the stock of that exact option is another number. Null when fine or when the option is not pinned to one variant. */
+    private static String wrongCount(Product p, String sentence, String customer) {
+        Matcher m = COUNT.matcher(sentence);
+        if (!m.find()) return null;
+        Map<String, String> want = wanted(p, sentence, customer);
+        if (want.isEmpty()) return null;
+        List<Variant> exact = p.variants().stream().filter(v -> v.options().values().containsAll(want.keySet())).toList();
+        if (exact.size() != 1) return null;
+        String num = m.group(1) != null ? m.group(1) : m.group(2) != null ? m.group(2) : m.group(3);
+        int said = Integer.parseInt(num), real = exact.get(0).available();
+        if (said == real || real <= 0) return null;
+        return "«" + p.name() + "» " + String.join(" ", want.keySet()) + " has " + real + " in stock, not " + said + ". Say " + real + " or just that it is available.";
     }
 
     /**
@@ -516,7 +564,7 @@ final class FactCheck {
                 if (w.isEmpty()) continue;
                 for (int i = 0; i + w.size() <= toks.size(); i++) {
                     boolean all = true;
-                    for (int k = 0; k < w.size() && all; k++) all = toks.get(i + k).word().equals(w.get(k));
+                    for (int k = 0; k < w.size() && all; k++) all = same(toks.get(i + k).word(), w.get(k));
                     if (all) { out.put(e.getValue(), e.getKey()); break; }
                 }
             }

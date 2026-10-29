@@ -241,4 +241,17 @@ class ChatTextTest {
                 .contains("190").contains("تحب كام").doesNotContain("مقفول");
         assertThat(ChatService.withoutRepeatedClosedNote(List.of(AiProvider.Turn.user("عايز آكل")), "المحل مقفول دلوقتي وطلبك هيتحضر أول ما يفتح.")).contains("مقفول");
     }
+
+    @Test
+    void stallsAddItAndSelfWrittenSummariesAreRecognised() {
+        org.assertj.core.api.Assertions.assertThat(ChatService.STALL.matcher("يا فندم، لازم نتأكد من المخزون الأول عشان أقولك صح.").find()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(ChatService.STALL.matcher("Let me confirm the price for you right away").find()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(ChatService.STALL.matcher("ساندوتش شاورما فراخ كبير بـ ١١٠ جنيه").find()).isFalse();
+        org.assertj.core.api.Assertions.assertThat(ChatService.ADD_IT.matcher(FastAnswers.norm("ضيفه")).matches()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(ChatService.ADD_IT.matcher(FastAnswers.norm("ضيفه للاوردر")).matches()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(ChatService.ADD_IT.matcher(FastAnswers.norm("ضيف معاه بطاطس")).matches()).isFalse();
+        org.assertj.core.api.Assertions.assertThat(ChatService.FAKE_SUMMARY.matcher(FastAnswers.norm("تمام يا فندم هاني، الطلب جاهز للتأكيد:")).find()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(ChatService.ORDER_CLAIM.matcher("أهلاً بحضرتك 🙌 سجلت: ٣ زنجر حار وبطاطس كبير").find()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(ChatService.withoutDraftApology("آسف جداً يا فندم على الغلط السابق 🙏\n\nعندنا خيارات نباتية ممتازة")).startsWith("عندنا");
+    }
 }
