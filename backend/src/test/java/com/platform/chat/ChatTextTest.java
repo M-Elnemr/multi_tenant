@@ -233,4 +233,12 @@ class ChatTextTest {
         assertThat(ChatService.PICTURE_ONLY.matcher("دي الصور يا فندم 👆 راجعها وقولي أي واحد عجبك").find()).isTrue();
         assertThat(ChatService.PICTURE_ONLY.matcher("عندنا جينز سليم فيت بـ890 جنيه").find()).isFalse();
     }
+
+    @Test
+    void theClosedShopNoteIsSaidOncePerChat() {
+        var before = List.of(AiProvider.Turn.user("عايز آكل"), AiProvider.Turn.model("أهلاً يا فندم. المحل مقفول دلوقتي وطلبك هيتحضر أول ما يفتح. تحب إيه؟"));
+        assertThat(ChatService.withoutRepeatedClosedNote(before, "الكفتة بـ190 جنيه. المطعم مقفول دلوقتي وهنبدأ التحضير مع الفتح. تحب كام؟"))
+                .contains("190").contains("تحب كام").doesNotContain("مقفول");
+        assertThat(ChatService.withoutRepeatedClosedNote(List.of(AiProvider.Turn.user("عايز آكل")), "المحل مقفول دلوقتي وطلبك هيتحضر أول ما يفتح.")).contains("مقفول");
+    }
 }

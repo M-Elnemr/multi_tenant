@@ -151,7 +151,7 @@ class PatientAccountsIntegrationTest extends IntegrationTestBase {
             sent = jdbc.sql("SELECT status FROM notifications.outbox WHERE channel = 'PUSH' AND to_address = :t").param("t", tokSecond).query(String.class).single();
             if (!"SENT".equals(sent)) Thread.sleep(200);
         }
-        assertThat(sent).isEqualTo("SENT");
+        assertThat(sent).as(String.valueOf(jdbc.sql("SELECT attempts || ' ' || coalesce(last_error, '-') || ' pending=' || (SELECT count(*) FROM notifications.outbox WHERE status = 'PENDING') FROM notifications.outbox WHERE channel = 'PUSH' AND to_address = :t").param("t", tokSecond).query(String.class).single())).isEqualTo("SENT");
         onHost(h, second.token(), "GET", "/api/v1/portal/queue", null).andExpect(jsonPath("$[0].called").value(true));
         // unregistering removes the device
         onHost(h, second.token(), "DELETE", "/api/v1/portal/devices", "{\"token\":\"%s\"}".formatted(tokSecond)).andExpect(status().isOk());

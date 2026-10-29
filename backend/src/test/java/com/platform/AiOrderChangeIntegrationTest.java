@@ -254,4 +254,13 @@ class AiOrderChangeIntegrationTest extends IntegrationTestBase {
         String reply = chat.reply(tenant, "WEB", "puffer-" + uniq(), null, "الجاكيت البافر الرجالي " + tag + " زيتي متاح؟").text();
         assertThat(reply).contains("1850").doesNotContain("WRONG").doesNotContain("سەە");
     }
+
+    @Test
+    void theCustomersPhoneIsNeverWrittenBack() {
+        UUID tenant;
+        try { tenant = id(onboard("STORE")); } catch (Exception e) { throw new IllegalStateException(e); }
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام، رقم التليفون ٠١١٥٥٥٥٥٥٥٥٥ والدفع كاش. الرقم ده عليه واتساب؟"));
+        String reply = chat.reply(tenant, "WEB", "phone-" + uniq(), null, "انا مصطفى، ٠١١٥٥٥٥٥٥٥٥، كاش").text();
+        assertThat(reply).doesNotContain("٠١١٥٥").contains("الرقم ده");
+    }
 }

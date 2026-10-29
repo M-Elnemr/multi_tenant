@@ -81,7 +81,8 @@ public class ChatService {
                 .replaceAll("\\s*\\[[\\p{L}\\p{N}-]{3,}\\]", "")   // a catalog slug («[بنطلون-جينز-سليم]») is never for the customer
                 .replaceAll("(?<=\\p{IsArabic})[a-z]{3,}(?=\\s|$|\\p{IsArabic})", "")   // lowercase Latin glued to an Arabic word («أursic») is a slip; sizes after «و» («وXL») stay
                 .replaceAll("(?<=\\p{IsArabic})[A-Z][a-z]{2,}(?=\\p{IsArabic})", "")   // a capitalised Latin piece inside an Arabic word («أفCoreة»)
-                .replaceAll("[\\p{L}]*[\\u06D5\\u0695\\u06CE\\u06C6\\u06B5][\\p{L}]*[؟?]?", "");   // a word in Kurdish letters («سەە») never belongs in an Egyptian reply
+                .replaceAll("[\\p{L}]*[\\u06D5\\u0695\\u06CE\\u06C6\\u06B5][\\p{L}]*[؟?]?", "")   // a word in Kurdish letters («سەە») never belongs in an Egyptian reply
+                .replaceAll("(?<![\\d٠-٩-])(?:\\+?2)?[0٠][1١][0-9٠-٩]{8,10}(?![\\d٠-٩])", "الرقم ده");   // the customer's phone is never written back (a copy can be wrong)
         for (var fix : WORD_FIXES.entrySet()) t = t.replace(fix.getKey(), fix.getValue());
         t = t.replaceAll("وبتاع\\s+(?=[0-9٠-٩])", "وبـ");
         t = t.replaceAll("(?<=\\p{IsArabic})(?!(?:XL|XXL|XS|S|M|L)(?![A-Za-z]))[A-Za-z]{2,}(?=\\s|$|[.،,؟?!]|\\p{IsArabic})", "");   // «للمen»: Latin glued to an Arabic word, sizes after «و» stay
@@ -555,7 +556,7 @@ public class ChatService {
 
     private static final Pattern WHO_QUESTION = Pattern.compile("(?:ليك|ليكي|لحضرتك|لنفسك)\\s+(?:ولا|و\\s*لا)\\s+(?:لحد|ل\\s*حد)|(?:بتطلب|بتشتري|بتدور)\\s+(?:ل|لـ)?\\s*(?:حد|نفسك)|ليك\\s+ولا\\s+هدية|(?:for you|for yourself)\\s+or\\s+(?:someone|a gift)", Pattern.CASE_INSENSITIVE);
     private static final Pattern FOR_ME = Pattern.compile("(?<![\\p{L}])(?:ليا|ليّا|لنفسي|عشاني|علشاني|لي انا|ليه انا|for me|for myself)(?![\\p{L}])", Pattern.CASE_INSENSITIVE);
-    private static final Pattern NOT_HAVE = Pattern.compile("(?:مفيش\\s+(?:لبس|ملابس|منتج|منتجات|حاجة|حاجه|حاجات|موديل|موديلات|أنواع|انواع|أصناف|اصناف|صنف|اختيارات)|عندنا\\s+مفيش|مش\\s+(?:موجود|موجوده|موجودة|متوفر|متوفره|متوفرة|متاح|متاحه|متاحة)|معندناش|ماعندناش|مش\\s+عندنا|مفيش\\s+عندنا|مش\\s+عندهم|we\\s+(?:don't|do not)\\s+have|not\\s+available)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern NOT_HAVE = Pattern.compile("(?:مفيش\\s+(?:لبس|ملابس|منتج|منتجات|حاجة|حاجه|حاجات|موديل|موديلات|أنواع|انواع|أصناف|اصناف|صنف|اختيارات|خيارات)|عندنا\\s+مفيش|مش\\s+(?:موجود|موجوده|موجودة|متوفر|متوفره|متوفرة|متاح|متاحه|متاحة)|معندناش|ماعندناش|مش\\s+عندنا|مفيش\\s+عندنا|مش\\s+عندهم|we\\s+(?:don't|do not)\\s+have|not\\s+available)", Pattern.CASE_INSENSITIVE);
     private static final java.util.List<String> EXAMPLE_LINES = examples();
     private static final Pattern ONLY_OPTIONS = Pattern.compile("(?:الألوان|الالوان|المقاسات|اللون)\\s+(?:المتاحة|المتاحه|المتوفرة|المتوفره|الموجودة|الموجوده)[^.؟?!\\n]{0,40}(?:فقط|بس)|(?:لونه|لونها|متاح|متاحة|متوفر|موجود)\\s+[^.؟?!\\n]{0,15}(?:بس|فقط)|(?:بقطعة|بقطعه)\\s+واحدة|معنديش\\s+معلومات\\s+(?:دقيقة\\s+)?عن\\s+(?:المقاسات|الألوان|المخزون)");
 
@@ -572,6 +573,7 @@ public class ChatService {
      */
     private String ruleChecks(Ctx ctx, ChannelAi.Routed routed, String system, List<Turn> turns, List<ToolDef> tools, List<AiUsageService.Round> rounds, MoneyGuard.Allowed allowed, String answer) {
         if (answer == null || answer.isBlank()) return answer;
+        answer = withoutRepeatedClosedNote(turns, answer);
         // only a real tool call counts as having looked (a model with the catalog in its prompt still skimmed it and answered vaguely)
         boolean searched = rounds.stream().anyMatch(r -> r.tools().stream().anyMatch(t -> t.equals("search_products") || t.equals("get_product") || t.equals("show_products")));
         String last = lastCustomerText(turns);
@@ -646,6 +648,7 @@ public class ChatService {
         if (ctx.products().isEmpty()) return null;
         String said = FastAnswers.norm(answer);
         List<Map<String, Object>> named = ctx.products().stream().filter(p -> said.contains(FastAnswers.norm(String.valueOf(p.get("name"))))).toList();
+        if (named.isEmpty() && ctx.products().size() == 1) named = ctx.products();   // one product shown, named loosely («جاكيت بافر رجالي»)
         if (named.size() != 1) return null;   // several products in one reply: a colour cannot be tied to one of them
         Map<String, Object> p = named.get(0);
         java.util.Set<String> real = new java.util.HashSet<>();
@@ -662,6 +665,17 @@ public class ChatService {
 
     /** A reply that only points at the product pictures («دي الصور 👆», «الصور قدامك»). */
     static final Pattern PICTURE_ONLY = Pattern.compile("(?:دي\\s+(?:الصور|صوره|صورته|صورتها|صورهم)|الصور\\s+(?:فوق|قدامك)|صور(?:ه|ته|تها|هم)\\s+فوق|👆)");
+
+    /** A sentence telling the customer the shop is closed and the order is prepared when it opens. */
+    private static final Pattern CLOSED_NOTE = Pattern.compile("[^.!؟?\\n]*(?:مقفول|مقفل|مقفلين|مغلق|مغلقين|قافلين|closed)[^.!؟?\\n]*(?:يفتح|نفتح|يفتحوا|الفتح|opens?)[^.!؟?\\n]*[.!؟?]?", Pattern.CASE_INSENSITIVE);
+
+    /** The closed-shop note once per chat: when an earlier reply already said it, the sentence is dropped from this one. */
+    static String withoutRepeatedClosedNote(List<Turn> turns, String answer) {
+        boolean saidBefore = turns.stream().anyMatch(t -> "model".equals(t.role()) && t.text() != null && CLOSED_NOTE.matcher(t.text()).find());
+        if (!saidBefore) return answer;
+        String out = CLOSED_NOTE.matcher(answer).replaceAll("").replaceAll("[ \\t]{2,}", " ").replaceAll("\\n{3,}", "\n\n").trim();
+        return out.isBlank() ? answer : out;
+    }
 
     /** A reply that stops helping because the shop is closed («المحل مغلق، هنرد عليك أول ما يفتحوا»). */
     static final Pattern CLOSED_STOP = Pattern.compile("(?:مغلق|مقفول|مقفل|قافلين)[^.؟?!\\n]{0,40}(?:هنرد|هيرد|هيردوا|نرد\\s+عليك|يرد\\s+عليك|هنكلمك|هيكلموك|هنتواصل|هنرجعلك)", Pattern.CASE_INSENSITIVE);
