@@ -2194,10 +2194,10 @@ public class ChatService {
             waNumber = PhoneNormalizer.normalize(raw.replace(" ", ""));
             String last9 = waNumber.replaceAll("\\D", "");
             last9 = last9.substring(last9.length() - 9);
-            boolean said = jdbc.sql("SELECT EXISTS (SELECT 1 FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u AND right(regexp_replace(content, '\\D', '', 'g'), 9) LIKE '%' || :d || '%')")
-                    .param("c", ctx.conversationId()).param("u", ctx.userMsgId()).param("d", last9).query(Boolean.class).single()
-                    || jdbc.sql("SELECT EXISTS (SELECT 1 FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u AND regexp_replace(content, '\\D', '', 'g') LIKE '%' || :d || '%')")
-                    .param("c", ctx.conversationId()).param("u", ctx.userMsgId()).param("d", last9).query(Boolean.class).single();
+            // the customer's own messages, digits made Western first: «٠١٠٥٥٥٤٤٣٣٢» is 01055544332 (the database's \D does not know Arabic digits)
+            final String tail = last9;
+            boolean said = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u").param("c", ctx.conversationId()).param("u", ctx.userMsgId())
+                    .query(String.class).list().stream().anyMatch(m -> MoneyGuard.digits(m).replaceAll("\\D", "").contains(tail));
             if (!said) return obj("error", "That WhatsApp number was not given by the customer. Ask them for it and use exactly what they wrote.");
         }
 

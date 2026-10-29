@@ -263,4 +263,9 @@ class ChatTextTest {
         org.assertj.core.api.Assertions.assertThat(ChatService.GUEST.matcher(FastAnswers.norm("حضرتك بتقصد إن القميص هدية أو إنك بتشتريه لضيف؟")).find()).isTrue();
         org.assertj.core.api.Assertions.assertThat(ChatService.GUEST.matcher(FastAnswers.norm("تمام، ضفنالك القميص، تحب أي لون ومقاس؟")).find()).isFalse();
     }
+
+    @Test
+    void arabicDigitsOfAPhoneAreTheSameNumber() {
+        org.assertj.core.api.Assertions.assertThat(MoneyGuard.digits("انا سامي، الدقي، ٠١٠٥٥٥٤٤٣٣٢، كاش").replaceAll("\\D", "")).contains("055544332");
+    }
 }

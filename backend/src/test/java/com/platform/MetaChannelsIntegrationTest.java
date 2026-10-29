@@ -197,6 +197,23 @@ class MetaChannelsIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void theSummaryComesAtOnceAndSaysTheConfirmationGoesToTheirNumberWrittenInArabicDigits() throws Exception {
+        Tenant t = onboard("STORE");
+        onHost(t.host(), t.access(), "PATCH", "/api/v1/store/profile", "{\"whatsapp\":\"01099998888\"}").andExpect(status().isOk());
+        String branch = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
+        String variant = JsonPath.read(body(onHost(t.host(), t.access(), "POST", "/api/v1/store/products",
+                "{\"taxonomySlug\":\"cookware\",\"name\":\"Mug %s\",\"variants\":[{\"sku\":\"M-%s\",\"priceMinor\":10000,\"optionValues\":{},\"stock\":[{\"branchId\":\"%s\",\"quantity\":9}]}]}".formatted(uniq(), uniq(), branch)).andExpect(status().isCreated())), "$.variants[0].id");
+        connect(t, "WHATSAPP", pageId());
+        String conv = java.util.UUID.randomUUID().toString();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", Map.of("items", List.of(Map.of("variantId", variant, "quantity", 1)), "customerName", "Sami", "phone", "01055544332",
+                "governorateCode", "GIZ", "addressLine1", "5 Tahrir St, building 5, apt 2", "area", "Dokki", "paymentMethod", "CASH_ON_DELIVERY")));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ok"));
+        String r = body(onHost(t.host(), null, "POST", "/api/v1/shop/chat", "{\"conversationId\":\"%s\",\"message\":\"عايز مج، انا سامي، الدقي شارع التحرير عمارة ٥ شقة ٢، ٠١٠٥٥٥٤٤٣٣٢، كاش\"}".formatted(conv)).andExpect(status().isOk()));
+        assertThat(FakeAiProvider.RESULTS.get(0).result().get("error")).isNull();
+        assertThat(JsonPath.<String>read(r, "$.reply")).contains("أأكد الأوردر؟").contains("واتساب على نفس الرقم");
+    }
+
+    @Test
     void theButtonAndTheConfirmationWorkEvenWhenTheCustomerDeclinedToGiveAWhatsAppNumber() throws Exception {
         Tenant t = onboard("STORE");
         onHost(t.host(), t.access(), "PATCH", "/api/v1/store/profile", "{\"whatsapp\":\"01099998888\"}").andExpect(status().isOk());
