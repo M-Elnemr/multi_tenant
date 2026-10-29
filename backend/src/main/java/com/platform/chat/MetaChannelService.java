@@ -282,6 +282,7 @@ public class MetaChannelService {
                     }, 5, java.util.concurrent.TimeUnit.SECONDS);
                     try {
                         var reply = chat.reply(tenantId, platform, sender, null, text.length() > 1000 ? text.substring(0, 1000) : text, name);
+                        if (reply.text() == null || reply.text().isBlank()) return;   // the shop team took this chat over: nothing goes out automatically
                         answer = reply.text();
                         cards = share.pick(tenantId, answer, reply.products());
                         if (reply.order() != null && reply.order().get("accountNotice") instanceof String n && !n.isBlank()) answer += "\n\n" + n;

@@ -72,6 +72,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
             ]));
         const names = {'FACEBOOK': ('فيسبوك', 'Facebook'), 'INSTAGRAM': ('إنستجرام', 'Instagram'), 'WHATSAPP': ('واتساب', 'WhatsApp')};
         return RefreshIndicator(onRefresh: reload, child: ListView(padding: const EdgeInsets.all(16), children: [
+          ReadinessCard(ctx: ctx),
+          const SizedBox(height: 16),
           Text(ar ? 'القنوات المربوطة' : 'Connected channels', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
           if (channels.isEmpty) emptyState(ar ? 'لسه ماربطتش فيسبوك أو إنستجرام أو واتساب.' : 'No Facebook, Instagram or WhatsApp connected yet.', icon: Icons.chat_outlined),
           for (final c in channels) Card(child: ListTile(leading: const Icon(Icons.forum_rounded), title: Text('${c['name']}', maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text(ar ? (names['${c['platform']}']?.$1 ?? '${c['platform']}') : (names['${c['platform']}']?.$2 ?? '${c['platform']}')), trailing: Text('${c['status']}', style: const TextStyle(fontSize: 11)))),
@@ -207,5 +209,54 @@ class _EvolutionCardState extends State<EvolutionCard> {
       ],
       if (enabled && write) Padding(padding: const EdgeInsets.only(top: 14), child: OutlinedButton.icon(onPressed: _disable, style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFB91C1C)), icon: const Icon(Icons.link_off_rounded), label: Text(ar ? 'أوقف وافصل الربط' : 'Turn off and unlink'))),
     ])));
+  }
+}
+
+
+/// How ready the shop's data is for the assistant (it only says what the shop wrote): the score and the gaps that cost the most.
+class ReadinessCard extends StatelessWidget {
+  const ReadinessCard({super.key, required this.ctx});
+  final Ctx ctx;
+
+  static const _ar = {
+    'products': 'ضيف منتجاتك', 'prices': 'منتجات من غير سعر', 'photos': 'منتجات من غير صورة', 'descriptions': 'منتجات من غير وصف', 'details': 'منتجات من غير تفاصيل (الخامة، المقاس، المكونات، الضمان)',
+    'categories': 'منتجات من غير قسم', 'delivery': 'حدد مناطق التوصيل ومصاريفها', 'returns': 'اكتب سياسة الاسترجاع', 'hours': 'حدد مواعيد الشغل', 'shippingText': 'اكتب سياسة التوصيل', 'address': 'ضيف عنوان الفرع', 'lessons': 'علّم المساعد حاجة عن محلك',
+  };
+  static const _en = {
+    'products': 'Add your products', 'prices': 'Products without a price', 'photos': 'Products without a picture', 'descriptions': 'Products without a description', 'details': 'Products without details (material, size, ingredients, warranty)',
+    'categories': 'Products without a category', 'delivery': 'Set your delivery areas and fees', 'returns': 'Write your returns policy', 'hours': 'Set your opening hours', 'shippingText': 'Write your delivery policy', 'address': 'Add your branch address', 'lessons': 'Teach the assistant one thing about your shop',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final ar = S.of(context).ar;
+    return Async<dynamic>(
+      load: () => ctx.api.get('store/ai/readiness'),
+      builder: (context, data, reload) {
+        final d = Map<String, dynamic>.from(data as Map);
+        final score = (d['score'] as num).toInt();
+        final missing = ((d['checks'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).where((c) => c['ok'] != true).take(4).toList();
+        final color = score >= 85 ? const Color(0xFF1E9E5A) : score >= 60 ? const Color(0xFFB45309) : const Color(0xFFD14343);
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Expanded(child: Text(ar ? 'جاهزية محلك للمساعد' : 'How ready your shop is for the assistant', style: const TextStyle(fontWeight: FontWeight.w900))),
+                Text('$score/100', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20, color: color)),
+              ]),
+              const SizedBox(height: 8),
+              ClipRRect(borderRadius: BorderRadius.circular(8), child: LinearProgressIndicator(value: score / 100, minHeight: 7, color: color, backgroundColor: const Color(0xFFEDF1F5))),
+              const SizedBox(height: 8),
+              if (missing.isEmpty) Text(ar ? 'محلك فيه كل اللي المساعد محتاجه.' : 'Your shop has everything the assistant needs.')
+              else ...[
+                Text(ar ? 'المساعد بيقول اللي محلك كاتبه بس. كمّل دول:' : 'The assistant only says what your shop wrote. Fill these in:', style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 12.5)),
+                for (final c in missing) Padding(padding: const EdgeInsets.only(top: 4), child: Text('• ${(ar ? _ar : _en)[c['key']] ?? c['key']}${c['count'] != null ? ' (${c['count']})' : ''}')),
+              ],
+            ]),
+          ),
+        );
+      },
+    );
   }
 }

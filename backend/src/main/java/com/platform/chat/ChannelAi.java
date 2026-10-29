@@ -31,9 +31,10 @@ public class ChannelAi {
                      @Value("${app.ai.glm.base-url:https://api-cdn.thehive.ai/api/v3}") String glmUrl, @Value("${app.ai.glm.reasoning-effort:low}") String glmEffort,
                      @Value("${app.ai.qwen.api-key:}") String qwenKey, @Value("${app.ai.qwen.model:qwen3.7-flash}") String qwenModel,
                      @Value("${app.ai.qwen.base-url:https://dashscope-intl.aliyuncs.com/compatible-mode/v1}") String qwenUrl, @Value("${app.ai.qwen.thinking:off}") String qwenThinking,
-                     @Value("${app.ai.glm.temperature:}") String glmTemperature, @Value("${app.ai.qwen.temperature:}") String qwenTemperature) {
-        this(defaultAi, new AnthropicProvider(key, model, effort, baseUrl, cacheTtl, chatMaxOutput), new OpenAiProvider("glm", "GLM", glmKey, glmModel, glmEffort, glmUrl, chatMaxOutput, true, withTemperature("", glmTemperature)),
-                new OpenAiProvider("qwen", "Alibaba Qwen", qwenKey, qwenModel, "", qwenUrl, chatMaxOutput, true, withTemperature(qwenExtra(qwenThinking), qwenTemperature)), social, web);
+                     @Value("${app.ai.glm.temperature:}") String glmTemperature, @Value("${app.ai.qwen.temperature:}") String qwenTemperature,
+                     @Value("${app.ai.glm.max-rps:5}") int glmRps, @Value("${app.ai.qwen.max-rps:0}") int qwenRps) {
+        this(defaultAi, new AnthropicProvider(key, model, effort, baseUrl, cacheTtl, chatMaxOutput), new OpenAiProvider("glm", "GLM", glmKey, glmModel, glmEffort, glmUrl, chatMaxOutput, true, withTemperature("", glmTemperature), glmRps),
+                new OpenAiProvider("qwen", "Alibaba Qwen", qwenKey, qwenModel, "", qwenUrl, chatMaxOutput, true, withTemperature(qwenExtra(qwenThinking), qwenTemperature), qwenRps), social, web);
     }
 
     /** Alibaba's compatible mode reads {@code enable_thinking}: "off" (default) and "on" set it, anything else ("unset") sends nothing, for a host that rejects the field. */
@@ -77,10 +78,20 @@ public class ChannelAi {
     public Routed forChannel(String channel, String chosen) {
         String route = chosen != null ? chosen : channel != null && SOCIAL.contains(channel) ? social : web;
         // a chat that typed "glm" is testing that model: whatever is wrong with it (no key, not active, rejected) is shown as its error instead of quietly answering with another one
-        if ("glm".equals(chosen) && glm != null) return new Routed(glm, null);
-        if ("qwen".equals(chosen) && qwen != null) return new Routed(qwen, null);
+        if ("glm".equals(chosen) && glm != null) return new Routed(glm, null, true);
+        if ("qwen".equals(chosen) && qwen != null) return new Routed(qwen, null, true);
         AiProvider primary = "qwen".equals(route) && qwen != null && qwen.available() ? qwen : "anthropic".equals(route) && claude.available() ? claude : "glm".equals(route) && glm != null && glm.available() ? glm : defaultAi;
-        return new Routed(primary, defaultAi);
+        return new Routed(primary, backupFor(primary), false);
+    }
+
+    /**
+     * The model that answers when {@code primary} fails: GLM and Qwen stand in for each other (two companies, so one outage never silences the shop), anything else falls back to the
+     * default model. Null when there is no other working model.
+     */
+    AiProvider backupFor(AiProvider primary) {
+        boolean primaryIsGlm = primary == defaultAi || primary == glm || "glm".equals(primary.code());
+        if (primaryIsGlm) return qwen != null && qwen.available() ? qwen : null;
+        return defaultAi.available() ? defaultAi : null;
     }
 
     /** "claude", "glm", "qwen" or "alibaba" (optionally after "use" / "switch to" / "model"): the model code the customer asked for, or null when the text is not such a command. */
@@ -98,15 +109,27 @@ public class ChannelAi {
     /** One reply's model. It stays on whichever model it fell back to for the rest of the reply, because a model's own tool-exchange blocks cannot be replayed to another. */
     public static final class Routed implements AiProvider {
         private final AiProvider fallback;
+        private final boolean picked;
         private AiProvider active;
         private boolean fellBack;
 
-        Routed(AiProvider primary, AiProvider fallback) { this.active = primary; this.fallback = fallback; }
+        Routed(AiProvider primary, AiProvider fallback, boolean picked) { this.active = primary; this.fallback = fallback; this.picked = picked; }
 
         public boolean fellBack() { return fellBack; }
 
-        /** True when there is no fallback, so a failure of this model must be shown to the customer as it is. */
-        public boolean showsErrors() { return fallback == null; }
+        /** True for a model the chat picked by name (a test of that model): its failure is shown as it is instead of a polite apology. */
+        public boolean showsErrors() { return picked; }
+
+        /**
+         * For a reply whose model failed after its tool exchange had begun (which cannot be handed over mid-way): the same reply, from the start, on the fallback model. Null when there is
+         * none or it is already the one that failed.
+         */
+        public Routed restartOnFallback() {
+            if (fallback == null || active == fallback) return null;
+            Routed r = new Routed(fallback, null, false);
+            r.fellBack = true;
+            return r;
+        }
 
         @Override public String code() { return active.code(); }
 

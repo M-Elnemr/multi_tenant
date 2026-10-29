@@ -41,6 +41,18 @@ public class OpsWatchService {
         if (failedHooks > 100) problems.add("WEBHOOKS_FAILING:" + failedHooks);
         long outbox = jdbc.sql("SELECT count(*) FROM notifications.outbox WHERE status = 'PENDING' AND created_at < now() - interval '1 hour'").query(Long.class).optional().orElse(0L);
         if (outbox > 500) problems.add("NOTIFICATIONS_BACKLOG:" + outbox);
+        // the AI seller over the last 30 minutes: failures, switches to the backup model, and slow replies
+        var ai = jdbc.sql("""
+                SELECT count(*) FILTER (WHERE kind = 'REPLY') AS replies, count(*) FILTER (WHERE kind IN ('ERROR', 'FALLBACK')) AS bad,
+                       coalesce(percentile_cont(0.9) WITHIN GROUP (ORDER BY ms) FILTER (WHERE kind = 'REPLY'), 0) AS p90
+                FROM chat.ai_events WHERE created_at > now() - interval '30 minutes'
+                """).query().singleRow();
+        long replies = ((Number) ai.get("replies")).longValue(), bad = ((Number) ai.get("bad")).longValue();
+        if (replies >= 10 && bad * 10 > replies) problems.add("AI_FAILING:" + bad + "/" + replies);
+        if (replies >= 10 && ((Number) ai.get("p90")).doubleValue() > 25_000) problems.add("AI_SLOW:p90 " + Math.round(((Number) ai.get("p90")).doubleValue() / 1000) + "s");
+        // the nightly backup (infra/scripts/backup.sh records each run): none for more than a day once backups have started
+        var backup = jdbc.sql("SELECT count(*) AS runs, max(created_at) FILTER (WHERE ok AND kind = 'BACKUP') > now() - interval '26 hours' AS fresh FROM ops.backup_runs").query().singleRow();
+        if (((Number) backup.get("runs")).longValue() > 0 && !Boolean.TRUE.equals(backup.get("fresh"))) problems.add("BACKUP_MISSING");
         File dir = new File(filesDir);
         if (dir.exists() && dir.getTotalSpace() > 0) {
             long freePct = dir.getUsableSpace() * 100 / dir.getTotalSpace();

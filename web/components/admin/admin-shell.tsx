@@ -34,6 +34,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     { href: "/admin/visitors", label: "admin.visitors", icon: "users" },
     { href: "/admin/ai", label: "admin.ai", icon: "sparkles" },
     { href: "/admin/ai-usage", label: "aiu.title", icon: "chart" },
+    { href: "/admin/ai-health", label: "aih.title", icon: "shield" },
     { href: "/admin/security", label: "sec.title", icon: "shield" },
     { href: "/admin/wallet", label: "wa.adminTitle", icon: "wallet" },
     { href: "/admin/whatsapp", label: "pwa.title", icon: "link" },

@@ -334,6 +334,7 @@ public class EvolutionService {
                 else if (!aiOn) return;
                 else {
                     var reply = chat.reply(tenantId, "WHATSAPP", sender, null, text.length() > 1000 ? text.substring(0, 1000) : text, pushName);
+                    if (reply.text() == null || reply.text().isBlank()) return;   // the shop team took this chat over: nothing goes out automatically
                     answer = reply.text();
                     if (reply.order() != null && reply.order().get("accountNotice") instanceof String n && !n.isBlank()) answer += "\n\n" + n;   // confirmed on WhatsApp: the account message follows
                     cards = share.pick(tenantId, answer, reply.products());

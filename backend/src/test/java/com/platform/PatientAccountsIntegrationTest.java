@@ -143,8 +143,10 @@ class PatientAccountsIntegrationTest extends IntegrationTestBase {
         onHost(h, c.access(), "POST", "/api/v1/clinic/appointments/" + a2 + "/call", "{}").andExpect(status().isOk());
         List<String> pushed = jdbc.sql("SELECT to_address FROM notifications.outbox WHERE channel = 'PUSH' AND tenant_id = (SELECT id FROM core.tenants WHERE slug = :s)").param("s", c.slug()).query(String.class).list();
         assertThat(pushed).containsExactly(tokSecond);
-        // without Firebase configured the sender only logs, and the message is marked sent
-        // a background dispatch may hold the row for a moment, so send and look again until it settles
+        // without Firebase configured the sender only logs, and the message is marked sent.
+        // The shared test database holds pushes other tests left waiting (often more than a thousand), and the sender takes the oldest first: this one is moved to the front
+        // so the test checks the sending, not how long the queue of the whole suite is
+        jdbc.sql("UPDATE notifications.outbox SET created_at = now() - interval '10 years' WHERE channel = 'PUSH' AND to_address = :t").param("t", tokSecond).update();
         String sent = "";
         for (int i = 0; i < 25 && !"SENT".equals(sent); i++) {
             notifications.dispatchOutbox();

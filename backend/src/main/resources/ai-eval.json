@@ -980,6 +980,159 @@
     "names real items on sale with the old and new price",
     "mentions NILE10 only as 10% from 1000"
    ]
+  },
+  {
+   "id": 76,
+   "shop": "tech-zone",
+   "category": "options",
+   "dialect": "egyptian",
+   "customer": [
+    "نوفا X12 بكام؟",
+    "والـ 256 جيجا؟"
+   ],
+   "expect": [
+    "gives 14999 for 128 GB and 16999 for 256 GB (the price of each storage, never mixed up)",
+    "asks which colour (black, blue, silver)"
+   ]
+  },
+  {
+   "id": 77,
+   "shop": "tech-zone",
+   "category": "product_knowledge",
+   "dialect": "egyptian",
+   "customer": [
+    "الشاحن ٢٠ وات ينفع لآيفون 13؟ ومحتاج كابل ايه؟"
+   ],
+   "expect": [
+    "says yes, and that it needs a USB-C to Lightning cable (sold separately, the bundle or the cable)",
+    "does not claim the cable comes with the charger"
+   ]
+  },
+  {
+   "id": 78,
+   "shop": "tech-zone",
+   "category": "product_knowledge",
+   "dialect": "egyptian",
+   "customer": [
+    "عايز كابل لآيفون 15"
+   ],
+   "expect": [
+    "offers the USB-C to USB-C cable (iPhone 15 uses USB-C), not the Lightning one"
+   ]
+  },
+  {
+   "id": 79,
+   "shop": "tech-zone",
+   "category": "options",
+   "dialect": "egyptian",
+   "customer": [
+    "تلفزيون ٥٥ بوصة 4K بكام؟",
+    "ولو مع التركيب؟"
+   ],
+   "expect": [
+    "gives 20499 for 55 inch without installation",
+    "gives 20949 with wall installation (450 more)"
+   ]
+  },
+  {
+   "id": 80,
+   "shop": "tech-zone",
+   "category": "out_of_area",
+   "dialect": "egyptian",
+   "customer": [
+    "عايز تلفزيون ٦٥ بوصة يوصل اسكندرية"
+   ],
+   "expect": [
+    "explains TVs of 50 inch and more are delivered only in Cairo and Giza, kindly, and offers another way (pickup or a smaller TV) without inventing a fee"
+   ]
+  },
+  {
+   "id": 81,
+   "shop": "tech-zone",
+   "category": "unknown_question",
+   "dialect": "egyptian",
+   "customer": [
+    "في تقسيط؟"
+   ],
+   "expect": [
+    "says honestly there are no instalments now; cash on delivery"
+   ]
+  },
+  {
+   "id": 82,
+   "shop": "tech-zone",
+   "category": "no_returns",
+   "dialect": "egyptian",
+   "customer": [
+    "لو فتحت السماعة ومعجبتنيش ارجعها؟"
+   ],
+   "expect": [
+    "says opened earbuds and headphones cannot be returned for hygiene reasons, kindly",
+    "mentions the 14-day return for unopened products"
+   ]
+  },
+  {
+   "id": 83,
+   "shop": "tech-zone",
+   "category": "need_first",
+   "dialect": "egyptian",
+   "customer": [
+    "عايز لاب توب للبرمجة في حدود ٣٥ ألف"
+   ],
+   "expect": [
+    "recommends real laptops within the budget with their RAM, SSD and price",
+    "does not recommend a laptop above 35000 as within budget"
+   ]
+  },
+  {
+   "id": 84,
+   "shop": "tech-zone",
+   "category": "out_of_stock",
+   "dialect": "egyptian",
+   "customer": [
+    "عايز ١٠ موبايلات نوفا ميني 8 للشركة"
+   ],
+   "expect": [
+    "checks the stock and never promises more than is in stock; says how many are available"
+   ]
+  },
+  {
+   "id": 85,
+   "shop": "beit-elshawarma",
+   "category": "vegetarian",
+   "dialect": "egyptian",
+   "customer": [
+    "عندكم أكل نباتي؟"
+   ],
+   "expect": [
+    "names the vegetarian dishes (falafel, hummus, baba ghanoush, fattoush) with prices",
+    "never says there is nothing vegetarian"
+   ]
+  },
+  {
+   "id": 86,
+   "shop": "beit-elshawarma",
+   "category": "out_of_area",
+   "dialect": "egyptian",
+   "customer": [
+    "بتوصلوا طنطا؟"
+   ],
+   "expect": [
+    "says delivery is only in Cairo and Giza, offers pickup from the Nasr City branch, invents no fee"
+   ]
+  },
+  {
+   "id": 87,
+   "shop": "nile-style",
+   "category": "shoes",
+   "dialect": "egyptian",
+   "customer": [
+    "عندكم جزم رجالي؟"
+   ],
+   "expect": [
+    "names real men's shoes with prices",
+    "never says there are no men's shoes"
+   ]
   }
  ]
 }

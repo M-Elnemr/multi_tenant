@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
@@ -134,19 +135,24 @@ public class ChatService {
     private final com.platform.commerce.OrderService orders;
 
     private final AiUsageService usageLog;
+    private final AiEvents events;
+    private final org.springframework.context.ApplicationEventPublisher publisher;
     private final ChannelAi channelAi;
     private final boolean nameProbe;
     private final boolean review;
     private final String reviewModel;
 
     public ChatService(JdbcClient jdbc, AiProvider ai, CatalogService catalog, StoreSearchService search, CheckoutService checkout, StoreSettingsService settings,
-                       StoreFulfillmentService fulfilment, ShopperService shopper, PaymentPolicy policy, AuditService audit, SellerTools seller, com.platform.commerce.GenderService genders, com.platform.commerce.OrderService orders, @org.springframework.context.annotation.Lazy AccountNotice accountNotice, AiUsageService usageLog, ChannelAi channelAi,
+                       StoreFulfillmentService fulfilment, ShopperService shopper, PaymentPolicy policy, AuditService audit, SellerTools seller, com.platform.commerce.GenderService genders, com.platform.commerce.OrderService orders, @org.springframework.context.annotation.Lazy AccountNotice accountNotice, AiUsageService usageLog, AiEvents events, ChannelAi channelAi,
+                       org.springframework.context.ApplicationEventPublisher publisher,
                        @org.springframework.beans.factory.annotation.Value("${app.ai.name-probe:false}") boolean nameProbe,
                        @org.springframework.beans.factory.annotation.Value("${app.ai.review.enabled:true}") boolean review,
                        @org.springframework.beans.factory.annotation.Value("${app.ai.review.model:}") String reviewModel) {
         this.review = review;
         this.reviewModel = reviewModel == null || reviewModel.isBlank() ? null : reviewModel.trim();
         this.usageLog = usageLog;
+        this.events = events;
+        this.publisher = publisher;
         this.channelAi = channelAi;
         this.nameProbe = nameProbe;
         this.accountNotice = accountNotice;
@@ -327,6 +333,8 @@ public class ChatService {
         String said = statedGender(text);
         if (said != null) jdbc.sql("UPDATE chat.conversations SET gender = :g WHERE id = :c").param("g", said).param("c", conv).update();
         long userMsgId = jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'user', :x) RETURNING id").param("c", conv).param("x", text).query(Long.class).single();
+        // the shop team took this chat over: the assistant stays quiet until they hand it back (or two hours pass without them writing)
+        if (!"TEST".equals(channel) && paused(conv)) return pausedReply(conv, text);
 
         List<Turn> turns = new ArrayList<>();
         for (var m : jdbc.sql("SELECT role, content FROM (SELECT id, role, content FROM chat.messages WHERE conversation_id = :c ORDER BY id DESC LIMIT 12) x ORDER BY id").param("c", conv).query().listOfRows())
@@ -380,18 +388,48 @@ public class ChatService {
         var routed = channelAi.forChannel(channel, nameProbe || "TEST".equals(channel) ? chosenModel(conv) : null);
         boolean arabicChat = arabicConversation(conv);
         long started = System.nanoTime();
+        List<Turn> fresh = new ArrayList<>(turns);   // the reply as it was before any model call, for a restart on the other model
+        List<AiUsageService.Round> failedRounds = new ArrayList<>();
+        String fallbackWhy = null;
+        AiBudget.start(REPLY_BUDGET_MS);
         try {
             answer = converse(ctx, routed, system, turns, tools, rounds, arabicChat);
         } catch (AiProvider.AiUnavailableException e) {
             log.warn("AI unavailable: {} ({})", e.getMessage(), e.getCause() == null ? "no cause" : e.getCause().toString());
-            answer = routed.showsErrors()
-                    ? "⚠️ " + routed.label() + ": " + e.getMessage()
-                    : "عذرًا، المساعد غير متاح الآن، حاول بعد قليل. / Sorry, the assistant is unavailable right now. Please try again shortly.";
+            var backup = AiBudget.hasLeft(12_000) ? routed.restartOnFallback() : null;
+            if (backup != null) {
+                // the model failed after its tool exchange had begun: the whole reply again, on the other model (two companies, so one outage never silences the shop)
+                log.warn("Restarting the reply on {} after {} failed", backup.code(), routed.code());
+                fallbackWhy = routed.code() + ": " + e.getMessage();
+                failedRounds.addAll(rounds);
+                rounds.clear();
+                routed = backup;
+                turns = new ArrayList<>(fresh);
+                ctx = new Ctx(tenantId, conv, channel, externalId, clientId, userMsgId, new ArrayList<>(), orderBox, new String[1]);
+                try {
+                    answer = converse(ctx, routed, system, turns, tools, rounds, arabicChat);
+                } catch (AiProvider.AiUnavailableException e2) {
+                    log.warn("AI unavailable on the fallback too: {}", e2.getMessage());
+                    events.record(tenantId, conv, channel, routed.code(), "ERROR", e2.getMessage(), null);
+                    answer = unavailableText(arabicChat);
+                }
+            } else {
+                events.record(tenantId, conv, channel, routed.code(), "ERROR", e.getMessage(), null);
+                answer = routed.showsErrors() ? "⚠️ " + routed.label() + ": " + e.getMessage() : unavailableText(arabicChat);
+            }
+        } finally {
+            AiBudget.clear();
         }
+        if (routed.fellBack()) events.record(tenantId, conv, channel, routed.code(), "FALLBACK", fallbackWhy != null ? fallbackWhy : "the first call failed", null);
+        rounds.addAll(0, failedRounds);   // the failed model's calls are billed too
+        String human = needsHuman(text, answer, arabicChat);
+        if (human != null) flagForHuman(tenantId, conv, channel, human, text, routed.code());
         // Money is never the model's words: the order summary and the confirmation are written by code from the real order, whatever the model said around them.
         if (ctx.summary()[0] != null) answer = ctx.summary()[0];
         else if (orderBox[0] != null) answer = confirmedText(arabicChat, orderBox[0], Map.of());
-        log.info("Reply timing: model={} calls={} ms={} conversation={}", routed.code(), rounds.size(), (System.nanoTime() - started) / 1_000_000, conv);
+        long tookMs = (System.nanoTime() - started) / 1_000_000;
+        log.info("Reply timing: model={} calls={} ms={} conversation={}", routed.code(), rounds.size(), tookMs, conv);
+        events.record(tenantId, conv, channel, routed.code(), "REPLY", rounds.size() + " calls", tookMs);
         if (!"TEST".equals(channel)) { seller.count(tenantId); usageLog.record(tenantId, "CHAT", channel, conv, false, text, rounds, routed.code(), routed.fellBack()); }
         if (answer == null || answer.isBlank()) answer = arabicChat ? "معلش يا فندم، ممكن توضحلي أكتر حضرتك محتاج إيه؟ وأنا أساعدك على طول 🌸" : "Sorry, could you tell me a little more about what you need? I will help right away.";
         answer = polish(noLaughter(messaging(channel) ? forChannel(channel, answer) : forChannel("WEB", oneMessage(answer))), conv, tenantId, channel, externalId, clientId);
@@ -403,6 +441,57 @@ public class ChatService {
         if (ctx.summary()[0] != null) markSummary(conv, saved);
         jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();
         return new Reply(conv, answer, orderBox[0], ctx.products());
+    }
+
+    // ---- hand-over to the shop team ----------------------------------------------------------------------------------------
+
+    private boolean paused(UUID conv) {
+        return jdbc.sql("SELECT coalesce(ai_paused_until > now(), FALSE) FROM chat.conversations WHERE id = :c").param("c", conv).query(Boolean.class).optional().orElse(false);
+    }
+
+    static final String PAUSED_AR = "وصلت رسالتك 🙏 حد من فريق المحل هيرد عليك هنا في أقرب وقت.";
+    static final String PAUSED_EN = "Got your message 🙏 someone from the shop team will reply to you here shortly.";
+
+    /** While the team handles the chat, the customer is told once that a person will answer here; later messages get no automatic reply at all (an empty one). */
+    private Reply pausedReply(UUID conv, String text) {
+        jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();
+        boolean told = jdbc.sql("SELECT count(*) > 0 FROM chat.messages WHERE conversation_id = :c AND role = 'assistant' AND content IN (:a, :e) AND created_at > (SELECT coalesce(max(created_at), 'epoch') FROM chat.messages WHERE conversation_id = :c AND by_owner)")
+                .param("c", conv).param("a", PAUSED_AR).param("e", PAUSED_EN).query(Boolean.class).single();
+        if (told) return new Reply(conv, "", null, List.of());
+        String note = english(text) ? PAUSED_EN : PAUSED_AR;
+        jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x)").param("c", conv).param("x", note).update();
+        return new Reply(conv, note, null, List.of());
+    }
+
+    private static final Pattern HUMAN_ASK = Pattern.compile("(?:(?:عايز|عايزه|عاوز|عاوزه|محتاج|محتاجه|ممكن|عايزين|نفسي)\\s+(?:ا|أ)?(?:كلم|تكلم\\s+مع|اتكلم\\s+مع|أتكلم\\s+مع|اكلم|نكلم)\\s+(?:حد|حضرتك|بني\\s*ادم|بني\\s*آدم|انسان|إنسان|موظف|المدير|مدير|صاحب\\s+المحل|المسؤول|خدمه\\s+العملاء|خدمة\\s+العملاء)|(?:talk|speak)\\s+to\\s+(?:a\\s+)?(?:human|person|manager|agent|someone|real)|customer\\s+service|real\\s+person)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern ANGRY = Pattern.compile("(?:نصابين|نصاب|حرامي|حراميه|حرامية|نصب|سرقه|سرقة|هشتكي|اشتكي|شكوي|شكوى|بلاغ|حمايه\\s+المستهلك|حماية\\s+المستهلك|زباله|زبالة|مقرف|مش\\s+بتردوا|محدش\\s+بيرد|اتأخر\\s+(?:ساعه|ساعة|ساعتين|يوم)|مش\\s+طبيعي|عايز\\s+فلوسي|رجعولي\\s+فلوسي|scam|fraud|worst|terrible|disgusting|refund\\s+now|complaint)", Pattern.CASE_INSENSITIVE);
+
+    /** Why this chat needs a person from the shop (in the shop's words for the notification), or null. */
+    static String needsHuman(String customer, String answer, boolean arabic) {
+        if (customer == null) return null;
+        String c = customer.replace('أ', 'ا').replace('إ', 'ا').replace('ة', 'ه');
+        if (HUMAN_ASK.matcher(customer).find() || HUMAN_ASK.matcher(c).find()) return arabic ? "العميل طلب يكلم حد من المحل" : "The customer asked to talk to someone from the shop";
+        if (ANGRY.matcher(customer).find() || ANGRY.matcher(c).find()) return arabic ? "العميل زعلان أو بيشتكي" : "The customer is upset or complaining";
+        if (answer != null && (answer.equals(unavailableText(true)) || answer.equals(unavailableText(false)))) return arabic ? "المساعد مقدرش يرد على العميل" : "The assistant could not answer the customer";
+        return null;
+    }
+
+    /** Marks the chat for the team and tells them once (until they handle it). */
+    private void flagForHuman(UUID tenantId, UUID conv, String channel, String reason, String customer, String model) {
+        if ("TEST".equals(channel)) return;
+        int changed = jdbc.sql("UPDATE chat.conversations SET needs_human = TRUE, needs_human_reason = :r, needs_human_at = now() WHERE id = :c AND NOT needs_human")
+                .param("r", reason.length() > 200 ? reason.substring(0, 200) : reason).param("c", conv).update();
+        if (changed == 0) return;
+        events.record(tenantId, conv, channel, model, "NEEDS_HUMAN", reason, null);
+        publisher.publishEvent(new ChatNeedsHuman(tenantId, conv, channel, reason, customer));
+    }
+
+    /** The whole of one reply (every model call, review and rewrite) has to fit well inside the 60 seconds after which the gateway gives up on the customer. */
+    static final long REPLY_BUDGET_MS = 45_000;
+
+    private static String unavailableText(boolean arabic) {
+        return arabic ? "معلش يا فندم، عندنا ضغط دلوقتي 🙏 ابعتلي رسالتك تاني بعد دقيقة وهرد عليك على طول."
+                      : "Sorry, we are very busy right now 🙏 please send your message again in a minute and I will answer right away.";
     }
 
     /**
@@ -470,7 +559,7 @@ public class ChatService {
      * reply. Any failure sends the draft; the money and claims checks run after it either way.
      */
     private String reviewed(Ctx ctx, ChannelAi.Routed routed, String system, List<Turn> turns, List<AiUsageService.Round> rounds, String draft) {
-        if (!review || trivial(draft)) return draft;
+        if (!review || trivial(draft) || !AiBudget.hasLeft(REPLY_BUDGET_MS - 20_000)) return draft;   // past 20 seconds the customer has waited enough
         try {
             // the review runs on the answering model, or on the model set in app.ai.review.model (its cost is then logged under that model)
             ChannelAi.Routed reviewer = reviewModel == null || reviewModel.equals(routed.code()) ? routed : channelAi.forChannel(ctx.channel(), reviewModel);
@@ -577,57 +666,186 @@ public class ChatService {
         // only a real tool call counts as having looked (a model with the catalog in its prompt still skimmed it and answered vaguely)
         boolean searched = rounds.stream().anyMatch(r -> r.tools().stream().anyMatch(t -> t.equals("search_products") || t.equals("get_product") || t.equals("show_products")));
         String last = lastCustomerText(turns);
-        List<String> problems = new ArrayList<>();
+        Map<String, String> problems = new LinkedHashMap<>();   // check name -> what the model must fix
         if (WHO_QUESTION.matcher(answer).find()) {
-            if (FOR_ME.matcher(last).find()) problems.add("The customer already said it is for themself: never ask who it is for; recommend for them.");
-            else if (!searched) problems.add("You asked who it is for before searching: call search_products now; ask only if the results are for several groups (men, women, kids) and nothing tells.");
+            if (FOR_ME.matcher(last).find()) problems.put("WHO_ASKED", "The customer already said it is for themself: never ask who it is for; recommend for them.");
+            else if (!searched) problems.put("WHO_BEFORE_SEARCH", "You asked who it is for before searching: call search_products now; ask only if the results are for several groups (men, women, kids) and nothing tells.");
         }
         if (!searched && !NOT_HAVE.matcher(answer).find() && !ONLY_OPTIONS.matcher(answer).find() && productFacts(answer) && !alreadySaid(answer, turns))
-            problems.add("You described which colors, sizes or items are available without checking in this turn: call search_products (or get_product) now and answer only from the result.");
-        if (!searched && !NOT_HAVE.matcher(answer).find() && ONLY_OPTIONS.matcher(answer).find()) problems.add("You stated which colors, sizes or quantities exist without checking in this turn: call search_products or get_product and answer from allOptions and inStockOptions.");
-        if (!searched && NOT_HAVE.matcher(answer).find()) problems.add("You said we do not have something without searching in this turn: call search_products for exactly what the customer asked (also by color and size) and answer from the result.");
+            problems.put("UNCHECKED_FACTS", "You described which colors, sizes or items are available without checking in this turn: call search_products (or get_product) now and answer only from the result.");
+        if (!searched && !NOT_HAVE.matcher(answer).find() && ONLY_OPTIONS.matcher(answer).find()) problems.put("UNCHECKED_OPTIONS", "You stated which colors, sizes or quantities exist without checking in this turn: call search_products or get_product and answer from allOptions and inStockOptions.");
+        if (!searched && NOT_HAVE.matcher(answer).find()) problems.put("UNSEARCHED_DENIAL", "You said we do not have something without searching in this turn: call search_products for exactly what the customer asked (also by color and size) and answer from the result.");
         String norm = FastAnswers.norm(answer);
-        if (EXAMPLE_LINES.stream().anyMatch(norm::contains)) problems.add("You copied an example sentence from your instructions word for word; it may not fit. Answer THIS customer's message in your own words.");
-        if (english(last) && arabicShare(answer) > 0.5) problems.add("The customer writes English: reply in English.");
+        if (EXAMPLE_LINES.stream().anyMatch(norm::contains)) problems.put("COPIED_EXAMPLE", "You copied an example sentence from your instructions word for word; it may not fit. Answer THIS customer's message in your own words.");
+        if (english(last) && arabicShare(answer) > 0.5) problems.put("LANGUAGE", "The customer writes English: reply in English.");
         var asked = QUANTITY.matcher(MoneyGuard.digits(last));
         if (asked.find() && Integer.parseInt(asked.group(1)) >= 5 && MoneyGuard.digits(answer).contains(asked.group(1)) && PROMISE.matcher(answer).find() && !LIMIT_WORDS.matcher(answer).find())
-            problems.add("The customer asked for " + asked.group(1) + " pieces: check the stock count of that exact option (in ALL PRODUCTS or the search result) and never promise more than is in stock; if fewer are available, say how many.");
+            problems.put("STOCK_QUANTITY", "The customer asked for " + asked.group(1) + " pieces: check the stock count of that exact option (in ALL PRODUCTS or the search result) and never promise more than is in stock; if fewer are available, say how many.");
         if (PHONE_DOUBT.matcher(answer).find() && customerGaveMobile(turns))
-            problems.add("The mobile number the customer wrote is valid: never say it is wrong or count its digits; if needed, ask only «الرقم ده عليه واتساب؟».");
+            problems.put("PHONE_DOUBT", "The mobile number the customer wrote is valid: never say it is wrong or count its digits; if needed, ask only «الرقم ده عليه واتساب؟».");
         if (!searched && vagueAboutProducts(ctx.tenantId(), last, answer))
-            problems.add("The customer asked about a kind of product and your reply names none: call search_products and name the real products with their price, colors and sizes (or say honestly we do not have it).");
+            problems.put("VAGUE", "The customer asked about a kind of product and your reply names none: call search_products and name the real products with their price, colors and sizes (or say honestly we do not have it).");
         String unrelated = cardsUnrelated(ctx, last);
-        if (unrelated != null) problems.add(unrelated);
+        if (unrelated != null) problems.put("UNRELATED_CARDS", unrelated);
         boolean lookedUp = rounds.stream().anyMatch(r -> r.tools().stream().anyMatch(t -> t.equals("get_product") || t.equals("search_products")));
         if (NO_INFO.matcher(answer).find() && !lookedUp)
-            problems.add("You said there is no information without looking: call get_product for that product and answer from its details (ingredients, calories, material, size guide...); say it is not listed only if get_product has nothing.");
+            problems.put("NO_INFO", "You said there is no information without looking: call get_product for that product and answer from its details (ingredients, calories, material, size guide...); say it is not listed only if get_product has nothing.");
         if (ORDER_CLAIM.matcher(FastAnswers.norm(answer)).find() && ctx.order()[0] == null && !hasOrderOnFile(ctx))
-            problems.add("You said the order is recorded, but no order exists yet: an order exists only after the customer confirms the summary from prepare_order. Call prepare_order with the details you have (or ask for what is missing) and never say it is recorded before.");
+            problems.put("ORDER_CLAIM", "You said the order is recorded, but no order exists yet: an order exists only after the customer confirms the summary from prepare_order. Call prepare_order with the details you have (or ask for what is missing) and never say it is recorded before.");
         String colorProblem = inventedColors(ctx, answer);
-        if (colorProblem != null) problems.add(colorProblem);
+        if (colorProblem != null) problems.put("INVENTED_COLOR", colorProblem);
         if (PICTURE_ONLY.matcher(answer).find() && !MoneyGuard.digits(answer).matches("(?s).*\\d.*"))
-            problems.add("Do not just point at the pictures: name the products in words with their price and the colors/sizes that matter (and any size advice asked for), then one short question.");
+            problems.put("PICTURE_ONLY", "Do not just point at the pictures: name the products in words with their price and the colors/sizes that matter (and any size advice asked for), then one short question.");
         if (CLOSED_STOP.matcher(answer).find())
-            problems.add("Being outside opening hours does not stop you: answer the customer's question now and keep selling; only mention once that the order is prepared when the shop opens.");
+            problems.put("CLOSED_STOP", "Being outside opening hours does not stop you: answer the customer's question now and keep selling; only mention once that the order is prepared when the shop opens.");
         if (CARD_OFFER.matcher(answer).find() && !cardAccepted(ctx.tenantId()))
-            problems.add("This shop takes cash on delivery only: never offer card, Visa or wallet payment.");
+            problems.put("CARD_OFFER", "This shop takes cash on delivery only: never offer card, Visa or wallet payment.");
         boolean falseCancel = CANCEL_CLAIM.matcher(answer).find() && !orderCancelled(ctx);
-        if (falseCancel) problems.add("You told the customer the order is cancelled, but it is NOT cancelled: only cancel_order cancels. Ask kindly why they want to cancel, then call cancel_order with the reason (or noReason=true if they will not say), and tell them only what the tool answered.");
+        if (falseCancel) problems.put("CANCEL_CLAIM", "You told the customer the order is cancelled, but it is NOT cancelled: only cancel_order cancels. Ask kindly why they want to cancel, then call cancel_order with the reason (or noReason=true if they will not say), and tell them only what the tool answered.");
+        if (detailsGivenNoSummary(ctx, turns, rounds, last, answer))
+            problems.put("NO_SUMMARY", "The customer has just given their name, address and phone: call prepare_order now with the items they chose and these details, so they get the order summary (ask only for something really missing, such as a size or color).");
+        // the facts of the reply against the shop's own data (prices of options, stock, what we sell, delivery areas, hours, discounts)
+        FactCheck.Shop shopData = shopView(ctx.tenantId());
+        List<String> touched = ctx.products().stream().map(p -> String.valueOf(p.get("slug"))).distinct().toList();
+        List<FactCheck.Problem> facts = List.of();
+        try { facts = FactCheck.check(last, answer, shopData, touched); } catch (RuntimeException e) { log.warn("Fact check skipped", e); }
+        for (var f : facts) problems.putIfAbsent(f.kind(), f.note());
         if (problems.isEmpty()) return answer;
+        for (String kind : problems.keySet()) events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:" + kind, problems.get(kind), null);
         boolean phoneDoubt = PHONE_DOUBT.matcher(answer).find() && customerGaveMobile(turns);
-        if (!canRewrite(rounds)) return falseCancel ? cancelFallback(answer) : phoneDoubt ? phoneFallback(answer) : answer;
-        log.warn("Rule check: {} (conversation {}): {}", problems, ctx.conversationId(), answer);
+        if (!canRewrite(rounds)) return factsFixed(last, falseCancel ? cancelFallback(answer) : phoneDoubt ? phoneFallback(answer) : answer, shopData, touched);
+        log.warn("Rule check: {} (conversation {}): {}", problems.values(), ctx.conversationId(), answer);
         try {
             turns.add(Turn.model(answer));
-            turns.add(Turn.user("[SYSTEM CHECK, not from the customer] " + String.join(" ", problems) + " Write your reply again." + lastCustomerWords(turns)));
+            turns.add(Turn.user("[SYSTEM CHECK, not from the customer] " + String.join(" ", problems.values()) + " Write your reply again." + lastCustomerWords(turns)));
             String retry = modelLoop(ctx, routed, system, turns, tools, rounds, allowed);
-            if (retry == null || retry.isBlank()) return falseCancel ? cancelFallback(answer) : phoneDoubt ? phoneFallback(answer) : answer;
+            if (retry == null || retry.isBlank()) return factsFixed(last, falseCancel ? cancelFallback(answer) : phoneDoubt ? phoneFallback(answer) : answer, shopData, touched);
             if (CANCEL_CLAIM.matcher(retry).find() && !orderCancelled(ctx)) return cancelFallback(retry);
-            return PHONE_DOUBT.matcher(retry).find() && customerGaveMobile(turns) ? phoneFallback(retry) : retry;
+            if (PHONE_DOUBT.matcher(retry).find() && customerGaveMobile(turns)) return phoneFallback(retry);
+            List<String> touchedNow = ctx.products().stream().map(p -> String.valueOf(p.get("slug"))).distinct().toList();
+            String fixedRetry = factsFixed(last, retry, shopData, touchedNow);
+            if (!fixedRetry.equals(retry)) events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:FIXED_BY_CODE", "the rewrite still had a fact wrong", null);
+            return fixedRetry;
         } catch (AiProvider.AiUnavailableException e) {
             log.warn("Rule check: the rewrite failed: {}", e.getMessage());
-            return falseCancel ? cancelFallback(answer) : answer;
+            return factsFixed(last, falseCancel ? cancelFallback(answer) : answer, shopData, touched);
         }
+    }
+
+    /** The reply with every fact the code can put right exactly (a wrong option price, a promised area we do not deliver to, wrong hours...) put right. */
+    private String factsFixed(String customer, String answer, FactCheck.Shop shop, List<String> touched) {
+        try { return FactCheck.fix(customer, answer, shop, touched); } catch (RuntimeException e) { log.warn("Fact fix skipped", e); return answer; }
+    }
+
+    private static final Pattern ADDRESS_WORDS = Pattern.compile("(?:شارع|ش\\.|عماره|عمارة|برج|شقه|شقة|دور|الدور|حي|منطقه|منطقة|مدينه|مدينة|street|st\\.|building|apt|apartment|floor)", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * The customer sent their details (a mobile and an address) for items chosen in this chat, but no summary was made and the reply asks for nothing that is missing: the model should
+     * have called prepare_order.
+     */
+    private boolean detailsGivenNoSummary(Ctx ctx, List<Turn> turns, List<AiUsageService.Round> rounds, String last, String answer) {
+        if (ctx.summary()[0] != null || ctx.order()[0] != null || last == null) return false;
+        String d = MoneyGuard.digits(last).replaceAll("[\\s-]", "");
+        if (!d.matches("(?s).*(?<!\\d)(?:\\+?20)?01[0125]\\d{8}(?!\\d).*") || !ADDRESS_WORDS.matcher(last).find()) return false;
+        if (rounds.stream().anyMatch(r -> r.tools().contains("prepare_order"))) return false;
+        if (answer.contains("؟") || answer.contains("?")) {
+            // a real question for something missing is fine; the WhatsApp question alone is not a reason to skip the summary
+            String q = FastAnswers.norm(answer);
+            if (q.matches("(?s).*(?:مقاس|لون|حجم|انهي|اي نوع|الكميه|كام واحد|size|colou?r|which).*")) return false;
+        }
+        // there must be something chosen earlier in the chat (a product the assistant talked about)
+        return turns.stream().anyMatch(t -> "model".equals(t.role()) && t.text() != null && MoneyGuard.digits(t.text()).matches("(?s).*\\d{2,}.*(?:جنيه|ج|EGP).*"));
+    }
+
+    /** The shop's data for the fact checks, read once per reply. */
+    private FactCheck.Shop shopView(UUID tenantId) {
+        return new FactCheck.Shop() {
+            private List<FactCheck.Named> names;
+            private final Map<String, FactCheck.Product> products = new java.util.HashMap<>();
+            private Set<String> served;
+            private List<Map<String, Object>> zones;
+
+            public List<FactCheck.Named> names() {
+                if (names == null) {
+                    names = new ArrayList<>();
+                    for (var r : jdbc.sql("SELECT slug, name FROM commerce.products WHERE tenant_id = :t AND status = 'ACTIVE'").param("t", tenantId).query().listOfRows())
+                        names.add(new FactCheck.Named((String) r.get("slug"), (String) r.get("name")));
+                    for (var r : jdbc.sql("SELECT p.slug, tr.name FROM commerce.product_translations tr JOIN commerce.products p ON p.id = tr.product_id WHERE p.tenant_id = :t AND p.status = 'ACTIVE'").param("t", tenantId).query().listOfRows())
+                        names.add(new FactCheck.Named((String) r.get("slug"), (String) r.get("name")));
+                }
+                return names;
+            }
+
+            @SuppressWarnings("unchecked")
+            public FactCheck.Product product(String slug) {
+                return products.computeIfAbsent(slug, s -> {
+                    try {
+                        var p = catalog.detailBySlug(tenantId, s);
+                        List<FactCheck.Variant> vs = new ArrayList<>();
+                        double before = 0;
+                        for (var v : (List<Map<String, Object>>) p.get("variants")) {
+                            Map<String, String> opts = new LinkedHashMap<>();
+                            String combo = v.get("comboKey") == null ? "" : String.valueOf(v.get("comboKey"));
+                            for (String kv : combo.split("\\|")) { int i = kv.indexOf('='); if (i > 0) opts.put(kv.substring(0, i), kv.substring(i + 1)); }
+                            double b = v.get("compareAtPriceMinor") instanceof Number n ? n.longValue() / 100.0 : 0;
+                            before = Math.max(before, b);
+                            vs.add(new FactCheck.Variant(opts, major(v.get("priceMinor")), b, v.get("available") instanceof Number n ? n.intValue() : 0));
+                        }
+                        return new FactCheck.Product(s, String.valueOf(p.get("name")), before, vs);
+                    } catch (RuntimeException e) { return null; }
+                });
+            }
+
+            public List<FactCheck.Named> searchAll(List<String> words) {
+                if (words.isEmpty()) return List.of();
+                List<FactCheck.Named> out = new ArrayList<>();
+                for (var r : jdbc.sql("SELECT slug, name FROM commerce.products WHERE tenant_id = :t AND status = 'ACTIVE' AND search_text ILIKE ALL (CAST(:p AS text[])) ORDER BY sold_count DESC, name LIMIT 8")
+                        .param("t", tenantId).param("p", words.stream().map(w -> "%" + FastAnswers.norm(w) + "%").toArray(String[]::new)).query().listOfRows())
+                    out.add(new FactCheck.Named((String) r.get("slug"), (String) r.get("name")));
+                return out;
+            }
+
+            private List<Map<String, Object>> zones() { if (zones == null) zones = fulfilment.zones(tenantId, true); return zones; }
+
+            public Set<String> served() {
+                if (served == null) {
+                    served = new java.util.TreeSet<>();
+                    for (var z : zones()) if (z.get("governorateCodes") instanceof Iterable<?> it) for (Object c : it) served.add(String.valueOf(c));
+                }
+                return served;
+            }
+
+            public String zoneLine(String code, boolean arabic) {
+                for (var z : zones())
+                    if (z.get("governorateCodes") instanceof java.util.Collection<?> c && c.contains(code)) {
+                        String fee = price(z.get("feeMinor"));
+                        String free = z.get("freeAboveMinor") instanceof Number fa && fa.longValue() > 0 ? price(fa) : null;
+                        return arabic ? "أيوه بنوصل لـ" + FactCheck.govName(code, true) + "، التوصيل " + fee + " جنيه" + (free != null ? " ومجاني للطلبات من " + free + " جنيه" : "") + "."
+                                      : "Yes, we deliver to " + FactCheck.govName(code, false) + ": delivery " + fee + " EGP" + (free != null ? ", free for orders of " + free + " EGP or more" : "") + ".";
+                    }
+                return null;
+            }
+
+            public List<int[]> hours() {
+                List<int[]> out = new ArrayList<>();
+                try {
+                    String h = jdbc.sql("SELECT working_hours::text FROM commerce.store_profiles WHERE tenant_id = :t").param("t", tenantId).query(String.class).optional().orElse(null);
+                    if (h == null || h.isBlank() || h.equals("{}")) return out;
+                    var n = JSON.readTree(h);
+                    for (String d : WEEK) {
+                        var day = n.path(d);
+                        if (day.isMissingNode() || day.path("closed").asBoolean(false)) continue;
+                        var o = java.time.LocalTime.parse(day.path("open").asText("00:00")); var c = java.time.LocalTime.parse(day.path("close").asText("23:59"));
+                        out.add(new int[]{o.getHour() * 60 + o.getMinute(), c.getHour() * 60 + c.getMinute()});
+                    }
+                } catch (Exception e) { log.debug("Hours skipped", e); }
+                return out;
+            }
+
+            public String pickup() {
+                return jdbc.sql("SELECT name FROM commerce.branches WHERE tenant_id = :t AND is_active AND is_pickup ORDER BY sort_order LIMIT 1").param("t", tenantId).query(String.class).optional().orElse(null);
+            }
+        };
     }
 
     /** A reply that tells the customer an order is cancelled («اتلغى», «تم إلغاء الطلب», «cancelled»); a request («طلب الإلغاء اتبعت») is not a claim. */
@@ -822,7 +1040,7 @@ public class ChatService {
      * Each extra model call costs the customer a few seconds: a reply may be rewritten by the checks only while it has made fewer than five calls (tool rounds, the answer and the review
      * included). After that, a money or claims problem is cut from the text instead of asking again.
      */
-    static boolean canRewrite(List<AiUsageService.Round> rounds) { return rounds.size() < 5; }
+    static boolean canRewrite(List<AiUsageService.Round> rounds) { return rounds.size() < 5 && AiBudget.hasLeft(REPLY_BUDGET_MS - 25_000); }
 
     /** Reminds the model, after a system check, what the customer actually said, so the rewrite answers it instead of starting over. */
     private static String lastCustomerWords(List<Turn> turns) {

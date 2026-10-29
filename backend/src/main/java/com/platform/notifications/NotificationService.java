@@ -76,7 +76,14 @@ public class NotificationService {
     /** Background sender with retry; a failing provider only delays messages, never the business action that caused them. */
     @Scheduled(fixedDelayString = "PT30S", initialDelayString = "PT20S")
     public synchronized void dispatchOutbox() {
-        var batch = jdbc.sql("SELECT id, channel, to_address, subject, body, payload::text AS payload, attempts FROM notifications.outbox WHERE status = 'PENDING' ORDER BY attempts, created_at LIMIT 50").query().listOfRows();   // fresh messages first: retries of failing ones never hold new ones back
+        // only the channels this server can send on: a message for another one waits for a server that has it, and is never counted as failed here
+        var codes = channels.stream().map(NotificationChannel::code).distinct().toArray(String[]::new);
+        if (codes.length == 0) return;
+        // fresh messages first: retries of failing ones never hold new ones back
+        var batch = jdbc.sql("""
+                SELECT id, channel, to_address, subject, body, payload::text AS payload, attempts FROM notifications.outbox
+                WHERE status = 'PENDING' AND channel = ANY (CAST(:codes AS text[])) ORDER BY attempts, created_at LIMIT 50
+                """).param("codes", codes).query().listOfRows();
         for (var m : batch) {
             UUID id = (UUID) m.get("id");
             try {

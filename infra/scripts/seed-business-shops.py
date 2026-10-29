@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Creates two real, public demo shops with a big catalog: a take-away restaurant (beit-elshawarma, ~60 dishes)
-and a fashion shop (nile-style, ~140 products with colour and size variants). Data: business_shops_data.py.
+"""Creates real, public demo shops with a big catalog: a take-away restaurant (beit-elshawarma, ~60 dishes), a fashion shop (nile-style, ~140 products
+with colour and size variants) and an electronics shop (tech-zone, ~80 devices and accessories whose storage, RAM, size and installation change the price).
+Data: business_shops_data.py.
 
-  The fashion shop's pictures are drawn by garments.py (one per colour, no photos of people); the restaurant uses photos:
+  The fashion and electronics pictures are drawn (garments.py, devices.py: one per colour, no photos of people, no brands); the restaurant uses photos:
   1) photos (no login, restaurant): free photos from Wikimedia Commons (CC0 / public domain / CC BY / CC BY-SA only), cropped square;
      the author and licence go in each photo's alt text. Review the contact sheets, then re-run with --redo key,... if needed.
        python3 infra/scripts/seed-business-shops.py --stage photos --cache ~/shop-photos
@@ -10,7 +11,8 @@ and a fashion shop (nile-style, ~140 products with colour and size variants). Da
   2) onboard + seed (the owner phone and password are only passed on the command line / env, never stored):
        SEED_PASSWORD='<owner password>' python3 infra/scripts/seed-business-shops.py --stage all --phone 010... --cache ~/shop-photos
      An existing owner phone with its password adds the shops to that account (one business-app login for all of them).
-     Add the shop hosts to the HTTPS certificate afterwards: infra/scripts/test-https-add-hosts.sh elmanassa.shop beit-elshawarma.elmanassa.shop nile-style.elmanassa.shop
+     Only the electronics shop:  ... --stage all --shops electronics --phone 010...
+     Add the shop hosts to the HTTPS certificate afterwards: infra/scripts/test-https-add-hosts.sh elmanassa.shop beit-elshawarma.elmanassa.shop nile-style.elmanassa.shop tech-zone.elmanassa.shop
 
 Needs Pillow. Re-running the seed skips products that already exist (by name), so a failed run can simply be repeated.
 """
@@ -20,6 +22,7 @@ from urllib.parse import urlparse
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import business_shops_data as D
 import garments as G
+import devices as V
 from PIL import Image, ImageDraw, ImageFont
 
 ap = argparse.ArgumentParser()
@@ -38,6 +41,7 @@ UA = "ElmanassaSeed/1.0 (https://elmanassa.shop; shop demo photos)"
 SHOPS = {
     "restaurant": {"slug": "beit-elshawarma", "name": D.RESTAURANT_PROFILE["storeName"], "categories": ["food"], "items": D.RESTAURANT, "colors": ("#b4321e", "#f2a33a"), "initials": "BS"},
     "fashion": {"slug": "nile-style", "name": D.FASHION_PROFILE["storeName"], "categories": ["fashion_men", "fashion_women", "fashion_kids", "shoes_bags"], "items": D.FASHION, "colors": ("#1f3a5f", "#c8a165"), "initials": "NS"},
+    "electronics": {"slug": "tech-zone", "name": D.ELECTRONICS_PROFILE["storeName"], "categories": ["mobiles", "electronics", "computers"], "items": D.ELECTRONICS, "colors": ("#0f2a44", "#18a0c8"), "initials": "TZ"},
 }
 chosen = [s.strip() for s in a.shops.split(",") if s.strip()]
 PHOTOS = os.path.join(a.cache, "photos.json")
@@ -248,6 +252,19 @@ def drawn_banner(keys, w=1600, h=640, bg=(31, 58, 95)):
     return b.getvalue()
 
 
+def device_banner(keys, w=1600, h=640, bg=(15, 42, 68)):
+    im = Image.new("RGB", (w, h), bg)
+    items = {it[0]: it for it in D.ELECTRONICS}
+    size = int(h * .78)
+    for i, k in enumerate(keys):
+        it = items[k]
+        pic = Image.open(io.BytesIO(V.picture(k, it[2], (it[4] or [None])[0]))).resize((size, size))
+        im.paste(pic, (int(w * .03) + i * (size + int(w * .015)), (h - size) // 2))
+    b = io.BytesIO()
+    im.save(b, "JPEG", quality=86)
+    return b.getvalue()
+
+
 def credit(meta):
     return f"صورة: {meta['author']} · {meta['license']} · Wikimedia Commons"[:250]
 
@@ -281,21 +298,27 @@ def seed(shop):
         return p["fileId"]
 
     restaurant = shop == "restaurant"
-    prof = D.RESTAURANT_PROFILE if restaurant else D.FASHION_PROFILE
+    electronics = shop == "electronics"
+    prof = D.RESTAURANT_PROFILE if restaurant else D.ELECTRONICS_PROFILE if electronics else D.FASHION_PROFILE
     if restaurant:
         hours = {d: {"open": "12:00", "close": "02:00", "closed": False} for d in ["sat", "sun", "mon", "tue", "wed", "thu", "fri"]}
+    elif electronics:
+        hours = {d: {"open": "15:00" if d == "fri" else "11:00", "close": "23:00", "closed": False} for d in ["sat", "sun", "mon", "tue", "wed", "thu", "fri"]}
     else:
         hours = {d: {"open": "14:00" if d == "fri" else "10:00", "close": "23:00", "closed": False} for d in ["sat", "sun", "mon", "tue", "wed", "thu", "fri"]}
     cover_key = "gr-mix" if restaurant else "w-coat"
     if not manifest.get("profile"):
         api("PATCH", "/tenant/branding", {"primaryColor": s["colors"][0], "secondaryColor": s["colors"][1], "logoFileId": up(logo(s["initials"], *s["colors"]), "LOGO", "image/png"), "locale": "ar"})
         body = {**prof, "workingHours": hours}
-        if not restaurant:
+        if electronics:
+            body["coverFileId"] = up(device_banner(["ph-x12-pro", "lp-book14", "tv-4k", "au-buds-pro"], 1600, 700))
+        elif not restaurant:
             body["coverFileId"] = up(drawn_banner(["w-coat", "m-puffer", "w-satin-evening", "b-leather-hand"], 1600, 700))
         elif os.path.exists(os.path.join(a.cache, cover_key + "-orig.jpg")):
             body["coverFileId"] = up(wide(cover_key, 1600, 700))
         api("PATCH", "/store/profile", body)
         branch = {"name": "فرع مدينة نصر", "code": "NC", "phone": prof["supportPhone"], "address": "١٥ شارع عباس العقاد", "city": "القاهرة", "governorateCode": "CAI", "area": "مدينة نصر", "isPickup": True, "workingHours": hours} if restaurant else \
+                 {"name": "فرع المهندسين", "code": "MOH", "phone": prof["supportPhone"], "address": "٢٢ شارع شهاب", "city": "الجيزة", "governorateCode": "GIZ", "area": "المهندسين", "isPickup": True, "workingHours": hours} if electronics else \
                  {"name": "فرع مول العرب", "code": "MOA", "phone": prof["supportPhone"], "address": "مول العرب، الدور الأول", "city": "٦ أكتوبر", "governorateCode": "GIZ", "area": "٦ أكتوبر", "isPickup": True, "workingHours": hours}
         existing = api("GET", "/store/branches")
         if existing:
@@ -305,11 +328,15 @@ def seed(shop):
         api("POST", "/store/shipping-methods", {"type": "ZONES", "name": "توصيل" if restaurant else "شحن حسب المحافظة", "feeMinor": 0})
         if restaurant:
             api("POST", "/store/shipping-zones", {"name": "القاهرة والجيزة", "governorateCodes": ["CAI", "GIZ"], "feeMinor": 2500, "codFeeMinor": 0, "etaMinDays": 0, "etaMaxDays": 0, "freeAboveMinor": 40000})
+        elif electronics:
+            for name, codes, fee, emin, emax in D.ELECTRONICS_ZONES:
+                api("POST", "/store/shipping-zones", {"name": name, "governorateCodes": codes, "feeMinor": fee, "codFeeMinor": 0, "etaMinDays": emin, "etaMaxDays": emax, "freeAboveMinor": 500000})
         else:
             for name, codes, fee, emin, emax in D.FASHION_ZONES:
                 api("POST", "/store/shipping-zones", {"name": name, "governorateCodes": codes, "feeMinor": fee, "codFeeMinor": 1000, "etaMinDays": emin, "etaMaxDays": emax, "freeAboveMinor": 150000})
         try:
-            api("POST", "/store/coupons", {"code": "SHAWARMA15", "discountType": "PERCENT", "value": 15, "minOrderMinor": 30000} if restaurant else {"code": "NILE10", "discountType": "PERCENT", "value": 10, "minOrderMinor": 100000})
+            api("POST", "/store/coupons", {"code": "SHAWARMA15", "discountType": "PERCENT", "value": 15, "minOrderMinor": 30000} if restaurant else
+                {"code": "TECH5", "discountType": "PERCENT", "value": 5, "minOrderMinor": 300000} if electronics else {"code": "NILE10", "discountType": "PERCENT", "value": 10, "minOrderMinor": 100000})
         except RuntimeError as e:
             print("coupon skipped:", str(e)[:160])
         manifest["profile"] = True
@@ -324,13 +351,33 @@ def seed(shop):
         if page * 100 >= r.get("meta", {}).get("total", 0):
             break
         page += 1
-    rng = random.Random(7 if restaurant else 11)
+    rng = random.Random(7 if restaurant else 13 if electronics else 11)
     items = s["items"][: a.limit] if a.limit else s["items"]
     for n, it in enumerate(items):
         key = it[0]
         if key in manifest["products"]:
             continue
-        if restaurant:
+        if electronics:
+            key, name, cat, price, colors, opts, specs, badge, cmp_, tags, brand = it
+            options = ([{"name": "اللون", "attribute": "COLOR", "values": colors}] if colors else []) + [{"name": o, "values": [v for v, _ in vals]} for o, vals in opts]
+            combos = [({"اللون": c} if colors else {}, 0) for c in (colors or [None])]
+            for o, vals in opts:
+                combos = [({**c, o: v}, p + add) for c, p in combos for v, add in vals]
+            variants = []
+            for j, (cv, add) in enumerate(combos):
+                big = cat in ("phones", "laptops", "tvs", "tablets")
+                q = 0 if rng.random() < 0.08 else rng.choice([1, 2, 3, 4, 5, 6, 8] if big else [5, 8, 10, 15, 20, 30, 50])
+                if cv.get("الحالة") == "أوبن بوكس":
+                    q = rng.choice([0, 1, 1, 2])
+                variants.append({"sku": f"TZ-{n + 1:03d}-{j + 1:02d}", "priceMinor": price + add, "compareAtPriceMinor": (cmp_ + add) if cmp_ else None, "optionValues": cv, "stock": [{"branchId": branch_id, "quantity": q}]})
+            if all(v["stock"][0]["quantity"] == 0 for v in variants):
+                variants[0]["stock"][0]["quantity"] = 3
+            extra_specs = [{"k": k, "v": v} for k, v in specs]
+            desc = f"{name} من {brand}.\n" + (f"الألوان: {'، '.join(colors)}\n" if colors else "") + "\n".join(f"• {k}: {v}" for k, v in specs)
+            short = "، ".join(v for k, v in specs[:2])
+            audience, guide = None, ""
+            tags = tags + (["تخفيضات"] if cmp_ else [])
+        elif restaurant:
             key, name, cat, price, opts, specs, badge, cmp_, _q, tags = it
             options = [{"name": o, "values": [v for v, _ in vals]} for o, vals in opts]
             combos = [({}, 0)]
@@ -370,7 +417,9 @@ def seed(shop):
             brand = "نايل ستايل"
         media = []
         meta = got.get(key)
-        if not restaurant:   # a drawn picture per colour; choosing a colour shows its picture
+        if electronics:   # a drawn picture per colour (one picture when the product has no colours)
+            media = [{"fileId": up(V.picture(key, cat, c)), "altText": f"{name} — {c}", "optionValue": c} for c in colors] if colors else [{"fileId": up(V.picture(key, cat, None)), "altText": name}]
+        elif not restaurant:   # a drawn picture per colour; choosing a colour shows its picture
             media = [{"fileId": up(G.picture(key, cat, c)), "altText": f"{name} — {c}", "optionValue": c} for c in colors]
         elif meta and os.path.exists(os.path.join(a.cache, key + ".jpg")):
             media = [{"fileId": up(open(os.path.join(a.cache, key + ".jpg"), "rb").read()), "altText": f"{name} — {credit(meta)}"}]
@@ -389,6 +438,11 @@ def seed(shop):
         manifest["products"][key] = pid
         json.dump(manifest, open(manifest_path, "w"), ensure_ascii=False, indent=1)
         print(f"{len(manifest['products'])}/{len(s['items'])}", key, len(variants), "variants")
+    if not manifest.get("banners") and electronics:
+        for ks, (t, sub), bg in zip([["ph-x12", "ph-x12-pro", "tb-tab10"], ["lp-gamer16", "au-max", "gm-pad"]], [("موبايلات نوفا الجديدة", "X12 برو بكاميرا 200 ميجا · ضمان سنة"), ("كود TECH5", "خصم ٥٪ على الطلبات من ٣٠٠٠ جنيه")], [(15, 42, 68), (40, 40, 48)]):
+            api("POST", "/store/banners", {"imageFileId": up(device_banner(ks, bg=bg)), "title": t, "subtitle": sub, "linkUrl": "/products"})
+        manifest["banners"] = True
+        json.dump(manifest, open(manifest_path, "w"), ensure_ascii=False, indent=1)
     if not manifest.get("banners"):
         keys = ["ml-friends", "fc-bucket"] if restaurant else ["w-coat", "m-puffer"]
         texts = [("عرض وجبة الأصحاب", "٤ شاورما + ٢ بطاطس كبير + ٤ مشروب بـ ٥٢٠ بدل ٦٠٠"), ("بوكس العيلة بروستد", "١٢ قطعة بالبطاطس والكول سلو بـ ٤٨٠")] if restaurant else \

@@ -24,13 +24,25 @@ public class OpenAiProvider implements AiProvider {
     private final String code, name, key, model, effort, baseUrl, extraBody;
     private final boolean maxTokensField;
     private final int maxOutput;
+    private final Throttle throttle;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build();
+
+    /** One model call never waits longer than this for an answer; a reply has several calls and the gateway gives up at 60 seconds. */
+    static final long CALL_TIMEOUT_MS = 20_000;
+
+    /** Calls to one service (by address and key) share one limit, however many providers point at it: Hive allows GLM 5 calls a second for the whole account. */
+    private static final Map<String, Throttle> THROTTLES = new java.util.concurrent.ConcurrentHashMap<>();
 
     /**
      * Under its own model code. {@code maxTokensField} sends the limit as {@code max_tokens}
      * (what those services read) instead of {@code max_completion_tokens}; {@code extraBody} is a JSON object merged into every request, e.g. a setting that switches thinking off.
      */
     public OpenAiProvider(String code, String name, String key, String model, String effort, String baseUrl, int maxOutput, boolean maxTokensField, String extraBody) {
+        this(code, name, key, model, effort, baseUrl, maxOutput, maxTokensField, extraBody, 0);
+    }
+
+    /** Same, starting at most {@code maxPerSecond} calls a second to this service (0 = no limit): a burst waits a moment instead of being refused with 429. */
+    public OpenAiProvider(String code, String name, String key, String model, String effort, String baseUrl, int maxOutput, boolean maxTokensField, String extraBody, int maxPerSecond) {
         this.code = code;
         this.name = name;
         this.key = key == null || key.isBlank() ? null : key.trim();
@@ -40,6 +52,29 @@ public class OpenAiProvider implements AiProvider {
         this.maxOutput = maxOutput;
         this.maxTokensField = maxTokensField;
         this.extraBody = extraBody == null ? "" : extraBody.trim();
+        this.throttle = maxPerSecond > 0 ? THROTTLES.computeIfAbsent(this.baseUrl + "|" + (this.key == null ? "" : Integer.toHexString(this.key.hashCode())), k -> new Throttle(maxPerSecond)) : null;
+    }
+
+    /** At most {@code max} calls started in any one second; a caller over it waits (never longer than 3 seconds, then goes anyway and lets the service decide). */
+    static final class Throttle {
+        private final int max;
+        private final java.util.ArrayDeque<Long> started = new java.util.ArrayDeque<>();
+
+        Throttle(int max) { this.max = max; }
+
+        void acquire() throws InterruptedException {
+            long giveUp = System.nanoTime() + 3_000_000_000L;
+            while (true) {
+                long wait;
+                synchronized (this) {
+                    long now = System.nanoTime();
+                    while (!started.isEmpty() && now - started.peekFirst() >= 1_000_000_000L) started.pollFirst();
+                    if (started.size() < max || now >= giveUp) { started.addLast(now); return; }
+                    wait = (started.peekFirst() + 1_000_000_000L - now) / 1_000_000 + 1;
+                }
+                Thread.sleep(Math.max(1, Math.min(wait, 250)));
+            }
+        }
     }
 
     @Override public String code() { return code; }
@@ -54,9 +89,12 @@ public class OpenAiProvider implements AiProvider {
         String body;
         try { body = JSON.writeValueAsString(requestBody(system, turns, tools)); } catch (Exception e) { throw new AiUnavailableException("The AI assistant could not be reached", e); }
         AiUnavailableException last = null;
-        for (int attempt = 0; attempt < 3; attempt++) {   // two retries, with a growing pause, for a busy (429) or failing service
+        for (int attempt = 0; attempt < 3; attempt++) {   // two retries, with a growing pause, for a busy (429) or failing service, while the reply still has time for them
+            if (attempt > 0 && !AiBudget.hasLeft(8_000)) break;
             try {
-                HttpResponse<String> res = http.send(HttpRequest.newBuilder(URI.create(baseUrl + "/chat/completions")).timeout(Duration.ofSeconds(40))
+                if (throttle != null) throttle.acquire();
+                long timeout = Math.max(3_000, Math.min(CALL_TIMEOUT_MS, AiBudget.remainingMs() - 1_000));
+                HttpResponse<String> res = http.send(HttpRequest.newBuilder(URI.create(baseUrl + "/chat/completions")).timeout(Duration.ofMillis(timeout))
                         .header("Authorization", "Bearer " + key).header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body)).build(), HttpResponse.BodyHandlers.ofString());
                 if (res.statusCode() / 100 == 2) return parse(JSON.readTree(res.body()));
                 last = new AiUnavailableException("The AI assistant is busy, try again (HTTP " + res.statusCode() + ")");

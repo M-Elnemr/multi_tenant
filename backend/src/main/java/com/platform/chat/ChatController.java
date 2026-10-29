@@ -33,7 +33,10 @@ public class ChatController {
     private final LoginThrottle throttle;
     private final AiEvalService eval;
 
-    public ChatController(ChatService chat, LoginThrottle throttle, AiEvalService eval) {
+    private final AiReadinessService readiness;
+
+    public ChatController(ChatService chat, LoginThrottle throttle, AiEvalService eval, AiReadinessService readiness) {
+        this.readiness = readiness;
         this.chat = chat;
         this.throttle = throttle;
         this.eval = eval;
@@ -79,7 +82,9 @@ public class ChatController {
         UUID t = StoreContext.openTenantId();
         if (r.conversationId() == null || !CONV_ID.matcher(r.conversationId()).matches()) throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid conversation");
         if (!chat.enabled(t)) throw new BusinessException(HttpStatus.SERVICE_UNAVAILABLE, "CHAT_DISABLED", "Live chat is not available right now");
-        throttle.check("chat-ip|" + ClientInfo.ip(req), 40, Duration.ofMinutes(10));
+        // per chat: nobody types more than 30 messages in 10 minutes; per address a much higher ceiling, because many mobile customers share one carrier address
+        throttle.check("chat-conv10|" + r.conversationId(), 30, Duration.ofMinutes(10));
+        throttle.check("chat-ip|" + ClientInfo.ip(req), 300, Duration.ofMinutes(10));
         throttle.check("chat-conv|" + r.conversationId(), 300, Duration.ofDays(1));
         return view(chat.reply(t, "WEB", r.conversationId(), clientOrNull(a), r.message()));
     }
@@ -95,6 +100,11 @@ public class ChatController {
     public Map<String, Object> saveSettings(@RequestBody SettingsRequest r, Authentication a) {
         return chat.saveSettings(StoreContext.tenantId(), (UUID) a.getPrincipal(), r.enabled(), r.tone(), r.maxDiscountPct(), r.greeting());
     }
+
+    /** How ready the shop's data is for the assistant: a score and what to fill in. */
+    @GetMapping("/api/v1/store/ai/readiness")
+    @PreAuthorize("hasAuthority('ai.read') or hasAuthority('ai.manage')")
+    public Map<String, Object> readiness() { return readiness.readiness(StoreContext.tenantId()); }
 
     @GetMapping("/api/v1/store/ai/lessons")
     @PreAuthorize("hasAuthority('ai.read') or hasAuthority('ai.manage')")

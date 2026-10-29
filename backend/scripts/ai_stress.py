@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """Plays many customer scenarios against a shop's website chat on one model (never confirms an order) and writes the transcripts for review.
 
-usage: ai_stress.py MODEL_WORD OUT_FILE [scenario,names] [--host https://shop.example.com] [--pack general|restaurant|fashion]
-  --pack restaurant runs against beit-elshawarma and --pack fashion against nile-style unless --host is given.
+usage: ai_stress.py MODEL_WORD OUT_FILE [scenario,names] [--host https://shop.example.com] [--pack general|restaurant|fashion|electronics|restaurant-traps|fashion-traps] [--gap SECONDS]
+  The restaurant packs run against beit-elshawarma, the fashion packs against nile-style and electronics against tech-zone unless --host is given.
   MODEL_WORD is the chat word that switches the model while AI_NAME_PROBE is on: glm, alibaba, claude.
-  Paced to the shop chat's limit (40 messages per 10 minutes from one address): a full run takes about 40 minutes.
+  Paced to the shop chat's limits: 30 messages per 10 minutes per chat (each scenario is its own chat) and 300 per 10 minutes per address, so messages
+  leave at least --gap seconds apart (default 2.1). Against a server with the old limit of 40 per 10 minutes per address use --gap 15.5.
 """
 import json, sys, uuid, urllib.request, concurrent.futures, time
 
 PACK = sys.argv[sys.argv.index("--pack") + 1] if "--pack" in sys.argv else "general"
-DEFAULT_HOST = {"general": "https://layan-store.elmanassa.shop", "restaurant": "https://beit-elshawarma.elmanassa.shop", "fashion": "https://nile-style.elmanassa.shop"}[PACK]
+DEFAULT_HOST = {"general": "https://layan-store.elmanassa.shop", "restaurant": "https://beit-elshawarma.elmanassa.shop", "fashion": "https://nile-style.elmanassa.shop",
+                "electronics": "https://tech-zone.elmanassa.shop", "restaurant-traps": "https://beit-elshawarma.elmanassa.shop", "fashion-traps": "https://nile-style.elmanassa.shop"}[PACK]
 HOST = (sys.argv[sys.argv.index("--host") + 1].rstrip("/") if "--host" in sys.argv else DEFAULT_HOST) + "/api/v1/shop/chat"
 MODEL = sys.argv[1] if len(sys.argv) > 1 else "glm"
 OUT = sys.argv[2] if len(sys.argv) > 2 else "transcripts.txt"
@@ -144,13 +146,92 @@ FASHION = {
  "f_english": ["Do you have women's wide leg jeans in size L?"],
 }
 
+ELECTRONICS = {
+ "e_broad": ["عايز موبايل"],
+ "e_budget_phone": ["عايز موبايل كويس في حدود ١٠ آلاف"],
+ "e_storage_price": ["نوفا X12 بكام؟", "والـ 256؟"],
+ "e_storage_color": ["عايز نوفا X12 برو ٥١٢ ذهبي"],
+ "e_open_box": ["يعني ايه أوبن بوكس؟ وفرقه في السعر قد ايه في X12؟"],
+ "e_compare_phones": ["ايه الفرق بين X12 و X12 برو؟ انهي احسن للتصوير؟"],
+ "e_camera": ["عايز موبايل كاميرته حلوة جداً"],
+ "e_battery": ["عايز موبايل بطاريته بتقعد كتير للألعاب"],
+ "e_elderly": ["عايز موبايل بسيط لوالدي كبير في السن"],
+ "e_laptop_coding": ["عايز لاب توب للبرمجة في حدود ٣٥ ألف"],
+ "e_laptop_ram": ["زينترا بوك 14 بـ 16 جيجا رام و 1 تيرا بكام؟"],
+ "e_laptop_gaming": ["عايز لاب توب جيمنج يشغل ألعاب تقيلة"],
+ "e_laptop_student": ["لاب توب لطالب جامعة رخيص"],
+ "e_charger_iphone13": ["الشاحن ٢٠ وات ينفع لآيفون 13؟ ومحتاج كابل ايه؟"],
+ "e_cable_iphone15": ["عايز كابل لآيفون 15"],
+ "e_case_x12pro": ["عايز جراب لنوفا X12 برو", "جراب X12 العادي ينفع عليه؟"],
+ "e_case_iphone": ["جراب آيفون 15 برو ماكس بكام؟"],
+ "e_tv_size": ["تلفزيون ٥٥ بوصة 4K بكام؟", "ولو مع التركيب؟"],
+ "e_tv_alex": ["عايز تلفزيون ٦٥ بوصة واتوصل اسكندرية"],
+ "e_installments": ["في تقسيط؟"],
+ "e_tradein": ["ينفع ابدل موبايلي القديم بجديد؟"],
+ "e_warranty": ["الضمان قد ايه على اللاب توب؟ وبيغطي الكسر؟"],
+ "e_return_buds": ["لو فتحت السماعة ومعجبتنيش ارجعها؟"],
+ "e_buds_iphone": ["سماعة سونيك بادز برو بتشتغل مع الآيفون؟"],
+ "e_watch_size": ["الساعة بلس 5 مقاس ايه؟ وايدي رفيعة"],
+ "e_powerbank_plane": ["الباور بانك ٣٠ ألف ينفع في الطيارة؟"],
+ "e_qty_stock": ["عايز ١٠ موبايلات نوفا ميني 8 للشركة"],
+ "e_coupon": ["عندي كود TECH5", "ولو طلبي ب٢٥٠٠؟"],
+ "e_ship_aswan": ["الشحن لأسوان بكام وبياخد قد ايه؟"],
+ "e_kids_tablet": ["عايز تابلت لابني ٦ سنين"],
+ "e_tablet_sim": ["تابلت نوفا تاب 10 بشريحة بكام؟"],
+ "e_order_full": ["عايز نوفا A5 ١٢٨ جيجا أخضر", "انا حسن، القاهرة المعادي شارع ٩ عمارة ١٢ شقة ٤، ٠١٠٩٨٧٦٥٤٣٢، كاش"],
+ "e_change_option": ["عايز زينترا بوك 14 فضي ٨ جيجا ٥١٢", "لا خليه ١٦ جيجا"],
+ "e_english": ["Hi, do you have a laptop for video editing? Budget around 70k EGP", "Does it come with Windows?"],
+ "e_franco": ["3ayez sma3a bluetooth rkhesa"],
+ "e_angry": ["الموبايل اللي اشتريته منكم سخن وبيفصل، انتو نصابين"],
+ "e_human": ["عايز اكلم حد من المحل"],
+}
+
+RESTAURANT_TRAPS = {
+ "rt_veg": ["عندكم أكل نباتي؟"],
+ "rt_alex": ["انا في اسكندرية ينفع توصلولي؟"],
+ "rt_tanta": ["بتوصلوا طنطا؟"],
+ "rt_3am": ["انتو فاتحين الساعة ٣ الفجر؟"],
+ "rt_sale": ["ايه الأصناف اللي عليها خصم؟"],
+ "rt_price_en": ["How much is the large chicken shawarma sandwich?"],
+ "rt_super": ["ساندوتش شاورما لحمة سوبر بكام؟"],
+ "rt_garlic_alone": ["عايز ثومية كبيرة بس"],
+ "rt_one_message": ["عايز ٣ ساندوتش زنجر حار وواحد بطاطس كبير، انا سامي، الدقي شارع التحرير عمارة ٥ شقة ٢، ٠١٠٥٥٥٤٤٣٣٢، كاش"],
+ "rt_add_no_option": ["عايز ساندوتش شاورما فراخ", "ضيفه"],
+ "rt_after_summary": ["عايز وجبة بروستد ٤ قطع حار بيبسي", "انا هاني، مصر الجديدة شارع الحجاز عمارة ١ شقة ٣، ٠١٢٣٣٣٢٢٢١١، كاش", "لا خليها عادي مش حار"],
+ "rt_angry": ["الأوردر اتأخر ساعة ونص ده مش طبيعي", "انا عايز اكلم المدير"],
+ "rt_kids_meal": ["وجبة الأطفال فيها ايه وبكام؟"],
+ "rt_drinks": ["عندكم مشروبات ايه؟"],
+ "rt_family_kilo": ["كيلو الشاورما بيكفي كام؟ وبكام؟"],
+}
+
+FASHION_TRAPS = {
+ "ft_men_shoes": ["عندكم جزم رجالي؟"],
+ "ft_olive_xxl": ["الجاكيت البافر الشتوي الرجالي زيتي XXL موجود؟"],
+ "ft_kids_red10": ["جاكيت بافر ولادي احمر مقاس ١٠ سنين"],
+ "ft_sale": ["ايه العروض اللي عندكم؟"],
+ "ft_all_sizes": ["تيشيرت القطن السادة الرجالي متاح بكل المقاسات؟"],
+ "ft_wrong_size": ["عايز تيشيرت بناتي مقاس L"],
+ "ft_price_en": ["How much is the oxford shirt?"],
+ "ft_one_message": ["عايز جينز سليم فيت رجالي كحلي L، انا وليد، الجيزة الهرم شارع الملك فيصل عمارة ٨ شقة ٦، ٠١٠١١٢٢٣٣٤٤، كاش"],
+ "ft_add_no_option": ["عايز قميص أكسفورد", "ضيفه"],
+ "ft_alex_fee": ["الشحن لاسكندرية بكام؟"],
+ "ft_sinai": ["بتشحنوا شرم الشيخ؟"],
+ "ft_hours": ["الفرع فاتح لحد امتى يوم الجمعة؟"],
+ "ft_angry": ["الطلب جالي مقاس غلط وانتو مش بتردوا"],
+ "ft_burkini_xxl": ["المايوه الشرعي في XXL؟"],
+ "ft_gold_38": ["حذاء السواريه اللامع ذهبي مقاس ٣٨ موجود؟"],
+}
+
 if PACK == "restaurant": S = RESTAURANT
 elif PACK == "fashion": S = FASHION
+elif PACK == "electronics": S = ELECTRONICS
+elif PACK == "restaurant-traps": S = RESTAURANT_TRAPS
+elif PACK == "fashion-traps": S = FASHION_TRAPS
 
 import threading
 _lock = threading.Lock(); _last = [0.0]
 TIMES = []
-GAP = 15.5   # the shop chat allows 40 messages per 10 minutes from one address
+GAP = float(sys.argv[sys.argv.index("--gap") + 1]) if "--gap" in sys.argv else 2.1   # 300 messages per 10 minutes from one address
 
 def send(conv, msg):
     with _lock:

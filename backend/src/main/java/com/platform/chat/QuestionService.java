@@ -36,9 +36,11 @@ public class QuestionService {
     private final ProductShare share;
     private final OpenUrls urls;
     private final ExecutorService pool;
+    private final ChatDelivery delivery;
 
-    public QuestionService(JdbcClient jdbc, ChatService chat, EvolutionService evolution, MetaChannelService meta, WalletService wallet, ProductShare share, OpenUrls urls,
+    public QuestionService(JdbcClient jdbc, ChatService chat, EvolutionService evolution, MetaChannelService meta, WalletService wallet, ProductShare share, OpenUrls urls, ChatDelivery delivery,
                            @Value("${app.evolution.async:true}") boolean async) {
+        this.delivery = delivery;
         this.jdbc = jdbc;
         this.chat = chat;
         this.evolution = evolution;
@@ -200,24 +202,7 @@ public class QuestionService {
             }
             jdbc.sql("UPDATE chat.unanswered SET reply_text = :r WHERE id = :i").param("r", text.length() > 4000 ? text.substring(0, 4000) : text).param("i", id).update();
         }
-        String delivery, note = null;
-        if (channel == null || ext == null) { delivery = "SAVED"; }
-        else if ("WHATSAPP".equals(channel)) {
-            boolean ok;
-            if (evolution.connected(tenantId)) {
-                ok = true;
-                for (String part : MetaChannelService.chunks(text, 3000)) ok &= evolution.sendFree(tenantId, ext, part);
-                if (ok) for (var card : share.pick(tenantId, text, products)) {   // the pictures of the products the assistant mentions, like in any other reply
-                    if (evolution.deliver(tenantId, ext, card.caption(), card.imageUrl()) == EvolutionService.Delivery.FAILED && card.imageUrl() != null) evolution.deliver(tenantId, ext, card.caption(), null);
-                }
-            } else ok = meta.deliver(tenantId, "WHATSAPP", ext, text);
-            delivery = ok ? "SENT" : "FAILED";
-            if (!ok) note = "The message could not be sent on WhatsApp (the number is not linked, or the 24-hour window with this customer is closed). Copy the message and send it from your phone.";
-        } else if ("FACEBOOK".equals(channel) || "INSTAGRAM".equals(channel)) {
-            boolean ok = meta.deliver(tenantId, channel, ext, text);
-            delivery = ok ? "SENT" : "FAILED";
-            if (!ok) note = "The message could not be sent: the 24-hour window with this customer is closed or the page is not connected. Copy the message and reply from the page inbox.";
-        } else delivery = "SAVED";   // the website chat: the reply is in the chat for when the customer comes back
-        jdbc.sql("UPDATE chat.unanswered SET delivery = :d, delivery_note = :n WHERE id = :i").param("d", delivery).param("n", note).param("i", id).update();
+        var sent = delivery.send(tenantId, channel, ext, text, products);
+        jdbc.sql("UPDATE chat.unanswered SET delivery = :d, delivery_note = :n WHERE id = :i").param("d", sent.delivery()).param("n", sent.note()).param("i", id).update();
     }
 }

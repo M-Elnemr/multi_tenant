@@ -19,6 +19,7 @@ const NAV: NavItem[] = [
   { href: "/dashboard/copilot", label: "nav.copilot", group: "navgrp.insights", perm: "copilot.use", icon: "sparkles" },
   { href: "/dashboard/channels", label: "nav.channels", group: "navgrp.channels", screen: "integrations", icon: "link" },
   { href: "/dashboard/ai", label: "nav.ai", group: "navgrp.channels", screen: "ai", icon: "sparkles" },
+  { href: "/dashboard/conversations", label: "nav.inbox", group: "navgrp.channels", screen: "ai", icon: "chat" },
   { href: "/dashboard/questions", label: "nav.questions", group: "navgrp.channels", screen: "ai", icon: "chat" },
   { href: "/dashboard/shipping", label: "nav.shipping", group: "navgrp.channels", screen: "shipping", icon: "navigate" },
   { href: "/dashboard/settings", label: "nav.settings", group: "navgrp.setup", screen: "settings", icon: "settings" },

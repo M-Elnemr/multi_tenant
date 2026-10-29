@@ -8,6 +8,7 @@ import { AiChannels } from "@/components/dashboard/ai-channels";
 import { AiWhatsApp } from "@/components/dashboard/ai-whatsapp";
 import { AiLessons } from "@/components/dashboard/ai-lessons";
 import { Unanswered } from "@/components/dashboard/unanswered";
+import { AiReadiness } from "@/components/dashboard/ai-readiness";
 import { useAction, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Alert, Button, ErrorText, Field, Input, PageHeader, Select } from "@/components/ui";
@@ -36,6 +37,7 @@ function AiAssistant() {
   return (
     <>
       <PageHeader title={t("ai.title")} subtitle={t("ai.subtitle")} />
+      <AiReadiness />
       <div className="mb-4 flex gap-1 overflow-x-auto border-b [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {([["test", "ai.tabTest"], ["lessons", "ai.tabLessons"], ["channels", "ai.tabChannels"], ["whatsapp", "wa.tab"], ["settings", "ai.tabSettings"]] as const).filter(([k]) => k !== "test" || write).map(([k, label]) => (
           <button key={k} type="button" onClick={() => setTab(k)} className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-4 py-2 text-sm font-semibold ${tab === k ? "border-brand text-brand" : "border-transparent text-slate-500"}`}>{t(label)}</button>

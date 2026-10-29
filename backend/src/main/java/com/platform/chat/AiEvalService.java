@@ -45,7 +45,13 @@ public class AiEvalService {
             """;
 
     /** Starts a run on {@code tenantId} with {@code model} ("default", "glm", "anthropic", "qwen"); returns its id. */
-    public UUID start(UUID tenantId, String model, String only) {
+    public UUID start(UUID tenantId, String model, String only) { return start(tenantId, model, only, "MANUAL"); }
+
+    /** True while a run is going (one at a time per platform). */
+    public boolean busy() { return runs.values().stream().anyMatch(r -> "RUNNING".equals(r.get("status"))); }
+
+    /** Same, as a {@code kind} of run (MANUAL, NIGHTLY, WEEKLY): when it ends, its score is kept and compared with the last run of the same kind and model. */
+    public UUID start(UUID tenantId, String model, String only, String kind) {
         if (runs.values().stream().anyMatch(r -> "RUNNING".equals(r.get("status")))) throw BusinessException.conflict("EVAL_RUNNING", "An evaluation is already running, wait for it to finish");
         String m = model == null || model.isBlank() ? "default" : model;
         if (!ChatService.TRAIN_MODELS.contains(m)) throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown model");
@@ -74,13 +80,45 @@ public class AiEvalService {
                 for (JsonNode c : set) { results.add(play(tenantId, m, id, c)); run.put("done", results.size()); }
                 run.put("summary", summary(results));
                 run.put("status", "DONE");
+                keep(id, tenantId, m, kind, run);
             } catch (RuntimeException e) {
                 log.warn("AI evaluation failed", e);
                 run.put("status", "FAILED"); run.put("error", String.valueOf(e.getMessage()));
+                keep(id, tenantId, m, kind, run);
             }
         });
         return id;
     }
+
+    /** Drop that raises an alert: five points or more below the last run of the same kind on the same model. */
+    static final int ALERT_DROP = 5;
+
+    @SuppressWarnings("unchecked")
+    private void keep(UUID id, UUID tenantId, String model, String kind, Map<String, Object> run) {
+        try {
+            Map<String, Object> sum = (Map<String, Object>) run.get("summary");
+            Integer pct = sum == null ? null : ((Number) sum.get("overallPct")).intValue();
+            Integer checks = sum == null ? null : ((Number) sum.get("checks")).intValue();
+            // nothing graded (the judge could not be reached): not a score, so never compared
+            List<Map<String, Object>> results = (List<Map<String, Object>>) run.get("results");
+            boolean graded = results != null && results.stream().anyMatch(r -> r.get("checks") instanceof List<?> l && !l.isEmpty());
+            String status = "DONE".equals(run.get("status")) && graded ? "DONE" : "FAILED";
+            Integer before = jdbc.sql("SELECT overall_pct FROM chat.ai_eval_runs WHERE tenant_id = :t AND model = :m AND kind = :k AND status = 'DONE' ORDER BY finished_at DESC LIMIT 1")
+                    .param("t", tenantId).param("m", model).param("k", kind).query(Integer.class).optional().orElse(null);
+            jdbc.sql("INSERT INTO chat.ai_eval_runs (id, tenant_id, model, kind, overall_pct, checks, summary, status, started_at) VALUES (:i, :t, :m, :k, :p, :c, CAST(:s AS jsonb), :st, CAST(:at AS timestamptz))")
+                    .param("i", id).param("t", tenantId).param("m", model).param("k", kind).param("p", "DONE".equals(status) ? pct : null).param("c", checks)
+                    .param("s", JSON.writeValueAsString(sum == null ? Map.of() : sum)).param("st", status).param("at", String.valueOf(run.get("startedAt"))).update();
+            if ("DONE".equals(status) && before != null && pct != null && before - pct >= ALERT_DROP && alerts != null)
+                alerts.accept("AI_QUALITY_DROP", "جودة " + model + " نزلت من " + before + "% لـ " + pct + "% في الاختبار الدوري / " + model + " quality fell from " + before + "% to " + pct + "% in the " + kind.toLowerCase() + " check");
+        } catch (Exception e) {
+            log.warn("Could not keep the evaluation result", e);
+        }
+    }
+
+    /** Where a quality drop is reported (the platform owners' phones); set by the scheduler. */
+    private java.util.function.BiConsumer<String, String> alerts;
+
+    void onAlert(java.util.function.BiConsumer<String, String> alerts) { this.alerts = alerts; }
 
     public Map<String, Object> run(UUID id) {
         var r = runs.get(id);

@@ -103,6 +103,25 @@ public class NotificationListeners {
         });
     }
 
+    /** A chat the assistant should not handle alone: the people who run the assistant are told, with the customer's words, and open the chat in the inbox. */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void onChatNeedsHuman(com.platform.chat.ChatNeedsHuman e) {
+        safely("ChatNeedsHuman", () -> {
+            boolean ar = ar(e.tenantId());
+            String title = ar ? "عميل محتاج حد من المحل" : "A customer needs you";
+            String said = e.customerText() == null ? "" : e.customerText().length() > 140 ? e.customerText().substring(0, 140) + "…" : e.customerText();
+            String body = (ar ? e.reason() + " — العميل كتب: «" + said + "». افتح المحادثة ورد بنفسك." : e.reason() + " — the customer wrote: «" + said + "». Open the chat and reply yourself.");
+            String payload = "{\"type\":\"CHAT_NEEDS_HUMAN\",\"conversationId\":\"" + e.conversationId() + "\"}";
+            List<UUID> people = staffWith(e.tenantId(), "ai.manage");
+            for (UUID staff : people) {
+                notifications.notify(staff, e.tenantId(), "CHAT_NEEDS_HUMAN", title, body, json("conversationId", e.conversationId()), true);
+                notifications.push(staff, e.tenantId(), title, body, payload);
+            }
+            if (!people.isEmpty()) notifications.dispatchSoon();
+        });
+    }
+
     /** A new shop or clinic signed up: every platform operator is told, in the app and on the phone (no tenant on the notification). */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     @Transactional(propagation = Propagation.REQUIRES_NEW)

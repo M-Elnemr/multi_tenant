@@ -142,4 +142,42 @@ class ChannelAiTest {
         assertThat(routed.next("s", next, List.of()).text()).isEqualTo("done");
         assertThat(claude.calls).isEqualTo(1);
     }
+
+    @Test
+    void glmAndQwenStandInForEachOther() {
+        Scripted def = new Scripted("glm", true), claude = new Scripted("anthropic", true), glm = new Scripted("glm", true), qwen = new Scripted("qwen", true);
+        // GLM (the default) fails on the first call: Qwen answers
+        def.script.add(() -> { throw new AiUnavailableException("HTTP 429"); });
+        qwen.script.add(() -> Turn.model("from qwen"));
+        var routed = new ChannelAi(def, claude, glm, qwen, "default", "default").forChannel("WEB");
+        assertThat(routed.next("s", ASK, List.of()).text()).isEqualTo("from qwen");
+        assertThat(routed.fellBack()).isTrue();
+        assertThat(routed.showsErrors()).isFalse();
+        // routed to Qwen, GLM is its backup
+        var toQwen = new ChannelAi(def, claude, glm, qwen, "qwen", "qwen").forChannel("WHATSAPP");
+        assertThat(toQwen.restartOnFallback().code()).isEqualTo("glm");
+        // without a Qwen key GLM has no backup, and its failure is a polite apology (not its error) because nobody picked it by name
+        var alone = new ChannelAi(def, claude, glm, new Scripted("qwen", false), "default", "default").forChannel("WEB");
+        assertThat(alone.restartOnFallback()).isNull();
+        assertThat(alone.showsErrors()).isFalse();
+    }
+
+    @Test
+    void aReplyThatFailsInTheMiddleOfItsToolsStartsAgainOnTheOtherModel() {
+        Scripted def = new Scripted("glm", true), claude = new Scripted("anthropic", true), glm = new Scripted("glm", true), qwen = new Scripted("qwen", true);
+        def.script.add(() -> new Turn("model", "", List.of(new AiProvider.ToolCall("search_products", java.util.Map.of())), List.of(), "raw-glm"));
+        def.script.add(() -> { throw new AiUnavailableException("timeout"); });
+        var routed = new ChannelAi(def, claude, glm, qwen, "default", "default").forChannel("WEB");
+        Turn first = routed.next("s", ASK, List.of());
+        List<Turn> second = new ArrayList<>(ASK);
+        second.add(first);
+        second.add(Turn.tool(List.of()));
+        assertThatThrownBy(() -> routed.next("s", second, List.of())).isInstanceOf(AiUnavailableException.class);
+        var again = routed.restartOnFallback();
+        assertThat(again.code()).isEqualTo("qwen");
+        assertThat(again.fellBack()).isTrue();
+        assertThat(again.restartOnFallback()).isNull();   // the backup has no backup of its own
+        qwen.script.add(() -> Turn.model("answered from the start"));
+        assertThat(again.next("s", ASK, List.of()).text()).isEqualTo("answered from the start");
+    }
 }

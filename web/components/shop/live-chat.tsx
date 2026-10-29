@@ -25,9 +25,9 @@ function conversationId(): string {
 }
 
 /** The conversation, shared by the storefront button and the owner's test screen (same look, different endpoint). */
-export function ChatPanel({ send, load, onReset, onTeach, greeting, className = "" }: {
+export function ChatPanel({ send, load, onReset, onTeach, greeting, live = false, className = "" }: {
   send: (text: string) => Promise<Reply>; load: () => Promise<{ role: "user" | "assistant"; content: string }[]>; onReset?: () => Promise<void>; onTeach?: (question: string, answer: string) => void; greeting: string;
-  className?: string;
+  live?: boolean; className?: string;
 }) {
   const { t, locale } = useI18n();
   const [msgs, setMsgs] = useState<Msg[]>([]);
@@ -43,6 +43,15 @@ export function ChatPanel({ send, load, onReset, onTeach, greeting, className = 
     load().then((h) => { if (live) setMsgs(h); }).catch(() => undefined);
     return () => { live = false; };
   }, [load]);
+  // the storefront chat: a reply the shop team writes from their inbox shows up while the window is open
+  useEffect(() => {
+    if (!live) return;
+    const timer = setInterval(() => {
+      if (running.current) return;
+      load().then((h) => setMsgs((m) => (h.length > m.length ? h : m))).catch(() => undefined);
+    }, 6000);
+    return () => clearInterval(timer);
+  }, [live, load]);
   useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [msgs, busy, slow]);
   // A search or a long answer can take a few seconds: after three seconds say so, so the customer knows we are still on it.
   useEffect(() => {
@@ -59,7 +68,8 @@ export function ChatPanel({ send, load, onReset, onTeach, greeting, className = 
       const v = queue.current.shift() as string;
       try {
         const r = await send(v);
-        setMsgs((m) => [...m, { role: "assistant", content: r.reply, products: r.products, order: r.order }]);
+        // an empty reply: the shop team is answering this chat themselves, nothing automatic to show
+        if (r.reply && r.reply.trim()) setMsgs((m) => [...m, { role: "assistant", content: r.reply, products: r.products, order: r.order }]);
       } catch (e) {
         setMsgs((m) => [...m, { role: "assistant", content: errorMessage(t, locale, e) }]);
       }
@@ -168,7 +178,7 @@ export function LiveChat() {
             </div>
             <button type="button" onClick={() => setOpen(false)} aria-label={t("common.close")} className="grid h-11 w-11 place-items-center rounded-full hover:bg-white/20">✕</button>
           </header>
-          {conv && <ChatPanel className="flex-1" greeting={cfg.greeting || t("chat.greeting")} load={loadFn} send={(text) => api<Reply>("shop/chat", { body: { conversationId: conv, message: text } })} />}
+          {conv && <ChatPanel live className="flex-1" greeting={cfg.greeting || t("chat.greeting")} load={loadFn} send={(text) => api<Reply>("shop/chat", { body: { conversationId: conv, message: text } })} />}
         </section>
       )}
       {!open && (
