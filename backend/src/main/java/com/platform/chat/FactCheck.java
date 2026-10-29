@@ -599,7 +599,8 @@ final class FactCheck {
         Set<String> colors = new LinkedHashSet<>(), sizes = new LinkedHashSet<>();
         for (Variant v : p.variants()) v.options().forEach((k, val) -> { if (colorOption(k)) colors.add(val); else if (sizeOption(k)) sizes.add(val); });
         if (sizes.isEmpty()) return null;
-        String color = said.entrySet().stream().filter(e -> colorOption(e.getValue())).map(Map.Entry::getKey).findFirst().orElse(null);
+        List<String> saidColors = said.entrySet().stream().filter(e -> colorOption(e.getValue())).map(Map.Entry::getKey).toList();
+        String color = saidColors.size() == 1 ? saidColors.get(0) : null;   // several colours listed: every colour is claimed in every size
         List<String> missing = new ArrayList<>();
         for (String c : color != null ? Set.of(color) : colors.isEmpty() ? Set.of("") : colors)
             for (String sz : sizes) {

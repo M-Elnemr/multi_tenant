@@ -195,6 +195,7 @@ class FactCheckTest {
     void aWrongStockCountAndAWrongAllSizesAreCaught() {
         assertThat(kinds(FASH, "الجاكيت البافر الشتوي الرجالي زيتي XXL موجود؟", "موجود يا فندم! جاكيت البافر الشتوي الرجالي باللون الزيتي ومقاس XXL متوفر (16 قطعة في المخزن).")).contains("OPTION_STOCK");
         assertThat(kinds(FASH, "تيشيرت القطن السادة الرجالي متاح بكل المقاسات؟", "أيوة يا فندم، تيشيرت قطن سادة رجالي بسعر ٢٩٠ جنيه متاح بكل المقاسات من S لحد XXL.")).contains("OPTION_STOCK");
+        assertThat(kinds(FASH, "تيشيرت القطن السادة الرجالي متاح بكل المقاسات؟", "تيشيرت قطن سادة رجالي متاح بكل المقاسات يا فندم (S, M, L, XL, XXL) وبالألوان: أسود، أبيض، رمادي، كحلي، زيتي.")).contains("OPTION_STOCK");
     }
 
     // ---- every reply of the recorded test chats: what the checks say ------------------------------------------------

@@ -730,6 +730,8 @@ public class ChatService {
             if (retry == null || retry.isBlank()) return factsFixed(last, falseCancel ? cancelFallback(answer) : phoneDoubt ? phoneFallback(answer) : answer, shopData, touched);
             if (CANCEL_CLAIM.matcher(retry).find() && !orderCancelled(ctx)) return cancelFallback(retry);
             if (PHONE_DOUBT.matcher(retry).find() && customerGaveMobile(turns)) return phoneFallback(retry);
+            // still «سجلت طلبك» with no order: the words go, the rest of the reply stays
+            if (ctx.order()[0] == null && !hasOrderOnFile(ctx)) retry = ORDER_CLAIM.matcher(retry).replaceAll(english(retry) ? "noted" : "تمام،");
             List<String> touchedNow = ctx.products().stream().map(p -> String.valueOf(p.get("slug"))).distinct().toList();
             String fixedRetry = factsFixed(last, retry, shopData, touchedNow);
             if (!fixedRetry.equals(retry)) events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:FIXED_BY_CODE", "the rewrite still had a fact wrong", null);
@@ -759,7 +761,7 @@ public class ChatService {
     /** A short «ضيفه» / «احجزه» / «add it»: the customer wants the product just discussed. */
     static final Pattern ADD_IT = Pattern.compile("^(?:تمام\\s+|طيب\\s+|اوك\\s+)?(?:ضيفه|ضيفها|ضيفهم|ضيف|احجزه|احجزها|احجز|اطلبه|اطلبها|خده|خدها|عايزه|عايزاه|عايزها|هاخده|هاخدها|add it|add|book it|i ll take it|ill take it)(?:\\s+(?:للاوردر|للطلب|لو سمحت|بقي|بقى|please))?$");
     /** The reply asks about an option (size, colour, bread...). */
-    static final Pattern OPTION_ASK = Pattern.compile("(?:مقاس|المقاس|لون|اللون|حجم|الحجم|عيش|الخبز|خبز|نوع|السعه|الرامات|الطعم|حار|انهي|size|colou?r|which)");
+    static final Pattern OPTION_ASK = Pattern.compile("(?:مقاس|المقاس|لون|اللون|حجم|الحجم|عيش|الخبز|خبز|السعه|الرامات|الطعم|انهي|size|colou?r|which)");
     /** A model-written summary or confirmation request («الطلب جاهز للتأكيد», «نبدأ التحضير؟»). */
     static final Pattern FAKE_SUMMARY = Pattern.compile("(?:الطلب\\s+جاهز|جاهز\\s+للتاكيد|نبدا\\s+التحضير|ناكد\\s+الطلب|اكد\\s+الطلب|اكدلك\\s+الطلب\\s+كده|confirm\\s+(?:your|the)\\s+order|order\\s+is\\s+ready)");
 
