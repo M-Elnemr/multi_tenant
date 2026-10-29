@@ -237,6 +237,7 @@ final class FactCheck {
         sale(customer, answer, ms, load, out);
         offTopic(customer, answer, ms, shop, out);
         wrongKind(customer, ms, shop, out);
+        inventedValue(answer, ms, only, load, out);
         return out;
     }
 
@@ -894,6 +895,31 @@ final class FactCheck {
             List<String> shown = kind.stream().limit(5).map(Named::name).toList();
             out.add(new Problem("WRONG_KIND", "The customer asked for «" + w + "»; the products you named are not that. The shop's «" + w + "» products: " + String.join("، ", shown) + ". Answer with these.", null));
             return;
+        }
+    }
+
+    // ---- 9. a size word the product does not have ------------------------------------------------------------------------
+
+    /** The everyday size words of food and goods («دبل» for a sandwich that comes in عادي / كبير / سوبر). */
+    private static final Set<String> SIZE_WORDS = Set.of("دبل", "سنجل", "وسط", "صغير", "عائلي", "كبير", "سوبر", "عادي", "جامبو", "ميني");
+
+    private static void inventedValue(String answer, List<Mention> ms, String only, java.util.function.Function<String, Product> load, List<Problem> out) {
+        String slug = ms.size() == 1 ? ms.get(0).slug() : ms.isEmpty() ? only : null;
+        if (slug == null) return;
+        Product p = load.apply(slug);
+        Set<String> values = new java.util.HashSet<>();
+        for (Variant v : p.variants()) for (String val : v.options().values()) for (Tok t : tokens(light(val), 0, val.length())) values.add(t.word());
+        if (values.stream().noneMatch(SIZE_WORDS::contains)) return;   // only products sold by such sizes
+        String l = light(answer);
+        int from = ms.isEmpty() ? 0 : ms.get(0).end();
+        List<Tok> after = tokens(l, from, l.length());
+        for (int i = 0; i < Math.min(after.size(), 4); i++) {   // right after the name: «ساندوتش شاورما فراخ دبل»
+            String w = after.get(i).word();
+            if (SIZE_WORDS.contains(w) && !values.contains(w)) {
+                List<String> real = values.stream().filter(SIZE_WORDS::contains).sorted().toList();
+                out.add(new Problem("OPTION_STOCK", "«" + p.name() + "» does not come in «" + w + "»; its sizes are " + String.join("، ", real) + ". Never choose an option for the customer: ask them.", null));
+                return;
+            }
         }
     }
 }

@@ -208,6 +208,12 @@ class FactCheckTest {
         assertThat(kinds(REST, "عايز ساندوتش شاورما فراخ", "عندنا ساندوتش شاورما فراخ: عادي ٨٥، كبير ١١٠، سوبر ١٤٠.")).doesNotContain("WRONG_KIND");
     }
 
+    @Test
+    void aSizeTheProductDoesNotHaveIsCaught() {
+        assertThat(kinds(REST, "ضيفه", "تمام! ساندوتش شاورما فراخ دبل بفينو.")).contains("OPTION_STOCK");
+        assertThat(kinds(REST, "ضيفه", "تمام! ساندوتش شاورما فراخ كبير بفينو بـ ١١٠ جنيه.")).doesNotContain("OPTION_STOCK");
+    }
+
     // ---- every reply of the recorded test chats: what the checks say ------------------------------------------------
 
     /** Run with -Dfactcheck.corpus=<transcript.txt>,<shop slug>[;...] to print what the checks say about a recorded test run. */
