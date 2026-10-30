@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """An exam for the shop assistant that works on ANY shop: it reads the shop's own catalog from the public API, writes questions whose right answer
 is known from that data (the price of each option, a sold-out combination, an option the product does not have, more pieces than the stock, the
-colours of a product, a full order up to the summary) and grades every reply against the data. Orders are never confirmed.
+colours of a product, a full order up to the summary, several items, a change after the summary, pickup) and grades every reply against the data. Orders are never confirmed.
 
 usage: ai_exam.py SHOP_SLUG MODEL_WORD OUT_PREFIX [--n 60] [--seed 1] [--gap 4.2] [--only kind,kind]
   writes OUT_PREFIX.txt (transcripts in the corpus format of FactCheckTest) and OUT_PREFIX.json (every case with its verdict),
@@ -48,6 +48,7 @@ for it in items:
 prof = get("/profile") if not REGRADE else {"shippingZones": []}
 served = sorted({c for z in prof["shippingZones"] if z.get("isActive") for c in z["governorateCodes"]})
 MIN_ORDER = ((prof.get("profile") or {}).get("minOrderMinor") or 0) / 100
+PICKUP = any(b.get("isPickup") for b in get("/branches")) if not REGRADE else False
 print(SLUG, len(products), "products", file=sys.stderr)
 
 # ---- text helpers ------------------------------------------------------------------------------------------------------
@@ -137,6 +138,44 @@ if gov:
         v = rnd.choice([x for x in p["variants"] if x["available"] > 1])
         o = ask_values(p, v)
         add("order", [f"عايز {p['name']} {o}".strip(), f"انا كريم، {GOV[gov]}، ٠١٠٢٣٤٥٦٧٨٩، كاش"], product=p["name"], price=v["price"], values=list(v["options"].values()), min_order=MIN_ORDER)
+# ---- orders beyond one product: several items, a change after the summary, pickup; graded on the summary lines «• name (opts) × qty = amount» ----
+def pick(p, need=1):
+    vs = [x for x in p["variants"] if x["available"] >= need]
+    return rnd.choice(vs) if vs else None
+def item(p, v, q=1): return {"name": p["name"], "values": list(v["options"].values()), "qty": q, "amount": v["price"] * q}
+DETAILS = f"انا كريم، {GOV[gov]}، ٠١٠٢٣٤٥٦٧٨٩، كاش" if gov else None
+if gov:
+    stocked = [p for p in products if any(v["available"] > 1 for v in p["variants"])]
+    for _ in range(N // 10):   # two products in one message
+        a, b = rnd.sample(stocked, 2)
+        va, vb = pick(a), pick(b)
+        if a["name"] in b["name"] or b["name"] in a["name"]: continue
+        add("order_multi", [f"عايز {a['name']} {ask_values(a, va)} و{b['name']} {ask_values(b, vb)}".replace("  ", " "), DETAILS], items=[item(a, va), item(b, vb)], min_order=MIN_ORDER)
+    two = [p for p in stocked if len({tuple(v["options"].items()) for v in p["variants"] if v["available"] > 0}) >= 2 and len(p["variants"][0]["options"]) == 1]
+    for p in rnd.sample(two, min(len(two), N // 12)):   # the option changed after the summary
+        va, vb = rnd.sample([x for x in p["variants"] if x["available"] > 0], 2)
+        add("order_change_option", [f"عايز {p['name']} {ask_values(p, va)}", DETAILS, rnd.choice(["لا غيرها لـ {o}", "معلش خليها {o} بدل {a}", "عايزها {o} مش {a}"]).format(o=list(vb["options"].values())[0], a=list(va["options"].values())[0])],
+            items=[item(p, vb)], gone=list(va["options"].values()), min_order=MIN_ORDER)
+    for p in rnd.sample(stocked, min(len(stocked), N // 12)):   # the quantity changed after the summary
+        v = pick(p, 2)
+        if not v: continue
+        add("order_change_qty", [f"عايز {p['name']} {ask_values(p, v)}".strip(), DETAILS, rnd.choice(["خليهم ٢", "عايز اتنين منهم", "خليها قطعتين"])], items=[item(p, v, 2)], min_order=MIN_ORDER)
+    for _ in range(N // 12):   # an item added after the summary
+        a, b = rnd.sample(stocked, 2)
+        va, vb = pick(a), pick(b)
+        if a["name"] in b["name"] or b["name"] in a["name"]: continue
+        add("order_add_item", [f"عايز {a['name']} {ask_values(a, va)}".strip(), DETAILS, f"وضيف معاه {b['name']} {ask_values(b, vb)}".strip()], items=[item(a, va), item(b, vb)], min_order=MIN_ORDER)
+    for _ in range(N // 12):   # an item taken out after the summary
+        a, b = rnd.sample(stocked, 2)
+        va, vb = pick(a), pick(b)
+        if a["name"] in b["name"] or b["name"] in a["name"]: continue
+        add("order_remove_item", [f"عايز {a['name']} {ask_values(a, va)} و{b['name']} {ask_values(b, vb)}".replace("  ", " "), DETAILS, f"شيل {b['name']} وخلي {a['name']} بس"],
+            items=[item(a, va)], gone_items=[b["name"]], min_order=MIN_ORDER)
+if PICKUP:
+    stocked = [p for p in products if any(v["available"] > 1 for v in p["variants"])]
+    for p in rnd.sample(stocked, min(len(stocked), N // 15)):   # pickup: no delivery fee
+        v = pick(p)
+        add("order_pickup", [f"عايز {p['name']} {ask_values(p, v)}".strip(), "انا كريم ٠١٠٢٣٤٥٦٧٨٩، هستلم من الفرع بنفسي، كاش"], items=[item(p, v)], pickup=True, min_order=MIN_ORDER)
 cases = [c for c in cases if not ONLY or c["kind"] in ONLY]
 rnd.shuffle(cases)
 
@@ -218,6 +257,30 @@ def grade(c):
     if k == "colours":
         missing = [x for x in c["colours"] if light(x)[:3] not in lr]
         return ("in-stock colours missing: " + "، ".join(missing)) if missing else None
+    if k.startswith("order_"):
+        told_min = re.search(r"اقل\s+(?:طلب|قيمه|مبلغ|حد)|الحد\s+الادني|حد\s+ادني|علي\s+الاقل|minimum", lr)
+        total = sum(i["amount"] for i in c["items"])
+        if c.get("min_order") and total < c["min_order"]:
+            return None if told_min and num_txt(c["min_order"]) in [num_txt(x) for x in nums] else f"below the minimum order {num_txt(c['min_order'])}: not told"
+        lines = [ln for ln in r.split("\n") if "×" in ln]
+        if not lines: return "no order summary"
+        for it in c["items"]:
+            words = light(it["name"]).split()[:3]
+            ln = next((x for x in lines if all(w in light(x) for w in words)), None)
+            if ln is None: return f"summary without {it['name']}"
+            m = re.search(r"×\s*(\d+)\s*=\s*([\d,٬.]+)", ln.translate(AR))
+            if not m: return f"summary line unreadable: {ln.strip()[:60]}"
+            if int(m.group(1)) != it["qty"]: return f"{it['name']}: quantity {m.group(1)}, the customer said {it['qty']}"
+            if float(m.group(2).replace(",", "").replace("٬", "")) != it["amount"]: return f"{it['name']}: {m.group(2)} instead of {num_txt(it['amount'])}"
+            for val in it["values"]:
+                if light(val).split()[0] not in light(ln): return f"{it['name']}: summary without the chosen {val}"
+            for val in c.get("gone", []):
+                if re.search(r"(?<!\w)" + re.escape(light(val)) + r"(?!\w)", light(ln)) and not any(light(val) in light(x) for x in it["values"]): return f"{it['name']}: still {val} after the change"
+        if len(lines) != len(c["items"]): return f"summary has {len(lines)} items, the customer wants {len(c['items'])}"
+        for g in c.get("gone_items", []):
+            if any(all(w in light(x) for w in light(g).split()[:3]) for x in lines): return f"{g} still in the summary after it was taken out"
+        if c.get("pickup") and not re.search(r"استلام|pick\s*up", lr): return "pickup not in the summary"
+        return None
     if k == "order":
         told_min = re.search(r"اقل\s+(?:طلب|قيمه|مبلغ)|الحد\s+الادني|القيمه\s+الكليه|اقل\s+حد|حد\s+ادني|علي\s+الاقل|(?:يصل|يوصل|توصل|نوصل)\s+(?:ل|لـ|الي)|minimum\s+order|minimum\s+is", lr)
         if c.get("min_order") and c["price"] < c["min_order"]:   # under the shop's minimum: no summary can be made, the customer must hear the minimum

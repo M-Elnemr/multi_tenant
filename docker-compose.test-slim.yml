@@ -45,6 +45,9 @@ services:
       AI_REVIEW_MODEL: ${AI_REVIEW_MODEL:-}
       GLM_MAX_RPS: ${GLM_MAX_RPS:-5}
       QWEN_MAX_RPS: ${QWEN_MAX_RPS:-0}
+      EMBED_API_KEY: ${EMBED_API_KEY:-}
+      EMBED_BASE_URL: ${EMBED_BASE_URL:-https://dashscope-intl.aliyuncs.com/compatible-mode/v1}
+      EMBED_MODEL: ${EMBED_MODEL:-qwen3.7-text-embedding}
       AI_EVAL_SCHEDULE: ${AI_EVAL_SCHEDULE:-true}
       AI_EVAL_SHOP: ${AI_EVAL_SHOP:-layan-store}
       AI_EVAL_MODELS: ${AI_EVAL_MODELS:-glm,qwen}

@@ -14,6 +14,8 @@ import org.springframework.stereotype.Component;
 @Primary
 public class FakeAiProvider implements AiProvider {
     public static volatile String lastSystem = "";
+    public static volatile List<ToolDef> lastTools = List.of();
+    public static List<ToolDef> lastTools() { return lastTools; }
     public static final Deque<Function<List<Turn>, Turn>> SCRIPT = new ArrayDeque<>();
     public static final List<ToolResult> RESULTS = new ArrayList<>();
 
@@ -24,6 +26,7 @@ public class FakeAiProvider implements AiProvider {
     @Override
     public synchronized Turn next(String system, List<Turn> turns, List<ToolDef> tools) {
         lastSystem = system;
+        lastTools = tools;
         Turn last = turns.isEmpty() ? null : turns.get(turns.size() - 1);
         if (last != null && "tool".equals(last.role())) RESULTS.addAll(last.results());
         var f = SCRIPT.poll();

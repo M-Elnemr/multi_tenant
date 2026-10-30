@@ -29,13 +29,15 @@ public class SellerTools {
     private final EntitlementService ent;
     private final long defaultMonthlyCap;
     private final org.springframework.context.ApplicationEventPublisher events;
+    private final KnowledgeIndex knowledge;
 
     /** Published when the assistant hands the owner a question it could not answer: {@link QuestionService} tells the owner. */
     public record QuestionAsked(UUID tenantId, long id) {}
 
     public SellerTools(JdbcClient jdbc, StoreFulfillmentService fulfilment, EntitlementService ent, @Value("${app.ai.monthly-message-cap:5000}") long defaultMonthlyCap,
-                       org.springframework.context.ApplicationEventPublisher events) {
+                       org.springframework.context.ApplicationEventPublisher events, KnowledgeIndex knowledge) {
         this.events = events;
+        this.knowledge = knowledge;
         this.jdbc = jdbc;
         this.fulfilment = fulfilment;
         this.ent = ent;
@@ -55,7 +57,8 @@ public class SellerTools {
         return List.of(
                 new ToolDef("order_status", "Status of an existing order. Needs the order number AND the phone number on the order.",
                         obj("type", "OBJECT", "properties", obj("orderNumber", str("The order number the customer has"), "phone", str("The phone number used on the order")), "required", List.of("orderNumber", "phone"))),
-                new ToolDef("recommend_related", "Other in-stock products from the same category as a product: use for one honest add-on or a cheaper or better alternative.",
+                new ToolDef("recommend_related", "What to suggest next to a product: alternatives (the most similar in-stock products, for a cheaper, better or available choice), what other customers bought with it, "
+                        + "and in-stock items of other categories to pick ONE natural add-on from (fries and a drink with a burger, a case and a charger with a phone, a belt with trousers; never something unrelated). Use it once a product is chosen.",
                         obj("type", "OBJECT", "properties", obj("slug", str("Product slug from search_products")), "required", List.of("slug"))),
                 new ToolDef("delivery_quote", "Delivery fee, the order amount above which delivery is free, and days to one governorate. Quote the fee together with the free-delivery condition.",
                         obj("type", "OBJECT", "properties", obj("governorateCode", str("Governorate code from the SHOP FACTS list")), "required", List.of("governorateCode"))),
@@ -113,17 +116,54 @@ public class SellerTools {
 
     private Map<String, Object> related(UUID t, String slug) {
         if (slug == null) return obj("error", "Give the product slug");
-        var rows = jdbc.sql("""
-                SELECT p.name, p.slug, min(v.price_minor) AS price_minor, p.currency FROM commerce.products p
+        var me = jdbc.sql("SELECT id, category_id, taxonomy_id, audience FROM commerce.products WHERE tenant_id = :t AND slug = :s").param("t", t).param("s", slug).query().listOfRows().stream().findFirst().orElse(null);
+        if (me == null) return obj("error", "Unknown product slug: take it from search_products");
+        // alternatives: the most similar products by meaning, or the same category when the shop is not indexed
+        List<String> similar = knowledge.similarProducts(t, slug, 8);
+        List<Map<String, Object>> alternatives = similar.isEmpty()
+                ? cards(t, "p.slug <> :s AND p.category_id IS NOT NULL AND p.category_id = (SELECT category_id FROM commerce.products WHERE tenant_id = :t AND slug = :s)", slug, null, 4)
+                : cards(t, "p.slug = ANY(string_to_array(CAST(:list AS varchar), ','))", slug, String.join(",", similar), 4);
+        if (!similar.isEmpty()) alternatives.sort(java.util.Comparator.comparingInt(m -> similar.indexOf(String.valueOf(m.get("slug")))));
+        // what customers bought together with it, from the shop's own orders
+        var together = jdbc.sql("""
+                SELECT p.name, p.slug, min(v.price_minor) AS price_minor, count(DISTINCT a.order_id) AS n FROM commerce.order_items a
+                JOIN commerce.order_items b ON b.order_id = a.order_id AND b.product_id <> a.product_id
+                JOIN commerce.products p ON p.id = b.product_id AND p.status = 'ACTIVE'
                 JOIN commerce.product_variants v ON v.product_id = p.id AND v.status = 'ACTIVE'
-                WHERE p.tenant_id = :t AND p.status = 'ACTIVE' AND p.slug <> :s AND p.category_id IS NOT NULL
-                  AND p.category_id = (SELECT category_id FROM commerce.products WHERE tenant_id = :t AND slug = :s)
+                WHERE a.tenant_id = :t AND a.product_id = :p
                   AND EXISTS (SELECT 1 FROM commerce.inventory_items i JOIN commerce.product_variants pv ON pv.id = i.variant_id WHERE pv.product_id = p.id AND i.quantity_on_hand - i.quantity_reserved > 0)
-                GROUP BY p.id ORDER BY p.created_at DESC LIMIT 4
-                """).param("t", t).param("s", slug).query().listOfRows();
+                GROUP BY p.id ORDER BY n DESC LIMIT 3
+                """).param("t", t).param("p", me.get("id")).query().listOfRows();
+        List<Map<String, Object>> bought = new ArrayList<>();
+        for (var r : together) bought.add(obj("name", r.get("name"), "slug", r.get("slug"), "price", ChatService.major(r.get("price_minor")), "orders", r.get("n")));
+        // add-on candidates: the best seller of each other category (for the same person when it matters), for the seller to pick one natural add-on from
+        var other = jdbc.sql("""
+                SELECT DISTINCT ON (p.taxonomy_id) p.name, p.slug, min(v.price_minor) OVER (PARTITION BY p.id) AS price_minor, tx.name_ar AS category
+                FROM commerce.products p JOIN commerce.product_variants v ON v.product_id = p.id AND v.status = 'ACTIVE' LEFT JOIN commerce.taxonomy tx ON tx.id = p.taxonomy_id
+                WHERE p.tenant_id = :t AND p.status = 'ACTIVE' AND p.slug <> :s AND p.taxonomy_id IS DISTINCT FROM CAST(:tx AS int)
+                  AND (CAST(:aud AS varchar) = '' OR p.audience IN ('', 'ALL', CAST(:aud AS varchar)))
+                  AND EXISTS (SELECT 1 FROM commerce.inventory_items i JOIN commerce.product_variants pv ON pv.id = i.variant_id WHERE pv.product_id = p.id AND i.quantity_on_hand - i.quantity_reserved > 0)
+                ORDER BY p.taxonomy_id, p.sold_count DESC, p.created_at DESC LIMIT 8
+                """).param("t", t).param("s", slug).param("tx", me.get("taxonomy_id")).param("aud", me.get("audience") == null ? "" : String.valueOf(me.get("audience"))).query().listOfRows();
+        List<Map<String, Object>> addOns = new ArrayList<>();
+        for (var r : other) addOns.add(obj("name", r.get("name"), "slug", r.get("slug"), "price", ChatService.major(r.get("price_minor")), "category", r.get("category")));
+        return obj("alternatives", alternatives, "boughtTogether", bought, "addOnCandidates", addOns,
+                "note", "Suggest at most ONE add-on, only one that naturally goes with what they chose (from boughtTogether first, else addOnCandidates), with its price, in one short line; or an alternative when theirs is sold out, too expensive or not quite right. Never push.");
+    }
+
+    /** In-stock products of this shop matching {@code where} (with :t, :s and :list), as name, slug and lowest price. */
+    private List<Map<String, Object>> cards(UUID t, String where, String slug, String list, int max) {
+        var rows = jdbc.sql("""
+                SELECT p.name, p.slug, min(v.price_minor) AS price_minor FROM commerce.products p
+                JOIN commerce.product_variants v ON v.product_id = p.id AND v.status = 'ACTIVE'
+                WHERE p.tenant_id = :t AND p.status = 'ACTIVE' AND """ + where + """
+
+                  AND EXISTS (SELECT 1 FROM commerce.inventory_items i JOIN commerce.product_variants pv ON pv.id = i.variant_id WHERE pv.product_id = p.id AND i.quantity_on_hand - i.quantity_reserved > 0)
+                GROUP BY p.id ORDER BY p.created_at DESC LIMIT 12
+                """).param("t", t).param("s", slug).param("list", list == null ? "" : list).query().listOfRows();
         List<Map<String, Object>> out = new ArrayList<>();
-        for (var r : rows) out.add(obj("name", r.get("name"), "slug", r.get("slug"), "price", ChatService.major(r.get("price_minor"))));
-        return obj("related", out, "count", out.size());
+        for (var r : rows) if (out.size() < max) out.add(obj("name", r.get("name"), "slug", r.get("slug"), "price", ChatService.major(r.get("price_minor"))));
+        return out;
     }
 
     /** The delivery zone of this shop that serves a governorate code, or null. */

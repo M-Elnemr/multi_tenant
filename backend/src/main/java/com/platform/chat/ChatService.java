@@ -145,9 +145,11 @@ public class ChatService {
     private final boolean review;
     private final String reviewModel;
 
+    private final KnowledgeIndex knowledge;
+
     public ChatService(JdbcClient jdbc, AiProvider ai, CatalogService catalog, StoreSearchService search, CheckoutService checkout, StoreSettingsService settings,
                        StoreFulfillmentService fulfilment, ShopperService shopper, PaymentPolicy policy, AuditService audit, SellerTools seller, com.platform.commerce.GenderService genders, com.platform.commerce.OrderService orders, @org.springframework.context.annotation.Lazy AccountNotice accountNotice, AiUsageService usageLog, AiEvents events, ChannelAi channelAi,
-                       org.springframework.context.ApplicationEventPublisher publisher,
+                       KnowledgeIndex knowledge, org.springframework.context.ApplicationEventPublisher publisher,
                        @org.springframework.beans.factory.annotation.Value("${app.ai.name-probe:false}") boolean nameProbe,
                        @org.springframework.beans.factory.annotation.Value("${app.ai.review.enabled:true}") boolean review,
                        @org.springframework.beans.factory.annotation.Value("${app.ai.review.model:}") String reviewModel) {
@@ -157,6 +159,7 @@ public class ChatService {
         this.events = events;
         this.publisher = publisher;
         this.channelAi = channelAi;
+        this.knowledge = knowledge;
         this.nameProbe = nameProbe;
         this.accountNotice = accountNotice;
         this.genders = genders;
@@ -746,7 +749,7 @@ public class ChatService {
             problems.put("VAGUE", "The customer asked about a kind of product and your reply names none: call search_products and name the real products with their price, colors and sizes (or say honestly we do not have it).");
         String unrelated = cardsUnrelated(ctx, last);
         if (unrelated != null) problems.put("UNRELATED_CARDS", unrelated);
-        boolean lookedUp = rounds.stream().anyMatch(r -> r.tools().stream().anyMatch(t -> t.equals("get_product")));   // a search lists products; their specs are read with get_product
+        boolean lookedUp = rounds.stream().anyMatch(r -> r.tools().stream().anyMatch(t -> t.equals("get_product") || t.equals("shop_knowledge")));   // a search lists products; their specs are read with get_product or shop_knowledge
         if (NO_INFO.matcher(answer).find() && !lookedUp)
             problems.put("NO_INFO", "You said there is no information without looking: call get_product for that product and answer from its details (ingredients, calories, material, size guide...); say it is not listed only if get_product has nothing.");
         if (ORDER_CLAIM.matcher(FastAnswers.norm(answer)).find() && ctx.order()[0] == null && !hasOrderOnFile(ctx))
@@ -1119,6 +1122,28 @@ public class ChatService {
                         return new FactCheck.Product(s, String.valueOf(p.get("name")), before, vs);
                     } catch (RuntimeException e) { return null; }
                 });
+            }
+
+            private final Map<String, String> facts = new java.util.HashMap<>();
+            private String policies;
+
+            public String facts(String slug) {
+                if (facts.containsKey(slug)) return facts.get(slug);
+                var r = jdbc.sql("""
+                        SELECT p.name, p.brand, p.description, p.short_description, p.specs::text AS specs, array_to_string(p.tags, ' ') AS tags, p.size_guide,
+                          (SELECT string_agg(ov.value, ' ') FROM commerce.product_options o JOIN commerce.product_option_values ov ON ov.option_id = o.id WHERE o.product_id = p.id) AS options,
+                          (SELECT string_agg(tr.name || ' ' || tr.description, ' ') FROM commerce.product_translations tr WHERE tr.product_id = p.id) AS other
+                        FROM commerce.products p WHERE p.tenant_id = :t AND p.slug = :s
+                        """).param("t", tenantId).param("s", slug).query().listOfRows().stream().findFirst().orElse(null);
+                String text = null;
+                if (r != null) {
+                    if (policies == null) policies = jdbc.sql("SELECT concat_ws(' ', announcement, shipping_policy, return_policy, short_description) FROM commerce.store_profiles WHERE tenant_id = :t")
+                            .param("t", tenantId).query(String.class).optional().orElse("");
+                    text = java.util.stream.Stream.of(r.get("name"), r.get("brand"), r.get("description"), r.get("short_description"), r.get("specs"), r.get("tags"), r.get("size_guide"), r.get("options"), r.get("other"), policies)
+                            .filter(java.util.Objects::nonNull).map(String::valueOf).collect(java.util.stream.Collectors.joining("\n"));
+                }
+                facts.put(slug, text);
+                return text;
             }
 
             public List<FactCheck.Named> searchAll(List<String> words) {
@@ -2099,6 +2124,11 @@ public class ChatService {
                                 "noReason", obj("type", "BOOLEAN", "description", "true only when the customer did not want to give a reason"))))
         );
         List<ToolDef> all = new ArrayList<>(base);
+        if (knowledge.enabled())
+            all.add(new ToolDef("shop_knowledge", "Look up, by meaning, what this shop's own data says: product descriptions, specs, materials, compatibility, size guides, and the shop's policies, branches and announcement. "
+                    + "Use it for a question about a product's details or the shop («الشاحن ده بيشحن آيفون؟», «القماش بيكش؟», «سياسة الاسترجاع ايه؟», «هدية لواحد بيحب الجري»). It returns the closest passages with their source: "
+                    + "state product facts only from them (or from get_product); prices and stock always come from search_products / get_product, never from these passages.",
+                    obj("type", "OBJECT", "properties", obj("question", str("The customer's question or need, in their words")), "required", List.of("question"))));
         all.addAll(seller.defs());
         return all;
     }
@@ -2131,6 +2161,7 @@ public class ChatService {
             return switch (c.name()) {
                 case "search_products" -> searchProducts(ctx, c.args());
                 case "get_product" -> getProduct(ctx, c.args());
+                case "shop_knowledge" -> shopKnowledge(ctx, c.args());
                 case "show_products" -> showProducts(ctx, c.args());
                 case "prepare_order" -> {
                     Map<String, Object> r = prepareOrder(ctx, c.args());
@@ -2204,6 +2235,12 @@ public class ChatService {
             for (var r : find(ctx.tenantId(), broad, null, max)) seenSlugs.putIfAbsent(r.get("slug"), r);
             rows = seenSlugs.values().stream().limit(6).toList();
         }
+        // search by meaning (RAG): «سماعة للجري» is the sport neckband, «حاجة شيك لخطوبة» the evening dresses, «جاكت» the «جاكيت». Merged with the word search by rank, so an exact
+        // name stays on top and a product the words missed still comes, under the same filters (price, who it is for)
+        if (q != null && onSale == null && knowledge.enabled()) {
+            List<String> meant = knowledge.productSlugs(ctx.tenantId(), q, 6);
+            if (!meant.isEmpty()) rows = byRank(rows, meantRows(ctx.tenantId(), meant, max, aud), 6);
+        }
         if (rows.isEmpty() && q != null) {   // everyday Egyptian words for what the catalog names differently («حلل» are «أواني»)
             String alt = synonyms(q);
             if (alt != null) rows = find(ctx.tenantId(), alt, null, max);
@@ -2255,6 +2292,35 @@ public class ChatService {
     }
 
     private List<Map<String, Object>> find(UUID tenantId, String q, String category, Long maxMinor) { return find(tenantId, q, category, maxMinor, null); }
+
+    /** The products found by meaning, in that order, as search rows, without those above the price or for someone else. */
+    private List<Map<String, Object>> meantRows(UUID tenantId, List<String> slugs, Long maxMinor, String audience) {
+        Map<String, Map<String, Object>> by = new LinkedHashMap<>();
+        for (var r : search.bySlugs(tenantId, slugs)) by.put(String.valueOf(r.get("slug")), r);
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (String s : slugs) {
+            var r = by.get(s);
+            if (r == null) continue;
+            if (maxMinor != null && r.get("minPriceMinor") instanceof Number n && n.longValue() > maxMinor) continue;
+            String a = r.get("audience") == null ? "" : String.valueOf(r.get("audience"));
+            if (audience != null && !a.isBlank() && !a.equals(audience) && !a.equals("ALL")) continue;
+            out.add(r);
+        }
+        return out;
+    }
+
+    /** Two ranked lists as one (reciprocal rank: a product high in either list, or in both, comes first), at most {@code max}. */
+    static List<Map<String, Object>> byRank(List<Map<String, Object>> words, List<Map<String, Object>> meaning, int max) {
+        Map<Object, Double> score = new LinkedHashMap<>();
+        Map<Object, Map<String, Object>> row = new LinkedHashMap<>();
+        for (List<Map<String, Object>> list : List.of(words, meaning))
+            for (int i = 0; i < list.size(); i++) {
+                Object slug = list.get(i).get("slug");
+                score.merge(slug, 1.0 / (60 + i), Double::sum);
+                row.putIfAbsent(slug, list.get(i));
+            }
+        return score.entrySet().stream().sorted(Map.Entry.<Object, Double>comparingByValue().reversed()).limit(max).map(e -> row.get(e.getKey())).toList();
+    }
 
     private static final Map<String, String> SYNONYMS = Map.ofEntries(Map.entry("حلل", "اواني"), Map.entry("حله", "اواني"), Map.entry("طاسات", "اواني"), Map.entry("طاسه", "اواني"), Map.entry("حلة", "اواني"),
             Map.entry("ملايه", "ملايات"), Map.entry("ملايات", "ملايات"), Map.entry("مفارش", "ملايات"), Map.entry("مخده", "مخدة"), Map.entry("مخدات", "مخدة"), Map.entry("سكينه", "سكين"), Map.entry("سكاكين", "سكين"),
@@ -2440,6 +2506,20 @@ public class ChatService {
     }
 
     @SuppressWarnings("unchecked")
+    /** The passages of the shop's own data closest in meaning to the question (RAG): products with their details, and shop texts. No prices or stock in them. */
+    private Map<String, Object> shopKnowledge(Ctx ctx, Map<String, Object> a) {
+        String q = a.get("question") == null ? "" : String.valueOf(a.get("question")).trim();
+        if (q.isEmpty()) return obj("error", "Give the customer's question");
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (var h : knowledge.search(ctx.tenantId(), q, null, 5)) {
+            Map<String, Object> m = obj("source", "PRODUCT".equals(h.type()) ? "product" : "shop", "title", h.title(), "text", clip(h.body(), 900));
+            if ("PRODUCT".equals(h.type())) m.put("slug", h.sourceId());
+            out.add(m);
+        }
+        if (out.isEmpty()) return obj("passages", List.of(), "note", "The shop's data says nothing about this. Do not invent it: give only general know-how, clearly as general («عادةً…»), or ask the shop (flag_unanswered) if it is the shop's own decision.");
+        return obj("passages", out, "note", "Answer from these passages only for facts about THIS shop and its products; for prices and stock use search_products or get_product.");
+    }
+
     private Map<String, Object> getProduct(Ctx ctx, Map<String, Object> a) {
         var p = catalog.detailBySlug(ctx.tenantId(), String.valueOf(a.get("slug")));
         List<Map<String, Object>> variants = variantsOf(p, a.get("want") == null ? null : String.valueOf(a.get("want")), 12);

@@ -62,6 +62,8 @@ final class FactCheck {
         default String pickup() { return null; }
         /** The tags the shop gives its products («نباتي», «للأطفال», «شتوي»), as bare words. */
         default Set<String> tags() { return Set.of(); }
+        /** Everything the shop wrote about the product (names, options, description, specs, tags, size guide) and its own policies, or null when unknown (then the spec lock is off). */
+        default String facts(String slug) { return null; }
     }
 
     record Problem(String kind, String note, String fixed) {}
@@ -275,6 +277,7 @@ final class FactCheck {
         run(out, () -> inventedProducts(answer, shop, out));
         run(out, () -> { if (out.stream().noneMatch(x -> x.kind().equals("INVENTED_PRODUCTS"))) inventedBrands(answer, shop, out); });
         run(out, () -> betterMatch(customer, answer, ms, shop, out));
+        run(out, () -> { if (out.stream().noneMatch(x -> x.fixed() != null)) specLock(customer, answer, ms, only0, shop, out); });
         run(out, () -> answerLock(customer, answer, ms, shop, load, out));
         return out;
     }
@@ -665,7 +668,10 @@ final class FactCheck {
             Object[] v = valueAt(toks, i, values);
             if (v != null) {
                 int after = i + (int) v[1];
-                boolean ownPrice = after < toks.size() && NUMBER.matcher(toks.get(after).word()).matches();   // «٨٥ ج (كبير ١١٠)»: that value has its own price
+                if (after < toks.size() && Set.of("ب", "بسعر", "سعره", "سعرها", "سعر").contains(toks.get(after).word())) after++;
+                boolean ownPrice = after < toks.size() && NUMBER.matcher(toks.get(after).word()).matches();   // «٨٥ ج (كبير ١١٠)», «… والنص كيلو بـ ٧٠٠»: that value has its own price
+                String between = i > from ? answer.substring(toks.get(i - 1).end(), toks.get(i).start()) : "";
+                if (between.contains("،") || between.contains(",") || fillers > 0 && toks.get(i).raw().startsWith("و") && !toks.get(i).raw().equals(toks.get(i).word())) return null;   // «… ٧٠٠ جنيه، والنص كيلو»: the next pair
                 boolean inBrackets = fillers == 0 && from > 0 && answer.substring(toks.get(from - 1).end(), toks.get(i).start()).contains("(");   // «10999 (256 جيجا)»
                 return (fillers > 0 || inBrackets) && !ownPrice ? (String) v[0] : null;
             }
@@ -1463,8 +1469,9 @@ final class FactCheck {
         if (slug == null) return;
         Product p = load.apply(slug);
         if (p.variants().isEmpty()) return;
-        String n = String.valueOf(asked);   // «٥١٢ ذهبي» is the 512 GB option, not 512 pieces
-        if (p.variants().stream().flatMap(v -> v.options().values().stream()).anyMatch(v -> Pattern.compile("(?<!\\d)" + n + "(?!\\d)").matcher(light(v)).find())) return;
+        String n = String.valueOf(asked);   // «٥١٢ ذهبي» is the 512 GB option, not 512 pieces; «10 قطعة» is ten pieces even when a size is «10 سنة»
+        boolean pieces = Pattern.compile("(?<!\\d)" + n + "\\s*(?:قطعه|قطع|حته|حتت|pieces?|pcs)(?!\\p{L})").matcher(lc).find();
+        if (!pieces && p.variants().stream().flatMap(v -> v.options().values().stream()).anyMatch(v -> Pattern.compile("(?<!\\d)" + n + "(?!\\d)").matcher(light(v)).find())) return;
         String l = light(answer);
         // the options the customer chose decide the stock; the reply's values count only for an option the customer left out («متاحة بالمقاسات S, M, L» is not the size asked)
         Map<String, String> want = new LinkedHashMap<>(valuesIn(light(customer), p));
@@ -1560,6 +1567,90 @@ final class FactCheck {
      * leaves it out («السعر بيختلف حسب الموديل», «تحب أشوفلك الألوان؟», «باللون الأسود فقط» when three colours are in stock) gets the answer written by code. An option the product
      * does not have («شاورما … عيش بلدي» when the bread is صاج / سوري / فينو) must not be agreed to. Works for any product of any shop.
      */
+    // ---- the spec lock: a spec of THIS product only from the shop's own data ------------------------------------------------------
+
+    /** A number with the unit of a spec (battery hours, mAh, watts, storage, screen, size, weight, warranty years…). Money, pieces and percentages of a discount are not specs. */
+    private static final Pattern SPEC_CLAIM = Pattern.compile("(?<![\\d.,])(\\d+(?:\\.\\d+)?)\\s*(ساعه|ساعات|mah|مللي\\s*امبير|ملي\\s*امبير|وات|واط|w|جيجا|gb|تيرا|tb|بوصه|انش|inch|هرتز|hz|ميجا\\s*بكسل|ميجابكسل|mp|سم|cm|مم|mm|كيلو(?:\\s*جرام)?|كجم|kg|جرام|لتر|مل|مللي|فولت|سنه|سنين|سنوات|شهر|شهور|اشهر|يوم|ايام|%|٪)(?![\\p{L}\\d])", Pattern.CASE_INSENSITIVE);
+    private static final Pattern WARRANTY = Pattern.compile("(?<!\\p{L})(?:ضمان|الضمان|بضمان|warranty|guarantee)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
+    /** A sentence that is general know-how, a discount, delivery, opening hours or a no: not a claim about the product's own specs. */
+    private static final Pattern NOT_A_SPEC = Pattern.compile("(?<!\\p{L})(?:عاده|عادتا|عادتاً|غالبا|عموما|تقريبا|تقريباً|حوالي|يعني|في\\s+العموم|بشكل\\s+عام|usually|generally|typically|خصم|تخفيض|discount|off|توصيل|التوصيل|(?:مصاريف|رسوم)\\s+(?:ال)?شحن|(?:ال)?شحن\\s+(?:ل|لـ|الي|إلى|مجاني|مجانا|لكل)|(?:ه|ب|و)?[يت]وصل\\p{L}*|هيجيلك|هتجيلك|delivery|shipping|deliver\\p{L}*|arriv\\p{L}*|مواعيد|بنفتح|بنقفل|open|استرجاع|استبدال|return|exchange|الحد\\s+الادني|minimum)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
+
+    private static String specUnit(String u) {
+        String x = u.toLowerCase(Locale.ROOT).replaceAll("\\s+", "");
+        return switch (x) {
+            case "ساعه", "ساعات" -> "h"; case "mah", "ملليامبير", "مليامبير" -> "mah"; case "وات", "واط", "w" -> "w"; case "جيجا", "gb" -> "gb"; case "تيرا", "tb" -> "tb";
+            case "بوصه", "انش", "inch" -> "in"; case "هرتز", "hz" -> "hz"; case "ميجابكسل", "mp" -> "mp"; case "سم", "cm" -> "cm"; case "مم", "mm" -> "mm"; case "كيلو", "كيلوجرام", "كجم", "kg" -> "kg";
+            case "جرام" -> "g"; case "لتر" -> "l"; case "مل", "مللي" -> "ml"; case "فولت" -> "v"; case "سنه", "سنين", "سنوات" -> "y"; case "شهر", "شهور", "اشهر" -> "mo"; case "يوم", "ايام" -> "d"; default -> "pct";
+        };
+    }
+
+    /** «سنة» is 1 year, «سنتين» 2, «شهرين» 2 months: the words become numbers so «ضمان سنة» and «ضمان 1 سنة» are the same claim. */
+    private static String specWords(String lightText) {
+        return lightText.replaceAll("(?<!\\p{L})سنتين(?!\\p{L})", "2 سنه").replaceAll("(?<!\\p{L})شهرين(?!\\p{L})", "2 شهر")
+                .replaceAll("(?<!\\d\\s?)(?<!\\p{L})(?:ال)?سنه(?!\\p{L})", "1 سنه").replaceAll("(?<!\\d\\s?)(?<!\\p{L})(?:ال)?شهر(?!\\p{L})", "1 شهر")
+                .replaceAll("(?<!\\p{L})(?:ب)?(?:ال)?(?:نص|نصف)\\s+(كيلو|لتر)(?!\\p{L})", "0.5 $1").replaceAll("(?<!\\p{L})(?:ب)?(?:ال)?ربع\\s+(كيلو|لتر)(?!\\p{L})", "0.25 $1");
+    }
+
+    private static Set<String> specsIn(String lightText) { return specsIn(lightText, false); }
+
+    private static Set<String> specsIn(String lightText, boolean joined) {
+        Set<String> out = new java.util.HashSet<>();
+        String t = specWords(lightText).replaceAll("(?<=\\d)[,٬](?=\\d{3})", "");
+        Matcher m = SPEC_CLAIM.matcher(t);
+        while (m.find()) {
+            double n = Double.parseDouble(m.group(1));
+            String u = specUnit(m.group(2));
+            if (u.equals("ml") && t.substring(Math.max(0, m.start() - 30), m.start()).contains("بطاري")) u = "mah";   // «بطارية 5000 مللي» is mAh
+            out.add(num(n, false) + "|" + u);
+            if (u.equals("kg")) out.add(num(n * 1000, false) + "|g");   // «نص كيلو» is «500 جرام»
+            if (u.equals("g")) out.add(num(n / 1000, false) + "|kg");
+            if (u.equals("l")) out.add(num(n * 1000, false) + "|ml");
+            if (u.equals("ml")) out.add(num(n / 1000, false) + "|l");
+            if (!joined) continue;
+            // in the shop's own text, «5 ساعات + 20 بالعلبة» and «16 أو 32 جيجا»: a bare number joined to it by «+» or «أو» shares its unit
+            Matcher next = Pattern.compile("^\\s*(?:\\+|او)\\s*(\\d+(?:\\.\\d+)?)(?![\\d.])(?!\\s*(?:جنيه|ج|egp))").matcher(t.substring(m.end()));
+            if (next.find()) out.add(num(Double.parseDouble(next.group(1)), false) + "|" + u);
+            Matcher prev = Pattern.compile("(?<![\\d.])(\\d+(?:\\.\\d+)?)\\s*(?:\\+|او)\\s*$").matcher(t.substring(Math.max(0, m.start() - 12), m.start()));
+            if (prev.find()) out.add(num(Double.parseDouble(prev.group(1)), false) + "|" + u);
+        }
+        return out;
+    }
+
+    /**
+     * «سماعة سونيك بطاريتها 20 ساعة وضمانها سنتين» when the shop wrote neither: a spec of THIS product (a number with a spec's unit, or a warranty) that is nowhere in what the shop
+     * wrote about it or in its policies is a guess presented as a fact. Code takes that sentence out and says the detail is not listed. General know-how («عادةً…»), a discount, delivery,
+     * opening hours and denials are left alone; off when the shop's data is unknown.
+     */
+    private static void specLock(String customer, String answer, List<Mention> ms, String only, Shop shop, List<Problem> out) {
+        String la = light(answer);
+        List<int[]> drop = new ArrayList<>();
+        String about = null, claim = null;
+        for (int[] sn : sentences(answer)) {
+            List<Mention> here = ms.stream().filter(m -> m.start() >= sn[0] && m.start() < sn[1]).toList();
+            String slug = here.size() == 1 ? here.get(0).slug() : here.isEmpty() ? (lastBefore(ms, sn[0], only) != null ? lastBefore(ms, sn[0], only) : only) : null;
+            if (slug == null) continue;
+            String facts = shop.facts(slug);
+            if (facts == null) continue;
+            String se = la.substring(sn[0], sn[1]);
+            if (NOT_A_SPEC.matcher(se).find() || NEG_STRICT.matcher(se).find() || DENY.matcher(se).find() || WITHOUT.matcher(se).find() || CONDITIONAL.matcher(se).find()
+                    || OTHER_CHOICES.matcher(se).find() || HOURS_TALK.matcher(se).find() || se.contains("؟") || se.contains("?")) continue;   // a no, another product offered, the opening hours
+            String lf = light(facts);
+            Set<String> known = specsIn(lf, true);
+            String bad = null;
+            for (String c : specsIn(se)) if (!known.contains(c) && !c.endsWith("|pct")) { bad = c; break; }
+            if (bad == null && WARRANTY.matcher(se).find() && !WARRANTY.matcher(lf).find()) bad = "warranty";
+            if (bad != null) { drop.add(sn); if (about == null) { about = slug; claim = bad; } }
+        }
+        if (drop.isEmpty()) return;
+        boolean ar = arabic(answer) || customer != null && arabic(customer);
+        final String aboutSlug = about;
+        String name = shop.names().stream().filter(n -> n.slug().equals(aboutSlug)).map(Named::name).findFirst().orElse("");
+        String note = ar ? "التفصيلة دي مش مكتوبة في بيانات «" + name + "» عندنا، أقدر أسأل المحل عليها لو تحب 🙏" : "That detail is not in our data for " + name + "; I can ask the shop if you like 🙏";
+        String rest = withoutRanges(answer, drop);
+        out.add(new Problem("SPEC_UNKNOWN", "You stated a detail of «" + name + "» (" + claim + ") that the shop's data does not have. Never guess a spec, a number or a warranty: say only what get_product or shop_knowledge gives, or offer to ask the shop.",
+                (rest.isBlank() ? note : rest + "\n\n" + note).trim()));
+    }
+
     private static void answerLock(String customer, String answer, List<Mention> ms, Shop shop, java.util.function.Function<String, Product> load, List<Problem> out) {
         if (customer == null || out.stream().anyMatch(x -> (x.kind().equals("OPTION_PRICE") || x.kind().equals("OPTION_STOCK")) && x.fixed() != null)) return;   // a wrong fact the other checks already put right
         var asked = mentions(customer, shop.names()).stream().map(Mention::slug).distinct().toList();
@@ -1839,9 +1930,9 @@ final class FactCheck {
     private static final Pattern CONDITIONAL = Pattern.compile("^[^\\p{L}\\d]*(?:و|ف)?(?:لو|اذا|إذا|if)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
 
     /** A reply that opens with yes. */
-    private static final Pattern YES_FIRST = Pattern.compile("^[^\\p{L}\\d]*(?:ايوه|ايوة|اه|اكيد|طبعا|yes|sure|of\\s+course)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
+    private static final Pattern YES_FIRST = Pattern.compile("^[^\\p{L}\\d]*(?:ايوه|ايوة|اه|اكيد|طبعا|نعم|yes|sure|of\\s+course)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
     /** Not knowing instead of answering: «مفيش تأكيد حالي على المخزون», «مش قادر أتأكد», «مش لاقي لها بيانات سعر», «حسب آخر تحديث», "I can't confirm". */
-    static final Pattern UNSURE = Pattern.compile("(?:(?:مفيش|مافيش|معنديش|معندناش|مش\\s+عندي|مش\\s+عندنا|مش\\s+لاقي|ملقتش)\\s+(?:اي\\s+)?تاكيد|مش\\s+قادر(?:ين)?\\s+(?:ا|ن)?(?:تاكد|اكد|احدد|حدد|اعرف|عرف|اقول|قول)|(?:ا|ن)تاكد\\s+(?:من|لك|ليك)|(?:ا|ن)?تحقق\\s+من|(?:مش\\s+لاقي|ملقتش|مفيش|مافيش|معنديش|معندناش|مش\\s+معايا|معييش|معيش)\\s+(?:\\p{L}+\\s+)?بيانات|اخر\\s+تحديث|مش\\s+ظاهر|(?:الرابط|اللينك|اللنك)\\s+(?:اللي\\s+)?(?:[\\p{L}\\u200C]+\\s+)?(?:مش|مبيفتحش|مش\\s+بيفتح)\\s*(?:شغال|شغاله|بيفتح|واضح|ظاهر)?|can'?t\\s+confirm|cannot\\s+confirm|not\\s+sure|no\\s+(?:data|information))", Pattern.CASE_INSENSITIVE);
+    static final Pattern UNSURE = Pattern.compile("(?:(?:مفيش|مافيش|معنديش|معندناش|مش\\s+عندي|مش\\s+عندنا|مش\\s+لاقي|ملقتش)\\s+(?:اي\\s+)?تاكيد|مش\\s+قادر(?:ين)?\\s+(?:ا|ن)?(?:تاكد|اكد|احدد|حدد|اعرف|عرف|اقول|قول)|مش\\s+عارف(?:ين)?\\s+(?:ا|ن)?(?:تاكد|اكد|اؤكد|احدد|حدد|اقول|قول)|(?:مش|مبي)\\s*(?:بي)?(?:حدد|يحدد|بيحدد|محدد|مذكور|موضح)(?!\\p{L})|(?:ا|ن)تاكد\\s+(?:من|لك|ليك)|(?:ا|ن)?تحقق\\s+من|(?:مش\\s+لاقي|ملقتش|مفيش|مافيش|معنديش|معندناش|مش\\s+معايا|معييش|معيش)\\s+(?:\\p{L}+\\s+)?بيانات|اخر\\s+تحديث|مش\\s+ظاهر|(?:الرابط|اللينك|اللنك)\\s+(?:اللي\\s+)?(?:[\\p{L}\\u200C]+\\s+)?(?:مش|مبيفتحش|مش\\s+بيفتح)\\s*(?:شغال|شغاله|بيفتح|واضح|ظاهر)?|can'?t\\s+confirm|cannot\\s+confirm|not\\s+sure|no\\s+(?:data|information))", Pattern.CASE_INSENSITIVE);
     private static final Pattern YES = Pattern.compile("(?:(?<!\\p{L})(?:و)?(?:بي?يجي|بتيجي)(?!ش)|متاح|متوفر|موجود|هنجهز|هجهز|حاضر|تمام|جاهز|مطلوب|ضفت|اضفت|هضيف|سجلت|ممكن\\s+يكون|غالبا|ايوه|ايوة|اه(?!\\p{L})|اكيد|زي\\s+ما|طبعا|available|sure|yes)", Pattern.CASE_INSENSITIVE);
     private static final Set<String> PORTION_WORDS = Set.of("فرد", "فردي", "عائلي", "شخص", "شخصين");
 
@@ -1884,12 +1975,7 @@ final class FactCheck {
                     for (int i = 0; i + 1 < w.size(); i++) if (w.get(i).chars().allMatch(Character::isDigit) && !w.get(i + 1).chars().allMatch(Character::isDigit)) measure = true;
                     if (measure && mine.stream().noneMatch(m -> m.chars().anyMatch(Character::isDigit))) continue;
                     // its words side by side («32 قطعة … 256 جيجا» is no «32 جيجا»)
-                    boolean all = false;
-                    for (int i = 0; i + w.size() <= toks.size() && !all; i++) {
-                        boolean here = true;
-                        for (int k = 0; k < w.size() && here; k++) here = same(toks.get(i + k).word(), w.get(k));
-                        all = here;
-                    }
+                    boolean all = phraseIn(toks, w);   // «ربع كيلو» is not «كيلو»
                     // its words all said side by side (so «L» is never read in «XL»; one of its own values holding them was skipped above)
                     if (all && (best == null || e.getValue().length() > best.length())) best = e.getValue();
                 }
@@ -1916,21 +2002,26 @@ final class FactCheck {
         for (int i = 0; i + w.size() <= st.size(); i++) {
             boolean here = true;
             for (int k = 0; k < w.size() && here; k++) here = same(st.get(i + k).word(), w.get(k));
+            String prev = i > 0 ? st.get(i - 1).word() : "";
+            if (here && (FRACTIONS.contains(prev) || prev.length() > 2 && "وبلف".indexOf(prev.charAt(0)) >= 0 && FRACTIONS.contains(prev.substring(1)))) here = false;   // «ربع كيلو», «بنص كيلو» do not say «كيلو»
             if (here) return true;
         }
         return false;
     }
 
-    /** The words stand side by side, in this order, inside one of the values. */
+    /** The words stand side by side, in this order, inside one of the values («أحمر» in «أحمر هادي»); a measure after a fraction is another amount («كيلو» is not «نص كيلو»). */
     private static boolean insideOne(List<String> w, List<List<String>> values) {
         for (List<String> v : values)
             for (int i = 0; i + w.size() <= v.size(); i++) {
                 boolean here = true;
                 for (int k = 0; k < w.size() && here; k++) here = same(v.get(i + k), w.get(k));
+                if (here && i > 0 && FRACTIONS.contains(v.get(i - 1))) here = false;
                 if (here) return true;
             }
         return false;
     }
+
+    private static final Set<String> FRACTIONS = Set.of("نص", "نصف", "ربع", "تلت", "ثلث", "تمن", "half", "quarter");
 
     /**
      * «ناجتس ٢ قطعة» for a product that comes in «٦ قطع، ٩ قطع، ٢٠ قطعة»: a number with the unit of one of its options that is none of its values (a count no product of the shop

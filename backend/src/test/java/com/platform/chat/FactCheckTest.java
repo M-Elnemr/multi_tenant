@@ -27,7 +27,10 @@ class FactCheckTest {
             List<FactCheck.Named> names = new ArrayList<>();
             Map<String, FactCheck.Product> bySlug = new LinkedHashMap<>();
             Map<String, String> search = new LinkedHashMap<>();
+            Map<String, String> facts = new LinkedHashMap<>();
+            String policies = root.path("policies").asText("");
             for (JsonNode p : root.path("products")) {
+                if (p.has("facts")) facts.put(p.path("slug").asText(), p.path("facts").asText() + "\n" + policies);
                 List<FactCheck.Variant> vs = new ArrayList<>();
                 for (JsonNode v : p.path("variants")) {
                     Map<String, String> o = new LinkedHashMap<>();
@@ -63,6 +66,7 @@ class FactCheckTest {
                 public List<int[]> hours() { return hours; }
                 public String pickup() { return pickup; }
                 public Set<String> tags() { return tags; }
+                public String facts(String slug) { return facts.get(slug); }
             };
         } catch (Exception e) {
             throw new IllegalStateException(e);
@@ -199,6 +203,45 @@ class FactCheckTest {
         assertThat(kinds(REST, "مياه معدنية ١ لتر عندكم؟", "مياه المعدنية عندنا بقتين يا فندم: صغيرة ٦٠٠ مل بـ ١٠ جنيه وكبيرة ١.٥ لتر بـ ١٥ جنيه. تحب مين؟ 🙂")).doesNotContain("OPTION_STOCK");
         assertThat(kinds(REST, "وجبة شاورما فراخ عربي كبير؟", "لا، وجبة شاورما فراخ عربي مش بتيجي كبير. الخيارات المتاحة عندها هي:\n- حجم عادي (145 جنيه)\n- حجم دبل (195 جنيه)\n\nتحب أجهزلك أيهم؟")).isEmpty();
         assertThat(kinds(REST, "عايز وجبة شاورما فراخ عربي مع مشروب كبيرة ١.٥ لتر", "الوجبة بتيجي مع مشروب كانز، لو عايز ١.٥ لتر ممكن نضيفه لك كمنتج منفصل في الطلب.")).doesNotContain("OPTION_STOCK");
+    }
+
+    @Test
+    void eachOptionKeepsItsOwnPriceWhenTwoArePricedInOneSentence() {
+        // «سنجل بـ ١٢٠، ودبل بـ ١٧٥» is right: the second value after the comma is the next pair, never the first amount's option (code once «fixed» 120 into 175 here)
+        assertThat(kinds(REST, "برجر كلاسيك بكام؟", "برجر كلاسيك سنجل بـ ١٢٠ جنيه، والدبل بـ ١٧٥ جنيه.")).doesNotContain("OPTION_PRICE");
+        assertThat(kinds(REST, "برجر كلاسيك بكام؟", "برجر كلاسيك سنجل بـ ١٢٠ جنيه ودبل بـ ١٧٥ جنيه.")).doesNotContain("OPTION_PRICE");
+        assertThat(kinds(REST, "ريش ضاني مشوية بكام؟", "ريش ضاني مشوية ربع كيلو بـ 360 جنيه، والنص كيلو بـ 700 جنيه.")).doesNotContain("OPTION_PRICE");
+        assertThat(FactCheck.fix("برجر كلاسيك بكام؟", "برجر كلاسيك سنجل بـ ١٢٠ جنيه، والدبل بـ ١٧٥ جنيه.", REST, List.of())).contains("١٢٠").contains("١٧٥");
+        // and the same amount said for both is caught
+        assertThat(kinds(REST, "برجر كلاسيك بكام؟", "برجر كلاسيك سنجل بـ ١٧٥ جنيه، والدبل بـ ١٧٥ جنيه.")).contains("OPTION_PRICE");
+        assertThat(kinds(REST, "ريش ضاني مشوية بكام؟", "ريش ضاني مشوية الربع كيلو بـ 700 جنيه، والنص كيلو بـ 700 جنيه.")).contains("OPTION_PRICE");
+    }
+
+    @Test
+    void theSlipsOfExamRoundEightAreCaught() {
+        // «10 قطعة» is ten pieces even when a size is «10 سنة»
+        assertThat(FactCheck.fix("عايز 4 قطعة من هودي أطفال أخضر مقاس 4 سنة", "تمام يا فندم 👌 متوفر عندنا الهودي الأطفال الأخضر مقاس ٤ سنين. ابعتلي الاسم والعنوان.", FASH, List.of())).contains("متاح منه 2");
+        // «مش عارف أؤكدلك» is no answer
+        assertThat(kinds(FASH, "عندكم فستان بناتي منفوش وردي مقاس 4 سنة؟", "للأسف الوصف اللي قدامي مش بيحدد الفستان المنفوش الوردي بمقاس 4 سنين بالظبط، مش عارف أؤكدلك عليه.")).contains("STOCK_MISSING");
+        // «كيلو» is not «نص كيلو»: a kilo of a product sold by the quarter and the half
+        assertThat(kinds(REST, "ريش ضاني مشوية كيلو عندكم؟", "النص كيلو يقرب من الكيلو لو مشتري حاجتين 😊 تحب أجهزلك نص كيلو؟")).contains("OPTION_STOCK");
+        assertThat(kinds(REST, "كباب مشوي ربع كيلو بكام؟", "كباب مشوي ربع كيلو بـ 260 جنيه.")).isEmpty();
+        // a battery in «مللي» is mAh
+        assertThat(kinds(TECH, "موبايل نوفا A7 بطاريته كام؟", "موبايل نوفا A7 بطاريته 5000 مللي.")).doesNotContain("SPEC_UNKNOWN");
+    }
+
+    @Test
+    void aSpecTheShopNeverWroteIsNotSaid() {
+        // battery and warranty the product's data does not have (it says 20 hours and 6 months)
+        String fixed = FactCheck.fix("سماعة رقبة رياضية سونيك كويسة؟", "سماعة رقبة رياضية سونيك ممتازة للجري. بطاريتها بتقعد 30 ساعة وضمانها سنة كاملة. تحب أحجزهالك؟", TECH, List.of());
+        assertThat(fixed).doesNotContain("30 ساعة").contains("مش مكتوبة").contains("ممتازة للجري");
+        assertThat(kinds(TECH, "باور بانك فولتا 10000 بيشحن لاب توب؟", "أيوه باور بانك فولتا 10000 بيطلع 65 وات وبيشحن اللاب توب.")).contains("SPEC_UNKNOWN");
+        assertThat(kinds(TECH, "باور بانك فولتا 10000 شحنه سريع؟", "باور بانك فولتا 10000 الشحن السريع فيه 45 وات.")).contains("SPEC_UNKNOWN");   // «الشحن» here is charging, not delivery
+        // what the shop wrote, general know-how, delivery days and a discount are fine
+        assertThat(kinds(TECH, "سماعة رقبة رياضية سونيك بطاريتها كام؟", "سماعة رقبة رياضية سونيك بطاريتها 20 ساعة، ومقاومة للعرق IPX5، وضمانها ٦ شهور.")).doesNotContain("SPEC_UNKNOWN");
+        assertThat(kinds(TECH, "شاحن فولتا 33 وات سريع؟", "شاحن فولتا 33 وات بيشحن لحد 33 وات. الشواحن السريعة عادةً بتبدأ من 18 وات.")).doesNotContain("SPEC_UNKNOWN");
+        assertThat(kinds(TECH, "باور بانك فولتا 10000 هيوصل امتى؟", "باور بانك فولتا 10000 هيوصلك خلال 2 أيام للقاهرة.")).doesNotContain("SPEC_UNKNOWN");
+        assertThat(kinds(TECH, "باور بانك فولتا 20000 PD فيه ضمان؟", "أيوه، باور بانك فولتا 20000 PD ضمانه سنة من الوكيل.")).doesNotContain("SPEC_UNKNOWN");
     }
 
     @Test
