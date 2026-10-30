@@ -100,7 +100,7 @@ final class MoneyGuard {
          * prices are not all in the prompt, and a right price from an earlier search must not be cut as made up.
          */
         void addShopPrices(java.util.Collection<Long> pricesCents, java.util.Collection<Long> optionStepsCents) {
-            for (long c : pricesCents) if (c > 0) { exact.add(c); fromTools.add(c); }
+            for (long c : pricesCents) if (c > 0) exact.add(c);   // exact only: a discount or a multiple of any shop price would let almost any big number through
             for (long c : optionStepsCents) if (c > 0) exact.add(c);
         }
 

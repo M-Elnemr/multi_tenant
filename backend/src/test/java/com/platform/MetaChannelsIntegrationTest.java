@@ -274,13 +274,13 @@ class MetaChannelsIntegrationTest extends IntegrationTestBase {
         String page = pageId();
         connect(t, "FACEBOOK", page);
         FakeMetaGraph.reset();
-        FakeAiProvider.SCRIPT.add(turns -> { try { Thread.sleep(5600); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); } return Turn.model("Here you go!"); });
+        FakeAiProvider.SCRIPT.add(turns -> { try { Thread.sleep(5600); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); } return Turn.model("اتفضل يا فندم!"); });
         String raw = pageMessage(page, "user-slow", "mid-" + uniq(), "عايز مخدة");
         webhook(raw, sign(raw)).andExpect(status().isOk());
         var texts = FakeMetaGraph.SENT.stream().map(m -> m.body().toString()).toList();
         assertThat(texts).hasSize(2);
         assertThat(texts.get(0)).contains("لحظات معايا");
-        assertThat(texts.get(1)).contains("Here you go!");
+        assertThat(texts.get(1)).contains("اتفضل يا فندم!");
         // a quick answer gets no wait message
         FakeMetaGraph.reset();
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("Quick!"));

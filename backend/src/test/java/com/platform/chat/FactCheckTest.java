@@ -100,10 +100,8 @@ class FactCheckTest {
     void debugOnce() {
         if (System.getProperty("factcheck.corpus", "").isEmpty()) return;
         FactCheck.Shop TECH = fixture("tech-zone");
-        for (String[] c : new String[][]{
-                {"تلفزيون ٥٥ بوصة 4K بكام؟", "عندنا تلفزيون فيستا 4K سمارت مقاس 55 بوصة بسعر 20,499 جنيه (بدون تركيب) أو 20,949 جنيه (مع التركيب على الحائط)."},
-                {"تابلت نوفا تاب 10 بشريحة بكام؟", "تابلت نوفا تاب 10 بشريحة متوفر بـ 10,499 جنيه (سعة 64 جيجا) أو 11,499 جنيه (سعة 128 جيجا)."}})
-            for (var p : FactCheck.check(c[0], c[1], TECH, List.of())) System.out.println("DBG " + p);
+        for (String[] c : new String[][]{{"الجاكيت البافر الشتوي الرجالي زيتي XXL موجود؟", "أهلاً حضرتك 🙏 الجاكيت البافر الشتوي الرجالي زيتي موجود لكن XXL مش متاح منه حالياً (الزيتي متاح بس في S و M). المقاس XXL متاح في الأسود والكحلي بسعر 1850."}})
+            { System.out.println("DBG m " + FactCheck.mentions(c[1], FASH.names()) + " c " + FactCheck.mentions(c[0], FASH.names())); for (var p : FactCheck.check(c[0], c[1], FASH, List.of())) System.out.println("DBG " + p); }
     }
 
     @Test
@@ -257,6 +255,41 @@ class FactCheckTest {
         assertThat(kinds(TECH, "عايز موبايل", "عندنا موبايل نوفا A5 بـ 5499 جنيه. لكن عندنا تاني موديلات من هونور أو شاومي لو تحب.")).contains("INVENTED_PRODUCTS");
         assertThat(kinds(TECH, "عندكم سامسونج؟", "مش بنبيع سامسونج، بس عندنا موبايل نوفا A5 بـ 5499 جنيه.")).doesNotContain("INVENTED_PRODUCTS");
         assertThat(kinds(TECH, "جراب آيفون 15 برو ماكس بكام؟", "عندنا جراب آيفون 15 شفاف ماج سيف بـ 379 جنيه.")).doesNotContain("INVENTED_PRODUCTS");
+    }
+
+    @Test
+    void aSoldOutComboStillOfferedIsReplacedByTheRealStock() {
+        String reply = "أيوه يا فندم، حذاء السواريه اللامع متاح باللون الذهبي ومقاس ٣٨ موجود في المخزن ✅ سعره ١١٥٠ جنيه.\nتحب أحضّرهولك؟";
+        String q = "حذاء السواريه اللامع ذهبي مقاس ٣٨ موجود؟";
+        if (FASH.product(slugOf(FASH, "حذاء سواريه لامع")).variants().stream().anyMatch(v -> v.options().containsValue("ذهبي") && v.options().containsValue("38") && v.available() == 0)) {
+            assertThat(kinds(FASH, q, reply)).contains("OPTION_STOCK");
+            assertThat(FactCheck.fix(q, reply, FASH, List.of())).contains("خلص حالياً").doesNotContain("موجود في المخزن");
+        }
+    }
+
+    @Test
+    void anotherProductsPriceAndALeftOutProductAreCaught() {
+        FactCheck.Shop TECH = fixture("tech-zone");
+        assertThat(kinds(TECH, "عايز تلفزيون ٦٥ بوصة", "عندنا:\n1. تلفزيون فيستا HD – ٢٥٩٩٩ جنيه (شاشة عادية)\n2. تلفزيون فيستا 4K سمارت – ٢٧٤٩٩ جنيه")).contains("OPTION_PRICE");
+        assertThat(kinds(TECH, "عايز تلفزيون ٦٥ بوصة", "عندنا:\n1. تلفزيون فيستا 4K سمارت – ٢٧٤٩٩ جنيه\n2. تلفزيون فيستا QLED – ٣٤٩٩٩ جنيه")).doesNotContain("OPTION_PRICE");
+        assertThat(kinds(TECH, "سماعة سونيك بادز برو بتشتغل مع الآيفون؟", "لا يا فندم، عندنا حالياً موديلات تانية بس:\n1. سماعة رقبة رياضية سونيك (599 جنيه)")).contains("BETTER_MATCH");
+        assertThat(kinds(TECH, "سماعة سونيك بادز برو بتشتغل مع الآيفون؟", "أيوه، سماعة سونيك بادز برو بتشتغل مع الآيفون، سعرها 2499 جنيه.")).doesNotContain("BETTER_MATCH");
+    }
+
+    @Test
+    void aDenialNextToOtherSizesIsStillCaught() {
+        String q = "الجاكيت البافر الشتوي الرجالي زيتي XXL موجود؟";
+        String reply = "الجاكيت البافر الشتوي الرجالي زيتي موجود لكن XXL مش متاح منه حالياً (الزيتي متاح بس في S و M). المقاس XXL متاح في الأسود والكحلي بسعر 1850.";
+        boolean inStock = FASH.product(slugOf(FASH, "جاكيت بافر شتوي رجالي")).variants().stream().anyMatch(v -> v.options().containsValue("زيتي") && v.options().containsValue("XXL") && v.available() > 0);
+        if (inStock) assertThat(kinds(FASH, q, reply)).contains("OPTION_STOCK");
+    }
+
+    @Test
+    void sizesNameNumbersAndShortDenialsAreNotMisread() {
+        FactCheck.Shop TECH = fixture("tech-zone");
+        assertThat(kinds(TECH, "عايز زينترا بوك 14 فضي ٨ جيجا ٥١٢", "لاب توب زينترا بوك 14 فضي 8 جيجا و512 جيجا SSD متاح بـ 24999 جنيه. تحب أحجزهولك؟")).doesNotContain("STOCK_QUANTITY");
+        assertThat(kinds(FASH, "انا لابسة ٤٢ عادة اخد ايه في الجينز المام فيت؟", "جينز مام فيت مقاس L متوفر بـ 850 جنيه. تحبي أحجزهولك؟")).doesNotContain("STOCK_QUANTITY");
+        assertThat(kinds(FASH, "عايز تيشيرت بناتي مقاس L", "التيشيرت البناتي مقاساته بالسنة من ٤ لحد ١٢ سنة، ومفيهوش مقاس L.")).doesNotContain("OPTION_STOCK");
     }
 
     @Test

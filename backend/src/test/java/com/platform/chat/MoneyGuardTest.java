@@ -28,6 +28,15 @@ class MoneyGuardTest {
     }
 
     @Test
+    void everyRealShopPriceIsFineButNotAGuessNearOne() {
+        var a = new MoneyGuard.Allowed(15);
+        a.addShopPrices(List.of(2049900L, 2094900L, 2499900L), List.of(45000L));
+        assertThat(bad("التلفزيون بـ 20,499 جنيه، ومع التركيب 20,949 جنيه (التركيب 450 جنيه)", a)).isEmpty();
+        // the slip: «سعر الجهاز + 1000 جنيه تكلفة التركيب» is no price of the shop, even if 24999 less 14% comes near it
+        assertThat(bad("التلفزيون مع التركيب بـ 21,499 جنيه", a)).containsExactly("21,499");
+    }
+
+    @Test
     void anAmountFromATooleResultTheShopDataOrTheChatIsFineButAMadeUpTotalIsNot() {
         var a = knows(3800, 75, 1500);
         a.addText("الشحن 75 جنيه ومجاني فوق 1500 جنيه");

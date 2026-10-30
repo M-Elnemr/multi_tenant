@@ -689,6 +689,7 @@ public class ChatService {
             problems.put("BROKEN_TEXT", "Your reply broke off into a run of repeated letters («لجماااا…»): write the whole reply again, short and complete.");
         if (EXAMPLE_LINES.stream().anyMatch(norm::contains)) problems.put("COPIED_EXAMPLE", "You copied an example sentence from your instructions word for word; it may not fit. Answer THIS customer's message in your own words.");
         if (english(last) && arabicShare(answer) > 0.5) problems.put("LANGUAGE", "The customer writes English: reply in English.");
+        else if (!english(last) && arabicShare(last) > 0.6 && arabicShare(answer) < 0.2) problems.put("LANGUAGE", "The customer writes Arabic: reply in Egyptian Arabic.");
         var asked = QUANTITY.matcher(MoneyGuard.digits(last));
         if (asked.find() && Integer.parseInt(asked.group(1)) >= 5 && MoneyGuard.digits(answer).contains(asked.group(1)) && PROMISE.matcher(answer).find() && !LIMIT_WORDS.matcher(answer).find())
             problems.put("STOCK_QUANTITY", "The customer asked for " + asked.group(1) + " pieces: check the stock count of that exact option (in ALL PRODUCTS or the search result) and never promise more than is in stock; if fewer are available, say how many.");
@@ -735,10 +736,12 @@ public class ChatService {
             problems.put("NO_SUMMARY", "The customer has just given their name, address and phone: call prepare_order now with the items they chose and these details, so they get the order summary (ask only for something really missing, such as a size or color).");
         // the facts of the reply against the shop's own data (prices of options, stock, what we sell, delivery areas, hours, discounts)
         FactCheck.Shop shopData = shopView(ctx.tenantId());
-        List<String> touched = ctx.products().stream().map(p -> String.valueOf(p.get("slug"))).distinct().toList();
+        List<String> touched = touchedOrBefore(ctx, shopData);
         List<FactCheck.Problem> facts = List.of();
         try { facts = FactCheck.check(last, answer, shopData, touched); } catch (RuntimeException e) { log.warn("Fact check skipped", e); }
         for (var f : facts) problems.putIfAbsent(f.kind(), f.note());
+        String switched = switchedProduct(ctx, shopData, last, answer);
+        if (switched != null) problems.put("SWITCHED_PRODUCT", switched);
         if (problems.isEmpty()) return answer;
         for (String kind : problems.keySet()) events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:" + kind, problems.get(kind), null);
         boolean phoneDoubt = PHONE_DOUBT.matcher(answer).find() && customerGaveMobile(turns);
@@ -755,7 +758,7 @@ public class ChatService {
             if (ctx.summary()[0] == null && !rounds.stream().anyMatch(r -> r.tools().contains("prepare_order")) && summaryShaped(retry)) retry = withoutSelfSummary(retry);
             // still «سجلت طلبك» with no order: the words go, the rest of the reply stays
             if (ctx.order()[0] == null && !hasOrderOnFile(ctx)) retry = ORDER_CLAIM.matcher(retry).replaceAll(english(retry) ? "noted" : "تمام،");
-            List<String> touchedNow = ctx.products().stream().map(p -> String.valueOf(p.get("slug"))).distinct().toList();
+            List<String> touchedNow = touchedOrBefore(ctx, shopData);
             String fixedRetry = factsFixed(last, retry, shopData, touchedNow);
             if (!fixedRetry.equals(retry)) events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:FIXED_BY_CODE", "the rewrite still had a fact wrong", null);
             return fixedRetry;
@@ -801,6 +804,36 @@ public class ChatService {
     static final Pattern CHANGE_WORDS = Pattern.compile("(?:(?<!\\p{L})(?:خليها|خليه|خليهم|خليني|غير|غيرها|غيره|بدل|بدلها|شيل|شيلها|شيله|زود|زودها|نقص|قلل|مش\\s+عايز|عايزها|عايزه)(?!\\p{L})|\\b(?:change|instead|remove|make\\s+it)\\b)");
 
     /** The last assistant message before this customer message was the code-written summary (pending order not yet placed). */
+    /** The products this reply's tools returned; with none, the one product the previous reply was about («ولو مع التركيب؟» right after the TV's price). */
+    private List<String> touchedOrBefore(Ctx ctx, FactCheck.Shop shop) {
+        List<String> touched = ctx.products().stream().map(p -> String.valueOf(p.get("slug"))).distinct().toList();
+        if (!touched.isEmpty()) return touched;
+        String before = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'assistant' AND id < :u ORDER BY id DESC LIMIT 1").param("c", ctx.conversationId()).param("u", ctx.userMsgId())
+                .query(String.class).optional().orElse(null);
+        if (before == null) return touched;
+        var was = FactCheck.mentions(before, shop.names()).stream().map(FactCheck.Mention::slug).distinct().toList();
+        return was.size() == 1 ? was : touched;
+    }
+
+    /**
+     * «لا خليه ١٦ جيجا» right after a laptop was offered, answered with a phone: the customer changed an option of the product just talked about and names no other product, so the reply
+     * must stay on it. Null when fine.
+     */
+    private String switchedProduct(Ctx ctx, FactCheck.Shop shop, String customer, String answer) {
+        if (customer == null || !CHANGE_WORDS.matcher(FastAnswers.norm(customer)).find() || !FactCheck.mentions(customer, shop.names()).isEmpty()) return null;
+        String before = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'assistant' AND id < :u ORDER BY id DESC LIMIT 1").param("c", ctx.conversationId()).param("u", ctx.userMsgId())
+                .query(String.class).optional().orElse(null);
+        String said = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id < :u ORDER BY id DESC LIMIT 1").param("c", ctx.conversationId()).param("u", ctx.userMsgId())
+                .query(String.class).optional().orElse("");
+        Set<String> was = new java.util.LinkedHashSet<>();
+        for (String t : new String[]{before, said}) if (t != null) for (var m : FactCheck.mentions(t, shop.names())) was.add(m.slug());
+        if (was.isEmpty()) return null;
+        var now = FactCheck.mentions(answer, shop.names());
+        if (now.isEmpty() || now.stream().anyMatch(m -> was.contains(m.slug()))) return null;
+        String name = shop.names().stream().filter(n -> was.contains(n.slug())).map(FactCheck.Named::name).findFirst().orElse("");
+        return "The customer changed an option of «" + name + "» (the product just talked about); your reply switched to another product. Answer about «" + name + "» with that option: its price and stock (get_product).";
+    }
+
     private boolean summaryWasShown(Ctx ctx) {
         return jdbc.sql("SELECT pending -> 'items' IS NOT NULL FROM chat.conversations WHERE id = :c").param("c", ctx.conversationId()).query(Boolean.class).optional().orElse(false)
                 && isSummary(jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'assistant' AND id < :u ORDER BY id DESC LIMIT 1").param("c", ctx.conversationId()).param("u", ctx.userMsgId())
@@ -1915,6 +1948,9 @@ public class ChatService {
     private Map<String, Object> flagGate(Ctx ctx, Map<String, Object> args) {
         String q = args.get("question") == null ? "" : String.valueOf(args.get("question"));
         boolean knowledge = PRODUCT_KNOWLEDGE.matcher(q).find(), ownerOnly = OWNER_ONLY.matcher(q).find();
+        String said = jdbc.sql("SELECT content FROM chat.messages WHERE id = :u").param("u", ctx.userMsgId()).query(String.class).optional().orElse("");
+        if (CHANGE_WORDS.matcher(FastAnswers.norm(said)).find() && summaryWasShown(ctx))   // «لا خليها عادي مش حار» right after the summary: the order being prepared, not the owner's business
+            return obj("error", "Do not ask the owner: the customer is changing the order you just summarised. Call prepare_order now with the complete changed list and the same details, so they get the updated summary.");
         if (CANCEL_WORDS.matcher(q).find() && jdbc.sql("SELECT last_order IS NOT NULL FROM chat.conversations WHERE id = :c").param("c", ctx.conversationId()).query(Boolean.class).optional().orElse(false))
             return obj("error", "For cancelling the customer's order use cancel_order (ask the reason first), not flag_unanswered.");
         if (ctx.products().isEmpty() && knowledge)
@@ -2007,6 +2043,7 @@ public class ChatService {
             if (alt != null) rows = find(ctx.tenantId(), alt, null, max);
             if (rows.isEmpty() && alt != null) for (String slug : search.categoriesMatching(ctx.tenantId(), List.of(alt.split("\\s+")))) for (var r : find(ctx.tenantId(), null, slug, max)) if (rows.size() < 3) { rows = new ArrayList<>(rows); rows.add(r); }
         }
+        if (rows.isEmpty() && q != null) rows = findByKnownWords(ctx.tenantId(), q, max);
         boolean exact = !rows.isEmpty() || q == null;
         if (rows.isEmpty() && q != null) {
             // the customer's words matched no product name: try each word, then a category whose name contains a word, then the best sellers
@@ -2089,6 +2126,23 @@ public class ChatService {
     static String withoutOptions(String q) {
         String out = java.util.Arrays.stream(FastAnswers.norm(q).split("\\s+")).filter(w -> !w.isBlank() && !OPTION_WORDS.contains(w) && !w.matches("\\d+|[٠-٩]+")).collect(java.util.stream.Collectors.joining(" "));
         return out.isBlank() ? null : out;
+    }
+
+    /**
+     * «موبايلات نوفا ميني 8 للشركة» matches no product as a whole: the words that match something on their own («موبايلات» as «موبايل», not «للشركة») are searched together, so the exact
+     * product comes back instead of whatever the first word alone finds. Empty when that gives nothing better.
+     */
+    private List<Map<String, Object>> findByKnownWords(UUID tenantId, String q, Long max) {
+        List<String> words = java.util.Arrays.stream(FastAnswers.norm(q).split("\\s+")).filter(w -> !w.isBlank()).toList();
+        if (words.size() < 2 || words.size() > 8) return List.of();
+        List<String> known = new ArrayList<>();
+        for (String w : words) {
+            if (!find(tenantId, w, null, max).isEmpty()) { known.add(w); continue; }
+            String single = w.length() > 4 && (w.endsWith("ات") || w.endsWith("ين")) ? w.substring(0, w.length() - 2) : w.length() > 3 && w.endsWith("s") ? w.substring(0, w.length() - 1) : null;   // «موبايلات», "phones"
+            if (single != null && !find(tenantId, single, null, max).isEmpty()) known.add(single);
+        }
+        if (known.size() < 2 || known.size() == words.size()) return List.of();
+        return find(tenantId, String.join(" ", known), null, max);
     }
 
     @SuppressWarnings("unchecked")
