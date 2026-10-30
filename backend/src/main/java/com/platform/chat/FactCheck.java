@@ -1075,7 +1075,7 @@ final class FactCheck {
     private static final Pattern SELLS_NOT = Pattern.compile("(?<!\\p{L})(?:بنبيع|نبيع|بنقدم|نقدم|متخصصين\\s+في)\\s+[^.؟?!\\n]{2,60}?\\s(?:و)?(?:مش|وليس|ليس)(?!\\p{L})");
 
     /** «عندنا شاورما وبروستد فقط»: what we have is only that. */
-    private static final Pattern ONLY_CLAIM = Pattern.compile("(?:عندنا|بنبيع|متخصصين\\s+في)\\s+[^.؟?!\\n]{2,60}?\\s(?:فقط|بس)(?=\\s*(?:[.!؟?،,\\n]|$))");
+    private static final Pattern ONLY_CLAIM = Pattern.compile("(?:عندنا|بنبيع|بنقدم|نقدم|متخصصين\\s+في)\\s+[^.؟?!\\n]{2,60}?\\s(?:فقط|بس)(?=\\s*(?:[.!؟?،,\\n]|$))");
 
     /**
      * The customer named a product of the shop that is in stock («عايز ويب كام زينترا 1080p أسود») and the reply says we do not have it («مفيش ويب كام زينترا عندنا», «مش بنبيع مياه

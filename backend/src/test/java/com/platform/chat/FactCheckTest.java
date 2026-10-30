@@ -226,6 +226,8 @@ class FactCheckTest {
         // «كيلو» is not «نص كيلو»: a kilo of a product sold by the quarter and the half
         assertThat(kinds(REST, "ريش ضاني مشوية كيلو عندكم؟", "النص كيلو يقرب من الكيلو لو مشتري حاجتين 😊 تحب أجهزلك نص كيلو؟")).contains("OPTION_STOCK");
         assertThat(kinds(REST, "كباب مشوي ربع كيلو بكام؟", "كباب مشوي ربع كيلو بـ 260 جنيه.")).isEmpty();
+        // «بنقدم … فقط» denies what the shop has (round 9: fresh mango juice)
+        assertThat(kinds(REST, "عايز عصير مانجو فريش", "عذراً يا فندم، بنقدم شاورما ومشويات وسندوتشات فقط. تحب تشوف القائمة؟")).contains("FALSE_DENIAL");
         // a battery in «مللي» is mAh
         assertThat(kinds(TECH, "موبايل نوفا A7 بطاريته كام؟", "موبايل نوفا A7 بطاريته 5000 مللي.")).doesNotContain("SPEC_UNKNOWN");
     }

@@ -258,7 +258,7 @@ def grade(c):
         missing = [x for x in c["colours"] if light(x)[:3] not in lr]
         return ("in-stock colours missing: " + "، ".join(missing)) if missing else None
     if k.startswith("order_"):
-        told_min = re.search(r"اقل\s+(?:طلب|قيمه|مبلغ|حد)|الحد\s+الادني|حد\s+ادني|علي\s+الاقل|minimum", lr)
+        told_min = re.search(r"اقل\s+(?:طلب|قيمه|مبلغ|حد)|الحد\s+الادني|حد\s+ادني|علي\s+الاقل|قيمه\s+(?:ال\s*)?\d|المطلوبه\s+للطلب|كحد\s+ادني|اقل\s+من\s+\d|minimum", lr)
         total = sum(i["amount"] for i in c["items"])
         if c.get("min_order") and total < c["min_order"]:
             return None if told_min and num_txt(c["min_order"]) in [num_txt(x) for x in nums] else f"below the minimum order {num_txt(c['min_order'])}: not told"
@@ -282,7 +282,7 @@ def grade(c):
         if c.get("pickup") and not re.search(r"استلام|pick\s*up", lr): return "pickup not in the summary"
         return None
     if k == "order":
-        told_min = re.search(r"اقل\s+(?:طلب|قيمه|مبلغ)|الحد\s+الادني|القيمه\s+الكليه|اقل\s+حد|حد\s+ادني|علي\s+الاقل|(?:يصل|يوصل|توصل|نوصل)\s+(?:ل|لـ|الي)|minimum\s+order|minimum\s+is", lr)
+        told_min = re.search(r"اقل\s+(?:طلب|قيمه|مبلغ)|الحد\s+الادني|القيمه\s+الكليه|قيمه\s+(?:ال\s*)?\d|المطلوبه\s+للطلب|كحد\s+ادني|اقل\s+من\s+\d|اقل\s+حد|حد\s+ادني|علي\s+الاقل|(?:يصل|يوصل|توصل|نوصل)\s+(?:ل|لـ|الي)|minimum\s+order|minimum\s+is", lr)
         if c.get("min_order") and c["price"] < c["min_order"]:   # under the shop's minimum: no summary can be made, the customer must hear the minimum
             return None if told_min and num_txt(c["min_order"]) in [num_txt(x) for x in nums] else f"below the minimum order {num_txt(c['min_order'])}: not told"
         if told_min and not c.get("min_order"): return None   # an old run without the minimum: asking to add is right
