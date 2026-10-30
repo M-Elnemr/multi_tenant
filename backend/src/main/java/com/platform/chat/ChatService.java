@@ -423,8 +423,13 @@ public class ChatService {
                 try { if (orderByCode(ctx)) log.info("Order summary made by code (conversation {})", conv); } catch (RuntimeException e) { log.warn("Order by code skipped", e); }
             }
             // the customer changed the order just summarised («ضيف X», «شيل X», «خليهم ٢», «خليها كبير») and no new summary came: code applies the change (the customer confirms it as usual)
-            if (ctx.summary()[0] == null && ctx.order()[0] == null && !madeChanges(ctx, rounds) && ORDER_CHANGE.matcher(FastAnswers.norm(text)).find() && summaryWasShown(ctx)) {
+            boolean placedOrCancelled = rounds.stream().anyMatch(r -> r.tools().stream().anyMatch(t -> t.equals("place_order") || t.equals("cancel_order")));   // a flag to the owner is no reason to skip
+            if (ctx.summary()[0] == null && ctx.order()[0] == null && !placedOrCancelled && ORDER_CHANGE.matcher(FastAnswers.norm(text)).find() && summaryWasShown(ctx)) {
                 try { if (changeByCode(ctx, text)) log.info("Order change made by code (conversation {})", conv); } catch (RuntimeException e) { log.warn("Change by code skipped", e); }
+            }
+            // details given, the minimum told, and now an item added to reach it: code makes the first summary from what they named
+            if (ctx.summary()[0] == null && ctx.order()[0] == null && !placedOrCancelled && !summaryWasShown(ctx)) {
+                try { if (minimumReachedByCode(ctx, text)) log.info("Order summary made by code after the minimum (conversation {})", conv); } catch (RuntimeException e) { log.warn("Minimum order by code skipped", e); }
             }
         } catch (AiProvider.AiUnavailableException e) {
             log.warn("AI unavailable: {} ({})", e.getMessage(), e.getCause() == null ? "no cause" : e.getCause().toString());
@@ -977,6 +982,7 @@ public class ChatService {
     private boolean orderByCode(Ctx ctx) {
         FactCheck.Shop shop = shopView(ctx.tenantId());
         List<String> chosen = chosenInChat(ctx, shop);
+        if (chosen.size() >= 2 && chosen.size() <= 5) return severalByCode(ctx, shop, chosen);
         Map<String, Object> variant = pickedVariant(ctx, chosen);
         if (variant == null) return false;
         List<String> msgs = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u ORDER BY id").param("c", ctx.conversationId()).param("u", ctx.userMsgId()).query(String.class).list();
@@ -1015,59 +1021,141 @@ public class ChatService {
         String combo = FastAnswers.norm(MoneyGuard.digits(String.valueOf(variant.get("comboKey"))));
         while (q.find()) if (!combo.contains(q.group())) { quantity = Integer.parseInt(q.group(1)); break; }   // «٦ قطع» of wings is the option, not the quantity
         // the details: the last message that holds the mobile and the address (or «هستلم من الفرع»)
-        String last = msgs.get(msgs.size() - 1);
-        var n = NAME_SAID.matcher(last);
-        if (!n.find()) return false;
-        String name = n.group(1).trim();
-        if (PICKUP_WORDS.matcher(FastAnswers.norm(last)).find() && !ADDRESS_WORDS.matcher(last).find()) {
-            for (String w : name.split("\\s+")) if (PICKUP_WORDS.matcher(FastAnswers.norm(w)).find()) { name = name.substring(0, name.indexOf(w)).trim(); break; }
-            String mobile = mobileTheCustomerWrote(ctx);
-            if (name.length() < 2 || mobile == null) return false;
-            Map<String, Object> args = new LinkedHashMap<>();
-            args.put("items", List.of(obj("variantId", String.valueOf(variant.get("id")), "quantity", quantity)));
-            args.put("customerName", name);
-            args.put("phone", mobile);
-            args.put("pickup", true);
-            args.put("paymentMethod", CARD_WORDS.matcher(said).find() && policy.cardEnabled() ? "CARD" : "CASH_ON_DELIVERY");
-            Map<String, Object> r;
-            try { r = prepareOrder(ctx, args); } catch (RuntimeException e) { log.warn("Pickup order by code failed", e); return false; }
-            if (r.get("error") != null || ctx.summary()[0] == null) { log.info("Pickup order by code refused (conversation {}): {}", ctx.conversationId(), r.get("error")); return false; }
-            events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), null, "ORDER_BY_CODE", chosen.get(0) + " x" + quantity + " pickup", null);
-            return true;
-        }
-        String gov = null, govName = null;
-        String lastNorm = FastAnswers.norm(last);
-        for (var e : GOVERNORATES.entrySet()) {
-            String ar = FastAnswers.norm(e.getValue().split(" ")[0]), en = e.getValue().substring(e.getValue().indexOf(' ') + 1).toLowerCase(java.util.Locale.ROOT);
-            String bare = ar.startsWith("ال") ? ar.substring(2) : ar;
-            if (Pattern.compile("(?<!\\p{L})(?:ال)?" + Pattern.quote(bare) + "(?!\\p{L})").matcher(lastNorm).find() || lastNorm.contains(en)) { gov = e.getKey(); govName = e.getValue().split(" ")[0]; break; }
-        }
-        if (gov == null) return false;
-        // the name ends where the address starts («انا كريم القاهرة مدينة نصر…»)
-        for (String w : name.split("\\s+")) if (FastAnswers.norm(w).contains(FastAnswers.norm(govName).replaceFirst("^ال", "")) || ADDRESS_WORDS.matcher(w).find()) { name = name.substring(0, name.indexOf(w)).trim(); break; }
-        if (name.length() < 2) return false;
-        String address = null;
-        for (String part : last.split("[،,\\n]")) if (ADDRESS_WORDS.matcher(part).find()) { address = part.trim(); break; }
-        if (address == null) return false;
-        String mobile = mobileTheCustomerWrote(ctx);
-        if (mobile == null) return false;
-        Map<String, Object> args = new LinkedHashMap<>();
+        Map<String, Object> args = detailsFrom(ctx, msgs.get(msgs.size() - 1), said);
+        if (args == null) return false;
         args.put("items", List.of(obj("variantId", String.valueOf(variant.get("id")), "quantity", quantity)));
-        args.put("customerName", name);
-        args.put("phone", mobile);
-        args.put("governorateCode", gov);
-        String street = address.replaceFirst("^\\s*(?:محافظه|محافظة)?\\s*" + Pattern.quote(govName) + "[\\s،,-]*", "").trim();
-        args.put("addressLine1", street.length() >= 5 ? street : address);
-        args.put("area", govName);
-        args.put("paymentMethod", CARD_WORDS.matcher(said).find() && policy.cardEnabled() ? "CARD" : "CASH_ON_DELIVERY");
         Map<String, Object> r;
         try { r = prepareOrder(ctx, args); } catch (RuntimeException e) { log.warn("Order by code failed", e); return false; }
         if (r.get("error") != null || ctx.summary()[0] == null) {
             log.info("Order by code refused (conversation {}): {}", ctx.conversationId(), r.get("error"));
             return false;
         }
-        events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), null, "ORDER_BY_CODE", chosen.get(0) + " x" + quantity, null);
+        events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), null, "ORDER_BY_CODE", chosen.get(0) + " x" + quantity + (Boolean.TRUE.equals(args.get("pickup")) ? " pickup" : ""), null);
         return true;
+    }
+
+    /**
+     * The order details in one customer message: their name, the mobile they wrote, and either the governorate and address or «هستلم من الفرع» (pickup); the payment from their words.
+     * Null when anything is missing or unclear.
+     */
+    private Map<String, Object> detailsFrom(Ctx ctx, String msg, String said) {
+        var n = NAME_SAID.matcher(msg);
+        if (!n.find()) return null;
+        String name = n.group(1).trim();
+        String mobile = mobileTheCustomerWrote(ctx);
+        if (mobile == null) return null;
+        Map<String, Object> args = new LinkedHashMap<>();
+        args.put("paymentMethod", CARD_WORDS.matcher(said).find() && policy.cardEnabled() ? "CARD" : "CASH_ON_DELIVERY");
+        if (PICKUP_WORDS.matcher(FastAnswers.norm(msg)).find() && !ADDRESS_WORDS.matcher(msg).find()) {
+            for (String w : name.split("\\s+")) if (PICKUP_WORDS.matcher(FastAnswers.norm(w)).find()) { name = name.substring(0, name.indexOf(w)).trim(); break; }
+            if (name.length() < 2) return null;
+            args.put("customerName", name);
+            args.put("phone", mobile);
+            args.put("pickup", true);
+            return args;
+        }
+        String gov = null, govName = null;
+        String norm = FastAnswers.norm(msg);
+        for (var e : GOVERNORATES.entrySet()) {
+            String ar = FastAnswers.norm(e.getValue().split(" ")[0]), en = e.getValue().substring(e.getValue().indexOf(' ') + 1).toLowerCase(java.util.Locale.ROOT);
+            String bare = ar.startsWith("ال") ? ar.substring(2) : ar;
+            if (Pattern.compile("(?<!\\p{L})(?:ال)?" + Pattern.quote(bare) + "(?!\\p{L})").matcher(norm).find() || norm.contains(en)) { gov = e.getKey(); govName = e.getValue().split(" ")[0]; break; }
+        }
+        if (gov == null) return null;
+        // the name ends where the address starts («انا كريم القاهرة مدينة نصر…»)
+        for (String w : name.split("\\s+")) if (FastAnswers.norm(w).contains(FastAnswers.norm(govName).replaceFirst("^ال", "")) || ADDRESS_WORDS.matcher(w).find()) { name = name.substring(0, name.indexOf(w)).trim(); break; }
+        if (name.length() < 2) return null;
+        String address = null;
+        for (String part : msg.split("[،,\\n]")) if (ADDRESS_WORDS.matcher(part).find()) { address = part.trim(); break; }
+        if (address == null) return null;
+        args.put("customerName", name);
+        args.put("phone", mobile);
+        args.put("governorateCode", gov);
+        String street = address.replaceFirst("^\\s*(?:محافظه|محافظة)?\\s*" + Pattern.quote(govName) + "[\\s،,-]*", "").trim();
+        args.put("addressLine1", street.length() >= 5 ? street : address);
+        args.put("area", govName);
+        return args;
+    }
+
+    /** Several products named, each with every option it needs said right after its name, and the details in the last message: code makes the summary (quantity 1 each). */
+    private boolean severalByCode(Ctx ctx, FactCheck.Shop shop, List<String> chosen) {
+        List<String> msgs = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u ORDER BY id").param("c", ctx.conversationId()).param("u", ctx.userMsgId()).query(String.class).list();
+        String said = FastAnswers.norm(MoneyGuard.digits(String.join(" \n ", msgs)));
+        Map<String, Object> args = detailsFrom(ctx, msgs.get(msgs.size() - 1), said);
+        if (args == null) return false;
+        Map<String, String> own = wordsPerProduct(msgs, shop);
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (String sl : chosen) {
+            Map<String, Object> v = variantSaid(ctx.tenantId(), sl, own.getOrDefault(sl, said), null);
+            if (v == null) return false;
+            items.add(obj("variantId", String.valueOf(v.get("id")), "quantity", 1));
+        }
+        args.put("items", items);
+        Map<String, Object> r;
+        try { r = prepareOrder(ctx, args); } catch (RuntimeException e) { log.warn("Order by code failed", e); return false; }
+        if (r.get("error") != null || ctx.summary()[0] == null) { log.info("Order by code refused (conversation {}): {}", ctx.conversationId(), r.get("error")); return false; }
+        events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), null, "ORDER_BY_CODE", String.join("+", chosen), null);
+        return true;
+    }
+
+    /**
+     * The customer gave their details, was told the minimum order, and now adds a product to reach it («وضيف معاه ناجتس ٢٠ قطعة»), but no summary came: code makes it from every product
+     * they named in this chat (each with every option it needs said by them, quantity 1) and the details they gave. True when the summary was made.
+     */
+    private boolean minimumReachedByCode(Ctx ctx, String last) {
+        if (!ADD_WORDS.matcher(FactCheck.light(last)).find()) return false;
+        String told = lastAssistant(ctx.conversationId());
+        List<String> msgs = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u ORDER BY id").param("c", ctx.conversationId()).param("u", ctx.userMsgId()).query(String.class).list();
+        // the reply before this message: the one that answered the details is the minimum note («أقل قيمة للطلب …»)
+        String before = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'assistant' AND id < :u ORDER BY id DESC LIMIT 1").param("c", ctx.conversationId()).param("u", ctx.userMsgId()).query(String.class).optional().orElse(told);
+        if (!FastAnswers.norm(MoneyGuard.digits(before)).matches("(?s).*(?:اقل|الحد الادني|حد ادني|minimum).*")) return false;
+        String detailsMsg = null;
+        for (int i = msgs.size() - 2; i >= 0 && detailsMsg == null; i--) {
+            String d = MoneyGuard.digits(msgs.get(i)).replaceAll("[\\s-]", "");
+            if (d.matches("(?s).*(?<!\\d)(?:\\+?20)?01[0125]\\d{8}(?!\\d).*")) detailsMsg = msgs.get(i);
+        }
+        if (detailsMsg == null) return false;
+        String said = FastAnswers.norm(MoneyGuard.digits(String.join(" \n ", msgs)));
+        Map<String, Object> args = detailsFrom(ctx, detailsMsg, said);
+        if (args == null) return false;
+        FactCheck.Shop shop = shopView(ctx.tenantId());
+        List<String> chosen = chosenInChat(ctx, shop);
+        if (chosen.size() < 2 || chosen.size() > 5) return false;
+        List<Map<String, Object>> items = new ArrayList<>();
+        Map<String, String> own = wordsPerProduct(msgs, shop);
+        for (String sl : chosen) {
+            Map<String, Object> v = variantSaid(ctx.tenantId(), sl, own.getOrDefault(sl, said), null);
+            if (v == null) return false;   // an option still to choose: the model asks
+            items.add(obj("variantId", String.valueOf(v.get("id")), "quantity", 1));
+        }
+        args.put("items", items);
+        Map<String, Object> r;
+        try { r = prepareOrder(ctx, args); } catch (RuntimeException e) { log.warn("Minimum order by code failed", e); return false; }
+        if (r.get("error") != null || ctx.summary()[0] == null) { log.info("Minimum order by code refused (conversation {}): {}", ctx.conversationId(), r.get("error")); return false; }
+        events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), null, "ORDER_BY_CODE", String.join("+", chosen), null);
+        return true;
+    }
+
+    /**
+     * In a message that names several products, each one's options are the words right after its own name («فستان بني XL وبومبر جاكيت كحلي XXL»: the jacket is XXL, not XL); a later
+     * message about that one product, or about none («خليها XXL»), counts for it too. Only products named together with another; normalised, Western digits.
+     */
+    private static Map<String, String> wordsPerProduct(List<String> customerMsgs, FactCheck.Shop view) {
+        Map<String, StringBuilder> own = new LinkedHashMap<>();
+        for (String m : customerMsgs) {
+            var ms = FactCheck.mentions(m, view.names());
+            if (ms.stream().map(FactCheck.Mention::slug).distinct().count() < 2) continue;
+            for (int k = 0; k < ms.size(); k++)
+                own.computeIfAbsent(ms.get(k).slug(), x -> new StringBuilder()).append(' ').append(m, ms.get(k).end(), k + 1 < ms.size() ? ms.get(k + 1).start() : m.length());
+        }
+        for (String m : customerMsgs) {
+            var slugs = FactCheck.mentions(m, view.names()).stream().map(FactCheck.Mention::slug).collect(java.util.stream.Collectors.toSet());
+            if (slugs.size() > 1) continue;
+            for (var e : own.entrySet()) if (slugs.isEmpty() || slugs.contains(e.getKey())) e.getValue().append(' ').append(m);
+        }
+        Map<String, String> out = new LinkedHashMap<>();
+        own.forEach((k, v) -> out.put(k, FastAnswers.norm(MoneyGuard.digits(v.toString()))));
+        return out;
     }
 
     /** A message that may change the order just summarised: adding, removing, swapping an option or a new quantity. */
@@ -1121,7 +1209,7 @@ public class ChatService {
             for (String sl : added) {
                 Map<String, Object> v = variantSaid(ctx.tenantId(), sl, norm, null);
                 if (v == null) return false;   // an option still to choose: the model asks
-                items.add(obj("variantId", String.valueOf(v.get("id")), "quantity", quantityIn(norm, String.valueOf(v.get("comboKey"))).orElse(1), "note", null));
+                items.add(obj("variantId", String.valueOf(v.get("id")), "quantity", quantityIn(withoutNames(last, ms), String.valueOf(v.get("comboKey"))).orElse(1), "note", null));
             }
             changed = true;
         }
@@ -1143,8 +1231,8 @@ public class ChatService {
                 one.put("variantId", String.valueOf(swapped.get("id")));
                 drops = changed = true;
             }
-            // 4. a new quantity («خليهم ٢», «عايز اتنين منهم», «خليها قطعتين»)
-            var q = quantityIn(norm, combo);
+            // 4. a new quantity («خليهم ٢», «عايز اتنين منهم», «خليها قطعتين»), never a number inside a product's name («آيفون 15», «X12»)
+            var q = quantityIn(withoutNames(last, ms), combo);
             if (q.isPresent() && q.get() != ((Number) one.get("quantity")).intValue()) {
                 one.put("quantity", q.get());
                 qtyConfirmed = changed = true;
@@ -1189,7 +1277,8 @@ public class ChatService {
         boolean anyNew = false;
         for (var e : values.entrySet()) {
             if (e.getValue().size() < 2) continue;
-            List<String> heard = e.getValue().stream().filter(x -> saidValue(x, said)).toList();
+            List<String> heard0 = e.getValue().stream().filter(x -> saidValue(x, said)).toList();
+            List<String> heard = heard0.stream().filter(x -> heard0.stream().noneMatch(y -> !y.equals(x) && (" " + FastAnswers.norm(y) + " ").contains(" " + FastAnswers.norm(x) + " "))).toList();   // «كيلو» inside «ربع كيلو»
             String keep = base == null ? null : base.get(e.getKey());
             List<String> fresh = heard.stream().filter(x -> !x.equals(keep)).toList();
             if (fresh.size() > 1) return null;   // two new values of one option: unclear
@@ -1206,6 +1295,13 @@ public class ChatService {
         return null;
     }
 
+    /** The customer's words, normalised, with the product names they wrote taken out (their numbers are no quantity). */
+    private static String withoutNames(String text, List<FactCheck.Mention> ms) {
+        StringBuilder b = new StringBuilder(text);
+        for (var m : ms) for (int i = m.start(); i < m.end() && i < b.length(); i++) b.setCharAt(i, ' ');
+        return FastAnswers.norm(MoneyGuard.digits(b.toString()));
+    }
+
     private static boolean saidValue(String value, String said) {
         String val = FastAnswers.norm(MoneyGuard.digits(value));
         return Pattern.compile("(?<![\\p{L}\\d])" + Pattern.quote(val) + "(?![\\p{L}\\d])").matcher(said).find() || val.length() > 3 && valueSaid(val, said, false);
@@ -1214,7 +1310,7 @@ public class ChatService {
     /** A quantity in the customer's words: a number that is no option value («٦ قطع» is a pack), a number word, or the dual («قطعتين»). */
     static java.util.Optional<Integer> quantityIn(String said, String combo) {
         String c = FastAnswers.norm(MoneyGuard.digits(combo == null ? "" : combo));
-        java.util.regex.Matcher m = Pattern.compile("(?<![\\d.])(\\d{1,2})(?![\\d.])").matcher(said);
+        java.util.regex.Matcher m = Pattern.compile("(?<![\\p{L}\\d.])(\\d{1,2})(?![\\d.]|\\p{L})").matcher(said);
         while (m.find()) {
             String after = said.substring(m.end()).trim();
             String unit = after.isEmpty() ? "" : after.split("\\s+")[0];
@@ -2733,17 +2829,19 @@ public class ChatService {
         // the product the customer named, not one whose name is inside it («زينترا بوك 14» is not «زينترا بوك 14 أوبن بوكس»), and the options they said, not others
         FactCheck.Shop view = shopView(tenantId);
         List<String> named = chosenInChat(ctx, view);
+        Map<String, String> ownWords = wordsPerProduct(customerMsgs, view);
         for (CheckoutService.Item it : items) {
             var row = jdbc.sql("SELECT p.slug, p.name FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE v.id = :v").param("v", it.variantId()).query().listOfRows().stream().findFirst().orElse(null);
             if (row == null) return obj("error", "Invalid variantId" + realVariantIds(ctx));
             String slug = String.valueOf(row.get("slug")), name = FastAnswers.norm(String.valueOf(row.get("name")));
+            String itemWords = ownWords.getOrDefault(slug, saidWords);
             if (!named.contains(slug))
                 for (String n : named) {
                     var asked = view.names().stream().filter(x -> x.slug().equals(n)).findFirst().orElse(null);
                     if (asked != null && FastAnswers.norm(asked.name()).startsWith(name + " "))
                         return obj("error", "The customer asked for «" + asked.name() + "» (slug " + n + "), not «" + row.get("name") + "»: use that product's variant (get_product " + n + ").");
                 }
-            List<String> changed = contradictedOptions(it.variantId(), saidWords);
+            List<String> changed = contradictedOptions(it.variantId(), itemWords);
             if (!changed.isEmpty())
                 return obj("error", "Wrong option for " + variantNames(List.of(it.variantId())) + ": " + String.join("; ", changed) + ". Use the variant with what the customer said; if that one cannot be ordered (sold out, minimum order), tell them and ask, never pick another option for them.");
             // a quantity is the customer's: 2 nuggets to reach the minimum order is the model's choice, not theirs
@@ -2785,6 +2883,8 @@ public class ChatService {
         Map<String, Object> onFile = changeableOrder(ctx);
         List<UUID> earlier;
         String earlierWhat;
+        if (change != null && onFile == null && jdbc.sql("SELECT last_order IS NULL FROM chat.conversations WHERE id = :c").param("c", ctx.conversationId()).query(Boolean.class).optional().orElse(true))
+            change = null;   // no order placed yet in this chat: «changeOrder» is the summary being changed, an ordinary new summary
         if (change != null) {
             if (onFile == null || !change.equalsIgnoreCase(String.valueOf(onFile.get("number"))))
                 return obj("error", "Order " + change + " cannot be changed here: it is not this customer's latest order from this chat, or the shop has already started preparing it. Tell the customer kindly that you will ask the shop team, and call flag_unanswered.");
