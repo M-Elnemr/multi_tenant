@@ -41,6 +41,18 @@ class ChannelAiTest {
     }
 
     @Test
+    void theOtherCompanysModelGivesTheSecondOpinionWhateverAnswersFirst() {
+        Scripted def = new Scripted("glm", true), claude = new Scripted("anthropic", true), glm = new Scripted("glm", true), qwen = new Scripted("qwen", true);
+        ChannelAi ai = new ChannelAi(def, claude, glm, qwen, "qwen", "default");
+        // routed to Qwen: GLM gives the second opinion; picked GLM: Qwen does
+        assertThat(ai.forChannel("WHATSAPP").secondOpinion().code()).isEqualTo("glm");
+        assertThat(ai.forChannel("WEB", "glm").secondOpinion().code()).isEqualTo("qwen");
+        // the second opinion has no second opinion, and without the other model there is none
+        assertThat(ai.forChannel("WHATSAPP").secondOpinion().secondOpinion()).isNull();
+        assertThat(new ChannelAi(def, claude, glm, new Scripted("qwen", false), "default", "default").forChannel("WEB", "glm").secondOpinion()).isNull();
+    }
+
+    @Test
     void qwenIsPickedByItsCommandOrTheRouteAndShowsItsErrorsWhenPicked() {
         Scripted def = new Scripted("glm", true), claude = new Scripted("anthropic", true), glm = new Scripted("glm", true), qwen = new Scripted("qwen", true);
         for (String c : List.of("qwen", "Qwen", "use qwen", "qwen flash", "Qwen3.7-Flash", "qwen 3.7 flash", "alibaba", "Alibaba", "use alibaba", "switch to alibaba", "alibaba qwen")) assertThat(ChannelAi.command(c)).as(c).isEqualTo("qwen");

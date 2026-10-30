@@ -78,10 +78,11 @@ public class ChannelAi {
     public Routed forChannel(String channel, String chosen) {
         String route = chosen != null ? chosen : channel != null && SOCIAL.contains(channel) ? social : web;
         // a chat that typed "glm" is testing that model: whatever is wrong with it (no key, not active, rejected) is shown as its error instead of quietly answering with another one
-        if ("glm".equals(chosen) && glm != null) return new Routed(glm, null, true);
-        if ("qwen".equals(chosen) && qwen != null) return new Routed(qwen, null, true);
+        if ("glm".equals(chosen) && glm != null) return new Routed(glm, null, true, backupFor(glm));
+        if ("qwen".equals(chosen) && qwen != null) return new Routed(qwen, null, true, backupFor(qwen));
         AiProvider primary = "qwen".equals(route) && qwen != null && qwen.available() ? qwen : "anthropic".equals(route) && claude.available() ? claude : "glm".equals(route) && glm != null && glm.available() ? glm : defaultAi;
-        return new Routed(primary, backupFor(primary), false);
+        AiProvider backup = backupFor(primary);
+        return new Routed(primary, backup, false, backup);
     }
 
     /**
@@ -109,11 +110,20 @@ public class ChannelAi {
     /** One reply's model. It stays on whichever model it fell back to for the rest of the reply, because a model's own tool-exchange blocks cannot be replayed to another. */
     public static final class Routed implements AiProvider {
         private final AiProvider fallback;
+        private final AiProvider second;   // the other company's model, asked again when this one's reply still has a problem the code cannot put right
         private final boolean picked;
         private AiProvider active;
         private boolean fellBack;
 
-        Routed(AiProvider primary, AiProvider fallback, boolean picked) { this.active = primary; this.fallback = fallback; this.picked = picked; }
+        Routed(AiProvider primary, AiProvider fallback, boolean picked) { this(primary, fallback, picked, null); }
+
+        Routed(AiProvider primary, AiProvider fallback, boolean picked, AiProvider second) { this.active = primary; this.fallback = fallback; this.picked = picked; this.second = second; }
+
+        /** The same reply asked of the other model (a second opinion), or null when there is none or it is the one answering. */
+        public Routed secondOpinion() {
+            if (second == null || second == active || !second.available()) return null;
+            return new Routed(second, null, false, null);
+        }
 
         public boolean fellBack() { return fellBack; }
 

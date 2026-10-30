@@ -670,7 +670,7 @@ final class FactCheck {
     /** Words that offer the item as ready to sell («تحب أحجزهولك؟», «موجود», "available"). */
     private static final Pattern OFFER = Pattern.compile("(?:احجز|أحجز|نحجز|اجهز|أجهز|نجهز|ابعتهولك|متاح|متاحه|متوفر|متوفره|موجود|موجوده|available|in\\s+stock|shall\\s+i\\s+(?:book|reserve|order))", Pattern.CASE_INSENSITIVE);
     /** A stock count («١٦ قطعة في المخزن», «فاضل ٣ بس», "6 left"); a number that is part of a name or option («وجبة بروستد ٤ قطع») is not one. */
-    private static final Pattern COUNT = Pattern.compile("(?:(\\d{1,4})\\s*(?:قطعه|قطع|حته|حتت)\\s*(?:في\\s+المخزن|بالمخزن|متاحه|متاحين|متوفره|متوفرين|موجوده|موجودين|متبقيه|باقيه|فاضله)|(?:فاضل|باقي|متبقي|فيه|في|متوفر|متاح|موجود|عندنا|متوفر\\s+عندنا|عندنا\\s+متوفر)\\s+(?:منه\\s+|منها\\s+)?(\\d{1,4})\\s*(?:قطعه|قطع|حته|حتت|بس|اجهزه|جهاز)|(\\d{1,4})\\s*(?:pieces?\\s+)?(?:in\\s+stock|left|available))", Pattern.CASE_INSENSITIVE);
+    private static final Pattern COUNT = Pattern.compile("(?:(\\d{1,4})\\s*(?:قطعه|قطع|حته|حتت)\\s*(?:في\\s+المخزن|بالمخزن|متاحه|متاحين|متوفره|متوفرين|موجوده|موجودين|متبقيه|باقيه|فاضله)|(?:فاضل|باقي|متبقي|فيه|في|متوفر|متاح|موجود|عندنا|متوفر\\s+عندنا|عندنا\\s+متوفر)\\s+(?:منه\\s+|منها\\s+)?(?:بـ\\s*|ب\\s*)?(\\d{1,4})\\s*(?:قطعه|قطع|حته|حتت|بس|اجهزه|جهاز)|(\\d{1,4})\\s*(?:pieces?\\s+)?(?:in\\s+stock|left|available))", Pattern.CASE_INSENSITIVE);
     private static final Set<String> SIZE_CODES = Set.of("xs", "s", "m", "l", "xl", "xxl", "3xl", "xxxl");
 
     private static void optionStock(String customer, String answer, List<Mention> ms, String only, String askedForeign, java.util.function.Function<String, Product> load, List<Problem> out) {
@@ -847,13 +847,14 @@ final class FactCheck {
     private static Map<String, String> valuesIn(String lightSentence, Product p) {
         Map<String, String> out = new LinkedHashMap<>();
         Map<String, int[]> at = new java.util.HashMap<>();   // where each value was found, in tokens
-        List<Tok> toks = new ArrayList<>(tokens(lightSentence, 0, lightSentence.length()));
+        List<Tok> toks = tokens(lightSentence, 0, lightSentence.length());
         List<String> name = new ArrayList<>();
         for (Tok t : tokens(light(p.name()), 0, p.name().length())) name.add(t.word());
-        for (int i = 0; name.size() > 1 && i + name.size() <= toks.size(); i++) {   // the words of the product's own name are not options it is asked in
+        List<int[]> nameAt = new ArrayList<>();   // where the product's own name stands: a value wholly inside it is not an option asked («جراب آيفون 14 سيليكون»)
+        for (int i = 0; name.size() > 1 && i + name.size() <= toks.size(); i++) {
             boolean all = true;
             for (int k = 0; k < name.size() && all; k++) all = same(toks.get(i + k).word(), name.get(k)) || toks.get(i + k).word().equals(name.get(k));
-            if (all) for (int k = 0; k < name.size(); k++) { Tok t = toks.get(i + k); toks.set(i + k, new Tok("\u0000", t.start(), t.end(), t.raw())); }
+            if (all) nameAt.add(new int[]{i, i + name.size()});
         }
         for (Variant v : p.variants())
             for (var e : v.options().entrySet()) {
@@ -864,7 +865,9 @@ final class FactCheck {
                 for (int i = 0; i + w.size() <= toks.size(); i++) {
                     boolean all = true;
                     for (int k = 0; k < w.size() && all; k++) all = same(toks.get(i + k).word(), w.get(k));
-                    if (all) { out.put(e.getValue(), e.getKey()); at.put(e.getValue(), new int[]{i, i + w.size()}); break; }
+                    final int from = i, to = i + w.size();
+                    // «… لآيفون 15 برو ماكس» runs past the name «اسكرينة جلاس آيفون 15»: it is the option
+                    if (all && nameAt.stream().noneMatch(n -> n[0] <= from && to <= n[1])) { out.put(e.getValue(), e.getKey()); at.put(e.getValue(), new int[]{from, to}); break; }
                 }
             }
         // «آيفون 15 برو ماكس» is that value, not also «آيفون 15» and «آيفون 15 برو» inside it
@@ -1413,6 +1416,13 @@ final class FactCheck {
                 out.add(new Problem("OPTION_STOCK", "«" + p.name() + "» does NOT come in «" + foreign + "»; never agree to it. Its options: " + optionsLine(p, foreignKey(p, foreign, shop, load)) + ".", truth + "\n" + answer));
                 return;
             }
+        }
+        // the customer wants an option combination that is sold out and the reply never says so: code says it
+        if (!picked.isEmpty() && !fit.isEmpty() && fit.stream().allMatch(v -> v.available() <= 0) && !NEG_STRICT.matcher(la).find() && !STOCK_NEG.matcher(la).find()) {
+            String what = "«" + p.name() + "» " + String.join(" ", picked.keySet());
+            String line = ar ? what + " خلص حالياً 🙏 المتاح منه: " + stockLine(p, Map.of()) + "." : p.name() + " in " + String.join(" ", picked.keySet()) + " is sold out right now 🙏 In stock: " + stockLine(p, Map.of()) + ".";
+            out.add(new Problem("OPTION_STOCK", what + " is SOLD OUT (0 in stock): say so first, then offer what is in stock: " + stockLine(p, Map.of()) + ".", line + "\n" + answer));
+            return;
         }
         if (ASK_PRICE.matcher(question).find() && !fit.isEmpty()) {
             Set<String> ok = new java.util.HashSet<>();

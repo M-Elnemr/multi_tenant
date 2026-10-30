@@ -16,6 +16,8 @@ ONLY = set(arg("--only", "").split(",")) - {""}
 BASE = f"https://{SLUG}.elmanassa.shop/api/v1/shop"
 rnd = random.Random(SEED)
 
+REGRADE = arg("--regrade", None)   # re-grade a saved OUT_PREFIX.json with this grader, without playing anything
+
 def get(path):
     for i in range(4):
         try:
@@ -26,8 +28,8 @@ def get(path):
     raise SystemExit("failed " + path)
 
 # ---- the shop's data ---------------------------------------------------------------------------------------------------
-items, page = [], 1
-while True:
+items, page = ([], 1) if not REGRADE else ([], 0)
+while not REGRADE:
     d = get(f"/products?page={page}&pageSize=100")
     items += d["data"]
     if len(d["data"]) < 100: break
@@ -43,7 +45,7 @@ for it in items:
             if "=" in kv: k, val = kv.split("=", 1); opts[k] = val
         vs.append({"options": opts, "price": v["priceMinor"] / 100, "before": (v.get("compareAtPriceMinor") or 0) / 100, "available": v.get("available") or 0})
     products.append({"name": p["name"], "slug": p["slug"], "variants": vs})
-prof = get("/profile")
+prof = get("/profile") if not REGRADE else {"shippingZones": []}
 served = sorted({c for z in prof["shippingZones"] if z.get("isActive") for c in z["governorateCodes"]})
 print(SLUG, len(products), "products", file=sys.stderr)
 
@@ -106,7 +108,10 @@ for p in rnd.sample(optioned, min(len(optioned), N // 6)):
     for v in p["variants"]:
         for k, val in v["options"].items(): own.setdefault(light(k), set()).add(val)
     k = rnd.choice(list(own))
-    foreign = sorted(all_values.get(k, set()) - own[k])
+    unit = re.compile(r"\d")
+    own_has_numbers = any(unit.search(light(v)) for v in own[k])
+    # a fair question: a value of the same kind (a size for sizes, a number only where its own values are numbers), never «فرد» (how many it feeds)
+    foreign = sorted(v for v in all_values.get(k, set()) - own[k] if light(v) not in ("فرد", "فردي", "عائلي") and bool(unit.search(light(v))) == own_has_numbers)
     if not foreign: continue
     val = rnd.choice(foreign)
     q = rnd.choice(["{n} {v} عندكم؟", "عايز {n} {v}", "{n} بييجي {v}؟"]).format(n=p["name"], v=val)
@@ -206,18 +211,22 @@ def grade(c):
         return None
     return None
 
-with concurrent.futures.ThreadPoolExecutor(4) as ex:
-    done = list(ex.map(play, cases))
+if REGRADE:
+    done = json.load(open(REGRADE))
+else:
+    with concurrent.futures.ThreadPoolExecutor(4) as ex:
+        done = list(ex.map(play, cases))
 by = {}
 for c in done:
     c["fail"] = grade(c)
     by.setdefault(c["kind"], [0, 0])[0 if c["fail"] is None else 1] += 1
-with open(OUT + ".txt", "w") as f:
+if not REGRADE:
+  with open(OUT + ".txt", "w") as f:
     for i, c in enumerate(done):
         f.write(f"### {c['kind']}_{i}\n")
         for m, r, s in zip(c["msgs"], c["replies"], c["secs"]): f.write(f"👤 {m}\n🤖 ({s}s) {r}\n")
         f.write("\n")
-json.dump(done, open(OUT + ".json", "w"), ensure_ascii=False, indent=1)
+  json.dump(done, open(OUT + ".json", "w"), ensure_ascii=False, indent=1)
 secs = sorted(s for c in done for s in c["secs"])
 total_fail = sum(v[1] for v in by.values())
 print(f"{SLUG} {MODEL}: {len(done)} cases, {total_fail} failed; avg {sum(secs)/max(1,len(secs)):.1f}s p90 {secs[int(len(secs)*.9)] if secs else 0}s")

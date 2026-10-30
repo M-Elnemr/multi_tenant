@@ -416,6 +416,18 @@ class FactCheckTest {
     }
 
     @Test
+    void aSoldOutOptionThatHoldsTheProductsNameIsCaught() {
+        FactCheck.Shop TECH = fixture("tech-zone");
+        String q = "عايز اسكرينة جلاس آيفون 15 آيفون 15 برو ماكس";
+        boolean soldOut = TECH.product(slugOf(TECH, "اسكرينة جلاس آيفون 15")).variants().stream().anyMatch(v -> v.options().containsValue("آيفون 15 برو ماكس") && v.available() <= 0);
+        if (soldOut) {
+            assertThat(kinds(TECH, q, "تمام يا فندم، اسكرينة الجلاس لآيفون 15 برو ماكس متاحة 👌\nعشان أحجزها ليك محتاج منك: الاسم، رقم الموبايل.")).contains("OPTION_STOCK");
+            // a reply that never says it: code says it
+            assertThat(FactCheck.fix(q, "يبعتلك الصورة دلوقتي. لو حابب نكمل الطلب ابعتلي الاسم ورقم الموبايل.", TECH, List.of())).contains("خلص حالياً");
+        }
+    }
+
+    @Test
     void sizesNameNumbersAndShortDenialsAreNotMisread() {
         FactCheck.Shop TECH = fixture("tech-zone");
         assertThat(kinds(TECH, "عايز زينترا بوك 14 فضي ٨ جيجا ٥١٢", "لاب توب زينترا بوك 14 فضي 8 جيجا و512 جيجا SSD متاح بـ 24999 جنيه. تحب أحجزهولك؟")).doesNotContain("STOCK_QUANTITY");

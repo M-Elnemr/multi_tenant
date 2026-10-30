@@ -396,6 +396,24 @@ public class ChatService {
         AiBudget.start(REPLY_BUDGET_MS);
         try {
             answer = converse(ctx, routed, system, turns, tools, rounds, arabicChat);
+            // still a problem the code could not put right after its own rewrite: the other company's model answers the same message, and the reply with fewer problems goes
+            List<String> left = unresolved(ctx, text, answer, turns, rounds);
+            var other = left.isEmpty() || !AiBudget.hasLeft(18_000) || madeChanges(ctx, rounds) ? null : routed.secondOpinion();
+            if (other != null) {
+                Ctx ctx2 = new Ctx(tenantId, conv, channel, externalId, clientId, userMsgId, new ArrayList<>(), orderBox, new String[1]);
+                List<AiUsageService.Round> r2 = new ArrayList<>();
+                List<Turn> t2 = new ArrayList<>(fresh);
+                try {
+                    String b = converse(ctx2, other, system, t2, tools, r2, arabicChat);
+                    List<String> left2 = b == null || b.isBlank() ? left : unresolved(ctx2, text, b, t2, r2);
+                    log.info("Second opinion: {} {} -> {} {} (conversation {})", routed.code(), left, other.code(), left2, conv);
+                    events.record(tenantId, conv, channel, other.code(), "SECOND_OPINION", routed.code() + " " + left + " -> " + other.code() + " " + left2, null);
+                    if (left2.size() < left.size() || ctx2.summary()[0] != null || orderBox[0] != null) { answer = b; ctx = ctx2; routed = other; }
+                } catch (AiProvider.AiUnavailableException e2) {
+                    log.warn("Second opinion unavailable: {}", e2.getMessage());
+                }
+                rounds.addAll(r2);
+            }
         } catch (AiProvider.AiUnavailableException e) {
             log.warn("AI unavailable: {} ({})", e.getMessage(), e.getCause() == null ? "no cause" : e.getCause().toString());
             var backup = AiBudget.hasLeft(12_000) ? routed.restartOnFallback() : null;
@@ -491,6 +509,27 @@ public class ChatService {
         if (changed == 0) return;
         events.record(tenantId, conv, channel, model, "NEEDS_HUMAN", reason, null);
         publisher.publishEvent(new ChatNeedsHuman(tenantId, conv, channel, reason, customer));
+    }
+
+    /** What is still wrong with a finished reply that the code could not put right itself (a code-written summary or confirmation has nothing left). */
+    private List<String> unresolved(Ctx ctx, String last, String answer, List<Turn> turns, List<AiUsageService.Round> rounds) {
+        List<String> out = new ArrayList<>();
+        if (answer == null || answer.isBlank()) { out.add("EMPTY"); return out; }
+        if (ctx.summary()[0] != null || ctx.order()[0] != null) return out;
+        if (answer.equals(unavailableText(true)) || answer.equals(unavailableText(false))) out.add("UNAVAILABLE");
+        try {
+            FactCheck.Shop shop = shopView(ctx.tenantId());
+            for (var f : FactCheck.check(last, answer, shop, touchedOrBefore(ctx, shop))) if (!f.kind().equals("CHECK_ERROR")) out.add(f.kind());
+        } catch (RuntimeException e) { log.warn("Unresolved check skipped", e); }
+        if (STALL.matcher(answer).find()) out.add("STALL");
+        if (detailsGivenNoSummary(ctx, turns, rounds, last, answer)) out.add("NO_SUMMARY");
+        return out;
+    }
+
+    /** The reply already did something that cannot be asked twice: an order summary, an order, a cancellation, a question sent to the owner. */
+    private static boolean madeChanges(Ctx ctx, List<AiUsageService.Round> rounds) {
+        return ctx.summary()[0] != null || ctx.order()[0] != null
+                || rounds.stream().anyMatch(r -> r.tools().stream().anyMatch(t -> t.equals("place_order") || t.equals("cancel_order") || t.equals("flag_unanswered")));
     }
 
     /** The whole of one reply (every model call, review and rewrite) has to fit well inside the 60 seconds after which the gateway gives up on the customer. */
@@ -789,7 +828,7 @@ public class ChatService {
     }
 
     /** «هتأكد وأرجعلك», «لازم نتأكد من المخزون الأول», "let me confirm the price": a promise to look instead of looking. */
-    static final Pattern STALL = Pattern.compile("(?:(?:ه|هـ)(?:تاكد|تأكد|شوف|بحث|راجع|سال|سأل)(?:لك|لك)?\\s|لازم\\s+(?:ا|أ|ن)?(?:تاكد|تأكد)|ثواني\\s+و|هرجعلك|هرد\\s+عليك|هبلغك|(?:ا|أ)?رجع\\s*لك|وارجعلك|لحظه\\s+(?:ا|أ)?(?:تاكد|تأكد|شوف|راجع)|(?:ا|أ)تاكدلك|(?:ا|أ)تأكدلك|(?:ا|أ)راجع\\s+تاني|وارد\\s+عليك|وأرد\\s+عليك|(?:ا|أ)راجع\\s+(?:المخزون|الكتالوج|السيستم)|اتاكد\\s+من\\s+المخزون|(?:ا|أ)?تاكد\\s+لك|(?:ا|أ)?تأكد\\s+لك|هنادرك|هندور|هشوفلك\\s+و|لحظه\\s+يا\\s+فندم|لحظة\\s+يا\\s+فندم|استني\\s+(?:ثواني|دقيقه|شويه)|هبعتلك\\s+(?:التفاصيل|السعر)|let\\s+me\\s+(?:check|confirm|look)|i\\s*(?:'ll|\\s+will)\\s+(?:check|confirm|look)|one\\s+moment)", Pattern.CASE_INSENSITIVE);
+    static final Pattern STALL = Pattern.compile("(?:(?:ه|هـ)(?:تاكد|تأكد|شوف|بحث|راجع|سال|سأل)(?:لك|لك)?\\s|لازم\\s+(?:ا|أ|ن)?(?:تاكد|تأكد)|ثواني\\s+و|هرجعلك|هرد\\s+عليك|هبلغك|(?:ا|أ)?رجع\\s*لك|وارجعلك|لحظه\\s+(?:ا|أ)?(?:تاكد|تأكد|شوف|راجع)|(?:ا|أ)تاكدلك|(?:ا|أ)تأكدلك|(?:ا|أ)راجع\\s+تاني|وارد\\s+عليك|وأرد\\s+عليك|(?:ا|أ)راجع\\s+(?:المخزون|الكتالوج|السيستم)|اتاكد\\s+من\\s+المخزون|(?:ا|أ)?تاكد\\s+لك|لازم\\s+(?:ا|أ)?تحقق|محتاجين\\s+نتاكد|محتاجين\\s+نتأكد|مش\\s+عارف\\s+(?:ا|أ)?قولك|معنديش\\s+تاكيد|معنديش\\s+تأكيد|مش\\s+متاكد|مش\\s+متأكد|(?:ا|أ)?تحقق\\s+من\\s+المخزون|(?:ا|أ)?تأكد\\s+لك|هنادرك|هندور|هشوفلك\\s+و|لحظه\\s+يا\\s+فندم|لحظة\\s+يا\\s+فندم|استني\\s+(?:ثواني|دقيقه|شويه)|هبعتلك\\s+(?:التفاصيل|السعر)|let\\s+me\\s+(?:check|confirm|look)|i\\s*(?:'ll|\\s+will)\\s+(?:check|confirm|look)|one\\s+moment)", Pattern.CASE_INSENSITIVE);
     /** The model talking about its own machinery to the customer. */
     static final Pattern TOOL_TALK = Pattern.compile("(?:اداه\\s+البحث|أداة\\s+البحث|اداة\\s+البحث|نتايج\\s+البحث|نتائج\\s+البحث|البحث\\s+(?:مرجعش|لم\\s+يرجع|مارجعش)|في\\s+نظامنا|السيستم\\s+بتاعنا|قاعده\\s+البيانات|قاعدة\\s+البيانات|the\\s+(?:search\\s+)?tool|my\\s+tools|the\\s+database|in\\s+our\\s+system)", Pattern.CASE_INSENSITIVE);
 
