@@ -154,6 +154,29 @@ class FactCheckTest {
     }
 
     @Test
+    void theSlipsOfExamRoundFiveAreCaught() {
+        // a value the product does not have, neither agreed to nor answered: code says no and names the real ones, the sentences offering it go
+        var fatta = FactCheck.check("فتة شاورما فراخ عادي عندكم؟", "نعم، عندنا فتة شاورما فراخ. تحب الحجم العادي ولا الكبير؟", REST, List.of());
+        assertThat(fatta).extracting(FactCheck.Problem::kind).contains("OPTION_STOCK");
+        assertThat(FactCheck.fix("فتة شاورما فراخ عادي عندكم؟", "نعم، عندنا فتة شاورما فراخ. تحب الحجم العادي ولا الكبير؟", REST, List.of())).contains("صغير، كبير").doesNotContain("العادي ولا");
+        assertThat(kinds(REST, "عايز وينجز مقرمشة ٢٠ قطعة", "الوينجز متوفر عندنا. هل تحب أجهزلك الـ ٢٠ قطعة دلوقتي؟")).contains("OPTION_STOCK");
+        assertThat(kinds(TECH, "موبايل نوفا X10 رمادي عندكم؟", "حضرتك، موبايل نوفا X10 متوفر عندنا. هل عايز تعرف سعره وتوافر اللون الرمادي بالظبط؟")).contains("OPTION_STOCK");
+        assertThat(kinds(TECH, "عايز ساعة ذكية بلس برو أبيض", "حضرتك عايز ساعة ذكية بلس برو أبيض، صح؟ تحب أشوفلك الخيارات المتاحة دلوقتي؟")).contains("OPTION_STOCK");
+        assertThat(kinds(FASH, "عايز كوتشي بناتي 45", "بالنسبة للكوتشي البناتي مقاس ٤٥، ده مقاس كبير جداً على كوتشي البنات اللي عندنا. الكوتشي ده لحد؟")).contains("OPTION_STOCK");
+        // the product itself denied while asking another value: code says it is there, with its price
+        assertThat(FactCheck.fix("عايز ساندوتش شيش طاووق عيش بلدي", "للأسف الساندوتش ده مش من أصنافنا. تحب أرشحلك حاجة من المنو؟", REST, List.of())).contains("صاج، فينو").doesNotContain("مش من أصنافنا");
+        // a colour said for another product that it does not have («X12 … الرمادي»)
+        assertThat(kinds(TECH, "موبايل نوفا X10 رمادي عندكم؟", "الألوان المتاحة في نوفا X10 هي الأسود والفضي بس يا فندم. لو الرمادي مهم لك، نوفا X12 عنده اللون الفضي والرمادي في الشكل. تحب أوريك صور؟")).contains("INVENTED_COLOR");
+        // right answers stay: a no, the full list, a range, another product's value, a no to a number of pieces, a no to an option
+        assertThat(kinds(TECH, "موبايل نوفا X10 رمادي عندكم؟", "للأسف مفيش رمادي في نوفا X10. المتاح أسود وفضي.")).isEmpty();
+        assertThat(kinds(REST, "عايز برجر كلاسيك كبير", "عندنا برجر كلاسيك بحجمين: سنجل بـ120 والدبل بـ175. أظبطهولك دبل؟")).isEmpty();
+        assertThat(kinds(FASH, "عايز كوتشي بناتي 45", "المقاسات المتاحة من 26 لحد 32 بس يا فندم.")).isEmpty();
+        assertThat(kinds(REST, "عايز تشيز برجر وبيبسي كانز", "تمام، تشيز برجر سنجل بـ135 ومشروب غازي بيبسي كانز. تحب أجهزهم؟")).isEmpty();
+        assertThat(kinds(TECH, "عايز 32 قطعة من فلاشة زينترا USB 3.2 أسود 256 جيجا", "أسف يا فندم، من الفلاشة دي متوفر عندنا حالياً 30 قطعة بس في الأسود 256 جيجا — مفيش 32. تحب أخدلك الـ 30 دي؟")).isEmpty();
+        assertThat(kinds(FASH, "عباية كريب سادة بييجي فري سايز؟", "لأ يا فندم، عباية الكريب السادة دي مفيهاش فري سايز، مقاساتها M و L و XL و XXL بس، وسعرها ١٢٠٠ جنيه ومتوفرة بأسود وكحلي وبيج. تحب أحجزلك مقاس؟")).isEmpty();
+    }
+
+    @Test
     void anUnsureReplyIsNoAnswer() {
         String reply = "مفيش تأكيد حالي على المخزون في النظام، ممكن يتفاجى حسب آخر تحديث. تحب نتأكد معاك من التوافر الحالي قبل ما نجهز الطلب؟";
         String customer = "جراب آيفون 14 سيليكون أبيض آيفون 14 برو موجود ولا خلص؟";

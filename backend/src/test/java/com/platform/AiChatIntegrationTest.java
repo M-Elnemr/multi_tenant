@@ -123,6 +123,30 @@ class AiChatIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void aQuantityTheCustomerNeverSaidIsRefusedAndBelowTheMinimumTheCustomerIsToldByCode() throws Exception {
+        Tenant t = onboard("STORE");
+        String[] w = wings(t);   // 150 for 6 pieces
+        onHost(t.host(), t.access(), "PATCH", "/api/v1/store/profile", "{\"minOrderMinor\":20000}").andExpect(status().isOk());
+        // the model doubles the quantity to reach the minimum (exam round 5: «ناجتس ٦ قطع × 2»); «٦ قطع» and «عمارة ٣ شقة ٧» are no quantity
+        Map<String, Object> two = new java.util.HashMap<>(prepare(w[1], 0, "CASH_ON_DELIVERY"));
+        two.put("items", List.of(Map.of("variantId", w[1], "quantity", 2)));
+        FakeAiProvider.reset();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", two));
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepare(w[1], 0, "CASH_ON_DELIVERY")));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام يا أستاذ كريم، تحب تضيف حاجة؟"));
+        String sent = send(t, UUID.randomUUID().toString(), "عايز " + w[0] + " ٦ قطع، انا كريم، القاهرة مدينة نصر شارع مكرم عبيد عمارة ٣ شقة ٢، ٠١٠٢٣٤٥٦٧٨٩، كاش");
+        // read by content: a background job of the app may take a scripted turn too
+        String refusals = FakeAiProvider.RESULTS.stream().filter(r -> "prepare_order".equals(r.name())).map(r -> String.valueOf(r.result().get("error"))).toList().toString();
+        assertThat(refusals).contains("never asked for 2").contains("minimum order value is 200").contains("150");
+        // the reply says the minimum and the total, whatever the model wrote
+        assertThat((String) JsonPath.read(sent, "$.reply")).contains("أقل قيمة للطلب 200").contains("150").doesNotContain("ملخص الأوردر");
+        // two said in words is the customer's own quantity
+        assertThat(com.platform.chat.ChatService.quantityFromCustomer(2, "عايز اتنين wings 6 قطع", List.of("6 قطع"), null)).isTrue();
+        assertThat(com.platform.chat.ChatService.quantityFromCustomer(3, "عايز wings 6 قطع عماره 3 شقه 7", List.of("6 قطع"), null)).isFalse();
+        assertThat(orders(t)).isZero();
+    }
+
+    @Test
     void noSummaryIsShownForMoreThanTheStockOrASoldOutItem() throws Exception {
         Tenant t = onboard("STORE");
         String variant = mug(t);   // 9 in stock

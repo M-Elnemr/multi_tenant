@@ -119,7 +119,8 @@ public class ChatService {
 
     private static boolean messaging(String channel) { return "WHATSAPP".equals(channel) || "FACEBOOK".equals(channel) || "INSTAGRAM".equals(channel); }
 
-    private record Ctx(UUID tenantId, UUID conversationId, String channel, String externalId, UUID clientId, long userMsgId, List<Map<String, Object>> products, Map<String, Object>[] order, String[] summary) {}
+    /** {@code mustSay}: a line the customer has to read whatever the model wrote (why no summary could be made, such as the minimum order). */
+    private record Ctx(UUID tenantId, UUID conversationId, String channel, String externalId, UUID clientId, long userMsgId, List<Map<String, Object>> products, Map<String, Object>[] order, String[] summary, String[] mustSay) {}
 
     private final JdbcClient jdbc;
     private final AiProvider ai;
@@ -343,7 +344,7 @@ public class ChatService {
             turns.add("user".equals(m.get("role")) ? Turn.user((String) m.get("content")) : Turn.model((String) m.get("content")));
 
         @SuppressWarnings("unchecked") Map<String, Object>[] orderBox = new Map[1];
-        Ctx ctx = new Ctx(tenantId, conv, channel, externalId, clientId, userMsgId, new ArrayList<>(), orderBox, new String[1]);
+        Ctx ctx = new Ctx(tenantId, conv, channel, externalId, clientId, userMsgId, new ArrayList<>(), orderBox, new String[1], new String[1]);
         String system = systemPrompt(tenantId, conv, clientId, channel, externalId);
         if (!system.contains("ALL PRODUCTS (")) system += productsForMessage(tenantId, text);
         List<ToolDef> tools = tools();
@@ -400,7 +401,7 @@ public class ChatService {
             List<String> left = unresolved(ctx, text, answer, turns, rounds);
             var other = left.isEmpty() || !AiBudget.hasLeft(18_000) || madeChanges(ctx, rounds) ? null : routed.secondOpinion();
             if (other != null) {
-                Ctx ctx2 = new Ctx(tenantId, conv, channel, externalId, clientId, userMsgId, new ArrayList<>(), orderBox, new String[1]);
+                Ctx ctx2 = new Ctx(tenantId, conv, channel, externalId, clientId, userMsgId, new ArrayList<>(), orderBox, new String[1], new String[1]);
                 List<AiUsageService.Round> r2 = new ArrayList<>();
                 List<Turn> t2 = new ArrayList<>(fresh);
                 try {
@@ -429,7 +430,7 @@ public class ChatService {
                 rounds.clear();
                 routed = backup;
                 turns = new ArrayList<>(fresh);
-                ctx = new Ctx(tenantId, conv, channel, externalId, clientId, userMsgId, new ArrayList<>(), orderBox, new String[1]);
+                ctx = new Ctx(tenantId, conv, channel, externalId, clientId, userMsgId, new ArrayList<>(), orderBox, new String[1], new String[1]);
                 try {
                     answer = converse(ctx, routed, system, turns, tools, rounds, arabicChat);
                 } catch (AiProvider.AiUnavailableException e2) {
@@ -453,6 +454,8 @@ public class ChatService {
         // Money is never the model's words: the order summary and the confirmation are written by code from the real order, whatever the model said around them.
         if (ctx.summary()[0] != null) answer = ctx.summary()[0];
         else if (orderBox[0] != null) answer = confirmedText(arabicChat, orderBox[0], Map.of());
+        else if (ctx.mustSay()[0] != null && answer != null && !answer.contains(ctx.mustSay()[0]) && !mentionsMinimum(answer, ctx.mustSay()[0]))
+            answer = answer.strip() + "\n\n" + ctx.mustSay()[0];
         long tookMs = (System.nanoTime() - started) / 1_000_000;
         log.info("Reply timing: model={} calls={} ms={} conversation={}", routed.code(), rounds.size(), tookMs, conv);
         events.record(tenantId, conv, channel, routed.code(), "REPLY", rounds.size() + " calls", tookMs);
@@ -566,7 +569,7 @@ public class ChatService {
         } else turns.add(Turn.user(note));
         long lastUserMsg = jdbc.sql("SELECT coalesce(max(id), 0) FROM chat.messages WHERE conversation_id = :c AND role = 'user'").param("c", conv).query(Long.class).single();
         @SuppressWarnings("unchecked") Map<String, Object>[] orderBox = new Map[1];
-        Ctx ctx = new Ctx(tenantId, conv, channel, externalId, clientId, lastUserMsg, new ArrayList<>(), orderBox, new String[1]);
+        Ctx ctx = new Ctx(tenantId, conv, channel, externalId, clientId, lastUserMsg, new ArrayList<>(), orderBox, new String[1], new String[1]);
         String system = systemPrompt(tenantId, conv, clientId, channel, externalId);
         List<ToolDef> tools = tools();
         List<AiUsageService.Round> rounds = new ArrayList<>();
@@ -735,7 +738,7 @@ public class ChatService {
         if (english(last) && arabicShare(answer) > 0.5) problems.put("LANGUAGE", "The customer writes English: reply in English.");
         else if (!english(last) && arabicShare(last) > 0.6 && arabicShare(answer) < 0.2) problems.put("LANGUAGE", "The customer writes Arabic: reply in Egyptian Arabic.");
         var asked = QUANTITY.matcher(MoneyGuard.digits(last));
-        if (asked.find() && Integer.parseInt(asked.group(1)) >= 5 && MoneyGuard.digits(answer).contains(asked.group(1)) && PROMISE.matcher(answer).find() && !LIMIT_WORDS.matcher(answer).find())
+        if (asked.find() && Integer.parseInt(asked.group(1)) >= 5 && MoneyGuard.digits(answer).contains(asked.group(1)) && PROMISE.matcher(answer).find() && !LIMIT_WORDS.matcher(answer).find() && !isOptionCount(ctx.tenantId(), asked.group(1)))
             problems.put("STOCK_QUANTITY", "The customer asked for " + asked.group(1) + " pieces: check the stock count of that exact option (in ALL PRODUCTS or the search result) and never promise more than is in stock; if fewer are available, say how many.");
         if (PHONE_DOUBT.matcher(answer).find() && customerGaveMobile(turns))
             problems.put("PHONE_DOUBT", "The mobile number the customer wrote is valid: never say it is wrong or count its digits; if needed, ask only «الرقم ده عليه واتساب؟».");
@@ -2458,7 +2461,7 @@ public class ChatService {
         for (Object o : l) {
             Map<String, Object> m = (Map<String, Object>) o;
             UUID vid;
-            try { vid = UUID.fromString(String.valueOf(m.get("variantId"))); } catch (IllegalArgumentException e) { return obj("error", "Invalid variantId: use get_product to get it"); }
+            try { vid = UUID.fromString(String.valueOf(m.get("variantId"))); } catch (IllegalArgumentException e) { return obj("error", "Invalid variantId" + realVariantIds(ctx)); }
             int q = m.get("quantity") instanceof Number n ? n.intValue() : 1;
             if (q < 1 || q > 50) return obj("error", "Quantity must be between 1 and 50");
             items.add(new CheckoutService.Item(vid, q, m.get("note") == null ? null : String.valueOf(m.get("note"))));
@@ -2472,7 +2475,7 @@ public class ChatService {
         List<String> named = chosenInChat(ctx, view);
         for (CheckoutService.Item it : items) {
             var row = jdbc.sql("SELECT p.slug, p.name FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE v.id = :v").param("v", it.variantId()).query().listOfRows().stream().findFirst().orElse(null);
-            if (row == null) return obj("error", "Invalid variantId: use get_product to get it");
+            if (row == null) return obj("error", "Invalid variantId" + realVariantIds(ctx));
             String slug = String.valueOf(row.get("slug")), name = FastAnswers.norm(String.valueOf(row.get("name")));
             if (!named.contains(slug))
                 for (String n : named) {
@@ -2483,6 +2486,10 @@ public class ChatService {
             List<String> changed = contradictedOptions(it.variantId(), saidWords);
             if (!changed.isEmpty())
                 return obj("error", "Wrong option for " + variantNames(List.of(it.variantId())) + ": " + String.join("; ", changed) + ". Use the variant with what the customer said; if that one cannot be ordered (sold out, minimum order), tell them and ask, never pick another option for them.");
+            // a quantity is the customer's: 2 nuggets to reach the minimum order is the model's choice, not theirs
+            if (it.quantity() > 1 && !quantityFromCustomer(it.quantity(), saidWords, comboValues(it.variantId()), dualOf(name.split(" ")[0])))
+                return obj("error", "The customer never asked for " + it.quantity() + " of " + variantNames(List.of(it.variantId())) + ": use the quantity they said (1 when they said none). "
+                        + "If the order is then below the minimum order value, tell them the minimum and ask what they want to add; never raise a quantity or add an item for them.");
         }
         if (!Boolean.TRUE.equals(a.get("optionsConfirmed"))) {
             for (CheckoutService.Item it : items) {
@@ -2597,7 +2604,19 @@ public class ChatService {
         var req = new CheckoutService.CheckoutReq(items, shippingId, addr, pm, text(a, "couponCode"), text(a, "notes"));
 
         Map<String, Object> quote;
-        try { quote = checkout.quoteView(tenantId, null, req); } catch (BusinessException e) { return obj("error", e.getMessage()); }
+        try { quote = checkout.quoteView(tenantId, null, req); } catch (BusinessException e) {
+            if (!"MIN_ORDER_NOT_REACHED".equals(e.getCode())) return obj("error", e.getMessage());
+            // below the minimum: the customer is told the minimum and their total by code, so no reply can skip it or "fix" it by raising a quantity
+            long sub = 0;
+            for (CheckoutService.Item it : items)
+                sub += it.quantity() * jdbc.sql("SELECT price_minor FROM commerce.product_variants WHERE id = :v").param("v", it.variantId()).query(Long.class).optional().orElse(0L);
+            String min = plainAmount(Double.parseDouble(e.getMessage().replaceAll("[^0-9.]", ""))), now = plainAmount(sub / 100.0);
+            boolean ar = arabicConversation(ctx.conversationId());
+            ctx.mustSay()[0] = ar ? "🙏 أقل قيمة للطلب " + min + " جنيه، وطلبك دلوقتي " + now + " جنيه. تحب تضيف إيه عشان نكمل الأوردر؟"
+                    : "🙏 The minimum order is " + min + " EGP and your order is " + now + " EGP now. What would you like to add so we can complete it?";
+            return obj("error", "The minimum order value is " + min + " and this order is " + now + ": tell the customer exactly that and ask what they want to add (you may suggest one or two items). "
+                    + "Never raise a quantity or add an item they did not ask for.");
+        }
         int maxPct = ((Number) getSettings(tenantId).get("maxDiscountPct")).intValue();
         int pct = a.get("discountPercent") instanceof Number n ? (int) Math.round(n.doubleValue()) : 0;
         if (pct < 0) pct = 0;
@@ -2686,6 +2705,65 @@ public class ChatService {
                 if (!other.equals(mine) && valueSaid(FastAnswers.norm(MoneyGuard.digits(other)), customerWords, false)) { out.add("«" + name + "»: the customer said «" + other + "», not «" + mine + "»"); break; }
         }
         return out;
+    }
+
+    /** The real variant ids of the products the customer named in this chat («: use one of these: … = id»), so a made-up id is put right in the next call instead of costing a get_product round. */
+    private String realVariantIds(Ctx ctx) {
+        List<String> slugs = chosenInChat(ctx, shopView(ctx.tenantId()));
+        if (slugs.isEmpty()) return ": use get_product to get it";
+        List<String> rows = new ArrayList<>();
+        for (var r : jdbc.sql("SELECT v.id, p.name, v.combo_key FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE p.tenant_id = :t AND p.slug IN (:s) AND v.status = 'ACTIVE' ORDER BY p.name, v.combo_key LIMIT 24")
+                .param("t", ctx.tenantId()).param("s", slugs).query().listOfRows()) {
+            String key = r.get("combo_key") == null || "default".equals(r.get("combo_key")) ? "" : " (" + String.valueOf(r.get("combo_key")).replace("|", ", ").replace("=", ": ") + ")";
+            rows.add(r.get("name") + key + " = " + r.get("id"));
+        }
+        return rows.isEmpty() ? ": use get_product to get it" : ". Copy the id exactly from this list (the variant with the options the customer said): " + String.join("; ", rows);
+    }
+
+    /** «٦ قطع» is an option of a product here (a box of six), not six pieces: some option value of the shop starts with this number. */
+    private boolean isOptionCount(UUID tenantId, String number) {
+        return jdbc.sql("SELECT ov.value FROM commerce.product_option_values ov JOIN commerce.product_options o ON o.id = ov.option_id JOIN commerce.products p ON p.id = o.product_id WHERE p.tenant_id = :t AND p.status = 'ACTIVE'")
+                .param("t", tenantId).query(String.class).list().stream().anyMatch(v -> MoneyGuard.digits(v).trim().matches(Pattern.quote(number) + "\\s+\\p{L}.*"));
+    }
+
+    /** «100» for 100.0, «99.5» for 99.5. */
+    static String plainAmount(double v) { return v == Math.rint(v) ? String.valueOf((long) v) : String.valueOf(v); }
+
+    /** The reply already says the minimum order: the first amount of the code's line («أقل قيمة للطلب 100 …») is in it. */
+    static boolean mentionsMinimum(String answer, String line) {
+        java.util.regex.Matcher m = Pattern.compile("\\d+(?:\\.\\d+)?").matcher(line);
+        return m.find() && Pattern.compile("(?<![\\d.])" + Pattern.quote(m.group()) + "(?![\\d])").matcher(MoneyGuard.digits(answer).replace(",", "")).find();
+    }
+
+    /** This variant's option values, normalised with Western digits («6 قطع», «كبير»). */
+    private List<String> comboValues(UUID variantId) {
+        String key = jdbc.sql("SELECT combo_key FROM commerce.product_variants WHERE id = :v").param("v", variantId).query(String.class).optional().orElse(null);
+        List<String> out = new ArrayList<>();
+        if (key != null) for (String kv : key.split("\\|")) if (kv.indexOf('=') > 0) out.add(FastAnswers.norm(MoneyGuard.digits(kv.substring(kv.indexOf('=') + 1))));
+        return out;
+    }
+
+    private static final Pattern ADDRESS_NUMBER = Pattern.compile("(?<!\\p{L})(?:عماره|عمارة|شقه|شقة|شارع|ش|الدور|دور|برج|بلوك|مبني|منزل|بيت|رقم|مربع|قطعه رقم|كيلو|km)\\s*\\d+", Pattern.CASE_INSENSITIVE);
+    private static final Pattern MORE_WORDS = Pattern.compile("(?<!\\p{L})(?:كمان|زود|زوود|زياده|زيادة|تاني|تانيه|كده|كدا|more|another|extra)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * The customer's own words (normalised, Western digits) give this quantity: the number, a number word or the dual («قميصين»), or «كمان / زود» after an earlier one. A number that is
+     * one of the item's option values («٦ قطع») or part of the address («عمارة ٣ شقة ٧») is no quantity.
+     */
+    public static boolean quantityFromCustomer(int quantity, String words, List<String> optionValues, String dual) {
+        if (quantity <= 1) return true;
+        String w = " " + words + " ";
+        for (String v : optionValues) if (!v.isBlank()) w = w.replace(v, " ");
+        w = ADDRESS_NUMBER.matcher(w).replaceAll(" ");
+        if (MORE_WORDS.matcher(w).find()) return true;
+        if (Pattern.compile("(?<![\\d.,])" + quantity + "(?![\\d.,])").matcher(w).find()) return true;
+        for (String t : w.split("[^\\p{L}]+")) {
+            if (t.isEmpty()) continue;
+            Integer k = FactCheck.NUMBER_WORDS.get(t);
+            if (k != null && k == quantity) return true;
+            if (quantity == 2 && (t.equals("قطعتين") || t.equals("حتتين") || t.equals("التنين") || dual != null && (t.equals(dual) || t.equals("ال" + dual)))) return true;
+        }
+        return false;
     }
 
     /** Arabic and Persian digits as 0-9, so «٠١٠١٢٣٤٥٦٧٨» is a valid mobile number. */

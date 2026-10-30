@@ -47,6 +47,7 @@ for it in items:
     products.append({"name": p["name"], "slug": p["slug"], "variants": vs})
 prof = get("/profile") if not REGRADE else {"shippingZones": []}
 served = sorted({c for z in prof["shippingZones"] if z.get("isActive") for c in z["governorateCodes"]})
+MIN_ORDER = ((prof.get("profile") or {}).get("minOrderMinor") or 0) / 100
 print(SLUG, len(products), "products", file=sys.stderr)
 
 # ---- text helpers ------------------------------------------------------------------------------------------------------
@@ -115,7 +116,7 @@ for p in rnd.sample(optioned, min(len(optioned), N // 6)):
     if not foreign: continue
     val = rnd.choice(foreign)
     q = rnd.choice(["{n} {v} عندكم؟", "عايز {n} {v}", "{n} بييجي {v}؟"]).format(n=p["name"], v=val)
-    add("invented_value", [q], product=p["name"], values=[val])
+    add("invented_value", [q], product=p["name"], values=[val], own=sorted(own[k]))
 for p in rnd.sample(optioned, min(len(optioned), N // 8)):
     ins = [x for x in p["variants"] if x["available"] > 0 and x["options"]]
     if not ins: continue
@@ -135,7 +136,7 @@ if gov:
     for p in rnd.sample(pool, min(len(pool), N // 8)):
         v = rnd.choice([x for x in p["variants"] if x["available"] > 1])
         o = ask_values(p, v)
-        add("order", [f"عايز {p['name']} {o}".strip(), f"انا كريم، {GOV[gov]}، ٠١٠٢٣٤٥٦٧٨٩، كاش"], product=p["name"], price=v["price"], values=list(v["options"].values()))
+        add("order", [f"عايز {p['name']} {o}".strip(), f"انا كريم، {GOV[gov]}، ٠١٠٢٣٤٥٦٧٨٩، كاش"], product=p["name"], price=v["price"], values=list(v["options"].values()), min_order=MIN_ORDER)
 cases = [c for c in cases if not ONLY or c["kind"] in ONLY]
 rnd.shuffle(cases)
 
@@ -194,9 +195,15 @@ def grade(c):
         return None
     if k == "invented_value":
         v = light(c["values"][0])
-        if NEG.search(lr) or v not in lr: return None   # denied, or simply not agreed to (it lists the real options)
         if re.search(r"(?:من\s+غير|بدون|ماعدا|عدا|بدل)\s+(?:\S+\s+){0,2}" + re.escape(v), lr): return None   # «S لحد XL، من غير XXL»
-        return f"value {c['values'][0]} the product does not have was agreed to"
+        own = c.get("own")
+        if v in lr and not NEG.search(lr): return f"value {c['values'][0]} the product does not have was agreed to"
+        if own is None: return None   # an old run without the product's own values: not agreed is enough
+        # strict: a no to it, or the real values of that option named (all of them, or a range «من 26 لحد 32»)
+        if v in lr and NEG.search(lr): return None
+        if all(light(o).split()[0] in lr for o in own): return None
+        if re.search(r"من\s+\S+\s+(?:لحد|لغايه|الي|ل|-)\s*\S+", lr) and NEG.search(lr): return None
+        return f"value {c['values'][0]} not answered: neither a no nor its real options ({'، '.join(own)})"
     if k == "qty_over_stock":
         if c["available"] >= 100: return None   # a made-to-order kitchen: the stock number is not a limit a customer meets
         WORDS = {1: r"قطعه\s+واحده|واحده\s+بس|حته\s+واحده", 2: r"قطعتين|اتنين|حتتين", 3: r"تلات|تلاته|ثلاث", 4: r"اربع|اربعه", 5: r"خمس|خمسه"}
@@ -208,7 +215,11 @@ def grade(c):
         missing = [x for x in c["colours"] if light(x)[:3] not in lr]
         return ("in-stock colours missing: " + "، ".join(missing)) if missing else None
     if k == "order":
-        if re.search(r"اقل\s+(?:طلب|قيمه|مبلغ)|الحد\s+الادني|minimum\s+order", lr): return None   # under the shop's minimum order: asking to add is right
+        told_min = re.search(r"اقل\s+(?:طلب|قيمه|مبلغ)|الحد\s+الادني|minimum\s+order|minimum\s+is", lr)
+        if c.get("min_order") and c["price"] < c["min_order"]:   # under the shop's minimum: no summary can be made, the customer must hear the minimum
+            return None if told_min and num_txt(c["min_order"]) in [num_txt(x) for x in nums] else f"below the minimum order {num_txt(c['min_order'])}: not told"
+        if told_min and not c.get("min_order"): return None   # an old run without the minimum: asking to add is right
+        if re.search(r"[×x]\s*([2-9]|\d{2,})(?!\d)", r.translate(AR)): return "summary with a quantity the customer never asked for"
         if "ملخص" not in r and "Total" not in r and "الاجمالي" not in lr:
             # one question back for something really missing is fine only when the product has an option the customer did not say
             return "no order summary after full details"
