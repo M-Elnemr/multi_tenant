@@ -674,11 +674,11 @@ final class FactCheck {
     // ---- 2. colours and sizes of one product ----------------------------------------------------------------------------
 
     /** A real negation: «للأسف» alone only softens («للأسف متوفر منه ٢ قطعة بس»). */
-    static final Pattern NEG_STRICT = Pattern.compile("(?:(?<!\\p{L})(?:و|ف)?(?:مش|مفيش|مافيش|مفيهوش|مفيهاش|مافيهوش|مافيهاش|معندناش|ماعندناش|معنديش|مبقاش|متوفرش|موجودش|متاحش|خلص|خلصان|خلصانه|خلصت|خلصوا|نفذ|نفذت|نفد|نفدت|نافد|نفاذ|نافذ|ناضب|نفاص|ملهوش|ملهاش|مالوش|مجيش|مجيهش|مجاش|مبيجيش|مابيجيش|ميجيش|مبتجيش|مبيجيش)(?!\\p{L})"
+    static final Pattern NEG_STRICT = Pattern.compile("(?:(?<!\\p{L})(?:و|ف)?(?:مش|مفيش|مافيش|مفيهوش|مفيهاش|مافيهوش|مافيهاش|مفيناش|مافيناش|معندناش|ماعندناش|معنديش|مبقاش|متوفرش|موجودش|متاحش|خلص|خلصان|خلصانه|خلصت|خلصوا|نفذ|نفذت|نفد|نفدت|نافد|نفاذ|نافذ|ناضب|نفاص|ملهوش|ملهاش|مالوش|مجيش|مجيهش|مجاش|مبيجيش|مابيجيش|مبييجيش|مابييجيش|ميجيش|مبتجيش|مبيجيش)(?!\\p{L})"
             + "|(?<!\\p{L})ليس(?!\\p{L})|(?<!\\p{L})غير\\s+(?:متاح|متاحه|متوفر|متوفره|موجود|موجوده)|(?<!\\p{L})لا\\s+يوجد|not\\s+available|out\\s+of\\s+stock|sold\\s+out|unavailable|don'?t\\s+have|do\\s+not\\s+have|isn'?t|aren'?t|no\\s+longer)", Pattern.CASE_INSENSITIVE);
 
     /** A word that says it is not there, as a whole word («بوليستر» holds «ليس» and says nothing), with «و»/«ف» in front allowed. */
-    static final Pattern NEG = Pattern.compile("(?:(?<!\\p{L})(?:و|ف)?(?:مش|مفيش|مافيش|مفيهوش|مفيهاش|مافيهوش|مافيهاش|معندناش|ماعندناش|معنديش|مبقاش|متوفرش|موجودش|متاحش|خلص|خلصان|خلصانه|خلصت|خلصوا|نفذ|نفذت|نفد|نفدت|نافد|نفاذ|نافذ|ناضب|نفاص|للاسف|ملهوش|ملهاش|مالوش|مجيش|مجيهش|مجاش|مبيجيش|مابيجيش|ميجيش|مبتجيش)(?!\\p{L})|(?<!\\p{L})ليس(?!\\p{L})"
+    static final Pattern NEG = Pattern.compile("(?:(?<!\\p{L})(?:و|ف)?(?:مش|مفيش|مافيش|مفيهوش|مفيهاش|مافيهوش|مافيهاش|معندناش|ماعندناش|معنديش|مبقاش|متوفرش|موجودش|متاحش|خلص|خلصان|خلصانه|خلصت|خلصوا|نفذ|نفذت|نفد|نفدت|نافد|نفاذ|نافذ|ناضب|نفاص|للاسف|ملهوش|ملهاش|مالوش|مجيش|مجيهش|مجاش|مبيجيش|مابيجيش|مبييجيش|مابييجيش|ميجيش|مبتجيش)(?!\\p{L})|(?<!\\p{L})ليس(?!\\p{L})"
             + "|(?<!\\p{L})غير\\s+(?:متاح|متاحه|متوفر|متوفره|موجود|موجوده)|(?<!\\p{L})لا\\s+يوجد|not\\s+available|out\\s+of\\s+stock|sold\\s+out|unavailable|don'?t\\s+have|do\\s+not\\s+have|isn'?t|aren'?t|no\\s+longer)", Pattern.CASE_INSENSITIVE);
     private static final Pattern AVAIL = Pattern.compile("(?:متاح|متاحه|متوفر|متوفره|موجود|موجوده|عندنا|بالوان|الوان|الالوان|المقاسات|مقاسات|available|in\\s+stock|comes?\\s+in|colou?rs|sizes)", Pattern.CASE_INSENSITIVE);
     private static final Pattern ALL_SIZES = Pattern.compile("(?<!\\p{L})(?:ب|في\\s+|ف)?(?:كل|جميع)\\s+(?:ال)?(?:مقاسات|المقاسات|الالوان|الوان)|(?:ال)?(?:مقاسات|الوان)\\s+(?:كلها|كلهم)|all\\s+(?:the\\s+)?(?:sizes|colou?rs)|every\\s+size", Pattern.CASE_INSENSITIVE);
@@ -822,7 +822,7 @@ final class FactCheck {
      * size the product does not come in at all makes the denial right («الأسود مقاس L مش متوفر» for a shirt without black); a size or colour the clause leaves out is taken from the
      * rest of the sentence, then from the customer's message («الذهبي غير متوفر» after «مقاس ٣٨»).
      */
-    private static final Pattern STOCK_NEG = Pattern.compile("(?:(?<!\\p{L})(?:و|ف)?(?:مفيش|مافيش|مفيهوش|مفيهاش|مافيهوش|مافيهاش|معندناش|ماعندناش|مبقاش|متوفرش|موجودش|متاحش|خلص|خلصان|خلصانه|خلصت|خلصوا|نفذ|نفذت|نفد|نفدت|نافد|نفاذ|نافذ|ناضب|نفاص|مش\\s+(?:لاقي|لاقيه|لقيت|لاقيين)|ملقتش|مالقيتش|ملقيتش|ملاقيتش|مالقتش|ملهوش|ملهاش|مالوش|مجيش|مجيهش|مجاش|مبيجيش|مابيجيش|ميجيش|مبتجيش)(?!\\p{L})"
+    private static final Pattern STOCK_NEG = Pattern.compile("(?:(?<!\\p{L})(?:و|ف)?(?:مفيش|مافيش|مفيهوش|مفيهاش|مافيهوش|مافيهاش|مفيناش|مافيناش|معندناش|ماعندناش|مبقاش|متوفرش|موجودش|متاحش|خلص|خلصان|خلصانه|خلصت|خلصوا|نفذ|نفذت|نفد|نفدت|نافد|نفاذ|نافذ|ناضب|نفاص|مش\\s+(?:لاقي|لاقيه|لقيت|لاقيين)|ملقتش|مالقيتش|ملقيتش|ملاقيتش|مالقتش|ملهوش|ملهاش|مالوش|مجيش|مجيهش|مجاش|مبيجيش|مابيجيش|مبييجيش|مابييجيش|ميجيش|مبتجيش)(?!\\p{L})"
             + "|(?<!\\p{L})(?:و|ف)?(?:مش|غير|ليس|لا)\\s+(?:(?:هو|هي|ده|دي)\\s+)?(?:متاح|متاحه|متوفر|متوفره|موجود|موجوده|عندنا|بيجي|بتيجي|جاي|جايه|بييجي|بنبيع|بنوفر|يوجد|available)(?!\\p{L})"
             + "|not\\s+available|out\\s+of\\s+stock|sold\\s+out|unavailable|don'?t\\s+have|do\\s+not\\s+have|no\\s+longer)", Pattern.CASE_INSENSITIVE);
 
@@ -973,7 +973,7 @@ final class FactCheck {
 
     // ---- 3. "we do not have it" when we do --------------------------------------------------------------------------------
 
-    private static final Pattern DENY = Pattern.compile("(?<!\\p{L})(?:و|ف)?(?:مفيش|مفيهوش|مفيهاش|معندناش|ماعندناش|محدش|مش\\s+عندنا|مش\\s+موجود|مش\\s+متوفر|مش\\s+متاح|غير\\s+(?:متاح|متوفر|موجود)|مش\\s+في\\s+(?:القائمه|القايمه|المنيو)|مش\\s+(?:من\\s+)?ضمن|مش\\s+بنتعامل|مش\\s+بنوفر|مبنبيعش|مش\\s+بنبيع|مش\\s+ببيع|مش\\s+لاقي|مش\\s+لاقيه|مش\\s+لقيت|ملقتش|مالقيتش|ملقيتش|ملاقيتش|مالقتش|مش\\s+عندي|معنديش|لا\\s+يوجد|لا\\s+نبيع|(?:بس|لكن)\\s+مش|we\\s+(?:don'?t|do\\s+not)\\s+(?:have|sell|carry)|there\\s+(?:is|are)\\s+no|we\\s+have\\s+no)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
+    private static final Pattern DENY = Pattern.compile("(?<!\\p{L})(?:و|ف)?(?:مفيش|مفيهوش|مفيهاش|مفيناش|مافيناش|معندناش|ماعندناش|محدش|مش\\s+عندنا|مش\\s+موجود|مش\\s+متوفر|مش\\s+متاح|غير\\s+(?:متاح|متوفر|موجود)|مش\\s+في\\s+(?:القائمه|القايمه|المنيو)|مش\\s+(?:من\\s+)?ضمن|مش\\s+بنتعامل|مش\\s+بنوفر|مبنبيعش|مش\\s+بنبيع|مش\\s+ببيع|مش\\s+لاقي|مش\\s+لاقيه|مش\\s+لقيت|مينفعش\\s+(?:ن|ت|ا)?لاقي|مش\\s+هت?لاقي|مش\\s+هن?لاقي|منلاقيش|ملقتش|مالقيتش|ملقيتش|ملاقيتش|مالقتش|مش\\s+عندي|معنديش|لا\\s+يوجد|لا\\s+نبيع|(?:بس|لكن)\\s+مش|we\\s+(?:don'?t|do\\s+not)\\s+(?:have|sell|carry)|there\\s+(?:is|are)\\s+no|we\\s+have\\s+no)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
     /** Words that say nothing about which product: negations, chat words, time words, vague nouns. */
     private static final Set<String> STOP = Set.of("مش", "مفيش", "معندناش", "ماعندناش", "عندنا", "عندي", "بنبيع", "ببيع", "نبيع", "مبنبيعش", "موجود", "موجوده", "متوفر", "متوفره", "متاح", "متاحه", "يوجد",
             "حاليا", "دلوقتي", "النهارده", "النهاردة", "كامل", "كامله", "خالص", "للاسف", "بس", "لكن", "غير", "ابدا", "تاني", "نوع", "انواع", "اصناف", "صنف", "خيارات", "اختيارات", "موديلات", "موديل", "حاجه", "حاجات",
@@ -1411,6 +1411,8 @@ final class FactCheck {
             String ownKind = light(p.name()).split("\\s+")[0];
             if (!before.isEmpty() && !same(before, ownKind) && shop.names().stream().anyMatch(n -> !n.words().isEmpty() && (same(before, n.words().get(0)) || bare(before).equals(n.words().get(0))))) continue;   // «وبطاطس كبير»: the fries' size
             if (SIZE_WORDS.contains(w) && !values.contains(w)) {
+                String upTo = l.substring(from, after.get(i).start());
+                if (NEG_STRICT.matcher(upTo).find() || DENY.matcher(upTo).find()) return;   // «وجبة … مش بتيجي كبير»: said no to it
                 List<String> real = values.stream().filter(SIZE_WORDS::contains).sorted().toList();
                 out.add(new Problem("OPTION_STOCK", "«" + p.name() + "» does not come in «" + w + "»; its sizes are " + String.join("، ", real) + ". Never choose an option for the customer: ask them.", null));
                 return;
@@ -1451,8 +1453,9 @@ final class FactCheck {
         if (!found) return;
         int asked = Integer.parseInt(m.group(1));
         if (asked < 3) return;
-        String slug = ms.size() == 1 ? ms.get(0).slug() : only;
-        if (slug == null) { var c = mentions(customer, shop.names()); if (c.size() == 1) slug = c.get(0).slug(); }
+        // the product the customer named decides (a reply about another one, «جينز سكيني ممزق … 8 قطع» for «… هاي ويست», is no answer)
+        var named = mentions(customer, shop.names()).stream().map(Mention::slug).distinct().toList();
+        String slug = named.size() == 1 ? named.get(0) : ms.size() == 1 ? ms.get(0).slug() : only;
         if (slug == null) return;
         Product p = load.apply(slug);
         if (p.variants().isEmpty()) return;
@@ -1571,12 +1574,16 @@ final class FactCheck {
         while (nm.find()) nums.add(nm.group());
         // an option of the same kind that this product does not have («فرد», «عيش بلدي», «رمادي»): never agreed to
         String foreign = foreignValue(lc, p, shop, load);
+        String fkey0 = foreign == null ? null : foreignKey(p, foreign, shop, load);
+        if (foreign == null) { String[] c = foreignCount(customer, question, p); if (c != null) { foreign = c[0]; fkey0 = c[1]; } }   // «ناجتس ٢ قطعة»
         if (foreign != null) {
-            String fkey = foreignKey(p, foreign, shop, load);
+            String fkey = fkey0;
             Set<String> ownOfKey = new java.util.HashSet<>();
             for (Variant v : p.variants()) if (fkey != null && v.options().containsKey(fkey)) ownOfKey.add(light(v.options().get(fkey)));
             List<String> fw = new ArrayList<>();
             for (Tok t : tokens(light(foreign), 0, foreign.length())) fw.add(t.word());
+            // «كبيرة ١.٥ لتر» is said as «١.٥ لتر» too: a value with a number is found by the number and what follows it
+            for (int i = 0; i < fw.size(); i++) if (fw.get(i).chars().allMatch(Character::isDigit)) { if (i > 0) fw.subList(0, i).clear(); break; }
             boolean agreed = false;
             List<int[]> agreeing = new ArrayList<>();
             boolean saysYes = YES_FIRST.matcher(la).find();   // «أيوه، … بيقرب من فري سايز»
@@ -1587,17 +1594,19 @@ final class FactCheck {
                 String under = lastBefore(ms, sn[0], null);   // «- الألوان: أسود، أبيض» under «2. ساعة ذكية بلس 5»: that product's line
                 if (ms.stream().noneMatch(m -> m.start() >= sn[0] && m.start() < sn[1]) && under != null && !under.equals(p.slug())) continue;
                 List<Tok> st = tokens(se, 0, se.length());
-                boolean has = fw.stream().allMatch(x -> st.stream().anyMatch(t -> same(t.word(), x)));
+                boolean has = phraseIn(st, fw);
                 // «المقاس 40 عادةً هو M»: a size conversion, not a yes; «العيش المتاح عيش بلدي أو فينو» lists it with the real ones: a yes
                 boolean mapped = sizes && !saysYes && ownOfKey.stream().anyMatch(o -> st.stream().anyMatch(t -> same(t.word(), o)));
-                if (has && NEG_STRICT.matcher(se).find()) break;   // «مفيش وردي»: said no; what follows are other choices («لو الوردي مهم ليك، …»)
-                if (has && (CONDITIONAL.matcher(se).find() || ALTERNATIVE.matcher(se).find())) continue;   // «أقولك لما التركواز يوصل»
-                if (has && !mapped && (YES.matcher(se).find() || saysYes)) { agreed = true; agreeing.add(sn); }
+                // the clause that holds it decides («الوصف مش بيحدد نوع العيش، وعادةً بييجي بعيش سوري» is a yes to «عيش سوري»)
+                String cl = has ? clauseOf(se, st, fw) : se;
+                if (has && (NEG_STRICT.matcher(cl).find() || WITHOUT.matcher(cl).find())) break;   // «مفيش وردي», «… أو ١ لتر بس، من غير ١.٥ لتر»: said no; what follows are other choices
+                if (has && (CONDITIONAL.matcher(se).find() || ALTERNATIVE.matcher(cl).find())) continue;   // «أقولك لما التركواز يوصل»
+                if (has && !mapped && (YES.matcher(cl).find() || saysYes || YES.matcher(se).find() && !NEG_STRICT.matcher(se).find())) { agreed = true; agreeing.add(sn); }
             }
             if (agreed) {
-                String truth = ar ? "«" + p.name() + "» مش متاح «" + foreign + "»؛ المتاح: " + optionsLine(p, foreignKey(p, foreign, shop, load)) + "."
-                                  : p.name() + " does not come in " + foreign + "; it comes in: " + optionsLine(p, foreignKey(p, foreign, shop, load)) + ".";
-                out.add(new Problem("OPTION_STOCK", "«" + p.name() + "» does NOT come in «" + foreign + "»; never agree to it. Its options: " + optionsLine(p, foreignKey(p, foreign, shop, load)) + ".", (truth + "\n" + withoutRanges(answer, agreeing)).trim()));
+                String truth = ar ? "«" + p.name() + "» مش متاح «" + foreign + "»؛ المتاح: " + optionsLine(p, fkey) + "."
+                                  : p.name() + " does not come in " + foreign + "; it comes in: " + optionsLine(p, fkey) + ".";
+                out.add(new Problem("OPTION_STOCK", "«" + p.name() + "» does NOT come in «" + foreign + "»; never agree to it. Its options: " + optionsLine(p, fkey) + ".", (truth + "\n" + withoutRanges(answer, agreeing)).trim()));
                 return;
             }
             // not agreed, but not answered either («هل عايز تعرف توافر الرمادي؟», «تحب العادي ولا الكبير؟», «ده مقاس كبير على اللي عندنا»): the reply has to say no to it or name the
@@ -1606,7 +1615,7 @@ final class FactCheck {
                 List<int[]> offering = new ArrayList<>(unsureSentences(answer));
                 for (int[] sn : sentences(answer)) {
                     List<Tok> st = tokens(la.substring(sn[0], sn[1]), 0, sn[1] - sn[0]);
-                    if (fw.stream().allMatch(x -> st.stream().anyMatch(t -> same(t.word(), x)))) offering.add(sn);
+                    if (phraseIn(st, fw)) offering.add(sn);
                 }
                 // «الساندوتش ده مش من أصنافنا», «مفيش كيبورد لاسلكي زينترا»: the product itself denied while it is there — those go too, and code says it is there with its price
                 boolean deniedItself = false;
@@ -1614,7 +1623,8 @@ final class FactCheck {
                     for (int[] sn : sentences(answer)) {
                         boolean other = ms.stream().anyMatch(m -> m.start() >= sn[0] && m.start() < sn[1] && !m.slug().equals(p.slug()));
                         String se = la.substring(sn[0], sn[1]);
-                        if (!other && (NEG_STRICT.matcher(se).find() || DENY.matcher(se).find() || SELLS_NOT.matcher(se).find())) { offering.add(sn); deniedItself = true; }
+                        boolean itself = ms.stream().anyMatch(m -> m.start() >= sn[0] && m.start() < sn[1] && m.slug().equals(p.slug()));
+                        if (!other && (NEG_STRICT.matcher(se).find() || DENY.matcher(se).find() || SELLS_NOT.matcher(se).find() || !itself && ONLY_CLAIM.matcher(se).find())) { offering.add(sn); deniedItself = true; }
                     }
                 offering.sort(java.util.Comparator.comparingInt(a -> a[0]));
                 String truth = deniedItself
@@ -1624,6 +1634,12 @@ final class FactCheck {
                              : p.name() + " does not come in " + foreign + " 🙏 It comes in: " + optionsLine(p, fkey) + ".";
                 out.add(new Problem("OPTION_STOCK", "The customer asked for «" + p.name() + "» in «" + foreign + "», which it does NOT have: say so plainly and name its real options: " + optionsLine(p, fkey) + ".",
                         (truth + "\n" + withoutRanges(answer, offering)).trim()));
+                return;
+            }
+            // a no, but not what it does come in («مش من الأصناف اللي عندنا، بس عندنا أحجام تانية»): code adds its real options
+            if (fkey != null && !ownListed(la, p, fkey) && !optionsLine(p, fkey).isBlank()) {
+                String line = ar ? "المتاح من «" + p.name() + "»: " + optionsLine(p, fkey) + "." : p.name() + " comes in: " + optionsLine(p, fkey) + ".";
+                out.add(new Problem("OPTIONS_MISSING", "You said «" + p.name() + "» does not come in «" + foreign + "»: also name what it does come in: " + optionsLine(p, fkey) + ".", answer.strip() + "\n\n" + line));
                 return;
             }
         }
@@ -1669,7 +1685,11 @@ final class FactCheck {
             boolean itself = ms.stream().anyMatch(m -> m.start() >= sn[0] && m.start() < sn[1] && m.slug().equals(p.slug()));
             if (!itself && ms.stream().anyMatch(m -> m.start() >= sn[0] && m.start() < sn[1])) continue;   // a sentence about another product
             if (!itself && HOURS_TALK.matcher(se).find() && !SAYS_STOCK.matcher(se).find()) continue;   // «مش لسه بنفتح دلوقتي»: the hours, not the product
-            if (NEG_STRICT.matcher(se).find() || SAYS_STOCK.matcher(se).find() && !OTHER_CHOICES.matcher(se).find() && !CONDITIONAL.matcher(se).find()) { stockSaid = true; break; }
+            // a no counts when it is about the product: its name, an option the customer picked or a stock word («الرابط مش شغال» says nothing about the stock)
+            List<Tok> st = tokens(se, 0, se.length());
+            boolean aboutIt = itself || STOCK_NEG.matcher(se).find() || SAYS_STOCK.matcher(se).find()
+                    || picked.keySet().stream().anyMatch(v -> tokens(light(v), 0, v.length()).stream().allMatch(w -> st.stream().anyMatch(t -> same(t.word(), w.word()))));
+            if (NEG_STRICT.matcher(se).find() && aboutIt || SAYS_STOCK.matcher(se).find() && !OTHER_CHOICES.matcher(se).find() && !CONDITIONAL.matcher(se).find()) { stockSaid = true; break; }
         }
         if ((!picked.isEmpty() || unsure && foreign == null) && ASK_STOCK.matcher(question).find() && !stockSaid) {
             int stock = fit.stream().mapToInt(Variant::available).sum();
@@ -1684,25 +1704,47 @@ final class FactCheck {
      * («الألوان: أسود وفضي بس»), or for numbered values the first and the last («المقاسات من ٢٦ لـ ٣٢»).
      */
     private static boolean foreignAnswered(String answer, String la, List<Mention> ms, Product p, String key, List<String> fw) {
+        return saidNoTo(answer, la, ms, p, fw) || ownListed(la, p, key);
+    }
+
+    /** A sentence about the product holds the value and a no («مفيش رمادي», «من غير XXL»). */
+    private static boolean saidNoTo(String answer, String la, List<Mention> ms, Product p, List<String> fw) {
         for (int[] sn : sentences(answer)) {
             boolean other = ms.stream().anyMatch(m -> m.start() >= sn[0] && m.start() < sn[1] && !m.slug().equals(p.slug()))
                     && ms.stream().noneMatch(m -> m.start() >= sn[0] && m.start() < sn[1] && m.slug().equals(p.slug()));
             if (other) continue;   // «X12 مش متاح بالرمادي» is about the X12
-            String se = la.substring(sn[0], sn[1]);
+            String se = UNSURE.matcher(la.substring(sn[0], sn[1])).replaceAll(" ");   // «مش لاقي تأكيد إنه متوفر بالأحمر» is no no
             List<Tok> st = tokens(se, 0, se.length());
-            if (fw.stream().allMatch(x -> st.stream().anyMatch(t -> same(t.word(), x))) && (NEG_STRICT.matcher(se).find() || STOCK_NEG.matcher(se).find() || DENY.matcher(se).find() || WITHOUT.matcher(se).find())) return true;
+            if (!phraseIn(st, fw)) continue;
+            String cl = clauseOf(se, st, fw);
+            if (NEG_STRICT.matcher(cl).find() || STOCK_NEG.matcher(cl).find() || DENY.matcher(cl).find() || WITHOUT.matcher(cl).find()) return true;
         }
+        return false;
+    }
+
+    /** The reply names the values of that option the product has: all of them in stock, a range of two of them, the first and the last, or the smallest with «أصغر». */
+    private static boolean ownListed(String la, Product p, String key) {
         Set<String> own = new LinkedHashSet<>();
         for (Variant v : p.variants()) if (v.available() > 0 && v.options().containsKey(key)) own.add(light(v.options().get(key)));
         if (own.isEmpty()) for (Variant v : p.variants()) if (v.options().containsKey(key)) own.add(light(v.options().get(key)));
         if (own.isEmpty()) return true;
         List<Tok> all = tokens(la, 0, la.length());
         if (own.stream().allMatch(v -> tokens(v, 0, v.length()).stream().allMatch(w -> all.stream().anyMatch(t -> same(t.word(), w.word()))))) return true;
-        // «متاح من مقاس S لحد XL بس»: a range between two of its own values
+        List<String> ordered = new ArrayList<>(own);
+        if (ordered.size() >= 2) {
+            String gap = "[^.؟?!\\n\\d]{0,22}?(?<![\\p{L}\\p{N}])";
+            String any = ordered.stream().map(Pattern::quote).collect(java.util.stream.Collectors.joining("|"));   // the shop's order of values is not always smallest first
+            if (Pattern.compile("(?:" + LIMIT_WORDS + "|" + START_WORDS + ")" + gap + "(?:" + any + ")(?![\\p{L}\\p{N}])").matcher(la).find()) return true;
+        }
+        // «متاح من مقاس S لحد XL بس», «S لغاية XXL»: a range between two of its own values
         Matcher r = RANGE.matcher(la);
         while (r.find()) { String a = bare(r.group(1)), b = bare(r.group(2)); if (!a.equals(b) && own.stream().anyMatch(o -> o.equals(a)) && own.stream().anyMatch(o -> o.equals(b))) return true; }
         List<Double> numbers = new ArrayList<>();
         for (String v : own) { Matcher m = Pattern.compile("^(\\d+(?:\\.\\d+)?)").matcher(v.trim()); if (!m.find()) { numbers = null; break; } numbers.add(Double.parseDouble(m.group(1))); }
+        if (numbers != null && numbers.size() >= 2) {
+            String lo0 = num(java.util.Collections.min(numbers), false);
+            if (Pattern.compile("(?<!\\p{L})(?:ال)?(?:اصغر|اقل)(?!\\p{L})[^.؟?!\\n]{0,25}?(?<![\\d.])" + Pattern.quote(lo0) + "(?![\\d])").matcher(la).find()) return true;
+        }
         if (numbers != null && numbers.size() >= 3) {
             String lo = num(java.util.Collections.min(numbers), false), hi = num(java.util.Collections.max(numbers), false);
             return Pattern.compile("(?<![\\d.])" + Pattern.quote(lo) + "(?![\\d])").matcher(la).find() && Pattern.compile("(?<![\\d.])" + Pattern.quote(hi) + "(?![\\d])").matcher(la).find();
@@ -1711,7 +1753,9 @@ final class FactCheck {
     }
 
     private static final Pattern WITHOUT = Pattern.compile("(?<!\\p{L})(?:من\\s+غير|بدون|ماعدا|عدا|الا|except|without)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
-    private static final Pattern RANGE = Pattern.compile("(?<!\\p{L})من\\s+(?:مقاس\\s+|المقاس\\s+|سن\\s+)?([\\p{L}\\p{N}]+)\\s*(?:لحد|لغايه|لغايت|الي|إلى|ل|-|–|to)\\s*(?:مقاس\\s+)?([\\p{L}\\p{N}]+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern RANGE = Pattern.compile("(?<![\\p{L}\\p{N}])(?:من\\s+)?(?:مقاس\\s+|المقاس\\s+|سن\\s+)?([\\p{L}\\p{N}]+)[\\s\\u200C]*(?:لحد|لغايه|لغايت|الي|إلى|ل|-|–|to)[\\s\\u200C]*(?:مقاس\\s+)?([\\p{L}\\p{N}]+)", Pattern.CASE_INSENSITIVE);
+    /** «لحد مقاس XL», «أكبر مقاس فيه XL», «بيوقف عند XL»: its last value with a word that says it is the last; «بيبدأ من مقاس ٤٠»: the first with one that says it is the first. */
+    private static final String LIMIT_WORDS = "(?:لحد|لغايه|حتي|اقصي|اكبر|الاكبر|بيوقف\\s+عند|بيخلص\\s+عند|بتوصل|بيوصل|توصل|يوصل)", START_WORDS = "(?:يبدا|بيبدا|تبدا|بتبدا|بتبتدي|بيبتدي|ابتداء|اصغر|الاصغر|اقل)";
 
     /** «رمادية», «الرمادي», «بالرمادي» as «رمادي». */
     private static String colourWord(String w) {
@@ -1792,8 +1836,8 @@ final class FactCheck {
     /** A reply that opens with yes. */
     private static final Pattern YES_FIRST = Pattern.compile("^[^\\p{L}\\d]*(?:ايوه|ايوة|اه|اكيد|طبعا|yes|sure|of\\s+course)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
     /** Not knowing instead of answering: «مفيش تأكيد حالي على المخزون», «مش قادر أتأكد», «مش لاقي لها بيانات سعر», «حسب آخر تحديث», "I can't confirm". */
-    static final Pattern UNSURE = Pattern.compile("(?:(?:مفيش|مافيش|معنديش|معندناش|مش\\s+عندي|مش\\s+عندنا)\\s+(?:اي\\s+)?تاكيد|مش\\s+قادر(?:ين)?\\s+(?:ا|ن)?(?:تاكد|اكد|احدد|حدد|اعرف|عرف|اقول|قول)|(?:ا|ن)تاكد\\s+(?:من|لك|ليك)|(?:ا|ن)?تحقق\\s+من|(?:مش\\s+لاقي|ملقتش|مفيش|مافيش|معنديش|معندناش)\\s+(?:\\p{L}+\\s+)?بيانات|اخر\\s+تحديث|مش\\s+ظاهر|can'?t\\s+confirm|cannot\\s+confirm|not\\s+sure|no\\s+(?:data|information))", Pattern.CASE_INSENSITIVE);
-    private static final Pattern YES = Pattern.compile("(?:متاح|متوفر|موجود|هنجهز|هجهز|حاضر|تمام|جاهز|مطلوب|ضفت|اضفت|هضيف|سجلت|ممكن\\s+يكون|غالبا|ايوه|ايوة|اه(?!\\p{L})|اكيد|زي\\s+ما|طبعا|available|sure|yes)", Pattern.CASE_INSENSITIVE);
+    static final Pattern UNSURE = Pattern.compile("(?:(?:مفيش|مافيش|معنديش|معندناش|مش\\s+عندي|مش\\s+عندنا|مش\\s+لاقي|ملقتش)\\s+(?:اي\\s+)?تاكيد|مش\\s+قادر(?:ين)?\\s+(?:ا|ن)?(?:تاكد|اكد|احدد|حدد|اعرف|عرف|اقول|قول)|(?:ا|ن)تاكد\\s+(?:من|لك|ليك)|(?:ا|ن)?تحقق\\s+من|(?:مش\\s+لاقي|ملقتش|مفيش|مافيش|معنديش|معندناش|مش\\s+معايا|معييش|معيش)\\s+(?:\\p{L}+\\s+)?بيانات|اخر\\s+تحديث|مش\\s+ظاهر|(?:الرابط|اللينك|اللنك)\\s+(?:اللي\\s+)?(?:[\\p{L}\\u200C]+\\s+)?(?:مش|مبيفتحش|مش\\s+بيفتح)\\s*(?:شغال|شغاله|بيفتح|واضح|ظاهر)?|can'?t\\s+confirm|cannot\\s+confirm|not\\s+sure|no\\s+(?:data|information))", Pattern.CASE_INSENSITIVE);
+    private static final Pattern YES = Pattern.compile("(?:(?<!\\p{L})(?:و)?(?:بي?يجي|بتيجي)(?!ش)|متاح|متوفر|موجود|هنجهز|هجهز|حاضر|تمام|جاهز|مطلوب|ضفت|اضفت|هضيف|سجلت|ممكن\\s+يكون|غالبا|ايوه|ايوة|اه(?!\\p{L})|اكيد|زي\\s+ما|طبعا|available|sure|yes)", Pattern.CASE_INSENSITIVE);
     private static final Set<String> PORTION_WORDS = Set.of("فرد", "فردي", "عائلي", "شخص", "شخصين");
 
     /** A value in the customer's words that other products of the shop have for an option this product has too, but this product does not («شاورما … عيش بلدي»). */
@@ -1802,7 +1846,8 @@ final class FactCheck {
         for (Variant v : p.variants()) v.options().forEach((k, val) -> own.computeIfAbsent(light(k), x -> new java.util.HashSet<>()).add(light(val)));
         if (own.isEmpty()) return null;
         Set<String> anyOwnWord = new java.util.HashSet<>();
-        for (var vals : own.values()) for (String v : vals) for (Tok t : tokens(v, 0, v.length())) anyOwnWord.add(t.word());
+        List<List<String>> ownValueWords = new ArrayList<>();
+        for (var vals : own.values()) for (String v : vals) { List<String> vw = new ArrayList<>(); for (Tok t : tokens(v, 0, v.length())) { anyOwnWord.add(t.word()); vw.add(t.word()); } ownValueWords.add(vw); }
         String rest = lightCustomer;
         for (Mention m : mentions(lightCustomer, shop.names())) rest = rest.substring(0, m.start()) + " ".repeat(m.end() - m.start()) + rest.substring(m.end());   // not the product's own name
         List<Tok> toks = tokens(rest, 0, rest.length());
@@ -1826,7 +1871,13 @@ final class FactCheck {
                     if (mine == null || mine.contains(light(e.getValue()))) continue;
                     List<String> w = new ArrayList<>();
                     for (Tok t : tokens(light(e.getValue()), 0, e.getValue().length())) w.add(t.word());
-                    if (w.isEmpty() || w.stream().anyMatch(x -> x.length() < 2) || w.stream().allMatch(anyOwnWord::contains) || w.stream().anyMatch(PORTION_WORDS::contains)) continue;   // «فرد»: how many it feeds, a question not an option   // «عادي» is its own taste, «أحمر» its own «أحمر هادي»; «عيش بلدي» is not «عيش سوري»
+                    // «فرد»: how many it feeds, a question not an option; «عادي» is its own taste, «أحمر» its own «أحمر هادي» (the words side by side in one own value);
+                    // «عيش بلدي» is not «عيش سوري», and «١ لتر» is not «١.٥ لتر» (one digit is a word too)
+                    if (w.isEmpty() || w.stream().anyMatch(x -> x.length() < 2 && !x.chars().allMatch(Character::isDigit)) || insideOne(w, ownValueWords) || w.stream().anyMatch(PORTION_WORDS::contains)) continue;
+                    // «كبيرة ١.٥ لتر» (the water's) is no size of a meal that comes «عادي، دبل»: a measure is compared only with measures
+                    boolean measure = false;   // a number with its unit after it («١.٥ لتر»); a bare size number («40») is compared with any size
+                    for (int i = 0; i + 1 < w.size(); i++) if (w.get(i).chars().allMatch(Character::isDigit) && !w.get(i + 1).chars().allMatch(Character::isDigit)) measure = true;
+                    if (measure && mine.stream().noneMatch(m -> m.chars().anyMatch(Character::isDigit))) continue;
                     // its words side by side («32 قطعة … 256 جيجا» is no «32 جيجا»)
                     boolean all = false;
                     for (int i = 0; i + w.size() <= toks.size() && !all; i++) {
@@ -1834,11 +1885,95 @@ final class FactCheck {
                         for (int k = 0; k < w.size() && here; k++) here = same(toks.get(i + k).word(), w.get(k));
                         all = here;
                     }
-                    // its words all said, and none is one of this product's own values («L» in «XL»)
-                    if (all && mine.stream().noneMatch(m -> w.stream().allMatch(x -> m.contains(x))) && (best == null || e.getValue().length() > best.length())) best = e.getValue();
+                    // its words all said side by side (so «L» is never read in «XL»; one of its own values holding them was skipped above)
+                    if (all && (best == null || e.getValue().length() > best.length())) best = e.getValue();
                 }
         }
         return best;
+    }
+
+    /** The clause of the sentence (between commas and dashes) where the words stand side by side. */
+    private static String clauseOf(String se, List<Tok> st, List<String> w) {
+        for (int i = 0; i + w.size() <= st.size(); i++) {
+            boolean here = true;
+            for (int k = 0; k < w.size() && here; k++) here = same(st.get(i + k).word(), w.get(k));
+            if (!here) continue;
+            int at = st.get(i).start(), a = at, b = st.get(i + w.size() - 1).end();
+            while (a > 0 && "،,—–".indexOf(se.charAt(a - 1)) < 0) a--;
+            while (b < se.length() && "،,—–".indexOf(se.charAt(b)) < 0) b++;
+            return se.substring(a, b);
+        }
+        return se;
+    }
+
+    /** The words stand side by side, in this order, in the sentence («١ لتر» is not in «١.٥ لتر»: «1 5 لتر»). */
+    private static boolean phraseIn(List<Tok> st, List<String> w) {
+        for (int i = 0; i + w.size() <= st.size(); i++) {
+            boolean here = true;
+            for (int k = 0; k < w.size() && here; k++) here = same(st.get(i + k).word(), w.get(k));
+            if (here) return true;
+        }
+        return false;
+    }
+
+    /** The words stand side by side, in this order, inside one of the values. */
+    private static boolean insideOne(List<String> w, List<List<String>> values) {
+        for (List<String> v : values)
+            for (int i = 0; i + w.size() <= v.size(); i++) {
+                boolean here = true;
+                for (int k = 0; k < w.size() && here; k++) here = same(v.get(i + k), w.get(k));
+                if (here) return true;
+            }
+        return false;
+    }
+
+    /**
+     * «ناجتس ٢ قطعة» for a product that comes in «٦ قطع، ٩ قطع، ٢٠ قطعة»: a number with the unit of one of its options that is none of its values (a count no product of the shop
+     * has, so it is no other product's value either). {raw text, option name}, or null. A real value of that option said too («٢ ناجتس ٩ قطع») makes the number a quantity.
+     */
+    private static String[] foreignCount(String customer, String question, Product p) {
+        Map<String, List<double[]>> byKey = new LinkedHashMap<>();
+        Map<String, String> unitOf = new LinkedHashMap<>();
+        Map<String, Set<String>> valuesOf = new LinkedHashMap<>();
+        for (Variant v : p.variants())
+            for (var e : v.options().entrySet()) {
+                if (unitOf.containsKey(e.getKey()) && unitOf.get(e.getKey()) == null) continue;
+                valuesOf.computeIfAbsent(e.getKey(), x -> new LinkedHashSet<>()).add(light(e.getValue()));
+                Matcher m = COUNT_VALUE.matcher(light(e.getValue()).trim());
+                String u = m.matches() ? countUnit(m.group(2)) : null;
+                if (u == null || unitOf.containsKey(e.getKey()) && !u.equals(unitOf.get(e.getKey()))) { unitOf.put(e.getKey(), null); continue; }
+                unitOf.put(e.getKey(), u);
+                byKey.computeIfAbsent(e.getKey(), x -> new ArrayList<>()).add(new double[]{Double.parseDouble(m.group(1))});
+            }
+        for (var e : unitOf.entrySet()) {
+            if (e.getValue() == null || valuesOf.get(e.getKey()).size() < 2) continue;
+            String lc = light(customer);
+            if (valuesOf.get(e.getKey()).stream().anyMatch(o -> Pattern.compile("(?<![\\p{L}\\d.])" + Pattern.quote(o) + "(?![\\p{L}\\d])").matcher(lc).find())) continue;
+            Matcher m = Pattern.compile("(?<![\\d.])(\\d+(?:\\.\\d+)?)\\s*(\\p{L}+)").matcher(question);
+            while (m.find()) {
+                if (!e.getValue().equals(countUnit(bare(m.group(2))))) continue;
+                double n = Double.parseDouble(m.group(1));
+                if (byKey.get(e.getKey()).stream().anyMatch(x -> x[0] == n)) continue;
+                return new String[]{customer.substring(m.start(), m.end()), e.getKey()};
+            }
+        }
+        return null;
+    }
+
+    private static final Pattern COUNT_VALUE = Pattern.compile("^(?:\\p{L}+\\s+)?(\\d+(?:\\.\\d+)?)\\s*(\\p{L}+)$");
+
+    /** The unit of an option value, singular and plural as one («قطع», «قطعة» -> «قطع»). */
+    private static String countUnit(String w) {
+        String b = bare(w);
+        return switch (b) {
+            case "قطع", "قطعه", "حته", "حتت", "pieces", "piece", "pcs" -> "قطع";
+            case "لتر", "litre", "liter", "l" -> "لتر";
+            case "مل", "ملي", "ml" -> "مل";
+            case "جرام", "جم", "g" -> "جرام";
+            case "كيلو", "kg" -> "كيلو";
+            case "اصابع", "صباع" -> "صباع";
+            default -> b.length() >= 2 ? unit(b) : null;
+        };
     }
 
     private static String foreignKey(Product p, String value, Shop shop, java.util.function.Function<String, Product> load) {

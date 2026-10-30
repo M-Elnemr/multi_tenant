@@ -59,7 +59,7 @@ def light(s):
 def numbers(s):
     t = re.sub(r"(?<=\d)[,٬](?=\d{3}\b)", "", s.translate(AR))
     return [float(x) for x in re.findall(r"(?<![\d.])\d+(?:\.\d{1,2})?(?![\d])", t)]
-NEG = re.compile(r"(?<!\w)(?:و|ف)?مش(?!\w)|ما\s+بي?جيش|مبيجيش|مابيجيش|مجيهش|مجيش|ميجيش|معديش|مفيش|مافيش|معندناش|ماعندناش|معنديش|خلص|خلصان|خلصت|نفذ|نفذت|نفد|نفاذ|نافذ|ناضب|نفاص|متوفرش|موجودش|متاحش|غير\s+(?:متاح|متوفر|موجود)|للاسف|ملهوش|مفيهوش|مفيهاش|مبقاش|(?<!\w)لا(?!\w)|(?<!\w)لأ(?!\w)|بس\s+(?:بلون|باللون|بالوان|في)|"
+NEG = re.compile(r"(?<!\w)(?:و|ف)?مش(?!\w)|ما\s+بي?جيش|مبيجيش|مابيجيش|مجيهش|مجيش|ميجيش|معديش|مفيش|مافيش|معندناش|ماعندناش|ما\s+عندناش|مفيناش|مافيناش|معنديش|متاتيش|مبتجيش|مابتجيش|خلص|خلصان|خلصت|نفذ|نفذت|نفد|نفاذ|نافذ|ناضب|نفاص|متوفرش|موجودش|متاحش|غير\s+(?:متاح|متوفر|موجود)|للاسف|ملهوش|مفيهوش|مفيهاش|مبقاش|(?<!\w)لا(?!\w)|(?<!\w)لأ(?!\w)|بس\s+(?:بلون|باللون|بالوان|في)|"
                  r"not\s+available|unavailable|out\s+of\s+stock|sold\s+out|don'?t\s+have|no\s+longer|isn'?t|aren'?t")
 POS = re.compile(r"متاح|متوفر|موجود|available|in\s+stock|عندنا")
 def sentences(s): return [x for x in re.split(r"[\n.!؟?]+", s) if x.strip()]
@@ -203,6 +203,8 @@ def grade(c):
         if v in lr and NEG.search(lr): return None
         if all(light(o).split()[0] in lr for o in own): return None
         if re.search(r"من\s+\S+\s+(?:لحد|لغايه|الي|ل|-)\s*\S+", lr) and NEG.search(lr): return None
+        own_n = [numbers(o)[0] for o in own if numbers(o)]
+        if len(own_n) == len(own) >= 3 and min(own_n) in nums and max(own_n) in nums: return None   # «المقاسات من 26 إلى 32»
         return f"value {c['values'][0]} not answered: neither a no nor its real options ({'، '.join(own)})"
     if k == "qty_over_stock":
         if c["available"] >= 100: return None   # a made-to-order kitchen: the stock number is not a limit a customer meets
@@ -215,7 +217,7 @@ def grade(c):
         missing = [x for x in c["colours"] if light(x)[:3] not in lr]
         return ("in-stock colours missing: " + "، ".join(missing)) if missing else None
     if k == "order":
-        told_min = re.search(r"اقل\s+(?:طلب|قيمه|مبلغ)|الحد\s+الادني|minimum\s+order|minimum\s+is", lr)
+        told_min = re.search(r"اقل\s+(?:طلب|قيمه|مبلغ)|الحد\s+الادني|القيمه\s+الكليه|(?:يصل|يوصل|توصل|نوصل)\s+(?:ل|لـ|الي)|minimum\s+order|minimum\s+is", lr)
         if c.get("min_order") and c["price"] < c["min_order"]:   # under the shop's minimum: no summary can be made, the customer must hear the minimum
             return None if told_min and num_txt(c["min_order"]) in [num_txt(x) for x in nums] else f"below the minimum order {num_txt(c['min_order'])}: not told"
         if told_min and not c.get("min_order"): return None   # an old run without the minimum: asking to add is right

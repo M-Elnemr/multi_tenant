@@ -177,6 +177,31 @@ class FactCheckTest {
     }
 
     @Test
+    void theSlipsOfExamRoundSixAreCaught() {
+        // a value with a one-digit number («١ لتر», «كبيرة ١.٥ لتر») is a value too, and «١ لتر» is not inside «١.٥ لتر»
+        assertThat(FactCheck.fix("مياه معدنية ١ لتر عندكم؟", "تحب أحسبلك واحدة منهم في طلبك؟", REST, List.of())).contains("مش متاح «١ لتر»").contains("كبيرة ١.٥ لتر");
+        assertThat(FactCheck.fix("عايز مشروب غازي كبيرة ١.٥ لتر", "عندنا مشروبات غازية بيبسي، سفن أب، ميرندا وماونتن ديو حجم ١.٥ لتر بسعر ٤٠ جنيه. تحب أي نوع؟", REST, List.of()))
+                .contains("كانز، ١ لتر").doesNotContain("حجم ١.٥ لتر بسعر");
+        assertThat(kinds(REST, "عايز مشروب غازي كبيرة ١.٥ لتر", "أهلاً بيك يا فندم 🙌 المشروب الغازي بحجم ١.٥ لتر للأسف مش من الأصناف اللي عندنا، بس عندنا مشروبات غازية بأحجام تانية — تحب أبعتلك الأحجام والأصناف المتاحة؟")).contains("OPTIONS_MISSING");
+        // the product denied with «مينفعش نلاقي» / «مافيناش»: code says it is there, with its real sizes
+        String water = FactCheck.fix("عايز مياه معدنية ١ لتر", "عندنا في المتجر أكلات شاورما ومشويات بس ومينفعش نلاقي مياه معدنية. تحب نساعدك تختار ساندوتش أو وجبة؟", REST, List.of());
+        assertThat(water).contains("صغيرة ٦٠٠ مل").doesNotContain("مينفعش");
+        assertThat(FactCheck.fix("عايز مياه معدنية ١ لتر", "عذرًا يا فندم، إحنا محل شاورما ومشويات ومافيناش مياه معدنية في الطلبات. تحب أجهزلك ساندوتش أو مشوي بدل كده؟", REST, List.of())).contains("كبيرة ١.٥ لتر").doesNotContain("مافيناش");
+        // a count the product does not come in («٢ قطعة» of nuggets that come in ٦/٩/٢٠)
+        assertThat(FactCheck.fix("عايز ناجتس فراخ ٢ قطعة", "الناجتس متوفر عندنا، بس الحد الأدنى للطلب هو ١٠٠ جنيه. هل تحب تضيف ساندوتش أو مشويات عشان تكمل الطلب؟", REST, List.of())).contains("٦ قطع، ٩ قطع، ٢٠ قطعة");
+        // more than the stock answered with another product's count: the product the customer named decides
+        assertThat(FactCheck.fix("عايز 13 قطعة من جينز سكيني هاي ويست أزرق L", "عذرًا يا فندم، المتوفر حاليًا من جينز سكيني ممزق أزرق مقاس L هو 8 قطع بس. تحب أحجزهولك بـ 8 دلوقتي؟", FASH, List.of())).contains("متاح منه 3").doesNotContain("8 قطع");
+        // «الرابط اللي بعتّه مش شغال» says nothing about the stock, and goes
+        assertThat(FactCheck.fix("سماعة رقبة رياضية سونيك أحمر موجود ولا خلص؟", "حضرتك، الرابط اللي بعتّه مش شغال معايا للأسف 😅 ممكن تبعت صورة للسماعة أو اسمها زي ما هي مكتوبة؟", TECH, List.of())).contains("متاح ✅").doesNotContain("الرابط");
+        // right answers stay: «من غير ١.٥ لتر», the smallest count, the real list, a no to a size before it, a measure is no size of a meal
+        assertThat(kinds(REST, "عايز مشروب غازي كبيرة ١.٥ لتر", "للأسف يا فندم، عندنا المشروبات الغازية متاحة بكانز ٣٣٠ مل (٢٥ جنيه) أو ١ لتر (٤٠ جنيه) بس، من غير ١.٥ لتر. تحب أخدلك ١ لتر؟")).doesNotContain("OPTION_STOCK");
+        assertThat(kinds(REST, "عايز ناجتس فراخ ٢ قطعة", "أهلاً بيك يا فندم 🙌 عندي ناجتس فراخ بس الأصغر حجم عندنا ٦ قطع بـ ٧٠ جنيه، وبعدها ٩ قطع بـ ١٠٠.")).doesNotContain("OPTION_STOCK");
+        assertThat(kinds(REST, "مياه معدنية ١ لتر عندكم؟", "مياه المعدنية عندنا بقتين يا فندم: صغيرة ٦٠٠ مل بـ ١٠ جنيه وكبيرة ١.٥ لتر بـ ١٥ جنيه. تحب مين؟ 🙂")).doesNotContain("OPTION_STOCK");
+        assertThat(kinds(REST, "وجبة شاورما فراخ عربي كبير؟", "لا، وجبة شاورما فراخ عربي مش بتيجي كبير. الخيارات المتاحة عندها هي:\n- حجم عادي (145 جنيه)\n- حجم دبل (195 جنيه)\n\nتحب أجهزلك أيهم؟")).isEmpty();
+        assertThat(kinds(REST, "عايز وجبة شاورما فراخ عربي مع مشروب كبيرة ١.٥ لتر", "الوجبة بتيجي مع مشروب كانز، لو عايز ١.٥ لتر ممكن نضيفه لك كمنتج منفصل في الطلب.")).doesNotContain("OPTION_STOCK");
+    }
+
+    @Test
     void anUnsureReplyIsNoAnswer() {
         String reply = "مفيش تأكيد حالي على المخزون في النظام، ممكن يتفاجى حسب آخر تحديث. تحب نتأكد معاك من التوافر الحالي قبل ما نجهز الطلب؟";
         String customer = "جراب آيفون 14 سيليكون أبيض آيفون 14 برو موجود ولا خلص؟";
