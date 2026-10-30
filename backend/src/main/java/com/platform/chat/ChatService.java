@@ -414,6 +414,10 @@ public class ChatService {
                 }
                 rounds.addAll(r2);
             }
+            // the customer sent every detail for what they chose and still no summary: code makes it (the customer confirms it as usual)
+            if (ctx.summary()[0] == null && ctx.order()[0] == null && !madeChanges(ctx, rounds) && detailsGivenNoSummary(ctx, turns, rounds, text, answer)) {
+                try { if (orderByCode(ctx)) log.info("Order summary made by code (conversation {})", conv); } catch (RuntimeException e) { log.warn("Order by code skipped", e); }
+            }
         } catch (AiProvider.AiUnavailableException e) {
             log.warn("AI unavailable: {} ({})", e.getMessage(), e.getCause() == null ? "no cause" : e.getCause().toString());
             var backup = AiBudget.hasLeft(12_000) ? routed.restartOnFallback() : null;
@@ -521,7 +525,8 @@ public class ChatService {
             FactCheck.Shop shop = shopView(ctx.tenantId());
             for (var f : FactCheck.check(last, answer, shop, touchedOrBefore(ctx, shop))) if (!f.kind().equals("CHECK_ERROR")) out.add(f.kind());
         } catch (RuntimeException e) { log.warn("Unresolved check skipped", e); }
-        if (STALL.matcher(answer).find()) out.add("STALL");
+        if (STALL.matcher(answer).find() || FactCheck.UNSURE.matcher(FactCheck.light(answer)).find()) out.add("STALL");
+        if (TOOL_TALK.matcher(answer).find()) out.add("TOOL_TALK");
         if (detailsGivenNoSummary(ctx, turns, rounds, last, answer)) out.add("NO_SUMMARY");
         return out;
     }
@@ -762,6 +767,8 @@ public class ChatService {
             problems.put("TOOL_TALK", "Never talk about your tools, the system, the catalog data or searches to the customer («أداة البحث», «النظام», «الكتالوج مش راجع»): answer like a person in the shop, from what the search found (search again with fewer words if it found nothing).");
         if (!lookedUp && STALL.matcher(answer).find())
             problems.put("STALL", "Do not tell the customer you will check or confirm later: look it up now (search_products or get_product) and answer in this message.");
+        else if (FactCheck.UNSURE.matcher(FactCheck.light(answer)).find())
+            problems.put("STALL", "Never tell the customer you cannot confirm or have no data («مفيش تأكيد», «مش قادر أتأكد», «مش لاقي بيانات»): the shop's data has the price and the stock of every option; read it (get_product) and answer plainly in this message.");
         boolean prepared = rounds.stream().anyMatch(r -> r.tools().contains("prepare_order"));
         if (!prepared && ADD_IT.matcher(FastAnswers.norm(last)).matches() && !OPTION_ASK.matcher(FastAnswers.norm(answer)).find())
             problems.put("ADD_WITHOUT_OPTIONS", "The customer wants to order the product you just talked about: ask in one message for every option they have not chosen yet (size, colour, bread, spice...), exactly as the product has them; ask for the delivery details only after that.");
@@ -830,7 +837,7 @@ public class ChatService {
     /** «هتأكد وأرجعلك», «لازم نتأكد من المخزون الأول», "let me confirm the price": a promise to look instead of looking. */
     static final Pattern STALL = Pattern.compile("(?:(?:ه|هـ)(?:تاكد|تأكد|شوف|بحث|راجع|سال|سأل)(?:لك|لك)?\\s|لازم\\s+(?:ا|أ|ن)?(?:تاكد|تأكد)|ثواني\\s+و|هرجعلك|هرد\\s+عليك|هبلغك|(?:ا|أ)?رجع\\s*لك|وارجعلك|لحظه\\s+(?:ا|أ)?(?:تاكد|تأكد|شوف|راجع)|(?:ا|أ)تاكدلك|(?:ا|أ)تأكدلك|(?:ا|أ)راجع\\s+تاني|وارد\\s+عليك|وأرد\\s+عليك|(?:ا|أ)راجع\\s+(?:المخزون|الكتالوج|السيستم)|اتاكد\\s+من\\s+المخزون|(?:ا|أ)?تاكد\\s+لك|لازم\\s+(?:ا|أ)?تحقق|محتاجين\\s+نتاكد|محتاجين\\s+نتأكد|مش\\s+عارف\\s+(?:ا|أ)?قولك|معنديش\\s+تاكيد|معنديش\\s+تأكيد|مش\\s+متاكد|مش\\s+متأكد|(?:ا|أ)?تحقق\\s+من\\s+المخزون|(?:ا|أ)?تأكد\\s+لك|هنادرك|هندور|هشوفلك\\s+و|لحظه\\s+يا\\s+فندم|لحظة\\s+يا\\s+فندم|استني\\s+(?:ثواني|دقيقه|شويه)|هبعتلك\\s+(?:التفاصيل|السعر)|let\\s+me\\s+(?:check|confirm|look)|i\\s*(?:'ll|\\s+will)\\s+(?:check|confirm|look)|one\\s+moment)", Pattern.CASE_INSENSITIVE);
     /** The model talking about its own machinery to the customer. */
-    static final Pattern TOOL_TALK = Pattern.compile("(?:اداه\\s+البحث|أداة\\s+البحث|اداة\\s+البحث|نتايج\\s+البحث|نتائج\\s+البحث|البحث\\s+(?:مرجعش|لم\\s+يرجع|مارجعش)|في\\s+نظامنا|السيستم\\s+بتاعنا|قاعده\\s+البيانات|قاعدة\\s+البيانات|the\\s+(?:search\\s+)?tool|my\\s+tools|the\\s+database|in\\s+our\\s+system)", Pattern.CASE_INSENSITIVE);
+    static final Pattern TOOL_TALK = Pattern.compile("(?:🔍|(?:جاري|جار|بجري)\\s+(?:ال)?بحث|^\\s*(?:ال)?بحث\\s+عن|اداه\\s+البحث|أداة\\s+البحث|اداة\\s+البحث|نتايج\\s+البحث|نتائج\\s+البحث|البحث\\s+(?:مرجعش|لم\\s+يرجع|مارجعش)|في\\s+نظامنا|السيستم\\s+بتاعنا|قاعده\\s+البيانات|قاعدة\\s+البيانات|the\\s+(?:search\\s+)?tool|my\\s+tools|the\\s+database|in\\s+our\\s+system)", Pattern.CASE_INSENSITIVE);
 
     /** «بكام», «سعره كام», «how much»: the customer asks a price. */
     static final Pattern PRICE_ASKED = Pattern.compile("(?:(?<!\\p{L})بكام(?!\\p{L})|سعر(?:ه|ها|هم)?\\s+(?:كام|ايه)|ب\\s*كام|كام\\s+سعر|how\\s+much|what\\s*(?:'s|\\s+is)\\s+the\\s+price|price\\s+of)", Pattern.CASE_INSENSITIVE);
@@ -917,14 +924,106 @@ public class ChatService {
         String d = MoneyGuard.digits(last).replaceAll("[\\s-]", "");
         if (!d.matches("(?s).*(?<!\\d)(?:\\+?20)?01[0125]\\d{8}(?!\\d).*") || !ADDRESS_WORDS.matcher(last).find()) return false;
         if (rounds.stream().anyMatch(r -> r.tools().contains("prepare_order"))) return false;
-        if (answer.contains("؟") || answer.contains("?")) {
-            // a real question for something missing is fine; the WhatsApp question alone is not a reason to skip the summary
-            String q = FastAnswers.norm(answer);
-            if (q.matches("(?s).*(?:مقاس|لون|حجم|انهي|اي نوع|الكميه|كام واحد|size|colou?r|which).*")) return false;
+        FactCheck.Shop shop = shopView(ctx.tenantId());
+        List<String> chosen = chosenInChat(ctx, shop);
+        // a real question for an option still to choose is fine — asked in the question itself, about a product that has that choice («عادي ولا كبير؟» for a sandwich of one size is not);
+        // the WhatsApp question or «تحب أجهزلك الطلب؟» is no reason to skip the summary
+        for (String q : answer.split("(?<=[؟?])")) {
+            if (!(q.contains("؟") || q.contains("?"))) continue;
+            String n = FastAnswers.norm(q.length() > 160 ? q.substring(q.length() - 160) : q);
+            if (n.matches("(?s).*(?:مقاس|لون|حجم|انهي|اي نوع|الكميه|كام واحد|size|colou?r|which).*")
+                    && (chosen.isEmpty() || chosen.stream().anyMatch(s -> { var p = shop.product(s); return p == null || p.variants().size() > 1; }))) return false;
         }
-        // there must be something chosen: a product named in this very message, or one the assistant talked about earlier in the chat
-        if (!FactCheck.mentions(last, shopView(ctx.tenantId()).names()).isEmpty()) return true;
+        // there must be something chosen: a product named in this very message or earlier by the customer, or one the assistant talked about earlier in the chat
+        if (!FactCheck.mentions(last, shop.names()).isEmpty() || !chosen.isEmpty()) return true;
         return turns.stream().anyMatch(t -> "model".equals(t.role()) && t.text() != null && MoneyGuard.digits(t.text()).matches("(?s).*\\d{2,}.*(?:جنيه|ج|EGP).*"));
+    }
+
+    /** The products the customer named in this chat so far (their own messages), in order. */
+    private List<String> chosenInChat(Ctx ctx, FactCheck.Shop shop) {
+        Set<String> out = new java.util.LinkedHashSet<>();
+        for (String m : jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u ORDER BY id").param("c", ctx.conversationId()).param("u", ctx.userMsgId()).query(String.class).list())
+            for (var mn : FactCheck.mentions(m, shop.names())) out.add(mn.slug());
+        return new ArrayList<>(out);
+    }
+
+    private static final Pattern NAME_SAID = Pattern.compile("(?:(?<!\\p{L})(?:انا|أنا|اسمي|إسمي|الاسم|الإسم|معاك)\\s*[:：]?\\s*)([^،,.\\n\\d:٠-٩]{2,40})");
+    private static final Pattern PIECES = Pattern.compile("(?<![\\d.])(\\d{1,2})\\s*(?:قطع|قطعه|قطعة|حته|حتت|حتة|pieces?|pcs)(?!\\p{L})");
+    private static final Pattern PICKUP_WORDS = Pattern.compile("[أإا]ستلام|[أإا]ستلم|هاجي|pick ?up|collect|بنفسي|من المحل|من الفرع", Pattern.CASE_INSENSITIVE);
+    private static final Pattern CARD_WORDS = Pattern.compile("(?:فيزا|كارت|بطاقه|بطاقة|visa|card)", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * The customer gave their name, mobile and address for the one product they chose, and neither model made the summary: code makes it, with prepare_order and all its locks (each option
+     * the customer said, the stock of one branch, a valid mobile, a governorate we know). The customer still confirms that summary. Nothing happens when anything is unclear: more than one
+     * product, an option not said, no name, no governorate, pickup. True when the summary was made.
+     */
+    private boolean orderByCode(Ctx ctx) {
+        FactCheck.Shop shop = shopView(ctx.tenantId());
+        List<String> chosen = chosenInChat(ctx, shop);
+        if (chosen.size() != 1) return false;
+        List<String> msgs = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u ORDER BY id").param("c", ctx.conversationId()).param("u", ctx.userMsgId()).query(String.class).list();
+        String said = FastAnswers.norm(MoneyGuard.digits(String.join(" \n ", msgs)));
+        if (PICKUP_WORDS.matcher(said).find()) return false;
+        Map<String, Object> product;
+        try { product = catalog.detailBySlug(ctx.tenantId(), chosen.get(0)); } catch (RuntimeException e) { return false; }
+        // the one variant whose every option with a choice was said by the customer
+        Map<String, Set<String>> values = new java.util.HashMap<>();
+        List<Map<String, Object>> variants = (List<Map<String, Object>>) product.get("variants");
+        for (var v : variants) for (String kv : String.valueOf(v.get("comboKey") == null ? "" : v.get("comboKey")).split("\\|")) if (kv.contains("=")) values.computeIfAbsent(kv.substring(0, kv.indexOf('=')), k -> new java.util.HashSet<>()).add(kv.substring(kv.indexOf('=') + 1));
+        List<Map<String, Object>> fit = new ArrayList<>();
+        for (var v : variants) {
+            boolean all = true;
+            for (String kv : String.valueOf(v.get("comboKey") == null ? "" : v.get("comboKey")).split("\\|")) {
+                if (!kv.contains("=") || values.getOrDefault(kv.substring(0, kv.indexOf('=')), Set.of()).size() < 2) continue;
+                String val = FastAnswers.norm(MoneyGuard.digits(kv.substring(kv.indexOf('=') + 1)));
+                if (!Pattern.compile("(?<![\\p{L}\\d])" + Pattern.quote(val) + "(?![\\p{L}\\d])").matcher(said).find()) { all = false; break; }
+            }
+            if (all) fit.add(v);
+        }
+        if (fit.size() != 1) return false;
+        Map<String, Object> variant = fit.get(0);
+        int quantity = 1;
+        var q = PIECES.matcher(said);
+        String combo = FastAnswers.norm(MoneyGuard.digits(String.valueOf(variant.get("comboKey"))));
+        while (q.find()) if (!combo.contains(q.group())) { quantity = Integer.parseInt(q.group(1)); break; }   // «٦ قطع» of wings is the option, not the quantity
+        // the details: the last message that holds the mobile and the address
+        String last = msgs.get(msgs.size() - 1);
+        var n = NAME_SAID.matcher(last);
+        if (!n.find()) return false;
+        String name = n.group(1).trim();
+        String gov = null, govName = null;
+        String lastNorm = FastAnswers.norm(last);
+        for (var e : GOVERNORATES.entrySet()) {
+            String ar = FastAnswers.norm(e.getValue().split(" ")[0]), en = e.getValue().substring(e.getValue().indexOf(' ') + 1).toLowerCase(java.util.Locale.ROOT);
+            String bare = ar.startsWith("ال") ? ar.substring(2) : ar;
+            if (Pattern.compile("(?<!\\p{L})(?:ال)?" + Pattern.quote(bare) + "(?!\\p{L})").matcher(lastNorm).find() || lastNorm.contains(en)) { gov = e.getKey(); govName = e.getValue().split(" ")[0]; break; }
+        }
+        if (gov == null) return false;
+        // the name ends where the address starts («انا كريم القاهرة مدينة نصر…»)
+        for (String w : name.split("\\s+")) if (FastAnswers.norm(w).contains(FastAnswers.norm(govName).replaceFirst("^ال", "")) || ADDRESS_WORDS.matcher(w).find()) { name = name.substring(0, name.indexOf(w)).trim(); break; }
+        if (name.length() < 2) return false;
+        String address = null;
+        for (String part : last.split("[،,\\n]")) if (ADDRESS_WORDS.matcher(part).find()) { address = part.trim(); break; }
+        if (address == null) return false;
+        String mobile = mobileTheCustomerWrote(ctx);
+        if (mobile == null) return false;
+        Map<String, Object> args = new LinkedHashMap<>();
+        args.put("items", List.of(obj("variantId", String.valueOf(variant.get("id")), "quantity", quantity)));
+        args.put("customerName", name);
+        args.put("phone", mobile);
+        args.put("governorateCode", gov);
+        String street = address.replaceFirst("^\\s*(?:محافظه|محافظة)?\\s*" + Pattern.quote(govName) + "[\\s،,-]*", "").trim();
+        args.put("addressLine1", street.length() >= 5 ? street : address);
+        args.put("area", govName);
+        args.put("paymentMethod", CARD_WORDS.matcher(said).find() && policy.cardEnabled() ? "CARD" : "CASH_ON_DELIVERY");
+        Map<String, Object> r;
+        try { r = prepareOrder(ctx, args); } catch (RuntimeException e) { log.warn("Order by code failed", e); return false; }
+        if (r.get("error") != null || ctx.summary()[0] == null) {
+            log.info("Order by code refused (conversation {}): {}", ctx.conversationId(), r.get("error"));
+            return false;
+        }
+        events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), null, "ORDER_BY_CODE", chosen.get(0) + " x" + quantity, null);
+        return true;
     }
 
     private record NamesAt(List<FactCheck.Named> names, long at) {}

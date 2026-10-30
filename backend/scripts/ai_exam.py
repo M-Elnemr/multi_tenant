@@ -58,7 +58,7 @@ def light(s):
 def numbers(s):
     t = re.sub(r"(?<=\d)[,٬](?=\d{3}\b)", "", s.translate(AR))
     return [float(x) for x in re.findall(r"(?<![\d.])\d+(?:\.\d{1,2})?(?![\d])", t)]
-NEG = re.compile(r"(?<!\w)مش(?!\w)|مفيش|مافيش|معندناش|ماعندناش|معنديش|خلص|خلصان|خلصت|نفذ|نفذت|نفد|نفاذ|نافذ|ناضب|نفاص|متوفرش|موجودش|متاحش|غير\s+(?:متاح|متوفر|موجود)|للاسف|ملهوش|مفيهوش|مفيهاش|مبقاش|(?<!\w)لا(?!\w)|(?<!\w)لأ(?!\w)|بس\s+(?:بلون|باللون|بالوان|في)|"
+NEG = re.compile(r"(?<!\w)(?:و|ف)?مش(?!\w)|ما\s+بي?جيش|مبيجيش|مابيجيش|مجيهش|مجيش|ميجيش|معديش|مفيش|مافيش|معندناش|ماعندناش|معنديش|خلص|خلصان|خلصت|نفذ|نفذت|نفد|نفاذ|نافذ|ناضب|نفاص|متوفرش|موجودش|متاحش|غير\s+(?:متاح|متوفر|موجود)|للاسف|ملهوش|مفيهوش|مفيهاش|مبقاش|(?<!\w)لا(?!\w)|(?<!\w)لأ(?!\w)|بس\s+(?:بلون|باللون|بالوان|في)|"
                  r"not\s+available|unavailable|out\s+of\s+stock|sold\s+out|don'?t\s+have|no\s+longer|isn'?t|aren'?t")
 POS = re.compile(r"متاح|متوفر|موجود|available|in\s+stock|عندنا")
 def sentences(s): return [x for x in re.split(r"[\n.!؟?]+", s) if x.strip()]
@@ -82,7 +82,7 @@ with_soldout = [p for p in optioned if any(v["available"] <= 0 for v in p["varia
 single = [p for p in products if len({v["price"] for v in p["variants"]}) == 1]
 
 for p in rnd.sample(priced, min(len(priced), N // 5)):
-    v = rnd.choice(p["variants"])
+    v = rnd.choice([x for x in p["variants"] if x["available"] > 0] or p["variants"])   # the price of an option that is there (a sold-out one is the soldout cases' business)
     q = rnd.choice(["{n} {o} بكام؟", "سعر {n} {o} كام؟", "{n} {o} بكام لو سمحت", "عايز اعرف سعر {n} {o}"]).format(n=p["name"], o=ask_values(p, v))
     add("price_option", [q], product=p["name"], price=v["price"], others=sorted({x["price"] for x in p["variants"] if x["price"] != v["price"]}))
 for p in rnd.sample(single, min(len(single), N // 10)):

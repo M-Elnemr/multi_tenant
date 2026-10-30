@@ -45,6 +45,29 @@ class AiChatIntegrationTest extends IntegrationTestBase {
     long orders(Tenant t) throws Exception { return ((Number) JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/orders", null)), "$.meta.total")).longValue(); }
 
     @Test
+    void theSummaryIsMadeByCodeWhenTheCustomerSentEveryDetailAndTheModelOnlyAskedAgain() throws Exception {
+        Tenant t = onboard("STORE");
+        String variant = mug(t);
+        String name = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/products?q=Mug", null)), "$.data[0].name");
+        String conv = UUID.randomUUID().toString();
+        FakeAiProvider.reset();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("متاح عندنا يا فندم. ابعتلي الاسم والعنوان ورقم الموبايل."));
+        send(t, conv, "عايز " + name);
+        FakeAiProvider.reset();
+        // every model answer only asks again («عايز تأكيد الطلب دلوقتي؟»), never calls prepare_order
+        for (int i = 0; i < 8; i++) FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام يا أستاذ كريم، استلمت العنوان والرقم. عايز تأكيد الطلب دلوقتي؟"));
+        String sent = send(t, conv, "انا كريم، القاهرة مدينة نصر شارع مكرم عبيد عمارة ٣ شقة ٧، ٠١٠٢٣٤٥٦٧٨٩، كاش");
+        String reply = JsonPath.read(sent, "$.reply");
+        conv = JsonPath.read(sent, "$.conversationId");
+        assertThat(reply).contains("ملخص الأوردر").contains("100").contains("مدينة نصر شارع مكرم عبيد");
+        assertThat(jdbc.sql("SELECT pending ->> 'name' FROM chat.conversations WHERE id = CAST(:c AS uuid)").param("c", conv).query(String.class).single()).isEqualTo("كريم");
+        assertThat(jdbc.sql("SELECT pending -> 'items' IS NOT NULL FROM chat.conversations WHERE id = CAST(:c AS uuid)").param("c", conv).query(Boolean.class).single()).isTrue();
+        assertThat(jdbc.sql("SELECT pending ->> 'phone' FROM chat.conversations WHERE id = CAST(:c AS uuid)").param("c", conv).query(String.class).single()).isEqualTo("01023456789");
+        assertThat(jdbc.sql("SELECT pending -> 'items' -> 0 ->> 'variantId' FROM chat.conversations WHERE id = CAST(:c AS uuid)").param("c", conv).query(String.class).single()).isEqualTo(variant);
+        assertThat(orders(t)).isZero();   // only the summary: the customer still confirms it
+    }
+
+    @Test
     void noSummaryIsShownForMoreThanTheStockOrASoldOutItem() throws Exception {
         Tenant t = onboard("STORE");
         String variant = mug(t);   // 9 in stock
