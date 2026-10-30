@@ -21,6 +21,21 @@ public class FakeAiProvider implements AiProvider {
 
     public static synchronized void reset() { SCRIPT.clear(); RESULTS.clear(); lastSystem = ""; }
 
+    /**
+     * A scripted turn for one chat only: when another conversation (a background job of the app) reaches it first, it goes back to the front of the queue and that caller gets «ok».
+     * {@code marker} is any text of the chat it belongs to.
+     */
+    public static Function<List<Turn>, Turn> only(String marker, Function<List<Turn>, Turn> f) {
+        return new Function<>() {
+            @Override public Turn apply(List<Turn> turns) {
+                boolean mine = turns.stream().anyMatch(t -> t.text() != null && t.text().contains(marker));
+                if (mine) return f.apply(turns);
+                SCRIPT.addFirst(this);
+                return Turn.model("ok");
+            }
+        };
+    }
+
     public static Turn call(String tool, java.util.Map<String, Object> args) { return new Turn("model", "", List.of(new ToolCall(tool, args)), List.of(), null); }
 
     @Override

@@ -131,9 +131,10 @@ class AiChatIntegrationTest extends IntegrationTestBase {
         Map<String, Object> two = new java.util.HashMap<>(prepare(w[1], 0, "CASH_ON_DELIVERY"));
         two.put("items", List.of(Map.of("variantId", w[1], "quantity", 2)));
         FakeAiProvider.reset();
-        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", two));
-        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepare(w[1], 0, "CASH_ON_DELIVERY")));
-        FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام يا أستاذ كريم، تحب تضيف حاجة؟"));
+        String mine = "مكرم عبيد عمارة ٣ شقة ٢";   // this chat's own words: a background job never takes these turns
+        FakeAiProvider.SCRIPT.add(FakeAiProvider.only(mine, turns -> FakeAiProvider.call("prepare_order", two)));
+        FakeAiProvider.SCRIPT.add(FakeAiProvider.only(mine, turns -> FakeAiProvider.call("prepare_order", prepare(w[1], 0, "CASH_ON_DELIVERY"))));
+        FakeAiProvider.SCRIPT.add(FakeAiProvider.only(mine, turns -> Turn.model("تمام يا أستاذ كريم، تحب تضيف حاجة؟")));
         String sent = send(t, UUID.randomUUID().toString(), "عايز " + w[0] + " ٦ قطع، انا كريم، القاهرة مدينة نصر شارع مكرم عبيد عمارة ٣ شقة ٢، ٠١٠٢٣٤٥٦٧٨٩، كاش");
         // read by content: a background job of the app may take a scripted turn too
         String refusals = FakeAiProvider.RESULTS.stream().filter(r -> "prepare_order".equals(r.name())).map(r -> String.valueOf(r.result().get("error"))).toList().toString();
