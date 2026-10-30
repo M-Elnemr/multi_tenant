@@ -434,7 +434,7 @@ final class FactCheck {
             case "w" -> "وات"; case "قطعه" -> "قطع"; case "شهور" -> "شهر"; case "مل" -> "مللي"; default -> u; };
     }
 
-    /** Another product of the shop costs exactly this amount and at least two words of its name are in the same line: the amount is that product's. */
+    /** Another product of the shop costs exactly this amount and its own words (or one word of letters only it has) are in the same line: the amount is that product's. */
     private static boolean namedInLine(String l, int at, double amount, Product named, Shop shop, java.util.function.Function<String, Product> load) {
         int from = l.lastIndexOf('\n', at) + 1, to = l.indexOf('\n', at);
         String line = l.substring(from, to < 0 ? l.length() : to);
@@ -442,11 +442,15 @@ final class FactCheck {
         for (Tok t : tokens(line, 0, line.length())) { said.add(t.word()); said.add(stem(t.word())); }
         Set<String> own = new java.util.HashSet<>();
         for (Tok t : tokens(light(named.name()), 0, named.name().length())) own.add(t.word());
+        Set<String> ownValues = new java.util.HashSet<>();   // «أبيض», «أوبن بوكس»: its own options are no other product's name
+        for (Variant v : named.variants()) for (String val : v.options().values()) for (Tok t : tokens(light(val), 0, val.length())) ownValues.add(t.word());
         for (Named n : shop.names()) {
             if (n.slug().equals(named.slug())) continue;
             // its own words, not the ones it shares with the product named («تلفزيون فيستا» is in both TVs; «qled» says which)
             List<String> distinct = n.words().stream().filter(w -> !own.contains(w) && !STOP.contains(w) && w.length() >= 2).toList();
-            if (distinct.isEmpty() || !distinct.stream().allMatch(w -> said.contains(w) || said.contains(stem(w)))) continue;
+            // all of them, or one word of letters that only it has («الشاحن اللاسلكي (499)» is «شاحن لاسلكي فولتا 15 وات», whose price that is)
+            if (distinct.isEmpty() || !distinct.stream().allMatch(w -> said.contains(w) || said.contains(stem(w)))
+                    && distinct.stream().noneMatch(w -> w.length() >= 4 && w.chars().allMatch(Character::isLetter) && !ownValues.contains(w) && (said.contains(w) || said.contains(stem(w))))) continue;
             Product p = load.apply(n.slug());
             for (Variant v : p.variants()) if (v.price() == amount || v.before() == amount) return true;
         }
@@ -823,7 +827,7 @@ final class FactCheck {
      * rest of the sentence, then from the customer's message («الذهبي غير متوفر» after «مقاس ٣٨»).
      */
     private static final Pattern STOCK_NEG = Pattern.compile("(?:(?<!\\p{L})(?:و|ف)?(?:مفيش|مافيش|مفيهوش|مفيهاش|مافيهوش|مافيهاش|مفيناش|مافيناش|معندناش|ماعندناش|مبقاش|متوفرش|موجودش|متاحش|خلص|خلصان|خلصانه|خلصت|خلصوا|نفذ|نفذت|نفد|نفدت|نافد|نفاذ|نافذ|ناضب|نفاص|مش\\s+(?:لاقي|لاقيه|لقيت|لاقيين)|ملقتش|مالقيتش|ملقيتش|ملاقيتش|مالقتش|ملهوش|ملهاش|مالوش|مجيش|مجيهش|مجاش|مبيجيش|مابيجيش|مبييجيش|مابييجيش|ميجيش|مبتجيش)(?!\\p{L})"
-            + "|(?<!\\p{L})(?:و|ف)?(?:مش|غير|ليس|لا)\\s+(?:(?:هو|هي|ده|دي)\\s+)?(?:متاح|متاحه|متوفر|متوفره|موجود|موجوده|عندنا|بيجي|بتيجي|جاي|جايه|بييجي|بنبيع|بنوفر|يوجد|available)(?!\\p{L})"
+            + "|(?<!\\p{L})(?:و|ف)?(?:مش|غير|ليس|لا)\\s+(?:(?:هو|هي|ده|دي)\\s+)?(?:متاح|متاحه|متوفر|متوفره|موجود|موجوده|عندنا|فيه|فيها|بيجي|بتيجي|جاي|جايه|بييجي|بنبيع|بنوفر|يوجد|available)(?!\\p{L})"
             + "|not\\s+available|out\\s+of\\s+stock|sold\\s+out|unavailable|don'?t\\s+have|do\\s+not\\s+have|no\\s+longer)", Pattern.CASE_INSENSITIVE);
 
     private static final Pattern EXCEPT = Pattern.compile("(?<!\\p{L})(?:مفيش|مافيش|مفيهوش|مفيهاش|ملوش|مالوش|ملهاش|مش\\s+\\p{L}+)\\s+(?:غير|الا|سوي)(?!\\p{L})");
@@ -973,7 +977,7 @@ final class FactCheck {
 
     // ---- 3. "we do not have it" when we do --------------------------------------------------------------------------------
 
-    private static final Pattern DENY = Pattern.compile("(?<!\\p{L})(?:و|ف)?(?:مفيش|مفيهوش|مفيهاش|مفيناش|مافيناش|معندناش|ماعندناش|محدش|مش\\s+عندنا|مش\\s+موجود|مش\\s+متوفر|مش\\s+متاح|غير\\s+(?:متاح|متوفر|موجود)|مش\\s+في\\s+(?:القائمه|القايمه|المنيو)|مش\\s+(?:من\\s+)?ضمن|مش\\s+بنتعامل|مش\\s+بنوفر|مبنبيعش|مش\\s+بنبيع|مش\\s+ببيع|مش\\s+لاقي|مش\\s+لاقيه|مش\\s+لقيت|مينفعش\\s+(?:ن|ت|ا)?لاقي|مش\\s+هت?لاقي|مش\\s+هن?لاقي|منلاقيش|ملقتش|مالقيتش|ملقيتش|ملاقيتش|مالقتش|مش\\s+عندي|معنديش|لا\\s+يوجد|لا\\s+نبيع|(?:بس|لكن)\\s+مش|we\\s+(?:don'?t|do\\s+not)\\s+(?:have|sell|carry)|there\\s+(?:is|are)\\s+no|we\\s+have\\s+no)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
+    private static final Pattern DENY = Pattern.compile("(?<!\\p{L})(?:و|ف)?(?:مفيش|مفيهوش|مفيهاش|مفيناش|مافيناش|معندناش|ماعندناش|محدش|مش\\s+عندنا|مش\\s+فيه|مش\\s+فيها|مش\\s+موجود|مش\\s+متوفر|مش\\s+متاح|غير\\s+(?:متاح|متوفر|موجود)|مش\\s+في\\s+(?:القائمه|القايمه|المنيو)|مش\\s+(?:من\\s+)?ضمن|مش\\s+بنتعامل|مش\\s+بنوفر|مبنبيعش|مش\\s+بنبيع|مش\\s+ببيع|مش\\s+لاقي|مش\\s+لاقيه|مش\\s+لقيت|مينفعش\\s+(?:ن|ت|ا)?لاقي|مش\\s+هت?لاقي|مش\\s+هن?لاقي|منلاقيش|ملقتش|مالقيتش|ملقيتش|ملاقيتش|مالقتش|مش\\s+عندي|معنديش|لا\\s+يوجد|لا\\s+نبيع|(?:بس|لكن)\\s+مش|we\\s+(?:don'?t|do\\s+not)\\s+(?:have|sell|carry)|there\\s+(?:is|are)\\s+no|we\\s+have\\s+no)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
     /** Words that say nothing about which product: negations, chat words, time words, vague nouns. */
     private static final Set<String> STOP = Set.of("مش", "مفيش", "معندناش", "ماعندناش", "عندنا", "عندي", "بنبيع", "ببيع", "نبيع", "مبنبيعش", "موجود", "موجوده", "متوفر", "متوفره", "متاح", "متاحه", "يوجد",
             "حاليا", "دلوقتي", "النهارده", "النهاردة", "كامل", "كامله", "خالص", "للاسف", "بس", "لكن", "غير", "ابدا", "تاني", "نوع", "انواع", "اصناف", "صنف", "خيارات", "اختيارات", "موديلات", "موديل", "حاجه", "حاجات",
@@ -1681,7 +1685,8 @@ final class FactCheck {
         }
         boolean stockSaid = false;   // a plain sentence about it says it is there or not («عندنا أنواع تانية…», «لو تحب… متاحة؟» are other choices)
         for (int[] sn : sentences(answer)) {
-            String se = UNSURE.matcher(la.substring(sn[0], sn[1])).replaceAll(" ");
+            if (UNSURE.matcher(la.substring(sn[0], sn[1])).find()) continue;   // «مش عندي تأكيد على توفر …، ومش كلام تقريبي»: not knowing is no answer, whatever else it holds
+            String se = la.substring(sn[0], sn[1]);
             boolean itself = ms.stream().anyMatch(m -> m.start() >= sn[0] && m.start() < sn[1] && m.slug().equals(p.slug()));
             if (!itself && ms.stream().anyMatch(m -> m.start() >= sn[0] && m.start() < sn[1])) continue;   // a sentence about another product
             if (!itself && HOURS_TALK.matcher(se).find() && !SAYS_STOCK.matcher(se).find()) continue;   // «مش لسه بنفتح دلوقتي»: the hours, not the product
@@ -1828,7 +1833,7 @@ final class FactCheck {
     private static final Pattern HOURS_TALK = Pattern.compile("(?<!\\p{L})(?:بنفتح|نفتح|بنفتتح|نفتتح|الفتح|يفتح|مقفول|مقفوله|مغلق|مقفل|قافل|قافلين|مواعيد|open|opens|closed)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
 
     /** «عندنا أنواع تانية», «أقترح عليك خيارات متاحة»: other choices offered, not the one asked. */
-    private static final Pattern OTHER_CHOICES = Pattern.compile("(?<!\\p{L})(?:تاني|تانيه|تانين|تانيين|غيره|غيرها|بديل|بدايل|اقترح|اقترحلك|ارشح|ارشحلك|اشوفلك|other|another|alternatives?)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
+    private static final Pattern OTHER_CHOICES = Pattern.compile("(?<!\\p{L})(?:اقرب|ادورلك|ادور|تاني|تانيه|تانين|تانيين|غيره|غيرها|بديل|بدايل|اقترح|اقترحلك|ارشح|ارشحلك|اشوفلك|other|another|alternatives?)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
 
     /** A sentence that starts with «لو» / "if": a condition, not a claim. */
     private static final Pattern CONDITIONAL = Pattern.compile("^[^\\p{L}\\d]*(?:و|ف)?(?:لو|اذا|إذا|if)(?!\\p{L})", Pattern.CASE_INSENSITIVE);

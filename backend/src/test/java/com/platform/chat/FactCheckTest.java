@@ -202,6 +202,19 @@ class FactCheckTest {
     }
 
     @Test
+    void theSlipsOfExamRoundSevenAreCaught() {
+        // «مش فيه» denies an option combination that is in stock
+        assertThat(FactCheck.fix("عندكم وينجز مقرمشة ١٢ قطعة بافلو حار؟", "حضرتك، المنيو عندي مش فيه وينجز مقرمشة ١٢ قطعة بصوص بافلو حار بالظبط، ومش عايز أقولك حاجة وأطلعها مختلفة.", REST, List.of()))
+                .contains("متاح عندنا").doesNotContain("مش فيه");
+        // «مش عندي تأكيد على توفر …» is no answer, whatever else the sentence holds
+        assertThat(FactCheck.fix("لاب توب زينترا بوك 14 أوبن بوكس فضي 8 جيجا 512 جيجا SSD موجود ولا خلص؟", "يا فندم، مش عندي تأكيد دلوقتي على توفر زينترا بوك 14 أوبن بوكس فضي 8 جيجا / 512 SSD، وعايز أرد عليك بمعلومة مضبوطة مش كلام تقريبي. تحب أدوّر لك على أقرب لاب توب متوفر بنفس الفئة؟", TECH, List.of()))
+                .contains("متاح ✅").doesNotContain("تأكيد");
+        // right: an amount after another product's own word is that product's price («الشاحن اللاسلكي … (499)»)
+        assertThat(kinds(TECH, "شاحن فولتا 20 وات USB-C رمادي؟", "للأسف شاحن فولتا 20 وات USB-C مش بيجي باللون الرمادي، بس موجود باللون الأبيض بس.\n\nلو عايز لون تاني، ممكن نختارلك شاحن فولتا 33 وات اللي بييجي باللونين الأبيض والأسود (549 جنيه) أو الشاحن اللاسلكي اللي بييجي أسود وأبيض (499 جنيه). تحب أوريك إيه؟"))
+                .doesNotContain("OPTION_PRICE");
+    }
+
+    @Test
     void anUnsureReplyIsNoAnswer() {
         String reply = "مفيش تأكيد حالي على المخزون في النظام، ممكن يتفاجى حسب آخر تحديث. تحب نتأكد معاك من التوافر الحالي قبل ما نجهز الطلب؟";
         String customer = "جراب آيفون 14 سيليكون أبيض آيفون 14 برو موجود ولا خلص؟";

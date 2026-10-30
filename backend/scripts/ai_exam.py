@@ -203,6 +203,8 @@ def grade(c):
         if v in lr and NEG.search(lr): return None
         if all(light(o).split()[0] in lr for o in own): return None
         if re.search(r"من\s+\S+\s+(?:لحد|لغايه|الي|ل|-)\s*\S+", lr) and NEG.search(lr): return None
+        lo = [light(o) for o in own]
+        if re.search(r"(?<!\w)(?:" + "|".join(map(re.escape, lo)) + r")\s*(?:الي|لحد|لغايه|ل|-|–)\s*(?:" + "|".join(map(re.escape, lo)) + r")(?!\w)", lr): return None   # «S إلى XXL»
         own_n = [numbers(o)[0] for o in own if numbers(o)]
         if len(own_n) == len(own) >= 3 and min(own_n) in nums and max(own_n) in nums: return None   # «المقاسات من 26 إلى 32»
         return f"value {c['values'][0]} not answered: neither a no nor its real options ({'، '.join(own)})"
@@ -217,7 +219,7 @@ def grade(c):
         missing = [x for x in c["colours"] if light(x)[:3] not in lr]
         return ("in-stock colours missing: " + "، ".join(missing)) if missing else None
     if k == "order":
-        told_min = re.search(r"اقل\s+(?:طلب|قيمه|مبلغ)|الحد\s+الادني|القيمه\s+الكليه|(?:يصل|يوصل|توصل|نوصل)\s+(?:ل|لـ|الي)|minimum\s+order|minimum\s+is", lr)
+        told_min = re.search(r"اقل\s+(?:طلب|قيمه|مبلغ)|الحد\s+الادني|القيمه\s+الكليه|اقل\s+حد|حد\s+ادني|علي\s+الاقل|(?:يصل|يوصل|توصل|نوصل)\s+(?:ل|لـ|الي)|minimum\s+order|minimum\s+is", lr)
         if c.get("min_order") and c["price"] < c["min_order"]:   # under the shop's minimum: no summary can be made, the customer must hear the minimum
             return None if told_min and num_txt(c["min_order"]) in [num_txt(x) for x in nums] else f"below the minimum order {num_txt(c['min_order'])}: not told"
         if told_min and not c.get("min_order"): return None   # an old run without the minimum: asking to add is right
