@@ -415,7 +415,7 @@ public class ChatService {
                 rounds.addAll(r2);
             }
             // the customer sent every detail for what they chose and still no summary: code makes it (the customer confirms it as usual)
-            if (ctx.summary()[0] == null && ctx.order()[0] == null && !madeChanges(ctx, rounds) && detailsGivenNoSummary(ctx, turns, rounds, text, answer)) {
+            if (ctx.summary()[0] == null && ctx.order()[0] == null && !madeChanges(ctx, rounds) && detailsGivenNoSummary(ctx, turns, rounds, text, answer, true)) {
                 try { if (orderByCode(ctx)) log.info("Order summary made by code (conversation {})", conv); } catch (RuntimeException e) { log.warn("Order by code skipped", e); }
             }
         } catch (AiProvider.AiUnavailableException e) {
@@ -696,7 +696,7 @@ public class ChatService {
         return arabicConversation(ctx.conversationId()) ? "أكيد يا فندم 🌸 قولي أكتر عن اللي بتدوري عليه وأنا أساعدك بكل حاجة." : "Of course 🌸 tell me a little more about what you are looking for and I will help with everything.";
     }
 
-    private static final Pattern WHO_QUESTION = Pattern.compile("(?:ليك|ليكي|لحضرتك|لنفسك)\\s+(?:ولا|و\\s*لا)\\s+(?:لحد|ل\\s*حد)|(?:بتطلب|بتشتري|بتدور)\\s+(?:ل|لـ)?\\s*(?:حد|نفسك)|ليك\\s+ولا\\s+هدية|(?:for you|for yourself)\\s+or\\s+(?:someone|a gift)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern WHO_QUESTION = Pattern.compile("(?:ليك|ليكي|لحضرتك|لنفسك)\\s+(?:ولا|و\\s*لا)\\s+(?:لحد|ل\\s*حد)|(?:بتطلب|بتشتري|بتدور)\\s+(?:ل|لـ)?\\s*(?:حد|نفسك)|ليك\\s+ولا\\s+هدية|هدية\\s+(?:لحد|ل\\s*حد)|(?:لنفسك|ليكي|ليك|نفسك)\\s+(?:ولا|و\\s*لا)\\s+(?:لحد|ل\\s*حد)\\s*(?:تاني|تانية)?|(?:for you|for yourself)\\s+or\\s+(?:someone|a gift)", Pattern.CASE_INSENSITIVE);
     private static final Pattern FOR_ME = Pattern.compile("(?<![\\p{L}])(?:ليا|ليّا|لنفسي|عشاني|علشاني|لي انا|ليه انا|for me|for myself)(?![\\p{L}])", Pattern.CASE_INSENSITIVE);
     private static final Pattern NOT_HAVE = Pattern.compile("(?:مفيش\\s+(?:لبس|ملابس|منتج|منتجات|حاجة|حاجه|حاجات|موديل|موديلات|أنواع|انواع|أصناف|اصناف|صنف|اختيارات|خيارات)|عندنا\\s+مفيش|مش\\s+(?:موجود|موجوده|موجودة|متوفر|متوفره|متوفرة|متاح|متاحه|متاحة)|معندناش|ماعندناش|مش\\s+عندنا|مفيش\\s+عندنا|مش\\s+عندهم|we\\s+(?:don't|do not)\\s+have|not\\s+available)", Pattern.CASE_INSENSITIVE);
     private static final java.util.List<String> EXAMPLE_LINES = examples();
@@ -919,17 +919,24 @@ public class ChatService {
      * The customer sent their details (a mobile and an address) for items chosen in this chat, but no summary was made and the reply asks for nothing that is missing: the model should
      * have called prepare_order.
      */
-    private boolean detailsGivenNoSummary(Ctx ctx, List<Turn> turns, List<AiUsageService.Round> rounds, String last, String answer) {
+    private boolean detailsGivenNoSummary(Ctx ctx, List<Turn> turns, List<AiUsageService.Round> rounds, String last, String answer) { return detailsGivenNoSummary(ctx, turns, rounds, last, answer, false); }
+
+    /** {@code evenAfterTry}: also when the model called prepare_order and was sent back (a wrong variant id, an option it could not match), for the summary made by code. */
+    private boolean detailsGivenNoSummary(Ctx ctx, List<Turn> turns, List<AiUsageService.Round> rounds, String last, String answer, boolean evenAfterTry) {
         if (ctx.summary()[0] != null || ctx.order()[0] != null || last == null) return false;
         String d = MoneyGuard.digits(last).replaceAll("[\\s-]", "");
         if (!d.matches("(?s).*(?<!\\d)(?:\\+?20)?01[0125]\\d{8}(?!\\d).*") || !ADDRESS_WORDS.matcher(last).find()) return false;
-        if (rounds.stream().anyMatch(r -> r.tools().contains("prepare_order"))) return false;
+        if (!evenAfterTry && rounds.stream().anyMatch(r -> r.tools().contains("prepare_order"))) return false;
         FactCheck.Shop shop = shopView(ctx.tenantId());
         List<String> chosen = chosenInChat(ctx, shop);
+        // the customer's own words already pick one variant of the one product: no question about an option is needed («هو هدية لحد؟», «متأكد من المقاس؟» are no reason either)
+        if (pickedVariant(ctx, chosen) != null) return true;
         // a real question for an option still to choose is fine — asked in the question itself, about a product that has that choice («عادي ولا كبير؟» for a sandwich of one size is not);
         // the WhatsApp question or «تحب أجهزلك الطلب؟» is no reason to skip the summary
         for (String q : answer.split("(?<=[؟?])")) {
             if (!(q.contains("؟") || q.contains("?"))) continue;
+            String[] parts = q.split("[.!\\n:—]");
+            q = parts[parts.length - 1];   // the question sentence itself, not the lines before it
             String n = FastAnswers.norm(q.length() > 160 ? q.substring(q.length() - 160) : q);
             if (n.matches("(?s).*(?:مقاس|لون|حجم|انهي|اي نوع|الكميه|كام واحد|size|colou?r|which).*")
                     && (chosen.isEmpty() || chosen.stream().anyMatch(s -> { var p = shop.product(s); return p == null || p.variants().size() > 1; }))) return false;
@@ -960,12 +967,22 @@ public class ChatService {
     private boolean orderByCode(Ctx ctx) {
         FactCheck.Shop shop = shopView(ctx.tenantId());
         List<String> chosen = chosenInChat(ctx, shop);
-        if (chosen.size() != 1) return false;
+        Map<String, Object> variant = pickedVariant(ctx, chosen);
+        if (variant == null) return false;
         List<String> msgs = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u ORDER BY id").param("c", ctx.conversationId()).param("u", ctx.userMsgId()).query(String.class).list();
         String said = FastAnswers.norm(MoneyGuard.digits(String.join(" \n ", msgs)));
         if (PICKUP_WORDS.matcher(said).find()) return false;
+        return orderByCode(ctx, chosen, variant, msgs, said);
+    }
+
+    /** The one variant of the one product the customer named whose every option with a choice they said, or null. */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> pickedVariant(Ctx ctx, List<String> chosen) {
+        if (chosen.size() != 1) return null;
+        List<String> msgs = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u ORDER BY id").param("c", ctx.conversationId()).param("u", ctx.userMsgId()).query(String.class).list();
+        String said = FastAnswers.norm(MoneyGuard.digits(String.join(" \n ", msgs)));
         Map<String, Object> product;
-        try { product = catalog.detailBySlug(ctx.tenantId(), chosen.get(0)); } catch (RuntimeException e) { return false; }
+        try { product = catalog.detailBySlug(ctx.tenantId(), chosen.get(0)); } catch (RuntimeException e) { return null; }
         // the one variant whose every option with a choice was said by the customer
         Map<String, Set<String>> values = new java.util.HashMap<>();
         List<Map<String, Object>> variants = (List<Map<String, Object>>) product.get("variants");
@@ -976,12 +993,14 @@ public class ChatService {
             for (String kv : String.valueOf(v.get("comboKey") == null ? "" : v.get("comboKey")).split("\\|")) {
                 if (!kv.contains("=") || values.getOrDefault(kv.substring(0, kv.indexOf('=')), Set.of()).size() < 2) continue;
                 String val = FastAnswers.norm(MoneyGuard.digits(kv.substring(kv.indexOf('=') + 1)));
-                if (!Pattern.compile("(?<![\\p{L}\\d])" + Pattern.quote(val) + "(?![\\p{L}\\d])").matcher(said).find()) { all = false; break; }
+                if (!Pattern.compile("(?<![\\p{L}\\d])" + Pattern.quote(val) + "(?![\\p{L}\\d])").matcher(said).find() && !(val.length() > 3 && valueSaid(val, said, false))) { all = false; break; }
             }
             if (all) fit.add(v);
         }
-        if (fit.size() != 1) return false;
-        Map<String, Object> variant = fit.get(0);
+        return fit.size() == 1 ? fit.get(0) : null;
+    }
+
+    private boolean orderByCode(Ctx ctx, List<String> chosen, Map<String, Object> variant, List<String> msgs, String said) {
         int quantity = 1;
         var q = PIECES.matcher(said);
         String combo = FastAnswers.norm(MoneyGuard.digits(String.valueOf(variant.get("comboKey"))));
@@ -2445,11 +2464,29 @@ public class ChatService {
             items.add(new CheckoutService.Item(vid, q, m.get("note") == null ? null : String.valueOf(m.get("note"))));
         }
         // every option the customer has to choose (size, color, spice, bread...) must come from them: an item whose option they never mentioned is sent back so the model asks
+        // Western digits first: «١٢٨ جيجا» is the option «128 جيجا»
+        List<String> customerMsgs = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u ORDER BY id").param("c", ctx.conversationId()).param("u", ctx.userMsgId()).query(String.class).list();
+        String saidWords = FastAnswers.norm(MoneyGuard.digits(String.join(" ", customerMsgs)));
+        // the product the customer named, not one whose name is inside it («زينترا بوك 14» is not «زينترا بوك 14 أوبن بوكس»), and the options they said, not others
+        FactCheck.Shop view = shopView(tenantId);
+        List<String> named = chosenInChat(ctx, view);
+        for (CheckoutService.Item it : items) {
+            var row = jdbc.sql("SELECT p.slug, p.name FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE v.id = :v").param("v", it.variantId()).query().listOfRows().stream().findFirst().orElse(null);
+            if (row == null) return obj("error", "Invalid variantId: use get_product to get it");
+            String slug = String.valueOf(row.get("slug")), name = FastAnswers.norm(String.valueOf(row.get("name")));
+            if (!named.contains(slug))
+                for (String n : named) {
+                    var asked = view.names().stream().filter(x -> x.slug().equals(n)).findFirst().orElse(null);
+                    if (asked != null && FastAnswers.norm(asked.name()).startsWith(name + " "))
+                        return obj("error", "The customer asked for «" + asked.name() + "» (slug " + n + "), not «" + row.get("name") + "»: use that product's variant (get_product " + n + ").");
+                }
+            List<String> changed = contradictedOptions(it.variantId(), saidWords);
+            if (!changed.isEmpty())
+                return obj("error", "Wrong option for " + variantNames(List.of(it.variantId())) + ": " + String.join("; ", changed) + ". Use the variant with what the customer said; if that one cannot be ordered (sold out, minimum order), tell them and ask, never pick another option for them.");
+        }
         if (!Boolean.TRUE.equals(a.get("optionsConfirmed"))) {
-            // Western digits first: «١٢٨ جيجا» is the option «128 جيجا»
-            String said = FastAnswers.norm(MoneyGuard.digits(String.join(" ", jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u").param("c", ctx.conversationId()).param("u", ctx.userMsgId()).query(String.class).list())));
             for (CheckoutService.Item it : items) {
-                List<String> missing = unchosenOptions(it.variantId(), said);
+                List<String> missing = unchosenOptions(it.variantId(), saidWords);
                 if (!missing.isEmpty())
                     return obj("error", "The customer has not chosen " + String.join(" and ", missing) + " for " + variantNames(List.of(it.variantId())) + ". Ask them in one short message (offer the available values), then call prepare_order again; "
                             + "pass optionsConfirmed=true only if they said any choice is fine.");
@@ -2607,19 +2644,48 @@ public class ChatService {
         for (String kv : String.valueOf(v.get("combo_key")).split("\\|")) {
             int i = kv.indexOf('=');
             if (i < 0) continue;
-            String name = kv.substring(0, i), value = FastAnswers.norm(kv.substring(i + 1));
+            String name = kv.substring(0, i), value = FastAnswers.norm(MoneyGuard.digits(kv.substring(i + 1)));   // «٦ قطع» is «6 قطع», as the customer's words are
             if (choices.getOrDefault(name, 1L) < 2) continue;   // nothing to choose
-            boolean said = value.length() <= 3 ? Pattern.compile("(?<![\\p{L}\\p{N}])" + Pattern.quote(value) + "(?![\\p{L}\\p{N}])").matcher(words).find() : words.contains(value);
-            for (String alt : SAID_AS.getOrDefault(value, List.of())) said = said || words.contains(alt);
-            // a value that starts with a number («128 جيجا», «1 تيرا SSD», «43 بوصة»): the number with its unit, or a number of two digits or more on its own («عايز ٥١٢»)
-            String[] parts = value.split("\\s+");
-            if (!said && parts.length >= 2 && parts[0].matches("\\d+(?:\\.\\d+)?")) {
-                said = words.contains(" " + parts[0] + " " + parts[1]) || words.contains(" " + parts[0] + parts[1])
-                        || (parts[0].length() >= 2 && Pattern.compile("(?<![\\p{L}\\p{N}])" + Pattern.quote(parts[0]) + "(?![\\p{N}])(?!\\s*(?:الف|جنيه|ج(?!\\p{L})|مليون))").matcher(words).find());   // not a budget («في حدود ١٦ ألف»)
-            }
-            if (!said) missing.add("«" + name + "»");
+            if (!valueSaid(value, words, true)) missing.add("«" + name + "»");
         }
         return missing;
+    }
+
+    /** The customer's words (normalised, Western digits) hold this option value (normalised, Western digits); {@code loose} also takes a number of two digits on its own («عايز ٥١٢»). */
+    static boolean valueSaid(String value, String words, boolean loose) {
+        words = " " + words + " ";
+        boolean said = value.length() <= 3 ? Pattern.compile("(?<![\\p{L}\\p{N}])" + Pattern.quote(value) + "(?![\\p{L}\\p{N}])").matcher(words).find() : words.contains(value);
+        for (String alt : SAID_AS.getOrDefault(value, List.of())) said = said || words.contains(alt);
+        // a value that starts with a number («128 جيجا», «1 تيرا SSD», «43 بوصة»): the number with its unit, or a number of two digits or more on its own («عايز ٥١٢»)
+        String[] parts = value.split("\\s+");
+        if (!said && parts.length >= 2 && parts[0].matches("\\d+(?:\\.\\d+)?")) {
+            said = Pattern.compile("(?<![\\p{N}.])" + Pattern.quote(parts[0]) + "\\s?" + Pattern.quote(parts[1])).matcher(words).find()
+                    || (loose && parts[0].length() >= 2 && Pattern.compile("(?<![\\p{L}\\p{N}])" + Pattern.quote(parts[0]) + "(?![\\p{N}])(?!\\s*(?:الف|جنيه|ج(?!\\p{L})|مليون))").matcher(words).find());   // not a budget («في حدود ١٦ ألف»)
+        }
+        return said;
+    }
+
+    /**
+     * An option of the item that the customer named another value of («٦ قطع» said, «٩ قطع» in the item): the model changed their choice. Each as «option: said, not item value»; checked even
+     * with optionsConfirmed, since «any is fine» never covers a value they did say.
+     */
+    List<String> contradictedOptions(UUID variantId, String customerWords) {
+        var v = jdbc.sql("SELECT combo_key, product_id FROM commerce.product_variants WHERE id = :v").param("v", variantId).query().listOfRows().stream().findFirst().orElse(null);
+        if (v == null || v.get("combo_key") == null || "default".equals(v.get("combo_key"))) return List.of();
+        Map<String, List<String>> values = new java.util.HashMap<>();
+        for (var o : jdbc.sql("SELECT o.name, ov.value FROM commerce.product_options o JOIN commerce.product_option_values ov ON ov.option_id = o.id WHERE o.product_id = :p")
+                .param("p", v.get("product_id")).query().listOfRows()) values.computeIfAbsent(String.valueOf(o.get("name")), k -> new ArrayList<>()).add(String.valueOf(o.get("value")));
+        List<String> out = new ArrayList<>();
+        for (String kv : String.valueOf(v.get("combo_key")).split("\\|")) {
+            int i = kv.indexOf('=');
+            if (i < 0) continue;
+            String name = kv.substring(0, i), mine = kv.substring(i + 1);
+            List<String> all = values.getOrDefault(name, List.of());
+            if (all.size() < 2 || valueSaid(FastAnswers.norm(MoneyGuard.digits(mine)), customerWords, false)) continue;
+            for (String other : all)
+                if (!other.equals(mine) && valueSaid(FastAnswers.norm(MoneyGuard.digits(other)), customerWords, false)) { out.add("«" + name + "»: the customer said «" + other + "», not «" + mine + "»"); break; }
+        }
+        return out;
     }
 
     /** Arabic and Persian digits as 0-9, so «٠١٠١٢٣٤٥٦٧٨» is a valid mobile number. */

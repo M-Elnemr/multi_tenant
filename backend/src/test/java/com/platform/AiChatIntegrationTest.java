@@ -67,6 +67,61 @@ class AiChatIntegrationTest extends IntegrationTestBase {
         assertThat(orders(t)).isZero();   // only the summary: the customer still confirms it
     }
 
+    /** Wings with «٦ قطع» / «٩ قطع» (Arabic digits in the option values), 5 of each; returns the product name and the two variant ids. */
+    String[] wings(Tenant t) throws Exception {
+        String branch = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
+        String name = "Wings " + uniq();
+        String created = body(onHost(t.host(), t.access(), "POST", "/api/v1/store/products", """
+                {"taxonomySlug":"cookware","name":"%1$s","options":[{"name":"العدد","values":["٦ قطع","٩ قطع"]}],
+                 "variants":[{"sku":"W6-%2$s","priceMinor":15000,"optionValues":{"العدد":"٦ قطع"},"stock":[{"branchId":"%3$s","quantity":5}]},
+                             {"sku":"W9-%2$s","priceMinor":20000,"optionValues":{"العدد":"٩ قطع"},"stock":[{"branchId":"%3$s","quantity":5}]}]}
+                """.formatted(name, uniq(), branch)).andExpect(status().isCreated()));
+        return new String[]{name, JsonPath.read(created, "$.variants[0].id"), JsonPath.read(created, "$.variants[1].id")};
+    }
+
+    @Test
+    void anOptionWrittenInArabicDigitsIsTheOneTheCustomerChoseAndNoOtherOptionIsPickedForThem() throws Exception {
+        Tenant t = onboard("STORE");
+        String[] w = wings(t);
+        String six = w[1];
+        Map<String, Object> order = new java.util.HashMap<>(prepare(six, 0, "CASH_ON_DELIVERY"));
+        FakeAiProvider.reset();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", order));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ده الملخص"));
+        send(t, UUID.randomUUID().toString(), "عايز " + w[0] + " ٦ قطع");
+        assertThat(FakeAiProvider.RESULTS.get(0).result()).doesNotContainKey("error").containsKey("summary");
+        // the model picks the 9 pieces although the customer said 6, even claiming «any is fine»
+        Map<String, Object> nine = new java.util.HashMap<>(prepare(w[2], 0, "CASH_ON_DELIVERY"));
+        nine.put("optionsConfirmed", true);
+        FakeAiProvider.reset();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", nine));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام"));
+        send(t, UUID.randomUUID().toString(), "عايز " + w[0] + " ٦ قطع");
+        assertThat(FakeAiProvider.RESULTS.get(0).result().get("error").toString()).contains("Wrong option").contains("٦ قطع");
+        assertThat(orders(t)).isZero();
+    }
+
+    @Test
+    void theSummaryIsMadeByCodeAfterAFailedTryAndAQuestionAboutWhoItIsFor() throws Exception {
+        Tenant t = onboard("STORE");
+        String[] w = wings(t);
+        String conv = UUID.randomUUID().toString();
+        FakeAiProvider.reset();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("متاح يا فندم. ابعتلي الاسم والعنوان ورقم الموبايل."));
+        send(t, conv, "عايز " + w[0] + " ٦ قطع");
+        FakeAiProvider.reset();
+        Map<String, Object> bad = new java.util.HashMap<>(prepare("not-an-id", 0, "CASH_ON_DELIVERY"));
+        for (int i = 0; i < 4; i++) {
+            FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", bad));
+            FakeAiProvider.SCRIPT.add(turns -> Turn.model("يا أستاذ كريم، الطلب ده (٦ قطع، متوفر) — هو هدية لحد ولا حاجة تانية؟"));
+        }
+        String sent = send(t, conv, "انا كريم، القاهرة مدينة نصر شارع مكرم عبيد عمارة ٣ شقة ٧، ٠١٠٢٣٤٥٦٧٨٩، كاش");
+        conv = JsonPath.read(sent, "$.conversationId");
+        assertThat((String) JsonPath.read(sent, "$.reply")).contains("ملخص الأوردر").contains("150");
+        assertThat(jdbc.sql("SELECT pending -> 'items' -> 0 ->> 'variantId' FROM chat.conversations WHERE id = CAST(:c AS uuid)").param("c", conv).query(String.class).single()).isEqualTo(w[1]);
+        assertThat(orders(t)).isZero();
+    }
+
     @Test
     void noSummaryIsShownForMoreThanTheStockOrASoldOutItem() throws Exception {
         Tenant t = onboard("STORE");

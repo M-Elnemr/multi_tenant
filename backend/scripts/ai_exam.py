@@ -185,15 +185,22 @@ def grade(c):
     if k == "instock_combo":
         for s in sentences(r):
             ls = light(s)
-            if has_values(s, c["values"]) and NEG.search(ls) and not POS.search(ls): return "in-stock combination denied: " + s.strip()[:80]
+            # the clause that holds the values denies them («… وردي، … (الشريحة مش داخل معاها)» denies the SIM, not the colour)
+            clauses = [x for x in re.split(r"[،,(]", s) if x.strip()]
+            holder = [x for x in clauses if has_values(x, c["values"])] or [s]   # values spread over clauses: the whole sentence
+            if has_values(s, c["values"]) and not POS.search(ls) and any(NEG.search(light(x)) for x in holder):
+                return "in-stock combination denied: " + s.strip()[:80]
         if not POS.search(lr) and not any(w in lr for w in ("ايوه", "اه ", "تمام", "yes")): return "availability not confirmed"
         return None
     if k == "invented_value":
         v = light(c["values"][0])
         if NEG.search(lr) or v not in lr: return None   # denied, or simply not agreed to (it lists the real options)
+        if re.search(r"(?:من\s+غير|بدون|ماعدا|عدا|بدل)\s+(?:\S+\s+){0,2}" + re.escape(v), lr): return None   # «S لحد XL، من غير XXL»
         return f"value {c['values'][0]} the product does not have was agreed to"
     if k == "qty_over_stock":
         if c["available"] >= 100: return None   # a made-to-order kitchen: the stock number is not a limit a customer meets
+        WORDS = {1: r"قطعه\s+واحده|واحده\s+بس|حته\s+واحده", 2: r"قطعتين|اتنين|حتتين", 3: r"تلات|تلاته|ثلاث", 4: r"اربع|اربعه", 5: r"خمس|خمسه"}
+        if c["available"] in WORDS and re.search(r"(?<!\w)(?:" + WORDS[c["available"]] + r")(?!\w)", lr): nums = nums + [c["available"]]   # «قطعتين بس»
         if c["available"] not in nums and not NEG.search(lr): return f"only {c['available']} in stock, reply does not say so"
         if c["want"] in nums and not NEG.search(lr) and c["available"] not in nums: return "promised more than the stock"
         return None

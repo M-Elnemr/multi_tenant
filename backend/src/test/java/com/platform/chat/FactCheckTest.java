@@ -100,13 +100,20 @@ class FactCheckTest {
     @Test
     void debugOnce() {
         if (System.getProperty("factcheck.corpus", "").isEmpty()) return;
-        FactCheck.Shop TECH = fixture("tech-zone");
-        String r0 = "موجود يا فندم ✅ شنطة كروس رجالي أسود بسعر ٥٩٠ جنيه، خامة جلد صناعي عالي الجودة وجيب داخلي بسوستة.";
-        System.out.println("DBG light " + FactCheck.light(r0) + " | m " + FactCheck.mentions(r0, FASH.names()));
-        for (int[] sn : FactCheck.sentences(r0)) System.out.println("DBG sent " + sn[0] + "-" + sn[1] + " " + FactCheck.light(r0).substring(sn[0], sn[1]));
-        for (Object[] c : new Object[][]{
-                {FASH, "عايز جينز سليم فيت رجالي كحلي L، انا وليد، الجيزة الهرم شارع الملك فيصل عمارة ٨ شقة ٦، ٠١٠١١٢٢٣٣٤٤، كاش", "موجود عندنا جينز سليم فيت رجالي باللون الكحلي والمقاس L، سعره 890 جنيه."}})
-            { FactCheck.Shop sh = (FactCheck.Shop) c[0]; System.out.println("DBG m " + FactCheck.mentions((String) c[2], sh.names()) + " c " + FactCheck.mentions((String) c[1], sh.names())); for (var p : FactCheck.check((String) c[1], (String) c[2], sh, List.of())) System.out.println("DBG " + p); for (var p : FactCheck.check((String) c[1], (String) c[2], sh, List.of(slugOf(sh, "جينز سليم فيت رجالي")))) System.out.println("DBG touched " + p); }
+        java.nio.file.Path f = java.nio.file.Path.of(System.getProperty("factcheck.corpus"));
+        if (!java.nio.file.Files.exists(f)) return;
+        try {
+            // a probe file: «shop|customer|reply|touched» per line
+            for (String line : java.nio.file.Files.readAllLines(f)) {
+                String[] c = line.split("\\|", -1);
+                if (c.length < 3) continue;
+                FactCheck.Shop sh = fixture(c[0]);
+                String reply = c[2].replace("⏎", "\n");
+                List<String> touched = c.length > 3 && !c[3].isBlank() ? List.of(c[3].split(",")) : List.of();
+                System.out.println("DBG mentions c=" + FactCheck.mentions(c[1], sh.names()) + " r=" + FactCheck.mentions(reply, sh.names()));
+                System.out.println("DBG " + c[1] + "\n    -> " + FactCheck.check(c[1], reply, sh, touched).stream().map(x -> x.kind() + " :: " + x.note() + (x.fixed() == null ? "" : " || FIX: " + x.fixed().replace("\n", " ⏎ "))).toList());
+            }
+        } catch (java.io.IOException e) { throw new java.io.UncheckedIOException(e); }
     }
 
     // ---- round 3 of the exam: slips no check saw, and right replies that must stay ---------------------------------------
@@ -123,6 +130,27 @@ class FactCheckTest {
         // a quantity, a limit or «only white» is not a denial of the product
         assertThat(kinds(TECH, "عايز 18 قطعة من ويب كام زينترا 1080p أسود", "للأسف الموجود حالياً من ويب كام زينترا 1080p أسود 8 قطع بس، مفيش 18. تحب أحجزلك الثمانية؟")).doesNotContain("FALSE_DENIAL", "STOCK_QUANTITY");
         assertThat(kinds(REST, "عايز 302 قطعة ناجتس فراخ ٩ قطع", "بالنسبة للناجتس، عندنا صنف ناجتس فراخ، بس مفيش حد أقصى للكمية في الفاتورة الواحدة.")).doesNotContain("FALSE_DENIAL");
+    }
+
+    @Test
+    void theSlipsOfExamRoundFourAreCaught() {
+        // a product named exactly is denied «on its own», or «not found» after a search
+        assertThat(kinds(REST, "عايز اعرف سعر ثومية كبير", "عندنا شاورما وسندوتحات ومشويات، لكن مش بنبيع ثومية لوحدها. عايز تطلب ساندوتش شاورما أو أكلة من القائمة؟")).contains("FALSE_DENIAL");
+        assertThat(kinds(FASH, "حزام نسائي رفيع أسود متاح؟", "للأسف، بحثت في المخزون الحالي ومش لقيت حزام نسائي رفيع أسود مطابق للوصف ده. عندنا تشكيلة متنوعة من الحزام والاكسسوارات، تحب أشوفلك بدائل متاحة؟")).contains("OPTION_STOCK");
+        assertThat(kinds(TECH, "عايز لاب توب زينترا بوك 14 أوبن بوكس فضي 8 جيجا 512 جيجا SSD", "تمام يا فندم، شوفت اللاب توب: لاب توب زينترا بوك 14 مفيهوش نسخة أوبن بوكس، الموجود منه جديد ✅\n\n- فضي، 8 جيجا رام، 512 SSD بسعر 24,999 جنيه (متوفر)")).contains("FALSE_DENIAL");
+        // the customer's last message names nothing: the denial is read for the product of the chat
+        assertThat(FactCheck.check("انا كريم، القاهرة مدينة نصر شارع مكرم عبيد عمارة ٣ شقة ٧، ٠١٠٢٣٤٥٦٧٨٩، كاش", "لازم تحدد إيه بالضبط عايز تطلب يا أستاذ كريم، لأننا بنبيع أكل شاورما ومشويات مش مياه معدنية.\n\nعايز ساندوتش شاورما فراخ ولا لحمة؟", REST, List.of("مياه-معدنية")))
+                .extracting(FactCheck.Problem::kind).contains("FALSE_DENIAL");
+        // an option the product does not have, agreed to or left open
+        assertThat(kinds(REST, "عايز ساندوتش شاورما ميكس فراخ ولحمة عيش بلدي", "جاهز، مطلوب ساندوتش شاورما ميكس فراخ ولحمة على عيش بلدي.")).contains("OPTION_STOCK");
+        assertThat(kinds(REST, "عايز مياه معدنية ١ لتر", "مياه معدنية ١ لتر متاحة عندنا بسعر ١٥ جنيه. تحب أضيفها لطلبك؟")).isNotEmpty();
+        assertThat(kinds(REST, "مياه معدنية ١ لتر عندكم؟", "عندنا مياه معدنية ١ لتر بسعر ١٥ جنيه. تحب أضيفها لطلبك؟")).isNotEmpty();
+        assertThat(kinds(FASH, "عايز طقم رياضي نسائي فري سايز", "عندنا تشكيلة من الطقم الرياضي النسائي، ممكن يكون فري سايز أو مقاسات مختلفة حسب القطعة. حضرتك عايزة أظبطلك طلبك دلوقتي؟")).isNotEmpty();
+        // availability asked and never answered
+        assertThat(kinds(REST, "عندكم تشيز برجر دبل؟", "يا فندم، معاهم حق عليا إننا مش لسه بنفتح دلوقتي (بنفتتح من ١٢)، لكن ممكن نحجزهولك تاني ويجهز مع الفتح. عدا كده، هل انت بتسأل عن تشيز برجر دبل تحديداً ولا عندك طلب تاني؟")).contains("STOCK_MISSING");
+        // right answers stay
+        assertThat(kinds(FASH, "عايز كارديجان تريكو نسائي XXL", "عذراً يا فندم، الكارديجان ده متاح من مقاس S لحد XL بس، من غير XXL. لو مقاسك 46، الـ XL ممكن يناسبك والقماشة فيها مطاطية شوية، وساعتها متوفر منه بيج ورمادي ووردي بـ 690 جنيه. تحب أحجزهولك بلون معين؟")).isEmpty();
+        assertThat(kinds(TECH, "عندكم ساعة أطفال بلس كيدز بشريحة وردي؟", "أيوة يا فندم، متوفرة عندنا 🌸\n\nساعة أطفال بلس كيدز بشريحة باللون الوردي بسعر 1799 جنيه، وفيها مكالمات بشريحة، تتبع مكان GPS وزرار طوارئ، ومناسبة لسن 5-12 سنة (الشريحة نانو ومش داخل معاها).\n\nتحب أحجزها ليك؟")).isEmpty();
     }
 
     @Test
