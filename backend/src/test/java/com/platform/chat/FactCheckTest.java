@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -100,8 +101,12 @@ class FactCheckTest {
     void debugOnce() {
         if (System.getProperty("factcheck.corpus", "").isEmpty()) return;
         FactCheck.Shop TECH = fixture("tech-zone");
-        for (String[] c : new String[][]{{"الجاكيت البافر الشتوي الرجالي زيتي XXL موجود؟", "أهلاً حضرتك 🙏 الجاكيت البافر الشتوي الرجالي زيتي موجود لكن XXL مش متاح منه حالياً (الزيتي متاح بس في S و M). المقاس XXL متاح في الأسود والكحلي بسعر 1850."}})
-            { System.out.println("DBG m " + FactCheck.mentions(c[1], FASH.names()) + " c " + FactCheck.mentions(c[0], FASH.names())); for (var p : FactCheck.check(c[0], c[1], FASH, List.of())) System.out.println("DBG " + p); }
+        var tp = FASH.product(slugOf(FASH, "طقم رياضي نسائي"));
+        System.out.println("DBG wanted " + FactCheck.light("أيوه متاح يا فندم ✅ الطقم الرياضي النسائي الوردي متوفر بمقاس L، سعره 890 جنيه"));
+        for (int[] sn : FactCheck.sentences("أيوه متاح يا فندم ✅ الطقم الرياضي النسائي الوردي متوفر بمقاس L، سعره 890 جنيه، خامة.")) System.out.println("DBG sent " + sn[0] + "-" + sn[1]);
+        for (Object[] c : new Object[][]{
+                {FASH, "عايز جينز سليم فيت رجالي كحلي L، انا وليد، الجيزة الهرم شارع الملك فيصل عمارة ٨ شقة ٦، ٠١٠١١٢٢٣٣٤٤، كاش", "موجود عندنا جينز سليم فيت رجالي باللون الكحلي والمقاس L، سعره 890 جنيه."}})
+            { FactCheck.Shop sh = (FactCheck.Shop) c[0]; System.out.println("DBG m " + FactCheck.mentions((String) c[2], sh.names()) + " c " + FactCheck.mentions((String) c[1], sh.names())); for (var p : FactCheck.check((String) c[1], (String) c[2], sh, List.of())) System.out.println("DBG " + p); for (var p : FactCheck.check((String) c[1], (String) c[2], sh, List.of(slugOf(sh, "جينز سليم فيت رجالي")))) System.out.println("DBG touched " + p); }
     }
 
     @Test
@@ -282,6 +287,132 @@ class FactCheckTest {
         String reply = "الجاكيت البافر الشتوي الرجالي زيتي موجود لكن XXL مش متاح منه حالياً (الزيتي متاح بس في S و M). المقاس XXL متاح في الأسود والكحلي بسعر 1850.";
         boolean inStock = FASH.product(slugOf(FASH, "جاكيت بافر شتوي رجالي")).variants().stream().anyMatch(v -> v.options().containsValue("زيتي") && v.options().containsValue("XXL") && v.available() > 0);
         if (inStock) assertThat(kinds(FASH, q, reply)).contains("OPTION_STOCK");
+    }
+
+    @Test
+    void everyAmountNextToAProductIsOneOfItsPrices() {
+        FactCheck.Shop TECH = fixture("tech-zone");
+        // a second wrong amount in the same line is caught too, and the fix writes the real prices
+        String reply = "موبايل نوفا X12: جديد 14,999 جنيه، أوبن بوكس 12,999 جنيه.";
+        assertThat(kinds(TECH, "نوفا X12 بكام؟", reply)).contains("OPTION_PRICE");
+        assertThat(FactCheck.fix("نوفا X12 بكام؟", reply, TECH, List.of())).contains("13499").doesNotContain("12,999");
+        // right ones, a delivery fee and a coupon minimum in the same line are fine
+        assertThat(kinds(TECH, "نوفا X12 بكام؟", "موبايل نوفا X12: جديد 14,999 جنيه، أوبن بوكس 13,499 جنيه، والشحن 100 جنيه ومجاني فوق 5000 جنيه.")).doesNotContain("OPTION_PRICE");
+        assertThat(kinds(TECH, "عايز تلفزيون", "تلفزيون فيستا 4K سمارت 55 بوصة بـ 20,499 والتركيب بيزود 450 جنيه.")).doesNotContain("OPTION_PRICE");
+    }
+
+    @Test
+    void anOptionWithAUnitTheProductDoesNotHaveIsCaught() {
+        FactCheck.Shop TECH = fixture("tech-zone");
+        assertThat(kinds(TECH, "عايز تلفزيون كبير", "تلفزيون فيستا HD متاح 65 بوصة بـ 7999 جنيه.")).contains("OPTION_STOCK");
+        assertThat(FactCheck.fix("عايز تلفزيون كبير", "تلفزيون فيستا HD متاح 65 بوصة بـ 7999 جنيه.", TECH, List.of())).contains("32 بوصة").doesNotContain("65 بوصة");
+        assertThat(kinds(TECH, "نوفا X12 بكام؟", "موبايل نوفا X12 بـ 14999 جنيه، رامات 8 جيجا وشاشة 6.5 بوصة.")).doesNotContain("OPTION_STOCK");
+        assertThat(kinds(TECH, "نوفا X10؟", "موبايل نوفا X10 بـ 11499: شاشة AMOLED و8 جيجا رامات.")).doesNotContain("OPTION_STOCK");
+    }
+
+    @Test
+    void whatTheCustomerAskedAboutANamedProductIsAnswered() {
+        FactCheck.Shop TECH = fixture("tech-zone");
+        // a price asked and not given: code writes it
+        String q = "عايز اعرف سعر تابلت نوفا تاب 10 رمادي 128 جيجا واي فاي + شريحة";
+        String r = "حضرتك عايز تابلت نوفا تاب 10 رمادي 128 جيجا، صح؟ عشان أتأكد هنادرك على بيانات المنتج. تحب أجهزلك الطلب؟";
+        assertThat(kinds(TECH, q, r)).contains("PRICE_MISSING");
+        assertThat(FactCheck.fix(q, r, TECH, List.of())).contains("11499");
+        assertThat(kinds(TECH, q, "تابلت نوفا تاب 10 رمادي 128 جيجا واي فاي + شريحة بـ 11,499 جنيه.")).doesNotContain("PRICE_MISSING");
+        // the colours asked and only some given
+        String c = "سماعة رأس سونيك ماكس متاح بألوان ايه؟";
+        assertThat(kinds(TECH, c, "سماعة رأس سونيك ماكس متاحة حالياً باللون الأسود فقط، بسعر 3999 جنيه.")).contains("OPTIONS_MISSING");
+        assertThat(kinds(TECH, "جراب نوفا X12 برو ضد الصدمات متاح بألوان ايه؟", "جراب نوفا X12 برو ضد الصدمات متاح بالأسود والأزرق، بـ 299 جنيه.")).doesNotContain("OPTIONS_MISSING");
+        // an option this product does not have, agreed to
+        String b = "عايز ساندوتش شاورما ميكس فراخ ولحمة عيش بلدي";
+        String agreed = "ساندوتش الشاورما ميكس فراخ ولحمة متاح، وهنجهزه عيش بلدي زي ما حضرتك طلبت.";
+        if (REST.names().stream().anyMatch(n -> n.name().equals("ساندوتش شاورما ميكس فراخ ولحمة"))) {
+            assertThat(kinds(REST, b, agreed)).contains("OPTION_STOCK");
+            assertThat(kinds(REST, b, "ساندوتش شاورما ميكس فراخ ولحمة مش بيتعمل عيش بلدي، المتاح صاج أو عيش سوري أو فينو.")).doesNotContain("OPTION_STOCK");
+        }
+        // availability asked, not answered
+        assertThat(kinds(TECH, "عندكم سماعة سلك سونيك USB-C أبيض؟", "تحب أجهزهالك ولا حاجة تانية تفيدك؟")).contains("STOCK_MISSING");
+    }
+
+    /**
+     * Every product and every option combination of the three shops: a right reply (its real price, in stock or sold out said truly) raises nothing, a wrong one (another price, a
+     * sold-out combination offered) is caught, and no reply ever breaks the checks. This is what makes the checks hold for any catalog, not only the replies seen so far.
+     */
+    @Test
+    void everyCombinationOfEveryProductIsJudgedRight() {
+        List<String> falseAlarms = new ArrayList<>(), missed = new ArrayList<>();
+        int right = 0, wrong = 0;
+        for (String slug : List.of("tech-zone", "nile-style", "beit-elshawarma")) {
+            FactCheck.Shop shop = fixture(slug);
+            for (var n : shop.names()) {
+                FactCheck.Product p = shop.product(n.slug());
+                for (FactCheck.Variant v : p.variants()) {
+                    String opts = String.join(" ", v.options().values());
+                    String q = (n.name() + " " + opts).trim() + " بكام؟";
+                    String price = String.valueOf((long) v.price());
+                    String good = v.available() > 0 ? n.name() + " " + opts + " متاح بـ " + price + " جنيه. تحب أجهزهولك؟"
+                                                    : n.name() + " " + opts + " خلص حالياً، بس سعره كان " + price + " جنيه.";
+                    right++;
+                    var found = FactCheck.check(q, good.replaceAll("\\s+", " "), shop, List.of());
+                    for (var f : found) if (Set.of("OPTION_PRICE", "OPTION_STOCK", "FALSE_DENIAL", "PRICE_MISSING", "STOCK_QUANTITY", "CHECK_ERROR").contains(f.kind())) falseAlarms.add(slug + " | " + good + " -> " + f.kind() + ": " + f.note());
+                    FactCheck.fix(q, good, shop, List.of());
+                    // a wrong price: no price of this product
+                    long bad = (long) v.price() + 1000;
+                    if (p.variants().stream().noneMatch(x -> (long) x.price() == bad || (long) x.before() == bad)) {
+                        wrong++;
+                        String reply = n.name() + " " + opts + " متاح بـ " + bad + " جنيه.";
+                        if (FactCheck.check(q, reply, shop, List.of()).stream().noneMatch(f -> f.kind().equals("OPTION_PRICE"))) missed.add(slug + " | price | " + reply);
+                    }
+                    // the same right reply in other words: Arabic digits with a thousands comma, English, a list line under the name
+                    String ar = String.format("%,d", (long) v.price()).replace(",", "،").chars().mapToObj(ch -> Character.isDigit(ch) ? String.valueOf((char) ('٠' + ch - '0')) : String.valueOf((char) ch)).collect(java.util.stream.Collectors.joining()).replace("،", "٬");
+                    for (String other : new String[]{
+                            n.name() + " " + opts + " بسعر " + ar + " جنيه" + (v.available() > 0 ? " ✅" : "، بس للأسف خلص حالياً"),
+                            v.available() > 0 ? "We have " + n.name() + " " + opts + " for " + String.format("%,d", (long) v.price()) + " EGP." : n.name() + " " + opts + " is sold out right now.",
+                            n.name() + ":\n- " + (opts.isEmpty() ? "السعر" : opts) + ": " + price + " جنيه" + (v.available() > 0 ? "" : " (خلص)")}) {
+                        right++;
+                        for (var f : FactCheck.check(q, other, shop, List.of())) if (Set.of("OPTION_PRICE", "OPTION_STOCK", "FALSE_DENIAL", "PRICE_MISSING", "STOCK_QUANTITY", "CHECK_ERROR").contains(f.kind())) falseAlarms.add(slug + " | " + other + " -> " + f.kind() + ": " + f.note());
+                    }
+                    // an option that IS in stock said to be sold out
+                    if (v.available() > 0 && !v.options().isEmpty()) {
+                        wrong++;
+                        String reply = "للأسف " + n.name() + " " + opts + " خلص حالياً.";
+                        if (FactCheck.check(n.name() + " " + opts + " موجود؟", reply, shop, List.of()).stream().noneMatch(f -> f.kind().equals("OPTION_STOCK"))) missed.add(slug + " | denied | " + reply);
+                    }
+                    // a sold-out combination offered
+                    if (v.available() <= 0 && !v.options().isEmpty()) {
+                        wrong++;
+                        String reply = n.name() + " " + opts + " متاح ✅ تحب أجهزهولك؟";
+                        if (FactCheck.check(n.name() + " " + opts + " موجود؟", reply, shop, List.of()).stream().noneMatch(f -> f.kind().equals("OPTION_STOCK"))) missed.add(slug + " | soldout | " + reply);
+                    }
+                }
+            }
+        }
+        // the answer lock, per product: a price asked and not given, the colours asked and only some given
+        for (String slug : List.of("tech-zone", "nile-style", "beit-elshawarma")) {
+            FactCheck.Shop shop = fixture(slug);
+            for (var n : shop.names()) {
+                FactCheck.Product p = shop.product(n.slug());
+                if (p.variants().stream().noneMatch(v -> v.available() > 0)) continue;
+                wrong++;
+                String noPrice = "أهلاً بيك يا فندم 🌸 " + n.name() + " من أحلى الحاجات عندنا. تحب أوريك الصور؟";
+                if (FactCheck.check(n.name() + " بكام؟", noPrice, shop, List.of()).stream().noneMatch(f -> f.kind().equals("PRICE_MISSING"))) missed.add(slug + " | no price | " + noPrice);
+                Set<String> colours = new LinkedHashSet<>();
+                for (var v : p.variants()) if (v.available() > 0) v.options().forEach((k, val) -> { if (FactCheck.colorOption(k)) colours.add(val); });
+                if (colours.size() >= 2) {
+                    wrong++;
+                    String some = n.name() + " متاح باللون " + colours.iterator().next() + " بس.";
+                    if (FactCheck.check(n.name() + " متاح بألوان ايه؟", some, shop, List.of()).stream().noneMatch(f -> f.kind().equals("OPTIONS_MISSING"))) missed.add(slug + " | colours | " + some);
+                    right++;
+                    String all = n.name() + " متاح بالألوان: " + String.join("، ", colours) + ".";
+                    for (var f : FactCheck.check(n.name() + " متاح بألوان ايه؟", all, shop, List.of())) if (!Set.of("BETTER_MATCH", "WRONG_KIND").contains(f.kind())) falseAlarms.add(slug + " | " + all + " -> " + f.kind() + ": " + f.note());
+                }
+            }
+        }
+        System.out.println("COMBOS right=" + right + " falseAlarms=" + falseAlarms.size() + " wrong=" + wrong + " missed=" + missed.size());
+        falseAlarms.stream().limit(40).forEach(x -> System.out.println("FALSE " + x));
+        missed.stream().limit(40).forEach(x -> System.out.println("MISSED " + x));
+        assertThat(falseAlarms).isEmpty();
+        assertThat(missed).isEmpty();
     }
 
     @Test

@@ -738,8 +738,14 @@ public class ChatService {
         FactCheck.Shop shopData = shopView(ctx.tenantId());
         List<String> touched = touchedOrBefore(ctx, shopData);
         List<FactCheck.Problem> facts = List.of();
-        try { facts = FactCheck.check(last, answer, shopData, touched); } catch (RuntimeException e) { log.warn("Fact check skipped", e); }
-        for (var f : facts) problems.putIfAbsent(f.kind(), f.note());
+        try { facts = FactCheck.check(last, answer, shopData, touched); } catch (RuntimeException e) {
+            log.warn("Fact check skipped", e);
+            events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK_ERROR", String.valueOf(e), null);   // a check that broke is seen on the AI health page, never silent
+        }
+        for (var f : facts) {
+            if (f.kind().equals("CHECK_ERROR")) { log.warn("Fact check error: {}", f.note()); events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK_ERROR", f.note(), null); continue; }
+            problems.putIfAbsent(f.kind(), f.note());
+        }
         String switched = switchedProduct(ctx, shopData, last, answer);
         if (switched != null) problems.put("SWITCHED_PRODUCT", switched);
         if (problems.isEmpty()) return answer;
@@ -783,7 +789,7 @@ public class ChatService {
     }
 
     /** «هتأكد وأرجعلك», «لازم نتأكد من المخزون الأول», "let me confirm the price": a promise to look instead of looking. */
-    static final Pattern STALL = Pattern.compile("(?:(?:ه|هـ)(?:تاكد|تأكد|شوف|بحث|راجع|سال|سأل)(?:لك|لك)?\\s|لازم\\s+(?:ا|أ|ن)?(?:تاكد|تأكد)|ثواني\\s+و|هرجعلك|هرد\\s+عليك|هبلغك|(?:ا|أ)?رجع\\s*لك|وارجعلك|لحظه\\s+(?:ا|أ)?(?:تاكد|تأكد|شوف|راجع)|(?:ا|أ)تاكدلك|(?:ا|أ)تأكدلك|(?:ا|أ)راجع\\s+تاني|وارد\\s+عليك|وأرد\\s+عليك|(?:ا|أ)راجع\\s+(?:المخزون|الكتالوج|السيستم)|اتاكد\\s+من\\s+المخزون|let\\s+me\\s+(?:check|confirm|look)|i\\s*(?:'ll|\\s+will)\\s+(?:check|confirm|look)|one\\s+moment)", Pattern.CASE_INSENSITIVE);
+    static final Pattern STALL = Pattern.compile("(?:(?:ه|هـ)(?:تاكد|تأكد|شوف|بحث|راجع|سال|سأل)(?:لك|لك)?\\s|لازم\\s+(?:ا|أ|ن)?(?:تاكد|تأكد)|ثواني\\s+و|هرجعلك|هرد\\s+عليك|هبلغك|(?:ا|أ)?رجع\\s*لك|وارجعلك|لحظه\\s+(?:ا|أ)?(?:تاكد|تأكد|شوف|راجع)|(?:ا|أ)تاكدلك|(?:ا|أ)تأكدلك|(?:ا|أ)راجع\\s+تاني|وارد\\s+عليك|وأرد\\s+عليك|(?:ا|أ)راجع\\s+(?:المخزون|الكتالوج|السيستم)|اتاكد\\s+من\\s+المخزون|(?:ا|أ)?تاكد\\s+لك|(?:ا|أ)?تأكد\\s+لك|هنادرك|هندور|هشوفلك\\s+و|لحظه\\s+يا\\s+فندم|لحظة\\s+يا\\s+فندم|استني\\s+(?:ثواني|دقيقه|شويه)|هبعتلك\\s+(?:التفاصيل|السعر)|let\\s+me\\s+(?:check|confirm|look)|i\\s*(?:'ll|\\s+will)\\s+(?:check|confirm|look)|one\\s+moment)", Pattern.CASE_INSENSITIVE);
     /** The model talking about its own machinery to the customer. */
     static final Pattern TOOL_TALK = Pattern.compile("(?:اداه\\s+البحث|أداة\\s+البحث|اداة\\s+البحث|نتايج\\s+البحث|نتائج\\s+البحث|البحث\\s+(?:مرجعش|لم\\s+يرجع|مارجعش)|في\\s+نظامنا|السيستم\\s+بتاعنا|قاعده\\s+البيانات|قاعدة\\s+البيانات|the\\s+(?:search\\s+)?tool|my\\s+tools|the\\s+database|in\\s+our\\s+system)", Pattern.CASE_INSENSITIVE);
 
@@ -2310,6 +2316,18 @@ public class ChatService {
                     return obj("error", "The customer has not chosen " + String.join(" and ", missing) + " for " + variantNames(List.of(it.variantId())) + ". Ask them in one short message (offer the available values), then call prepare_order again; "
                             + "pass optionsConfirmed=true only if they said any choice is fine.");
             }
+        }
+        // the order lock: a summary only with what can really be delivered — the stock the checkout will reserve (one branch holds the whole quantity), checked now, not at the confirmation
+        Map<UUID, Integer> perVariant = new LinkedHashMap<>();
+        for (CheckoutService.Item it : items) perVariant.merge(it.variantId(), it.quantity(), Integer::sum);
+        for (var e : perVariant.entrySet()) {
+            int can = jdbc.sql("SELECT coalesce(max(i.quantity_on_hand - i.quantity_reserved), 0) FROM commerce.inventory_items i JOIN commerce.branches b ON b.id = i.branch_id AND b.is_active WHERE i.tenant_id = :t AND i.variant_id = :v")
+                    .param("t", tenantId).param("v", e.getKey()).query(Integer.class).single();
+            if (can >= e.getValue()) continue;
+            String what = variantNames(List.of(e.getKey()));
+            return obj("error", can <= 0
+                    ? what + " is SOLD OUT. Tell the customer it is not available in that option and offer the options that are in stock (get_product); never show a summary with it."
+                    : "Only " + can + " of " + what + " are in stock, not " + e.getValue() + ". Tell the customer exactly that and ask whether " + can + " is fine (or another option); never show a summary with more.");
         }
         // «قميصين» is two shirts: a quantity of 1 for a product the customer asked for in the dual is sent back
         for (CheckoutService.Item it : items) {

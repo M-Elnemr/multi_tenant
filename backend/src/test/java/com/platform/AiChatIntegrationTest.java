@@ -45,6 +45,28 @@ class AiChatIntegrationTest extends IntegrationTestBase {
     long orders(Tenant t) throws Exception { return ((Number) JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/orders", null)), "$.meta.total")).longValue(); }
 
     @Test
+    void noSummaryIsShownForMoreThanTheStockOrASoldOutItem() throws Exception {
+        Tenant t = onboard("STORE");
+        String variant = mug(t);   // 9 in stock
+        Map<String, Object> twelve = new java.util.HashMap<>(prepare(variant, 0, "CASH_ON_DELIVERY"));
+        twelve.put("items", List.of(Map.of("variantId", variant, "quantity", 12)));
+        FakeAiProvider.RESULTS.clear();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", twelve));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("We have 9 left, is 9 fine?"));
+        send(t, UUID.randomUUID().toString(), "I want 12 mugs");
+        assertThat(FakeAiProvider.RESULTS.get(0).result().get("error").toString()).contains("Only 9");
+        assertThat(FakeAiProvider.RESULTS.get(0).result()).doesNotContainKey("summary");
+        // sold out: the last 9 are gone
+        jdbc.sql("UPDATE commerce.inventory_items SET quantity_on_hand = 0 WHERE variant_id = CAST(:v AS uuid)").param("v", variant).update();
+        FakeAiProvider.RESULTS.clear();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepare(variant, 0, "CASH_ON_DELIVERY")));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("Sorry, it is sold out"));
+        send(t, UUID.randomUUID().toString(), "I want the mug");
+        assertThat(FakeAiProvider.RESULTS.get(0).result().get("error").toString()).contains("SOLD OUT");
+        assertThat(orders(t)).isZero();
+    }
+
+    @Test
     void guestChatsNegotiatesConfirmsAndTheOrderIsCreatedWithTheirCustomerRecord() throws Exception {
         Tenant t = onboard("STORE");
         String variant = mug(t);
