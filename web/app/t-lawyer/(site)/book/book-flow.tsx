@@ -54,8 +54,8 @@ export function BookFlow({ services }: { services: LawyerSite["services"] }) {
 
   const step = (n: number, title: string) => <h2 className="flex items-center gap-3 text-lg font-bold"><span className="grid h-8 w-8 place-items-center rounded-full text-sm" style={{ background: "var(--lw-accent)", color: "var(--lw-accent-ink)" }}>{n}</span>{title}</h2>;
   return (
-    <form onSubmit={(e) => { e.preventDefault(); void send.run(); }} className="mt-8 grid gap-6 lg:grid-cols-[1.5fr_1fr]">
-      <div className="space-y-6">
+    <form onSubmit={(e) => { e.preventDefault(); void send.run(); }} className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+      <div className="min-w-0 space-y-6">
         {services.length > 1 && (
           <div className="lw-card p-6">
             {step(1, t("lws.chooseService"))}
@@ -67,7 +67,7 @@ export function BookFlow({ services }: { services: LawyerSite["services"] }) {
             ))}</div>
           </div>
         )}
-        <div className="lw-card p-6" data-field="startsAt">
+        <div className="lw-card min-w-0 overflow-hidden p-6" data-field="startsAt">
           {step(services.length > 1 ? 2 : 1, t("lws.chooseTime"))}
           <div className="-mx-1 mt-4 flex gap-2 overflow-x-auto px-1 pb-2">
             {days.data?.map((d) => {

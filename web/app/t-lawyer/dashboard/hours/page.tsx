@@ -42,7 +42,7 @@ export default function Hours() {
     <>
       <PageHeader title={t("lw.nav.hours")} subtitle={t("lw.hours.subtitle")} />
       <ErrorText error={error} />
-      <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         <Section title={t("lw.hours.week")}>
           <div className="space-y-2">
             {ORDER.map((w) => {

@@ -54,7 +54,7 @@ export default function ClientPage({ params }: { params: Promise<{ id: string }>
         <Stat label={t("lw.fin.collected")} value={fmt(c.paidMinor)} icon="wallet" tone="green" />
         <Stat label={t("lw.fin.balance")} value={fmt(c.balanceMinor)} icon="alert" tone={c.balanceMinor > 0 ? "red" : "green"} />
       </div>
-      <div className="grid gap-5 lg:grid-cols-[1.5fr_1fr] print:hidden">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] print:hidden">
         <section>
           <div className="mb-3 flex items-center justify-between"><h2 className="font-bold text-ink">{t("lw.nav.cases")} ({c.cases.length})</h2>{canWrite("cases") && <Button size="sm" onClick={() => setNewCase(true)}><Icon name="plus" className="h-3.5 w-3.5" />{t("lw.case.new")}</Button>}</div>
           {c.cases.length === 0 ? <p className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-6 text-center text-sm text-slate-500">{t("lw.client.noCases")}</p> : (

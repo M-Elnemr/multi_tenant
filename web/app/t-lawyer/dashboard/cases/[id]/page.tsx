@@ -84,7 +84,7 @@ export default function CasePage({ params }: { params: Promise<{ id: string }> }
       <ErrorText error={status.error ?? delStep.error ?? toggleStep.error ?? delAction.error ?? delPay.error ?? delDoc.error ?? upload.error} />
 
       {tab === "overview" && (
-        <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
           <div className="space-y-5">
             <div className="rounded-2xl bg-white p-5 shadow-card">
               <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">{info.filter(([, v]) => v).map(([l, v]) => <div key={l}><dt className="text-xs font-semibold text-slate-500">{l}</dt><dd className="font-semibold text-slate-800">{v}</dd></div>)}</dl>

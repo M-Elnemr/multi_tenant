@@ -43,7 +43,7 @@ export default function LawyerHome() {
         <Stat label={t("lw.kpi.collected")} value={fmt(x?.collectedThisMonthMinor ?? 0)} icon="wallet" tone="green" />
         <Stat label={t("lw.kpi.due")} value={fmt(x?.dueMinor ?? 0)} icon="receipt" tone={(x?.dueMinor ?? 0) > 0 ? "red" : "brand"} hint={<Link href="/dashboard/finance" className="font-semibold text-brand">{t("lw.kpi.seeFinance")}</Link>} />
       </div>
-      <div className="mt-6 grid gap-5 lg:grid-cols-[1.4fr_1fr]">
+      <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         <Section title={t("lw.home.today")} action={<Link href="/dashboard/schedule" className="text-sm font-semibold text-brand">{t("lw.home.openCalendar")}</Link>}>
           {agenda.data && agenda.data.length === 0 ? <p className="py-6 text-center text-sm text-slate-500">☕ {t("lw.home.freeDay")}</p> : (
             <ol className="relative space-y-3 border-s-2 border-slate-100 ps-5">

@@ -230,7 +230,7 @@ export function OfferForm({ type, initial, onSaved, onBack }: { type: OfferType;
   );
 
   return (
-    <form onSubmit={(e) => { e.preventDefault(); void save.run(false); }} className="grid gap-5 lg:grid-cols-[1fr_320px]">
+    <form onSubmit={(e) => { e.preventDefault(); void save.run(false); }} className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
       <div className="space-y-5">
         <div className="flex items-center gap-3 rounded-2xl p-4 text-white shadow-lg" style={{ background: `linear-gradient(120deg, ${look.from}, ${look.to})` }}>
           <span className="text-3xl">{look.emoji}</span>

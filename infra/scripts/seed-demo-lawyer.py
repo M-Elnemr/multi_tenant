@@ -48,7 +48,7 @@ def call(method, base, path, body=None, token=None, raw=None, ctype="application
 
 def onboard():
     r = call("POST", a.base, "/api/v1/onboarding/tenants", {"type": "LAWYER", "name": "المستشار أحمد الحسيني", "slug": a.slug, "ownerFirstName": "أحمد", "ownerLastName": "الحسيني",
-                                                            "phone": PHONE, "password": a.password, "categories": ["criminal", "family", "commercial", "civil", "real_estate", "cassation"]})
+                                                            "phone": PHONE, "password": a.password, "categories": ["criminal", "family", "commercial", "civil", "cassation"]})
     print("created", r["host"])
 
 
