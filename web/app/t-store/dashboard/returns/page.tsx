@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { DateRangePicker, rangeQuery, type DateRange } from "@/components/date-range";
 import { useState } from "react";
 import { api } from "@/lib/client";
 import { Page, useAction, useApi } from "@/components/hooks";
@@ -15,12 +16,14 @@ const TONE: Record<string, "amber" | "blue" | "red" | "green"> = { REQUESTED: "a
 export default function Returns() {
   const { t, locale } = useI18n();
   const [status, setStatus] = useState("");
+  const [range, setRange] = useState<DateRange>({});
+  const rq = (b: string) => { const qs = rangeQuery(new URLSearchParams(), range).toString(); return qs ? `${b}${b.includes("?") ? "&" : "?"}${qs}` : b; };
   const [page, setPage] = useState(1);
-  const { data, loading, error, reload } = useApi<Page<Ret>>(`store/returns?page=${page}&status=${status}`);
+  const { data, loading, error, reload } = useApi<Page<Ret>>(rq(`store/returns?page=${page}&status=${status}`));
   const decide = useAction(async (id: string, s: string) => { await api(`store/returns/${id}/decision`, { body: { status: s } }); await reload(); });
   return (
     <>
-      <PageHeader title={t("nav.returns")} actions={<Select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}><option value="">{t("admin.allStatuses")}</option>{["REQUESTED", "APPROVED", "REJECTED", "RECEIVED"].map((s) => <option key={s} value={s}>{t(`return.${s}`)}</option>)}</Select>} />
+      <PageHeader title={t("nav.returns")} actions={<div className="flex flex-wrap gap-2"><DateRangePicker value={range} onChange={(r) => { setRange(r); setPage(1); }} /><Select className="!w-auto" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}><option value="">{t("admin.allStatuses")}</option>{["REQUESTED", "APPROVED", "REJECTED", "RECEIVED"].map((s) => <option key={s} value={s}>{t(`return.${s}`)}</option>)}</Select></div>} />
       <ErrorText error={error ?? decide.error} />
       {loading && !data ? <Loading /> : data?.data.length === 0 ? <p className="rounded-2xl border border-dashed p-10 text-center text-slate-500">{t("returns.empty")}</p> : (
         <>

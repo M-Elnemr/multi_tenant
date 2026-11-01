@@ -128,6 +128,8 @@ class _PatientsScreenState extends State<PatientsScreen> {
       key: ValueKey('patients$_n'),
       api: ctx.api,
       path: 'clinic/patients',
+      dateRange: true,
+      dateLabel: s.ar ? 'تاريخ التسجيل' : 'Registered',
       fab: ctx.can('patient.create') ? FloatingActionButton.extended(onPressed: () async { if (await addPatientChooser(context, ctx) != null && mounted) setState(() => _n++); }, icon: const Icon(Icons.person_add_alt_1_rounded), label: Text(s.ar ? 'مريض جديد' : 'New patient')) : null,
       searchHint: s.ar ? 'ابحث بالاسم أو الهاتف أو الكود أو رقم المريض' : 'Name, phone, code or patient ID',
       emptyText: s.ar ? 'لا يوجد مرضى' : 'No patients',

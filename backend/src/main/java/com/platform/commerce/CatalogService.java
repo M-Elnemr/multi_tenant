@@ -40,8 +40,10 @@ public class CatalogService {
     private final AuditService audit;
     private final com.platform.files.FileService files;
     private final TaxonomyService taxonomy;
+    private final InventoryService inventory;
 
-    public CatalogService(JdbcClient jdbc, EntitlementService ent, AuditService audit, com.platform.files.FileService files, TaxonomyService taxonomy) {
+    public CatalogService(JdbcClient jdbc, EntitlementService ent, AuditService audit, com.platform.files.FileService files, TaxonomyService taxonomy, InventoryService inventory) {
+        this.inventory = inventory;
         this.taxonomy = taxonomy;
         this.files = files;
         this.jdbc = jdbc;
@@ -74,16 +76,138 @@ public class CatalogService {
 
     // ---- products -----------------------------------------------------------------------------------
 
+    /** One row of the edit screen's variant table: {@code id} is the variant it was loaded from (null for a new row); stock sets the quantity per branch. */
+    public record VariantEdit(UUID id, String sku, long priceMinor, Long compareAtPriceMinor, String barcode, Integer weightGrams,
+                              Map<String, String> optionValues, List<StockReq> stock) {
+        VariantReq asReq() { return new VariantReq(sku, priceMinor, compareAtPriceMinor, barcode, weightGrams, optionValues, stock); }
+    }
+
+    /**
+     * Replaces a product's options and variants from the edit screen. A combination that already exists keeps its variant (and its history);
+     * a row loaded from a variant whose combination is gone moves that variant to the new combination; anything else is a new variant.
+     * Variants no longer listed are switched off (INACTIVE), never deleted, so past orders keep pointing at them.
+     * Stock per branch is a target: the difference is written as one ADJUSTMENT movement (or the initial PURCHASE for a new variant).
+     */
+    @Transactional
+    public Map<String, Object> replaceVariants(UUID tenantId, UUID actor, UUID productId, List<OptionReq> rawOptions, List<VariantEdit> edits) {
+        requireOwned("commerce.products", productId, tenantId);
+        List<VariantEdit> rows = edits == null ? List.of() : edits;
+        precheck("x", rows.stream().map(VariantEdit::asReq).toList(), "DRAFT", false);
+        Integer taxonomyId = jdbc.sql("SELECT taxonomy_id FROM commerce.products WHERE id = :p").param("p", productId).query(Integer.class).optional().orElse(null);
+        Map<String, Object> node = taxonomyId == null ? null : taxonomy.pick(taxonomyId, null, true);
+        Canon canon = canonicalize(rawOptions == null ? List.of() : rawOptions, rows.stream().map(VariantEdit::asReq).toList(), node);
+        List<OptionReq> options = canon.options();
+        List<VariantReq> variants = canon.variants();
+        validateVariantsAgainstOptions(options, variants);
+
+        // options and values: keep rows by name so pictures tied to a colour stay tied to it
+        Map<String, UUID> valueIds = new LinkedHashMap<>();
+        Set<UUID> keepOptions = new HashSet<>(), keepValues = new HashSet<>();
+        for (int oi = 0; oi < options.size(); oi++) {
+            OptionReq o = options.get(oi);
+            UUID optionId = jdbc.sql("""
+                    INSERT INTO commerce.product_options (product_id, name, sort_order, attribute_code, size_scale) VALUES (:p, :n, :o, :ac, :sc)
+                    ON CONFLICT (product_id, name) DO UPDATE SET sort_order = EXCLUDED.sort_order, attribute_code = EXCLUDED.attribute_code, size_scale = EXCLUDED.size_scale RETURNING id
+                    """).param("p", productId).param("n", o.name()).param("o", oi).param("ac", o.attribute() == null ? "" : o.attribute()).param("sc", o.sizeScale() == null ? "" : o.sizeScale()).query(UUID.class).single();
+            keepOptions.add(optionId);
+            for (int vi = 0; vi < o.values().size(); vi++) {
+                String v = o.values().get(vi);
+                UUID vid = jdbc.sql("""
+                        INSERT INTO commerce.product_option_values (option_id, value, sort_order, value_code) VALUES (:o, :v, :s, :vc)
+                        ON CONFLICT (option_id, value) DO UPDATE SET sort_order = EXCLUDED.sort_order, value_code = EXCLUDED.value_code RETURNING id
+                        """).param("o", optionId).param("v", v).param("s", vi).param("vc", canon.codes().getOrDefault(o.name() + "=" + v, "")).query(UUID.class).single();
+                keepValues.add(vid);
+                valueIds.put(o.name() + "=" + v, vid);
+            }
+        }
+
+        Map<String, UUID> byCombo = new HashMap<>();
+        Set<UUID> existingIds = new HashSet<>();
+        for (var r : jdbc.sql("SELECT id, combo_key FROM commerce.product_variants WHERE product_id = :p AND tenant_id = :t").param("p", productId).param("t", tenantId).query().listOfRows()) {
+            byCombo.put((String) r.get("combo_key"), (UUID) r.get("id"));
+            existingIds.add((UUID) r.get("id"));
+        }
+        List<String> combos = new ArrayList<>();
+        for (VariantReq v : variants) combos.add(comboKey(options, v.optionValues()));
+        Set<UUID> claimed = new HashSet<>();
+        UUID[] target = new UUID[variants.size()];
+        for (int i = 0; i < variants.size(); i++) if (byCombo.containsKey(combos.get(i))) { target[i] = byCombo.get(combos.get(i)); claimed.add(target[i]); }
+        for (int i = 0; i < variants.size(); i++) {
+            UUID from = rows.get(i).id();
+            if (target[i] == null && from != null && existingIds.contains(from) && !claimed.contains(from)) { target[i] = from; claimed.add(from); }
+        }
+        // free the SKUs and combinations of variants that are being switched off, so a new row may reuse them
+        List<UUID> off = existingIds.stream().filter(id -> !claimed.contains(id)).toList();
+        for (UUID id : off)
+            jdbc.sql("UPDATE commerce.product_variants SET status = 'INACTIVE', sku = left(sku, 60) || '~' || left(CAST(id AS varchar), 8), barcode = NULL, combo_key = '~' || CAST(id AS varchar), updated_at = now() WHERE id = :i AND status = 'ACTIVE'")
+                    .param("i", id).update();
+        // a moved variant first gets a temporary key, so two variants swapping combinations never collide
+        for (int i = 0; i < variants.size(); i++) if (target[i] != null)
+            jdbc.sql("UPDATE commerce.product_variants SET combo_key = '~' || CAST(id AS varchar) WHERE id = :i").param("i", target[i]).update();
+        jdbc.sql("DELETE FROM commerce.variant_option_values WHERE variant_id IN (SELECT id FROM commerce.product_variants WHERE product_id = :p)").param("p", productId).update();
+
+        for (int i = 0; i < variants.size(); i++) {
+            VariantReq v = variants.get(i);
+            String at = "variants[" + i + "]";
+            UUID id = target[i];
+            try {
+                if (id == null) {
+                    id = jdbc.sql("""
+                            INSERT INTO commerce.product_variants (tenant_id, product_id, sku, barcode, price_minor, compare_at_price_minor, weight_grams, combo_key)
+                            VALUES (:t, :p, :sku, :bc, :pr, :cp, :w, :ck) RETURNING id
+                            """).param("t", tenantId).param("p", productId).param("sku", v.sku().trim()).param("bc", cleanBarcode(v.barcode()))
+                            .param("pr", v.priceMinor()).param("cp", v.compareAtPriceMinor()).param("w", v.weightGrams()).param("ck", combos.get(i)).query(UUID.class).single();
+                    if (v.stock() != null) for (StockReq st : v.stock()) if (st.quantity() > 0) setInitialStock(tenantId, actor, id, st);
+                } else {
+                    jdbc.sql("""
+                            UPDATE commerce.product_variants SET sku = :sku, barcode = :bc, price_minor = :pr, compare_at_price_minor = :cp, weight_grams = coalesce(:w, weight_grams),
+                              combo_key = :ck, status = 'ACTIVE', updated_at = now() WHERE id = :i
+                            """).param("sku", v.sku().trim()).param("bc", cleanBarcode(v.barcode())).param("pr", v.priceMinor()).param("cp", v.compareAtPriceMinor())
+                            .param("w", v.weightGrams()).param("ck", combos.get(i)).param("i", id).update();
+                    if (v.stock() != null) for (StockReq st : v.stock()) setStock(tenantId, actor, id, st, at);
+                }
+            } catch (DuplicateKeyException e) {
+                throw duplicate(e, v.sku(), v.barcode(), at);
+            }
+            if (v.optionValues() != null)
+                for (var e : v.optionValues().entrySet())
+                    jdbc.sql("INSERT INTO commerce.variant_option_values (variant_id, option_value_id) VALUES (:v, :o) ON CONFLICT DO NOTHING")
+                            .param("v", id).param("o", valueIds.get(e.getKey() + "=" + e.getValue())).update();
+        }
+        // options and values the shop removed (pictures shown for a removed colour become general pictures)
+        String keepV = String.join(",", keepValues.stream().map(UUID::toString).toList());
+        String keepO = String.join(",", keepOptions.stream().map(UUID::toString).toList());
+        jdbc.sql("""
+                DELETE FROM commerce.product_option_values ov USING commerce.product_options o WHERE ov.option_id = o.id AND o.product_id = :p
+                AND NOT (ov.id = ANY(string_to_array(NULLIF(:k, ''), ',')::uuid[]) AND :k <> '')
+                """).param("p", productId).param("k", keepV).update();
+        jdbc.sql("DELETE FROM commerce.product_options WHERE product_id = :p AND NOT (:k <> '' AND id = ANY(string_to_array(NULLIF(:k, ''), ',')::uuid[]))")
+                .param("p", productId).param("k", keepO).update();
+        jdbc.sql("UPDATE commerce.products SET has_variants = :hv, updated_at = now() WHERE id = :p").param("hv", !options.isEmpty()).param("p", productId).update();
+        audit.record(actor, tenantId, "PRODUCT_VARIANTS_UPDATED", "product", productId, "{\"variants\":" + variants.size() + ",\"off\":" + off.size() + "}");
+        return detail(tenantId, productId, false);
+    }
+
+    /** Sets one branch's on-hand stock to the wanted number through an ADJUSTMENT movement (nothing when it is already there). */
+    private void setStock(UUID tenantId, UUID actor, UUID variantId, StockReq s, String at) {
+        if (s.branchId() == null) return;
+        Integer onHand = jdbc.sql("SELECT quantity_on_hand FROM commerce.inventory_items WHERE branch_id = :b AND variant_id = :v AND tenant_id = :t")
+                .param("b", s.branchId()).param("v", variantId).param("t", tenantId).query(Integer.class).optional().orElse(0);
+        int delta = s.quantity() - onHand;
+        if (delta == 0) return;
+        try { inventory.adjust(tenantId, actor, s.branchId(), variantId, delta, "ADJUSTMENT", "Edited on the product page"); }
+        catch (BusinessException e) { throw e.field(at + ".stock"); }
+    }
+
     @Transactional
     public Map<String, Object> createProduct(UUID tenantId, UUID actor, ProductReq r) {
-        if (r.name() == null || r.name().isBlank()) throw BusinessException.badRequest("VALIDATION_ERROR", "Product name is required");
-        if (r.variants() == null || r.variants().isEmpty()) throw BusinessException.badRequest("VALIDATION_ERROR", "At least one variant is required");
+        precheck(r.name(), r.variants(), r.status(), r.taxonomyId() == null && (r.taxonomySlug() == null || r.taxonomySlug().isBlank()));
         long existing = jdbc.sql("SELECT count(*) FROM commerce.products WHERE tenant_id = :t AND status <> 'ARCHIVED'").param("t", tenantId).query(Long.class).single();
         ent.requireCapacity(tenantId, "max_products", existing);
         String status = r.status() == null ? "ACTIVE" : r.status();
         if (!Set.of("DRAFT", "ACTIVE").contains(status)) throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid status");
         Map<String, Object> node = taxonomy.pick(r.taxonomyId(), r.taxonomySlug(), false);
-        if (node == null && "ACTIVE".equals(status)) throw BusinessException.badRequest("CATEGORY_REQUIRED", "Choose a category from the list");
+        if (node == null && "ACTIVE".equals(status)) throw BusinessException.badRequest("CATEGORY_REQUIRED", "Choose a category from the list").field("taxonomyId");
         String audience = audience(r.audience(), node, "ACTIVE".equals(status));
         String condition = condition(r.condition());
 
@@ -112,7 +236,8 @@ public class CatalogService {
                 valueIds.put(o.name() + "=" + v, vid);
             }
         }
-        for (VariantReq v : variants) {
+        for (int vi = 0; vi < variants.size(); vi++) {
+            VariantReq v = variants.get(vi);
             String combo = comboKey(options, v.optionValues());
             UUID variantId;
             try {
@@ -123,7 +248,7 @@ public class CatalogService {
                         .param("pr", v.priceMinor()).param("cp", v.compareAtPriceMinor()).param("w", v.weightGrams()).param("ck", combo)
                         .query(UUID.class).single();
             } catch (DuplicateKeyException e) {
-                throw duplicate(e, v.sku(), v.barcode());
+                throw duplicate(e, v.sku(), v.barcode(), "variants[" + vi + "]");
             }
             if (v.optionValues() != null)
                 for (var e : v.optionValues().entrySet())
@@ -229,7 +354,7 @@ public class CatalogService {
     String audience(String raw, Map<String, Object> node, boolean active) {
         String a = raw == null ? "" : raw.trim().toUpperCase(Locale.ROOT);
         if (!a.isEmpty() && !TaxonomyService.AUDIENCES.contains(a)) throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid value for: for whom");
-        if (a.isEmpty() && active && node != null && Boolean.TRUE.equals(node.get("applies_audience"))) throw BusinessException.badRequest("AUDIENCE_REQUIRED", "Choose who this product is for (men, women, kids...)");
+        if (a.isEmpty() && active && node != null && Boolean.TRUE.equals(node.get("applies_audience"))) throw BusinessException.badRequest("AUDIENCE_REQUIRED", "Choose who this product is for (men, women, kids...)").field("audience");
         return a;
     }
 
@@ -278,7 +403,7 @@ public class CatalogService {
                     List<String> order = new ArrayList<>(); if (node != null && !((String) node.get("size_scales")).isEmpty()) order.addAll(List.of(((String) node.get("size_scales")).split(",")));
                     for (String sc : List.of("APPAREL", "KIDS", "SHOE", "BED")) if (!order.contains(sc)) order.add(sc);
                     for (String sc : order) if (o.values().stream().allMatch(v -> taxonomy.standardValue("SIZE", sc, v) != null)) { scale = sc; break; }
-                    if (scale.isEmpty()) throw BusinessException.badRequest("INVALID_OPTION_VALUE", "Choose sizes from the standard list");
+                    if (scale.isEmpty()) throw BusinessException.badRequest("INVALID_OPTION_VALUE", "Choose sizes from the standard list").field("options[" + options.indexOf(o) + "].values");
                 }
             }
             String canonName = attr.equals("COLOR") ? "اللون" : "المقاس";
@@ -286,7 +411,7 @@ public class CatalogService {
             List<String> canonValues = new ArrayList<>();
             for (String v : o.values()) {
                 var std = taxonomy.standardValue(attr, scale, v);
-                if (std == null) throw BusinessException.badRequest("INVALID_OPTION_VALUE", "\"" + v + "\" is not a standard " + (attr.equals("COLOR") ? "colour" : "size") + ": choose from the list");
+                if (std == null) throw BusinessException.badRequest("INVALID_OPTION_VALUE", "\"" + v + "\" is not a standard " + (attr.equals("COLOR") ? "colour" : "size") + ": choose from the list").field("options[" + options.indexOf(o) + "].values");
                 String canonValue = (String) std.get("name_ar");
                 vm.put(v, canonValue);
                 canonValues.add(canonValue);
@@ -312,27 +437,47 @@ public class CatalogService {
         return new Canon(outOptions, outVariants, codes);
     }
 
+    /** Every simple field problem at once, each under its own field, before the slower checks run. */
+    private void precheck(String name, List<VariantReq> variants, String status, boolean noCategory) {
+        var fe = new com.platform.shared.FieldErrors();
+        fe.when(name == null || name.isBlank(), "name", "Product name is required");
+        if (noCategory && (status == null || "ACTIVE".equals(status))) fe.add("taxonomyId", "CATEGORY_REQUIRED", "Choose a category from the list");
+        if (variants == null || variants.isEmpty()) fe.add("variants", "At least one variant is required");
+        else for (int i = 0; i < variants.size(); i++) {
+            VariantReq v = variants.get(i);
+            fe.when(v.sku() == null || v.sku().isBlank(), "variants[" + i + "].sku", "SKU is required");
+            fe.when(v.priceMinor() < 0, "variants[" + i + "].priceMinor", "Price cannot be negative");
+            fe.when(v.compareAtPriceMinor() != null && v.compareAtPriceMinor() > 0 && v.compareAtPriceMinor() <= v.priceMinor(), "variants[" + i + "].compareAtPriceMinor", "The old price must be higher than the price");
+            if (v.stock() != null) for (StockReq st : v.stock()) fe.when(st.quantity() < 0, "variants[" + i + "].stock", "Stock cannot be negative");
+        }
+        fe.throwIfAny();
+    }
+
     private void validateVariantsAgainstOptions(List<OptionReq> options, List<VariantReq> variants) {
         Set<String> optionNames = new HashSet<>();
-        for (OptionReq o : options) {
+        for (int i = 0; i < options.size(); i++) {
+            OptionReq o = options.get(i);
             if (o.name() == null || o.name().isBlank() || o.values() == null || o.values().isEmpty())
-                throw BusinessException.badRequest("VALIDATION_ERROR", "Each option needs a name and values");
-            if (!optionNames.add(o.name())) throw BusinessException.badRequest("VALIDATION_ERROR", "Duplicate option " + o.name());
-            if (new HashSet<>(o.values()).size() != o.values().size()) throw BusinessException.badRequest("VALIDATION_ERROR", "Duplicate values in " + o.name());
+                throw BusinessException.badRequest("VALIDATION_ERROR", "Each option needs a name and values").field("options[" + i + "]");
+            if (!optionNames.add(o.name())) throw BusinessException.badRequest("VALIDATION_ERROR", "Duplicate option " + o.name()).field("options[" + i + "].name");
+            if (new HashSet<>(o.values()).size() != o.values().size()) throw BusinessException.badRequest("VALIDATION_ERROR", "Duplicate values in " + o.name()).field("options[" + i + "].values");
         }
         if (options.isEmpty() && variants.size() != 1)
-            throw BusinessException.badRequest("VALIDATION_ERROR", "A product without options has exactly one variant");
+            throw BusinessException.badRequest("VALIDATION_ERROR", "A product without options has exactly one variant").field("variants");
         Set<String> seen = new HashSet<>();
         Set<String> skus = new HashSet<>();
         Set<String> barcodes = new HashSet<>();
-        for (VariantReq v : variants) {
-            if (v.sku() == null || v.sku().isBlank()) throw BusinessException.badRequest("VALIDATION_ERROR", "SKU is required");
-            if (!skus.add(v.sku().trim())) throw BusinessException.conflict("SKU_TAKEN", "Duplicate SKU " + v.sku());
+        for (int i = 0; i < variants.size(); i++) {
+            VariantReq v = variants.get(i);
+            String at = "variants[" + i + "]";
+            if (v.sku() == null || v.sku().isBlank()) throw BusinessException.badRequest("VALIDATION_ERROR", "SKU is required").field(at + ".sku");
+            if (!skus.add(v.sku().trim())) throw BusinessException.conflict("SKU_TAKEN", "Duplicate SKU " + v.sku()).field(at + ".sku");
             String bc = cleanBarcode(v.barcode());
-            if (bc != null && !barcodes.add(bc)) throw BusinessException.conflict("BARCODE_TAKEN", "Duplicate barcode " + bc);
-            if (v.priceMinor() < 0) throw BusinessException.badRequest("VALIDATION_ERROR", "Price cannot be negative");
-            if (!seen.add(comboKey(options, v.optionValues())))
-                throw BusinessException.badRequest("DUPLICATE_VARIANT", "Two variants have the same option combination");
+            if (bc != null && !barcodes.add(bc)) throw BusinessException.conflict("BARCODE_TAKEN", "Duplicate barcode " + bc).field(at + ".barcode");
+            if (v.priceMinor() < 0) throw BusinessException.badRequest("VALIDATION_ERROR", "Price cannot be negative").field(at + ".priceMinor");
+            String key;
+            try { key = comboKey(options, v.optionValues()); } catch (BusinessException e) { throw e.field(at); }
+            if (!seen.add(key)) throw BusinessException.badRequest("DUPLICATE_VARIANT", "Two variants have the same option combination").field(at);
         }
     }
 
@@ -358,7 +503,8 @@ public class CatalogService {
         Map<String, Object> node = taxonomy.pick(taxonomyId, null, false);
         Integer effectiveTaxonomy = node != null ? (Integer) node.get("id") : (Integer) cur.get("taxonomy_id");
         String effectiveStatus = status != null ? status : (String) cur.get("status");
-        if ("ACTIVE".equals(effectiveStatus) && effectiveTaxonomy == null) throw BusinessException.badRequest("CATEGORY_REQUIRED", "Choose a category from the list");
+        if ("ACTIVE".equals(effectiveStatus) && effectiveTaxonomy == null) throw BusinessException.badRequest("CATEGORY_REQUIRED", "Choose a category from the list").field("taxonomyId");
+        if (name != null && name.isBlank()) throw BusinessException.badRequest("VALIDATION_ERROR", "Product name is required").field("name");
         String aud = null;
         if (taxonomyId != null || audience != null || status != null) {
             Map<String, Object> checkNode = node != null ? node : effectiveTaxonomy == null ? null : taxonomy.pick(effectiveTaxonomy, null, true);
@@ -406,10 +552,16 @@ public class CatalogService {
         return b.isEmpty() ? null : b;
     }
 
-    private static BusinessException duplicate(DuplicateKeyException e, String sku, String barcode) {
+    private static BusinessException duplicate(DuplicateKeyException e, String sku, String barcode) { return duplicate(e, sku, barcode, null); }
+
+    private static BusinessException duplicate(DuplicateKeyException e, String sku, String barcode, String at) {
         String m = String.valueOf(e.getMessage());
-        if (m.contains("uq_variant_barcode")) return BusinessException.conflict("BARCODE_TAKEN", "Barcode already used: " + barcode);
-        return BusinessException.conflict("SKU_TAKEN", "SKU already exists: " + sku);
+        if (m.contains("uq_variant_barcode")) {
+            var ex = BusinessException.conflict("BARCODE_TAKEN", "Barcode already used: " + barcode);
+            return at == null ? ex.field("barcode") : ex.field(at + ".barcode");
+        }
+        var ex = BusinessException.conflict("SKU_TAKEN", "SKU already exists: " + sku);
+        return at == null ? ex.field("sku") : ex.field(at + ".sku");
     }
 
     /** Products are never hard-deleted (orders keep snapshots; history stays intact): DELETE archives. */
@@ -499,6 +651,25 @@ public class CatalogService {
                      JOIN commerce.branches b ON b.id = i.branch_id AND b.is_active WHERE i.variant_id = v.id) AS available
                 FROM commerce.product_variants v WHERE v.product_id = :p AND v.tenant_id = :t AND (NOT :po OR v.status = 'ACTIVE') ORDER BY v.created_at
                 """).param("p", id).param("t", tenantId).param("po", publicOnly).query().listOfRows()));
+        if (!publicOnly) {
+            // the edit screen: each variant's chosen values and its stock per branch
+            @SuppressWarnings("unchecked") var vs = (List<Map<String, Object>>) out.get("variants");
+            var stock = jdbc.sql("""
+                    SELECT i.variant_id, i.branch_id, b.name AS branch_name, i.quantity_on_hand, i.quantity_reserved, i.low_stock_threshold
+                    FROM commerce.inventory_items i JOIN commerce.branches b ON b.id = i.branch_id JOIN commerce.product_variants v ON v.id = i.variant_id
+                    WHERE v.product_id = :p ORDER BY b.name
+                    """).param("p", id).query().listOfRows();
+            var picks = jdbc.sql("""
+                    SELECT vov.variant_id, o.name, ov.value FROM commerce.variant_option_values vov JOIN commerce.product_option_values ov ON ov.id = vov.option_value_id
+                    JOIN commerce.product_options o ON o.id = ov.option_id JOIN commerce.product_variants v ON v.id = vov.variant_id WHERE v.product_id = :p
+                    """).param("p", id).query().listOfRows();
+            for (var v : vs) {
+                Map<String, Object> ov = new LinkedHashMap<>();
+                for (var pk : picks) if (pk.get("variant_id").equals(v.get("id"))) ov.put((String) pk.get("name"), pk.get("value"));
+                v.put("optionValues", ov);
+                v.put("stock", Rows.camel(stock.stream().filter(r -> r.get("variant_id").equals(v.get("id"))).toList()));
+            }
+        }
         out.put("media", Rows.camel(jdbc.sql("""
                 SELECT m.id, m.url, m.alt_text, m.sort_order, m.media_base, m.media_ext, ov.value AS option_value
                 FROM commerce.product_media m LEFT JOIN commerce.product_option_values ov ON ov.id = m.option_value_id WHERE m.product_id = :p ORDER BY m.sort_order

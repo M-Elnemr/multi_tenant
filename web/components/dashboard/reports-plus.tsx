@@ -4,6 +4,7 @@ import { useState } from "react";
 import { dateOnly, money } from "@/lib/format";
 import { governorateName } from "@/lib/governorates";
 import { useApi } from "../hooks";
+import { DateRangePicker, rangeQuery, type DateRange } from "../date-range";
 import { useI18n } from "../i18n-provider";
 import { Alert, Badge, Card, Loading, Stat, Table, Tabs, Td } from "../ui";
 import { Bars, downloadCsv, TrendChart } from "./report-charts";
@@ -29,9 +30,11 @@ type Tab = "overview" | "sales" | "products" | "customers" | "operations";
 export default function ReportsPlus() {
   const { t, locale, currency } = useI18n();
   const [days, setDays] = useState(30);
+  const [range, setRange] = useState<DateRange>({});
+  const span = range.from || range.to ? rangeQuery(new URLSearchParams(), range).toString() : `days=${days}`;
   const [tab, setTab] = useState<Tab>("overview");
-  const o = useApi<Overview>(`store/reports/overview?days=${days}`);
-  const m = useApi<Margin>(tab === "products" ? `store/reports/margin?days=${days}` : null);
+  const o = useApi<Overview>(`store/reports/overview?${span}`);
+  const m = useApi<Margin>(tab === "products" ? `store/reports/margin?${span}` : null);
   const c = useApi<Cohort[]>(tab === "customers" ? "store/reports/cohorts" : null);
   const attr = useApi<Attr>(tab === "operations" ? `store/attribution?days=${days}` : null);
   const mon = (n: number) => money(n, currency, locale);
@@ -49,7 +52,8 @@ export default function ReportsPlus() {
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <Tabs<Tab> tabs={(["overview", "sales", "products", "customers", "operations"] as Tab[]).map((k) => ({ key: k, label: t(`rp2.tab.${k}`) }))} value={tab} onChange={setTab} />
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-xl border bg-white p-0.5">{[7, 30, 90].map((n) => <button key={n} type="button" onClick={() => setDays(n)} className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${days === n ? "bg-brand text-white" : "text-slate-600 hover:bg-slate-50"}`}>{t("rp2.lastDays", { n })}</button>)}</div>
+          <div className="inline-flex rounded-xl border bg-white p-0.5">{[7, 30, 90].map((n) => <button key={n} type="button" onClick={() => { setDays(n); setRange({}); }} className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${days === n && !range.from ? "bg-brand text-white" : "text-slate-600 hover:bg-slate-50"}`}>{t("rp2.lastDays", { n })}</button>)}</div>
+          <DateRangePicker value={range} onChange={setRange} label={t("range.custom")} />
           <button type="button" onClick={() => window.print()} className="rounded-xl border bg-white px-3 py-1.5 text-sm font-semibold hover:bg-slate-50">🖨️ {t("pos.print")}</button>
         </div>
       </div>

@@ -115,6 +115,16 @@ class _TopToastState extends State<_TopToast> with SingleTickerProviderStateMixi
   }
 }
 
+/// Like [run] for a form: field errors go under their fields (and the screen scrolls there); anything else is a toast.
+Future<bool> runForm(BuildContext c, FieldErrors fe, Future<void> Function() f) async {
+  fe.clear();
+  try { await f(); return true; } catch (e) {
+    if (!c.mounted) return false;
+    if (fe.take(e)) { toast(c, AppLocale.isAr ? 'من فضلك صحّح الحقول المعلَّمة باللون الأحمر' : 'Please fix the fields marked in red', isError: true); } else { toast(c, errorText(e), isError: true); }
+    return false;
+  }
+}
+
 /// Runs an action, shows a readable error if it fails and reports success so the caller can refresh.
 Future<bool> run(BuildContext c, Future<void> Function() f) async {
   try { await f(); return true; } catch (e) { if (c.mounted) toast(c, errorText(e), isError: true); return false; }
@@ -177,9 +187,87 @@ String fmtDate(String? iso, {bool time = true}) {
   return time ? '$day  ${two(d.hour)}:${two(d.minute)}' : day;
 }
 
+String ymd(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+/// from/to query values of a date range (both days included); empty when there is none.
+Map<String, String> rangeQuery(DateTimeRange? r) => r == null ? const {} : {'from': ymd(r.start), 'to': ymd(r.end)};
+
+/// The date filter of every list: a chip that opens quick choices (today, last 7 days, this month...) or the calendar for any range.
+class DateRangeChip extends StatelessWidget {
+  const DateRangeChip({super.key, required this.value, required this.onChanged, this.future = false, this.label});
+  final DateTimeRange? value;
+  final ValueChanged<DateTimeRange?> onChanged;
+  final bool future;
+  final String? label;
+
+  static String text(DateTimeRange? r, bool ar, {String? empty}) {
+    if (r == null) return empty ?? (ar ? 'أي تاريخ' : 'Any date');
+    String d(DateTime x) => '${x.day}/${x.month}${x.year == DateTime.now().year ? '' : '/${x.year % 100}'}';
+    return r.start == r.end ? d(r.start) : '${d(r.start)} – ${d(r.end)}';
+  }
+
+  Future<void> _open(BuildContext context) async {
+    final ar = AppLocale.isAr;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    DateTimeRange r(DateTime a, DateTime b) => DateTimeRange(start: a, end: b);
+    final presets = future
+        ? <(String, DateTimeRange)>[
+            (ar ? 'اليوم' : 'Today', r(today, today)), (ar ? 'غدًا' : 'Tomorrow', r(today.add(const Duration(days: 1)), today.add(const Duration(days: 1)))),
+            (ar ? 'الأيام السبعة القادمة' : 'Next 7 days', r(today, today.add(const Duration(days: 6)))), (ar ? 'الثلاثون يومًا القادمة' : 'Next 30 days', r(today, today.add(const Duration(days: 29)))),
+          ]
+        : <(String, DateTimeRange)>[
+            (ar ? 'اليوم' : 'Today', r(today, today)), (ar ? 'أمس' : 'Yesterday', r(today.subtract(const Duration(days: 1)), today.subtract(const Duration(days: 1)))),
+            (ar ? 'آخر 7 أيام' : 'Last 7 days', r(today.subtract(const Duration(days: 6)), today)), (ar ? 'آخر 30 يومًا' : 'Last 30 days', r(today.subtract(const Duration(days: 29)), today)),
+            (ar ? 'هذا الشهر' : 'This month', r(DateTime(now.year, now.month, 1), today)),
+            (ar ? 'الشهر الماضي' : 'Last month', r(DateTime(now.year, now.month - 1, 1), DateTime(now.year, now.month, 0))),
+          ];
+    final picked = await showModalBottomSheet<Object>(
+      context: context,
+      showDragHandle: true,
+      builder: (c) => SafeArea(child: Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 16), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text(ar ? 'اختر الفترة' : 'Choose dates', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
+        const SizedBox(height: 10),
+        Wrap(spacing: 8, runSpacing: 8, children: [for (final p in presets) ChoiceChip(label: Text(p.$1), selected: value != null && value!.start == p.$2.start && value!.end == p.$2.end, onSelected: (_) => Navigator.pop(c, p.$2))]),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(onPressed: () => Navigator.pop(c, 'custom'), icon: const Icon(Icons.date_range_rounded), label: Text(ar ? 'اختر من التقويم' : 'Pick on the calendar')),
+        if (value != null) TextButton(onPressed: () => Navigator.pop(c, 'clear'), child: Text(ar ? 'مسح التاريخ' : 'Clear dates')),
+      ]))),
+    );
+    if (!context.mounted || picked == null) return;
+    if (picked == 'clear') { onChanged(null); return; }
+    if (picked is DateTimeRange) { onChanged(picked); return; }
+    final custom = await showDateRangePicker(context: context, firstDate: DateTime(2020), lastDate: DateTime(now.year + 2, 12, 31), initialDateRange: value, helpText: ar ? 'من — إلى' : 'From — to');
+    if (custom != null) onChanged(DateTimeRange(start: DateTime(custom.start.year, custom.start.month, custom.start.day), end: DateTime(custom.end.year, custom.end.month, custom.end.day)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ar = AppLocale.isAr;
+    final on = value != null;
+    final color = Theme.of(context).colorScheme.primary;
+    return InputChip(
+      avatar: Icon(Icons.calendar_month_rounded, size: 18, color: on ? Colors.white : color),
+      label: Text(text(value, ar, empty: label), style: TextStyle(fontWeight: FontWeight.w800, color: on ? Colors.white : null)),
+      selected: on,
+      showCheckmark: false,
+      selectedColor: color,
+      onPressed: () => _open(context),
+      onDeleted: on ? () => onChanged(null) : null,
+      deleteIconColor: Colors.white,
+    );
+  }
+}
+
 /// Search + filter chips + endless pagination + pull to refresh. The backend pages are `{data:[...], meta:{hasNext}}`.
 class PagedList extends StatefulWidget {
-  const PagedList({super.key, required this.api, required this.path, required this.itemBuilder, this.searchHint, this.searchParam = 'q', this.filters, this.filterParam, this.query, this.pageSize = 20, this.emptyText, this.header, this.fab});
+  const PagedList({super.key, required this.api, required this.path, required this.itemBuilder, this.searchHint, this.searchParam = 'q', this.filters, this.filterParam, this.query, this.pageSize = 20, this.emptyText, this.header, this.fab, this.dateRange = false, this.dateLabel, this.futureDates = false, this.extraFilters});
+  /// Shows a date chip next to the filters and sends from/to.
+  final bool dateRange;
+  final String? dateLabel;
+  final bool futureDates;
+  /// More chips/buttons in the filter row (e.g. a "more filters" button).
+  final List<Widget>? extraFilters;
   final ApiClient api;
   final String path;
   final String? searchHint;
@@ -203,6 +291,7 @@ class PagedListState extends State<PagedList> {
   Timer? _t;
   List<Map<String, dynamic>> _items = [];
   String _filter = '';
+  DateTimeRange? _range;
   int _page = 1;
   bool _loading = true, _more = false, _hasNext = false;
   Object? _error;
@@ -235,6 +324,7 @@ class PagedListState extends State<PagedList> {
         'pageSize': '${widget.pageSize}',
         if (_search.text.trim().isNotEmpty) widget.searchParam: _search.text.trim(),
         if (widget.filterParam != null && _filter.isNotEmpty) widget.filterParam!: _filter,
+        ...rangeQuery(_range),
       };
 
   Future<void> reload() async {
@@ -275,11 +365,13 @@ class PagedListState extends State<PagedList> {
               decoration: InputDecoration(hintText: widget.searchHint, prefixIcon: const Icon(Icons.search_rounded), suffixIcon: _search.text.isEmpty ? null : IconButton(icon: const Icon(Icons.close_rounded), onPressed: () { _search.clear(); reload(); })),
             ),
           ),
-        if (widget.filters != null)
+        if (widget.filters != null || widget.dateRange || widget.extraFilters != null)
           SizedBox(
-            height: 46,
+            height: 50,
             child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), children: [
-              for (final f in widget.filters!)
+              if (widget.dateRange) Padding(padding: const EdgeInsets.symmetric(horizontal: 4), child: DateRangeChip(value: _range, future: widget.futureDates, label: widget.dateLabel, onChanged: (r) { setState(() => _range = r); reload(); })),
+              ...?widget.extraFilters,
+              for (final f in widget.filters ?? const <(String, String)>[])
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   child: ChoiceChip(label: Text(f.$2), selected: _filter == f.$1, showCheckmark: false, onSelected: (_) { setState(() => _filter = f.$1); reload(); }),

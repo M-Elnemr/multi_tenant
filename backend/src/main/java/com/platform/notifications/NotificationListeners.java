@@ -128,7 +128,7 @@ public class NotificationListeners {
     public void onTenantCreated(com.platform.core.tenant.TenantCreatedEvent e) {
         safely("TenantCreated", () -> {
             String name = jdbc.sql("SELECT name FROM core.tenants WHERE id = :t").param("t", e.tenantId()).query(String.class).optional().orElse("");
-            String title = e.type() == com.platform.core.tenant.TenantType.STORE ? "متجر جديد" : "عيادة جديدة";
+            String title = e.type() == com.platform.core.tenant.TenantType.STORE ? "متجر جديد" : e.type() == com.platform.core.tenant.TenantType.LAWYER ? "محامٍ جديد" : "عيادة جديدة";
             String payload = "{\"type\":\"TENANT_CREATED\",\"tenantId\":\"" + e.tenantId() + "\"}";
             List<UUID> admins = jdbc.sql("""
                     SELECT DISTINCT pr.user_id FROM core.user_platform_roles pr JOIN core.role_permissions rp ON rp.role_id = pr.role_id

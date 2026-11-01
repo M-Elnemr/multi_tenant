@@ -10,3 +10,4 @@ export 'src/splash.dart';
 export 'src/theme.dart';
 export 'src/ui.dart';
 export 'src/widgets.dart';
+export 'src/field_errors.dart';

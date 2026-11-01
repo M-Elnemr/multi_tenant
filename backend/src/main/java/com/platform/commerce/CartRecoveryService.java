@@ -157,7 +157,10 @@ public class CartRecoveryService {
     // ---- the owner's screen ----------------------------------------------------------------------------------------------
 
     /** view: due (open for 24 hours or more - the default), recent (open, younger), recovered, all. */
-    public Map<String, Object> list(UUID tenantId, String view) {
+    public Map<String, Object> list(UUID tenantId, String view) { return list(tenantId, view, null, null); }
+
+    public Map<String, Object> list(UUID tenantId, String view, java.time.LocalDate from, java.time.LocalDate to) {
+        com.platform.shared.DateRange.check(from, to);
         String where = switch (view == null ? "due" : view) {
             case "recent" -> "status = 'OPEN' AND created_at > now() - interval '24 hours'";
             case "recovered" -> "status = 'RECOVERED'";
@@ -165,7 +168,7 @@ public class CartRecoveryService {
             default -> "status = 'OPEN' AND created_at <= now() - interval '24 hours'";
         };
         var rows = jdbc.sql("SELECT id, name, phone, items::text AS items, item_count, total_minor, currency, status, created_at, updated_at, contacted_at, reminder_status, reminder_sent_at, recovered_order_id, recovered_at "
-                + "FROM commerce.abandoned_carts WHERE tenant_id = :t AND " + where + " ORDER BY created_at DESC LIMIT 200").param("t", tenantId).query().listOfRows();
+                + "FROM commerce.abandoned_carts WHERE tenant_id = :t AND " + where + " AND " + com.platform.shared.DateRange.sql("created_at", "t") + " ORDER BY created_at DESC LIMIT 200").param("t", tenantId).param("from", from).param("to", to).query().listOfRows();
         List<Map<String, Object>> out = new ArrayList<>();
         for (var r : rows) {
             Map<String, Object> m = new LinkedHashMap<>(Rows.camel(r));

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { DateRangePicker, rangeQuery, type DateRange } from "@/components/date-range";
 import { api } from "@/lib/client";
 import { dateTime, money } from "@/lib/format";
 import { useAction, useApi } from "../hooks";
@@ -19,7 +20,9 @@ type Res = { carts: Cart[]; stats: Stats; settings: Settings };
 export default function CartsView({ canWrite }: { canWrite: boolean }) {
   const { t, locale, currency } = useI18n();
   const [view, setView] = useState<"due" | "recent" | "recovered">("due");
-  const res = useApi<Res>(`store/carts?view=${view}`);
+  const [range, setRange] = useState<DateRange>({});
+  const rqs = rangeQuery(new URLSearchParams(), range).toString();
+  const res = useApi<Res>(`store/carts?view=${view}${rqs ? `&${rqs}` : ""}`);
   const [notice, setNotice] = useState<string | null>(null);
   const act = useAction(async (id: string, what: "remind" | "dismiss" | "contacted") => { const r = await api<{ result?: string }>(`store/carts/${id}/${what}`, { body: {} }); if (what === "remind") setNotice(t("cart.reminded")); await res.reload(); return r; });
   const [form, setForm] = useState<{ enabled: boolean; paid: boolean; hours: string; coupon: string; mode: SendMode } | null>(null);
@@ -41,7 +44,7 @@ export default function CartsView({ canWrite }: { canWrite: boolean }) {
           <Stat label={t("cart.stat.rate")} value={<span dir="ltr">{d.stats.recoveryRatePercent}%</span>} icon="trending" />
         </div>
       )}
-      <Tabs tabs={[{ key: "due", label: t("cart.tab.due") }, { key: "recent", label: t("cart.tab.recent") }, { key: "recovered", label: t("cart.tab.recovered") }]} value={view} onChange={setView} />
+      <div className="flex flex-wrap items-center gap-2"><Tabs tabs={[{ key: "due", label: t("cart.tab.due") }, { key: "recent", label: t("cart.tab.recent") }, { key: "recovered", label: t("cart.tab.recovered") }]} value={view} onChange={setView} /><DateRangePicker value={range} onChange={setRange} /></div>
       {notice && <Alert tone="green">{notice}</Alert>}
       <ErrorText error={act.error ?? template.error} />
       {d && d.carts.length === 0 ? <Empty>{t(view === "due" ? "cart.empty.due" : view === "recent" ? "cart.empty.recent" : "cart.empty.recovered")}</Empty> : (

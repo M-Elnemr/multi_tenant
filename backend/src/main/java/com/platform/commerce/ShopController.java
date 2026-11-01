@@ -40,6 +40,7 @@ public class ShopController {
     private final BlogService blog;
 
     private final com.platform.core.auth.AccountAuthService accounts;
+    @org.springframework.beans.factory.annotation.Autowired private OfferService offers;
 
     public ShopController(CatalogService catalog, StoreSearchService search, TaxonomyService taxonomy, StoreFulfillmentService fulfilment, StoreSettingsService settings, com.platform.core.auth.LoginThrottle throttle, CheckoutService checkout,
                           OrderService orders, ShopperService shopper, List<PaymentProvider> providers, WebhookEventStore webhooks, TranslationService translations, BlogService blog, com.platform.core.auth.AccountAuthService accounts) {
@@ -109,9 +110,16 @@ public class ShopController {
                                         @RequestParam(required = false) String size, @RequestParam(required = false) String condition,
                                         @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize, @RequestParam(required = false) String lang) {
         Map<String, Object> res = search.list(StoreContext.tenantId(), Page.of(page, pageSize), new StoreSearchService.Filter(q, category, minPrice, maxPrice, brand, inStock, onSale, minRating, sort, audience, color, size, condition));
-        if (res.get("data") instanceof List<?> l) translations.overlay(StoreContext.tenantId(), lang, (List<Map<String, Object>>) l);
+        if (res.get("data") instanceof List<?> l) {
+            translations.overlay(StoreContext.tenantId(), lang, (List<Map<String, Object>>) l);
+            offers.decorate(StoreContext.tenantId(), (List<Map<String, Object>>) l);
+        }
         return res;
     }
+
+    /** Running offers to announce on the storefront (flash sale countdowns, free delivery...). */
+    @GetMapping("/offers")
+    public List<Map<String, Object>> activeOffers() { return offers.banners(StoreContext.tenantId()); }
 
     @GetMapping("/products/facets")
     public Map<String, Object> facets(@RequestParam(required = false) String q, @RequestParam(required = false) String category) {
@@ -124,7 +132,12 @@ public class ShopController {
     @GetMapping("/home")
     public Map<String, Object> home(@RequestParam(required = false) String lang) {
         Map<String, Object> h = search.home(StoreContext.tenantId());
-        for (String k : List.of("featured", "newest", "offers", "bestSellers")) if (h.get(k) instanceof List<?> l) translations.overlay(StoreContext.tenantId(), lang, (List<Map<String, Object>>) l);
+        for (String k : List.of("featured", "newest", "offers", "bestSellers")) if (h.get(k) instanceof List<?> l) {
+            translations.overlay(StoreContext.tenantId(), lang, (List<Map<String, Object>>) l);
+            offers.decorate(StoreContext.tenantId(), (List<Map<String, Object>>) l);
+        }
+        h = new java.util.LinkedHashMap<>(h);
+        h.put("offerBanners", offers.banners(StoreContext.tenantId()));
         return h;
     }
 
@@ -133,6 +146,7 @@ public class ShopController {
         UUID t = StoreContext.tenantId();
         List<Map<String, Object>> rows = catalog.related(t, (UUID) catalog.detailBySlug(t, slug).get("id"), 8);
         translations.overlay(t, lang, rows);
+        offers.decorate(t, rows);
         return rows;
     }
 
@@ -142,6 +156,7 @@ public class ShopController {
         Map<String, Object> p = catalog.detailBySlug(t, slug);
         translations.overlayOne(t, lang, p);
         p.put("reviews", shopper.publicReviews(t, (UUID) p.get("id")));
+        offers.decorateProduct(t, p);
         return p;
     }
 

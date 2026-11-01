@@ -1,6 +1,7 @@
 "use client";
 
 import { localPhone } from "@/lib/phone";
+import { DateRangePicker, rangeQuery, type DateRange } from "@/components/date-range";
 import Link from "next/link";
 import { useState } from "react";
 import { api } from "@/lib/client";
@@ -21,8 +22,10 @@ export default function Patients() {
   const { t, locale } = useI18n();
   const { can } = useMe();
   const [q, setQ] = useState("");
+  const [range, setRange] = useState<DateRange>({});
+  const rq = (b: string) => { const qs = rangeQuery(new URLSearchParams(), range).toString(); return qs ? `${b}${b.includes("?") ? "&" : "?"}${qs}` : b; };
   const [page, setPage] = useState(1);
-  const { data, loading, error, reload } = useApi<Page<P>>(`clinic/patients?page=${page}&q=${encodeURIComponent(q)}`);
+  const { data, loading, error, reload } = useApi<Page<P>>(rq(`clinic/patients?page=${page}&q=${encodeURIComponent(q)}`));
   const [open, setOpen] = useState(false);
   const portal = usePatientPortal();
   const clinic = useApi<{ clinicName?: string }>("clinic/public/profile");
@@ -63,7 +66,7 @@ export default function Patients() {
           {portal && <p className="text-sm text-slate-600">{created.portalAccess === "PASSWORD_SET" ? t("patients.howPassword") : created.portalAccess === "ASSIGNED" ? t("patients.howAssigned") : created.portalAccess === "GUARDIAN" ? t("patients.howGuardian") : t("patients.noPortal")}</p>}
         </div>
       )}
-      <FilterBar><div className="relative w-full max-w-md flex-1"><Icon name="search" className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><Input className="ps-10" placeholder={t("patients.searchHint")} value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} /></div></FilterBar>
+      <FilterBar><div className="relative w-full max-w-md flex-1"><Icon name="search" className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><Input className="ps-10" placeholder={t("patients.searchHint")} value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} /></div><DateRangePicker value={range} onChange={(r) => { setRange(r); setPage(1); }} label={t("patients.registered")} /></FilterBar>
       <ErrorText error={error} />
       {loading && !data ? <Loading /> : (
         <>

@@ -44,7 +44,7 @@ export function DashboardShell({ nav, children }: { nav: NavItem[]; children: Re
   const [open, setOpen] = useState(false);
   const collapsed = useSyncExternalStore(subscribe, readCollapsed, () => false);
   const toggleCollapsed = () => { try { localStorage.setItem(COLLAPSE_KEY, collapsed ? "0" : "1"); } catch { /* ignore */ } listeners.forEach((l) => l()); };
-  useEffect(() => { if (ready && !me) router.replace(`/login?next=${encodeURIComponent(path)}`); }, [ready, me, path, router]);
+  useEffect(() => { if (ready && !me) router.replace(`/dashboard/login?next=${encodeURIComponent(path)}`); }, [ready, me, path, router]);
   useEffect(() => {
     if (!open) return;
     const h = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { DateRangePicker } from "@/components/date-range";
 import { Page, useApi } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Empty, ErrorText, Input, Loading, Modal, PageHeader, Pager, Section, Select, Stat, Table, Td } from "@/components/ui";
@@ -89,8 +90,7 @@ export default function Visitors() {
     <>
       <PageHeader title={t("admin.visitors")} subtitle={t("vis.sub")} />
       <div className="mb-4 grid gap-2 sm:grid-cols-4">
-        <label className="text-xs text-slate-500">{t("vis.from")}<Input type="date" value={from} max={to} onChange={(e) => { setFrom(e.target.value); setPage(1); }} dir="ltr" /></label>
-        <label className="text-xs text-slate-500">{t("vis.to")}<Input type="date" value={to} min={from} onChange={(e) => { setTo(e.target.value); setPage(1); }} dir="ltr" /></label>
+        <DateRangePicker value={{ from, to }} onChange={(r) => { setFrom(r.from ?? ""); setTo(r.to ?? ""); setPage(1); }} />
         <label className="text-xs text-slate-500">{t("vis.filterPath")}<Input value={path} onChange={(e) => { setPath(e.target.value); setPage(1); }} placeholder="/products" dir="ltr" /></label>
         <label className="text-xs text-slate-500">{t("vis.device")}
           <Select value={device} onChange={(e) => { setDevice(e.target.value); setPage(1); }}><option value="">-</option><option value="desktop">desktop</option><option value="mobile">mobile</option><option value="tablet">tablet</option></Select>

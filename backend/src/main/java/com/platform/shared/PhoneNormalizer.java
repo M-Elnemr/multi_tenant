@@ -41,6 +41,11 @@ public final class PhoneNormalizer {
         return s;
     }
 
+    /** Like normalize, but null instead of an error, so a form can put "invalid phone" under the phone field. */
+    public static String tryNormalize(String raw) {
+        try { return normalize(raw); } catch (BusinessException e) { return null; }
+    }
+
     public static boolean looksLikeEmail(String s) {
         return s != null && s.contains("@");
     }

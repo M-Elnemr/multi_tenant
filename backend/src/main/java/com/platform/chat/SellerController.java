@@ -21,7 +21,9 @@ public class SellerController {
     /** Questions the assistant handed to the owner: {@code status} OPEN, ANSWERED, DISMISSED or empty for all. */
     @GetMapping("/questions")
     @PreAuthorize("hasAuthority('ai.read') or hasAuthority('ai.manage')")
-    public List<Map<String, Object>> questions(@RequestParam(required = false) String status) { return questions.list(StoreContext.tenantId(), status); }
+    public List<Map<String, Object>> questions(@RequestParam(required = false) String status, @RequestParam(required = false) java.time.LocalDate from, @RequestParam(required = false) java.time.LocalDate to) {
+        return questions.list(StoreContext.tenantId(), status, from, to);
+    }
 
     @GetMapping("/questions/open-count")
     @PreAuthorize("hasAuthority('ai.read') or hasAuthority('ai.manage')")

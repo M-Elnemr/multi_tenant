@@ -15,17 +15,18 @@ import 'dashboards.dart';
 import 'domains_billing.dart';
 import 'exam.dart';
 import 'offline_ops.dart';
-import 'products.dart';
+import 'offers.dart';
 import 'queue.dart';
 import 'settings.dart';
 import 'channels.dart';
 import 'store_panel.dart';
+import 'lawyer_panel.dart';
 
 /// Group headings of the menu (Arabic, English), in the order they appear.
 const Map<String, List<String>> kMenuGroups = {
   'home': ['الرئيسية', 'Home'], 'sales': ['المبيعات', 'Sales'], 'catalog': ['الكتالوج', 'Catalog'], 'growth': ['العملاء والنمو', 'Customers & growth'],
   'insights': ['التحليلات', 'Insights'], 'channels': ['القنوات والشحن', 'Channels & delivery'], 'setup': ['الإعدادات', 'Setup'], 'account': ['الحساب', 'Account'],
-  'clinic': ['العيادة', 'Clinic'], 'records': ['المرضى', 'Patients'],
+  'clinic': ['العيادة', 'Clinic'], 'records': ['المرضى', 'Patients'], 'office': ['المكتب', 'Office'], 'work': ['القضايا والأتعاب', 'Cases & fees'],
 };
 
 /// One section of the control panel. Mirrors the website's menu: the same sections, hidden without the same permission.
@@ -67,7 +68,7 @@ List<PanelSection> storeSections() => [
       PanelSection('المنتجات', 'Products', Icons.shopping_bag_rounded, screen: 'products', group: 'catalog', bottom: true, build: (c) => ProductsScreen(ctx: c)),
       PanelSection('المخزون', 'Inventory', Icons.inventory_2_rounded, screen: 'inventory', group: 'catalog', build: (c) => InventoryScreen(ctx: c)),
       PanelSection('المشتريات', 'Purchasing', Icons.local_mall_rounded, perm: 'purchase.manage', group: 'catalog', build: (c) => PurchasingScreen(ctx: c)),
-      PanelSection('الكوبونات', 'Coupons', Icons.local_offer_rounded, screen: 'coupons', group: 'catalog', build: (c) => CouponsScreen(ctx: c)),
+      PanelSection('العروض والكوبونات', 'Offers & coupons', Icons.local_offer_rounded, screen: 'coupons', group: 'catalog', build: (c) => OffersScreen(ctx: c)),
       PanelSection('التقييمات', 'Reviews', Icons.star_rounded, screen: 'reviews', group: 'catalog', build: (c) => ReviewsScreen(ctx: c)),
       PanelSection('العملاء', 'Customers', Icons.people_alt_rounded, screen: 'customers', group: 'growth', build: (c) => CustomersScreen(ctx: c)),
       PanelSection('نمو العملاء', 'Customers growth', Icons.trending_up_rounded, perm: 'growth.manage', group: 'growth', build: (c) => GrowthScreen(ctx: c)),
@@ -97,7 +98,7 @@ class PanelShell extends StatefulWidget {
 
 class _PanelShellState extends State<PanelShell> {
   int _tab = 0;
-  late final List<PanelSection> _all = (widget.ctx.type == 'STORE' ? storeSections() : clinicSections()).where((s) => s.allowed(widget.ctx)).toList();
+  late final List<PanelSection> _all = (widget.ctx.type == 'STORE' ? storeSections() : widget.ctx.type == 'LAWYER' ? lawyerSections() : clinicSections()).where((s) => s.allowed(widget.ctx)).toList();
   late final List<PanelSection> _native = _all;
   late final List<PanelSection> _bottom = _pickBottom(_native);
   late final List<PanelSection> _more = _all.where((s) => !_bottom.contains(s)).toList();

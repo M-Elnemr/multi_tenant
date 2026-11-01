@@ -152,32 +152,53 @@ class _ProductFormPageState extends State<ProductFormPage> {
   String _newColor = '';   // edit mode: the colour the next uploaded picture is for
   final _opts = <_Opt>[];
   final _rows = <String, Map<String, TextEditingController>>{};
-  final _prices = <String, TextEditingController>{};
-  final _barcodes = <String, TextEditingController>{};
+  final _rowIds = <String, String>{};   // edit: row key -> the variant it was loaded from
+  final _fe = FieldErrors();
   Object? _error;
   bool _busy = false;
   final int _skuSeed = DateTime.now().millisecondsSinceEpoch % 100000;
 
   @override
-  void initState() { super.initState(); _init(); }
+  void initState() { super.initState(); _fe.addListener(_refresh); _init(); }
+
+  void _refresh() { if (mounted) setState(() {}); }
 
   @override
-  void dispose() { _name.dispose(); _desc.dispose(); _brand.dispose(); super.dispose(); }
+  void dispose() { _name.dispose(); _desc.dispose(); _brand.dispose(); _fe.dispose(); super.dispose(); }
+
+  /// Fills the options editor and the rows from a saved product.
+  void _loadVariants(Map<String, dynamic> d) {
+    _opts.clear(); _rows.clear(); _rowIds.clear();
+    final opts = _maps(d['options']);
+    for (final o in opts) {
+      final vals = ((o['values'] as List?) ?? const []).cast<String>();
+      if (o['attribute'] == 'COLOR') { _opts.add(_Opt('COLOR')..values.addAll(vals)); }
+      else if (o['attribute'] == 'SIZE') { _opts.add(_Opt('SIZE', scale: '${o['sizeScale'] ?? 'APPAREL'}')..values.addAll(vals)); }
+      else { final x = _Opt('CUSTOM'); x.name.text = '${o['name']}'; x.custom.text = vals.join('، '); _opts.add(x); }
+    }
+    for (final v in _maps(d['variants']).where((v) => v['status'] == 'ACTIVE')) {
+      final ov = Map<String, dynamic>.from((v['optionValues'] as Map?) ?? const {});
+      final key = opts.map((o) => '${ov[o['name']] ?? ''}').join('|');
+      _rowIds[key] = '${v['id']}';
+      final r = {'sku': TextEditingController(text: '${v['sku']}'), 'barcode': TextEditingController(text: '${v['barcode'] ?? ''}'), 'price': TextEditingController(text: fmtMoney(v['priceMinor'] as num?)),
+        'compare': TextEditingController(text: v['compareAtPriceMinor'] == null ? '' : fmtMoney(v['compareAtPriceMinor'] as num?))};
+      for (final st in _maps(v['stock'])) { r['stock:${st['branchId']}'] = TextEditingController(text: '${st['quantityOnHand']}'); r['was:${st['branchId']}'] = TextEditingController(text: '${st['quantityOnHand']}'); }
+      _rows[key] = r;
+    }
+  }
 
   Future<void> _init() async {
     try {
+      _branches = _maps(await ctx.api.get('store/branches'));
+      _branchId = _branches.isEmpty ? null : '${_branches.first['id']}';
+      ctx.api.get('store/taxonomy/attributes', query: {'lang': AppLocale.isAr ? 'ar' : 'en'}).then((r) { if (mounted) setState(() => _attrs = Map<String, dynamic>.from(r as Map)); }).catchError((_) {});
       if (isNew) {
-        _branches = _maps(await ctx.api.get('store/branches'));
-        _branchId = _branches.isEmpty ? null : '${_branches.first['id']}';
-        ctx.api.get('store/taxonomy/attributes', query: {'lang': AppLocale.isAr ? 'ar' : 'en'}).then((r) { if (mounted) setState(() => _attrs = Map<String, dynamic>.from(r as Map)); }).catchError((_) {});
         if (mounted) setState(() => _detail = {});
       } else {
         final d = Map<String, dynamic>.from(await ctx.api.get('store/products/${widget.id}') as Map);
         _name.text = '${d['name'] ?? ''}'; _desc.text = '${d['description'] ?? ''}'; _brand.text = '${d['brand'] ?? ''}';
         _status = '${d['status'] ?? 'ACTIVE'}'; _condition = '${d['itemCondition'] ?? 'NEW'}'; _audience = '${d['audience'] ?? ''}';
-        _prices.clear();
-        _barcodes.clear();
-        for (final v in _maps(d['variants'])) { _prices['${v['id']}'] = TextEditingController(text: fmtMoney(v['priceMinor'] as num?)); _barcodes['${v['id']}'] = TextEditingController(text: '${v['barcode'] ?? ''}'); }
+        _loadVariants(d);
         if (mounted) setState(() => _detail = d);
       }
     } catch (e) {
@@ -185,10 +206,32 @@ class _ProductFormPageState extends State<ProductFormPage> {
     }
   }
 
-  Future<void> _reloadDetail() async {
+  Future<void> _reloadDetail({bool variants = false}) async {
     final d = Map<String, dynamic>.from(await ctx.api.get('store/products/${widget.id}') as Map);
+    if (variants) _loadVariants(d);
     if (mounted) setState(() => _detail = d);
   }
+
+  List<Map<String, dynamic>> get _parsed => _opts.map((o) => o.toRequest()).where((o) => (o['name'] as String).isNotEmpty && (o['values'] as List).isNotEmpty).toList();
+
+  /// The form's own checks before sending (each message under its field).
+  bool _checkLocal(List<Map<String, String>> combos, bool isAr) {
+    final m = <String, String?>{'name': _name.text.trim().isEmpty ? (isAr ? 'اكتب اسم المنتج' : 'Product name is required') : null};
+    if (isNew && _status == 'ACTIVE' && _picked == null) m['taxonomyId'] = isAr ? 'اختر القسم من القائمة' : 'Choose a category from the list';
+    for (var i = 0; i < combos.length; i++) {
+      final r = _rowFor(combos[i], i);
+      if (r['sku']!.text.trim().isEmpty) m['variants[$i].sku'] = isAr ? 'اكتب كود المنتج (SKU)' : 'SKU is required';
+      if (r['price']!.text.trim().isEmpty || num.tryParse(r['price']!.text.trim()) == null) m['variants[$i].priceMinor'] = isAr ? 'اكتب السعر' : 'Enter the price';
+      final cmp = num.tryParse(r['compare']!.text.trim());
+      if (cmp != null && cmp <= (num.tryParse(r['price']!.text.trim()) ?? 0)) m['variants[$i].compareAtPriceMinor'] = isAr ? 'السعر قبل الخصم يجب أن يكون أعلى' : 'The old price must be higher';
+    }
+    return _fe.check(m);
+  }
+
+  List<Map<String, dynamic>> _stockOf(Map<String, TextEditingController> r) => [
+        for (final b in _branches)
+          if (r['stock:${b['id']}'] != null && r['stock:${b['id']}']!.text.trim().isNotEmpty) {'branchId': b['id'], 'quantity': int.tryParse(r['stock:${b['id']}']!.text.trim()) ?? 0},
+      ];
 
   Future<void> _pickCategory() async {
     final n = await Navigator.of(context).push<Map<String, dynamic>>(MaterialPageRoute(builder: (_) => TaxonomyPage(ctx: ctx)));
@@ -199,19 +242,24 @@ class _ProductFormPageState extends State<ProductFormPage> {
 
   Future<void> _save() async {
     final isAr = S.of(context).ar;
+    final parsed = _parsed;
+    final combos = _combos(parsed);
+    if (!_checkLocal(combos, isAr)) { toast(context, isAr ? 'من فضلك صحّح الحقول المعلَّمة باللون الأحمر' : 'Please fix the fields marked in red', isError: true); setState(() {}); return; }
     setState(() => _busy = true);
-    final ok = await run(context, () async {
+    final variants = <Map<String, dynamic>>[];
+    for (var i = 0; i < combos.length; i++) {
+      final r = _rowFor(combos[i], i);
+      final key = combos[i].values.join('|');
+      variants.add({if (!isNew && _rowIds[key] != null) 'id': _rowIds[key], 'sku': r['sku']!.text.trim(), 'barcode': r['barcode']!.text.trim(), 'priceMinor': toMinor(r['price']!.text),
+        if (r['compare']!.text.trim().isNotEmpty) 'compareAtPriceMinor': toMinor(r['compare']!.text), 'optionValues': combos[i], 'stock': _stockOf(r)});
+    }
+    final ok = await runForm(context, _fe, () async {
       if (isNew) {
-        final parsed = _opts.map((o) => o.toRequest()).where((o) => (o['name'] as String).isNotEmpty && (o['values'] as List).isNotEmpty).toList();
-        final combos = _combos(parsed);
-        final variants = <Map<String, dynamic>>[];
-        for (var i = 0; i < combos.length; i++) {
-          final r = _rowFor(combos[i], i);
-          variants.add({'sku': r['sku']!.text.trim(), if (r['barcode']!.text.trim().isNotEmpty) 'barcode': r['barcode']!.text.trim(), 'priceMinor': toMinor(r['price']!.text), 'optionValues': combos[i], 'stock': [{'branchId': _branchId, 'quantity': int.tryParse(r['stock']!.text.trim()) ?? 0}]});
-        }
         final res = await ctx.api.post('store/products', {
           'name': _name.text.trim(), 'description': _desc.text.trim(), if (_picked != null) 'taxonomyId': _picked!['id'], if (_audience.isNotEmpty) 'audience': _audience,
-          'condition': _condition, if (_brand.text.trim().isNotEmpty) 'brand': _brand.text.trim(), 'status': _status, 'options': parsed, 'variants': variants, 'media': [for (final id in _images) {'fileId': id, if (_colorValues(parsed).contains(_imageColor[id])) 'optionValue': _imageColor[id]}],
+          'condition': _condition, if (_brand.text.trim().isNotEmpty) 'brand': _brand.text.trim(), 'status': _status, 'options': parsed,
+          'variants': [for (final v in variants) {...v, 'barcode': (v['barcode'] as String).isEmpty ? null : v['barcode']}],
+          'media': [for (final id in _images) {'fileId': id, if (_colorValues(parsed).contains(_imageColor[id])) 'optionValue': _imageColor[id]}],
         }) as Map<String, dynamic>;
         if (mounted) {
           toast(context, isAr ? 'تم إنشاء المنتج' : 'Product created');
@@ -219,10 +267,8 @@ class _ProductFormPageState extends State<ProductFormPage> {
         }
       } else {
         await ctx.api.patch('store/products/${widget.id}', {'name': _name.text.trim(), 'description': _desc.text.trim(), 'status': _status, 'brand': _brand.text.trim(), if (_audience.isNotEmpty) 'audience': _audience, 'condition': _condition, if (_picked != null) 'taxonomyId': _picked!['id']});
-        for (final e in _prices.entries) {
-          await ctx.api.patch('store/variants/${e.key}', {'priceMinor': toMinor(e.value.text), 'barcode': _barcodes[e.key]?.text.trim() ?? ''});
-        }
-        await _reloadDetail();
+        await ctx.api.put('store/products/${widget.id}/variants', {'options': parsed, 'variants': variants});
+        await _reloadDetail(variants: true);
         if (mounted) toast(context, isAr ? 'تم الحفظ' : 'Saved');
       }
     });
@@ -230,7 +276,11 @@ class _ProductFormPageState extends State<ProductFormPage> {
     if (mounted) setState(() => _busy = false);
   }
 
-  Map<String, TextEditingController> _rowFor(Map<String, String> combo, int i) => _rows.putIfAbsent(combo.values.join('|'), () => {'sku': TextEditingController(text: 'SKU-${_skuSeed + i}'), 'barcode': TextEditingController(), 'price': TextEditingController(), 'stock': TextEditingController(text: '0')});
+  Map<String, TextEditingController> _rowFor(Map<String, String> combo, int i) {
+    final r = _rows.putIfAbsent(combo.values.join('|'), () => {'sku': TextEditingController(text: 'SKU-${_skuSeed + i}'), 'barcode': TextEditingController(), 'price': TextEditingController(), 'compare': TextEditingController()});
+    for (final b in _branches) { r.putIfAbsent('stock:${b['id']}', () => TextEditingController(text: isNew && '${b['id']}' == _branchId ? '0' : '')); }
+    return r;
+  }
 
   /// A barcode box that takes typing, a USB / laser scanner, or the camera.
   Widget _barcodeField(TextEditingController c, bool isAr, {String? label}) => Padding(padding: const EdgeInsets.only(top: 8), child: TextField(
@@ -244,7 +294,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
 
   bool get _showAudience => !isNew || _picked?['appliesAudience'] == true;
 
-  bool get _valid => _name.text.trim().isNotEmpty && (isNew ? _branchId != null && (_status != 'ACTIVE' || _picked != null) : true);
+  bool get _valid => isNew ? _branchId != null : true;
 
   @override
   Widget build(BuildContext context) {
@@ -255,8 +305,9 @@ class _ProductFormPageState extends State<ProductFormPage> {
           ? (_error != null ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Text(errorText(_error!)), TextButton(onPressed: () { setState(() => _error = null); _init(); }, child: Text(S.of(context).retry))])) : const Center(child: CircularProgressIndicator()))
           : ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 100), children: [
               Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                tf(_name, isAr ? 'اسم المنتج' : 'Product name', onChanged: (_) => setState(() {})),
+                tf(_name, isAr ? 'اسم المنتج' : 'Product name', onChanged: (_) => setState(() {}), fe: _fe, field: 'name'),
                 tf(_desc, isAr ? 'الوصف' : 'Description', lines: 4),
+                if (_fe.of('taxonomyId') != null) Padding(key: _fe.key('taxonomyId'), padding: const EdgeInsets.only(bottom: 4), child: Text(_fe.of('taxonomyId')!, style: const TextStyle(color: Color(0xFFD14343), fontWeight: FontWeight.w700))),
                 OutlinedButton.icon(
                   onPressed: _pickCategory,
                   icon: const Icon(Icons.category_outlined),
@@ -327,7 +378,6 @@ class _ProductFormPageState extends State<ProductFormPage> {
   List<Widget> _createExtras(BuildContext context, bool isAr) {
     final parsed = _opts.map((o) => o.toRequest()).where((o) => (o['name'] as String).isNotEmpty && (o['values'] as List).isNotEmpty).toList();
     final combos = _combos(parsed);
-    final used = _opts.map((o) => o.kind).toSet();
     return [
       Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(isAr ? 'الصور' : 'Pictures', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
@@ -347,46 +397,75 @@ class _ProductFormPageState extends State<ProductFormPage> {
         ]),
       ]))),
       const SizedBox(height: 12),
-      Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Text(isAr ? 'الخيارات (لون، مقاس...)' : 'Options (colour, size...)', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
-        const SizedBox(height: 6),
-        for (var i = 0; i < _opts.length; i++) _optionEditor(context, i, isAr),
-        Wrap(spacing: 8, children: [
-          if (!used.contains('COLOR')) ActionChip(label: Text(isAr ? '+ لون' : '+ Colour'), onPressed: () => setState(() => _opts.add(_Opt('COLOR')))),
-          if (!used.contains('SIZE')) ActionChip(label: Text(isAr ? '+ مقاس' : '+ Size'), onPressed: () => setState(() => _opts.add(_Opt('SIZE', scale: _scales.first)))),
-          ActionChip(label: Text(isAr ? '+ خيار آخر' : '+ Other'), onPressed: () => setState(() => _opts.add(_Opt('CUSTOM')))),
-        ]),
-      ]))),
+      _optionsCard(context, isAr),
       const SizedBox(height: 12),
-      Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Text(isAr ? 'الأسعار والمخزون' : 'Prices and stock', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
-        if (_branches.length > 1) Padding(padding: const EdgeInsets.only(top: 8), child: DropdownButtonFormField<String>(
-          initialValue: _branchId,
-          decoration: InputDecoration(labelText: isAr ? 'الفرع' : 'Branch'),
-          items: [for (final b in _branches) DropdownMenuItem(value: '${b['id']}', child: Text('${b['name']}'))],
-          onChanged: (v) => setState(() => _branchId = v),
-        )),
-        if (_branches.isEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: Text(isAr ? 'أضف فرعًا من الإعدادات أولًا.' : 'Add a branch in Settings first.', style: const TextStyle(color: Color(0xFFD14343)))),
-        for (var i = 0; i < combos.length; i++) Builder(builder: (_) {
-          final r = _rowFor(combos[i], i);
-          return Container(
-            margin: const EdgeInsets.only(top: 10), padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(border: Border.all(color: Theme.of(context).dividerColor), borderRadius: BorderRadius.circular(12)),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              if (combos[i].isNotEmpty) Padding(padding: const EdgeInsets.only(bottom: 6), child: Text(combos[i].values.join(' / '), style: const TextStyle(fontWeight: FontWeight.w800))),
-              Row(children: [
-                Expanded(flex: 3, child: tf(r['sku']!, 'SKU', ltr: true)),
-                const SizedBox(width: 8),
-                Expanded(flex: 2, child: tf(r['price']!, isAr ? 'السعر' : 'Price', number: true, ltr: true)),
-                const SizedBox(width: 8),
-                Expanded(flex: 2, child: tf(r['stock']!, isAr ? 'المخزون' : 'Stock', number: true, ltr: true)),
-              ]),
-              _barcodeField(r['barcode']!, isAr),
-            ]),
-          );
-        }),
-      ]))),
+      _variantsCard(context, isAr, combos),
     ];
+  }
+
+  Widget _optionsCard(BuildContext context, bool isAr) {
+    final used = _opts.map((o) => o.kind).toSet();
+    return Card(key: _fe.key('options'), child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Text(isAr ? 'الخيارات (لون، مقاس...)' : 'Options (colour, size...)', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+      if (!isNew) Padding(padding: const EdgeInsets.only(top: 4), child: Text(isAr ? 'أضف أو احذف لونًا أو مقاسًا؛ التركيبات المحذوفة تُخفى ولا تُمسح.' : 'Add or remove a colour or size; removed combinations are hidden, not deleted.', style: const TextStyle(fontSize: 12, color: Color(0xFF6B7C8D)))),
+      if (_fe.under('options') != null) Text(_fe.under('options')!, style: const TextStyle(color: Color(0xFFD14343), fontWeight: FontWeight.w700)),
+      const SizedBox(height: 6),
+      for (var i = 0; i < _opts.length; i++) _optionEditor(context, i, isAr),
+      Wrap(spacing: 8, children: [
+        if (!used.contains('COLOR')) ActionChip(label: Text(isAr ? '+ لون' : '+ Colour'), onPressed: () => setState(() => _opts.add(_Opt('COLOR')))),
+        if (!used.contains('SIZE')) ActionChip(label: Text(isAr ? '+ مقاس' : '+ Size'), onPressed: () => setState(() => _opts.add(_Opt('SIZE', scale: _scales.first)))),
+        ActionChip(label: Text(isAr ? '+ خيار آخر' : '+ Other'), onPressed: () => setState(() => _opts.add(_Opt('CUSTOM')))),
+      ]),
+    ])));
+  }
+
+  /// Price, old price, SKU, barcode and the quantity in each branch for every combination.
+  Widget _variantsCard(BuildContext context, bool isAr, List<Map<String, String>> combos) {
+    final all = TextEditingController(), add = TextEditingController();
+    return Card(key: _fe.key('variants'), child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Text(isAr ? 'الأسعار والمخزون لكل اختيار' : 'Price and stock per option', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+      if (_branches.isEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: Text(isAr ? 'أضف فرعًا من الإعدادات أولًا.' : 'Add a branch in Settings first.', style: const TextStyle(color: Color(0xFFD14343)))),
+      if (combos.length > 1) Padding(padding: const EdgeInsets.only(top: 8), child: Row(children: [
+        Expanded(child: TextField(controller: all, keyboardType: TextInputType.number, decoration: InputDecoration(isDense: true, labelText: isAr ? 'نفس السعر للكل' : 'Same price for all'))),
+        TextButton(onPressed: () => setState(() { for (var i = 0; i < combos.length; i++) { _rowFor(combos[i], i)['price']!.text = all.text.trim(); } }), child: Text(isAr ? 'تطبيق' : 'Apply')),
+        const SizedBox(width: 6),
+        Expanded(child: TextField(controller: add, keyboardType: TextInputType.number, decoration: InputDecoration(isDense: true, labelText: isAr ? '+ قطع للكل' : '+ pieces for all'))),
+        TextButton(onPressed: () => setState(() { final n = int.tryParse(add.text.trim()) ?? 0; if (_branches.isEmpty || n == 0) return; final b = '${_branchId ?? _branches.first['id']}'; for (var i = 0; i < combos.length; i++) { final c = _rowFor(combos[i], i)['stock:$b']!; c.text = '${(int.tryParse(c.text.trim()) ?? 0) + n}'; } }), child: Text(isAr ? 'تطبيق' : 'Apply')),
+      ])),
+      if (_fe.of('variants') != null) Text(_fe.of('variants')!, style: const TextStyle(color: Color(0xFFD14343), fontWeight: FontWeight.w700)),
+      for (var i = 0; i < combos.length; i++) Builder(builder: (_) {
+        final r = _rowFor(combos[i], i);
+        final rowErr = _fe.under('variants[$i]');
+        final isNewRow = !isNew && _rowIds[combos[i].values.join('|')] == null;
+        return Container(
+          key: _fe.key('variants[$i]'),
+          margin: const EdgeInsets.only(top: 10), padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(color: rowErr != null ? const Color(0x0FD14343) : null, border: Border.all(color: rowErr != null ? const Color(0xFFD14343) : Theme.of(context).dividerColor), borderRadius: BorderRadius.circular(12)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            if (combos[i].isNotEmpty) Padding(padding: const EdgeInsets.only(bottom: 6), child: Row(children: [
+              Expanded(child: Text(combos[i].values.join(' / '), style: const TextStyle(fontWeight: FontWeight.w800))),
+              if (isNewRow) Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: const Color(0x221E9E5A), borderRadius: BorderRadius.circular(6)), child: Text(isAr ? 'جديد' : 'NEW', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Color(0xFF1E9E5A)))),
+            ])),
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(flex: 3, child: tf(r['sku']!, 'SKU', ltr: true, fe: _fe, field: 'variants[$i].sku')),
+              const SizedBox(width: 8),
+              Expanded(flex: 2, child: tf(r['price']!, isAr ? 'السعر' : 'Price', number: true, ltr: true, fe: _fe, field: 'variants[$i].priceMinor')),
+              const SizedBox(width: 8),
+              Expanded(flex: 2, child: tf(r['compare']!, isAr ? 'قبل الخصم' : 'Old price', number: true, ltr: true, fe: _fe, field: 'variants[$i].compareAtPriceMinor')),
+            ]),
+            Wrap(spacing: 8, runSpacing: 4, children: [
+              for (final b in _branches) SizedBox(width: _branches.length > 1 ? 150 : 200, child: Row(children: [
+                IconButton(visualDensity: VisualDensity.compact, onPressed: () => setState(() { final c = r['stock:${b['id']}']!; c.text = '${((int.tryParse(c.text.trim()) ?? 0) - 1).clamp(0, 999999)}'; }), icon: const Icon(Icons.remove_circle_outline_rounded)),
+                Expanded(child: TextField(controller: r['stock:${b['id']}'], textAlign: TextAlign.center, keyboardType: TextInputType.number, decoration: InputDecoration(isDense: true, labelText: _branches.length > 1 ? '${b['name']}' : (isAr ? 'المخزون' : 'Stock'), helperText: !isNew && r['was:${b['id']}'] != null && r['was:${b['id']}']!.text != r['stock:${b['id']}']!.text ? '${isAr ? 'كان' : 'was'} ${r['was:${b['id']}']!.text}' : null))),
+                IconButton(visualDensity: VisualDensity.compact, onPressed: () => setState(() { final c = r['stock:${b['id']}']!; c.text = '${(int.tryParse(c.text.trim()) ?? 0) + 1}'; }), icon: const Icon(Icons.add_circle_outline_rounded)),
+              ])),
+            ]),
+            _barcodeField(r['barcode']!, isAr),
+            if (rowErr != null && !['sku', 'priceMinor', 'compareAtPriceMinor'].any((k) => _fe.of('variants[$i].$k') != null)) Padding(padding: const EdgeInsets.only(top: 6), child: Text(rowErr, style: const TextStyle(color: Color(0xFFD14343), fontWeight: FontWeight.w700))),
+          ]),
+        );
+      }),
+    ])));
   }
 
   Widget _optionEditor(BuildContext context, int i, bool isAr) {
@@ -451,24 +530,14 @@ class _ProductFormPageState extends State<ProductFormPage> {
   // --- edit: variants prices, images, extras
   List<Widget> _editExtras(BuildContext context, bool isAr) {
     final d = _detail!;
-    final variants = _maps(d['variants']);
     final media = _maps(d['media']);
     return [
       if (ctx.canSee('integrations')) Padding(padding: const EdgeInsets.only(bottom: 10), child: OutlinedButton.icon(
         onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => PublishScreen(ctx: ctx, productId: widget.id!))),
         icon: const Icon(Icons.hub_rounded), label: Text(isAr ? 'النشر على المنصات (أمازون، نون، شوبيفاي...)' : 'Publish to platforms (Amazon, noon, Shopify...)'))),
-      Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Text(isAr ? 'الأسعار والمخزون' : 'Prices and stock', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
-        for (final v in variants) Padding(padding: const EdgeInsets.only(top: 10), child: Row(children: [
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(comboLabel(v['comboKey']).isEmpty ? '-' : comboLabel(v['comboKey']), style: const TextStyle(fontWeight: FontWeight.w700)),
-            Text('${v['sku']} · ${isAr ? 'المخزون' : 'stock'}: ${v['available']}', style: const TextStyle(fontSize: 12, color: Color(0xFF6B7C8D))),
-          ])),
-          SizedBox(width: 110, child: TextField(controller: _prices['${v['id']}'], keyboardType: const TextInputType.numberWithOptions(decimal: true), textDirection: TextDirection.ltr, decoration: InputDecoration(labelText: ctx.currency))),
-        ])),
-        for (final v in variants) if (_barcodes['${v['id']}'] != null) _barcodeField(_barcodes['${v['id']}']!, isAr, label: '${isAr ? 'الباركود' : 'Barcode'} · ${comboLabel(v['comboKey']).isEmpty ? '${v['sku']}' : comboLabel(v['comboKey'])}'),
-        Padding(padding: const EdgeInsets.only(top: 8), child: Text(isAr ? 'لتعديل المخزون استخدم قسم المخزون.' : 'Use the Inventory section to change stock.', style: const TextStyle(fontSize: 12, color: Color(0xFF6B7C8D)))),
-      ]))),
+      _optionsCard(context, isAr),
+      const SizedBox(height: 12),
+      _variantsCard(context, isAr, _combos(_parsed)),
       const SizedBox(height: 12),
       Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('${isAr ? 'الصور' : 'Pictures'} (${media.length}/10)', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),

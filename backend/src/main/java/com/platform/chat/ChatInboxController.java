@@ -27,7 +27,9 @@ public class ChatInboxController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('ai.read') or hasAuthority('ai.manage')")
-    public List<Map<String, Object>> list(@RequestParam(defaultValue = "false") boolean needsYou) { return inbox.list(StoreContext.tenantId(), needsYou); }
+    public List<Map<String, Object>> list(@RequestParam(defaultValue = "false") boolean needsYou, @RequestParam(required = false) java.time.LocalDate from, @RequestParam(required = false) java.time.LocalDate to) {
+        return inbox.list(StoreContext.tenantId(), needsYou, from, to);
+    }
 
     @GetMapping("/needs-you-count")
     @PreAuthorize("hasAuthority('ai.read') or hasAuthority('ai.manage')")

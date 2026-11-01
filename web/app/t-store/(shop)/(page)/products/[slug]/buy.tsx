@@ -11,13 +11,16 @@ import { whatsappLink } from "@/lib/whatsapp";
 import { useAction, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Gallery } from "@/components/shop/gallery";
+import { ProductOffers } from "@/components/shop/offer-strip";
 import { ErrorText } from "@/components/ui";
 
 export type ProductDetail = {
   id: string; name: string; slug: string; description: string; shortDescription?: string; brand?: string; currency: string; hasVariants: boolean; badge?: string;
   sizeGuide?: string; tags?: string[]; specs?: { k: string; v: string }[];
   options: { name: string; values: string[]; attribute?: string; labelAr?: string; labelEn?: string; valueMeta?: { value: string; nameAr: string; nameEn: string; hex: string }[] }[];
-  variants: { id: string; sku: string; priceMinor: number; compareAtPriceMinor?: number; comboKey: string; available: number }[];
+  variants: { id: string; sku: string; priceMinor: number; salePriceMinor?: number; compareAtPriceMinor?: number; comboKey: string; available: number }[];
+  offer?: { type: string; badge?: string | null; percent?: number; endsAt?: string } | null;
+  offerHints?: { type: string; name: string; badge?: string; config: Record<string, unknown>; endsAt?: string }[];
   media: { url: string; altText?: string; mediaBase?: string | null; mediaExt?: string | null; optionValue?: string | null }[];
   reviews: { average: number; count: number; reviews: { rating: number; reviewText?: string; firstName: string }[] };
 };
@@ -37,7 +40,11 @@ export function ProductBuy({ product, whatsapp, storeName, isOpen, returnDays }:
   const combo = product.options.map((o) => `${o.name}=${choice[o.name]}`).join("|");
   const variant = useMemo(() => product.variants.find((v) => v.comboKey === combo), [product.variants, combo]);
   const inStock = (variant?.available ?? 0) > 0;
-  const discount = variant?.compareAtPriceMinor && variant.compareAtPriceMinor > variant.priceMinor ? Math.round(((variant.compareAtPriceMinor - variant.priceMinor) * 100) / variant.compareAtPriceMinor) : 0;
+  // a running offer's sale price is what checkout charges; otherwise the shop's own old price shows the saving
+  const sale = variant?.salePriceMinor !== undefined && variant.salePriceMinor < variant.priceMinor ? variant.salePriceMinor : null;
+  const shownPrice = sale ?? variant?.priceMinor ?? 0;
+  const wasPrice = sale !== null ? variant!.priceMinor : variant?.compareAtPriceMinor;
+  const discount = wasPrice && wasPrice > shownPrice ? Math.round(((wasPrice - shownPrice) * 100) / wasPrice) : 0;
   const badge = product.badge || (discount > 0 ? "SALE" : "");
   // what the shopper sees: the option name and value in their language (stored values are the Arabic standard names)
   const optLabel = (o: ProductDetail["options"][number]) => (locale === "ar" ? o.labelAr : o.labelEn) ?? o.name;
@@ -82,9 +89,10 @@ export function ProductBuy({ product, whatsapp, storeName, isOpen, returnDays }:
             {product.shortDescription && <p className="mt-3 text-[var(--s-mute)]">{product.shortDescription}</p>}
           </div>
           <div className="flex flex-wrap items-baseline gap-3">
-            <span className="text-[clamp(1.75rem,8vw,2.5rem)] font-extrabold" style={{ color: "var(--brand)" }}>{variant ? money(variant.priceMinor, product.currency, locale) : "-"}</span>
-            {discount > 0 && variant?.compareAtPriceMinor && <><span className="text-xl text-[var(--s-mute)] line-through">{money(variant.compareAtPriceMinor, product.currency, locale)}</span><span className="rounded-full bg-red-50 px-2.5 py-0.5 text-sm font-extrabold text-[#e5484d]">{t("shop.save", { p: discount })}</span></>}
+            <span className="text-[clamp(1.75rem,8vw,2.5rem)] font-extrabold" style={{ color: sale !== null ? "#e5484d" : "var(--brand)" }}>{variant ? money(shownPrice, product.currency, locale) : "-"}</span>
+            {discount > 0 && wasPrice && <><span className="text-xl text-[var(--s-mute)] line-through">{money(wasPrice, product.currency, locale)}</span><span className="rounded-full bg-red-50 px-2.5 py-0.5 text-sm font-extrabold text-[#e5484d]">{t("shop.save", { p: discount })}</span></>}
           </div>
+          <ProductOffers offer={product.offer} hints={product.offerHints} currency={product.currency} />
           {product.options.map((o) => (
             <div key={o.name}>
               <p className="mb-2 text-sm font-extrabold">{optLabel(o)}: <span className="font-medium text-[var(--s-mute)]">{valLabel(o, choice[o.name])}</span></p>
@@ -135,7 +143,7 @@ export function ProductBuy({ product, whatsapp, storeName, isOpen, returnDays }:
 
       <div data-buybar className="fixed inset-x-0 bottom-[calc(var(--tabbar-h)+var(--safe-b))] z-30 flex h-[var(--buybar-h)] items-center border-t border-[var(--s-line)] bg-white/95 px-3 backdrop-blur-xl md:hidden">
         <div className="flex w-full items-center gap-3">
-          <div className="min-w-0 flex-1"><p className="truncate text-xs text-[var(--s-mute)]">{product.name}</p><p className="font-extrabold" style={{ color: "var(--brand)" }}>{variant ? money(variant.priceMinor, product.currency, locale) : "-"}</p></div>
+          <div className="min-w-0 flex-1"><p className="truncate text-xs text-[var(--s-mute)]">{product.name}</p><p className="font-extrabold" style={{ color: "var(--brand)" }}>{variant ? money(shownPrice, product.currency, locale) : "-"}</p></div>
           <button onClick={() => add()} disabled={!inStock || !isOpen} className="s-btn !px-7">{inStock ? t("shop.addToCart") : t("shop.outOfStock")}</button>
         </div>
       </div>

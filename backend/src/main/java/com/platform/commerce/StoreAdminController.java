@@ -145,6 +145,15 @@ public class StoreAdminController {
         return Map.of("ok", true);
     }
 
+    public record VariantsPut(List<CatalogService.OptionReq> options, List<CatalogService.VariantEdit> variants) {}
+
+    /** The edit screen's options + variants + stock per branch, saved together. */
+    @PutMapping("/products/{id}/variants")
+    @PreAuthorize("hasAuthority('product.update')")
+    public Map<String, Object> replaceVariants(@PathVariable UUID id, @RequestBody VariantsPut r, Authentication a) {
+        return catalog.replaceVariants(StoreContext.tenantId(), user(a), id, r.options(), r.variants());
+    }
+
     @DeleteMapping("/products/{id}")
     @PreAuthorize("hasAuthority('product.delete')")
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -154,8 +163,25 @@ public class StoreAdminController {
 
     @GetMapping("/inventory")
     @PreAuthorize("(hasAuthority('inventory.adjust') or hasAuthority('inventory.read'))")
-    public Map<String, Object> inventory(@RequestParam(defaultValue = "false") boolean lowStock, @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize) {
-        return inventory.list(StoreContext.tenantId(), Page.of(page, pageSize), lowStock);
+    public Map<String, Object> inventory(@RequestParam(defaultValue = "false") boolean lowStock, @RequestParam(required = false) String q, @RequestParam(required = false) UUID branchId,
+                                         @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize) {
+        return inventory.list(StoreContext.tenantId(), Page.of(page, pageSize), lowStock, q, branchId);
+    }
+
+    /** Stock movements (purchases, sales, adjustments, transfers...) with a date range. */
+    @GetMapping("/inventory/movements")
+    @PreAuthorize("(hasAuthority('inventory.adjust') or hasAuthority('inventory.read'))")
+    public Map<String, Object> movements(@RequestParam(required = false) String q, @RequestParam(required = false) String type,
+                                         @RequestParam(required = false) java.time.LocalDate from, @RequestParam(required = false) java.time.LocalDate to,
+                                         @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize) {
+        return inventory.movements(StoreContext.tenantId(), Page.of(page, pageSize), q, type, from, to);
+    }
+
+    /** Several stock changes at once, e.g. "+5" for each colour/size of one product; all or nothing. */
+    @PostMapping("/inventory/bulk")
+    @PreAuthorize("hasAuthority('inventory.adjust')")
+    public Map<String, Object> bulkAdjust(@RequestBody List<InventoryService.BulkLine> lines, Authentication a) {
+        return inventory.bulk(StoreContext.tenantId(), user(a), lines);
     }
 
     @PostMapping("/inventory/adjustments")
@@ -169,8 +195,13 @@ public class StoreAdminController {
     @GetMapping("/orders")
     @PreAuthorize("hasAuthority('order.read')")
     public Map<String, Object> orders(@RequestParam(required = false) String status, @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize,
-                                      @RequestParam(required = false) Boolean unconfirmed, @RequestParam(required = false) String governorate, @RequestParam(required = false) String q, @RequestParam(required = false) String channel) {
-        return orders.list(StoreContext.tenantId(), Page.of(page, pageSize), status, null, unconfirmed, governorate, q, channel);
+                                      @RequestParam(required = false) Boolean unconfirmed, @RequestParam(required = false) String governorate, @RequestParam(required = false) String q, @RequestParam(required = false) String channel,
+                                      @RequestParam(required = false) java.time.LocalDate from, @RequestParam(required = false) java.time.LocalDate to,
+                                      @RequestParam(required = false) String paymentMethod, @RequestParam(required = false) String paymentStatus,
+                                      @RequestParam(required = false) Long minTotal, @RequestParam(required = false) Long maxTotal, @RequestParam(required = false) String discount,
+                                      @RequestParam(required = false) String risk, @RequestParam(required = false) UUID branchId, @RequestParam(required = false) String source, @RequestParam(required = false) String sort) {
+        return orders.list(StoreContext.tenantId(), Page.of(page, pageSize), new OrderService.Filter(status, null, unconfirmed, governorate, q, channel, from, to,
+                paymentMethod, paymentStatus, minTotal, maxTotal, discount, risk, branchId, source, sort));
     }
 
     /** Counter for the dashboard badge: new orders nobody has called yet. */
@@ -190,8 +221,9 @@ public class StoreAdminController {
 
     @GetMapping("/returns")
     @PreAuthorize("hasAuthority('order.read')")
-    public Map<String, Object> returns(@RequestParam(required = false) String status, @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize) {
-        return fulfilment.returns(StoreContext.tenantId(), Page.of(page, pageSize), status);
+    public Map<String, Object> returns(@RequestParam(required = false) String status, @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize,
+                                       @RequestParam(required = false) java.time.LocalDate from, @RequestParam(required = false) java.time.LocalDate to) {
+        return fulfilment.returns(StoreContext.tenantId(), Page.of(page, pageSize), status, from, to);
     }
 
     public record ReturnDecision(String status, String note) {}
@@ -248,8 +280,9 @@ public class StoreAdminController {
 
     @GetMapping("/customers")
     @PreAuthorize("hasAuthority('customer.read')")
-    public Map<String, Object> customers(@RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize, @RequestParam(required = false) String q) {
-        return settings.customers(StoreContext.tenantId(), Page.of(page, pageSize), q);
+    public Map<String, Object> customers(@RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize, @RequestParam(required = false) String q,
+                                         @RequestParam(required = false) java.time.LocalDate from, @RequestParam(required = false) java.time.LocalDate to) {
+        return settings.customers(StoreContext.tenantId(), Page.of(page, pageSize), q, from, to);
     }
 
     public record GenderReq(String gender) {}
@@ -381,8 +414,9 @@ public class StoreAdminController {
 
     @GetMapping("/reviews")
     @PreAuthorize("(hasAuthority('review.moderate') or hasAuthority('review.read'))")
-    public Map<String, Object> reviews(@RequestParam(required = false) String status, @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize) {
-        return settings.reviewsForModeration(StoreContext.tenantId(), Page.of(page, pageSize), status);
+    public Map<String, Object> reviews(@RequestParam(required = false) String status, @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize,
+                                       @RequestParam(required = false) java.time.LocalDate from, @RequestParam(required = false) java.time.LocalDate to) {
+        return settings.reviewsForModeration(StoreContext.tenantId(), Page.of(page, pageSize), status, from, to);
     }
 
     @PostMapping("/reviews/{id}/status")

@@ -36,7 +36,9 @@ public class CartController {
 
     @GetMapping("/api/v1/store/carts")
     @PreAuthorize("hasAuthority('cart.read') or hasAuthority('cart.manage')")
-    public Map<String, Object> list(@RequestParam(required = false) String view) { return carts.list(StoreContext.tenantId(), view); }
+    public Map<String, Object> list(@RequestParam(required = false) String view, @RequestParam(required = false) java.time.LocalDate from, @RequestParam(required = false) java.time.LocalDate to) {
+        return carts.list(StoreContext.tenantId(), view, from, to);
+    }
 
     @PutMapping("/api/v1/store/carts/settings")
     @PreAuthorize("hasAuthority('cart.manage')")

@@ -37,7 +37,8 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
   if (!res.ok) {
     const d = (data ?? {}) as { code?: string; message?: string; fields?: Record<string, string>; params?: Record<string, unknown> };
     if (res.status === 401 && typeof window !== "undefined" && !path.startsWith("auth/")) {
-      window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname)}`);
+      const p = window.location.pathname;
+      window.location.assign(`${p.startsWith("/dashboard") ? "/dashboard/login" : "/login"}?next=${encodeURIComponent(p)}`);
     }
     throw new ApiError(res.status, d.code ?? `HTTP_${res.status}`, d.message ?? res.statusText, d.fields, d.params);
   }

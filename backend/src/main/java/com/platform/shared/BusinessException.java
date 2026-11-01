@@ -25,6 +25,21 @@ public class BusinessException extends RuntimeException {
         return this;
     }
 
+    /** Field path -> message ("name", "variants[2].sku"): the form shows each message under its own field and scrolls to the first one. */
+    private java.util.Map<String, String> fields = java.util.Map.of();
+    public java.util.Map<String, String> getFields() { return fields; }
+    /** Marks the field this error belongs to (the message is the exception's own). */
+    public BusinessException field(String path) {
+        fields = new java.util.LinkedHashMap<>(fields);
+        fields.put(path, getMessage());
+        return this;
+    }
+    public BusinessException fields(java.util.Map<String, String> all) {
+        fields = new java.util.LinkedHashMap<>(fields);
+        fields.putAll(all);
+        return this;
+    }
+
     public static BusinessException notFound(String code, String msg) { return new BusinessException(HttpStatus.NOT_FOUND, code, msg); }
     public static BusinessException forbidden(String code, String msg) { return new BusinessException(HttpStatus.FORBIDDEN, code, msg); }
     public static BusinessException conflict(String code, String msg) { return new BusinessException(HttpStatus.CONFLICT, code, msg); }

@@ -138,3 +138,17 @@ img { -webkit-user-drag: none; }
 
 /* a Table nested in a Section card: drop its own card chrome */
 .section-flat > div:last-child > div { box-shadow: none; border-radius: 0 0 1rem 1rem; }
+
+/* a field the server (or the form) rejected: red frame + a short shake so the eye lands on it */
+.field-error :is(input, select, textarea) { border-color: rgb(239 68 68); box-shadow: 0 0 0 4px rgb(239 68 68 / 0.12); }
+.field-error { animation: field-shake .35s ease-in-out 1; }
+.cell-error { outline: 2px solid rgb(239 68 68); outline-offset: -2px; border-radius: .75rem; background: rgb(254 242 242); }
+@keyframes field-shake { 0%, 100% { transform: none; } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+@media (prefers-reduced-motion: reduce) { .field-error { animation: none; } }
+
+/* one-tap filter chips */
+.chip { display: inline-flex; flex-shrink: 0; align-items: center; gap: .4rem; min-height: 2.25rem; padding: .35rem .85rem; border-radius: 999px; font-size: .8125rem; font-weight: 600;
+  background: #fff; color: rgb(51 65 85); border: 1px solid rgb(226 232 240); box-shadow: 0 1px 2px rgb(15 23 42 / .04); transition: all .18s ease; white-space: nowrap; }
+.chip:hover { border-color: color-mix(in srgb, var(--brand) 40%, transparent); color: var(--brand-dark, var(--brand)); }
+.chip-on, .chip-on:hover { background: var(--brand); border-color: var(--brand); color: #fff; box-shadow: 0 6px 16px -8px var(--brand); }
+@media (pointer: coarse) { .chip { min-height: 2.75rem; } }

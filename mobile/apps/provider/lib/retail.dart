@@ -150,7 +150,7 @@ class InvoicesScreen extends StatelessWidget {
     final s = S.of(context);
     final ar = s.ar;
     return PagedList(
-      api: ctx.api, path: 'store/invoices', emptyText: ar ? 'لا توجد فواتير بعد. افتح أوردر واضغط فاتورة ضريبية.' : 'No invoices yet. Open an order and press Tax invoice.',
+      api: ctx.api, path: 'store/invoices', dateRange: true, searchHint: ar ? 'رقم الفاتورة أو المشتري أو الطلب' : 'Invoice no., buyer or order', emptyText: ar ? 'لا توجد فواتير بعد. افتح أوردر واضغط فاتورة ضريبية.' : 'No invoices yet. Open an order and press Tax invoice.',
       itemBuilder: (c, i, reload) => Card(child: ListTile(
         title: Text('${i['number']}', textDirection: TextDirection.ltr, textAlign: TextAlign.start, style: const TextStyle(fontWeight: FontWeight.w900)),
         subtitle: Text('${i['buyerName']} · ${fmtDate(i['issuedAt'] as String?, time: false)}${i['kind'] == 'CREDIT_NOTE' ? (ar ? ' · إشعار دائن' : ' · credit note') : ''}'),

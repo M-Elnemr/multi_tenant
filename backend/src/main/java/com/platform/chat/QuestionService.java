@@ -89,11 +89,14 @@ public class QuestionService {
     // ---- the screen ------------------------------------------------------------------------------------------------------------
 
     /** Questions of this shop, open ones first, each with its customer. {@code status} is OPEN, ANSWERED, DISMISSED or null for all. */
-    public List<Map<String, Object>> list(UUID tenantId, String status) {
+    public List<Map<String, Object>> list(UUID tenantId, String status) { return list(tenantId, status, null, null); }
+
+    public List<Map<String, Object>> list(UUID tenantId, String status, java.time.LocalDate from, java.time.LocalDate to) {
+        com.platform.shared.DateRange.check(from, to);
         String st = status == null || status.isBlank() || "ALL".equalsIgnoreCase(status) ? null : status.toUpperCase();
         if (st != null && !List.of("OPEN", "ANSWERED", "DISMISSED").contains(st)) throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown status");
-        var rows = Rows.camel(jdbc.sql(SELECT + " WHERE u.tenant_id = :t AND (CAST(:s AS varchar) IS NULL OR u.status = CAST(:s AS varchar)) ORDER BY (u.status = 'OPEN') DESC, u.created_at DESC LIMIT 100")
-                .param("t", tenantId).param("s", st).query().listOfRows());
+        var rows = Rows.camel(jdbc.sql(SELECT + " WHERE u.tenant_id = :t AND (CAST(:s AS varchar) IS NULL OR u.status = CAST(:s AS varchar)) AND " + com.platform.shared.DateRange.sql("u.created_at", "t") + " ORDER BY (u.status = 'OPEN') DESC, u.created_at DESC LIMIT 100")
+                .param("t", tenantId).param("s", st).param("from", from).param("to", to).query().listOfRows());
         Map<String, String> names = new LinkedHashMap<>();
         for (var r : rows) addCustomer(tenantId, r, names);
         return rows;

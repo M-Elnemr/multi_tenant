@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
+import { DateRangePicker, rangeQuery, type DateRange } from "@/components/date-range";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/client";
 import { useAction, useApi, useMe } from "@/components/hooks";
@@ -28,13 +29,15 @@ function Questions() {
   const params = useSearchParams();
   const [tab, setTab] = useState<Tab>("OPEN");
   const [picked, setPicked] = useState<number | null>(params.get("id") ? Number(params.get("id")) : null);
-  const list = useApi<Q[]>(`store/ai/questions?status=${tab}`);
+  const [range, setRange] = useState<DateRange>({});
+  const rq = (b: string) => { const qs = rangeQuery(new URLSearchParams(), range).toString(); return qs ? `${b}${b.includes("?") ? "&" : "?"}${qs}` : b; };
+  const list = useApi<Q[]>(rq(`store/ai/questions?status=${tab}`));
   const counts = useApi<{ open: number }>("store/ai/questions/open-count");
   const items = list.data ?? [];
   const current = picked ?? items[0]?.id ?? null;
   return (
     <>
-      <PageHeader title={t("qs.title")} subtitle={t("qs.hint")} />
+      <PageHeader title={t("qs.title")} subtitle={t("qs.hint")} actions={<DateRangePicker value={range} onChange={setRange} />} />
       <div className="mb-4"><Tabs tabs={(["OPEN", "ANSWERED", "DISMISSED"] as Tab[]).map((k) => ({ key: k, label: t(`qs.tab.${k}`), count: k === "OPEN" ? counts.data?.open : undefined }))} value={tab} onChange={(k) => { setTab(k); setPicked(null); }} /></div>
       <ErrorText error={list.error} />
       {list.loading && !list.data ? <Loading /> : items.length === 0 ? <Empty>{t("qs.none")}</Empty> : (

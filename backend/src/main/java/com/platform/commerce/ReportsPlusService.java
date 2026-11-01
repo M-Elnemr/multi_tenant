@@ -16,9 +16,27 @@ public class ReportsPlusService {
 
     public ReportsPlusService(JdbcClient jdbc) { this.jdbc = jdbc; }
 
+    /** The end of the reported window: now(), or the end of the chosen "to" day (so a date range can look at the past). */
+    private static final ThreadLocal<String> END = ThreadLocal.withInitial(() -> "now()");
+
+    private JdbcClient.StatementSpec q(String sql) { return jdbc.sql(sql.replace("now()", END.get())); }
+
+    /** A date range: from..to (shop days, both included) becomes "days" ending at the end of "to". */
+    public <T> T inRange(UUID t, java.time.LocalDate from, java.time.LocalDate to, java.util.function.IntFunction<T> run) {
+        com.platform.shared.DateRange.check(from, to);
+        java.time.ZoneId tz;
+        try { tz = java.time.ZoneId.of(jdbc.sql("SELECT timezone FROM core.tenants WHERE id = :t").param("t", t).query(String.class).single()); } catch (RuntimeException e) { tz = java.time.ZoneId.of("Africa/Cairo"); }
+        java.time.LocalDate today = java.time.LocalDate.now(tz);
+        java.time.LocalDate end = to == null || to.isAfter(today) ? today : to;
+        java.time.LocalDate start = from == null ? end.minusDays(29) : from;
+        int days = (int) Math.max(1, java.time.temporal.ChronoUnit.DAYS.between(start, end) + 1);
+        if (end.isBefore(today)) END.set("TIMESTAMPTZ '" + end.plusDays(1).atStartOfDay(tz).toInstant() + "'");
+        try { return run.apply(days); } finally { END.remove(); }
+    }
+
     public Map<String, Object> margin(UUID t, int days) {
         int d = Math.max(1, Math.min(days, 365));
-        var rows = jdbc.sql("""
+        var rows = q("""
                 SELECT i.product_name_snapshot AS name, sum(i.quantity) AS units, sum(i.line_total_minor) AS revenue_minor,
                        sum(i.quantity * coalesce(v.cost_price_minor, 0)) AS cost_minor, bool_and(v.cost_price_minor IS NOT NULL) AS cost_known
                 FROM commerce.order_items i JOIN commerce.orders o ON o.id = i.order_id LEFT JOIN commerce.product_variants v ON v.id = i.variant_id
@@ -41,7 +59,7 @@ public class ReportsPlusService {
     }
 
     public List<Map<String, Object>> cohorts(UUID t) {
-        return Rows.camel(jdbc.sql("""
+        return Rows.camel(q("""
                 WITH o AS (
                   SELECT customer_phone_snapshot AS phone, date_trunc('month', created_at)::date AS month FROM commerce.orders
                   WHERE tenant_id = :t AND status NOT IN ('PENDING','CANCELLED') AND customer_phone_snapshot <> ''
@@ -59,7 +77,7 @@ public class ReportsPlusService {
     private static final String LIVE = "o.status NOT IN ('PENDING','CANCELLED','RETURNED','REFUNDED')";
 
     private Map<String, Object> period(UUID t, int fromDays, int toDays) {
-        var r = jdbc.sql("SELECT count(*) AS orders, coalesce(sum(o.total_minor), 0) AS revenue, count(DISTINCT o.customer_phone_snapshot) AS customers FROM commerce.orders o "
+        var r = q("SELECT count(*) AS orders, coalesce(sum(o.total_minor), 0) AS revenue, count(DISTINCT o.customer_phone_snapshot) AS customers FROM commerce.orders o "
                 + "WHERE o.tenant_id = :t AND " + LIVE + " AND o.created_at >= now() - make_interval(days => :f) AND o.created_at < now() - make_interval(days => :e)")
                 .param("t", t).param("f", fromDays).param("e", toDays).query().listOfRows().get(0);
         long orders = ((Number) r.get("orders")).longValue(), rev = ((Number) r.get("revenue")).longValue();
@@ -78,7 +96,7 @@ public class ReportsPlusService {
         out.put("days", d);
         out.put("current", period(t, d, 0));
         out.put("previous", period(t, d * 2, d));
-        out.put("trend", Rows.camel(jdbc.sql(live("""
+        out.put("trend", Rows.camel(q(live("""
                 SELECT g.day::date AS day, count(o.id) AS orders, coalesce(sum(o.total_minor), 0) AS revenue_minor
                 FROM generate_series((now() - make_interval(days => :d - 1))::date, now()::date, interval '1 day') AS g(day)
                 LEFT JOIN commerce.orders o ON o.tenant_id = :t AND o.created_at::date = g.day::date AND %LIVE%
@@ -86,16 +104,16 @@ public class ReportsPlusService {
                 """)).param("t", t).param("d", d).query().listOfRows()));
         out.put("byChannel", split(t, d, "o.channel"));
         out.put("byPayment", split(t, d, "o.payment_method"));
-        out.put("byGovernorate", jdbc.sql("SELECT coalesce(nullif(o.governorate_code, ''), '-') AS key, count(*) AS orders, coalesce(sum(o.total_minor), 0) AS revenue_minor FROM commerce.orders o WHERE o.tenant_id = :t AND " + LIVE
+        out.put("byGovernorate", q("SELECT coalesce(nullif(o.governorate_code, ''), '-') AS key, count(*) AS orders, coalesce(sum(o.total_minor), 0) AS revenue_minor FROM commerce.orders o WHERE o.tenant_id = :t AND " + LIVE
                 + " AND o.created_at > now() - make_interval(days => :d) GROUP BY 1 ORDER BY 3 DESC LIMIT 8").param("t", t).param("d", d).query().listOfRows().stream().map(Rows::camel).toList());
-        out.put("topProducts", Rows.camel(jdbc.sql(live("""
+        out.put("topProducts", Rows.camel(q(live("""
                 SELECT i.product_name_snapshot AS name, sum(i.quantity) AS units, sum(i.line_total_minor) AS revenue_minor
                 FROM commerce.order_items i JOIN commerce.orders o ON o.id = i.order_id
                 WHERE o.tenant_id = :t AND %LIVE%
                  AND o.created_at > now() - make_interval(days => :d)
                 GROUP BY i.product_name_snapshot ORDER BY sum(i.line_total_minor) DESC LIMIT 8
                 """)).param("t", t).param("d", d).query().listOfRows()));
-        var cust = jdbc.sql(live("""
+        var cust = q(live("""
                 WITH first AS (SELECT customer_phone_snapshot AS phone, min(created_at) AS first_at FROM commerce.orders WHERE tenant_id = :t AND status NOT IN ('PENDING','CANCELLED') AND customer_phone_snapshot <> '' GROUP BY 1),
                 inperiod AS (SELECT DISTINCT customer_phone_snapshot AS phone FROM commerce.orders o WHERE o.tenant_id = :t AND %LIVE%
                  AND o.created_at > now() - make_interval(days => :d) AND customer_phone_snapshot <> '')
@@ -103,16 +121,16 @@ public class ReportsPlusService {
                 FROM inperiod p JOIN first f ON f.phone = p.phone
                 """)).param("t", t).param("d", d).query().listOfRows().get(0);
         out.put("customerMix", Map.of("newCustomers", ((Number) cust.get("fresh")).longValue(), "returningCustomers", ((Number) cust.get("returning_customers")).longValue()));
-        var ops = jdbc.sql("""
+        var ops = q("""
                 SELECT count(*) FILTER (WHERE status = 'CANCELLED') AS cancelled, count(*) FILTER (WHERE status IN ('RETURNED','REFUNDED')) AS returned,
                        count(*) FILTER (WHERE payment_method = 'CASH_ON_DELIVERY') AS cod, count(*) AS all_orders
                 FROM commerce.orders WHERE tenant_id = :t AND created_at > now() - make_interval(days => :d)
                 """).param("t", t).param("d", d).query().listOfRows().get(0);
-        long ret = jdbc.sql("SELECT coalesce(sum(refund_minor), 0) FROM commerce.order_returns WHERE tenant_id = :t AND created_at > now() - make_interval(days => :d)").param("t", t).param("d", d).query(Long.class).single();
+        long ret = q("SELECT coalesce(sum(refund_minor), 0) FROM commerce.order_returns WHERE tenant_id = :t AND created_at > now() - make_interval(days => :d)").param("t", t).param("d", d).query(Long.class).single();
         Map<String, Object> o = new LinkedHashMap<>(Rows.camel(ops));
         o.put("refundedMinor", ret);
         out.put("operations", o);
-        out.put("lowStock", Rows.camel(jdbc.sql("""
+        out.put("lowStock", Rows.camel(q("""
                 SELECT p.name, v.sku, coalesce(sum(i.quantity_on_hand - i.quantity_reserved), 0) AS available
                 FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id LEFT JOIN commerce.inventory_items i ON i.variant_id = v.id
                 WHERE v.tenant_id = :t AND v.status = 'ACTIVE' AND p.status = 'ACTIVE' GROUP BY p.name, v.sku HAVING coalesce(sum(i.quantity_on_hand - i.quantity_reserved), 0) <= 5
@@ -122,7 +140,7 @@ public class ReportsPlusService {
     }
 
     private List<Map<String, Object>> split(UUID t, int d, String column) {
-        return jdbc.sql("SELECT coalesce(nullif(" + column + ", ''), '-') AS key, count(*) AS orders, coalesce(sum(o.total_minor), 0) AS revenue_minor FROM commerce.orders o WHERE o.tenant_id = :t AND " + LIVE
+        return q("SELECT coalesce(nullif(" + column + ", ''), '-') AS key, count(*) AS orders, coalesce(sum(o.total_minor), 0) AS revenue_minor FROM commerce.orders o WHERE o.tenant_id = :t AND " + LIVE
                 + " AND o.created_at > now() - make_interval(days => :d) GROUP BY 1 ORDER BY 3 DESC").param("t", t).param("d", d).query().listOfRows().stream().map(Rows::camel).toList();
     }
 }

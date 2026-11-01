@@ -19,6 +19,58 @@ class OrdersScreen extends StatefulWidget {
 class _OrdersScreenState extends State<OrdersScreen> {
   int _unconfirmed = 0;
   String _channel = '';
+  /// The "more filters" sheet: payment, discount, risk, total range, source and sort.
+  Map<String, String> _more = {};
+
+  Future<void> _openMore() async {
+    final ar = AppLocale.isAr;
+    final f = Map<String, String>.from(_more);
+    final min = TextEditingController(text: f['minTotal'] == null ? '' : '${(int.parse(f['minTotal']!) / 100).round()}');
+    final max = TextEditingController(text: f['maxTotal'] == null ? '' : '${(int.parse(f['maxTotal']!) / 100).round()}');
+    Widget group(String title, String key, Map<String, String> options, void Function(void Function()) set) => Padding(
+          padding: const EdgeInsets.only(bottom: 14),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(title, style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF6B7C8D), fontSize: 12)),
+            const SizedBox(height: 6),
+            Wrap(spacing: 6, runSpacing: 6, children: [for (final o in options.entries) ChoiceChip(label: Text(o.value), selected: f[key] == o.key, showCheckmark: false, onSelected: (v) => set(() => v ? f[key] = o.key : f.remove(key)))]),
+          ]),
+        );
+    final ok = await showModalBottomSheet<bool>(
+      context: context, isScrollControlled: true, showDragHandle: true,
+      builder: (c) => StatefulBuilder(builder: (c, set) => Padding(
+        padding: EdgeInsets.fromLTRB(20, 0, 20, MediaQuery.of(c).viewInsets.bottom + 16),
+        child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+          Text(ar ? 'فلاتر أكثر' : 'More filters', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
+          const SizedBox(height: 12),
+          group(ar ? 'الترتيب' : 'Sort', 'sort', ar ? {'NEWEST': 'الأحدث', 'OLDEST': 'الأقدم', 'TOTAL_DESC': 'الأعلى قيمة', 'TOTAL_ASC': 'الأقل قيمة'} : {'NEWEST': 'Newest', 'OLDEST': 'Oldest', 'TOTAL_DESC': 'Highest', 'TOTAL_ASC': 'Lowest'}, set),
+          group(ar ? 'طريقة الدفع' : 'Payment', 'paymentMethod', ar ? {'CASH_ON_DELIVERY': 'الدفع عند الاستلام', 'CARD': 'بطاقة'} : {'CASH_ON_DELIVERY': 'Cash on delivery', 'CARD': 'Card'}, set),
+          group(ar ? 'حالة الدفع' : 'Payment status', 'paymentStatus', ar ? {'UNPAID': 'غير مدفوع', 'PAID': 'مدفوع', 'REFUNDED': 'مسترد'} : {'UNPAID': 'Unpaid', 'PAID': 'Paid', 'REFUNDED': 'Refunded'}, set),
+          group(ar ? 'الخصم' : 'Discount', 'discount', ar ? {'OFFER': 'بعرض', 'COUPON': 'بكوبون', 'ANY': 'بأي خصم', 'NONE': 'بدون خصم'} : {'OFFER': 'Offer', 'COUPON': 'Coupon', 'ANY': 'Any', 'NONE': 'None'}, set),
+          group(ar ? 'المخاطرة' : 'Risk', 'risk', ar ? {'HIGH': 'عالية', 'MEDIUM': 'متوسطة', 'LOW': 'منخفضة'} : {'HIGH': 'High', 'MEDIUM': 'Medium', 'LOW': 'Low'}, set),
+          group(ar ? 'المصدر' : 'Placed from', 'source', ar ? {'WEB': 'الموقع', 'AI_CHAT': 'البائع الذكي', 'POS': 'نقطة البيع', 'OPEN': 'السوق المفتوح'} : {'WEB': 'Website', 'AI_CHAT': 'AI seller', 'POS': 'POS', 'OPEN': 'Marketplace'}, set),
+          Text(ar ? 'قيمة الطلب' : 'Order total', style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF6B7C8D), fontSize: 12)),
+          const SizedBox(height: 6),
+          Row(children: [
+            Expanded(child: TextField(controller: min, keyboardType: TextInputType.number, decoration: InputDecoration(labelText: ar ? 'من' : 'From', isDense: true))),
+            const SizedBox(width: 10),
+            Expanded(child: TextField(controller: max, keyboardType: TextInputType.number, decoration: InputDecoration(labelText: ar ? 'إلى' : 'To', isDense: true))),
+          ]),
+          const SizedBox(height: 16),
+          Row(children: [
+            Expanded(child: OutlinedButton(onPressed: () { f.clear(); min.clear(); max.clear(); set(() {}); }, child: Text(ar ? 'مسح الكل' : 'Clear all'))),
+            const SizedBox(width: 10),
+            Expanded(child: FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(ar ? 'عرض النتائج' : 'Show results'))),
+          ]),
+        ])),
+      )),
+    );
+    if (ok != true || !mounted) return;
+    final mn = int.tryParse(min.text.trim()), mx = int.tryParse(max.text.trim());
+    if (mn != null) { f['minTotal'] = '${mn * 100}'; } else { f.remove('minTotal'); }
+    if (mx != null) { f['maxTotal'] = '${mx * 100}'; } else { f.remove('maxTotal'); }
+    if (f['sort'] == 'NEWEST') f.remove('sort');
+    setState(() => _more = f);
+  }
   @override
   void initState() {
     super.initState();
@@ -31,11 +83,17 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final ar = s.ar;
     final ctx = widget.ctx;
     return PagedList(
-      key: ValueKey('orders-$_channel'),
+      key: ValueKey('orders-$_channel-$_more'),
       api: ctx.api,
       path: 'store/orders',
-      query: _channel.isEmpty ? null : {'channel': _channel},
-      searchHint: ar ? 'رقم الطلب أو اسم العميل أو الهاتف' : 'Order number, customer or phone',
+      query: {if (_channel.isNotEmpty) 'channel': _channel, ..._more},
+      dateRange: true,
+      extraFilters: [Padding(padding: const EdgeInsets.symmetric(horizontal: 4), child: ActionChip(
+        avatar: Icon(Icons.tune_rounded, size: 18, color: _more.isEmpty ? null : Colors.white),
+        backgroundColor: _more.isEmpty ? null : Theme.of(context).colorScheme.primary,
+        label: Text('${ar ? 'فلاتر أكثر' : 'More filters'}${_more.isEmpty ? '' : ' (${_more.length})'}', style: TextStyle(fontWeight: FontWeight.w800, color: _more.isEmpty ? null : Colors.white)),
+        onPressed: _openMore))],
+      searchHint: ar ? 'رقم الطلب أو الاسم أو الهاتف أو المنتج' : 'Order no., name, phone or product',
       filterParam: 'status',
       filters: [('', s.all), for (final st in ['REQUESTED', 'PREPARING', 'SHIPPED', 'ARRIVED', 'RETURNED', 'CANCELLED']) (st, ar ? _arStatus[st]! : st[0] + st.substring(1).toLowerCase())],
       header: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -190,6 +248,7 @@ class ReturnsScreen extends StatelessWidget {
     return PagedList(
       api: ctx.api,
       path: 'store/returns',
+      dateRange: true,
       filterParam: 'status',
       filters: [('', s.all), ('REQUESTED', ar ? 'جديد' : 'New'), ('APPROVED', ar ? 'مقبول' : 'Approved'), ('REJECTED', ar ? 'مرفوض' : 'Rejected')],
       emptyText: ar ? 'لا توجد مرتجعات' : 'No returns',
@@ -221,6 +280,7 @@ class ReviewsScreen extends StatelessWidget {
     return PagedList(
       api: ctx.api,
       path: 'store/reviews',
+      dateRange: true,
       filterParam: 'status',
       filters: [('', s.all), ('PENDING', ar ? 'بانتظار المراجعة' : 'Pending'), ('PUBLISHED', ar ? 'منشور' : 'Published'), ('HIDDEN', ar ? 'مخفي' : 'Hidden')],
       emptyText: ar ? 'لا توجد تقييمات' : 'No reviews',
@@ -281,37 +341,87 @@ class _InventoryScreenState extends State<InventoryScreen> {
   bool _low = false;
   int _n = 0;
 
+  /// Add (or set) stock for every colour / size of one product in one sheet.
   Future<void> _adjust(Map<String, dynamic> row, VoidCallback reload) async {
-    final s = S.of(context);
-    final ar = s.ar;
-    final delta = TextEditingController();
+    final ar = AppLocale.isAr;
+    final api = widget.ctx.api;
+    Map<String, dynamic> d;
+    List<Map<String, dynamic>> branches;
+    try {
+      d = Map<String, dynamic>.from(await api.get('store/products/${row['productId']}') as Map);
+      branches = ((await api.get('store/branches') as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    } catch (e) { if (mounted) toast(context, errorText(e), isError: true); return; }
+    if (!mounted) return;
+    final variants = ((d['variants'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).where((v) => v['status'] == 'ACTIVE').toList();
+    String branch = '${row['branchId'] ?? (branches.isEmpty ? '' : branches.first['id'])}';
+    String mode = 'add', type = 'PURCHASE';
+    final qty = {for (final v in variants) '${v['id']}': TextEditingController()};
     final reason = TextEditingController();
-    String type = 'PURCHASE';
+    final all = TextEditingController();
+    final fe = FieldErrors();
+    int onHand(Map<String, dynamic> v) => (((v['stock'] as List?) ?? const []).cast<Map>().where((x) => '${x['branchId']}' == branch).map((x) => (x['quantityOnHand'] as num).toInt()).firstOrNull) ?? 0;
     final ok = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
       builder: (c) => StatefulBuilder(builder: (c, set) => Padding(
-        padding: EdgeInsets.fromLTRB(20, 4, 20, MediaQuery.of(c).viewInsets.bottom + 20),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Text('${row['productName']}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
-          Text('${row['sku']} · ${ar ? 'الحالي' : 'on hand'}: ${row['quantityOnHand']}', style: const TextStyle(color: Color(0xFF6B7C8D))),
-          const SizedBox(height: 12),
-          SegmentedButton<String>(segments: [ButtonSegment(value: 'PURCHASE', label: Text(ar ? 'إضافة' : 'Add')), ButtonSegment(value: 'DAMAGE', label: Text(ar ? 'تالف' : 'Damage')), ButtonSegment(value: 'ADJUSTMENT', label: Text(ar ? 'تسوية' : 'Adjust'))], selected: {type}, onSelectionChanged: (v) => set(() => type = v.first)),
-          const SizedBox(height: 12),
-          TextField(controller: delta, keyboardType: const TextInputType.numberWithOptions(signed: true), decoration: InputDecoration(labelText: ar ? 'الكمية (للتسوية استخدم - للنقص)' : 'Quantity (use - to reduce on Adjust)')),
+        padding: EdgeInsets.fromLTRB(20, 0, 20, MediaQuery.of(c).viewInsets.bottom + 16),
+        child: SizedBox(height: MediaQuery.of(c).size.height * 0.78, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text('${d['name']}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
           const SizedBox(height: 10),
-          TextField(controller: reason, decoration: InputDecoration(labelText: ar ? 'السبب' : 'Reason')),
-          const SizedBox(height: 14),
-          FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(ar ? 'حفظ' : 'Save')),
-        ]),
+          SegmentedButton<String>(segments: [ButtonSegment(value: 'add', label: Text(ar ? 'إضافة / خصم' : 'Add / remove')), ButtonSegment(value: 'set', label: Text(ar ? 'ضبط العدد' : 'Set count'))], selected: {mode}, onSelectionChanged: (v) => set(() => mode = v.first)),
+          const SizedBox(height: 8),
+          if (mode == 'add') Wrap(spacing: 6, children: [for (final t in const ['PURCHASE', 'RETURN', 'ADJUSTMENT', 'DAMAGE']) ChoiceChip(label: Text(ar ? {'PURCHASE': 'شراء', 'RETURN': 'مرتجع', 'ADJUSTMENT': 'تسوية', 'DAMAGE': 'تالف'}[t]! : t), selected: type == t, onSelected: (_) => set(() => type = t))]),
+          if (branches.length > 1) DropdownButtonFormField<String>(initialValue: branch, decoration: InputDecoration(labelText: ar ? 'الفرع' : 'Branch', isDense: true), items: [for (final b in branches) DropdownMenuItem(value: '${b['id']}', child: Text('${b['name']}'))], onChanged: (v) => set(() => branch = v ?? branch)),
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(child: TextField(controller: all, keyboardType: TextInputType.number, decoration: InputDecoration(labelText: mode == 'add' ? (ar ? 'نفس الكمية للكل' : 'Same quantity for all') : (ar ? 'اضبط الكل على' : 'Set all to'), isDense: true))),
+            const SizedBox(width: 8),
+            OutlinedButton(onPressed: () => set(() { for (final q in qty.values) { q.text = all.text.trim(); } }), child: Text(ar ? 'تطبيق' : 'Apply')),
+          ]),
+          const SizedBox(height: 8),
+          Expanded(child: ListView(children: [
+            for (var i = 0; i < variants.length; i++) Builder(builder: (_) {
+              final v = variants[i];
+              final q = qty['${v['id']}']!;
+              final now = onHand(v);
+              final n = int.tryParse(q.text.trim()) ?? 0;
+              final after = mode == 'set' ? (q.text.trim().isEmpty ? now : n) : now + (type == 'DAMAGE' ? -n : n);
+              return Container(
+                key: fe.key('lines[$i]'),
+                margin: const EdgeInsets.only(bottom: 8), padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(border: Border.all(color: fe.under('lines[$i]') != null ? const Color(0xFFD14343) : Theme.of(c).dividerColor), borderRadius: BorderRadius.circular(14)),
+                child: Row(children: [
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(comboLabel(v['comboKey']).isEmpty ? '${v['sku']}' : comboLabel(v['comboKey']), style: const TextStyle(fontWeight: FontWeight.w800)),
+                    Text('${ar ? 'الآن' : 'Now'} $now → $after', style: TextStyle(fontSize: 12, color: after < 0 ? const Color(0xFFD14343) : const Color(0xFF1E9E5A), fontWeight: FontWeight.w700)),
+                    if (fe.under('lines[$i]') != null) Text(fe.under('lines[$i]')!, style: const TextStyle(fontSize: 12, color: Color(0xFFD14343))),
+                  ])),
+                  IconButton.outlined(visualDensity: VisualDensity.compact, onPressed: () => set(() => q.text = '${(n - 1).clamp(0, 99999)}'), icon: const Icon(Icons.remove_rounded, size: 18)),
+                  SizedBox(width: 62, child: TextField(controller: q, textAlign: TextAlign.center, keyboardType: TextInputType.number, onChanged: (_) => set(() {}), decoration: InputDecoration(isDense: true, hintText: mode == 'add' ? '+0' : '$now'))),
+                  IconButton.outlined(visualDensity: VisualDensity.compact, onPressed: () => set(() => q.text = '${n + 1}'), icon: const Icon(Icons.add_rounded, size: 18)),
+                ]),
+              );
+            }),
+          ])),
+          TextField(controller: reason, decoration: InputDecoration(labelText: ar ? 'السبب (اختياري)' : 'Reason (optional)', isDense: true)),
+          const SizedBox(height: 10),
+          FilledButton(onPressed: () async {
+            final lines = <Map<String, dynamic>>[];
+            for (final v in variants) {
+              final t = qty['${v['id']}']!.text.trim();
+              if (t.isEmpty) continue;
+              final n = int.tryParse(t) ?? 0;
+              lines.add(mode == 'set' ? {'branchId': branch, 'variantId': v['id'], 'setTo': n, 'reason': reason.text.trim()} : {'branchId': branch, 'variantId': v['id'], 'delta': type == 'DAMAGE' ? -n : n, 'type': type, 'reason': reason.text.trim()});
+            }
+            if (lines.isEmpty) { toast(c, ar ? 'اكتب كمية لاختيار واحد على الأقل' : 'Enter a quantity for at least one option', isError: true); return; }
+            if (await runForm(c, fe, () => api.post('store/inventory/bulk', lines)) && c.mounted) Navigator.pop(c, true);
+            set(() {});
+          }, child: Text(ar ? 'حفظ' : 'Save')),
+        ])),
       )),
     );
-    if (ok != true || !mounted) return;
-    var d = (int.tryParse(delta.text.trim().replaceAll('-', '')) ?? 0).abs();
-    if (d == 0) return;
-    if (type == 'DAMAGE' || (type == 'ADJUSTMENT' && delta.text.trim().startsWith('-'))) d = -d;
-    if (await run(context, () => widget.ctx.api.post('store/inventory/adjustments', {'branchId': row['branchId'], 'variantId': row['variantId'], 'delta': d, 'type': type, 'reason': reason.text.trim()}))) { _n++; reload(); setState(() {}); }
+    if (ok == true && mounted) { _n++; reload(); setState(() {}); toast(context, ar ? 'تم تحديث المخزون' : 'Stock updated'); }
   }
 
   @override
@@ -350,6 +460,8 @@ class CustomersScreen extends StatelessWidget {
     return PagedList(
       api: ctx.api,
       path: 'store/customers',
+      dateRange: true,
+      dateLabel: ar ? 'تاريخ الانضمام' : 'Joined',
       searchHint: ar ? 'اسم العميل أو الهاتف' : 'Customer name or phone',
       emptyText: ar ? 'لا يوجد عملاء' : 'No customers',
       itemBuilder: (c, u, reload) => Card(child: ListTile(

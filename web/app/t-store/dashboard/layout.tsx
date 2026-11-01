@@ -10,7 +10,7 @@ const NAV: NavItem[] = [
   { href: "/dashboard/products", label: "nav.products", group: "navgrp.catalog", screen: "products", icon: "bag" },
   { href: "/dashboard/inventory", label: "nav.inventory", group: "navgrp.catalog", screen: "inventory", icon: "inventory" },
   { href: "/dashboard/purchasing", label: "nav.purchasing", group: "navgrp.catalog", perm: "purchase.manage", icon: "inventory" },
-  { href: "/dashboard/coupons", label: "nav.coupons", group: "navgrp.catalog", screen: "coupons", icon: "coupon" },
+  { href: "/dashboard/offers", label: "nav.offers", group: "navgrp.catalog", screen: "coupons", icon: "coupon" },
   { href: "/dashboard/reviews", label: "nav.reviews", group: "navgrp.catalog", screen: "reviews", icon: "star" },
   { href: "/dashboard/customers", label: "nav.customers", group: "navgrp.growth", screen: "customers", icon: "users" },
   { href: "/dashboard/growth", label: "nav.growth", group: "navgrp.growth", perm: "growth.manage", icon: "users" },

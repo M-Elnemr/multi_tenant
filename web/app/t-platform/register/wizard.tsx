@@ -12,7 +12,7 @@ import { LogoMark } from "@/components/brand";
 import { AppBenefits } from "@/components/app-benefits";
 import { trackStep } from "@/components/visit-tracker";
 
-type Type = "STORE" | "CLINIC";
+type Type = "STORE" | "CLINIC" | "LAWYER";
 
 function slugify(s: string) {
   return s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
@@ -31,7 +31,7 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
   const [rand] = useState(() => Math.random().toString(36).slice(2, 6));
   const [suffix, setSuffix] = useState("");
   const base = slugify(name);
-  const auto = (base.length >= 3 ? base : `${type === "CLINIC" ? "clinic" : "shop"}-${rand}`) + (suffix ? `-${suffix}` : "");
+  const auto = (base.length >= 3 ? base : `${type === "CLINIC" ? "clinic" : type === "LAWYER" ? "law" : "shop"}-${rand}`) + (suffix ? `-${suffix}` : "");
   const slug = manualSlug ?? auto;
   const [check, setCheck] = useState<{ slug: string; state: "ok" | "taken" | "invalid" }>({ slug: "", state: "ok" });
   const [owner, setOwner] = useState({ name: "", phone: "", password: "" });
@@ -135,8 +135,8 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
       <div className="mx-auto max-w-2xl px-4 py-14">
         <LogoMark className="mx-auto mb-4 h-16 w-16 animate-float" />
         <h1 className="mb-8 animate-fade-up text-center text-2xl font-bold sm:text-3xl">{t("register.chooseType")}</h1>
-        <div className="stagger grid gap-4 sm:grid-cols-2">
-          {([["STORE", "type.store", "register.storeDesc", "bag"], ["CLINIC", "type.clinic", "register.clinicDesc", "stethoscope"]] as const).map(([v, title, desc, icon], i) => (
+        <div className="stagger grid gap-4 sm:grid-cols-3">
+          {([["STORE", "type.store", "register.storeDesc", "bag"], ["CLINIC", "type.clinic", "register.clinicDesc", "stethoscope"], ["LAWYER", "type.lawyer", "register.lawyerDesc", "scale"]] as const).map(([v, title, desc, icon], i) => (
             <button key={v} style={{ "--i": i } as React.CSSProperties} onClick={() => setType(v)} className="hover-lift group rounded-3xl border-2 border-slate-200 bg-white p-6 text-start hover:border-brand">
               <span className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-soft text-brand transition group-hover:bg-brand-gradient group-hover:text-white"><Icon name={icon} className="h-7 w-7" /></span>
               <p className="text-lg font-bold">{t(title)}</p>
@@ -152,11 +152,11 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
   return (
     <div className="mx-auto max-w-xl animate-fade-up px-4 py-12">
       <button onClick={() => { setType(null); setCats([]); setOtherCat(""); }} className="mb-4 inline-flex items-center gap-1 text-sm text-slate-500 transition hover:text-brand"><Icon name="arrow" className="h-4 w-4 rotate-180 rtl:rotate-0" />{t("common.back")}</button>
-      <h1 className="mb-1 text-2xl font-bold">{type === "STORE" ? t("register.storeTitle") : t("register.clinicTitle")}</h1>
+      <h1 className="mb-1 text-2xl font-bold">{type === "STORE" ? t("register.storeTitle") : type === "LAWYER" ? t("register.lawyerTitle") : t("register.clinicTitle")}</h1>
       <p className="mb-4 text-sm text-slate-500">{t("register.freeTrial")}</p>
       <div className="mb-6"><AppBenefits kind={type} compact /></div>
       <form onSubmit={(e) => { e.preventDefault(); if (valid) { trackStep("/register/~submit"); void create.run(); } }} onFocus={onStart} className="space-y-5 rounded-3xl border border-slate-200/80 bg-white p-6 shadow-lift sm:p-8">
-        <Field label={type === "STORE" ? t("register.storeName") : t("register.clinicName")}>
+        <Field label={type === "STORE" ? t("register.storeName") : type === "LAWYER" ? t("register.lawyerName") : t("register.clinicName")}>
           <Input value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} autoComplete="organization" autoFocus />
         </Field>
         <Field label={t("register.phone")} hint={t("register.phoneHint")} error={owner.phone && !validMobile(owner.phone) ? t("register.phoneInvalid") : undefined}><PhoneInput value={owner.phone} onValue={(phone) => setOwner({ ...owner, phone })} required /></Field>
@@ -179,7 +179,7 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
           </div>
         </Field>
         <details className="rounded-xl border border-slate-200 p-3">
-          <summary className="cursor-pointer text-sm font-medium text-slate-600">{type === "STORE" ? t("register.category") : t("register.specialty")} <span className="text-slate-400">({t("register.optional")})</span></summary>
+          <summary className="cursor-pointer text-sm font-medium text-slate-600">{type === "STORE" ? t("register.category") : type === "LAWYER" ? t("register.practiceAreas") : t("register.specialty")} <span className="text-slate-400">({t("register.optional")})</span></summary>
           <div className="mt-3">
             {catOptions.data ? <CategoryPicker key={type} options={catOptions.data} value={cats} onChange={setCats} other={otherCat} onOther={setOtherCat} /> : <p className="text-sm text-slate-500">{t("register.checking")}</p>}
           </div>

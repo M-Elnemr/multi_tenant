@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { DateRangePicker, rangeQuery, type DateRange } from "@/components/date-range";
+import { SearchBox } from "@/components/dashboard/filters";
 import { useState } from "react";
 import { dateOnly, money } from "@/lib/format";
 import { Page, useApi } from "@/components/hooks";
@@ -12,10 +14,14 @@ type Row = { id: string; number: string; kind: string; issuedAt: string; totalMi
 export default function Invoices() {
   const { t, locale } = useI18n();
   const [page, setPage] = useState(1);
-  const { data, loading, error } = useApi<Page<Row>>(`store/invoices?page=${page}`);
+  const [range, setRange] = useState<DateRange>({});
+  const [q, setQ] = useState("");
+  const rq = (b: string) => { const qs = rangeQuery(new URLSearchParams(), range).toString(); return qs ? `${b}${b.includes("?") ? "&" : "?"}${qs}` : b; };
+  const { data, loading, error } = useApi<Page<Row>>(rq(`store/invoices?page=${page}&q=${encodeURIComponent(q)}`));
   return (
     <>
       <PageHeader title={t("inv.title")} subtitle={t("inv.subtitle")} />
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-2xl bg-white p-3 shadow-card"><SearchBox value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder={t("invoices.search")} /><DateRangePicker value={range} onChange={(r) => { setRange(r); setPage(1); }} /></div>
       <ErrorText error={error} />
       {loading && !data ? <Loading /> : data?.data.length === 0 ? <Empty>{t("inv.none")}</Empty> : (
         <>

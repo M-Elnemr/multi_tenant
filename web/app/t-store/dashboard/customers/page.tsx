@@ -1,6 +1,7 @@
 "use client";
 
 import { localPhone } from "@/lib/phone";
+import { DateRangePicker, rangeQuery, type DateRange } from "@/components/date-range";
 import { useState } from "react";
 import { api } from "@/lib/client";
 import { Page, useAction, useApi } from "@/components/hooks";
@@ -22,8 +23,10 @@ export default function Customers() {
   const { t, locale, currency } = useI18n();
   const [page, setPage] = useState(1);
   const [q, setQ] = useState("");
+  const [range, setRange] = useState<DateRange>({});
+  const rq = (b: string) => { const qs = rangeQuery(new URLSearchParams(), range).toString(); return qs ? `${b}${b.includes("?") ? "&" : "?"}${qs}` : b; };
   const [open, setOpen] = useState<C | null>(null);
-  const { data, loading, error, reload } = useApi<Page<C>>(`store/customers?page=${page}&q=${encodeURIComponent(q)}`);
+  const { data, loading, error, reload } = useApi<Page<C>>(rq(`store/customers?page=${page}&q=${encodeURIComponent(q)}`));
   const setGender = useAction(async (g: string) => { if (!open) return; await api(`store/customers/${open.id}/gender`, { method: "PUT", body: { gender: g } }); setOpen({ ...open, gender: (g || null) as C["gender"], genderSource: g ? "OWNER" : null }); await reload(); });
   const orders = useApi<O[]>(open ? `store/customers/${open.id}/orders` : null);
   const call = (c: C) => c.phone && (
@@ -34,7 +37,7 @@ export default function Customers() {
     <>
       <PageHeader title={t("nav.customers")} subtitle={t("customers.readOnly")} />
       <FlaggedPhones />
-      <FilterBar><div className="relative w-full max-w-md flex-1"><Icon name="search" className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><Input className="ps-10" placeholder={t("customers.search")} value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} /></div></FilterBar>
+      <FilterBar><div className="relative w-full max-w-md flex-1"><Icon name="search" className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><Input className="ps-10" placeholder={t("customers.search")} value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} /></div><DateRangePicker value={range} onChange={(r) => { setRange(r); setPage(1); }} label={t("customers.joined")} /></FilterBar>
       <ErrorText error={error} />
       {loading && !data ? <Loading /> : (
         <>

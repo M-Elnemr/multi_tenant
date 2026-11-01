@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'billing_ui.dart';
 import 'common.dart';
+import 'lawyer_panel.dart';
 import 'clinic_panel.dart';
 import 'offline_ops.dart';
 import 'platform_admin.dart';
@@ -257,6 +258,7 @@ class BusinessCard extends StatelessWidget {
     final s = S.of(context);
     final color = hexColor(business['primaryColor']) ?? kBrandBlue;
     final store = business['type'] == 'STORE';
+    final lawyer = business['type'] == 'LAWYER';
     final roles = (business['roles'] as List?)?.cast<String>() ?? const [];
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -277,7 +279,7 @@ class BusinessCard extends StatelessWidget {
                 Text(business['name'] as String, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 6),
                 Wrap(spacing: 6, runSpacing: 4, children: [
-                  _Pill(store ? (s.ar ? 'متجر' : 'Shop') : (s.ar ? 'عيادة' : 'Clinic'), store ? Icons.storefront_rounded : Icons.local_hospital_rounded),
+                  _Pill(store ? (s.ar ? 'متجر' : 'Shop') : lawyer ? (s.ar ? 'محاماة' : 'Law office') : (s.ar ? 'عيادة' : 'Clinic'), store ? Icons.storefront_rounded : lawyer ? Icons.gavel_rounded : Icons.local_hospital_rounded),
                   if (roles.isNotEmpty) _Pill(roles.first.replaceAll('_', ' ').toLowerCase(), Icons.badge_outlined),
                 ]),
               ]),
@@ -400,6 +402,7 @@ class _BusinessHomeState extends State<BusinessHome> with WidgetsBindingObserver
       Navigator.of(context).push(MaterialPageRoute(builder: (_) => OrderDetail(ctx: c, id: '${d['orderId']}')));
       return;
     }
+    if (c.type == 'LAWYER') { pushOpened.value = null; openLegalPush(context, c, d); return; }
     if (d['patientId'] == null) return;
     pushOpened.value = null;
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => PatientDetail(ctx: c, id: '${d['patientId']}', openLabId: d['labOrderId'] == null ? null : '${d['labOrderId']}')));

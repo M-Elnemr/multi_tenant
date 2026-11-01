@@ -54,10 +54,13 @@ public class CheckoutService {
     private final PhoneFlags phoneFlags;
     private final CodRiskService codRisk;
     private final CartRecoveryService carts;
+    private final OfferService offers;
 
     public CheckoutService(JdbcClient jdbc, InventoryService inventory, EntitlementService ent, List<PaymentProvider> providers,
                            StoreCustomerService customers, ApplicationEventPublisher events, com.platform.shared.PaymentPolicy policy,
-                           StoreFulfillmentService fulfilment, PhoneFlags phoneFlags, CodRiskService codRisk, @org.springframework.context.annotation.Lazy CartRecoveryService carts) {
+                           StoreFulfillmentService fulfilment, PhoneFlags phoneFlags, CodRiskService codRisk, @org.springframework.context.annotation.Lazy CartRecoveryService carts,
+                           OfferService offers) {
+        this.offers = offers;
         this.policy = policy;
         this.fulfilment = fulfilment;
         this.phoneFlags = phoneFlags;
@@ -97,7 +100,7 @@ public class CheckoutService {
         Quote q = quote(tenantId, customerId, r, true);
         if (extraDiscountMinor > 0) {
             long extra = Math.min(extraDiscountMinor, q.subtotal() - q.discount());
-            q = new Quote(q.lines(), q.currency(), q.subtotal(), q.discount() + extra, q.shipping(), Math.max(0, q.total() - extra), q.couponId(), q.couponCode(), q.codFee(), q.etaMin(), q.etaMax());
+            q = new Quote(q.lines(), q.currency(), q.subtotal(), q.discount() + extra, q.shipping(), Math.max(0, q.total() - extra), q.couponId(), q.couponCode(), q.codFee(), q.etaMin(), q.etaMax(), q.lineDiscounts(), q.applied());
         }
         UUID orderId = UUID.randomUUID();
 
@@ -118,9 +121,9 @@ public class CheckoutService {
                 INSERT INTO commerce.orders (id, tenant_id, order_number, customer_id, user_id, status, payment_status, payment_method, shipping_method_id, coupon_code,
                     currency, subtotal_minor, discount_minor, shipping_minor, total_minor, customer_name_snapshot, customer_phone_snapshot,
                     shipping_address_snapshot, notes, idempotency_key, reservation_expires_at,
-                    governorate_code, area, landmark, phone2, cod_fee_minor, eta_min_days, eta_max_days, source, channel, risk_score, risk_level, risk_reasons, needs_confirmation)
+                    governorate_code, area, landmark, phone2, cod_fee_minor, eta_min_days, eta_max_days, source, channel, risk_score, risk_level, risk_reasons, needs_confirmation, applied_offers)
                 VALUES (:id, :t, :n, :c, :u, :st, 'UNPAID', :pm, :sm, :cc, :cur, :sub, :disc, :ship, :total, :cn, :cp, CAST(:addr AS jsonb), :notes, :key, :exp,
-                    :gov, :area, :lm, :ph2, :codfee, :emin, :emax, :src, :ch, :rs, :rl, :rr, :nc)
+                    :gov, :area, :lm, :ph2, :codfee, :emin, :emax, :src, :ch, :rs, :rl, :rr, :nc, CAST(:ao AS jsonb))
                 """).param("id", orderId).param("t", tenantId).param("n", number).param("c", customerId).param("u", userId)
                 .param("st", card ? "PENDING" : "REQUESTED").param("pm", r.paymentMethod()).param("sm", r.shippingMethodId()).param("cc", q.couponCode())
                 .param("cur", q.currency()).param("sub", q.subtotal()).param("disc", q.discount()).param("ship", q.shipping()).param("total", q.total())
@@ -129,16 +132,19 @@ public class CheckoutService {
                 .param("exp", card ? java.sql.Timestamp.from(Instant.now().plus(30, ChronoUnit.MINUTES)) : null)
                 .param("gov", nz(r.address().governorateCode()).toUpperCase()).param("area", nz(r.address().area())).param("lm", nz(r.address().landmark())).param("ph2", nz(r.address().phone2()))
                 .param("codfee", q.codFee()).param("emin", q.etaMin()).param("emax", q.etaMax()).param("src", source == null ? "WEB" : source).param("ch", "POS".equals(source) ? "POS" : "OPEN".equals(source) ? "OTHER" : "WEBSITE")
-                .param("rs", risk.score()).param("rl", risk.level()).param("rr", String.join(",", risk.reasons())).param("nc", risk.score() > 0 && risk.level().length() > 0 && codRisk.mustHold(tenantId, risk.level())).update();
+                .param("rs", risk.score()).param("rl", risk.level()).param("rr", String.join(",", risk.reasons())).param("nc", risk.score() > 0 && risk.level().length() > 0 && codRisk.mustHold(tenantId, risk.level())).param("ao", offers.appliedJson(q.applied())).update();
+        offers.recordUse(tenantId, q.applied());
 
-        for (QuoteLine l : q.lines())
+        for (int li = 0; li < q.lines().size(); li++) {
+            QuoteLine l = q.lines().get(li);
             jdbc.sql("""
                     INSERT INTO commerce.order_items (order_id, tenant_id, product_id, variant_id, branch_id, sku_snapshot, product_name_snapshot, variant_name_snapshot,
-                        unit_price_minor, quantity, line_total_minor, note)
-                    VALUES (:o, :t, :p, :v, :b, :sku, :pn, :vn, :up, :q, :lt, :note)
-                    """).param("o", orderId).param("t", tenantId).param("p", l.productId()).param("v", l.variantId()).param("b", branchByVariant.get(l.variantId()))
+                        unit_price_minor, quantity, line_total_minor, note, discount_minor)
+                    VALUES (:o, :t, :p, :v, :b, :sku, :pn, :vn, :up, :q, :lt, :note, :ld)
+                    """).param("ld", li < q.lineDiscounts().length ? q.lineDiscounts()[li] : 0).param("o", orderId).param("t", tenantId).param("p", l.productId()).param("v", l.variantId()).param("b", branchByVariant.get(l.variantId()))
                     .param("sku", l.sku()).param("pn", l.productName()).param("vn", l.variantName()).param("up", l.unitPrice()).param("q", l.quantity())
                     .param("lt", l.unitPrice() * l.quantity()).param("note", l.note()).update();
+        }
 
         if (q.couponId() != null) {
             jdbc.sql("UPDATE commerce.coupons SET redemptions = redemptions + 1 WHERE id = :c").param("c", q.couponId()).update();
@@ -174,7 +180,9 @@ public class CheckoutService {
 
     record QuoteLine(UUID productId, UUID variantId, String sku, String productName, String variantName, long unitPrice, int quantity, String note) {}
 
-    record Quote(List<QuoteLine> lines, String currency, long subtotal, long discount, long shipping, long total, UUID couponId, String couponCode, long codFee, Integer etaMin, Integer etaMax) {}
+    /** lineDiscounts: what offers took off each line (same order as lines); applied: the offers used, for the order record. */
+    record Quote(List<QuoteLine> lines, String currency, long subtotal, long discount, long shipping, long total, UUID couponId, String couponCode, long codFee, Integer etaMin, Integer etaMax,
+                 long[] lineDiscounts, List<Map<String, Object>> applied) {}
 
     /** Computes the full price breakdown. With lock=true it also takes the coupon row lock and enforces usage limits. */
     Quote quote(UUID tenantId, UUID customerId, CheckoutReq r, boolean lock) {
@@ -219,6 +227,19 @@ public class CheckoutService {
             subtotal += price * i.quantity();
         }
 
+        // automatic offers (sales, buy X get Y, bundles, ...) on the live prices; a gift is a free line while it is in stock
+        var priced = offers.price(tenantId, customerId, lines.stream().map(l -> new OfferService.Line(l.productId(), l.variantId(), l.unitPrice(), l.quantity())).toList(),
+                r.address() == null ? null : r.address().governorateCode());
+        long[] lineDiscounts = java.util.Arrays.copyOf(priced.lineDiscounts(), lines.size() + priced.gifts().size());
+        for (var g : priced.gifts()) {
+            var gv = jdbc.sql("SELECT v.product_id, v.sku, v.combo_key, p.name FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE v.id = :v AND v.tenant_id = :t")
+                    .param("v", g.variantId()).param("t", tenantId).query().listOfRows().stream().findFirst().orElse(null);
+            if (gv == null) continue;
+            String combo = (String) gv.get("combo_key");
+            lines.add(new QuoteLine((UUID) gv.get("product_id"), g.variantId(), (String) gv.get("sku"), (String) gv.get("name"), combo.isEmpty() ? null : combo.replace("|", ", ").replace("=", ": "), 0, g.quantity(), "🎁"));
+        }
+        long offerDiscount = Math.min(priced.total(), subtotal);
+
         long shipping = 0, codFee = 0;
         Integer etaMin = null, etaMax = null;
         if (r.shippingMethodId() != null) {
@@ -245,7 +266,8 @@ public class CheckoutService {
             throw BusinessException.badRequest("SHIPPING_UNAVAILABLE", "Choose a shipping method");
         }
 
-        long discount = 0;
+        if (priced.freeShipping()) shipping = 0;
+        long discount = offerDiscount;
         UUID couponId = null;
         String couponCode = null;
         if (r.couponCode() != null && !r.couponCode().isBlank()) {
@@ -257,7 +279,7 @@ public class CheckoutService {
             boolean ok = (Boolean) c.get("is_active")
                     && (c.get("starts_at") == null || !((java.sql.Timestamp) c.get("starts_at")).toInstant().isAfter(now))
                     && (c.get("ends_at") == null || ((java.sql.Timestamp) c.get("ends_at")).toInstant().isAfter(now))
-                    && subtotal >= ((Number) c.get("min_order_minor")).longValue()
+                    && subtotal - offerDiscount >= ((Number) c.get("min_order_minor")).longValue()
                     && (c.get("max_redemptions") == null || ((Number) c.get("redemptions")).intValue() < ((Number) c.get("max_redemptions")).intValue());
             if (ok && c.get("per_customer_limit") != null && customerId != null) {
                 long used = jdbc.sql("SELECT count(*) FROM commerce.coupon_redemptions WHERE coupon_id = :c AND user_id = :u").param("c", c.get("id")).param("u", customerId).query(Long.class).single();
@@ -265,7 +287,8 @@ public class CheckoutService {
             }
             if (!ok) throw BusinessException.badRequest("COUPON_INVALID", "This coupon cannot be used for this order");
             long value = ((Number) c.get("value")).longValue();
-            discount = "PERCENT".equals(c.get("discount_type")) ? subtotal * Math.min(value, 100) / 100 : Math.min(value, subtotal);
+            long base = subtotal - offerDiscount;
+            discount = offerDiscount + ("PERCENT".equals(c.get("discount_type")) ? base * Math.min(value, 100) / 100 : Math.min(value, base));
             couponId = (UUID) c.get("id");
             couponCode = (String) c.get("code");
         }
@@ -275,7 +298,7 @@ public class CheckoutService {
         if (minOrder > 0 && subtotal - discount < minOrder) throw BusinessException.badRequest("MIN_ORDER_NOT_REACHED", "The minimum order value is " + (minOrder / 100.0));
         long total = subtotal - discount + shipping + codFee;
         if (total < 0) total = 0;   // never negative (spec 82.5)
-        return new Quote(lines, currency, subtotal, discount, shipping, total, couponId, couponCode, codFee, etaMin, etaMax);
+        return new Quote(lines, currency, subtotal, discount, shipping, total, couponId, couponCode, codFee, etaMin, etaMax, lineDiscounts, priced.applied());
     }
 
     public Map<String, Object> quoteView(UUID tenantId, UUID userId, CheckoutReq r) {
@@ -284,12 +307,24 @@ public class CheckoutService {
         out.put("currency", q.currency());
         out.put("subtotalMinor", q.subtotal());
         out.put("discountMinor", q.discount());
+        out.put("offers", q.applied());
+        out.put("freeShipping", q.applied().stream().anyMatch(a -> "FREE_SHIPPING".equals(a.get("type"))));
         out.put("shippingMinor", q.shipping());
         out.put("codFeeMinor", q.codFee());
         out.put("etaMinDays", q.etaMin());
         out.put("etaMaxDays", q.etaMax());
         out.put("totalMinor", q.total());
-        out.put("lines", q.lines().stream().map(l -> { Map<String, Object> m = new LinkedHashMap<>(Map.of("variantId", l.variantId(), "productName", l.productName(), "unitPriceMinor", l.unitPrice(), "quantity", l.quantity())); if (l.note() != null) m.put("note", l.note()); return (Map<String, Object>) m; }).toList());
+        List<Map<String, Object>> outLines = new ArrayList<>();
+        for (int i = 0; i < q.lines().size(); i++) {
+            QuoteLine l = q.lines().get(i);
+            Map<String, Object> m = new LinkedHashMap<>(Map.of("variantId", l.variantId(), "productName", l.productName(), "unitPriceMinor", l.unitPrice(), "quantity", l.quantity()));
+            if (l.note() != null) m.put("note", l.note());
+            long d = i < q.lineDiscounts().length ? q.lineDiscounts()[i] : 0;
+            if (d > 0) m.put("discountMinor", d);
+            if (l.unitPrice() == 0 && "🎁".equals(l.note())) m.put("gift", true);
+            outLines.add(m);
+        }
+        out.put("lines", outLines);
         return out;
     }
 

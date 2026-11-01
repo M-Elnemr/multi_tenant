@@ -20,7 +20,7 @@ public class GlobalExceptionHandler {
     @SuppressWarnings("unchecked")
     @ExceptionHandler(BusinessException.class)
     ResponseEntity<Map<String, Object>> business(BusinessException e) {
-        var r = body(e.getStatus(), e.getCode(), e.getMessage(), null);
+        var r = body(e.getStatus(), e.getCode(), e.getMessage(), e.getFields().isEmpty() ? null : e.getFields());
         if (!e.getParams().isEmpty()) ((Map<String, Object>) r.getBody()).put("params", e.getParams());
         return r;
     }

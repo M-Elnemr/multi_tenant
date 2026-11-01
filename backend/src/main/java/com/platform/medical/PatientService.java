@@ -199,7 +199,11 @@ public class PatientService {
     // ---- reads / updates -----------------------------------------------------------------------------------------------
 
     /** Clinic patient list: parents (and independent patients) paged, each with its dependents nested. A child is found by its own name/code, or through its parent's name/phone. */
-    public Map<String, Object> search(UUID tenantId, String q, Page page) {
+    public Map<String, Object> search(UUID tenantId, String q, Page page) { return search(tenantId, q, page, null, null); }
+
+    /** from/to: patients registered in that range. */
+    public Map<String, Object> search(UUID tenantId, String q, Page page, java.time.LocalDate from, java.time.LocalDate to) {
+        com.platform.shared.DateRange.check(from, to);
         String like = q == null || q.isBlank() ? null : "%" + q.trim() + "%";
         String code = q == null ? null : q.trim().toUpperCase();
         String ph = q == null ? "" : "%" + q.trim().replaceAll("[\\s\\-]", "").replaceFirst("^0", "") + "%";
@@ -207,11 +211,11 @@ public class PatientService {
         Integer pid = PatientIds.parse(q);
         String roots = "r.tenant_id = :t AND r.status = 'ACTIVE' AND r.guardian_patient_id IS NULL AND (" + match.formatted("r")
                 + " OR (CAST(:pid AS int) IS NOT NULL AND r.user_id IN (SELECT a.id FROM medical.patient_accounts a WHERE a.public_id = CAST(:pid AS int)))"
-                + " OR EXISTS (SELECT 1 FROM medical.patients c WHERE c.guardian_patient_id = r.id AND c.status = 'ACTIVE' AND " + match.formatted("c") + "))";
-        long total = jdbc.sql("SELECT count(*) FROM medical.patients r WHERE " + roots).param("t", tenantId).param("like", like).param("code", code).param("ph", ph).param("pid", pid).query(Long.class).single();
+                + " OR EXISTS (SELECT 1 FROM medical.patients c WHERE c.guardian_patient_id = r.id AND c.status = 'ACTIVE' AND " + match.formatted("c") + ")) AND " + com.platform.shared.DateRange.sql("r.created_at", "t");
+        long total = jdbc.sql("SELECT count(*) FROM medical.patients r WHERE " + roots).param("t", tenantId).param("like", like).param("code", code).param("ph", ph).param("pid", pid).param("from", from).param("to", to).query(Long.class).single();
         var rows = Rows.camel(jdbc.sql("SELECT r.id, r.patient_code, r.first_name, r.last_name, r.date_of_birth, r.sex, r.phone, (r.user_id IS NOT NULL) AS has_portal, (SELECT a.public_id FROM medical.patient_accounts a WHERE a.id = r.user_id) AS public_id, r.created_at FROM medical.patients r WHERE " + roots
                 + " ORDER BY r.first_name, r.last_name LIMIT :lim OFFSET :off")
-                .param("t", tenantId).param("like", like).param("code", code).param("ph", ph).param("pid", pid).param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows());
+                .param("t", tenantId).param("like", like).param("code", code).param("ph", ph).param("pid", pid).param("from", from).param("to", to).param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows());
         ZoneId tz = zone(tenantId);
         List<UUID> ids = rows.stream().map(m -> (UUID) m.get("id")).toList();
         Map<Object, List<Map<String, Object>>> kids = ids.isEmpty() ? Map.of() : Rows.camel(jdbc.sql("SELECT id, patient_code, first_name, last_name, date_of_birth, sex, guardian_patient_id, FALSE AS has_portal, created_at FROM medical.patients WHERE tenant_id = :t AND status = 'ACTIVE' AND guardian_patient_id IN (:ids) ORDER BY first_name, last_name")

@@ -18,7 +18,7 @@ import { PhoneInput } from "@/components/inputs";
 type Method = { id: string; type: string; name: string; feeMinor: number; freeAboveMinor?: number };
 type Zone = { id: string; name: string; governorateCodes: string[]; feeMinor: number; freeAboveMinor?: number; codFeeMinor: number; etaMinDays: number; etaMaxDays: number };
 type Profile = { profile: { isOpen?: boolean; closedMessage?: string; minOrderMinor?: number }; paymentMethods: { method: string }[]; shippingMethods: Method[]; shippingZones: Zone[] };
-type Quote = { subtotalMinor: number; discountMinor: number; shippingMinor: number; codFeeMinor: number; totalMinor: number; currency: string; etaMinDays?: number | null; etaMaxDays?: number | null };
+type Quote = { offers?: { offerId: string; name: string; type: string; amountMinor: number }[]; lines?: { variantId: string; productName: string; quantity: number; gift?: boolean; discountMinor?: number }[]; subtotalMinor: number; discountMinor: number; shippingMinor: number; codFeeMinor: number; totalMinor: number; currency: string; etaMinDays?: number | null; etaMaxDays?: number | null };
 type Saved = { id: string; recipientName: string; phone: string; addressLine1: string; city: string; state?: string; district?: string; isDefaultShipping: boolean };
 type Placed = { orderId: string; orderNumber: string; totalMinor: number };
 type Addr = { recipientName: string; phone: string; phone2: string; governorateCode: string; city: string; area: string; addressLine1: string; landmark: string };
@@ -178,6 +178,8 @@ export default function Checkout() {
           <dl className="space-y-2 border-t border-[var(--s-line)] pt-4 text-sm">
             <div className="flex justify-between"><dt className="text-[var(--s-mute)]">{t("checkout.subtotal")}</dt><dd className="font-bold">{money(quote?.subtotalMinor ?? total, currency, locale)}</dd></div>
             {quote && quote.discountMinor > 0 && <div className="flex justify-between text-emerald-700"><dt>{t("checkout.discount")}</dt><dd className="font-bold">−{money(quote.discountMinor, currency, locale)}</dd></div>}
+            {quote?.offers?.filter((o) => o.amountMinor > 0 || o.type === "FREE_SHIPPING").map((o) => <div key={o.offerId} className="flex justify-between text-xs text-emerald-700"><dt>🎉 {o.name}</dt><dd>{o.amountMinor > 0 ? `−${money(o.amountMinor, currency, locale)}` : t("checkout.free")}</dd></div>)}
+            {quote?.lines?.filter((l) => l.gift).map((l) => <div key={"g" + l.variantId} className="flex justify-between rounded-xl bg-pink-50 px-3 py-2 text-xs font-bold text-pink-700"><dt>🎁 {l.productName} × {l.quantity}</dt><dd>{t("shop.giftFree")}</dd></div>)}
             <div className="flex justify-between"><dt className="text-[var(--s-mute)]">{t("checkout.shippingFee")}</dt><dd className="font-bold">{quote ? (quote.shippingMinor === 0 ? t("checkout.free") : money(quote.shippingMinor, currency, locale)) : "—"}</dd></div>
             {quote && quote.codFeeMinor > 0 && <div className="flex justify-between"><dt className="text-[var(--s-mute)]">{t("checkout.codFee")}</dt><dd className="font-bold">{money(quote.codFeeMinor, currency, locale)}</dd></div>}
             <div className="flex justify-between border-t border-[var(--s-line)] pt-3 text-lg font-extrabold"><dt>{t("checkout.total")}</dt><dd style={{ color: "var(--brand)" }}>{money(quote?.totalMinor ?? total, currency, locale)}</dd></div>

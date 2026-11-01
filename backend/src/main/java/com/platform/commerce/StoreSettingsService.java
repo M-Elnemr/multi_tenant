@@ -358,12 +358,16 @@ public class StoreSettingsService {
 
     // ---- reviews / customers -----------------------------------------------------------------------------------------
 
-    public Map<String, Object> reviewsForModeration(UUID tenantId, Page page, String status) {
-        long total = jdbc.sql("SELECT count(*) FROM commerce.reviews WHERE tenant_id = :t AND (CAST(:s AS varchar) IS NULL OR status = CAST(:s AS varchar))").param("t", tenantId).param("s", status).query(Long.class).single();
+    public Map<String, Object> reviewsForModeration(UUID tenantId, Page page, String status) { return reviewsForModeration(tenantId, page, status, null, null); }
+
+    public Map<String, Object> reviewsForModeration(UUID tenantId, Page page, String status, java.time.LocalDate from, java.time.LocalDate to) {
+        com.platform.shared.DateRange.check(from, to);
+        String dr = com.platform.shared.DateRange.sql("r.created_at", "t");
+        long total = jdbc.sql("SELECT count(*) FROM commerce.reviews r WHERE r.tenant_id = :t AND (CAST(:s AS varchar) IS NULL OR r.status = CAST(:s AS varchar)) AND " + dr).param("t", tenantId).param("s", status).param("from", from).param("to", to).query(Long.class).single();
         var rows = jdbc.sql("""
                 SELECT r.id, r.rating, r.review_text, r.status, r.created_at, p.name AS product_name FROM commerce.reviews r JOIN commerce.products p ON p.id = r.product_id
-                WHERE r.tenant_id = :t AND (CAST(:s AS varchar) IS NULL OR r.status = CAST(:s AS varchar)) ORDER BY r.created_at DESC LIMIT :lim OFFSET :off
-                """).param("t", tenantId).param("s", status).param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows();
+                WHERE r.tenant_id = :t AND (CAST(:s AS varchar) IS NULL OR r.status = CAST(:s AS varchar)) AND """ + dr + " ORDER BY r.created_at DESC LIMIT :lim OFFSET :off"
+                ).param("t", tenantId).param("s", status).param("from", from).param("to", to).param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows();
         return page.wrap(Rows.camel(rows), total);
     }
 
@@ -376,10 +380,14 @@ public class StoreSettingsService {
     }
 
     /** The store's clients (guests and signed-in Google clients), read-only: a store cannot create or edit them. */
-    public Map<String, Object> customers(UUID tenantId, Page page, String q) {
+    public Map<String, Object> customers(UUID tenantId, Page page, String q) { return customers(tenantId, page, q, null, null); }
+
+    /** from/to: customers who joined in that range. */
+    public Map<String, Object> customers(UUID tenantId, Page page, String q, java.time.LocalDate from, java.time.LocalDate to) {
+        com.platform.shared.DateRange.check(from, to);
         String like = q == null || q.isBlank() ? null : "%" + q.trim() + "%";
-        String where = "c.tenant_id = :t AND (CAST(:q AS varchar) IS NULL OR c.name ILIKE CAST(:q AS varchar) OR c.phone LIKE CAST(:q AS varchar) OR c.customer_number ILIKE CAST(:q AS varchar))";
-        long total = jdbc.sql("SELECT count(*) FROM commerce.customers c WHERE " + where).param("t", tenantId).param("q", like).query(Long.class).single();
+        String where = "c.tenant_id = :t AND (CAST(:q AS varchar) IS NULL OR c.name ILIKE CAST(:q AS varchar) OR c.phone LIKE CAST(:q AS varchar) OR c.customer_number ILIKE CAST(:q AS varchar)) AND " + com.platform.shared.DateRange.sql("c.created_at", "t");
+        long total = jdbc.sql("SELECT count(*) FROM commerce.customers c WHERE " + where).param("t", tenantId).param("q", like).param("from", from).param("to", to).query(Long.class).single();
         var rows = jdbc.sql("""
                 SELECT c.id, c.customer_number, c.name, c.phone, c.email, c.gender, c.gender_source, c.address_json::text AS address, (c.user_id IS NOT NULL) AS has_account, c.created_at,
                   (SELECT count(*) FROM commerce.orders o WHERE o.customer_id = c.id) AS orders_count,
@@ -387,7 +395,7 @@ public class StoreSettingsService {
                   (SELECT max(o.created_at) FROM commerce.orders o WHERE o.customer_id = c.id) AS last_order_at
                 FROM commerce.customers c WHERE\s""" + where + """
                  ORDER BY c.created_at DESC LIMIT :lim OFFSET :off
-                """).param("t", tenantId).param("q", like).param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows();
+                """).param("t", tenantId).param("q", like).param("from", from).param("to", to).param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows();
         var data = Rows.camel(rows).stream().map(m -> { m.put("address", Rows.json(m.get("address"))); return m; }).toList();
         return page.wrap(data, total);
     }

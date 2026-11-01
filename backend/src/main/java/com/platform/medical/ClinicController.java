@@ -139,8 +139,9 @@ public class ClinicController {
 
     @GetMapping("/patients")
     @PreAuthorize("hasAuthority('patient.read')")
-    public Map<String, Object> patients(@RequestParam(required = false) String q, @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize) {
-        return patients.search(ClinicContext.tenantId(), q, Page.of(page, pageSize));
+    public Map<String, Object> patients(@RequestParam(required = false) String q, @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize,
+                                        @RequestParam(required = false) java.time.LocalDate from, @RequestParam(required = false) java.time.LocalDate to) {
+        return patients.search(ClinicContext.tenantId(), q, Page.of(page, pageSize), from, to);
     }
 
     @PostMapping("/patients")

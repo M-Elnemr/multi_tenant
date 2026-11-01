@@ -31,15 +31,18 @@ public class ChatInboxService {
     }
 
     /** The latest chats (50), those needing the team first when {@code needsYou}; each with who, where, the last message and its state. */
-    public List<Map<String, Object>> list(UUID tenantId, boolean needsYou) {
+    public List<Map<String, Object>> list(UUID tenantId, boolean needsYou) { return list(tenantId, needsYou, null, null); }
+
+    /** from/to: conversations active (last message) in that range. */
+    public List<Map<String, Object>> list(UUID tenantId, boolean needsYou, java.time.LocalDate from, java.time.LocalDate to) {
+        com.platform.shared.DateRange.check(from, to);
         var rows = jdbc.sql("""
                 SELECT c.id, c.channel, c.external_id, c.client_id, c.display_name, c.updated_at, c.needs_human, c.needs_human_reason, c.needs_human_at, c.ai_paused_until, c.last_order,
                        (SELECT m.content FROM chat.messages m WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1) AS last_message,
                        (SELECT m.role FROM chat.messages m WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1) AS last_role
                 FROM chat.conversations c
                 WHERE c.tenant_id = :t AND c.channel <> 'TEST' AND (NOT :n OR c.needs_human) AND EXISTS (SELECT 1 FROM chat.messages m WHERE m.conversation_id = c.id)
-                ORDER BY c.needs_human DESC, c.updated_at DESC LIMIT 50
-                """).param("t", tenantId).param("n", needsYou).query().listOfRows();
+                AND """ + com.platform.shared.DateRange.sql("c.updated_at", "t") + " ORDER BY c.needs_human DESC, c.updated_at DESC LIMIT 50").param("t", tenantId).param("n", needsYou).param("from", from).param("to", to).query().listOfRows();
         List<Map<String, Object>> out = new ArrayList<>();
         for (var r : rows) out.add(view(tenantId, r));
         return out;

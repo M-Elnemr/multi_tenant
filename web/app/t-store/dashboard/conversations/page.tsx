@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useRef, useState } from "react";
+import { DateRangePicker, rangeQuery, type DateRange } from "@/components/date-range";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/client";
 import { useAction, useApi, useMe } from "@/components/hooks";
@@ -29,7 +30,9 @@ function Inbox() {
   const params = useSearchParams();
   const [tab, setTab] = useState<Tab>(params.get("id") ? "ALL" : "NEEDS");
   const [picked, setPicked] = useState<string | null>(params.get("id"));
-  const list = useApi<Chat[]>(`store/chat/conversations?needsYou=${tab === "NEEDS"}`);
+  const [range, setRange] = useState<DateRange>({});
+  const rq = (b: string) => { const qs = rangeQuery(new URLSearchParams(), range).toString(); return qs ? `${b}${b.includes("?") ? "&" : "?"}${qs}` : b; };
+  const list = useApi<Chat[]>(rq(`store/chat/conversations?needsYou=${tab === "NEEDS"}`));
   const count = useApi<{ count: number }>("store/chat/conversations/needs-you-count");
   // new customer messages arrive while the page is open
   useEffect(() => {
@@ -40,7 +43,7 @@ function Inbox() {
   const current = picked ?? items[0]?.id ?? null;
   return (
     <>
-      <PageHeader title={t("inbox.title")} subtitle={t("inbox.hint")} />
+      <PageHeader title={t("inbox.title")} subtitle={t("inbox.hint")} actions={<DateRangePicker value={range} onChange={setRange} />} />
       <div className="mb-4"><Tabs tabs={[{ key: "NEEDS" as Tab, label: t("inbox.tab.NEEDS"), count: count.data?.count }, { key: "ALL" as Tab, label: t("inbox.tab.ALL") }]} value={tab} onChange={(k) => { setTab(k); setPicked(null); }} /></div>
       <ErrorText error={list.error} />
       {list.loading && !list.data ? <Loading /> : items.length === 0 ? <Empty>{tab === "NEEDS" ? t("inbox.noneNeeds") : t("inbox.none")}</Empty> : (

@@ -6,9 +6,9 @@ import { Icon } from "./icons";
 export const BUSINESS_APP_URL = "https://play.google.com/store/apps/details?id=com.elmanassa.business";
 
 /** Why to use the mobile app: shown to shop and clinic owners on the pricing, sign-up and pay pages. */
-export function AppBenefits({ kind, compact }: { kind: "STORE" | "CLINIC"; compact?: boolean }) {
+export function AppBenefits({ kind, compact }: { kind: "STORE" | "CLINIC" | "LAWYER"; compact?: boolean }) {
   const t = useT();
-  const p = kind === "STORE" ? "store" : "clinic";
+  const p = kind === "STORE" ? "store" : kind === "LAWYER" ? "lawyer" : "clinic";
   return (
     <div className="rounded-2xl border border-brand/20 bg-brand-soft/60 p-5">
       <div className="flex items-start gap-3">

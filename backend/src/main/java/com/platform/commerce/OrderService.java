@@ -219,19 +219,63 @@ public class OrderService {
 
     /** unconfirmed=true: new COD orders nobody has called yet. q matches order number, name or phone. */
     public Map<String, Object> list(UUID tenantId, Page page, String status, UUID userId, Boolean unconfirmed, String governorate, String q, String channel) {
-        String like = q == null || q.isBlank() ? null : "%" + q.trim() + "%";
-        String where = "tenant_id = :t AND (CAST(:s AS varchar) IS NULL OR status = CAST(:s AS varchar)) AND (CAST(:u AS uuid) IS NULL OR user_id = CAST(:u AS uuid))"
-                + " AND (NOT :unc OR (status = 'REQUESTED' AND confirmed_at IS NULL)) AND (CAST(:g AS varchar) IS NULL OR governorate_code = CAST(:g AS varchar))"
-                + " AND (CAST(:q AS varchar) IS NULL OR order_number ILIKE CAST(:q AS varchar) OR customer_name_snapshot ILIKE CAST(:q AS varchar) OR customer_phone_snapshot LIKE CAST(:q AS varchar))"
-                + " AND (CAST(:ch AS varchar) IS NULL OR channel = CAST(:ch AS varchar))";
-        boolean unc = Boolean.TRUE.equals(unconfirmed);
-        String g = governorate == null || governorate.isBlank() ? null : governorate.toUpperCase();
-        long total = jdbc.sql("SELECT count(*) FROM commerce.orders WHERE " + where).param("t", tenantId).param("s", status).param("u", userId).param("unc", unc).param("g", g).param("q", like).param("ch", channel == null || channel.isBlank() ? null : channel.toUpperCase()).query(Long.class).single();
-        var rows = jdbc.sql("SELECT id, order_number, source, channel, whatsapp_confirmed_at, status, payment_status, fulfillment_status, payment_method, currency, total_minor, customer_name_snapshot, customer_phone_snapshot, governorate_code, "
-                        + "confirmed_at, courier_name, tracking_number, created_at, risk_level, needs_confirmation FROM commerce.orders WHERE " + where + " ORDER BY created_at DESC LIMIT :lim OFFSET :off")
-                .param("t", tenantId).param("s", status).param("u", userId).param("unc", unc).param("g", g).param("q", like).param("ch", channel == null || channel.isBlank() ? null : channel.toUpperCase()).param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows();
-        return page.wrap(Rows.camel(rows), total);
+        return list(tenantId, page, new Filter(status, userId, unconfirmed, governorate, q, channel, null, null, null, null, null, null, null, null, null, null, null));
     }
+
+    /**
+     * Everything the orders screen can filter by. statuses: several at once (comma separated); paymentMethod/paymentStatus; total range in minor units;
+     * discount: "COUPON" (a coupon was used), "OFFER" (an automatic offer applied), "ANY", "NONE"; risk: LOW/MEDIUM/HIGH; branchId: an item shipped from that branch;
+     * sort: NEWEST (default), OLDEST, TOTAL_DESC, TOTAL_ASC.
+     */
+    public record Filter(String status, UUID userId, Boolean unconfirmed, String governorate, String q, String channel,
+                         java.time.LocalDate from, java.time.LocalDate to, String paymentMethod, String paymentStatus, Long minTotal, Long maxTotal,
+                         String discount, String risk, UUID branchId, String source, String sort) {}
+
+    public Map<String, Object> list(UUID tenantId, Page page, Filter f) {
+        com.platform.shared.DateRange.check(f.from(), f.to());
+        String like = f.q() == null || f.q().isBlank() ? null : "%" + f.q().trim() + "%";
+        List<String> statuses = f.status() == null || f.status().isBlank() ? List.of() : java.util.Arrays.stream(f.status().split(",")).map(String::trim).filter(x -> !x.isEmpty()).toList();
+        String discount = f.discount() == null ? "" : f.discount().toUpperCase();
+        String where = "o.tenant_id = :t AND (:sn = 0 OR o.status = ANY(string_to_array(:ss, ','))) AND (CAST(:u AS uuid) IS NULL OR o.user_id = CAST(:u AS uuid))"
+                + " AND (NOT :unc OR (o.status = 'REQUESTED' AND o.confirmed_at IS NULL)) AND (CAST(:g AS varchar) IS NULL OR o.governorate_code = CAST(:g AS varchar))"
+                + " AND (CAST(:q AS varchar) IS NULL OR o.order_number ILIKE CAST(:q AS varchar) OR o.customer_name_snapshot ILIKE CAST(:q AS varchar) OR o.customer_phone_snapshot LIKE CAST(:q AS varchar)"
+                + "      OR EXISTS (SELECT 1 FROM commerce.order_items oi WHERE oi.order_id = o.id AND (oi.product_name_snapshot ILIKE CAST(:q AS varchar) OR oi.sku_snapshot ILIKE CAST(:q AS varchar))))"
+                + " AND (CAST(:ch AS varchar) IS NULL OR o.channel = CAST(:ch AS varchar))"
+                + " AND (CAST(:pm AS varchar) IS NULL OR o.payment_method = CAST(:pm AS varchar)) AND (CAST(:ps AS varchar) IS NULL OR o.payment_status = CAST(:ps AS varchar))"
+                + " AND (CAST(:mn AS bigint) IS NULL OR o.total_minor >= CAST(:mn AS bigint)) AND (CAST(:mx AS bigint) IS NULL OR o.total_minor <= CAST(:mx AS bigint))"
+                + " AND (CAST(:rk AS varchar) IS NULL OR o.risk_level = CAST(:rk AS varchar)) AND (CAST(:src AS varchar) IS NULL OR o.source = CAST(:src AS varchar))"
+                + " AND (CAST(:br AS uuid) IS NULL OR EXISTS (SELECT 1 FROM commerce.order_items oi WHERE oi.order_id = o.id AND oi.branch_id = CAST(:br AS uuid)))"
+                + switch (discount) {
+                    case "COUPON" -> " AND o.coupon_code IS NOT NULL";
+                    case "OFFER" -> " AND jsonb_array_length(coalesce(o.applied_offers, '[]'::jsonb)) > 0";
+                    case "ANY" -> " AND o.discount_minor > 0";
+                    case "NONE" -> " AND o.discount_minor = 0";
+                    default -> "";
+                }
+                + " AND " + com.platform.shared.DateRange.sql("o.created_at", "t");
+        String order = switch (f.sort() == null ? "" : f.sort().toUpperCase()) {
+            case "OLDEST" -> "o.created_at ASC";
+            case "TOTAL_DESC" -> "o.total_minor DESC, o.created_at DESC";
+            case "TOTAL_ASC" -> "o.total_minor ASC, o.created_at DESC";
+            default -> "o.created_at DESC";
+        };
+        java.util.function.UnaryOperator<org.springframework.jdbc.core.simple.JdbcClient.StatementSpec> bind = st -> st
+                .param("t", tenantId).param("sn", statuses.size()).param("ss", String.join(",", statuses)).param("u", f.userId()).param("unc", Boolean.TRUE.equals(f.unconfirmed()))
+                .param("g", blankUpper(f.governorate())).param("q", like).param("ch", blankUpper(f.channel())).param("pm", blankUpper(f.paymentMethod())).param("ps", blankUpper(f.paymentStatus()))
+                .param("mn", f.minTotal()).param("mx", f.maxTotal()).param("rk", blankUpper(f.risk())).param("src", blankUpper(f.source())).param("br", f.branchId())
+                .param("from", f.from()).param("to", f.to());
+        var sums = bind.apply(jdbc.sql("SELECT count(*) AS n, coalesce(sum(o.total_minor) FILTER (WHERE o.status NOT IN ('CANCELLED','RETURNED','REFUNDED')), 0) AS revenue FROM commerce.orders o WHERE " + where)).query().singleRow();
+        long total = ((Number) sums.get("n")).longValue();
+        var rows = bind.apply(jdbc.sql("SELECT o.id, o.order_number, o.source, o.channel, o.whatsapp_confirmed_at, o.status, o.payment_status, o.fulfillment_status, o.payment_method, o.currency, o.total_minor, o.discount_minor, o.coupon_code, "
+                        + "o.customer_name_snapshot, o.customer_phone_snapshot, o.governorate_code, o.confirmed_at, o.courier_name, o.tracking_number, o.created_at, o.risk_level, o.needs_confirmation, "
+                        + "(SELECT coalesce(sum(oi.quantity), 0) FROM commerce.order_items oi WHERE oi.order_id = o.id) AS item_count FROM commerce.orders o WHERE " + where + " ORDER BY " + order + " LIMIT :lim OFFSET :off"))
+                .param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows();
+        Map<String, Object> out = new java.util.LinkedHashMap<>(page.wrap(Rows.camel(rows), total));
+        out.put("revenueMinor", sums.get("revenue"));
+        return out;
+    }
+
+    private static String blankUpper(String s) { return s == null || s.isBlank() ? null : s.trim().toUpperCase(); }
 
     /** Orders waiting for the owner to call the customer. */
     public long unconfirmedCount(UUID tenantId) {

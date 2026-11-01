@@ -31,13 +31,14 @@ export function Spinner({ className }: { className?: string }) {
   return <span className={cx("inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent", className)} aria-hidden />;
 }
 
-export function Field({ label, hint, error, children }: { label: string; hint?: string; error?: string; children: ReactNode }) {
+/** `name` marks the field for scroll-to-error (useFieldErrors); with `error` the box turns red and the message shows under it. */
+export function Field({ label, hint, error, children, name, className }: { label: string; hint?: string; error?: string; children: ReactNode; name?: string; className?: string }) {
   return (
-    <label className="block space-y-1.5">
+    <label className={cx("block space-y-1.5 scroll-mt-24", error && "field-error", className)} data-field={name}>
       <span className="text-sm font-semibold text-slate-700">{label}</span>
       {children}
       {hint && !error && <span className="block text-xs text-slate-500">{hint}</span>}
-      {error && <span className="block animate-fade-in text-xs text-red-600">{error}</span>}
+      {error && <span role="alert" className="flex animate-fade-in items-start gap-1 text-xs font-medium text-red-600"><Icon name="alert" className="mt-px h-3.5 w-3.5 shrink-0" />{error}</span>}
     </label>
   );
 }

@@ -23,7 +23,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class StaffService {
     private static final Map<String, Set<String>> ASSIGNABLE = Map.of(
             "STORE", Set.of("STORE_ADMIN", "STORE_MANAGER", "INVENTORY_MANAGER", "ORDER_MANAGER", "CUSTOMER_SUPPORT", "REPORT_VIEWER"),
-            "CLINIC", Set.of("DOCTOR", "CLINIC_ADMIN", "RECEPTIONIST", "NURSE", "LAB_COORDINATOR", "ACCOUNTANT", "REPORT_VIEWER"));
+            "CLINIC", Set.of("DOCTOR", "CLINIC_ADMIN", "RECEPTIONIST", "NURSE", "LAB_COORDINATOR", "ACCOUNTANT", "REPORT_VIEWER"),
+            "LAWYER", Set.of("ASSOCIATE", "LEGAL_SECRETARY", "ACCOUNTANT", "REPORT_VIEWER"));
 
     public record Invited(UUID userId, UUID membershipId, String activationPin, boolean needsActivation) {}
 

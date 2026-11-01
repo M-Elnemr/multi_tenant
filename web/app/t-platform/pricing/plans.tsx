@@ -10,7 +10,7 @@ import { useI18n } from "@/components/i18n-provider";
 import { Icon } from "@/components/icons";
 import { money } from "@/lib/format";
 
-export type Plan = { code: string; name: string; tenantType: "STORE" | "CLINIC"; priceMinor: number; currency: string; interval?: string; features: Record<string, boolean | number> };
+export type Plan = { code: string; name: string; tenantType: "STORE" | "CLINIC" | "LAWYER"; priceMinor: number; currency: string; interval?: string; features: Record<string, boolean | number> };
 
 export function PricingPlans({ plans }: { plans: Plan[] }) {
   const { t, locale } = useI18n();
@@ -18,12 +18,12 @@ export function PricingPlans({ plans }: { plans: Plan[] }) {
   return (
     <>
       <div className="mt-8 flex justify-center"><CycleToggle value={cycle} onChange={setCycle} /></div>
-      {(["STORE", "CLINIC"] as const).map((type) => {
+      {(["STORE", "CLINIC", "LAWYER"] as const).map((type) => {
         const list = plans.filter((x) => x.tenantType === type && (x.priceMinor === 0 || (x.interval === "YEAR") === (cycle === "year")));
         if (list.length === 0) return null;
         return (
           <section key={type} className="mt-12">
-            <h2 className="mb-5 flex items-center gap-2 text-xl font-bold"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-soft text-brand"><Icon name={type === "STORE" ? "bag" : "stethoscope"} className="h-5 w-5" /></span>{type === "STORE" ? t("type.store") : t("type.clinic")}</h2>
+            <h2 className="mb-5 flex items-center gap-2 text-xl font-bold"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-soft text-brand"><Icon name={type === "STORE" ? "bag" : type === "LAWYER" ? "scale" : "stethoscope"} className="h-5 w-5" /></span>{type === "STORE" ? t("type.store") : type === "LAWYER" ? t("type.lawyer") : t("type.clinic")}</h2>
             <div className={`grid gap-5 ${list.length === 3 ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
               {list.map((p) => {
                 const free = p.priceMinor === 0;

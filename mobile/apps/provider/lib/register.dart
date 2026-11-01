@@ -52,7 +52,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   String get _auto {
     final b = _slugify(_name.text);
-    return b.length >= 3 ? b : '${_type == 'CLINIC' ? 'clinic' : 'shop'}-$_rand';
+    return b.length >= 3 ? b : '${_type == 'CLINIC' ? 'clinic' : _type == 'LAWYER' ? 'law' : 'shop'}-$_rand';
   }
 
   void _pick(String type) {
@@ -169,7 +169,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
     }
     return Scaffold(
-      appBar: AppBar(title: Text(_type == null ? (ar ? 'إنشاء حساب' : 'Create an account') : (_type == 'STORE' ? (ar ? 'متجر جديد' : 'New shop') : (ar ? 'عيادة جديدة' : 'New clinic'))), leading: BackButton(onPressed: () => _type == null ? Navigator.of(context).pop() : setState(() { _type = null; _error = null; }))),
+      appBar: AppBar(title: Text(_type == null ? (ar ? 'إنشاء حساب' : 'Create an account') : (_type == 'STORE' ? (ar ? 'متجر جديد' : 'New shop') : _type == 'LAWYER' ? (ar ? 'مكتب محاماة جديد' : 'New law office') : (ar ? 'عيادة جديدة' : 'New clinic'))), leading: BackButton(onPressed: () => _type == null ? Navigator.of(context).pop() : setState(() { _type = null; _error = null; }))),
       body: _type == null ? _chooser(ar, scheme) : _form(ar, scheme),
     );
   }
@@ -182,6 +182,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         for (final t in [
           ('STORE', Icons.storefront_rounded, ar ? 'متجر إلكتروني' : 'Online shop', ar ? 'بيع منتجاتك، استقبل الطلبات وأدر المخزون.' : 'Sell products, take orders and manage stock.'),
           ('CLINIC', Icons.medical_services_rounded, ar ? 'عيادة' : 'Clinic', ar ? 'حجوزات، ملفات مرضى وطابور الانتظار.' : 'Bookings, patient records and the waiting queue.'),
+          ('LAWYER', Icons.gavel_rounded, ar ? 'محامٍ / مكتب محاماة' : 'Lawyer / law firm', ar ? 'موقعك الخاص، حجز أونلاين، القضايا والموكلون والأتعاب وتذكير بالجلسات.' : 'Your website, online booking, cases, clients, fees and hearing reminders.'),
         ])
           Padding(
             padding: const EdgeInsets.only(bottom: 14),
@@ -213,7 +214,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           _ => const SizedBox.shrink(),
         };
     return ListView(padding: const EdgeInsets.all(20), children: [
-      TextField(controller: _name, autofocus: true, maxLength: 200, textInputAction: TextInputAction.next, onChanged: (_) { setState(() {}); _syncSlug(); }, decoration: InputDecoration(labelText: store ? (ar ? 'اسم المتجر' : 'Shop name') : (ar ? 'اسم العيادة' : 'Clinic name'), counterText: '', prefixIcon: Icon(store ? Icons.storefront_rounded : Icons.local_hospital_rounded))),
+      TextField(controller: _name, autofocus: true, maxLength: 200, textInputAction: TextInputAction.next, onChanged: (_) { setState(() {}); _syncSlug(); }, decoration: InputDecoration(labelText: store ? (ar ? 'اسم المتجر' : 'Shop name') : _type == 'LAWYER' ? (ar ? 'اسمك أو اسم المكتب' : 'Your name or the office name') : (ar ? 'اسم العيادة' : 'Clinic name'), counterText: '', prefixIcon: Icon(store ? Icons.storefront_rounded : _type == 'LAWYER' ? Icons.gavel_rounded : Icons.local_hospital_rounded))),
       const SizedBox(height: 14),
       TextField(controller: _phone, keyboardType: TextInputType.phone, textDirection: TextDirection.ltr, textInputAction: TextInputAction.next, onChanged: (_) => setState(() {}), decoration: InputDecoration(labelText: ar ? 'رقم الموبايل' : 'Mobile number', helperText: ar ? 'رقمك لتسجيل الدخول — بدون رسائل SMS' : 'Your sign-in number. No SMS codes.', errorText: phoneBad ? (ar ? 'رقم غير صحيح' : 'Not a valid mobile number') : null, prefixIcon: const Icon(Icons.phone_rounded))),
       const SizedBox(height: 14),
@@ -231,7 +232,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       Padding(padding: const EdgeInsets.only(top: 4, left: 4, right: 4), child: slugNote()),
       if (_options.isNotEmpty) ...[
         const SizedBox(height: 18),
-        Text('${store ? (ar ? 'ماذا تبيع؟' : 'What do you sell?') : (ar ? 'التخصص' : 'Specialty')} (${ar ? 'اختياري' : 'optional'})', style: const TextStyle(fontWeight: FontWeight.w800)),
+        Text('${store ? (ar ? 'ماذا تبيع؟' : 'What do you sell?') : _type == 'LAWYER' ? (ar ? 'مجالات الممارسة' : 'Practice areas') : (ar ? 'التخصص' : 'Specialty')} (${ar ? 'اختياري' : 'optional'})', style: const TextStyle(fontWeight: FontWeight.w800)),
         const SizedBox(height: 8),
         Wrap(spacing: 8, runSpacing: 4, children: [
           for (final o in _options)

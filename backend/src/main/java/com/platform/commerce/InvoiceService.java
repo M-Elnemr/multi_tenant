@@ -143,10 +143,15 @@ public class InvoiceService {
         return out;
     }
 
-    public Map<String, Object> list(UUID t, Page page) {
-        long total = jdbc.sql("SELECT count(*) FROM commerce.invoices WHERE tenant_id = :t").param("t", t).query(Long.class).single();
-        var rows = jdbc.sql("SELECT i.id, i.number, i.kind, i.issued_at, i.total_minor, i.vat_minor, i.currency, i.buyer_name, o.order_number FROM commerce.invoices i JOIN commerce.orders o ON o.id = i.order_id WHERE i.tenant_id = :t ORDER BY i.issued_at DESC LIMIT :l OFFSET :f")
-                .param("t", t).param("l", page.pageSize()).param("f", page.offset()).query().listOfRows();
+    public Map<String, Object> list(UUID t, Page page) { return list(t, page, null, null, null); }
+
+    public Map<String, Object> list(UUID t, Page page, String q, java.time.LocalDate from, java.time.LocalDate to) {
+        com.platform.shared.DateRange.check(from, to);
+        String like = q == null || q.isBlank() ? null : "%" + q.trim() + "%";
+        String where = " WHERE i.tenant_id = :t AND (CAST(:q AS varchar) IS NULL OR i.number ILIKE CAST(:q AS varchar) OR i.buyer_name ILIKE CAST(:q AS varchar) OR o.order_number ILIKE CAST(:q AS varchar)) AND " + com.platform.shared.DateRange.sql("i.issued_at", "t");
+        long total = jdbc.sql("SELECT count(*) FROM commerce.invoices i JOIN commerce.orders o ON o.id = i.order_id" + where).param("t", t).param("q", like).param("from", from).param("to", to).query(Long.class).single();
+        var rows = jdbc.sql("SELECT i.id, i.number, i.kind, i.issued_at, i.total_minor, i.vat_minor, i.currency, i.buyer_name, o.order_number FROM commerce.invoices i JOIN commerce.orders o ON o.id = i.order_id" + where + " ORDER BY i.issued_at DESC LIMIT :l OFFSET :f")
+                .param("t", t).param("q", like).param("from", from).param("to", to).param("l", page.pageSize()).param("f", page.offset()).query().listOfRows();
         return page.wrap(Rows.camel(rows), total);
     }
 }

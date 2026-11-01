@@ -5,9 +5,10 @@ import { SESSION_COOKIE } from "@/lib/session";
 /**
  * Host-based routing: one deployment serves the platform site, every store and every clinic.
  * The visitor's host decides which internal route group renders (URLs stay clean):
- *   platform host -> /t-platform/*,  store host -> /t-store/*,  clinic host -> /t-clinic/*,  open.<root> -> /t-open/* (the marketplace)
+ *   platform host -> /t-platform/*,  store host -> /t-store/*,  clinic host -> /t-clinic/*,  lawyer host -> /t-lawyer/*,  open.<root> -> /t-open/* (the marketplace)
+ * Every business signs its staff in on its own address: <its domain>/dashboard/login (no trip through the platform site).
  */
-const INTERNAL = /^\/t-(platform|store|clinic|open|unknown)(\/|$)/;
+const INTERNAL = /^\/t-(platform|store|clinic|lawyer|open|unknown)(\/|$)/;
 const PRIVATE_PREFIXES = ["/dashboard", "/account", "/portal", "/admin", "/orders"];   // /checkout is open: guests can order without an account
 
 export async function proxy(request: NextRequest) {
@@ -23,15 +24,17 @@ export async function proxy(request: NextRequest) {
     return NextResponse.rewrite(new URL("/t-unknown?reason=disabled", request.url), { status: 403 });
   }
 
-  if (PRIVATE_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/")) && !request.cookies.has(SESSION_COOKIE)) {
-    const login = new URL("/login", request.url);
+  const staffLogin = info.kind === "TENANT" && (pathname === "/dashboard/login" || pathname === "/admin/login");
+  if (!staffLogin && PRIVATE_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/")) && !request.cookies.has(SESSION_COOKIE)) {
+    // the dashboard has its own sign-in page on the business's address; customers and patients keep theirs
+    const login = new URL(info.kind === "TENANT" && (pathname === "/dashboard" || pathname.startsWith("/dashboard/")) ? "/dashboard/login" : "/login", request.url);
     login.searchParams.set("next", pathname + request.nextUrl.search);
     return NextResponse.redirect(login);
   }
 
-  const prefix = info.kind === "PLATFORM" ? "/t-platform" : info.kind === "OPEN" ? "/t-open" : info.type === "STORE" ? "/t-store" : "/t-clinic";
+  const prefix = info.kind === "PLATFORM" ? "/t-platform" : info.kind === "OPEN" ? "/t-open" : info.type === "STORE" ? "/t-store" : info.type === "LAWYER" ? "/t-lawyer" : "/t-clinic";
   const url = request.nextUrl.clone();
-  url.pathname = pathname === "/" ? prefix : prefix + pathname;
+  url.pathname = staffLogin ? `${prefix}/staff-login` : pathname === "/" ? prefix : prefix + pathname;
   return NextResponse.rewrite(url);
 }
 

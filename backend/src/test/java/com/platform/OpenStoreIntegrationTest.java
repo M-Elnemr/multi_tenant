@@ -55,7 +55,7 @@ class OpenStoreIntegrationTest extends IntegrationTestBase {
         onHost(OPEN, null, "GET", "/api/v1/tenant/resolve", null).andExpect(jsonPath("$.kind").value("OPEN"));
         onHost(OPEN, null, "GET", "/api/v1/shop/products", null).andExpect(status().isNotFound());   // the marketplace has no shop of its own
 
-        String all = ok(onHost(OPEN, null, "GET", "/api/v1/open/products?pageSize=100", null).andExpect(status().isOk()));
+        String all = ok(onHost(OPEN, null, "GET", "/api/v1/open/products?pageSize=100&q=mega", null).andExpect(status().isOk()));
         List<String> slugs = JsonPath.read(all, "$.data[*].slug");
         assertThat(slugs).contains(a.productSlug(), b.productSlug());
         onHost(OPEN, null, "GET", "/api/v1/open/products?shop=" + a.t().slug(), null).andExpect(jsonPath("$.meta.total").value(1)).andExpect(jsonPath("$.data[0].shop.slug").value(a.t().slug()));

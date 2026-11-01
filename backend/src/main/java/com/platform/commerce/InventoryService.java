@@ -55,17 +55,67 @@ public class InventoryService {
                 .param("b", branchId).param("v", variantId).param("t", tenantId).query().singleRow());
     }
 
-    public Map<String, Object> list(UUID tenantId, Page page, boolean lowStockOnly) {
-        long total = jdbc.sql("SELECT count(*) FROM commerce.inventory_items WHERE tenant_id = :t AND (NOT :l OR quantity_on_hand - quantity_reserved <= low_stock_threshold)")
-                .param("t", tenantId).param("l", lowStockOnly).query(Long.class).single();
-        var rows = jdbc.sql("""
-                SELECT i.branch_id, b.name AS branch_name, i.variant_id, v.sku, p.name AS product_name, v.combo_key,
-                       i.quantity_on_hand, i.quantity_reserved, i.quantity_on_hand - i.quantity_reserved AS available, i.low_stock_threshold
-                FROM commerce.inventory_items i JOIN commerce.branches b ON b.id = i.branch_id
-                JOIN commerce.product_variants v ON v.id = i.variant_id JOIN commerce.products p ON p.id = v.product_id
+    /** delta adds/removes; setTo (when given) makes the on-hand stock exactly that number. */
+    public record BulkLine(UUID branchId, UUID variantId, Integer delta, Integer setTo, String type, String reason) {}
+
+    @Transactional
+    public Map<String, Object> bulk(UUID tenantId, UUID actor, java.util.List<BulkLine> lines) {
+        if (lines == null || lines.isEmpty()) throw BusinessException.badRequest("VALIDATION_ERROR", "Nothing to change");
+        if (lines.size() > 500) throw BusinessException.badRequest("VALIDATION_ERROR", "Too many lines");
+        int done = 0;
+        for (int i = 0; i < lines.size(); i++) {
+            BulkLine l = lines.get(i);
+            if (l.branchId() == null || l.variantId() == null) throw BusinessException.badRequest("VALIDATION_ERROR", "Choose a branch").field("lines[" + i + "]");
+            int delta;
+            if (l.setTo() != null) {
+                if (l.setTo() < 0) throw BusinessException.badRequest("VALIDATION_ERROR", "Stock cannot be negative").field("lines[" + i + "].setTo");
+                int onHand = jdbc.sql("SELECT quantity_on_hand FROM commerce.inventory_items WHERE branch_id = :b AND variant_id = :v AND tenant_id = :t")
+                        .param("b", l.branchId()).param("v", l.variantId()).param("t", tenantId).query(Integer.class).optional().orElse(0);
+                delta = l.setTo() - onHand;
+            } else delta = l.delta() == null ? 0 : l.delta();
+            if (delta == 0) continue;
+            String type = l.type() == null || l.type().isBlank() ? (l.setTo() != null ? "ADJUSTMENT" : delta > 0 ? "PURCHASE" : "ADJUSTMENT") : l.type();
+            if (("PURCHASE".equals(type) || "RETURN".equals(type)) && delta < 0) type = "ADJUSTMENT";
+            try { adjust(tenantId, actor, l.branchId(), l.variantId(), delta, type, l.reason()); }
+            catch (BusinessException e) { throw e.field("lines[" + i + "]"); }
+            done++;
+        }
+        return Map.of("changed", done);
+    }
+
+    public Map<String, Object> list(UUID tenantId, Page page, boolean lowStockOnly) { return list(tenantId, page, lowStockOnly, null, null); }
+
+    public Map<String, Object> list(UUID tenantId, Page page, boolean lowStockOnly, String q, UUID branchId) {
+        String like = q == null || q.isBlank() ? null : "%" + q.trim() + "%";
+        String where = """
                 WHERE i.tenant_id = :t AND (NOT :l OR i.quantity_on_hand - i.quantity_reserved <= i.low_stock_threshold)
-                ORDER BY p.name, v.sku LIMIT :lim OFFSET :off
-                """).param("t", tenantId).param("l", lowStockOnly).param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows();
+                AND (CAST(:q AS varchar) IS NULL OR p.name ILIKE CAST(:q AS varchar) OR v.sku ILIKE CAST(:q AS varchar) OR v.barcode ILIKE CAST(:q AS varchar))
+                AND (CAST(:b AS uuid) IS NULL OR i.branch_id = CAST(:b AS uuid)) AND v.status = 'ACTIVE'
+                """;
+        String from = " FROM commerce.inventory_items i JOIN commerce.branches b ON b.id = i.branch_id JOIN commerce.product_variants v ON v.id = i.variant_id JOIN commerce.products p ON p.id = v.product_id ";
+        long total = jdbc.sql("SELECT count(*)" + from + where).param("t", tenantId).param("l", lowStockOnly).param("q", like).param("b", branchId).query(Long.class).single();
+        var rows = jdbc.sql("""
+                SELECT i.branch_id, b.name AS branch_name, i.variant_id, v.sku, p.id AS product_id, p.name AS product_name, v.combo_key,
+                       i.quantity_on_hand, i.quantity_reserved, i.quantity_on_hand - i.quantity_reserved AS available, i.low_stock_threshold
+                """ + from + where + " ORDER BY p.name, v.combo_key, b.name LIMIT :lim OFFSET :off")
+                .param("t", tenantId).param("l", lowStockOnly).param("q", like).param("b", branchId).param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows();
+        return page.wrap(Rows.camel(rows), total);
+    }
+
+    public Map<String, Object> movements(UUID tenantId, Page page, String q, String type, java.time.LocalDate from, java.time.LocalDate to) {
+        String like = q == null || q.isBlank() ? null : "%" + q.trim() + "%";
+        String where = """
+                FROM commerce.inventory_movements m JOIN commerce.product_variants v ON v.id = m.variant_id JOIN commerce.products p ON p.id = v.product_id
+                LEFT JOIN commerce.branches b ON b.id = m.branch_id
+                WHERE m.tenant_id = :t AND m.type NOT IN ('RESERVATION','RELEASE') AND (CAST(:ty AS varchar) IS NULL OR m.type = CAST(:ty AS varchar))
+                AND (CAST(:q AS varchar) IS NULL OR p.name ILIKE CAST(:q AS varchar) OR v.sku ILIKE CAST(:q AS varchar))
+                AND """ + com.platform.shared.DateRange.sql("m.created_at", "t");
+        com.platform.shared.DateRange.check(from, to);
+        String ty = type == null || type.isBlank() ? null : type;
+        long total = jdbc.sql("SELECT count(*) " + where).param("t", tenantId).param("ty", ty).param("q", like).param("from", from).param("to", to).query(Long.class).single();
+        var rows = jdbc.sql("SELECT m.id, m.type, m.quantity_delta, m.reason, m.created_at, b.name AS branch_name, p.name AS product_name, v.sku, v.combo_key " + where
+                        + " ORDER BY m.created_at DESC LIMIT :lim OFFSET :off")
+                .param("t", tenantId).param("ty", ty).param("q", like).param("from", from).param("to", to).param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows();
         return page.wrap(Rows.camel(rows), total);
     }
 

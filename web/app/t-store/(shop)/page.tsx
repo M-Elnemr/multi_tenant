@@ -2,6 +2,7 @@ import Link from "next/link";
 import { BannerCarousel } from "@/components/shop/hero";
 import { HoursList } from "@/components/shop/hours";
 import { ShopProductCard, type ShopProduct } from "@/components/shop/product-card";
+import { OfferStrip, type OfferBanner } from "@/components/shop/offer-strip";
 import { buildTree, type ShopBranch, type ShopCategory, type ShopProfile } from "@/components/shop/types";
 import { backendJson } from "@/lib/backend";
 import { governorateName } from "@/lib/governorates";
@@ -12,7 +13,7 @@ import { STORE_SECTIONS, arrange } from "@/lib/site-layout";
 import { wantsEdit } from "@/lib/edit-mode";
 import { EditBar, EditFrame, EditProvider } from "@/components/site-edit";
 
-type Home = { featured: ShopProduct[]; newest: ShopProduct[]; offers: ShopProduct[]; bestSellers: ShopProduct[]; banners: { id: string; imageFileId: string; title: string; subtitle: string; linkUrl: string }[] };
+type Home = { offerBanners?: OfferBanner[]; featured: ShopProduct[]; newest: ShopProduct[]; offers: ShopProduct[]; bestSellers: ShopProduct[]; banners: { id: string; imageFileId: string; title: string; subtitle: string; linkUrl: string }[] };
 
 function Section({ title, eyebrow, href, more, children }: { title: string; eyebrow?: string; href?: string; more?: string; children: React.ReactNode }) {
   return (
@@ -55,6 +56,7 @@ export default async function StoreHome({ searchParams }: { searchParams?: Promi
   const trustShown = p?.trustTiles?.length ? p.trustTiles.map((x, i) => ({ icon: ["💵", "🚚", "↩️", "💬", "⭐", "🎁"][i] ?? "✨", title: x.title, text: x.text })) : trust;
   const nodes: Record<(typeof STORE_SECTIONS)[number], React.ReactNode> = {
     banners: <>
+      {(home.offerBanners?.length ?? 0) > 0 && <section className="s-container pt-5"><OfferStrip banners={home.offerBanners!} currency={[...home.featured, ...home.newest][0]?.currency ?? "EGP"} /></section>}
       <section className="s-container pt-5 sm:pt-8">
         {slides.length > 0 ? <BannerCarousel slides={slides} cta={t("shop.browse")} /> : (
           <div className="s-hero s-hero-shine relative overflow-hidden rounded-[28px] shadow-[var(--s-shadow-lg)]">

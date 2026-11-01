@@ -46,6 +46,15 @@ public final class ScreenCatalog {
                     new Screen("schedule", List.of("schedule.read"), List.of("schedule.manage")),
                     REPORTS,
                     new Screen("settings", List.of("settings.read"), List.of("settings.manage")),
+                    DOMAINS, BILLING),
+            "LAWYER", List.of(
+                    new Screen("cases", List.of("legal.case.read"), List.of("legal.case.manage"), List.of("legal.client.read")),
+                    new Screen("clients", List.of("legal.client.read"), List.of("legal.client.manage")),
+                    new Screen("bookings", List.of("legal.booking.read"), List.of("legal.booking.manage")),
+                    new Screen("schedule", List.of("legal.schedule.read"), List.of("legal.schedule.manage"), List.of("legal.case.read")),
+                    new Screen("finance", List.of("legal.finance.read"), List.of("legal.finance.manage")),
+                    REPORTS,
+                    new Screen("settings", List.of("settings.read"), List.of("settings.manage")),
                     DOMAINS, BILLING));
 
     private ScreenCatalog() {}

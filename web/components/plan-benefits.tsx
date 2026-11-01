@@ -3,12 +3,12 @@
 import { useT } from "./i18n-provider";
 import { Icon } from "./icons";
 
-const COUNT = { STORE: 10, CLINIC: 9 } as const;
+const COUNT = { STORE: 10, CLINIC: 9, LAWYER: 10 } as const;
 
 /** The real benefits of a plan, in plain words (not feature flags). The last line says whether the plan includes a custom domain. */
-export function PlanBenefits({ type, domain }: { type: "STORE" | "CLINIC"; domain: boolean }) {
+export function PlanBenefits({ type, domain }: { type: "STORE" | "CLINIC" | "LAWYER"; domain: boolean }) {
   const t = useT();
-  const k = type === "STORE" ? "store" : "clinic";
+  const k = type === "STORE" ? "store" : type === "LAWYER" ? "lawyer" : "clinic";
   const rows = [...Array.from({ length: COUNT[type] }, (_, i) => ({ text: t(`benefit.${k}.${i + 1}`), on: true })), { text: t(domain ? "benefit.domain.yes" : "benefit.domain.no"), on: domain }];
   return (
     <ul className="space-y-2 text-sm text-slate-700">

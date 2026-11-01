@@ -178,7 +178,8 @@ public class RetailController {
 
     @GetMapping("/invoices")
     @PreAuthorize(INVOICE)
-    public Map<String, Object> invoiceList(@RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize) { return invoices.list(t(), Page.of(page, pageSize)); }
+    public Map<String, Object> invoiceList(@RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize, @RequestParam(required = false) String q,
+                                           @RequestParam(required = false) java.time.LocalDate from, @RequestParam(required = false) java.time.LocalDate to) { return invoices.list(t(), Page.of(page, pageSize), q, from, to); }
 
     @GetMapping("/invoices/{id}")
     @PreAuthorize(INVOICE)
@@ -200,11 +201,17 @@ public class RetailController {
 
     @GetMapping("/reports/overview")
     @PreAuthorize(REPORT)
-    public Map<String, Object> overview(@RequestParam(required = false, defaultValue = "30") int days) { return reports.overview(t(), days); }
+    public Map<String, Object> overview(@RequestParam(required = false, defaultValue = "30") int days, @RequestParam(required = false) java.time.LocalDate from, @RequestParam(required = false) java.time.LocalDate to) {
+        if (from == null && to == null) return reports.overview(t(), days);
+        return reports.inRange(t(), from, to, d -> reports.overview(t(), d));
+    }
 
     @GetMapping("/reports/margin")
     @PreAuthorize(REPORT)
-    public Map<String, Object> margin(@RequestParam(required = false, defaultValue = "30") int days) { return reports.margin(t(), days); }
+    public Map<String, Object> margin(@RequestParam(required = false, defaultValue = "30") int days, @RequestParam(required = false) java.time.LocalDate from, @RequestParam(required = false) java.time.LocalDate to) {
+        if (from == null && to == null) return reports.margin(t(), days);
+        return reports.inRange(t(), from, to, d -> reports.margin(t(), d));
+    }
 
     @GetMapping("/reports/cohorts")
     @PreAuthorize(REPORT)

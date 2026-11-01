@@ -116,15 +116,17 @@ Future<bool> confirm(BuildContext context, String message) async {
 }
 
 /// A plain labelled text field bound to a controller (for sheets).
-Widget tf(TextEditingController c, String label, {bool ltr = false, bool number = false, int lines = 1, String? hint, ValueChanged<String>? onChanged}) => Padding(
+/// A text box. With [fe] and [field] the server's (or the form's) message for that field shows under it and the screen can scroll to it.
+Widget tf(TextEditingController c, String label, {bool ltr = false, bool number = false, int lines = 1, String? hint, ValueChanged<String>? onChanged, FieldErrors? fe, String? field, String? error}) => Padding(
+      key: fe != null && field != null ? fe.key(field) : null,
       padding: const EdgeInsets.only(bottom: 10),
       child: TextField(
         controller: c,
         maxLines: lines,
-        onChanged: onChanged,
+        onChanged: (v) { if (fe != null && field != null) fe.clear(field); onChanged?.call(v); },
         textDirection: ltr ? TextDirection.ltr : null,
         keyboardType: number ? const TextInputType.numberWithOptions(decimal: true) : (lines > 1 ? TextInputType.multiline : TextInputType.text),
-        decoration: InputDecoration(labelText: label, hintText: hint),
+        decoration: InputDecoration(labelText: label, hintText: hint, errorText: error ?? (fe != null && field != null ? fe.of(field) : null), errorMaxLines: 3),
       ),
     );
 

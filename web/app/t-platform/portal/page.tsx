@@ -7,7 +7,7 @@ import { useT } from "@/components/i18n-provider";
 import { LogoutButton } from "@/components/logout-button";
 import { Badge, Card, Empty, ErrorText, Loading, PageHeader } from "@/components/ui";
 
-type Mine = { id: string; slug: string; name: string; type: "STORE" | "CLINIC"; host?: string; roles?: string };
+type Mine = { id: string; slug: string; name: string; type: "STORE" | "CLINIC" | "LAWYER"; host?: string; roles?: string };
 
 /** One login, every doctor and store you belong to. Each opens on its own address with its own separate data. */
 export default function MyPlaces() {
@@ -22,7 +22,7 @@ export default function MyPlaces() {
     const port = window.location.port ? `:${window.location.port}` : "";
     const roles = (m.roles ?? "").split(",");
     const staff = roles.some((r) => r && !["PATIENT", "CUSTOMER", "GUARDIAN"].includes(r));
-    const path = staff ? "/dashboard" : m.type === "CLINIC" ? "/portal" : "/account";
+    const path = staff ? "/dashboard" : m.type === "CLINIC" ? "/portal" : m.type === "LAWYER" ? "/" : "/account";
     try {
       const r = await api<{ ticket: string }>("auth/handoff", { body: { tenantId: m.id } });
       window.location.assign(`${window.location.protocol}//${m.host}${port}/api/sso?ticket=${encodeURIComponent(r.ticket)}&next=${encodeURIComponent(path)}`);
@@ -40,7 +40,7 @@ export default function MyPlaces() {
           {data?.filter((m) => m.host).map((m) => (
             <button key={m.id} type="button" onClick={() => void open(m)} disabled={busy !== null} className="text-start">
               <Card className="h-full transition hover:shadow-md">
-                <Badge tone={m.type === "CLINIC" ? "blue" : "green"}>{m.type === "CLINIC" ? t("type.clinic") : t("type.store")}</Badge>
+                <Badge tone={m.type === "CLINIC" ? "blue" : m.type === "LAWYER" ? "amber" : "green"}>{m.type === "CLINIC" ? t("type.clinic") : m.type === "LAWYER" ? t("type.lawyer") : t("type.store")}</Badge>
                 <p className="mt-2 text-lg font-semibold">{m.name}</p>
                 <p className="font-mono text-xs text-slate-500" dir="ltr">{m.host}</p>
                 {busy === m.id && <p className="mt-2 text-sm text-slate-500">{t("myplaces.opening")}</p>}

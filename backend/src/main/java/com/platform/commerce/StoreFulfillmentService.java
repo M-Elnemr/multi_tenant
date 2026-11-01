@@ -162,12 +162,15 @@ public class StoreFulfillmentService {
 
     // ---- returns (owner) -----------------------------------------------------------------------------------------
 
-    public Map<String, Object> returns(UUID tenantId, Page page, String status) {
-        String where = "r.tenant_id = :t AND (CAST(:s AS varchar) IS NULL OR r.status = CAST(:s AS varchar))";
-        long total = jdbc.sql("SELECT count(*) FROM commerce.return_requests r WHERE " + where).param("t", tenantId).param("s", status).query(Long.class).single();
+    public Map<String, Object> returns(UUID tenantId, Page page, String status) { return returns(tenantId, page, status, null, null); }
+
+    public Map<String, Object> returns(UUID tenantId, Page page, String status, java.time.LocalDate from, java.time.LocalDate to) {
+        com.platform.shared.DateRange.check(from, to);
+        String where = "r.tenant_id = :t AND (CAST(:s AS varchar) IS NULL OR r.status = CAST(:s AS varchar)) AND " + com.platform.shared.DateRange.sql("r.created_at", "t");
+        long total = jdbc.sql("SELECT count(*) FROM commerce.return_requests r WHERE " + where).param("t", tenantId).param("s", status).param("from", from).param("to", to).query(Long.class).single();
         var rows = jdbc.sql("SELECT r.id, r.order_id, r.reason, r.details, r.status, r.owner_note, r.created_at, o.order_number, o.customer_name_snapshot, o.customer_phone_snapshot, o.total_minor, o.currency "
                         + "FROM commerce.return_requests r JOIN commerce.orders o ON o.id = r.order_id WHERE " + where + " ORDER BY r.created_at DESC LIMIT :lim OFFSET :off")
-                .param("t", tenantId).param("s", status).param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows();
+                .param("t", tenantId).param("s", status).param("from", from).param("to", to).param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows();
         return page.wrap(Rows.camel(rows), total);
     }
 

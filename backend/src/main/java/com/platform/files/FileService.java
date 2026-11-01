@@ -64,7 +64,7 @@ public class FileService {
     @Transactional
     public Map<String, Object> presign(UUID tenantId, UUID userId, String filename, String contentType, long size, String category, String visibility) {
         boolean imageOnly = Set.of("PRODUCT_IMAGE", "LOGO", "AVATAR").contains(category);
-        if (!Set.of("PRODUCT_IMAGE", "LOGO", "AVATAR", "LAB_RESULT", "MEDICAL_DOCUMENT", "PRESCRIPTION").contains(category)) throw BusinessException.badRequest("FILE_NOT_ALLOWED", "Unknown category");
+        if (!Set.of("PRODUCT_IMAGE", "LOGO", "AVATAR", "LAB_RESULT", "MEDICAL_DOCUMENT", "PRESCRIPTION", "LEGAL_DOCUMENT").contains(category)) throw BusinessException.badRequest("FILE_NOT_ALLOWED", "Unknown category");
         if (contentType == null || !(imageOnly ? IMAGE_TYPES : DOC_TYPES).contains(contentType.toLowerCase())) throw BusinessException.badRequest("FILE_TYPE_NOT_ALLOWED", "This file type is not allowed").with("types", imageOnly ? "JPG, PNG" : "JPG, PNG, PDF");
         long max = imageOnly ? IMAGE_MAX : DOC_MAX;
         if (size <= 0 || size > max) throw BusinessException.badRequest("FILE_TOO_LARGE", "File too large (max " + (max / 1024 / 1024) + " MB)").with("max", max / 1024 / 1024);
@@ -283,7 +283,7 @@ public class FileService {
 
     // ---- helpers ---------------------------------------------------------------------------------------------------
 
-    private static String defaultVisibility(String category) { return Set.of("PRODUCT_IMAGE", "LOGO").contains(category) ? "PUBLIC" : "PRIVATE"; }
+    private static String defaultVisibility(String category) { return Set.of("PRODUCT_IMAGE", "LOGO").contains(category) ? "PUBLIC" : "LEGAL_DOCUMENT".equals(category) ? "TENANT_INTERNAL" : "PRIVATE"; }
 
     private static Bucket bucketFor(String category, String visibility) { return "PUBLIC".equals(visibility) && PROCESSED.contains(category) ? Bucket.PUBLIC : Bucket.PRIVATE; }
 
