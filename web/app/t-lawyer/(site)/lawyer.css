@@ -36,8 +36,8 @@
 .lw-hero-grain::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .07;
   background-image: repeating-linear-gradient(45deg, currentColor 0 1px, transparent 1px 7px); }
 .lw-frame { position: relative; border-radius: calc(var(--lw-radius) + 8px); }
-.lw-frame::before { content: ""; position: absolute; inset: -12px; border: 2px solid var(--lw-accent); border-radius: calc(var(--lw-radius) + 14px); opacity: .7; transform: translate(14px, 14px); }
-.lw[dir="rtl"] .lw-frame::before, [dir="rtl"] .lw-frame::before { transform: translate(-14px, 14px); }
+/* the gold outline sits evenly around the photo (same gap on every side) */
+.lw-frame::before { content: ""; position: absolute; inset: -14px; border: 2px solid var(--lw-accent); border-radius: calc(var(--lw-radius) + 22px); opacity: .7; pointer-events: none; }
 .lw-stat { font-family: var(--lw-display); font-size: clamp(1.8rem, 4vw, 2.6rem); font-weight: 700; color: var(--lw-accent); line-height: 1; }
 .lw-icon { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 16px; font-size: 1.6rem;
   background: color-mix(in srgb, var(--lw-accent) 14%, var(--lw-surface)); border: 1px solid color-mix(in srgb, var(--lw-accent) 30%, transparent); }
