@@ -13,11 +13,10 @@ type Qr = Partial<Info> & { qr?: string | null; pairingCode?: string | null };
 export function WhatsAppReportCard({ write }: { write: boolean }) {
   const { t } = useI18n();
   const info = useApi<Info>("lawyer/whatsapp");
-  const [accepted, setAccepted] = useState(false);
   const [qr, setQr] = useState<Qr | null>(null);
   const [sent, setSent] = useState<boolean | null>(null);
   const enable = useAction(async () => { setQr(await api<Qr>("lawyer/whatsapp/enable", { body: { acceptedRisk: true } })); await info.reload(); });
-  const disable = useAction(async () => { await api("lawyer/whatsapp/disable", { body: {} }); setQr(null); setAccepted(false); await info.reload(); });
+  const disable = useAction(async () => { await api("lawyer/whatsapp/disable", { body: {} }); setQr(null); await info.reload(); });
   const toggle = useAction(async (on: boolean) => { await api("lawyer/profile", { method: "PATCH", body: { waReport: on } }); await info.reload(); });
   const now = useAction(async () => { const r = await api<{ sent: boolean }>("lawyer/whatsapp/report/send-now", { body: {} }); setSent(r.sent); });
 
@@ -44,10 +43,8 @@ export function WhatsAppReportCard({ write }: { write: boolean }) {
       {!d.available && <Alert tone="blue">{t("evo.unavailable")}</Alert>}
       {d.available && !d.enabled && write && (
         <>
-          <Alert tone="amber"><div className="font-semibold">⚠️ {t("evo.warnTitle")}</div><ul className="mt-1 list-disc space-y-1 ps-5 text-sm"><li>{t("evo.w1")}</li><li>{t("lw.wa.w2")}</li></ul></Alert>
-          <label className="flex items-start gap-2 text-sm font-medium"><input type="checkbox" className="mt-1 h-5 w-5" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} />{t("evo.accept")}</label>
           <ErrorText error={enable.error} />
-          <Button loading={enable.loading} disabled={!accepted} onClick={() => void enable.run()}>{t("lw.wa.link")}</Button>
+          <Button loading={enable.loading} onClick={() => void enable.run()}>{t("lw.wa.link")}</Button>
         </>
       )}
       {d.enabled && !connected && (

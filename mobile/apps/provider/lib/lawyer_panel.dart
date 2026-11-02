@@ -1079,7 +1079,7 @@ class _WhatsAppReportCard extends StatefulWidget {
 class _WhatsAppReportCardState extends State<_WhatsAppReportCard> {
   Map<String, dynamic>? _i;
   String? _qr, _pairing;
-  bool _accepted = false, _busy = false;
+  bool _busy = false;
   Timer? _poll;
 
   @override
@@ -1138,11 +1138,8 @@ class _WhatsAppReportCardState extends State<_WhatsAppReportCard> {
           "Every day at 8 pm tomorrow's hearings, sessions, waiting requests and dues are sent from your number to your own chat — automatic and free."), style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 13)),
       if (i['available'] == false) Padding(padding: const EdgeInsets.only(top: 8), child: Text(_l('غير متاح على هذا الخادم.', 'Not available on this server.')))
       else if (i['enabled'] != true) ...[
-        const SizedBox(height: 8),
-        Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFFFFF7E6), borderRadius: BorderRadius.circular(12)),
-            child: Text(_l('⚠️ الربط يعمل مثل واتساب ويب وليس واجهة واتساب الرسمية. يُرسل منه تقريرك فقط ولا يرد على أحد.', '⚠️ Linking works like WhatsApp Web (not the official API). Only your report is sent; nobody gets automatic replies.'), style: const TextStyle(fontSize: 12.5))),
-        CheckboxListTile(contentPadding: EdgeInsets.zero, value: _accepted, onChanged: (v) => setState(() => _accepted = v == true), title: Text(_l('فهمت وأوافق', 'I understand and agree'), style: const TextStyle(fontSize: 13.5))),
-        FilledButton.icon(onPressed: !_accepted || _busy ? null : () => _do(() async { await widget.ctx.api.post('lawyer/whatsapp/enable', {'acceptedRisk': true}); }),
+        const SizedBox(height: 10),
+        FilledButton.icon(onPressed: _busy ? null : () => _do(() async { await widget.ctx.api.post('lawyer/whatsapp/enable', {'acceptedRisk': true}); }),
             icon: const Icon(Icons.link_rounded), label: Text(_l('ربط واتساب الخاص بي', 'Link my WhatsApp'))),
       ] else if (!connected) ...[
         const SizedBox(height: 8),

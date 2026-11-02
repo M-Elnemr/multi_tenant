@@ -61,7 +61,7 @@ class _RootState extends State<Root> {
   String? _error;
   List<String> _platformPerms = const [];   // the platform owner / admin's permissions (empty for everyone else)
   bool _client = false;      // single-office app: a client of the office is signed in
-  bool _staffLogin = false;  // single-office app: the office team's sign-in is shown instead of the clients'
+  String _gate = 'office';   // single-office app before sign-in: 'office' (the lawyer's page), 'client' or 'staff' sign-in
 
   @override
   void initState() {
@@ -123,9 +123,11 @@ class _RootState extends State<Root> {
     if (!_checked) {
       body = const Scaffold(key: ValueKey('boot'), body: SizedBox.shrink());
     } else if (SingleBusiness.on && _client) {
-      body = ClientHome(key: const ValueKey('client'), onSignedOut: () => setState(() => _client = false));
-    } else if (SingleBusiness.on && _businesses == null && _error == null && !_staffLogin) {
-      body = ClientLoginScreen(key: const ValueKey('clientLogin'), onSignedIn: () => setState(() => _client = true), onStaff: () => setState(() => _staffLogin = true));
+      body = ClientHome(key: const ValueKey('client'), onSignedOut: () => setState(() { _client = false; _gate = 'office'; }));
+    } else if (SingleBusiness.on && _businesses == null && _error == null && _gate == 'office') {
+      body = OfficeLanding(key: const ValueKey('office'), onClient: () => setState(() => _gate = 'client'), onStaff: () => setState(() => _gate = 'staff'));
+    } else if (SingleBusiness.on && _businesses == null && _error == null && _gate == 'client') {
+      body = ClientLoginScreen(key: const ValueKey('clientLogin'), onSignedIn: () => setState(() => _client = true), onStaff: () => setState(() => _gate = 'staff'), onBack: () => setState(() => _gate = 'office'));
     } else if (_businesses == null && _error == null) {
       body = LoginScreen(
         key: const ValueKey('login'),
@@ -135,7 +137,10 @@ class _RootState extends State<Root> {
         title: s.ar ? SingleBusiness.nameAr : SingleBusiness.nameEn,
         subtitle: s.ar ? SingleBusiness.taglineAr : SingleBusiness.taglineEn,
         onLoggedIn: (u) => _load(),
-        footer: SingleBusiness.on ? TextButton.icon(onPressed: () => setState(() => _staffLogin = false), icon: const Icon(Icons.person_outline_rounded), label: Text(s.ar ? 'أنا موكل — دخول الموكلين' : "I'm a client — client sign-in")) : Column(children: [
+        footer: SingleBusiness.on ? Column(children: [
+          TextButton.icon(onPressed: () => setState(() => _gate = 'client'), icon: const Icon(Icons.person_outline_rounded), label: Text(s.ar ? 'أنا موكل — دخول الموكلين' : "I'm a client — client sign-in")),
+          TextButton.icon(onPressed: () => setState(() => _gate = 'office'), icon: const Icon(Icons.home_rounded), label: Text(s.ar ? 'صفحة المكتب' : 'Office page')),
+        ]) : Column(children: [
           Row(children: [const Expanded(child: Divider()), Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Text(s.ar ? 'ليس لديك حساب؟' : 'New here?', style: const TextStyle(color: Color(0xFF6B7A8C)))), const Expanded(child: Divider())]),
           const SizedBox(height: 10),
           SizedBox(width: double.infinity, child: OutlinedButton.icon(

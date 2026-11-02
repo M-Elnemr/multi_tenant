@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:platform_core/platform_core.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'common.dart';
 import 'lawyer_panel.dart' show caseType, legalPill, stepKind;
@@ -44,9 +45,10 @@ class ClientAuth {
 // ============================================================================================ sign-in
 
 class ClientLoginScreen extends StatefulWidget {
-  const ClientLoginScreen({super.key, required this.onSignedIn, required this.onStaff});
+  const ClientLoginScreen({super.key, required this.onSignedIn, required this.onStaff, this.onBack});
   final VoidCallback onSignedIn;
   final VoidCallback onStaff;
+  final VoidCallback? onBack;
   @override
   State<ClientLoginScreen> createState() => _ClientLoginScreenState();
 }
@@ -119,6 +121,7 @@ class _ClientLoginScreenState extends State<ClientLoginScreen> {
               ),
             ),
             Center(child: TextButton.icon(onPressed: widget.onStaff, icon: const Icon(Icons.badge_outlined), label: Text(_l('دخول فريق المكتب', 'Office team sign-in')))),
+            if (widget.onBack != null) Center(child: TextButton.icon(onPressed: widget.onBack, icon: const Icon(Icons.home_rounded), label: Text(_l('صفحة المكتب', 'Office page')))),
             const SizedBox(height: 24),
           ]),
         ),
@@ -303,7 +306,7 @@ class _HomeTab extends StatelessWidget {
               leading: const Icon(Icons.event_available_rounded, color: _gold),
               title: Text(_l('لا مواعيد قادمة', 'Nothing coming up'), style: const TextStyle(fontWeight: FontWeight.w800)),
               subtitle: Text(_l('احجز استشارة مع المكتب في أي وقت', 'Book a session with the office any time')),
-              trailing: FilledButton(onPressed: onBook, style: FilledButton.styleFrom(backgroundColor: _navy), child: Text(_l('احجز', 'Book'))),
+              trailing: FilledButton(onPressed: onBook, style: FilledButton.styleFrom(backgroundColor: _navy, minimumSize: const Size(0, 40), padding: const EdgeInsets.symmetric(horizontal: 16)), child: Text(_l('احجز', 'Book'))),
             )),
             if (upcoming.length > 1) ...[
               const SizedBox(height: 6),
@@ -479,7 +482,9 @@ class _StepTile extends StatelessWidget {
 // ============================================================================================ booking
 
 class _BookTab extends StatefulWidget {
-  const _BookTab({required this.office, required this.cases, required this.onBooked});
+  const _BookTab({required this.office, required this.cases, required this.onBooked, this.guest = false});
+  /// A visitor without an account: asks for a name and a phone, and the request is remembered on this phone (see [GuestBookings]).
+  final bool guest;
   final Map<String, dynamic>? office;
   final List<Map<String, dynamic>> cases;
   final VoidCallback onBooked;
@@ -492,7 +497,8 @@ class _BookTabState extends State<_BookTab> {
   String? _day, _slot;
   List<Map<String, dynamic>> _days = [];
   List<String>? _slots;
-  final _topic = TextEditingController();
+  final _topic = TextEditingController(), _name = TextEditingController(), _phone = TextEditingController();
+  final _fe = FieldErrors();
   bool _busy = false;
 
   List<Map<String, dynamic>> get _services => _maps(widget.office?['services']);
@@ -515,18 +521,27 @@ class _BookTabState extends State<_BookTab> {
 
   Future<void> _book() async {
     if (_slot == null) return;
+    if (widget.guest && !_fe.check({
+      'name': _name.text.trim().length < 2 ? _l('اكتب اسمك', 'Write your name') : null,
+      'phone': _phone.text.trim().length < 8 ? _l('اكتب رقم موبايل يمكن الاتصال به', 'Write a phone we can call') : null,
+    })) { setState(() {}); return; }
     setState(() => _busy = true);
     Map<String, dynamic>? made;
-    final ok = await run(context, () async {
-      made = Map<String, dynamic>.from(await ClientAuth.api.post('lawyer/portal/bookings', {'serviceId': _service, 'startsAt': _slot, 'topic': _topic.text.trim(), 'caseId': _caseId}) as Map);
-    });
+    final ok = widget.guest
+        ? await runForm(context, _fe, () async {
+            made = Map<String, dynamic>.from(await ClientAuth.api.post('lawyer/public/bookings', {'serviceId': _service, 'startsAt': _slot, 'name': _name.text.trim(), 'phone': _phone.text.trim(), 'topic': _topic.text.trim()}) as Map);
+            await GuestBookings.add('${made!['code']}', _phone.text.trim());
+          })
+        : await run(context, () async {
+            made = Map<String, dynamic>.from(await ClientAuth.api.post('lawyer/portal/bookings', {'serviceId': _service, 'startsAt': _slot, 'topic': _topic.text.trim(), 'caseId': _caseId}) as Map);
+          });
     if (!mounted) return;
     setState(() => _busy = false);
     if (!ok) return;
     await showDialog<void>(context: context, builder: (c) => AlertDialog(
       icon: const Icon(Icons.check_circle_rounded, color: Color(0xFF1E9E5A), size: 48),
       title: Text(made?['status'] == 'APPROVED' ? _l('تم تأكيد موعدك', 'Your session is confirmed') : _l('تم إرسال طلبك', 'Request sent')),
-      content: Text('${_when(_slot)}\n${made?['status'] == 'APPROVED' ? '' : _l('سيصلك إشعار عند تأكيد المكتب.', 'You will be notified when the office confirms.')}', textAlign: TextAlign.center),
+      content: Text('${_when(_slot)}\n${widget.guest ? '${_l('كود الحجز', 'Booking code')}: ${made?['code']}\n${_l('تابع حالته من «حجوزاتي» في الصفحة الرئيسية.', 'Follow it from «My bookings» on the home page.')}' : made?['status'] == 'APPROVED' ? '' : _l('سيصلك إشعار عند تأكيد المكتب.', 'You will be notified when the office confirms.')}', textAlign: TextAlign.center),
       actions: [FilledButton(onPressed: () => Navigator.pop(c), child: Text(_l('تمام', 'OK')))],
     ));
     setState(() { _slot = null; _slots = null; _day = null; _topic.clear(); });
@@ -597,7 +612,12 @@ class _BookTabState extends State<_BookTab> {
         ],
         if (_slot != null) ...[
           const SizedBox(height: 14),
-          if (widget.cases.isNotEmpty) DropdownButtonFormField<String?>(
+          if (widget.guest) ListenableBuilder(listenable: _fe, builder: (context, _) => Column(children: [
+            Padding(key: _fe.key('name'), padding: const EdgeInsets.only(bottom: 10), child: TextField(controller: _name, onChanged: (_) => _fe.clear('name'), decoration: InputDecoration(labelText: _l('اسمك', 'Your name'), prefixIcon: const Icon(Icons.person_outline_rounded), errorText: _fe.of('name')))),
+            Padding(key: _fe.key('phone'), padding: const EdgeInsets.only(bottom: 10), child: TextField(controller: _phone, keyboardType: TextInputType.phone, textDirection: TextDirection.ltr, onChanged: (_) => _fe.clear('phone'),
+                decoration: InputDecoration(labelText: _l('رقم الموبايل', 'Mobile number'), hintText: '01xxxxxxxxx', prefixIcon: const Icon(Icons.phone_iphone_rounded), errorText: _fe.of('phone')))),
+          ])),
+          if (!widget.guest && widget.cases.isNotEmpty) DropdownButtonFormField<String?>(
             initialValue: _caseId,
             decoration: InputDecoration(labelText: _l('عن قضية؟ (اختياري)', 'About a case? (optional)')),
             items: [DropdownMenuItem(value: null, child: Text(_l('موضوع جديد', 'A new matter'))), for (final k in widget.cases) DropdownMenuItem(value: '${k['id']}', child: Text('${k['title']}', overflow: TextOverflow.ellipsis))],
@@ -702,6 +722,250 @@ class _AccountTab extends StatelessWidget {
         const SizedBox(height: 10),
         tile(Icons.logout_rounded, _l('تسجيل الخروج', 'Sign out'), color: const Color(0xFFD14343), onTap: onSignOut),
       ]),
+    );
+  }
+}
+
+// ============================================================================================ before sign-in: the office, guest booking
+
+String officeImage(String? u) => u == null || u.isEmpty ? '' : u.startsWith('/') ? '${ClientAuth.base}${u.replaceFirst('/api/bff/', '/api/v1/')}' : u;
+
+/// The requests a visitor made from this phone (code + phone), so they can follow and cancel them without an account.
+class GuestBookings {
+  static const _k = 'lawyer.guest.bookings';
+  static Future<List<Map<String, String>>> all() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      return (p.getStringList(_k) ?? const []).map((e) { final x = e.split('|'); return {'code': x[0], 'phone': x.length > 1 ? x[1] : ''}; }).toList();
+    } catch (_) { return []; }
+  }
+  static Future<void> add(String code, String phone) async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      final l = [...(p.getStringList(_k) ?? const <String>[]).where((e) => !e.startsWith('$code|')), '$code|$phone'];
+      await p.setStringList(_k, l.length > 20 ? l.sublist(l.length - 20) : l);
+    } catch (_) {}
+  }
+  static Future<void> remove(String code) async {
+    try { final p = await SharedPreferences.getInstance(); await p.setStringList(_k, (p.getStringList(_k) ?? const <String>[]).where((e) => !e.startsWith('$code|')).toList()); } catch (_) {}
+  }
+}
+
+/// What everyone sees after the splash: the lawyer, his practice, services and contact; guests book a session; clients and the team sign in.
+class OfficeLanding extends StatefulWidget {
+  const OfficeLanding({super.key, required this.onClient, required this.onStaff});
+  final VoidCallback onClient, onStaff;
+  @override
+  State<OfficeLanding> createState() => _OfficeLandingState();
+}
+
+class _OfficeLandingState extends State<OfficeLanding> {
+  Map<String, dynamic>? _p;
+  Object? _error;
+  List<Map<String, dynamic>> _mine = [];
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    try {
+      final r = Map<String, dynamic>.from(await ClientAuth.api.get('lawyer/public/profile') as Map);
+      if (mounted) setState(() { _p = r; _error = null; });
+    } catch (e) { if (mounted) setState(() => _error = e); }
+    await _loadMine();
+  }
+
+  Future<void> _loadMine() async {
+    final out = <Map<String, dynamic>>[];
+    for (final g in (await GuestBookings.all()).reversed) {
+      try {
+        final b = Map<String, dynamic>.from(await ClientAuth.api.post('lawyer/public/bookings/track', {'code': g['code'], 'phone': g['phone']}) as Map);
+        b['phone'] = g['phone'];
+        if (DateTime.parse('${b['startsAt']}').isAfter(DateTime.now().subtract(const Duration(days: 1)))) out.add(b);
+      } on ApiException catch (e) {
+        if (e.status == 404) await GuestBookings.remove('${g['code']}');
+      } catch (_) {}
+    }
+    if (mounted) setState(() => _mine = out);
+  }
+
+  void _signIn() => showModalBottomSheet<void>(context: context, showDragHandle: true, builder: (c) => SafeArea(child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text(_l('تسجيل الدخول', 'Sign in'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 12),
+          _choice(c, Icons.person_rounded, _l('أنا موكل', "I'm a client"), _l('تابع قضاياك وجلساتك ومواعيدك', 'Follow your cases, hearings and sessions'), widget.onClient),
+          const SizedBox(height: 10),
+          _choice(c, Icons.admin_panel_settings_rounded, _l('فريق المكتب', 'Office team'), _l('دخول المحامي ومساعديه للوحة التحكم', 'The lawyer and staff dashboard'), widget.onStaff),
+        ]),
+      )));
+
+  Widget _choice(BuildContext c, IconData i, String t, String sub, VoidCallback go) => Material(
+        color: const Color(0xFFF4F6F9),
+        borderRadius: BorderRadius.circular(16),
+        child: ListTile(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          leading: CircleAvatar(backgroundColor: _navy, child: Icon(i, color: _gold)),
+          title: Text(t, style: const TextStyle(fontWeight: FontWeight.w900)),
+          subtitle: Text(sub),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: () { Navigator.pop(c); go(); },
+        ),
+      );
+
+  void _book() => Navigator.of(context).push(MaterialPageRoute(builder: (_) => Scaffold(
+        appBar: AppBar(title: Text(_l('احجز استشارة', 'Book a session'))),
+        body: _BookTab(office: _p, cases: const [], guest: true, onBooked: () { Navigator.of(context).pop(); _loadMine(); }),
+      )));
+
+  Future<void> _cancel(Map<String, dynamic> b) async {
+    final yes = await showDialog<bool>(context: context, builder: (c) => AlertDialog(title: Text(_l('إلغاء الحجز؟', 'Cancel this booking?')), content: Text(_when('${b['startsAt']}')),
+        actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: Text(_l('رجوع', 'Back'))), FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(_l('إلغاء الحجز', 'Cancel it')))]));
+    if (yes != true || !mounted) return;
+    if (await run(context, () async { await ClientAuth.api.post('lawyer/public/bookings/cancel', {'code': b['code'], 'phone': b['phone']}); })) await _loadMine();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = _p;
+    if (p == null) {
+      return Scaffold(body: Center(child: _error == null ? const CircularProgressIndicator() : Column(mainAxisSize: MainAxisSize.min, children: [
+        const Icon(Icons.cloud_off_rounded, size: 48, color: Color(0xFF9AA9BA)), const SizedBox(height: 10), Text(errorText(_error!), textAlign: TextAlign.center),
+        TextButton(onPressed: _load, child: Text(_l('إعادة المحاولة', 'Retry'))), TextButton(onPressed: _signIn, child: Text(_l('تسجيل الدخول', 'Sign in'))),
+      ])));
+    }
+    final s = S.of(context);
+    final name = '${p['title'] ?? ''} ${p['displayName'] ?? ''}'.trim();
+    final cover = officeImage(p['coverUrl'] as String?), photo = officeImage(p['photoUrl'] as String?);
+    final areas = _maps(p['practiceAreas']), stats = _maps(p['achievements']), services = _maps(p['services']), reviews = _maps(p['testimonials']), faq = _maps(p['faq']);
+    final phone = '${p['phone'] ?? ''}', wa = '${p['whatsapp'] ?? ''}';
+    Widget title(String t) => Padding(padding: const EdgeInsets.fromLTRB(16, 22, 16, 10), child: Row(children: [Container(width: 4, height: 20, color: _gold), const SizedBox(width: 8), Text(t, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w900))]));
+    return Scaffold(
+      body: RefreshIndicator(
+        onRefresh: _load,
+        child: ListView(padding: EdgeInsets.zero, children: [
+          // ---- hero: the content sets the height; the cover and the shade fill behind it
+          Stack(children: [
+            Positioned.fill(child: Container(decoration: BoxDecoration(color: _navy, image: cover.isEmpty ? null : DecorationImage(image: NetworkImage(cover), fit: BoxFit.cover, opacity: .35)))),
+            Positioned.fill(child: Container(decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0x660B1D3A), _navy])))),
+            SafeArea(bottom: false, child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 6, 12, 18),
+              child: Column(children: [
+                Row(children: [
+                  const LanguageChip(onDark: true),
+                  const Spacer(),
+                  FilledButton.icon(onPressed: _signIn, style: FilledButton.styleFrom(backgroundColor: Colors.white.withValues(alpha: .16), foregroundColor: Colors.white, minimumSize: const Size(0, 40), padding: const EdgeInsets.symmetric(horizontal: 14)),
+                      icon: const Icon(Icons.login_rounded, size: 18), label: Text(_l('دخول', 'Sign in'), style: const TextStyle(fontWeight: FontWeight.w800))),
+                ]),
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: const BoxDecoration(color: _gold, shape: BoxShape.circle),
+                  child: CircleAvatar(radius: 58, backgroundColor: Colors.white, backgroundImage: photo.isEmpty ? null : NetworkImage(photo), child: photo.isEmpty ? const BrandLogo(size: 110) : null),
+                ),
+                const SizedBox(height: 12),
+                Text(name, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w900)),
+                if ('${p['barLevel'] ?? ''}'.isNotEmpty) Container(margin: const EdgeInsets.only(top: 6), padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4), decoration: BoxDecoration(color: _gold.withValues(alpha: .2), borderRadius: BorderRadius.circular(20)),
+                    child: Text('${p['barLevel']}', textAlign: TextAlign.center, style: const TextStyle(color: _gold, fontWeight: FontWeight.w800, fontSize: 12.5))),
+                if ('${p['headline'] ?? ''}'.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(16, 10, 16, 0), child: Text('${p['headline']}', textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: .85), height: 1.4))),
+              ]),
+            )),
+          ]),
+          // ---- actions
+          Container(
+            color: _navy,
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+            child: Column(children: [
+              if (p['bookingEnabled'] != false) FilledButton.icon(onPressed: _book, style: FilledButton.styleFrom(backgroundColor: _gold, foregroundColor: _navy, minimumSize: const Size.fromHeight(54)),
+                  icon: const Icon(Icons.event_available_rounded), label: Text(_l('احجز استشارة الآن', 'Book a session now'), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16))),
+              const SizedBox(height: 10),
+              Row(children: [
+                if (phone.isNotEmpty) Expanded(child: OutlinedButton.icon(onPressed: () => launch('tel:$phone'), style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: Colors.white38), minimumSize: const Size.fromHeight(46)), icon: const Icon(Icons.call_rounded), label: Text(_l('اتصال', 'Call')))),
+                if (phone.isNotEmpty && wa.isNotEmpty) const SizedBox(width: 10),
+                if (wa.isNotEmpty) Expanded(child: OutlinedButton.icon(onPressed: () => launch('https://wa.me/${wa.replaceAll(RegExp(r'[^0-9]'), '')}'), style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: Colors.white38), minimumSize: const Size.fromHeight(46)), icon: const Icon(Icons.chat_rounded), label: const Text('WhatsApp'))),
+              ]),
+            ]),
+          ),
+          // ---- numbers
+          if (stats.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(16, 16, 16, 0), child: Row(children: [
+            for (final a in stats.take(3)) Expanded(child: Card(child: Padding(padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6), child: Column(children: [
+              Text('${a['value']}', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: _navy)),
+              const SizedBox(height: 2),
+              Text('${a['label']}', textAlign: TextAlign.center, maxLines: 2, style: const TextStyle(fontSize: 11.5, color: Color(0xFF6B7C8D))),
+            ])))),
+          ])),
+          // ---- my requests (guests)
+          if (_mine.isNotEmpty) ...[
+            title(_l('حجوزاتي', 'My bookings')),
+            for (final b in _mine) Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Card(child: ListTile(
+              leading: const Icon(Icons.event_note_rounded, color: _navy),
+              title: Text('${b['serviceName'] ?? _l('استشارة', 'Session')} — ${_when('${b['startsAt']}')}', style: const TextStyle(fontWeight: FontWeight.w800)),
+              subtitle: Text(['${_l('الكود', 'Code')}: ${b['code']}', if ('${b['decisionNote'] ?? ''}'.isNotEmpty) '${b['decisionNote']}'].join('\n')),
+              trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
+                legalPill(b['status']),
+                if (b['status'] == 'PENDING' || b['status'] == 'APPROVED') InkWell(onTap: () => _cancel(b), child: Padding(padding: const EdgeInsets.only(top: 4), child: Text(_l('إلغاء', 'Cancel'), style: const TextStyle(color: Color(0xFFD14343), fontSize: 12, fontWeight: FontWeight.w700)))),
+              ]),
+            ))),
+          ],
+          // ---- about
+          if ('${p['bio'] ?? ''}'.isNotEmpty) ...[
+            title(_l('من نحن', 'About')),
+            Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Card(child: Padding(padding: const EdgeInsets.all(16), child: Text('${p['bio']}', style: const TextStyle(height: 1.7))))),
+          ],
+          // ---- practice areas
+          if (areas.isNotEmpty) ...[
+            title(_l('مجالات العمل', 'Practice areas')),
+            Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Wrap(children: [
+              for (final a in areas) FractionallySizedBox(widthFactor: .5, child: Padding(padding: const EdgeInsets.all(4), child: Card(margin: EdgeInsets.zero, child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('${a['icon'] ?? '⚖️'}', style: const TextStyle(fontSize: 26)),
+                const SizedBox(height: 6),
+                Text('${a['title']}', style: const TextStyle(fontWeight: FontWeight.w900)),
+                if ('${a['description'] ?? ''}'.isNotEmpty) Text('${a['description']}', maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: Color(0xFF6B7C8D))),
+              ]))))),
+            ])),
+          ],
+          // ---- services
+          if (services.isNotEmpty && p['bookingEnabled'] != false) ...[
+            title(_l('الخدمات والأتعاب', 'Services and fees')),
+            for (final sv in services) Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Card(child: ListTile(
+              title: Text('${sv['name']}', style: const TextStyle(fontWeight: FontWeight.w800)),
+              subtitle: Text(dotted(['${sv['durationMinutes']} ${_l('دقيقة', 'min')}', if (((sv['priceMinor'] as num?) ?? 0) > 0) s.money(sv['priceMinor'] as num, 'EGP')])),
+              trailing: FilledButton(onPressed: _book, style: FilledButton.styleFrom(backgroundColor: _navy, minimumSize: const Size(0, 40), padding: const EdgeInsets.symmetric(horizontal: 16)), child: Text(_l('احجز', 'Book'))),
+            ))),
+          ],
+          // ---- testimonials
+          if (reviews.isNotEmpty) ...[
+            title(_l('آراء الموكلين', 'What clients say')),
+            SizedBox(height: 170, child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 12), children: [
+              for (final r in reviews) SizedBox(width: 280, child: Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('★' * (((r['rating'] as num?) ?? 5).toInt()), style: const TextStyle(color: _gold)),
+                const SizedBox(height: 6),
+                Expanded(child: Text('«${r['text']}»', maxLines: 4, overflow: TextOverflow.ellipsis, style: const TextStyle(height: 1.5))),
+                Text('— ${r['name']}', style: const TextStyle(fontWeight: FontWeight.w800)),
+              ])))),
+            ])),
+          ],
+          // ---- faq
+          if (faq.isNotEmpty) ...[
+            title(_l('أسئلة شائعة', 'FAQ')),
+            Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Card(child: Column(children: [
+              for (final q in faq) ExpansionTile(title: Text('${q['q']}', style: const TextStyle(fontWeight: FontWeight.w800)), childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14), children: [Text('${q['a']}', style: const TextStyle(height: 1.6))]),
+            ]))),
+          ],
+          // ---- contact
+          title(_l('التواصل والمكتب', 'Contact & office')),
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Card(child: Column(children: [
+            if ('${p['officeAddress'] ?? ''}${p['officeCity'] ?? ''}'.isNotEmpty) ListTile(leading: const Icon(Icons.place_rounded, color: _navy), title: Text(dotted([p['officeAddress'], p['officeCity']])),
+                trailing: '${p['mapUrl'] ?? ''}'.isEmpty ? null : const Icon(Icons.map_rounded), onTap: '${p['mapUrl'] ?? ''}'.isEmpty ? null : () => launch('${p['mapUrl']}')),
+            if (phone.isNotEmpty) ListTile(leading: const Icon(Icons.call_rounded, color: _navy), title: Text(phone, textDirection: TextDirection.ltr, textAlign: TextAlign.start), onTap: () => launch('tel:$phone')),
+            if ('${p['email'] ?? ''}'.isNotEmpty) ListTile(leading: const Icon(Icons.mail_rounded, color: _navy), title: Text('${p['email']}'), onTap: () => launch('mailto:${p['email']}')),
+            ListTile(leading: const Icon(Icons.public_rounded, color: _navy), title: Text(Uri.parse(ClientAuth.base).host), onTap: () => launch(ClientAuth.base)),
+          ]))),
+          Padding(padding: const EdgeInsets.fromLTRB(16, 18, 16, 28), child: OutlinedButton.icon(onPressed: _signIn, style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(50)),
+              icon: const Icon(Icons.login_rounded), label: Text(_l('دخول الموكلين وفريق المكتب', 'Sign in: clients and office team')))),
+        ]),
+      ),
     );
   }
 }
