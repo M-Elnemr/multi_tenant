@@ -428,6 +428,7 @@ const en: Record<string, string> = {
   "error.WRONG_APP_STAFF": "This is a business account. Use the Elmanassa Business app.",
   "error.WRONG_APP_PATIENT": "This is a patient account. Use the Elmanassa app.",
   "login.identifier": "Phone, email or patient ID",
+  "login.identifierStaff": "Phone or email",
   "login.identifierHint": "The number you registered with.",
   "login.password": "Password",
   "login.newPassword": "New password",
@@ -1923,6 +1924,9 @@ const en: Record<string, string> = {
   "role.GUARDIAN": "Guardian",
   "role.PLATFORM_OWNER": "Platform owner",
   "role.PLATFORM_ADMIN": "Platform admin",
+  "role.LAWYER_OWNER": "Lawyer (owner)",
+  "role.ASSOCIATE": "Associate lawyer",
+  "role.LEGAL_SECRETARY": "Legal secretary",
 
   // plan features
   "feature.max_products": "Products",
@@ -4607,6 +4611,7 @@ const ar: Record<string, string> = {
   "error.WRONG_APP_STAFF": "هذا حساب نشاط تجاري. استخدم تطبيق المنصة للأعمال.",
   "error.WRONG_APP_PATIENT": "هذا حساب مريض. استخدم تطبيق المنصة.",
   "login.identifier": "رقم الهاتف أو البريد أو رقم المريض",
+  "login.identifierStaff": "رقم الهاتف أو البريد",
   "login.identifierHint": "الرقم الذي سجلت به.",
   "login.password": "كلمة المرور",
   "login.newPassword": "كلمة مرور جديدة",
@@ -6095,6 +6100,9 @@ const ar: Record<string, string> = {
   "role.GUARDIAN": "ولي أمر",
   "role.PLATFORM_OWNER": "مالك المنصة",
   "role.PLATFORM_ADMIN": "مدير المنصة",
+  "role.LAWYER_OWNER": "المحامي (المالك)",
+  "role.ASSOCIATE": "محامٍ مساعد",
+  "role.LEGAL_SECRETARY": "سكرتارية قانونية",
 
   "feature.max_products": "المنتجات",
   "feature.max_branches": "الفروع",

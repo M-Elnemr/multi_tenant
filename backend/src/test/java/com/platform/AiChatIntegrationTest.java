@@ -144,6 +144,9 @@ class AiChatIntegrationTest extends IntegrationTestBase {
         // two said in words is the customer's own quantity
         assertThat(com.platform.chat.ChatService.quantityFromCustomer(2, "عايز اتنين wings 6 قطع", List.of("6 قطع"), null)).isTrue();
         assertThat(com.platform.chat.ChatService.quantityFromCustomer(3, "عايز wings 6 قطع عماره 3 شقه 7", List.of("6 قطع"), null)).isFalse();
+        // a number inside the product's own name is no quantity («Wings a2b», «Galaxy A2»)
+        assertThat(com.platform.chat.ChatService.quantityFromCustomer(2, "عايز wings a2b 6 قطع", com.platform.chat.ChatService.withName(List.of("6 قطع"), "wings a2b"), null)).isFalse();
+        assertThat(com.platform.chat.ChatService.quantityFromCustomer(2, "عايز 2 wings a2b", com.platform.chat.ChatService.withName(List.of("6 قطع"), "wings a2b"), null)).isTrue();
         assertThat(orders(t)).isZero();
     }
 

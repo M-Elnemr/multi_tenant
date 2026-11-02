@@ -119,8 +119,9 @@ class _RootState extends State<Root> {
         key: const ValueKey('login'),
         api: _api,
         app: 'business',
+        idLabel: s.ar ? 'رقم الهاتف أو البريد' : 'Phone or email',
         title: 'Elmanassa Business',
-        subtitle: s.ar ? 'أدر عيادتك أو متجرك من هاتفك' : 'Run your clinic or shop from your phone',
+        subtitle: s.ar ? 'أدر متجرك أو عيادتك أو مكتب المحاماة من هاتفك' : 'Run your shop, clinic or law office from your phone',
         onLoggedIn: (u) => _load(),
         footer: Column(children: [
           Row(children: [const Expanded(child: Divider()), Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Text(s.ar ? 'ليس لديك حساب؟' : 'New here?', style: const TextStyle(color: Color(0xFF6B7A8C)))), const Expanded(child: Divider())]),
@@ -128,7 +129,7 @@ class _RootState extends State<Root> {
           SizedBox(width: double.infinity, child: OutlinedButton.icon(
             onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => RegisterScreen(api: _api, onRegistered: _load))),
             icon: const Icon(Icons.add_business_rounded),
-            label: Text(s.ar ? 'أنشئ متجرك أو عيادتك' : 'Create your shop or clinic'),
+            label: Text(s.ar ? 'أنشئ متجرك أو عيادتك أو مكتبك' : 'Create your shop, clinic or office'),
             style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(50)),
           )),
         ]),
@@ -149,7 +150,7 @@ class _RootState extends State<Root> {
     }
     return SplashGate(
       ready: _checked,
-      splash: AnimatedSplash(title: 'Elmanassa Business', tagline: s.ar ? 'أدر عيادتك أو متجرك من هاتفك' : 'Run your clinic or shop from your phone'),
+      splash: AnimatedSplash(title: 'Elmanassa Business', tagline: s.ar ? 'أدر متجرك أو عيادتك أو مكتب المحاماة من هاتفك' : 'Run your shop, clinic or law office from your phone'),
       child: AnimatedSwitcher(duration: const Duration(milliseconds: 380), switchInCurve: Curves.easeOutCubic, child: body),
     );
   }

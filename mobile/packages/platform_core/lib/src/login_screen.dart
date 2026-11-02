@@ -9,7 +9,9 @@ import 'ui.dart';
 /// Phone/email + password on ONE screen. Colleagues invited by a business (no password yet) are moved to the one-time-code step
 /// automatically; "forgot password" uses the same code flow. No SMS anywhere.
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key, required this.api, required this.title, required this.onLoggedIn, this.app, this.subtitle, this.footer});
+  const LoginScreen({super.key, required this.api, required this.title, required this.onLoggedIn, this.app, this.subtitle, this.footer, this.idLabel});
+  /// The label of the sign-in field (default: phone, email or patient ID).
+  final String? idLabel;
   final ApiClient api;
   final String title;
   final String? subtitle;
@@ -124,7 +126,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     curve: Curves.easeOutCubic,
                     alignment: Alignment.topCenter,
                     child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                      TextField(controller: _id, enabled: login, textInputAction: TextInputAction.next, decoration: InputDecoration(labelText: s.phone, prefixIcon: const Icon(Icons.person_outline_rounded)), keyboardType: TextInputType.emailAddress, textDirection: TextDirection.ltr),
+                      TextField(controller: _id, enabled: login, textInputAction: TextInputAction.next, decoration: InputDecoration(labelText: widget.idLabel ?? s.phone, prefixIcon: const Icon(Icons.person_outline_rounded)), keyboardType: TextInputType.emailAddress, textDirection: TextDirection.ltr),
                       AnimatedSwitcher(
                         duration: const Duration(milliseconds: 260),
                         transitionBuilder: (c, a) => FadeTransition(opacity: a, child: SizeTransition(sizeFactor: a, alignment: Alignment.topCenter, child: c)),

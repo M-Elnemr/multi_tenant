@@ -12,7 +12,7 @@ type Me = { roles: string[]; permissions: string[]; mustChangePassword?: boolean
 type Step = "login" | "activate" | "reset" | "mfa";
 
 /** Phone/email + password. First-time users (and anyone who forgot their password) use the one-time PIN given by the business: no SMS. */
-export function LoginForm({ defaultIdentifier = "" }: { defaultIdentifier?: string }) {
+export function LoginForm({ defaultIdentifier = "", staff: staffPage = false }: { defaultIdentifier?: string; staff?: boolean }) {
   const t = useT();
   const router = useRouter();
   const next = useSearchParams().get("next");
@@ -66,7 +66,7 @@ export function LoginForm({ defaultIdentifier = "" }: { defaultIdentifier?: stri
 
   return (
     <form onSubmit={submit} className="space-y-4">
-      <Field label={t("login.identifier")} hint={step === "login" ? t("login.identifierHint") : undefined}>
+      <Field label={t(staffPage ? "login.identifierStaff" : "login.identifier")} hint={step === "login" ? t("login.identifierHint") : undefined}>
         <IdentifierInput value={identifier} onValue={setIdentifier} required disabled={step !== "login"} autoFocus={step === "login"} />
       </Field>
 

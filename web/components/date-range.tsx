@@ -75,10 +75,20 @@ export function DateRangePicker({ value, onChange, future, label, className }: {
     else setDraft({ from: draft.from, to: d });
   };
   const apply = (r: DateRange) => { onChange(r); setOpen(false); };
+  // the panel opens from the button's start edge; near the far edge of the screen it opens from the end edge instead
+  const [flip, setFlip] = useState(false);
+  const toggleOpen = () => {
+    const r = box.current?.getBoundingClientRect();
+    if (r) {
+      const w = Math.min(640, window.innerWidth - 32), rtl = document.documentElement.dir === "rtl";
+      setFlip(rtl ? r.right - w < 16 : r.left + w > window.innerWidth - 16);
+    }
+    setOpen(!open);
+  };
 
   return (
     <div ref={box} className={`relative ${className ?? ""}`}>
-      <button type="button" onClick={() => { setDraft(value); setMonth(startOfMonth(parse(value.from) ?? new Date())); setOpen(!open); }} aria-expanded={open}
+      <button type="button" onClick={() => { setDraft(value); setMonth(startOfMonth(parse(value.from) ?? new Date())); toggleOpen(); }} aria-expanded={open}
         className={`inline-flex min-h-11 w-full items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-semibold shadow-sm transition sm:w-auto ${has ? "border-brand/40 bg-brand-soft text-brand-dark" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}`}>
         <Icon name="calendar" className="h-4 w-4 shrink-0" />
         <span className="truncate">{text}</span>
@@ -90,7 +100,7 @@ export function DateRangePicker({ value, onChange, future, label, className }: {
       {open && (
         <>
           <div className="fixed inset-0 z-40 bg-slate-900/30 sm:hidden" onClick={() => setOpen(false)} />
-          <div className="fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] animate-slide-up overflow-y-auto rounded-t-3xl bg-white p-4 pb-[calc(1rem+var(--safe-b))] shadow-2xl sm:absolute sm:inset-x-auto sm:bottom-auto sm:top-full sm:mt-2 sm:w-[640px] sm:max-w-[calc(100vw-2rem)] sm:animate-scale-in sm:rounded-2xl sm:pb-4 ltr:sm:left-0 rtl:sm:right-0">
+          <div className={`fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] animate-slide-up overflow-y-auto rounded-t-3xl bg-white p-4 pb-[calc(1rem+var(--safe-b))] shadow-2xl sm:absolute sm:inset-x-auto sm:bottom-auto sm:top-full sm:mt-2 sm:w-[640px] sm:max-w-[calc(100vw-2rem)] sm:animate-scale-in sm:rounded-2xl sm:pb-4 ${flip ? "ltr:sm:right-0 rtl:sm:left-0" : "ltr:sm:left-0 rtl:sm:right-0"}`}>
             <div className="flex flex-col gap-4 sm:flex-row">
               <div className="flex gap-2 overflow-x-auto pb-1 sm:w-40 sm:flex-col sm:overflow-visible sm:border-e sm:border-slate-100 sm:pe-3">
                 {list.map((p) => (

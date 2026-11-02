@@ -2845,7 +2845,7 @@ public class ChatService {
             if (!changed.isEmpty())
                 return obj("error", "Wrong option for " + variantNames(List.of(it.variantId())) + ": " + String.join("; ", changed) + ". Use the variant with what the customer said; if that one cannot be ordered (sold out, minimum order), tell them and ask, never pick another option for them.");
             // a quantity is the customer's: 2 nuggets to reach the minimum order is the model's choice, not theirs
-            if (it.quantity() > 1 && !quantityFromCustomer(it.quantity(), saidWords, comboValues(it.variantId()), dualOf(name.split(" ")[0])))
+            if (it.quantity() > 1 && !quantityFromCustomer(it.quantity(), saidWords, withName(comboValues(it.variantId()), name), dualOf(name.split(" ")[0])))
                 return obj("error", "The customer never asked for " + it.quantity() + " of " + variantNames(List.of(it.variantId())) + ": use the quantity they said (1 when they said none). "
                         + "If the order is then below the minimum order value, tell them the minimum and ask what they want to add; never raise a quantity or add an item for them.");
         }
@@ -3124,6 +3124,14 @@ public class ChatService {
             if (quantity == 2 && (t.equals("قطعتين") || t.equals("حتتين") || t.equals("التنين") || dual != null && (t.equals(dual) || t.equals("ال" + dual)))) return true;
         }
         return false;
+    }
+
+    /** The item's option values plus its own name: «Galaxy A2» or «iPhone 12» in the name is no quantity. Longest first, so the name goes before a value inside it. */
+    public static List<String> withName(List<String> optionValues, String normName) {
+        List<String> all = new ArrayList<>(optionValues);
+        if (normName != null && !normName.isBlank()) all.add(MoneyGuard.digits(normName));
+        all.sort((a, b) -> b.length() - a.length());
+        return all;
     }
 
     /** Arabic and Persian digits as 0-9, so «٠١٠١٢٣٤٥٦٧٨» is a valid mobile number. */

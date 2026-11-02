@@ -45,7 +45,7 @@ export async function StaffLogin() {
           </div>
           <h2 className="text-2xl font-extrabold tracking-tight text-ink">{t("staffLogin.title")}</h2>
           <p className="mt-1.5 text-sm text-slate-500">{t("staffLogin.subtitle")}</p>
-          <div className="mt-6 rounded-3xl border border-slate-200/80 bg-white p-6 shadow-lift sm:p-8"><Suspense><LoginForm /></Suspense></div>
+          <div className="mt-6 rounded-3xl border border-slate-200/80 bg-white p-6 shadow-lift sm:p-8"><Suspense><LoginForm staff /></Suspense></div>
           <p className="mt-6 text-center text-sm text-slate-500"><a href="/" className="font-semibold text-brand hover:underline">← {t("staffLogin.back")}</a></p>
         </div>
       </section>

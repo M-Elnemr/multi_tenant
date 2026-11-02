@@ -41,6 +41,8 @@ Color calColor(Map<String, dynamic> i) {
 }
 
 List<Map<String, dynamic>> _maps(dynamic v) => ((v as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+/// A case number kept left-to-right inside Arabic text («#2026-0001», not «0001-2026#»).
+String _no(Object? n) => '\u2066#$n\u2069';
 String _hm(DateTime d) => '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
 String _dayLabel(DateTime d) => '${_ar ? const ['الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'الأحد'][d.weekday - 1] : const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][d.weekday - 1]} ${d.day}/${d.month}';
 
@@ -54,7 +56,8 @@ List<PanelSection> lawyerSections() => [
       PanelSection('بحث شامل', 'Search', Icons.search_rounded, screen: ['cases', 'clients'], group: 'work', build: (c) => LawyerSearch(ctx: c)),
       PanelSection('الخدمات', 'Services', Icons.checklist_rounded, screen: 'settings', group: 'setup', build: (c) => LawyerServices(ctx: c)),
       PanelSection('مواعيد العمل', 'Working hours', Icons.schedule_rounded, screen: ['schedule', 'settings'], group: 'setup', build: (c) => LawyerHours(ctx: c)),
-      PanelSection('الموقع والإعدادات', 'Website & settings', Icons.settings_rounded, screen: 'settings', group: 'setup', build: (c) => LawyerSettings(ctx: c)),
+      PanelSection('موقعي', 'My website', Icons.public_rounded, screen: 'settings', group: 'setup', build: (c) => LawyerWebsite(ctx: c)),
+      PanelSection('قواعد الحجز', 'Booking rules', Icons.tune_rounded, screen: 'settings', group: 'setup', build: (c) => LawyerSettings(ctx: c)),
       PanelSection('النطاقات', 'Domains', Icons.language_rounded, screen: 'domains', group: 'setup', build: (c) => DomainsScreen(ctx: c)),
       PanelSection('الموظفون', 'Staff', Icons.badge_rounded, perm: 'staff.manage', group: 'account', build: (c) => StaffScreen(ctx: c)),
       PanelSection('الفواتير والاشتراك', 'Billing', Icons.credit_card_rounded, screen: 'billing', group: 'account', build: (c) => BillingScreen(ctx: c)),
@@ -121,7 +124,7 @@ class LawyerHome extends StatelessWidget {
             for (final u in _maps(o['upcoming'])) Card(child: ListTile(
               leading: CircleAvatar(backgroundColor: const Color(0x226366F1), child: Text('${DateTime.parse('${u['startsAt']}').toLocal().day}', style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF4338CA)))),
               title: Text('${u['description']}', style: const TextStyle(fontWeight: FontWeight.w800)),
-              subtitle: Text('#${u['number']} · ${stepKind(u['kind'])} · ${fmtDate('${u['startsAt']}')}'),
+              subtitle: Text('${_no(u['number'])} · ${stepKind(u['kind'])} · ${fmtDate('${u['startsAt']}')}'),
               onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CaseDetailPage(ctx: ctx, id: '${u['caseId']}'))),
             )),
           ]),
@@ -151,7 +154,7 @@ class _CalTile extends StatelessWidget {
         child: IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Container(width: 5, color: c),
           Expanded(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('${i['allDay'] == true ? _l('طوال اليوم', 'All day') : _hm(at)} · ${stepKind(i['kind'] == 'STEP' ? i['stepKind'] : i['kind'])}${i['caseNumber'] != null ? ' · #${i['caseNumber']}' : ''}', style: TextStyle(color: c, fontWeight: FontWeight.w800, fontSize: 12)),
+            Text('${i['allDay'] == true ? _l('طوال اليوم', 'All day') : _hm(at)} · ${stepKind(i['kind'] == 'STEP' ? i['stepKind'] : i['kind'])}${i['caseNumber'] != null ? ' · ${_no(i['caseNumber'])}' : ''}', style: TextStyle(color: c, fontWeight: FontWeight.w800, fontSize: 12)),
             const SizedBox(height: 2),
             Text('${i['title']}', style: TextStyle(fontWeight: FontWeight.w800, decoration: i['done'] == true ? TextDecoration.lineThrough : null)),
             if ('${i['location'] ?? ''}'.isNotEmpty) Text('📍 ${i['location']}', style: const TextStyle(fontSize: 12, color: Color(0xFF6B7C8D))),
@@ -328,7 +331,7 @@ class _AddToScheduleState extends State<_AddToSchedule> {
         if (newCase) ...[
           tf(caseTitle, _l('عنوان القضية', 'Case title'), fe: fe, field: 'newCase.title'),
           DropdownButtonFormField<String>(initialValue: newType, decoration: InputDecoration(labelText: _l('نوع القضية', 'Case type'), isDense: true), items: [for (final t in kCaseTypes) DropdownMenuItem(value: t, child: Text(caseType(t)))], onChanged: (v) => setState(() => newType = v ?? newType)),
-        ] else OutlinedButton.icon(key: fe.key('caseId'), onPressed: _pickCase, icon: const Icon(Icons.work_outline_rounded), label: Text(pickedCase == null ? _l('اختر من القضايا الحالية', 'Pick from current cases') : '#${pickedCase!['number']} · ${pickedCase!['title']}', overflow: TextOverflow.ellipsis)),
+        ] else OutlinedButton.icon(key: fe.key('caseId'), onPressed: _pickCase, icon: const Icon(Icons.work_outline_rounded), label: Text(pickedCase == null ? _l('اختر من القضايا الحالية', 'Pick from current cases') : '${_no(pickedCase!['number'])} · ${pickedCase!['title']}', overflow: TextOverflow.ellipsis)),
         err('caseId'),
         const SizedBox(height: 14),
         if (kind != 'NOTE') Text('🔔 ${_l('سيصلك تنبيه قبل الموعد بساعة', 'You get a reminder one hour before')}', style: const TextStyle(fontSize: 12, color: Color(0xFF4338CA))),
@@ -360,7 +363,7 @@ class _CasePickerState extends State<_CasePicker> {
   @override
   Widget build(BuildContext context) => SizedBox(height: MediaQuery.of(context).size.height * .75, child: Column(children: [
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: TextField(controller: q, onChanged: (_) => _load(), decoration: InputDecoration(prefixIcon: const Icon(Icons.search_rounded), hintText: _l('بالرقم أو العنوان أو الموكل', 'Number, title or client')))),
-        Expanded(child: ListView(children: [for (final c in res) ListTile(title: Text('#${c['number']} · ${c['title']}', style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text('${c['clientNames'] ?? ''}'), onTap: () => Navigator.pop(context, c))])),
+        Expanded(child: ListView(children: [for (final c in res) ListTile(title: Text('${_no(c['number'])} · ${c['title']}', style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text('${c['clientNames'] ?? ''}'), onTap: () => Navigator.pop(context, c))])),
       ]));
 }
 
@@ -512,7 +515,7 @@ class _LawyerCasesState extends State<LawyerCases> {
             Container(width: 5, color: k['outcome'] != 'NONE' ? legalTone(k['outcome']) : legalTone(k['status'])),
             Expanded(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
-                Expanded(child: Text('#${k['number']}${'${k['courtCaseNo'] ?? ''}'.isNotEmpty ? ' · ${k['courtCaseNo']}' : ''}', style: const TextStyle(fontSize: 11, color: Color(0xFF6B7C8D), fontWeight: FontWeight.w700))),
+                Expanded(child: Text('${_no(k['number'])}${'${k['courtCaseNo'] ?? ''}'.isNotEmpty ? ' · ${k['courtCaseNo']}' : ''}', style: const TextStyle(fontSize: 11, color: Color(0xFF6B7C8D), fontWeight: FontWeight.w700))),
                 legalPill(k['status']), if (k['outcome'] != 'NONE') ...[const SizedBox(width: 4), legalPill(k['outcome'])],
               ]),
               const SizedBox(height: 2),
@@ -754,7 +757,7 @@ class _CaseDetailPageState extends State<CaseDetailPage> {
       ),
       body: TabBarView(children: [
         RefreshIndicator(onRefresh: _load, child: ListView(padding: const EdgeInsets.all(16), children: [
-          Row(children: [legalPill(c['status']), const SizedBox(width: 6), if (c['outcome'] != 'NONE') legalPill(c['outcome']), const Spacer(), Text('#${c['number']}', style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF6B7C8D)))]),
+          Row(children: [legalPill(c['status']), const SizedBox(width: 6), if (c['outcome'] != 'NONE') legalPill(c['outcome']), const Spacer(), Text(_no(c['number']), style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF6B7C8D)))]),
           const SizedBox(height: 10),
           Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(children: [
             Row(children: [
@@ -980,7 +983,7 @@ class ClientDetailPage extends StatelessWidget {
           ]),
           for (final k in _maps(c['cases'])) Card(child: ListTile(
             title: Text('${k['title']}', style: const TextStyle(fontWeight: FontWeight.w800)),
-            subtitle: Text(dotted(['#${k['number']}', caseType(k['caseType']), k['court']])),
+            subtitle: Text(dotted([_no(k['number']), caseType(k['caseType']), k['court']])),
             trailing: legalPill(k['outcome'] != 'NONE' ? k['outcome'] : k['status']),
             onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CaseDetailPage(ctx: ctx, id: '${k['id']}'))).then((_) => reload()),
           )),
@@ -1036,14 +1039,14 @@ class _LawyerFinanceState extends State<LawyerFinance> {
           const SizedBox(height: 14),
           Text(_l('الأعلى مستحقات', 'Who owes most'), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
           for (final k in _maps(f['topDue'])) Card(child: ListTile(
-            title: Text('${k['title']}', style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text(dotted(['#${k['number']}', k['clientNames']])),
+            title: Text('${k['title']}', style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text(dotted([_no(k['number']), k['clientNames']])),
             trailing: Text(money(k['dueMinor'] as num), style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFFD14343))),
             onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CaseDetailPage(ctx: ctx, id: '${k['id']}'))),
           )),
           const SizedBox(height: 10),
           Text(_l('آخر المدفوعات', 'Recent payments'), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
           for (final p in _maps(f['recentPayments'])) Card(child: ListTile(
-            title: Text('${p['clientName'] ?? p['title']}', style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text(dotted([p['paidOn'], _ar ? _pmAr['${p['method']}'] : p['method'], '#${p['number']}'])),
+            title: Text('${p['clientName'] ?? p['title']}', style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text(dotted([p['paidOn'], _ar ? _pmAr['${p['method']}'] : p['method'], _no(p['number'])])),
             trailing: Text('+${money(p['amountMinor'] as num)}', style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF1E9E5A))),
           )),
         ]));
@@ -1086,12 +1089,12 @@ class _LawyerSearchState extends State<LawyerSearch> {
       TextField(controller: q, autofocus: false, onChanged: _go, decoration: InputDecoration(prefixIcon: const Icon(Icons.search_rounded), hintText: _l('اسم، رقم قضية، محكمة، خصم، موبايل…', 'Name, case no., court, opponent, phone…'))),
       if (r == null) Padding(padding: const EdgeInsets.all(24), child: Text(_l('ابحث في الموكلين والقضايا والجلسات والإجراءات والملاحظات والمستندات. (احمد = أحمد)', 'Search clients, cases, hearings, actions, notes and documents.'), textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF6B7C8D)))),
       if (r != null) ...[
-        group(_l('القضايا', 'Cases'), Icons.work_rounded, _maps(r!['cases']), (k) => ListTile(title: Text('${k['title']}', style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text(dotted(['#${k['number']}', k['courtCaseNo'], k['court']])), trailing: legalPill(k['status']), onTap: () => openCase(k['id']))),
+        group(_l('القضايا', 'Cases'), Icons.work_rounded, _maps(r!['cases']), (k) => ListTile(title: Text('${k['title']}', style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text(dotted([_no(k['number']), k['courtCaseNo'], k['court']])), trailing: legalPill(k['status']), onTap: () => openCase(k['id']))),
         group(_l('الموكلون', 'Clients'), Icons.people_alt_rounded, _maps(r!['clients']), (c) => ListTile(title: Text('${c['name']}', style: const TextStyle(fontWeight: FontWeight.w800)), subtitle: Text(localPhone(c['phone'])), onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ClientDetailPage(ctx: ctx, id: '${c['id']}'))))),
-        group(_l('الجلسات والمواعيد', 'Hearings'), Icons.event_rounded, _maps(r!['steps']), (s) => ListTile(title: Text('${s['description']}'), subtitle: Text(dotted([stepKind(s['kind']), fmtDate('${s['startsAt']}'), '#${s['number']}'])), onTap: () => openCase(s['caseId']))),
-        group(_l('الإجراءات', 'Actions'), Icons.note_alt_rounded, _maps(r!['actions']), (a) => ListTile(title: Text('${a['title']}'), subtitle: Text(dotted(['#${a['number']}', a['caseTitle'], a['actionDate']])), onTap: () => openCase(a['caseId']))),
+        group(_l('الجلسات والمواعيد', 'Hearings'), Icons.event_rounded, _maps(r!['steps']), (s) => ListTile(title: Text('${s['description']}'), subtitle: Text(dotted([stepKind(s['kind']), fmtDate('${s['startsAt']}'), _no(s['number'])])), onTap: () => openCase(s['caseId']))),
+        group(_l('الإجراءات', 'Actions'), Icons.note_alt_rounded, _maps(r!['actions']), (a) => ListTile(title: Text('${a['title']}'), subtitle: Text(dotted([_no(a['number']), a['caseTitle'], a['actionDate']])), onTap: () => openCase(a['caseId']))),
         group(_l('الملاحظات', 'Notes'), Icons.sticky_note_2_rounded, _maps(r!['notes']), (n) => ListTile(title: Text('${n['title']}'), subtitle: Text(fmtDate('${n['startsAt']}')), onTap: n['caseId'] == null ? null : () => openCase(n['caseId']))),
-        group(_l('المستندات', 'Documents'), Icons.description_rounded, _maps(r!['documents']), (d) => ListTile(title: Text('${d['name']}'), subtitle: Text('#${d['number']}'), onTap: () => launch('https://${ctx.host}${d['url']}'))),
+        group(_l('المستندات', 'Documents'), Icons.description_rounded, _maps(r!['documents']), (d) => ListTile(title: Text('${d['name']}'), subtitle: Text(_no(d['number'])), onTap: () => launch('https://${ctx.host}${d['url']}'))),
         if (['cases', 'clients', 'steps', 'actions', 'notes', 'documents'].every((k) => _maps(r![k]).isEmpty)) Padding(padding: const EdgeInsets.all(24), child: Center(child: Text(_l('لا نتائج', 'Nothing found')))),
       ],
     ]);
@@ -1197,7 +1200,7 @@ class _LawyerHoursState extends State<LawyerHours> {
   }
 }
 
-/// Booking rules, reminders and the website's main texts (the full website design is on the web dashboard).
+/// Booking rules and reminders (the website itself is designed in [LawyerWebsite]).
 class LawyerSettings extends StatelessWidget {
   const LawyerSettings({super.key, required this.ctx});
   final Ctx ctx;
@@ -1207,24 +1210,8 @@ class LawyerSettings extends StatelessWidget {
           leading: const Icon(Icons.public_rounded, color: Color(0xFFC9A227)),
           title: Text(_l('موقعك', 'Your website'), style: const TextStyle(fontWeight: FontWeight.w900)),
           subtitle: Text(ctx.host, textDirection: TextDirection.ltr, textAlign: TextAlign.start),
-          trailing: Wrap(children: [IconButton(onPressed: () => launch('https://${ctx.host}'), icon: const Icon(Icons.open_in_new_rounded)), IconButton(onPressed: () => launch('https://${ctx.host}/dashboard/website'), icon: const Icon(Icons.design_services_rounded))]),
+          trailing: Wrap(children: [IconButton(onPressed: () => launch('https://${ctx.host}'), icon: const Icon(Icons.open_in_new_rounded)), IconButton(tooltip: _l('تصميم موقعي', 'Design my website'), onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => Scaffold(appBar: AppBar(title: Text(_l('موقعي', 'My website'))), body: LawyerWebsite(ctx: ctx)))), icon: const Icon(Icons.design_services_rounded))]),
         )),
-        FormCard(
-          ctx: ctx, titleAr: 'بياناتك على الموقع', titleEn: 'You on the website', loadPath: 'lawyer/profile', savePath: 'lawyer/profile', method: 'PATCH',
-          fields: const [
-            F(FK.text, 'title', 'اللقب (المستشار / الأستاذ)', 'Title'),
-            F(FK.text, 'displayName', 'الاسم', 'Name'),
-            F(FK.text, 'headline', 'سطر واحد عنك', 'One line about you'),
-            F(FK.area, 'bio', 'نبذة', 'Biography'),
-            F(FK.text, 'barLevel', 'القيد بالنقابة', 'Bar admission'),
-            F(FK.number, 'yearsExperience', 'سنوات الخبرة', 'Years of experience'),
-            F(FK.ltr, 'phone', 'الموبايل', 'Phone'),
-            F(FK.ltr, 'whatsapp', 'واتساب', 'WhatsApp'),
-            F(FK.text, 'officeAddress', 'عنوان المكتب', 'Office address'),
-            F(FK.text, 'officeCity', 'المدينة', 'City'),
-          ],
-        ),
-        const SizedBox(height: 10),
         FormCard(
           ctx: ctx, titleAr: 'قواعد الحجز والتذكيرات', titleEn: 'Booking rules & reminders', loadPath: 'lawyer/profile', savePath: 'lawyer/profile', method: 'PATCH',
           fields: const [
@@ -1239,4 +1226,317 @@ class LawyerSettings extends StatelessWidget {
           ],
         ),
       ]);
+}
+
+// ======================================================================================= website designer
+
+const _kTemplates = [
+  ('classic', 'كلاسيكي', 'Classic', 'كحلي وذهبي — وقار المكاتب الكبرى', 'Navy and gold, the look of a senior office', [Color(0xFF0B1D3A), Color(0xFF1E3A5F)], Color(0xFFC9A227)),
+  ('modern', 'عصري', 'Modern', 'فاتح ونظيف بلمسة خضراء', 'Light and clean with a teal touch', [Color(0xFFF8FAFC), Color(0xFFE2E8F0)], Color(0xFF0F766E)),
+  ('heritage', 'تراثي', 'Heritage', 'بني دافئ بروح الخط العربي', 'Warm brown with an Arabic calligraphy feel', [Color(0xFF2B1D14), Color(0xFF5C3B23)], Color(0xFFD4A373)),
+];
+const _kAreaIcons = ['⚖️', '🛡️', '👪', '🏢', '👷', '🏠', '🏛️', '📊', '📜', '✍️', '💡', '🧾', '🤝', '🔨', '📁'];
+
+/// The lawyer's public website from the phone: design, photo and cover, practice areas, achievements, education, testimonials, FAQ and contact.
+class LawyerWebsite extends StatefulWidget {
+  const LawyerWebsite({super.key, required this.ctx});
+  final Ctx ctx;
+  @override
+  State<LawyerWebsite> createState() => _LawyerWebsiteState();
+}
+
+class _LawyerWebsiteState extends State<LawyerWebsite> {
+  Map<String, dynamic>? _p;
+  List<Map<String, dynamic>> _areas = [];
+  final _fe = FieldErrors();
+  bool _dirty = false, _saving = false;
+  int _v = 0; // bumps when list rows move, so their text fields rebuild with the right values
+  Ctx get ctx => widget.ctx;
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    try {
+      final r = await Future.wait([ctx.api.get('lawyer/profile'), ctx.api.get('lawyer/meta')]);
+      if (!mounted) return;
+      setState(() { _p = Map<String, dynamic>.from(r[0] as Map); _areas = _maps((r[1] as Map)['practiceAreas']); _dirty = false; _v++; });
+    } catch (e) { if (mounted) toast(context, errorText(e), isError: true); }
+  }
+
+  void _set(String k, dynamic v) { _p![k] = v; _fe.clear(k); if (!_dirty) setState(() => _dirty = true); }
+  void _redraw() => setState(() { _dirty = true; _v++; });
+  List<Map<String, dynamic>> _list(String k) => (_p![k] = _maps(_p![k]));
+  // the website keeps its pictures as web paths (/api/bff/files/...); the app reads the same file straight from the API
+  String? _img(String? u) => u == null || u.isEmpty ? null : u.startsWith('/') ? 'https://${ctx.host}${u.replaceFirst('/api/bff/', '/api/v1/')}' : u;
+
+  Future<void> _upload(String key, double aspect, String variant) async {
+    String? id;
+    if (await run(context, () async { id = await pickAndUpload(context, ctx.api, 'LOGO', aspect: aspect); }) && id != null) {
+      _set(key, '/api/bff/files/$id/content?variant=$variant');
+      setState(() {});
+    }
+  }
+
+  Future<void> _save() async {
+    final p = _p!;
+    if (!_fe.check({'displayName': '${p['displayName'] ?? ''}'.trim().isEmpty ? _l('اكتب اسمك كما يراه العملاء', 'Write your name as clients should see it') : null})) return;
+    setState(() => _saving = true);
+    final ok = await runForm(context, _fe, () async {
+      await ctx.api.patch('lawyer/profile', {
+        for (final k in ['displayName', 'title', 'headline', 'bio', 'photoUrl', 'coverUrl', 'barNumber', 'barLevel', 'officeAddress', 'officeCity', 'mapUrl', 'phone', 'whatsapp', 'email', 'template',
+          'practiceAreas', 'languages', 'education', 'achievements', 'testimonials', 'faq', 'social']) k: p[k],
+        'yearsExperience': int.tryParse('${p['yearsExperience'] ?? 0}') ?? 0,
+      });
+    });
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (ok) { toast(context, _l('تم النشر على موقعك ✓', 'Published on your website ✓')); await _load(); }
+  }
+
+  Widget _text(String key, String ar, String en, {int lines = 1, bool ltr = false, bool number = false, String? hint}) => Padding(
+        key: _fe.key(key),
+        padding: const EdgeInsets.only(bottom: 10),
+        child: TextFormField(
+          key: ValueKey('$key$_v'),
+          initialValue: '${_p![key] ?? ''}',
+          maxLines: lines,
+          textDirection: ltr ? TextDirection.ltr : null,
+          keyboardType: number ? TextInputType.number : (lines > 1 ? TextInputType.multiline : null),
+          onChanged: (v) => _set(key, number ? (int.tryParse(v) ?? 0) : v),
+          decoration: InputDecoration(labelText: _l(ar, en), hintText: hint, errorText: _fe.of(key), errorMaxLines: 3),
+        ),
+      );
+
+  Widget _rowField(Map<String, dynamic> row, String key, String label, {int lines = 1, bool ltr = false, double? width}) {
+    final f = TextFormField(
+      key: ValueKey('${identityHashCode(row)}$key$_v'),
+      initialValue: '${row[key] ?? ''}',
+      maxLines: lines,
+      textDirection: ltr ? TextDirection.ltr : null,
+      onChanged: (v) { row[key] = v; if (!_dirty) setState(() => _dirty = true); },
+      decoration: InputDecoration(labelText: label, isDense: true),
+    );
+    return Padding(padding: const EdgeInsets.only(bottom: 8), child: width == null ? f : SizedBox(width: width, child: f));
+  }
+
+  Widget _listEditor(String key, Map<String, dynamic> blank, Widget Function(Map<String, dynamic> row) body, {String? addAr, String? addEn}) {
+    final items = _list(key);
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      for (var i = 0; i < items.length; i++)
+        Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.fromLTRB(12, 12, 4, 4),
+          decoration: BoxDecoration(color: const Color(0xFFF4F6F9), borderRadius: BorderRadius.circular(14)),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(child: body(items[i])),
+            Column(children: [
+              if (i > 0) IconButton(visualDensity: VisualDensity.compact, tooltip: _l('لأعلى', 'Move up'), onPressed: () { final x = items.removeAt(i); items.insert(i - 1, x); _redraw(); }, icon: const Icon(Icons.arrow_upward_rounded, size: 20)),
+              IconButton(visualDensity: VisualDensity.compact, tooltip: _l('حذف', 'Remove'), onPressed: () { items.removeAt(i); _redraw(); }, icon: const Icon(Icons.close_rounded, size: 20, color: Color(0xFFD14343))),
+            ]),
+          ]),
+        ),
+      TextButton.icon(onPressed: () { items.add(Map<String, dynamic>.from(blank)); _redraw(); }, icon: const Icon(Icons.add_rounded), label: Text(_l(addAr ?? 'إضافة', addEn ?? 'Add'))),
+    ]);
+  }
+
+  Widget _card(String ar, String en, IconData icon, List<Widget> children, {String? hintAr, String? hintEn}) => Card(
+        margin: const EdgeInsets.only(bottom: 12),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Row(children: [Icon(icon, size: 20, color: const Color(0xFFC9A227)), const SizedBox(width: 8), Expanded(child: Text(_l(ar, en), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15)))]),
+            if (hintAr != null) Padding(padding: const EdgeInsets.only(top: 4), child: Text(_l(hintAr, hintEn!), style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 12.5))),
+            const SizedBox(height: 12),
+            ...children,
+          ]),
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final p = _p;
+    if (p == null) return const Center(child: CircularProgressIndicator());
+    final tpl = '${p['template'] ?? 'classic'}';
+    final photo = _img(p['photoUrl'] as String?), cover = _img(p['coverUrl'] as String?);
+    final social = Map<String, dynamic>.from((p['social'] as Map?) ?? const {});
+    p['social'] = social;
+    final chosen = _list('practiceAreas').map((a) => a['key']).toSet();
+    return ListenableBuilder(
+      listenable: _fe,
+      builder: (context, _) => Stack(children: [
+        ListView(padding: const EdgeInsets.fromLTRB(14, 14, 14, 96), children: [
+          Card(
+            margin: const EdgeInsets.only(bottom: 12),
+            color: const Color(0xFF0B1D3A),
+            child: ListTile(
+              leading: const Icon(Icons.public_rounded, color: Color(0xFFC9A227)),
+              title: Text(_l('موقعك على الإنترنت', 'Your website'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+              subtitle: Text(ctx.host, textDirection: TextDirection.ltr, textAlign: TextAlign.start, style: const TextStyle(color: Color(0xFFCBD5E1))),
+              trailing: IconButton(tooltip: _l('افتح الموقع', 'Open the website'), onPressed: () => launch('https://${ctx.host}'), icon: const Icon(Icons.open_in_new_rounded, color: Colors.white)),
+            ),
+          ),
+          _card('التصميم', 'Design', Icons.palette_rounded, [
+            SizedBox(
+              height: 168,
+              child: ListView(scrollDirection: Axis.horizontal, children: [
+                for (final t in _kTemplates)
+                  GestureDetector(
+                    onTap: () { _set('template', t.$1); setState(() {}); },
+                    child: Container(
+                      width: 170,
+                      margin: const EdgeInsetsDirectional.only(end: 10),
+                      decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), border: Border.all(color: tpl == t.$1 ? const Color(0xFFC9A227) : const Color(0xFFE2E8F0), width: tpl == t.$1 ? 2.5 : 1)),
+                      clipBehavior: Clip.antiAlias,
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                        Container(
+                          height: 84,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(gradient: LinearGradient(colors: t.$6)),
+                          child: Stack(children: [
+                            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Container(height: 6, width: 44, decoration: BoxDecoration(color: t.$7, borderRadius: BorderRadius.circular(4))),
+                              const SizedBox(height: 8),
+                              Container(height: 8, width: 100, decoration: BoxDecoration(color: Colors.white.withValues(alpha: .7), borderRadius: BorderRadius.circular(4))),
+                              const SizedBox(height: 5),
+                              Container(height: 6, width: 70, decoration: BoxDecoration(color: Colors.white.withValues(alpha: .4), borderRadius: BorderRadius.circular(4))),
+                            ]),
+                            PositionedDirectional(end: 0, bottom: 0, child: Container(height: 18, width: 44, decoration: BoxDecoration(color: t.$7, borderRadius: BorderRadius.circular(6)))),
+                            if (tpl == t.$1) const PositionedDirectional(start: 0, bottom: 0, child: CircleAvatar(radius: 11, backgroundColor: Colors.white, child: Icon(Icons.check_rounded, size: 16, color: Color(0xFF0B1D3A)))),
+                          ]),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text(_l(t.$2, t.$3), style: const TextStyle(fontWeight: FontWeight.w900)),
+                            Text(_l(t.$4, t.$5), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Color(0xFF6B7C8D))),
+                          ]),
+                        ),
+                      ]),
+                    ),
+                  ),
+              ]),
+            ),
+          ]),
+          _card('صورتك والغلاف', 'Your photo & cover', Icons.photo_camera_rounded, hintAr: 'صورة شخصية واضحة بخلفية هادئة تزيد ثقة العملاء', hintEn: 'A clear portrait on a calm background builds trust', [
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Column(children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(width: 112, height: 140, color: const Color(0xFFE8EEF4), child: photo == null ? const Center(child: Text('👨‍⚖️', style: TextStyle(fontSize: 48))) : Image.network(photo, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined))),
+                ),
+                TextButton(onPressed: () => _upload('photoUrl', 4 / 5, 'medium'), child: Text(photo == null ? _l('رفع صورة', 'Upload photo') : _l('تغيير', 'Change'))),
+                if (photo != null) TextButton(onPressed: () { _set('photoUrl', null); setState(() {}); }, child: Text(_l('حذف', 'Remove'), style: const TextStyle(color: Color(0xFFD14343)))),
+              ]),
+              const SizedBox(width: 12),
+              Expanded(child: Column(children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: AspectRatio(aspectRatio: 16 / 9, child: Container(color: const Color(0xFFE8EEF4), child: cover == null ? Center(child: Text(_l('صورة الغلاف\n(المكتب أو المحكمة)', 'Cover picture\n(office or court)'), textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF8A9AAB), fontSize: 12))) : Image.network(cover, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined)))),
+                ),
+                Wrap(children: [
+                  TextButton(onPressed: () => _upload('coverUrl', 16 / 7, 'original'), child: Text(cover == null ? _l('رفع غلاف', 'Upload cover') : _l('تغيير', 'Change'))),
+                  if (cover != null) TextButton(onPressed: () { _set('coverUrl', null); setState(() {}); }, child: Text(_l('حذف', 'Remove'), style: const TextStyle(color: Color(0xFFD14343)))),
+                ]),
+              ])),
+            ]),
+          ]),
+          _card('بياناتك', 'About you', Icons.badge_rounded, [
+            _text('title', 'اللقب', 'Title', hint: _l('المستشار / الأستاذ', 'Counsellor')),
+            _text('displayName', 'الاسم كما يظهر للعملاء', 'Name as clients see it'),
+            _text('headline', 'سطر واحد عنك', 'One line about you', hint: _l('محامٍ بالنقض والإدارية العليا', 'Attorney before the Court of Cassation')),
+            _text('bio', 'نبذة', 'Biography', lines: 5),
+            Row(children: [
+              Expanded(child: _text('yearsExperience', 'سنوات الخبرة', 'Years', number: true, ltr: true)),
+              const SizedBox(width: 8),
+              Expanded(child: _text('barNumber', 'رقم القيد', 'Bar no.', ltr: true)),
+            ]),
+            _text('barLevel', 'القيد بالنقابة', 'Bar admission', hint: _l('مقيد بالنقض', 'Admitted before the Court of Cassation')),
+          ]),
+          _card('مجالات العمل', 'Practice areas', Icons.gavel_rounded, [
+            Wrap(spacing: 6, runSpacing: 6, children: [
+              for (final a in _areas.where((a) => !chosen.contains(a['key'])))
+                ActionChip(
+                  label: Text('+ ${_l('${a['nameAr']}', '${a['nameEn']}')}'),
+                  onPressed: () { _list('practiceAreas').add({'key': a['key'], 'title': _l('${a['nameAr']}', '${a['nameEn']}'), 'description': '', 'icon': a['icon'] ?? '⚖️'}); _redraw(); },
+                ),
+            ]),
+            const SizedBox(height: 10),
+            _listEditor('practiceAreas', {'key': 'custom', 'title': '', 'description': '', 'icon': '⚖️'}, addAr: 'مجال آخر', addEn: 'Another area', (row) => Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  DropdownButton<String>(
+                    value: _kAreaIcons.contains(row['icon']) ? row['icon'] as String : '⚖️',
+                    underline: const SizedBox.shrink(),
+                    items: [for (final i in _kAreaIcons) DropdownMenuItem(value: i, child: Text(i, style: const TextStyle(fontSize: 22)))],
+                    onChanged: (v) { row['icon'] = v; _redraw(); },
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(child: Column(children: [_rowField(row, 'title', _l('اسم المجال', 'Area')), _rowField(row, 'description', _l('وصف قصير', 'Short description'), lines: 2)])),
+                ])),
+          ]),
+          _card('أرقام وإنجازات', 'Numbers & achievements', Icons.emoji_events_rounded, hintAr: 'تظهر كأرقام كبيرة: ٥٠٠+ قضية، ٢٥ سنة خبرة', hintEn: 'Shown as big numbers: 500+ cases, 25 years', [
+            _listEditor('achievements', {'value': '', 'label': ''}, (row) => Row(children: [
+                  _rowField(row, 'value', '500+', ltr: true, width: 84),
+                  const SizedBox(width: 8),
+                  Expanded(child: _rowField(row, 'label', _l('قضية ناجحة', 'cases won'))),
+                ])),
+          ]),
+          _card('المؤهلات', 'Education', Icons.school_rounded, [
+            _listEditor('education', {'title': '', 'place': '', 'year': ''}, (row) => Column(children: [
+                  _rowField(row, 'title', _l('المؤهل', 'Degree')),
+                  Row(children: [Expanded(child: _rowField(row, 'place', _l('الجهة', 'Where'))), const SizedBox(width: 8), _rowField(row, 'year', _l('السنة', 'Year'), ltr: true, width: 76)]),
+                ])),
+          ]),
+          _card('آراء العملاء', 'Testimonials', Icons.format_quote_rounded, [
+            _listEditor('testimonials', {'name': '', 'text': '', 'rating': 5}, (row) => Column(children: [
+                  Row(children: [
+                    Expanded(child: _rowField(row, 'name', _l('الاسم', 'Name'))),
+                    const SizedBox(width: 8),
+                    DropdownButton<int>(
+                      value: [5, 4, 3].contains(row['rating']) ? row['rating'] as int : 5,
+                      underline: const SizedBox.shrink(),
+                      items: [for (final r in [5, 4, 3]) DropdownMenuItem(value: r, child: Text('★' * r, style: const TextStyle(color: Color(0xFFC9A227))))],
+                      onChanged: (v) { row['rating'] = v; _redraw(); },
+                    ),
+                  ]),
+                  _rowField(row, 'text', _l('رأيه', 'What they said'), lines: 2),
+                ])),
+          ]),
+          _card('أسئلة شائعة', 'FAQ', Icons.help_outline_rounded, [
+            _listEditor('faq', {'q': '', 'a': ''}, (row) => Column(children: [_rowField(row, 'q', _l('السؤال', 'Question')), _rowField(row, 'a', _l('الإجابة', 'Answer'), lines: 2)])),
+          ]),
+          _card('التواصل والمكتب', 'Contact & office', Icons.place_rounded, [
+            _text('phone', 'الموبايل', 'Phone', ltr: true),
+            _text('whatsapp', 'واتساب', 'WhatsApp', ltr: true),
+            _text('email', 'البريد', 'Email', ltr: true),
+            _text('officeCity', 'المدينة', 'City'),
+            _text('officeAddress', 'عنوان المكتب', 'Office address'),
+            _text('mapUrl', 'رابط الخريطة', 'Map link', ltr: true, hint: 'https://maps.google.com/...'),
+            for (final k in ['facebook', 'linkedin', 'instagram', 'youtube'])
+              Padding(
+                key: _fe.key('social.$k'),
+                padding: const EdgeInsets.only(bottom: 10),
+                child: TextFormField(
+                  key: ValueKey('social$k$_v'),
+                  initialValue: '${social[k] ?? ''}',
+                  textDirection: TextDirection.ltr,
+                  onChanged: (v) { social[k] = v; _fe.clear('social.$k'); if (!_dirty) setState(() => _dirty = true); },
+                  decoration: InputDecoration(labelText: k[0].toUpperCase() + k.substring(1), hintText: 'https://', errorText: _fe.of('social.$k')),
+                ),
+              ),
+          ]),
+        ]),
+        PositionedDirectional(
+          start: 14, end: 14, bottom: 14,
+          child: SafeArea(
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52), backgroundColor: const Color(0xFF0B1D3A), foregroundColor: Colors.white),
+              onPressed: !_dirty || _saving ? null : _save,
+              icon: _saving ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.publish_rounded),
+              label: Text(_dirty ? _l('نشر التعديلات على موقعي', 'Publish changes') : _l('كل التعديلات منشورة', 'Everything is published'), style: const TextStyle(fontWeight: FontWeight.w900)),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
 }

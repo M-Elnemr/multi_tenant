@@ -15,7 +15,7 @@ export function Chips({ options, value, onChange, multi, allLabel }: { options: 
     onChange(multi ? (on ? value.filter((x) => x !== v) : [...value, v]) : on ? [] : [v]);
   };
   return (
-    <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
+    <div className="chip-row -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
       {allLabel && (
         <button type="button" onClick={() => onChange([])} className={cx("chip", value.length === 0 && "chip-on")}>{allLabel}</button>
       )}
@@ -70,7 +70,7 @@ export function MoreFilters({ count, children, onClear }: { count: number; child
 
 /** A labelled group inside the drawer. */
 export function FilterGroup({ label, children }: { label: string; children: ReactNode }) {
-  return <div><p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">{label}</p>{children}</div>;
+  return <div className="[&_.chip-row]:flex-wrap [&_.chip-row]:overflow-visible"><p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">{label}</p>{children}</div>;
 }
 
 /** The filters that are on, as removable chips, plus "clear all". */
