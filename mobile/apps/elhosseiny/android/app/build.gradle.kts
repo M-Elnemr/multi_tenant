@@ -6,7 +6,7 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-// Push notifications need the Firebase config file for com.elhusseiny.lowyer; without it the app builds and runs, just without push.
+// Push notifications need the Firebase config file for com.elhusseiny.lawyer; without it the app builds and runs, just without push.
 if (file("google-services.json").exists()) {
     apply(plugin = "com.google.gms.google-services")
 }
@@ -17,7 +17,7 @@ val keystoreProps = Properties().apply {
 }
 
 android {
-    namespace = "com.elhusseiny.lowyer"
+    namespace = "com.elhusseiny.lawyer"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -28,7 +28,7 @@ android {
 
     defaultConfig {
         // The law office app of المستشار أحمد الحسيني (built from the Elmanassa Business code, locked to that office).
-        applicationId = "com.elhusseiny.lowyer"
+        applicationId = "com.elhusseiny.lawyer"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
