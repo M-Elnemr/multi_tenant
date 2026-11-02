@@ -18,6 +18,7 @@ export type HostInfo =
       timezone: string;
       host: string;
       branding: Branding;
+      whiteLabel?: boolean;   // runs under its own name only: no «powered by», no billing/domains screens
     };
 
 const cache = new Map<string, { at: number; info: HostInfo }>();

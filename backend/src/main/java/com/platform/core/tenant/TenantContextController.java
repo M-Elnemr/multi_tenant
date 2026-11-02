@@ -54,6 +54,7 @@ public class TenantContextController {
         out.put("timezone", t.getTimezone());
         out.put("host", c.host());
         out.put("branding", branding);
+        out.put("whiteLabel", Boolean.TRUE.equals(jdbc.sql("SELECT white_label FROM core.tenants WHERE id = :t").param("t", t.getId()).query(Boolean.class).optional().orElse(false)));
         return out;
     }
 }

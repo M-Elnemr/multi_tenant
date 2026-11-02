@@ -34,7 +34,7 @@ const subscribe = (cb: () => void) => { listeners.add(cb); return () => { listen
 
 /** Sidebar dashboard used by shop owners, doctors and staff. Items are hidden without the permission (the backend enforces it regardless). */
 export function DashboardShell({ nav, children }: { nav: NavItem[]; children: React.ReactNode }) {
-  const { t, siteName, locale } = useI18n();
+  const { t, siteName, locale, whiteLabel } = useI18n();
   const path = usePathname();
   const router = useRouter();
   const { me, ready, can, canSee } = useMe();
@@ -134,7 +134,7 @@ export function DashboardShell({ nav, children }: { nav: NavItem[]; children: Re
             <LogoutButton />
             <button onClick={toggleCollapsed} aria-label={mini ? "Expand" : "Collapse"} className="hidden rounded-xl p-2 text-slate-500 transition hover:bg-brand-soft hover:text-brand lg:block"><Icon name="arrow" className={`h-4 w-4 ${(mini ? locale !== "ar" : locale === "ar") ? "" : "rotate-180"}`} /></button>
           </div>
-          <div className={mini ? "lg:hidden" : ""}><PoweredBy label={t("brand.powered")} name={t("brand.name")} /></div>
+          {!whiteLabel && <div className={mini ? "lg:hidden" : ""}><PoweredBy label={t("brand.powered")} name={t("brand.name")} /></div>}
         </div>
       </aside>
       </div>

@@ -71,7 +71,7 @@ export default async function ClinicSiteLayout({ children }: { children: React.R
         </div>
         <div className="border-t border-[var(--c-line)] py-5 text-center text-xs text-slate-500">
           <p>© {new Date().getFullYear()} {name}. {t("footer.rights")}</p>
-          <div className="mt-2"><PoweredBy label={t("brand.powered")} name={t("brand.name")} /></div>
+          {!(info.kind === "TENANT" && info.whiteLabel) && <div className="mt-2"><PoweredBy label={t("brand.powered")} name={t("brand.name")} /></div>}
         </div>
       </footer>
       {p && <MobileBar p={p} t={t} hrefBook={booking ? "/book" : undefined} />}

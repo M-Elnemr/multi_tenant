@@ -44,6 +44,20 @@ class LawyerIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void aWhiteLabelOfficeShowsNoBillingDomainsOrPlatformCredit() throws Exception {
+        Tenant t = lawyer();
+        onHost(t.host(), t.access(), "GET", "/api/v1/auth/me", null).andExpect(status().isOk()).andExpect(jsonPath("$.screens.billing").exists()).andExpect(jsonPath("$.screens.domains").exists());
+        onHost(t.host(), null, "GET", "/api/v1/tenant/context", null).andExpect(jsonPath("$.whiteLabel").value(false));
+        jdbc.sql("UPDATE core.tenants SET white_label = TRUE WHERE slug = :s").param("s", t.slug()).update();
+        onHost(t.host(), t.access(), "GET", "/api/v1/auth/me", null).andExpect(status().isOk())
+                .andExpect(jsonPath("$.screens.billing").doesNotExist()).andExpect(jsonPath("$.screens.domains").doesNotExist()).andExpect(jsonPath("$.screens.cases").exists());
+        onHost(t.host(), t.access(), "GET", "/api/v1/billing/subscription", null).andExpect(status().isForbidden());
+        onHost(t.host(), null, "GET", "/api/v1/tenant/context", null).andExpect(jsonPath("$.whiteLabel").value(true));
+        // lawyers' Professional plan is 300 EGP a month
+        assertThat(jdbc.sql("SELECT price_minor FROM billing.subscription_plans WHERE code = 'LAWYER_PRO'").query(Long.class).single()).isEqualTo(30000L);
+    }
+
+    @Test
     void websiteBookingApprovalAndSchedule() throws Exception {
         Tenant t = lawyer();
         String h = t.host(), a = t.access();

@@ -39,7 +39,7 @@ export default async function ShopLayout({ children }: { children: React.ReactNo
       <ShopHeader name={storeName} logoUrl={logoUrl} announcement={p.announcement} closedMessage={p.closedMessage} isOpen={p.isOpen !== false} categories={categories} />
       <VisitTracker />
       <main className="flex-1 pb-chrome">{children}</main>
-      <ShopFooter p={p} name={storeName} logoUrl={logoUrl} branches={branches} t={t} poweredLabel={t("brand.powered")} poweredName={t("brand.name")} />
+      <ShopFooter p={p} name={storeName} logoUrl={logoUrl} branches={branches} t={t} poweredLabel={info.kind === "TENANT" && info.whiteLabel ? "" : t("brand.powered")} poweredName={t("brand.name")} />
       <WhatsAppFloat phone={p.whatsapp} storeName={storeName} label={t("shop.chatWithUs")} />
       <LiveChat />
       <MobileBar />

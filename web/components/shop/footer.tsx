@@ -63,7 +63,7 @@ export function ShopFooter({ p, name, logoUrl, branches, t, poweredLabel, powere
       <div className="border-t border-white/10">
         <div className="s-container flex flex-col items-center justify-between gap-3 py-5 text-xs text-[#8f877c] sm:flex-row">
           <span>© {new Date().getFullYear()} {name}. {t("footer.rights")}</span>
-          <PoweredBy label={poweredLabel} name={poweredName} />
+          {poweredLabel && <PoweredBy label={poweredLabel} name={poweredName} />}
         </div>
       </div>
     </footer>

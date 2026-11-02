@@ -46,7 +46,14 @@ public class RbacService {
                 """).param("m", membershipId).query(String.class).list().stream().collect(Collectors.toSet());
         Map<String, String> access = screenAccess(membershipId);
         if (!access.isEmpty()) out.addAll(ScreenCatalog.permissions(tenantType(membershipId), access));
+        // a white-label business runs under its own name only: its staff see no billing or domains (the platform manages those)
+        if (whiteLabel(membershipId)) out.removeIf(c -> c.startsWith("billing.") || c.startsWith("domain."));
         return out;
+    }
+
+    private boolean whiteLabel(UUID membershipId) {
+        return jdbc.sql("SELECT t.white_label FROM core.user_tenant_memberships m JOIN core.tenants t ON t.id = m.tenant_id WHERE m.id = :m")
+                .param("m", membershipId).query(Boolean.class).optional().orElse(false);
     }
 
     private String tenantType(UUID membershipId) {
