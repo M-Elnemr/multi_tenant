@@ -1,0 +1,31 @@
+name: elhosseiny_lawyer
+description: The law office app of المستشار أحمد الحسيني (elhosseiny.elmanassa.shop) - the Elmanassa Business lawyer screens, for this office only.
+publish_to: none
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  platform_core:
+    path: ../../packages/platform_core
+  elmanassa_business:
+    path: ../provider
+
+dev_dependencies:
+  flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/lawyer.jpg
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: assets/icon.png
+  adaptive_icon_background: "#0B1D3A"
+  adaptive_icon_foreground: assets/icon_fg.png

@@ -23,7 +23,7 @@ class _AnimatedSplashState extends State<AnimatedSplash> with TickerProviderStat
 
   @override
   Widget build(BuildContext context) {
-    final a = widget.from ?? kBrandBlue, b = widget.to ?? kBrandGreen;
+    final a = widget.from ?? AppBrand.primary ?? kBrandBlue, b = widget.to ?? AppBrand.accent ?? kBrandGreen;
     return Scaffold(
       body: Container(
         width: double.infinity,
@@ -48,7 +48,7 @@ class _AnimatedSplashState extends State<AnimatedSplash> with TickerProviderStat
                   ),
                 ),
                 const SizedBox(height: 26),
-                SizedBox(width: 240, height: 50, child: CustomPaint(painter: _EcgPainter(line))),
+                SizedBox(width: 240, height: 50, child: AppBrand.custom ? null : CustomPaint(painter: _EcgPainter(line))),
                 const SizedBox(height: 10),
                 Opacity(opacity: text, child: Transform.translate(offset: Offset(0, (1 - text) * 18), child: Column(children: [
                   Text(widget.title, style: const TextStyle(color: Colors.white, fontSize: 34, fontWeight: FontWeight.w900, letterSpacing: 0.5)),

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Brand gradient shown by Android before Flutter draws the animated splash (no white flash) -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <gradient android:startColor="#0B1D3A" android:endColor="#1E3A5F" android:angle="315" />
+        </shape>
+    </item>
+</layer-list>

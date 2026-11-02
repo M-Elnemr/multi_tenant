@@ -15,7 +15,9 @@ class BrandLogo extends StatelessWidget {
   const BrandLogo({super.key, this.size = 96});
   final double size;
   @override
-  Widget build(BuildContext context) => Image.asset('assets/logo.png', package: 'platform_core', width: size, height: size, fit: BoxFit.contain);
+  Widget build(BuildContext context) => AppBrand.logo != null
+      ? ClipOval(child: Image(image: AppBrand.logo!, width: size, height: size, fit: BoxFit.cover))
+      : Image.asset('assets/logo.png', package: 'platform_core', width: size, height: size, fit: BoxFit.contain);
 }
 
 /// Fades and slides its child in; `index` staggers list items.
@@ -114,7 +116,7 @@ class GradientHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = Theme.of(context).colorScheme.primary;
-    final c = colors ?? [p, Color.lerp(p, kBrandGreen, 0.55)!];
+    final c = colors ?? [AppBrand.primary ?? p, Color.lerp(AppBrand.primary ?? p, AppBrand.accent ?? kBrandGreen, 0.55)!];
     return Container(
       height: height,
       decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topRight, end: Alignment.bottomLeft, colors: c), borderRadius: BorderRadius.vertical(bottom: Radius.circular(radius))),

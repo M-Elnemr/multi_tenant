@@ -8,6 +8,15 @@ const Color kBrandBlue = Color(0xFF1F6A99);
 const Color kBrandGreen = Color(0xFF3D9A63);
 const String kFont = 'packages/platform_core/Cairo';
 
+/// A single-business app (one law office, one shop) can carry its own look instead of Elmanassa's: a round picture as the logo,
+/// its own gradient colours, and no heartbeat line on the opening screen. Set once in main() before runApp; null keeps the platform look.
+class AppBrand {
+  static ImageProvider? logo;
+  static Color? primary;
+  static Color? accent;
+  static bool get custom => logo != null;
+}
+
 Color brandColor(TenantInfo? t) {
   final c = t?.primaryColor;
   if (c == null) return kBrandBlue;

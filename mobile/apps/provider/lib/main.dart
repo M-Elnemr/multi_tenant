@@ -15,9 +15,9 @@ import 'platform_admin.dart';
 import 'push.dart';
 import 'register.dart';
 import 'shell.dart';
+import 'single_business.dart';
 import 'store_panel.dart';
 
-const appVersion = '1.3.22';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,10 +31,10 @@ class ProviderApp extends StatelessWidget {
   Widget build(BuildContext context) => ValueListenableBuilder<Locale>(
         valueListenable: AppLocale.notifier,
         builder: (context, locale, _) => MaterialApp(
-          title: 'Elmanassa Business',
+          title: SingleBusiness.appTitle,
           debugShowCheckedModeBanner: false,
           navigatorKey: navigatorKey,
-          theme: themeFor(null),
+          theme: themeFor(null, seed: AppBrand.primary),
           locale: locale,
           localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],
           supportedLocales: const [Locale('ar'), Locale('en')],
@@ -75,6 +75,7 @@ class _RootState extends State<Root> {
       if (cached != null && mounted) setState(() { _businesses = cached.cast<Map<String, dynamic>>(); _checked = true; });
       try {
         list = ((await _api.get('me/businesses')) as List).cast<Map<String, dynamic>>();
+        if (SingleBusiness.on) list = list.where((b) => b['slug'] == SingleBusiness.slug).toList();
         await ListCache.write('business.list', list);
       } on ApiException catch (e) {
         if (e.status == 401) { list = null; await ListCache.clear(); } else if (cached != null) { list = cached.cast<Map<String, dynamic>>(); } else { error = errorText(e); }
@@ -83,7 +84,7 @@ class _RootState extends State<Root> {
       }
     }
     var perms = _platformPerms;
-    if (list != null) {
+    if (list != null && !SingleBusiness.on) {
       try {
         final me = await AuthRepository(_api).me();
         perms = ((me['permissions'] as List?) ?? const []).cast<String>().where((p) => p.startsWith('platform.')).toList();
@@ -120,10 +121,10 @@ class _RootState extends State<Root> {
         api: _api,
         app: 'business',
         idLabel: s.ar ? 'رقم الهاتف أو البريد' : 'Phone or email',
-        title: 'Elmanassa Business',
-        subtitle: s.ar ? 'أدر متجرك أو عيادتك أو مكتب المحاماة من هاتفك' : 'Run your shop, clinic or law office from your phone',
+        title: s.ar ? SingleBusiness.nameAr : SingleBusiness.nameEn,
+        subtitle: s.ar ? SingleBusiness.taglineAr : SingleBusiness.taglineEn,
         onLoggedIn: (u) => _load(),
-        footer: Column(children: [
+        footer: SingleBusiness.on ? null : Column(children: [
           Row(children: [const Expanded(child: Divider()), Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Text(s.ar ? 'ليس لديك حساب؟' : 'New here?', style: const TextStyle(color: Color(0xFF6B7A8C)))), const Expanded(child: Divider())]),
           const SizedBox(height: 10),
           SizedBox(width: double.infinity, child: OutlinedButton.icon(
@@ -143,6 +144,17 @@ class _RootState extends State<Root> {
         FilledButton(onPressed: () { setState(() { _checked = false; _error = null; }); _load(); }, child: Text(s.retry)),
         TextButton(onPressed: _signOut, child: Text(s.signOut)),
       ]))));
+    } else if (SingleBusiness.on && _businesses!.isEmpty) {
+      // signed in with an account that is not on this office's team
+      body = Scaffold(key: const ValueKey('notTeam'), body: Center(child: Padding(padding: const EdgeInsets.all(28), child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const BrandLogo(size: 96),
+        const SizedBox(height: 18),
+        Text(s.ar ? 'هذا التطبيق خاص بفريق ${SingleBusiness.nameAr}' : 'This app is for the team of ${SingleBusiness.nameEn}', textAlign: TextAlign.center, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+        const SizedBox(height: 8),
+        Text(s.ar ? 'الحساب الذي دخلت به ليس من فريق المكتب. سجّل الدخول برقم المكتب.' : 'The account you used is not on the office team. Sign in with the office number.', textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF6B7A8C))),
+        const SizedBox(height: 18),
+        FilledButton(onPressed: _signOut, child: Text(s.signOut)),
+      ]))));
     } else if (_businesses!.isEmpty && _platformPerms.contains('platform.tenant.manage')) {
       body = AdminHome(key: const ValueKey('admin'), api: _api, perms: _platformPerms, onSignOut: _signOut);
     } else {
@@ -150,7 +162,7 @@ class _RootState extends State<Root> {
     }
     return SplashGate(
       ready: _checked,
-      splash: AnimatedSplash(title: 'Elmanassa Business', tagline: s.ar ? 'أدر متجرك أو عيادتك أو مكتب المحاماة من هاتفك' : 'Run your shop, clinic or law office from your phone'),
+      splash: AnimatedSplash(title: s.ar ? SingleBusiness.nameAr : SingleBusiness.nameEn, tagline: s.ar ? SingleBusiness.taglineAr : SingleBusiness.taglineEn),
       child: AnimatedSwitcher(duration: const Duration(milliseconds: 380), switchInCurve: Curves.easeOutCubic, child: body),
     );
   }
@@ -520,7 +532,7 @@ class SettingsPage extends StatelessWidget {
         FadeSlideIn(child: tile(Icons.business_center_rounded, businessName)),
         FadeSlideIn(index: 1, child: tile(Icons.translate_rounded, s.language, trailing: const LanguageChip())),
         if (canSwitch) FadeSlideIn(index: 2, child: tile(Icons.swap_horiz_rounded, s.switchBusiness, onTap: onSwitch, trailing: const Icon(Icons.chevron_right_rounded))),
-        FadeSlideIn(index: 3, child: tile(Icons.info_outline_rounded, s.version, trailing: const Text(appVersion))),
+        FadeSlideIn(index: 3, child: tile(Icons.info_outline_rounded, s.version, trailing: Text(SingleBusiness.version))),
         FadeSlideIn(index: 4, child: tile(Icons.logout_rounded, s.signOut, onTap: onSignOut, color: Theme.of(context).colorScheme.error)),
       ]),
     );
