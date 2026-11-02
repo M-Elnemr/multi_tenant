@@ -28,10 +28,11 @@ public class LegalProfileService {
         TEXT.put("barNumber", "bar_number"); TEXT.put("barLevel", "bar_level");
         TEXT.put("officeAddress", "office_address"); TEXT.put("officeCity", "office_city"); TEXT.put("mapUrl", "map_url");
         TEXT.put("phone", "phone"); TEXT.put("whatsapp", "whatsapp"); TEXT.put("email", "email"); TEXT.put("template", "template");
+        TEXT.put("clientAppUrl", "client_app_url");
     }
     private static final Map<String, String> NUM = Map.of("yearsExperience", "years_experience", "slotMinutes", "slot_minutes", "bufferMinutes", "buffer_minutes",
             "minNoticeHours", "min_notice_hours", "maxDaysAhead", "max_days_ahead", "maxPerDay", "max_per_day", "reminderDaysBefore", "reminder_days_before");
-    private static final Map<String, String> BOOL = Map.of("autoApprove", "auto_approve", "bookingEnabled", "booking_enabled", "dailyDigest", "daily_digest");
+    private static final Map<String, String> BOOL = Map.of("autoApprove", "auto_approve", "bookingEnabled", "booking_enabled", "dailyDigest", "daily_digest", "waReport", "wa_report");
     private static final Map<String, String> JSON_COL = Map.of("practiceAreas", "practice_areas", "languages", "languages", "education", "education", "achievements", "achievements",
             "testimonials", "testimonials", "faq", "faq", "social", "social", "siteLayout", "site_layout");
 
@@ -88,6 +89,7 @@ public class LegalProfileService {
         if (f.get("template") instanceof String t) fe.when(!Set.of("classic", "modern", "heritage").contains(t), "template", "Choose one of the designs");
         if (f.get("email") instanceof String e && !e.isBlank()) fe.when(!e.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"), "email", "This email does not look right");
         if (f.get("mapUrl") instanceof String m && !m.isBlank()) fe.when(!m.startsWith("https://"), "mapUrl", "Paste a map link that starts with https://");
+        if (f.get("clientAppUrl") instanceof String u && !u.isBlank()) fe.when(!u.startsWith("https://"), "clientAppUrl", "Paste a link that starts with https://");
         for (String k : List.of("photoUrl", "coverUrl", "logoUrl")) if (f.get(k) instanceof String u && !u.isBlank()) fe.when(!(u.startsWith("https://") || u.startsWith("/")), k, "Upload the picture again");
         if (f.get("slotMinutes") instanceof Number n) fe.when(n.intValue() < 10 || n.intValue() > 240, "slotMinutes", "Use 10 to 240 minutes");
         if (f.get("bufferMinutes") instanceof Number n) fe.when(n.intValue() < 0 || n.intValue() > 120, "bufferMinutes", "Use 0 to 120 minutes");

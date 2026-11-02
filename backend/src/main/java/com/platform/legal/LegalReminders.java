@@ -31,10 +31,36 @@ public class LegalReminders {
 
     private final JdbcClient jdbc;
     private final NotificationService notifications;
+    private final com.platform.chat.EvolutionService evolution;
 
-    public LegalReminders(JdbcClient jdbc, NotificationService notifications) {
+    public LegalReminders(JdbcClient jdbc, NotificationService notifications, @org.springframework.context.annotation.Lazy com.platform.chat.EvolutionService evolution) {
         this.jdbc = jdbc;
         this.notifications = notifications;
+        this.evolution = evolution;
+    }
+
+    /** The office answered a client's booking: their phone hears it (approved, refused with the reason, or moved). */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void onDecided(LegalEvents.BookingDecided e) {
+        safely(() -> {
+            String when = when(e.tenantId(), e.startsAt());
+            String title, body;
+            switch (e.status()) {
+                case "APPROVED" -> { title = e.moved() ? "تم تغيير موعدك" : "تم تأكيد موعدك"; body = "موعدك مع المكتب " + when; }
+                case "DENIED" -> { title = "تعذّر تأكيد طلب الموعد"; body = (blank(e.note()) ? "تواصل مع المكتب لتحديد موعد آخر" : e.note()); }
+                default -> { title = "تم إلغاء موعدك"; body = "موعد " + when + (blank(e.note()) ? "" : " — " + e.note()); }
+            }
+            toClient(e.clientId(), e.tenantId(), title, body, "{\"type\":\"LEGAL_CLIENT_BOOKING\",\"bookingId\":\"" + e.bookingId() + "\"}");
+            notifications.dispatchSoon();
+        });
+    }
+
+    /** A push to a client of the office (only while the lawyer keeps their app access on). */
+    private void toClient(UUID clientId, UUID tenantId, String title, String body, String payload) {
+        if (clientId == null) return;
+        if (jdbc.sql("SELECT count(*) FROM legal.clients WHERE id = :c AND portal_enabled").param("c", clientId).query(Long.class).single() == 0) return;
+        notifications.push(clientId, tenantId, title, body, payload);
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
@@ -66,6 +92,27 @@ public class LegalReminders {
             UUID t = (UUID) b.get("tenant_id");
             safely(() -> send(t, "legal.schedule.read", "LEGAL_SESSION_SOON", "جلسة بعد ساعة", b.get("guest_name") + " — " + when(t, ts(b.get("starts_at"))) + " (" + b.get("guest_phone") + ")",
                     "{\"type\":\"LEGAL_BOOKING\",\"bookingId\":\"" + b.get("id") + "\"}"));
+        }
+        // the client: an hour before their session at the office
+        for (var b : jdbc.sql("""
+                UPDATE legal.bookings SET client_reminder_sent_at = now() WHERE status = 'APPROVED' AND client_id IS NOT NULL AND client_reminder_sent_at IS NULL
+                  AND starts_at > now() AND starts_at <= now() + interval '65 minutes'
+                """ + live.formatted("legal.bookings") + " RETURNING id, tenant_id, client_id, starts_at").query().listOfRows()) {
+            UUID t = (UUID) b.get("tenant_id");
+            safely(() -> toClient((UUID) b.get("client_id"), t, "موعدك بعد ساعة", "موعدك في المكتب " + when(t, ts(b.get("starts_at"))),
+                    "{\"type\":\"LEGAL_CLIENT_BOOKING\",\"bookingId\":\"" + b.get("id") + "\"}"));
+        }
+        // the client: the day before a hearing or meeting of their case
+        for (var s : jdbc.sql("""
+                UPDATE legal.case_steps st SET client_reminder_sent_at = now() FROM legal.cases k
+                WHERE k.id = st.case_id AND st.kind IN ('HEARING','MEETING') AND NOT st.done AND st.client_reminder_sent_at IS NULL
+                  AND st.starts_at > now() + interval '2 hours' AND st.starts_at <= now() + interval '26 hours'
+                """ + live.formatted("st") + " RETURNING st.id, st.tenant_id, st.case_id, st.kind, st.description, st.location, st.starts_at, k.number, k.title, k.court").query().listOfRows()) {
+            UUID t = (UUID) s.get("tenant_id");
+            for (UUID c : jdbc.sql("SELECT client_id FROM legal.case_clients WHERE case_id = :k").param("k", s.get("case_id")).query(UUID.class).list())
+                safely(() -> toClient(c, t, "تذكير: " + kindAr((String) s.get("kind")) + " قضيتك " + when(t, ts(s.get("starts_at"))),
+                        s.get("title") + " • " + s.get("description") + (blank(s.get("location")) ? (blank(s.get("court")) ? "" : " • " + s.get("court")) : " • " + s.get("location")),
+                        "{\"type\":\"LEGAL_CLIENT_CASE\",\"caseId\":\"" + s.get("case_id") + "\"}"));
         }
         for (var s : jdbc.sql("""
                 UPDATE legal.case_steps st SET reminder_sent_at = now() FROM legal.cases k WHERE k.id = st.case_id AND NOT st.done AND st.reminder_sent_at IS NULL
@@ -101,7 +148,7 @@ public class LegalReminders {
     public void dailyDigest() {
         for (var p : jdbc.sql("""
                 SELECT p.tenant_id, t.timezone FROM legal.profiles p JOIN core.tenants t ON t.id = p.tenant_id
-                WHERE p.daily_digest AND t.status NOT IN ('SUSPENDED','CANCELLED','ARCHIVED')
+                WHERE (p.daily_digest OR p.wa_report) AND t.status NOT IN ('SUSPENDED','CANCELLED','ARCHIVED')
                 """).query().listOfRows()) {
             UUID t = (UUID) p.get("tenant_id");
             ZoneId tz = zone((String) p.get("timezone"));
@@ -113,6 +160,10 @@ public class LegalReminders {
 
     void digest(UUID tenantId, ZoneId tz, LocalDate today) {
         if (jdbc.sql("INSERT INTO legal.digest_sent (tenant_id, day) VALUES (:t, :d) ON CONFLICT DO NOTHING").param("t", tenantId).param("d", today).update() == 0) return;
+        var flags = jdbc.sql("SELECT daily_digest, wa_report FROM legal.profiles WHERE tenant_id = :t").param("t", tenantId).query().singleRow();
+        // every evening, even a free one, the full report on the lawyer's own WhatsApp (from his linked number to itself)
+        if (Boolean.TRUE.equals(flags.get("wa_report"))) safely(() -> whatsappReport(tenantId, tz, today));
+        if (!Boolean.TRUE.equals(flags.get("daily_digest"))) return;
         LocalDate tomorrow = today.plusDays(1);
         java.sql.Timestamp s = java.sql.Timestamp.from(tomorrow.atStartOfDay(tz).toInstant()), e = java.sql.Timestamp.from(tomorrow.plusDays(1).atStartOfDay(tz).toInstant());
         List<Map<String, Object>> steps = jdbc.sql("SELECT st.kind, st.starts_at, st.description, k.number FROM legal.case_steps st JOIN legal.cases k ON k.id = st.case_id WHERE st.tenant_id = :t AND NOT st.done AND st.starts_at >= :s AND st.starts_at < :e ORDER BY st.starts_at")
@@ -131,6 +182,62 @@ public class LegalReminders {
         send(tenantId, "legal.schedule.read", "LEGAL_DAILY_DIGEST", "أجندة الغد — " + DAY.format(tomorrow), body.toString(), "{\"type\":\"LEGAL_SCHEDULE\",\"date\":\"" + tomorrow + "\"}");
         notifications.dispatchSoon();
     }
+
+    /** Sends tomorrow's report to the lawyer's own WhatsApp now (the "try it" button). False when his phone is not linked. */
+    public boolean sendWhatsAppReportNow(UUID tenantId) {
+        ZoneId tz = zone(jdbc.sql("SELECT timezone FROM core.tenants WHERE id = :t").param("t", tenantId).query(String.class).optional().orElse("Africa/Cairo"));
+        return whatsappReport(tenantId, tz, LocalDate.now(tz));
+    }
+
+    /** Tomorrow in full: hearings and case dates, sessions with clients, requests waiting for an answer, today's collections and what is due. */
+    boolean whatsappReport(UUID tenantId, ZoneId tz, LocalDate today) {
+        String self = evolution.selfNumber(tenantId);
+        if (self == null) return false;
+        return evolution.sendFree(tenantId, self, whatsappReportText(tenantId, tz, today));
+    }
+
+    public String whatsappReportText(UUID tenantId, ZoneId tz, LocalDate today) {
+        LocalDate tomorrow = today.plusDays(1);
+        java.sql.Timestamp s = java.sql.Timestamp.from(tomorrow.atStartOfDay(tz).toInstant()), e = java.sql.Timestamp.from(tomorrow.plusDays(1).atStartOfDay(tz).toInstant());
+        java.sql.Timestamp ts0 = java.sql.Timestamp.from(today.atStartOfDay(tz).toInstant());
+        var steps = jdbc.sql("""
+                SELECT st.kind, st.starts_at, st.description, st.location, k.number, k.title, k.court FROM legal.case_steps st JOIN legal.cases k ON k.id = st.case_id
+                WHERE st.tenant_id = :t AND NOT st.done AND st.starts_at >= :s AND st.starts_at < :e ORDER BY st.starts_at
+                """).param("t", tenantId).param("s", s).param("e", e).query().listOfRows();
+        var sessions = jdbc.sql("""
+                SELECT b.starts_at, b.guest_name, b.guest_phone, coalesce(sv.name, 'استشارة') AS service FROM legal.bookings b LEFT JOIN legal.services sv ON sv.id = b.service_id
+                WHERE b.tenant_id = :t AND b.status = 'APPROVED' AND b.starts_at >= :s AND b.starts_at < :e ORDER BY b.starts_at
+                """).param("t", tenantId).param("s", s).param("e", e).query().listOfRows();
+        long pending = jdbc.sql("SELECT count(*) FROM legal.bookings WHERE tenant_id = :t AND status = 'PENDING' AND starts_at > now()").param("t", tenantId).query(Long.class).single();
+        long collected = jdbc.sql("SELECT coalesce(sum(amount_minor), 0) FROM legal.payments WHERE tenant_id = :t AND created_at >= :s0").param("t", tenantId).param("s0", ts0).query(Long.class).single();
+        long due = jdbc.sql("""
+                SELECT coalesce(sum(greatest(0, k.agreed_fee_minor + (SELECT coalesce(sum(a.fee_minor), 0) FROM legal.case_actions a WHERE a.case_id = k.id)
+                  - (SELECT coalesce(sum(p.amount_minor), 0) FROM legal.payments p WHERE p.case_id = k.id))), 0) FROM legal.cases k WHERE k.tenant_id = :t
+                """).param("t", tenantId).query(Long.class).single();
+        StringBuilder m = new StringBuilder("📋 *تقرير الغد — ").append(DAY.format(tomorrow)).append("*\n");
+        if (steps.isEmpty() && sessions.isEmpty()) m.append("\n✨ لا جلسات ولا مواعيد غدًا.\n");
+        if (!steps.isEmpty()) {
+            m.append("\n⚖️ *الجلسات ومواعيد القضايا (").append(steps.size()).append(")*\n");
+            for (var x : steps) {
+                String place = blank(x.get("location")) ? (blank(x.get("court")) ? "" : " — " + x.get("court")) : " — " + x.get("location");
+                m.append("• ").append(time(ts(x.get("starts_at")), tz)).append(" ").append(kindAr((String) x.get("kind"))).append(": ").append(x.get("description"))
+                        .append("\n   قضية ").append(x.get("number")).append(" — ").append(x.get("title")).append(place).append("\n");
+            }
+        }
+        if (!sessions.isEmpty()) {
+            m.append("\n👥 *استشارات مع الموكلين (").append(sessions.size()).append(")*\n");
+            for (var x : sessions)
+                m.append("• ").append(time(ts(x.get("starts_at")), tz)).append(" ").append(x.get("guest_name")).append(" — ").append(x.get("service"))
+                        .append(" (").append(LegalPortalService.localPhone((String) x.get("guest_phone"))).append(")\n");
+        }
+        if (pending > 0) m.append("\n⏳ طلبات حجز تنتظر ردك: ").append(pending).append("\n");
+        m.append("\n💰 تحصيل اليوم: ").append(money(collected)).append("\n📌 المستحق على الموكلين: ").append(money(due));
+        return m.toString();
+    }
+
+    private static String time(Instant at, ZoneId tz) { return TIME.format(at.atZone(tz)).replace("AM", "ص").replace("PM", "م"); }
+
+    private static String money(long minor) { return String.format(java.util.Locale.US, "%,d", minor / 100) + " ج.م"; }
 
     private void send(UUID tenantId, String permission, String type, String title, String body, String payload) {
         for (UUID u : jdbc.sql("""

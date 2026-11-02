@@ -60,6 +60,10 @@ public class AccountAuthService {
                     WHERE p.tenant_id = :t AND p.user_id = :u AND p.status = 'ACTIVE' AND a.status = 'ACTIVE'
                     """).param("t", t.id()).param("u", s.id()).query(Long.class).single() > 0;
         }
+        if ("LAWCLIENT".equals(s.type())) {   // a client of a law office, only on that office's address and while the lawyer keeps their access on
+            if (!"LAWYER".equals(t.type())) return false;
+            return jdbc.sql("SELECT count(*) FROM legal.clients WHERE id = :u AND tenant_id = :t AND portal_enabled").param("u", s.id()).param("t", t.id()).query(Long.class).single() > 0;
+        }
         if ("CLIENT".equals(s.type())) {
             if (!"STORE".equals(t.type())) return false;
             return jdbc.sql("SELECT count(*) FROM commerce.client_accounts WHERE id = :u AND status = 'ACTIVE'").param("u", s.id()).query(Long.class).single() > 0;
@@ -278,7 +282,9 @@ public class AccountAuthService {
 
     @Transactional
     public TokenResponse reissue(String type, UUID id, String ip, String ua) {
-        boolean ok = "PATIENT".equals(type)
+        boolean ok = "LAWCLIENT".equals(type)
+                ? jdbc.sql("SELECT count(*) FROM legal.clients WHERE id = :u AND portal_enabled").param("u", id).query(Long.class).single() > 0
+                : "PATIENT".equals(type)
                 ? jdbc.sql("SELECT count(*) FROM medical.patient_accounts WHERE id = :u AND status = 'ACTIVE'").param("u", id).query(Long.class).single() > 0
                 : jdbc.sql("SELECT count(*) FROM commerce.client_accounts WHERE id = :u AND status = 'ACTIVE'").param("u", id).query(Long.class).single() > 0;
         if (!ok) throw BusinessException.unauthorized("INVALID_REFRESH_TOKEN", "Invalid refresh token");
@@ -288,6 +294,8 @@ public class AccountAuthService {
     public Optional<TokenResponse.UserSummary> me(UUID id) {
         var p = jdbc.sql("SELECT id, display_name, phone, must_change_password FROM medical.patient_accounts WHERE id = :u").param("u", id).query().listOfRows().stream().findFirst();
         if (p.isPresent()) return Optional.of(patientSummary(p.get()));
+        var lc = jdbc.sql("SELECT id, name, phone, portal_must_change FROM legal.clients WHERE id = :u AND portal_enabled").param("u", id).query().listOfRows().stream().findFirst();
+        if (lc.isPresent()) return Optional.of(new TokenResponse.UserSummary(id, (String) lc.get().get("name"), "", (String) lc.get().get("phone"), null, List.of("LEGAL_CLIENT"), List.of(), Boolean.TRUE.equals(lc.get().get("portal_must_change"))));
         return jdbc.sql("SELECT id, name, phone, email FROM commerce.client_accounts WHERE id = :u").param("u", id).query().listOfRows().stream().findFirst().map(this::clientSummary);
     }
 
@@ -300,6 +308,9 @@ public class AccountAuthService {
     }
 
     public TokenResponse issuePatientTokens(UUID accountId, String ip, String ua) { return issue("PATIENT", accountId, ip, ua); }
+
+    /** Tokens for a client of a law office (legal.clients row with app access on); see LegalPortalService. */
+    public TokenResponse issueLegalClientTokens(UUID clientId, String ip, String ua) { return issue("LAWCLIENT", clientId, ip, ua); }
 
     private TokenResponse issue(String type, UUID id, String ip, String ua) {
         byte[] raw = new byte[32];

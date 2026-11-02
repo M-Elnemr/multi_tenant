@@ -6,7 +6,7 @@ export const STEP_KINDS = ["HEARING", "DEADLINE", "FILING", "MEETING", "OTHER"] 
 export const PAY_METHODS = ["CASH", "TRANSFER", "INSTAPAY", "WALLET", "CHEQUE", "OTHER"] as const;
 
 export type CaseRow = { id: string; number: string; title: string; caseType: string; court: string; courtCaseNo: string; opponent: string; status: string; outcome: string; openedOn: string; closedOn?: string | null; clientNames?: string | null; nextStepAt?: string | null; billedMinor: number; paidMinor: number };
-export type Client = { id: string; name: string; phone: string; phone2?: string; email: string; nationalId?: string; address?: string; kind: "PERSON" | "COMPANY"; notes?: string; tags: string[]; caseCount?: number; openCases?: number; balanceMinor?: number; createdAt: string };
+export type Client = { id: string; name: string; phone: string; phone2?: string; email: string; nationalId?: string; address?: string; kind: "PERSON" | "COMPANY"; notes?: string; tags: string[]; caseCount?: number; openCases?: number; balanceMinor?: number; createdAt: string; portalEnabled?: boolean; portalLastLoginAt?: string | null };
 export type Step = { id: string; kind: string; startsAt: string; durationMinutes: number; description: string; location: string; done: boolean; result: string };
 export type Action = { id: string; actionDate: string; title: string; notes: string; feeMinor: number };
 export type Payment = { id: string; amountMinor: number; paidOn: string; method: string; note: string; clientId?: string | null; clientName?: string | null };

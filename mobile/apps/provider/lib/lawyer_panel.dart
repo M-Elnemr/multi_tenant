@@ -1,4 +1,8 @@
+import 'dart:async';
+import 'dart:convert' show base64Decode;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:platform_core/platform_core.dart';
 
 import 'common.dart';
@@ -57,7 +61,7 @@ List<PanelSection> lawyerSections() => [
       PanelSection('الخدمات', 'Services', Icons.checklist_rounded, screen: 'settings', group: 'setup', build: (c) => LawyerServices(ctx: c)),
       PanelSection('مواعيد العمل', 'Working hours', Icons.schedule_rounded, screen: ['schedule', 'settings'], group: 'setup', build: (c) => LawyerHours(ctx: c)),
       PanelSection('موقعي', 'My website', Icons.public_rounded, screen: 'settings', group: 'setup', build: (c) => LawyerWebsite(ctx: c)),
-      PanelSection('قواعد الحجز', 'Booking rules', Icons.tune_rounded, screen: 'settings', group: 'setup', build: (c) => LawyerSettings(ctx: c)),
+      PanelSection('الإعدادات', 'Settings', Icons.tune_rounded, screen: 'settings', group: 'setup', build: (c) => LawyerSettings(ctx: c)),
       PanelSection('النطاقات', 'Domains', Icons.language_rounded, screen: 'domains', group: 'setup', build: (c) => DomainsScreen(ctx: c)),
       PanelSection('الموظفون', 'Staff', Icons.badge_rounded, perm: 'staff.manage', group: 'account', build: (c) => StaffScreen(ctx: c)),
       PanelSection('الفواتير والاشتراك', 'Billing', Icons.credit_card_rounded, screen: 'billing', group: 'account', build: (c) => BillingScreen(ctx: c)),
@@ -973,6 +977,7 @@ class ClientDetailPage extends StatelessWidget {
             Expanded(child: Column(children: [Text(_l('المحصل', 'Paid'), style: const TextStyle(fontSize: 12)), Text(s.money((c['paidMinor'] as num?) ?? 0, ctx.currency), style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF1E9E5A)))])),
             Expanded(child: Column(children: [Text(_l('المتبقي', 'Due'), style: const TextStyle(fontSize: 12)), Text(s.money((c['balanceMinor'] as num?) ?? 0, ctx.currency), style: TextStyle(fontWeight: FontWeight.w900, color: ((c['balanceMinor'] as num?) ?? 0) > 0 ? const Color(0xFFD14343) : const Color(0xFF1E9E5A)))])),
           ]))),
+          _ClientAppCard(ctx: ctx, c: c, reload: reload),
           if ('${c['notes'] ?? ''}'.isNotEmpty) Card(child: Padding(padding: const EdgeInsets.all(14), child: Text('${c['notes']}'))),
           Row(children: [
             Expanded(child: Text(_l('القضايا', 'Cases'), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16))),
@@ -991,6 +996,178 @@ class ClientDetailPage extends StatelessWidget {
         ])),
       ),
     );
+  }
+}
+
+/// The client's access to the office app: the lawyer turns it on, and sends the temporary password by WhatsApp.
+class _ClientAppCard extends StatelessWidget {
+  const _ClientAppCard({required this.ctx, required this.c, required this.reload});
+  final Ctx ctx;
+  final Map<String, dynamic> c;
+  final Future<void> Function() reload;
+
+  Future<void> _act(BuildContext context, String action) async {
+    if (action == 'DISABLE') {
+      final yes = await showDialog<bool>(context: context, builder: (x) => AlertDialog(title: Text(_l('إيقاف دخول الموكل؟', 'Turn access off?')), content: Text(_l('سيتم تسجيل خروجه من التطبيق.', 'They will be signed out of the app.')),
+          actions: [TextButton(onPressed: () => Navigator.pop(x, false), child: Text(_l('رجوع', 'Back'))), FilledButton(onPressed: () => Navigator.pop(x, true), child: Text(_l('إيقاف', 'Turn off')))]));
+      if (yes != true) return;
+    }
+    Map<String, dynamic>? r;
+    if (!context.mounted || !await run(context, () async { r = Map<String, dynamic>.from(await ctx.api.post('lawyer/clients/${c['id']}/app-access', {'action': action}) as Map); })) return;
+    await reload();
+    if (r?['password'] == null || !context.mounted) return;
+    final msg = '${r!['message']}';
+    await showModalBottomSheet<void>(context: context, isScrollControlled: true, showDragHandle: true, builder: (x) => SafeArea(child: Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text(_l('أرسل بيانات الدخول للموكل', 'Send the sign-in details'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+        const SizedBox(height: 12),
+        Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: const Color(0xFFF4F6F9), borderRadius: BorderRadius.circular(14)), child: Column(children: [
+          Row(children: [Expanded(child: Text(_l('رقم الدخول', 'Sign-in number'))), Text('${r!['phone']}', textDirection: TextDirection.ltr, style: const TextStyle(fontWeight: FontWeight.w900))]),
+          const SizedBox(height: 8),
+          Row(children: [Expanded(child: Text(_l('كلمة المرور المؤقتة', 'Temporary password'))), SelectableText('${r!['password']}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 20, letterSpacing: 3))]),
+        ])),
+        const SizedBox(height: 8),
+        Text(_l('تظهر الآن فقط، والموكل سيغيّرها عند أول دخول.', 'Shown only now; the client changes it at the first sign-in.'), style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 12.5)),
+        const SizedBox(height: 14),
+        FilledButton.icon(style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(50), backgroundColor: const Color(0xFF25D366)),
+            onPressed: () => launch('https://wa.me/${r!['whatsapp']}?text=${Uri.encodeComponent(msg)}'), icon: const Icon(Icons.chat_rounded), label: Text(_l('إرسال عبر واتساب', 'Send by WhatsApp'))),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(onPressed: () async { await Clipboard.setData(ClipboardData(text: msg)); if (x.mounted) toast(x, _l('تم نسخ الرسالة', 'Message copied')); },
+            icon: const Icon(Icons.copy_rounded), label: Text(_l('نسخ الرسالة', 'Copy the message'))),
+      ]),
+    )));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final on = c['portalEnabled'] == true, hasPhone = '${c['phone'] ?? ''}'.isNotEmpty, write = ctx.canWrite('clients');
+    return Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Row(children: [
+        const Icon(Icons.phone_iphone_rounded, color: Color(0xFF0B1D3A)),
+        const SizedBox(width: 8),
+        Expanded(child: Text(_l('تطبيق الموكل', 'Client app'), style: const TextStyle(fontWeight: FontWeight.w900))),
+        Container(padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3), decoration: BoxDecoration(color: (on ? const Color(0xFF1E9E5A) : const Color(0xFF6B7C8D)).withValues(alpha: .12), borderRadius: BorderRadius.circular(20)),
+            child: Text(on ? _l('مفعّل', 'On') : _l('غير مفعّل', 'Off'), style: TextStyle(color: on ? const Color(0xFF1E9E5A) : const Color(0xFF6B7C8D), fontWeight: FontWeight.w800, fontSize: 11))),
+      ]),
+      const SizedBox(height: 6),
+      Text(on ? (c['portalLastLoginAt'] == null ? _l('مفعّل — لم يدخل بعد', 'On — has not signed in yet') : '${_l('مفعّل — آخر دخول', 'On — last sign-in')} ${fmtDate('${c['portalLastLoginAt']}')}')
+              : _l('يتابع قضاياه وجلساتها ويحجز مواعيده من تطبيق المكتب برقم موبايله.', 'They follow their cases and hearings and book sessions in the office app with their mobile.'),
+          style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 13)),
+      if (!hasPhone) Padding(padding: const EdgeInsets.only(top: 6), child: Text(_l('أضف رقم موبايل الموكل أولًا.', "Add the client's mobile first."), style: const TextStyle(color: Color(0xFFD98200), fontSize: 12.5))),
+      if (write && hasPhone) Padding(padding: const EdgeInsets.only(top: 8), child: Wrap(spacing: 8, runSpacing: 6, children: [
+        if (!on) FilledButton.icon(onPressed: () => _act(context, 'ENABLE'), icon: const Icon(Icons.lock_open_rounded), label: Text(_l('تفعيل دخول التطبيق', 'Give app access')))
+        else ...[
+          OutlinedButton(onPressed: () => _act(context, 'RESET'), child: Text(_l('كلمة مرور مؤقتة جديدة', 'New temporary password'))),
+          TextButton(onPressed: () => _act(context, 'DISABLE'), child: Text(_l('إيقاف الدخول', 'Turn off'), style: const TextStyle(color: Color(0xFFD14343)))),
+        ],
+      ])),
+    ])));
+  }
+}
+
+// ======================================================================================= the lawyer's WhatsApp evening report
+
+/// He links his own WhatsApp once (like WhatsApp Web); every evening at 8 pm tomorrow's report goes from his number to his own chat.
+class _WhatsAppReportCard extends StatefulWidget {
+  const _WhatsAppReportCard({required this.ctx});
+  final Ctx ctx;
+  @override
+  State<_WhatsAppReportCard> createState() => _WhatsAppReportCardState();
+}
+
+class _WhatsAppReportCardState extends State<_WhatsAppReportCard> {
+  Map<String, dynamic>? _i;
+  String? _qr, _pairing;
+  bool _accepted = false, _busy = false;
+  Timer? _poll;
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  @override
+  void dispose() { _poll?.cancel(); super.dispose(); }
+
+  Future<void> _load() async {
+    try {
+      final r = Map<String, dynamic>.from(await widget.ctx.api.get('lawyer/whatsapp') as Map);
+      if (!mounted) return;
+      setState(() => _i = r);
+      _watch();
+    } catch (_) {}
+  }
+
+  bool get _waiting => _i?['enabled'] == true && _i?['status'] != 'CONNECTED';
+
+  void _watch() {
+    _poll?.cancel();
+    if (!_waiting) return;
+    Future<void> tick() async {
+      try {
+        final q = Map<String, dynamic>.from(await widget.ctx.api.get('lawyer/whatsapp/qr') as Map);
+        if (!mounted) return;
+        setState(() { _qr = q['qr'] as String?; _pairing = q['pairingCode'] as String?; });
+        if (q['status'] == 'CONNECTED') { _poll?.cancel(); await _load(); }
+      } catch (_) {}
+    }
+    tick();
+    _poll = Timer.periodic(const Duration(seconds: 6), (_) => tick());
+  }
+
+  Future<void> _do(Future<void> Function() f) async {
+    setState(() => _busy = true);
+    await run(context, f);
+    if (mounted) setState(() => _busy = false);
+    await _load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final i = _i;
+    if (i == null) return const SizedBox.shrink();
+    final connected = i['enabled'] == true && i['status'] == 'CONNECTED';
+    return Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Row(children: [
+        const Icon(Icons.chat_rounded, color: Color(0xFF1E9E5A)),
+        const SizedBox(width: 8),
+        Expanded(child: Text(_l('التقرير اليومي على واتساب', 'Daily report on WhatsApp'), style: const TextStyle(fontWeight: FontWeight.w900))),
+        if (i['enabled'] == true) Text(connected ? _l('مرتبط', 'Linked') : _l('بانتظار الربط', 'Waiting'), style: TextStyle(color: connected ? const Color(0xFF1E9E5A) : const Color(0xFFD98200), fontWeight: FontWeight.w800, fontSize: 12)),
+      ]),
+      const SizedBox(height: 6),
+      Text(_l('كل يوم 8 مساءً تصلك جلسات الغد واستشاراته وطلبات الحجز والمستحقات من رقمك إلى محادثتك مع نفسك — تلقائيًا ومجانًا.',
+          "Every day at 8 pm tomorrow's hearings, sessions, waiting requests and dues are sent from your number to your own chat — automatic and free."), style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 13)),
+      if (i['available'] == false) Padding(padding: const EdgeInsets.only(top: 8), child: Text(_l('غير متاح على هذا الخادم.', 'Not available on this server.')))
+      else if (i['enabled'] != true) ...[
+        const SizedBox(height: 8),
+        Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFFFFF7E6), borderRadius: BorderRadius.circular(12)),
+            child: Text(_l('⚠️ الربط يعمل مثل واتساب ويب وليس واجهة واتساب الرسمية. يُرسل منه تقريرك فقط ولا يرد على أحد.', '⚠️ Linking works like WhatsApp Web (not the official API). Only your report is sent; nobody gets automatic replies.'), style: const TextStyle(fontSize: 12.5))),
+        CheckboxListTile(contentPadding: EdgeInsets.zero, value: _accepted, onChanged: (v) => setState(() => _accepted = v == true), title: Text(_l('فهمت وأوافق', 'I understand and agree'), style: const TextStyle(fontSize: 13.5))),
+        FilledButton.icon(onPressed: !_accepted || _busy ? null : () => _do(() async { await widget.ctx.api.post('lawyer/whatsapp/enable', {'acceptedRisk': true}); }),
+            icon: const Icon(Icons.link_rounded), label: Text(_l('ربط واتساب الخاص بي', 'Link my WhatsApp'))),
+      ] else if (!connected) ...[
+        const SizedBox(height: 8),
+        Text(_l('من هاتف آخر أو من الكمبيوتر اعرض هذا الكود، ثم على هاتفك: واتساب ← الأجهزة المرتبطة ← ربط جهاز. أو استخدم رمز الربط.', 'Show this code on another screen, then on your phone: WhatsApp → Linked devices → Link a device. Or use the pairing code.'), style: const TextStyle(fontSize: 12.5)),
+        const SizedBox(height: 8),
+        if (_qr != null) Center(child: Container(color: Colors.white, padding: const EdgeInsets.all(8), child: Image.memory(base64Decode(_qr!.split(',').last), width: 220, height: 220, gaplessPlayback: true)))
+        else const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator())),
+        if (_pairing != null) Center(child: Padding(padding: const EdgeInsets.only(top: 6), child: SelectableText('${_l('رمز الربط', 'Pairing code')}: $_pairing', style: const TextStyle(fontWeight: FontWeight.w900)))),
+      ] else ...[
+        const SizedBox(height: 8),
+        Text('${_l('مرتبط', 'Linked')}: +${i['phone'] ?? ''}', textDirection: TextDirection.ltr, textAlign: TextAlign.start, style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF1E9E5A))),
+        SwitchListTile(contentPadding: EdgeInsets.zero, value: i['waReport'] == true, title: Text(_l('أرسل لي التقرير كل يوم 8 مساءً', 'Send me the report daily at 8 pm')),
+            onChanged: _busy ? null : (v) => _do(() async { await widget.ctx.api.patch('lawyer/profile', {'waReport': v}); })),
+        OutlinedButton.icon(onPressed: _busy ? null : () async {
+          setState(() => _busy = true);
+          bool sent = false;
+          await run(this.context, () async { sent = (await widget.ctx.api.post('lawyer/whatsapp/report/send-now', {}) as Map)['sent'] == true; });
+          if (!mounted) return;
+          setState(() => _busy = false);
+          toast(this.context, sent ? _l('تم الإرسال — افتح محادثتك مع نفسك', 'Sent — open your own chat') : _l('لم يُرسل: الهاتف غير مرتبط الآن', 'Not sent: the phone is not linked right now'), isError: !sent);
+        }, icon: const Icon(Icons.send_rounded), label: Text(_l('أرسل تقرير الغد الآن', "Send tomorrow's report now"))),
+      ],
+      if (i['enabled'] == true) Align(alignment: AlignmentDirectional.centerStart, child: TextButton(onPressed: _busy ? null : () => _do(() async { await widget.ctx.api.post('lawyer/whatsapp/disable', {}); }),
+          child: Text(_l('فك ربط واتساب', 'Unlink WhatsApp'), style: const TextStyle(color: Color(0xFFD14343))))),
+    ])));
   }
 }
 
@@ -1206,6 +1383,7 @@ class LawyerSettings extends StatelessWidget {
   final Ctx ctx;
   @override
   Widget build(BuildContext context) => ListView(padding: const EdgeInsets.all(16), children: [
+        if (ctx.canWrite('settings')) _WhatsAppReportCard(ctx: ctx),
         Card(child: ListTile(
           leading: const Icon(Icons.public_rounded, color: Color(0xFFC9A227)),
           title: Text(_l('موقعك', 'Your website'), style: const TextStyle(fontWeight: FontWeight.w900)),

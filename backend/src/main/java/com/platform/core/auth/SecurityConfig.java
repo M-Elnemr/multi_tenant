@@ -59,7 +59,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/v1/chat/evolution/webhook/*").permitAll()   // Evolution API calls this from inside our network; the secret in the path proves it
                 .requestMatchers(HttpMethod.GET, "/api/v1/clinic/public/**", "/api/v1/files/*/content").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/lawyer/public/**").permitAll()
-                .requestMatchers(HttpMethod.POST, "/api/v1/lawyer/public/bookings", "/api/v1/lawyer/public/bookings/track", "/api/v1/lawyer/public/bookings/cancel").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/lawyer/public/bookings", "/api/v1/lawyer/public/bookings/track", "/api/v1/lawyer/public/bookings/cancel", "/api/v1/lawyer/portal/login").permitAll()
                 .requestMatchers(HttpMethod.PUT, "/api/v1/files/*/content").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/clinic/webhooks/*", "/api/v1/analytics/collect").permitAll()
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()

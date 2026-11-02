@@ -54,7 +54,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             // Patients and shop clients live in their own tables and only ever act on the right kind of place:
             // a patient on a clinic they belong to, a client on a store - never the other way round.
             TenantContext.Current t = TenantContext.get();
-            if (t != null && accounts.hasAccess(subject, t)) auths.add(new SimpleGrantedAuthority("PATIENT".equals(subject.type()) ? "ROLE_PATIENT" : "ROLE_CUSTOMER"));
+            if (t != null && accounts.hasAccess(subject, t)) auths.add(new SimpleGrantedAuthority("PATIENT".equals(subject.type()) ? "ROLE_PATIENT" : "LAWCLIENT".equals(subject.type()) ? "ROLE_LEGAL_CLIENT" : "ROLE_CUSTOMER"));
             SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(userId, null, List.copyOf(auths)));
             return;
         }

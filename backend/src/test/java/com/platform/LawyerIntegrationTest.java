@@ -44,6 +44,88 @@ class LawyerIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void aClientTheLawyerAddedSignsInSeesOnlyTheirCasesBooksAndIsTold() throws Exception {
+        Tenant t = lawyer();
+        String h = t.host(), a = t.access();
+        String phone = nextPhone(), other = nextPhone();
+        String c = JsonPath.read(ok(onHost(h, a, "POST", "/api/v1/lawyer/clients", "{\"name\":\"منى سعيد\",\"phone\":\"%s\"}".formatted(phone)).andExpect(status().isCreated())), "$.id");
+        String c2 = JsonPath.read(ok(onHost(h, a, "POST", "/api/v1/lawyer/clients", "{\"name\":\"عميل آخر\",\"phone\":\"%s\"}".formatted(other))), "$.id");
+        String noPhone = JsonPath.read(ok(onHost(h, a, "POST", "/api/v1/lawyer/clients", "{\"name\":\"بدون رقم\"}")), "$.id");
+        String mine = JsonPath.read(ok(onHost(h, a, "POST", "/api/v1/lawyer/cases", "{\"title\":\"دعوى نفقة\",\"caseType\":\"FAMILY\",\"court\":\"محكمة الأسرة\",\"agreedFeeMinor\":500000,\"clientIds\":[\"%s\"]}".formatted(c))), "$.id");
+        String theirs = JsonPath.read(ok(onHost(h, a, "POST", "/api/v1/lawyer/cases", "{\"title\":\"قضية غيرها\",\"clientIds\":[\"%s\"]}".formatted(c2))), "$.id");
+        onHost(h, a, "POST", "/api/v1/lawyer/cases/" + mine + "/actions", "{\"title\":\"مذكرة داخلية سرية\",\"notes\":\"ملاحظة للمكتب فقط\",\"feeMinor\":100000}").andExpect(status().isOk());
+        onHost(h, a, "POST", "/api/v1/lawyer/cases/" + mine + "/payments", "{\"amountMinor\":200000,\"clientId\":\"%s\"}".formatted(c)).andExpect(status().isOk());
+        onHost(h, a, "POST", "/api/v1/lawyer/cases/" + mine + "/steps", "{\"kind\":\"HEARING\",\"description\":\"جلسة أولى\",\"location\":\"الدائرة 3\",\"startsAt\":\"%s\"}".formatted(Instant.now().plus(20, ChronoUnit.HOURS))).andExpect(status().isOk());
+
+        // no sign-in before the lawyer turns access on; a client without a mobile cannot get it
+        onHost(h, null, "POST", "/api/v1/lawyer/portal/login", "{\"phone\":\"%s\",\"password\":\"12345678\"}".formatted(phone)).andExpect(status().isUnauthorized());
+        onHost(h, a, "POST", "/api/v1/lawyer/clients/" + noPhone + "/app-access", "{\"action\":\"ENABLE\"}").andExpect(status().isBadRequest()).andExpect(jsonPath("$.fields.phone").exists());
+        String access = ok(onHost(h, a, "POST", "/api/v1/lawyer/clients/" + c + "/app-access", "{\"action\":\"ENABLE\"}").andExpect(status().isOk()));
+        String temp = JsonPath.read(access, "$.password");
+        assertThat(temp).hasSize(8);
+        assertThat((String) JsonPath.read(access, "$.message")).contains(temp).contains("منى سعيد");
+        String detail = ok(onHost(h, a, "GET", "/api/v1/lawyer/clients/" + c, null).andExpect(jsonPath("$.portalEnabled").value(true)));
+        assertThat(detail).doesNotContain("portalPasswordHash").doesNotContain("$argon2");
+
+        // sign in with the temporary password, then a new one is required
+        onHost(h, null, "POST", "/api/v1/lawyer/portal/login", "{\"phone\":\"%s\",\"password\":\"wrong-pass\"}".formatted(phone)).andExpect(status().isUnauthorized());
+        String login = ok(onHost(h, null, "POST", "/api/v1/lawyer/portal/login", "{\"phone\":\"%s\",\"password\":\"%s\"}".formatted(phone, temp)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.user.mustChangePassword").value(true)).andExpect(jsonPath("$.user.roles[0]").value("LEGAL_CLIENT")));
+        String tok = JsonPath.read(login, "$.accessToken");
+        onHost(h, tok, "POST", "/api/v1/lawyer/portal/change-password", "{\"currentPassword\":\"%s\",\"newPassword\":\"%s\"}".formatted(temp, temp)).andExpect(status().isBadRequest());
+        tok = JsonPath.read(ok(onHost(h, tok, "POST", "/api/v1/lawyer/portal/change-password", "{\"currentPassword\":\"%s\",\"newPassword\":\"my-own-pass\"}".formatted(temp))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.user.mustChangePassword").value(false))), "$.accessToken");
+
+        // only their own case; the office's notes never reach them; fees and payments do
+        onHost(h, tok, "GET", "/api/v1/lawyer/portal/home", null).andExpect(status().isOk()).andExpect(jsonPath("$.cases.length()").value(1)).andExpect(jsonPath("$.cases[0].id").value(mine))
+                .andExpect(jsonPath("$.upcoming[0].caseId").value(mine));
+        String kase = ok(onHost(h, tok, "GET", "/api/v1/lawyer/portal/cases/" + mine, null).andExpect(status().isOk())
+                .andExpect(jsonPath("$.billedMinor").value(600000)).andExpect(jsonPath("$.paidMinor").value(200000)).andExpect(jsonPath("$.balanceMinor").value(400000))
+                .andExpect(jsonPath("$.steps[0].location").value("الدائرة 3")).andExpect(jsonPath("$.payments.length()").value(1)));
+        assertThat(kase).doesNotContain("مذكرة داخلية سرية").doesNotContain("ملاحظة للمكتب فقط");
+        onHost(h, tok, "GET", "/api/v1/lawyer/portal/cases/" + theirs, null).andExpect(status().isNotFound());
+        // a client token opens nothing of the lawyer's dashboard
+        onHost(h, tok, "GET", "/api/v1/lawyer/overview", null).andExpect(status().isForbidden());
+        onHost(h, tok, "GET", "/api/v1/lawyer/clients", null).andExpect(status().isForbidden());
+
+        // book from the app: tied to them and their case; the lawyer's answer reaches their phone
+        onHost(h, tok, "POST", "/api/v1/lawyer/portal/devices", "{\"token\":\"client-device-%s\"}".formatted(uniq())).andExpect(status().isOk());
+        String slot = freeSlot(t);
+        String code = JsonPath.read(ok(onHost(h, tok, "POST", "/api/v1/lawyer/portal/bookings", "{\"startsAt\":\"%s\",\"topic\":\"متابعة\",\"caseId\":\"%s\"}".formatted(slot, mine))
+                .andExpect(status().isCreated())), "$.code");
+        var row = jdbc.sql("SELECT id, client_id, case_id, source FROM legal.bookings WHERE upper(code) = upper(:c)").param("c", code).query().singleRow();
+        assertThat(row.get("client_id").toString()).isEqualTo(c);
+        assertThat(row.get("case_id").toString()).isEqualTo(mine);
+        assertThat(row.get("source")).isEqualTo("APP");
+        onHost(h, tok, "POST", "/api/v1/lawyer/portal/bookings", "{\"startsAt\":\"%s\",\"caseId\":\"%s\"}".formatted(slot, theirs)).andExpect(status().isBadRequest());
+        onHost(h, a, "PUT", "/api/v1/lawyer/bookings/" + row.get("id"), "{\"status\":\"APPROVED\"}").andExpect(status().isOk());
+        assertThat(jdbc.sql("SELECT count(*) FROM notifications.outbox WHERE user_id = CAST(:c AS uuid) AND channel = 'PUSH' AND subject = 'تم تأكيد موعدك'").param("c", c).query(Long.class).single()).isEqualTo(1);
+        onHost(h, tok, "GET", "/api/v1/lawyer/portal/bookings", null).andExpect(jsonPath("$[0].status").value("APPROVED"));
+        onHost(h, tok, "POST", "/api/v1/lawyer/portal/bookings/" + row.get("id") + "/cancel", null).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("CANCELLED"));
+
+        // the day before their hearing, their phone is reminded
+        reminders.remind();
+        assertThat(jdbc.sql("SELECT count(*) FROM notifications.outbox WHERE user_id = CAST(:c AS uuid) AND payload->>'type' = 'LEGAL_CLIENT_CASE'").param("c", c).query(Long.class).single()).isEqualTo(1);
+
+        // the evening WhatsApp report lists tomorrow's hearing (the phone is not linked in tests, so nothing is sent)
+        java.time.ZoneId cairo = java.time.ZoneId.of("Africa/Cairo");
+        java.time.LocalDate hearingDay = Instant.now().plus(20, ChronoUnit.HOURS).atZone(cairo).toLocalDate();
+        UUID tenantId = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", t.slug()).query(UUID.class).single();
+        String report = reminders.whatsappReportText(tenantId, cairo, hearingDay.minusDays(1));
+        assertThat(report).contains("جلسة أولى").contains("دعوى نفقة").contains("المستحق على الموكلين");
+        onHost(h, a, "GET", "/api/v1/lawyer/whatsapp", null).andExpect(status().isOk()).andExpect(jsonPath("$.enabled").value(false)).andExpect(jsonPath("$.waReport").value(true));
+        onHost(h, a, "POST", "/api/v1/lawyer/whatsapp/report/send-now", null).andExpect(jsonPath("$.sent").value(false));
+
+        // the lawyer turns access off: the client is out at once
+        onHost(h, a, "POST", "/api/v1/lawyer/clients/" + c + "/app-access", "{\"action\":\"DISABLE\"}").andExpect(jsonPath("$.portalEnabled").value(false));
+        onHost(h, tok, "GET", "/api/v1/lawyer/portal/home", null).andExpect(status().isForbidden());
+        onHost(h, null, "POST", "/api/v1/lawyer/portal/login", "{\"phone\":\"%s\",\"password\":\"my-own-pass\"}".formatted(phone)).andExpect(status().isUnauthorized());
+        // a client token of one office is useless at another
+        Tenant other2 = lawyer();
+        onHost(other2.host(), tok, "GET", "/api/v1/lawyer/portal/home", null).andExpect(status().isForbidden());
+    }
+
+    @Test
     void aWhiteLabelOfficeShowsNoBillingDomainsOrPlatformCredit() throws Exception {
         Tenant t = lawyer();
         onHost(t.host(), t.access(), "GET", "/api/v1/auth/me", null).andExpect(status().isOk()).andExpect(jsonPath("$.screens.billing").exists()).andExpect(jsonPath("$.screens.domains").exists());

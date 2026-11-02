@@ -17,11 +17,18 @@ public class LawyerController {
     private final LegalProfileService profiles;
     private final LegalCaseService cases;
     private final LegalBookingService bookings;
+    private final LegalPortalService portal;
+    private final com.platform.chat.EvolutionService evolution;
+    private final LegalReminders reminders;
 
-    public LawyerController(LegalProfileService profiles, LegalCaseService cases, LegalBookingService bookings) {
+    public LawyerController(LegalProfileService profiles, LegalCaseService cases, LegalBookingService bookings, LegalPortalService portal,
+                            com.platform.chat.EvolutionService evolution, LegalReminders reminders) {
         this.profiles = profiles;
         this.cases = cases;
         this.bookings = bookings;
+        this.portal = portal;
+        this.evolution = evolution;
+        this.reminders = reminders;
     }
 
     private static UUID user(Authentication a) { return (UUID) a.getPrincipal(); }
@@ -166,6 +173,41 @@ public class LawyerController {
     @PutMapping("/clients/{id}")
     @PreAuthorize("hasAuthority('legal.client.manage')")
     public Map<String, Object> updateClient(@PathVariable UUID id, @RequestBody LegalCaseService.ClientReq r, Authentication a) { return cases.updateClient(t(), user(a), id, r); }
+
+    public record AccessReq(String action) {}
+
+    /** ENABLE / RESET: the client may sign in to the office app with a new temporary password (returned once, with the WhatsApp text); DISABLE: not any more. */
+    @PostMapping("/clients/{id}/app-access")
+    @PreAuthorize("hasAuthority('legal.client.manage')")
+    public Map<String, Object> appAccess(@PathVariable UUID id, @RequestBody AccessReq r, Authentication a) { return portal.setAccess(t(), user(a), id, r.action()); }
+
+    // ---- the lawyer's own WhatsApp (linked like WhatsApp Web) for the evening report ---------------------------------------------
+    public record WaEnableReq(Boolean acceptedRisk) {}
+
+    @GetMapping("/whatsapp")
+    @PreAuthorize("hasAuthority('settings.read') or hasAuthority('settings.manage')")
+    public Map<String, Object> whatsapp() {
+        Map<String, Object> m = new java.util.LinkedHashMap<>(evolution.refresh(t()));
+        m.put("waReport", profiles.profile(t()).get("waReport"));
+        return m;
+    }
+
+    @PostMapping("/whatsapp/enable")
+    @PreAuthorize("hasAuthority('settings.manage')")
+    public Map<String, Object> whatsappEnable(@RequestBody WaEnableReq r, Authentication a) { return evolution.enable(t(), user(a), Boolean.TRUE.equals(r.acceptedRisk())); }
+
+    @GetMapping("/whatsapp/qr")
+    @PreAuthorize("hasAuthority('settings.manage')")
+    public Map<String, Object> whatsappQr() { return evolution.qr(t()); }
+
+    @PostMapping("/whatsapp/disable")
+    @PreAuthorize("hasAuthority('settings.manage')")
+    public Map<String, Object> whatsappDisable(Authentication a) { return evolution.disable(t(), user(a)); }
+
+    /** Sends tomorrow's report to the lawyer's own WhatsApp now (to try it). */
+    @PostMapping("/whatsapp/report/send-now")
+    @PreAuthorize("hasAuthority('settings.manage')")
+    public Map<String, Object> whatsappReportNow() { return Map.of("sent", reminders.sendWhatsAppReportNow(t())); }
 
     @DeleteMapping("/clients/{id}")
     @PreAuthorize("hasAuthority('legal.client.manage')")

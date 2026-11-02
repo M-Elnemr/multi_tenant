@@ -11,6 +11,7 @@ import { useI18n } from "@/components/i18n-provider";
 import { Icon } from "@/components/icons";
 import { CaseModal } from "@/components/lawyer/case-form";
 import { ClientModal } from "@/components/lawyer/client-modal";
+import { ClientAppCard } from "@/components/lawyer/client-app-card";
 import { Avatar, Badge, Button, ErrorText, Loading, Modal, Stat } from "@/components/ui";
 
 type Detail = Client & { cases: { id: string; number: string; title: string; caseType: string; status: string; outcome: string; openedOn: string; court: string; billedMinor: number; paidMinor: number; nextStepAt?: string | null }[];
@@ -68,6 +69,7 @@ export default function ClientPage({ params }: { params: Promise<{ id: string }>
           )}
         </section>
         <section className="space-y-5">
+          <ClientAppCard clientId={c.id} phone={c.phone} enabled={!!c.portalEnabled} lastLogin={c.portalLastLoginAt} write={canWrite("clients")} onChanged={() => void reload()} />
           {c.notes && <div className="rounded-2xl bg-white p-5 shadow-card"><p className="mb-2 text-sm font-bold text-slate-700">{t("lw.client.notes")}</p><p className="whitespace-pre-line text-sm text-slate-700">{c.notes}</p></div>}
           <div className="rounded-2xl bg-white p-5 shadow-card">
             <p className="mb-2 text-sm font-bold text-slate-700">{t("lw.client.bookings")}</p>

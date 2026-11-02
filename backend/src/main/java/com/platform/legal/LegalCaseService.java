@@ -67,6 +67,7 @@ public class LegalCaseService {
         var r = jdbc.sql("SELECT * FROM legal.clients WHERE id = :i AND tenant_id = :t").param("i", id).param("t", tenantId).query().listOfRows().stream().findFirst()
                 .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Client not found"));
         Map<String, Object> m = Rows.camel(r);
+        m.remove("portalPasswordHash");
         m.put("tags", arr(r.get("tags")));
         m.put("cases", Rows.camel(jdbc.sql("""
                 SELECT k.id, k.number, k.title, k.case_type, k.status, k.outcome, k.opened_on, k.court,

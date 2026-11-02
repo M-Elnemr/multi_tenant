@@ -10,4 +10,7 @@ public final class LegalEvents {
     public record BookingRequested(UUID tenantId, UUID bookingId, String name, Instant startsAt, boolean autoApproved) {}
 
     public record BookingCancelled(UUID tenantId, UUID bookingId, String name, Instant startsAt) {}
+
+    /** The office approved, denied or moved a booking that belongs to a client (tells the client's phone). */
+    public record BookingDecided(UUID tenantId, UUID bookingId, UUID clientId, String status, Instant startsAt, boolean moved, String note) {}
 }

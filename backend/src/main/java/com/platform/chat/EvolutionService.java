@@ -292,10 +292,11 @@ public class EvolutionService {
             if (tenant.isEmpty()) return;
             UUID tenantId = tenant.get();
             if (!running(tenantId)) return;   // a suspended, cancelled or archived shop does not answer customers
+            boolean lawyer = "LAWYER".equals(jdbc.sql("SELECT tenant_type FROM core.tenants WHERE id = :t").param("t", tenantId).query(String.class).optional().orElse(""));
             String event = root.path("event").asText("").toLowerCase().replace('_', '.');
             JsonNode data = root.path("data");
             if (event.equals("connection.update")) { applyState(tenantId, data.path("state").asText("")); return; }
-            if (!event.equals("messages.upsert")) return;
+            if (!event.equals("messages.upsert") || lawyer) return;   // a law office links its phone only for its own reports: its chats stay its own
             for (JsonNode m : data.isArray() ? data : List.of(data)) message(tenantId, m);
         } catch (Exception e) {
             log.warn("Could not handle an Evolution event: {}", e.toString());

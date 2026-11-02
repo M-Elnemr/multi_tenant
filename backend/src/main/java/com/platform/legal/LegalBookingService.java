@@ -214,6 +214,9 @@ public class LegalBookingService {
                   reminder_sent_at = CASE WHEN starts_at <> :st THEN NULL ELSE reminder_sent_at END, updated_at = now() WHERE id = :i
                 """).param("s", to).param("n", r.note() == null ? null : r.note().trim()).param("st", ts(start)).param("en", ts(end)).param("c", client).param("k", r.caseId()).param("i", id).update();
         audit.record(actor, tenantId, "LEGAL_BOOKING_" + to, "legal_booking", id, null);
+        boolean moved = !start.equals(((java.sql.Timestamp) b.get("starts_at")).toInstant());
+        if (client != null && (moved || !to.equals(b.get("status"))) && Set.of("APPROVED", "DENIED", "CANCELLED").contains(to))
+            events.publishEvent(new LegalEvents.BookingDecided(tenantId, id, client, to, start, moved, r.note()));
         return Rows.camel(jdbc.sql("SELECT b.*, s.name AS service_name FROM legal.bookings b LEFT JOIN legal.services s ON s.id = b.service_id WHERE b.id = :i").param("i", id).query().singleRow());
     }
 

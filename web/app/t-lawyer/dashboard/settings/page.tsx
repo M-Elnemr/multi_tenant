@@ -6,6 +6,8 @@ import { useFieldErrors } from "@/lib/use-field-errors";
 import { useAction, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Alert, Button, ErrorText, Field, Input, Loading, PageHeader, Section, Select } from "@/components/ui";
+import { ChangePasswordCard } from "@/components/change-password";
+import { WhatsAppReportCard } from "@/components/lawyer/whatsapp-report";
 
 type P = { slotMinutes: number; bufferMinutes: number; minNoticeHours: number; maxDaysAhead: number; maxPerDay: number | null; autoApprove: boolean; bookingEnabled: boolean; reminderDaysBefore: number; dailyDigest: boolean };
 
@@ -64,6 +66,8 @@ export default function Settings() {
         {saved && <Alert tone="green">{t("matrix.saved")}</Alert>}
         {fe.any ? <p className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{t("form.fixMarked")}</p> : <ErrorText error={save.error} />}
         {canWrite("settings") && <Button loading={save.loading} onClick={() => save.run()}>{t("common.save")}</Button>}
+        <Section title={t("lw.wa.title")}><WhatsAppReportCard write={canWrite("settings")} /></Section>
+        <div id="password"><ChangePasswordCard /></div>
       </div>
     </>
   );

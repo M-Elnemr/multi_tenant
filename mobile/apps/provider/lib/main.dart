@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'billing_ui.dart';
 import 'common.dart';
 import 'lawyer_panel.dart';
+import 'legal_client.dart';
 import 'clinic_panel.dart';
 import 'offline_ops.dart';
 import 'platform_admin.dart';
@@ -59,6 +60,8 @@ class _RootState extends State<Root> {
   List<Map<String, dynamic>>? _businesses;
   String? _error;
   List<String> _platformPerms = const [];   // the platform owner / admin's permissions (empty for everyone else)
+  bool _client = false;      // single-office app: a client of the office is signed in
+  bool _staffLogin = false;  // single-office app: the office team's sign-in is shown instead of the clients'
 
   @override
   void initState() {
@@ -67,6 +70,10 @@ class _RootState extends State<Root> {
   }
 
   Future<void> _load() async {
+    if (SingleBusiness.on && await ClientAuth.session.loggedIn) {
+      if (mounted) setState(() { _client = true; _checked = true; });
+      return;
+    }
     List<Map<String, dynamic>>? list;
     String? error;
     if (await _session.loggedIn) {
@@ -115,6 +122,10 @@ class _RootState extends State<Root> {
     Widget body;
     if (!_checked) {
       body = const Scaffold(key: ValueKey('boot'), body: SizedBox.shrink());
+    } else if (SingleBusiness.on && _client) {
+      body = ClientHome(key: const ValueKey('client'), onSignedOut: () => setState(() => _client = false));
+    } else if (SingleBusiness.on && _businesses == null && _error == null && !_staffLogin) {
+      body = ClientLoginScreen(key: const ValueKey('clientLogin'), onSignedIn: () => setState(() => _client = true), onStaff: () => setState(() => _staffLogin = true));
     } else if (_businesses == null && _error == null) {
       body = LoginScreen(
         key: const ValueKey('login'),
@@ -124,7 +135,7 @@ class _RootState extends State<Root> {
         title: s.ar ? SingleBusiness.nameAr : SingleBusiness.nameEn,
         subtitle: s.ar ? SingleBusiness.taglineAr : SingleBusiness.taglineEn,
         onLoggedIn: (u) => _load(),
-        footer: SingleBusiness.on ? null : Column(children: [
+        footer: SingleBusiness.on ? TextButton.icon(onPressed: () => setState(() => _staffLogin = false), icon: const Icon(Icons.person_outline_rounded), label: Text(s.ar ? 'أنا موكل — دخول الموكلين' : "I'm a client — client sign-in")) : Column(children: [
           Row(children: [const Expanded(child: Divider()), Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Text(s.ar ? 'ليس لديك حساب؟' : 'New here?', style: const TextStyle(color: Color(0xFF6B7A8C)))), const Expanded(child: Divider())]),
           const SizedBox(height: 10),
           SizedBox(width: double.infinity, child: OutlinedButton.icon(
@@ -482,7 +493,7 @@ class _BusinessHomeState extends State<BusinessHome> with WidgetsBindingObserver
             IconButton(
               tooltip: s.settings,
               icon: const Icon(Icons.tune_rounded),
-              onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => SettingsPage(businessName: b['name'] as String, canSwitch: widget.canSwitch, onSwitch: () { Navigator.of(context).pop(); widget.onSwitch(); }, onSignOut: () { Navigator.of(context).pop(); widget.onSignOut(); }))),
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => SettingsPage(api: _api, businessName: b['name'] as String, canSwitch: widget.canSwitch, onSwitch: () { Navigator.of(context).pop(); widget.onSwitch(); }, onSignOut: () { Navigator.of(context).pop(); widget.onSignOut(); }))),
             ),
           ],
         ),
@@ -517,7 +528,8 @@ class _BusinessHomeState extends State<BusinessHome> with WidgetsBindingObserver
 }
 
 class SettingsPage extends StatelessWidget {
-  const SettingsPage({super.key, required this.businessName, required this.canSwitch, required this.onSwitch, required this.onSignOut});
+  const SettingsPage({super.key, required this.api, required this.businessName, required this.canSwitch, required this.onSwitch, required this.onSignOut});
+  final ApiClient api;
   final String businessName;
   final bool canSwitch;
   final VoidCallback onSwitch;
@@ -531,10 +543,59 @@ class SettingsPage extends StatelessWidget {
       body: ListView(padding: const EdgeInsets.all(16), children: [
         FadeSlideIn(child: tile(Icons.business_center_rounded, businessName)),
         FadeSlideIn(index: 1, child: tile(Icons.translate_rounded, s.language, trailing: const LanguageChip())),
+        FadeSlideIn(index: 1, child: tile(Icons.lock_reset_rounded, s.ar ? 'تغيير كلمة المرور' : 'Change password', trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => StaffPasswordPage(api: api))))),
         if (canSwitch) FadeSlideIn(index: 2, child: tile(Icons.swap_horiz_rounded, s.switchBusiness, onTap: onSwitch, trailing: const Icon(Icons.chevron_right_rounded))),
         FadeSlideIn(index: 3, child: tile(Icons.info_outline_rounded, s.version, trailing: Text(SingleBusiness.version))),
         FadeSlideIn(index: 4, child: tile(Icons.logout_rounded, s.signOut, onTap: onSignOut, color: Theme.of(context).colorScheme.error)),
       ]),
+    );
+  }
+}
+
+/// The signed-in team member changes their own password (other devices are signed out; this one stays signed in).
+class StaffPasswordPage extends StatefulWidget {
+  const StaffPasswordPage({super.key, required this.api});
+  final ApiClient api;
+  @override
+  State<StaffPasswordPage> createState() => _StaffPasswordPageState();
+}
+
+class _StaffPasswordPageState extends State<StaffPasswordPage> {
+  final _cur = TextEditingController(), _next = TextEditingController(), _again = TextEditingController();
+  final _fe = FieldErrors();
+  bool _busy = false;
+
+  Future<void> _save() async {
+    final ar = AppLocale.isAr;
+    if (!_fe.check({
+      'currentPassword': _cur.text.isEmpty ? (ar ? 'اكتب كلمة المرور الحالية' : 'Write your current password') : null,
+      'newPassword': _next.text.length < 8 ? (ar ? '8 أحرف أو أرقام على الأقل' : 'At least 8 characters') : null,
+      'again': _again.text != _next.text ? (ar ? 'غير مطابقة' : 'Does not match') : null,
+    })) { setState(() {}); return; }
+    setState(() => _busy = true);
+    final ok = await runForm(context, _fe, () => AuthRepository(widget.api).changePassword(_cur.text, _next.text));
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (ok) { toast(context, ar ? 'تم تغيير كلمة المرور ✓' : 'Password changed ✓'); Navigator.of(context).pop(); }
+  }
+
+  Widget _f(TextEditingController c, String key, String label) => Padding(key: _fe.key(key), padding: const EdgeInsets.only(bottom: 12),
+      child: TextField(controller: c, obscureText: true, onChanged: (_) => _fe.clear(key), decoration: InputDecoration(labelText: label, errorText: _fe.of(key), prefixIcon: const Icon(Icons.lock_outline_rounded))));
+
+  @override
+  Widget build(BuildContext context) {
+    final ar = AppLocale.isAr;
+    return Scaffold(
+      appBar: AppBar(title: Text(ar ? 'تغيير كلمة المرور' : 'Change password')),
+      body: ListenableBuilder(listenable: _fe, builder: (context, _) => ListView(padding: const EdgeInsets.all(20), children: [
+        _f(_cur, 'currentPassword', ar ? 'كلمة المرور الحالية' : 'Current password'),
+        _f(_next, 'newPassword', ar ? 'كلمة المرور الجديدة' : 'New password'),
+        _f(_again, 'again', ar ? 'أعد كتابتها' : 'Type it again'),
+        const SizedBox(height: 8),
+        FilledButton(style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)), onPressed: _busy ? null : _save,
+            child: _busy ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : Text(ar ? 'حفظ' : 'Save', style: const TextStyle(fontWeight: FontWeight.w900))),
+      ])),
     );
   }
 }
