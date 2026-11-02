@@ -34,6 +34,7 @@ export default async function LawyerSiteLayout({ children }: { children: React.R
           <nav className="lw-nav hidden items-center gap-1 lg:flex">{nav.map((n) => <a key={n.href} href={n.href}>{n.label}</a>)}</nav>
           <div className="flex shrink-0 items-center gap-2">
             {p?.bookingEnabled !== false && <Link href="/book" className="lw-btn lw-btn-sm">{t("lws.book")}</Link>}
+            <Link href="/dashboard/login" aria-label={t("lws.staff")} title={t("lws.staff")} className="grid h-9 w-9 place-items-center rounded-lg transition hover:opacity-100" style={{ color: "var(--lw-mute)" }}><LockIcon /></Link>
             <a href={`/api/lang?l=${locale === "ar" ? "en" : "ar"}`} className="rounded-lg px-2 py-1 text-sm font-bold" style={{ color: "var(--lw-mute)" }}>{locale === "ar" ? "EN" : "عربي"}</a>
           </div>
         </div>
@@ -56,7 +57,7 @@ export default async function LawyerSiteLayout({ children }: { children: React.R
           <div className="flex flex-col items-start gap-3 md:items-end">
             {p?.whatsapp && <a href={whatsappLink(p.whatsapp, t("lws.waHello"))} target="_blank" rel="noopener noreferrer" className="lw-btn lw-btn-sm">WhatsApp</a>}
             <div className="flex gap-3 text-sm opacity-80">{Object.entries(p?.social ?? {}).filter(([, v]) => v).map(([k, v]) => <a key={k} href={v} target="_blank" rel="noopener noreferrer" className="capitalize hover:opacity-100">{k}</a>)}</div>
-            <Link href="/dashboard/login" className="text-xs opacity-50 hover:opacity-90">{t("lws.staff")}</Link>
+            <Link href="/dashboard/login" className="inline-flex items-center gap-2 rounded-xl border border-white/25 px-3.5 py-2 text-sm font-semibold opacity-90 transition hover:border-white/50 hover:opacity-100"><LockIcon />{t("lws.staff")}</Link>
           </div>
         </div>
         <div className="border-t border-white/10 py-5 text-center text-xs opacity-50">© {year} {name}</div>
@@ -66,4 +67,8 @@ export default async function LawyerSiteLayout({ children }: { children: React.R
       </a>}
     </div>
   );
+}
+
+function LockIcon() {
+  return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>;
 }
