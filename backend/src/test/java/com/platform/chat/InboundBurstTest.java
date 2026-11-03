@@ -41,6 +41,23 @@ class InboundBurstTest {
     }
 
     @Test
+    void aPhotoBeingReadHoldsTheBurstAndKeepsItsPlace() throws Exception {
+        InboundBurst b = new InboundBurst(timers, Runnable::run, 100, 300);
+        var photo = b.hold("c", fired::add);
+        b.add("c", "بكام ده؟", fired::add);
+        Thread.sleep(500);   // past the window and the ceiling: still waiting for the photo
+        assertThat(fired).isEmpty();
+        photo.accept("[صورة من العميل: فستان وردي]");
+        Thread.sleep(50);
+        assertThat(fired).containsExactly("[صورة من العميل: فستان وردي]\nبكام ده؟");
+        var unreadable = b.hold("d", fired::add);
+        unreadable.accept(null);
+        unreadable.accept("twice is ignored");
+        Thread.sleep(250);
+        assertThat(fired).containsExactly("[صورة من العميل: فستان وردي]\nبكام ده؟", "");
+    }
+
+    @Test
     void offMeansEveryLineGoesStraightOn() {
         assertThat(new InboundBurst(timers, Runnable::run, 0, 0).enabled()).isFalse();
     }

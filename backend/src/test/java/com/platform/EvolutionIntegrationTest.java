@@ -23,7 +23,7 @@ class EvolutionIntegrationTest extends IntegrationTestBase {
     @Autowired EvolutionService evolution;
 
     @BeforeEach
-    void clean() { FakeAiProvider.reset(); FakeEvolutionApi.reset(); FakeMetaGraph.reset(); }
+    void clean() { FakeAiProvider.reset(); FakeEvolutionApi.reset(); FakeMetaGraph.reset(); FakeMediaReader.reset(); }
 
     String ok(ResultActions r) throws Exception { return r.andReturn().getResponse().getContentAsString(); }
 
@@ -110,6 +110,23 @@ class EvolutionIntegrationTest extends IntegrationTestBase {
         // connection updates keep the state in step
         webhook(SECRET, "{\"event\":\"connection.update\",\"instance\":\"%s\",\"data\":{\"state\":\"close\"}}".formatted(inst)).andExpect(status().isOk());
         assertThat(evolution.connected(idOf(t))).isFalse();
+    }
+
+    @Test
+    void aPhotoOnTheShopsOwnNumberIsFetchedFromEvolutionAndReadIntoTheChat() throws Exception {
+        Tenant t = onboard("STORE");
+        onHost(t.host(), t.access(), "POST", "/api/v1/store/ai/evolution/enable", "{\"acceptedRisk\":true}").andExpect(status().isOk());
+        FakeEvolutionApi.STATE = "open";
+        onHost(t.host(), t.access(), "GET", "/api/v1/store/ai/evolution", null).andExpect(jsonPath("$.status").value("CONNECTED"));
+        String inst = instanceOf(t), id = "IMG" + uniq();
+        java.util.List<String> seen = new java.util.concurrent.CopyOnWriteArrayList<>();
+        for (int i = 0; i < 6; i++) FakeAiProvider.SCRIPT.add(turns -> { seen.add(turns.get(turns.size() - 1).text()); return Turn.model("ده فستان جميل! تحب تشوف الألوان المتاحة؟"); });
+        webhook(SECRET, "{\"event\":\"messages.upsert\",\"instance\":\"%s\",\"data\":{\"key\":{\"remoteJid\":\"201055551111@s.whatsapp.net\",\"fromMe\":false,\"id\":\"%s\"},\"message\":{\"imageMessage\":{\"mimetype\":\"image/jpeg\",\"caption\":\"عندكم زيه؟\"}}}}".formatted(inst, id)).andExpect(status().isOk());
+        assertThat(FakeEvolutionApi.CALLS).anyMatch(c -> c.path().equals("/chat/getBase64FromMediaMessage/" + inst) && c.body().toString().contains(id));
+        assertThat(seen.get(0)).contains("[صورة من العميل: فستان وردي قصير]").contains("عندكم زيه؟");
+        var sent = FakeEvolutionApi.CALLS.get(FakeEvolutionApi.CALLS.size() - 1);
+        assertThat(sent.path()).isEqualTo("/message/sendText/" + inst);
+        assertThat((String) sent.body().get("text")).doesNotContain("أستطيع قراءة الرسائل النصية فقط");
     }
 
     @Test

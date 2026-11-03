@@ -48,6 +48,10 @@ services:
       EMBED_API_KEY: ${EMBED_API_KEY:-}
       EMBED_BASE_URL: ${EMBED_BASE_URL:-https://dashscope-intl.aliyuncs.com/compatible-mode/v1}
       EMBED_MODEL: ${EMBED_MODEL:-qwen3.7-text-embedding}
+      AI_MEDIA: ${AI_MEDIA:-true}
+      AI_MEDIA_VISION_MODEL: ${AI_MEDIA_VISION_MODEL:-qwen3.7-flash}
+      AI_MEDIA_ASR_MODEL: ${AI_MEDIA_ASR_MODEL:-qwen3-asr-flash}
+      AI_HISTORY: ${AI_HISTORY:-12}
       AI_EVAL_SCHEDULE: ${AI_EVAL_SCHEDULE:-true}
       AI_EVAL_SHOP: ${AI_EVAL_SHOP:-layan-store}
       AI_EVAL_MODELS: ${AI_EVAL_MODELS:-glm,qwen}

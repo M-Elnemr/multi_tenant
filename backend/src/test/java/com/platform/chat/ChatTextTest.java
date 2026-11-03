@@ -22,6 +22,18 @@ class ChatTextTest {
     }
 
     @Test
+    void catalogueTalkAndForeignScriptsAreCaught() {
+        // seen from Qwen in the live exam
+        assertThat(ChatService.TOOL_TALK.matcher("ممكن أبعثلك صور من الكاتالوج عشان تختار منها؟").find()).isTrue();
+        assertThat(ChatService.TOOL_TALK.matcher("محتاج أشوف الكاتالوج الأول").find()).isTrue();
+        assertThat(ChatService.TOOL_TALK.matcher("مش موجود في كتالوجنا").find()).isTrue();
+        assertThat(ChatService.TOOL_TALK.matcher("It is not in our catalogue").find()).isTrue();
+        assertThat(ChatService.TOOL_TALK.matcher("عندنا تيشيرت قطن أبيض بـ ٢٥٠ جنيه").find()).isFalse();
+        assertThat(ChatService.BROKEN_RUN.matcher("عندنا تيشيرت 很好 قطن").find()).isTrue();
+        assertThat(ChatService.BROKEN_RUN.matcher("عندنا تيشيرت قطن مقاس XL، تحب أحجزهولك؟ 👌").find()).isFalse();
+    }
+
+    @Test
     void onWhatsAppARequestForAPhoneNumberIsDropped() {
         assertThat(ChatService.forChannel("WHATSAPP", "محتاج منك في رسالة واحدة: الاسم، رقم تليفون عليه واتساب، العنوان بالتفصيل، وطريقة الدفع."))
                 .isEqualTo("محتاج منك في رسالة واحدة: الاسم، العنوان بالتفصيل، وطريقة الدفع.");

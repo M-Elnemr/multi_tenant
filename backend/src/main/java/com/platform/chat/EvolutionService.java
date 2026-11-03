@@ -45,8 +45,9 @@ public class EvolutionService {
     private final ExecutorService pool;
     private final java.util.concurrent.ScheduledExecutorService timers = Executors.newSingleThreadScheduledExecutor();
     private final InboundBurst burst;
+    private final MediaReader media;
 
-    public EvolutionService(JdbcClient jdbc, EvolutionApi api, @Lazy ChatService chat, @Lazy WhatsAppConfirmService waConfirm, LoginThrottle throttle, AuditService audit, com.platform.commerce.GenderService genders, ProductShare share,
+    public EvolutionService(JdbcClient jdbc, EvolutionApi api, @Lazy ChatService chat, @Lazy WhatsAppConfirmService waConfirm, LoginThrottle throttle, AuditService audit, com.platform.commerce.GenderService genders, ProductShare share, MediaReader media,
                             @Value("${app.evolution.base-url:}") String baseUrl, @Value("${app.evolution.webhook-secret:}") String secret, @Value("${app.evolution.backend-url:http://backend:8080}") String backendUrl,
                             @Value("${app.evolution.typing-delay-ms:1500}") int typingDelayMs, @Value("${app.evolution.async:true}") boolean async, @Value("${app.chat.burst-ms:5000}") long burstMs) {
         this.jdbc = jdbc;
@@ -54,6 +55,7 @@ public class EvolutionService {
         this.chat = chat;
         this.genders = genders;
         this.share = share;
+        this.media = media;
         this.waConfirm = waConfirm;
         this.throttle = throttle;
         this.audit = audit;
@@ -315,9 +317,40 @@ public class EvolutionService {
         if (jdbc.sql("INSERT INTO chat.meta_events (mid) VALUES (:m) ON CONFLICT DO NOTHING").param("m", "evo:" + id).update() == 0) return;
         JsonNode msg = m.path("message");
         String text = msg.hasNonNull("conversation") ? msg.path("conversation").asText() : msg.path("extendedTextMessage").hasNonNull("text") ? msg.path("extendedTextMessage").path("text").asText() : null;
-        // a customer's quick lines are joined and answered once (see InboundBurst); media and empty messages go straight on
-        if (burst.enabled() && text != null && !text.isBlank()) { String name = m.path("pushName").asText(""); burst.add(tenantId + "|" + sender, text, joined -> respond(tenantId, sender, joined, name)); return; }
-        respond(tenantId, sender, text, m.path("pushName").asText(""));
+        String name = m.path("pushName").asText(""), burstKey = tenantId + "|" + sender;
+        // a photo or voice note is read into text (a few seconds); what the customer sends meanwhile waits for it, so «بكام ده؟» is answered with the photo, in order
+        MediaReader.Kind kind = msg.has("imageMessage") ? MediaReader.Kind.IMAGE : msg.has("audioMessage") ? MediaReader.Kind.AUDIO : null;
+        if ((text == null || text.isBlank()) && kind != null && media.enabled() && chat.enabled(tenantId) && mediaAllowed(burstKey)) {
+            JsonNode part = msg.path(kind == MediaReader.Kind.IMAGE ? "imageMessage" : "audioMessage");
+            var ref = new MediaReader.Media(kind, () -> mediaBytes(tenantId, m, kind), part.path("mimetype").asText(null), part.path("caption").asText(null));
+            if (burst.enabled()) {
+                var release = burst.hold(burstKey, joined -> respond(tenantId, sender, joined, name));
+                String read = null;
+                try { read = media.read(tenantId, "WHATSAPP", ref); } finally { release.accept(read); }
+                return;
+            }
+            text = media.read(tenantId, "WHATSAPP", ref);
+        }
+        // a customer's quick lines are joined and answered once (see InboundBurst); empty messages go straight on
+        if (burst.enabled() && text != null && !text.isBlank()) { burst.add(burstKey, text, joined -> respond(tenantId, sender, joined, name)); return; }
+        respond(tenantId, sender, text, name);
+    }
+
+    /** At most 20 photos and voice notes read per customer in 10 minutes (each read costs a model call); past that they get the "please type" answer. */
+    private boolean mediaAllowed(String key) {
+        try { throttle.check("media|" + key, 20, Duration.ofMinutes(10)); return true; } catch (BusinessException e) { return false; }
+    }
+
+    /** The media's bytes: in the webhook when Evolution is set to include them, else asked of Evolution by the message's key. */
+    private byte[] mediaBytes(UUID tenantId, JsonNode m, MediaReader.Kind kind) {
+        String b64 = m.path("message").path("base64").asText("");
+        if (b64.isEmpty()) {
+            var res = api.call("POST", "/chat/getBase64FromMediaMessage/" + row(tenantId).get("instance"), Map.of("message", Map.of("key", Map.of("id", m.path("key").path("id").asText(""))), "convertToMp4", false));
+            b64 = String.valueOf(res.getOrDefault("base64", ""));
+        }
+        byte[] bytes = java.util.Base64.getMimeDecoder().decode(b64.replaceFirst("^data:[^,]*,", ""));
+        if (bytes.length > (kind == MediaReader.Kind.IMAGE ? QwenMediaReader.MAX_IMAGE : QwenMediaReader.MAX_AUDIO)) throw new IllegalStateException("too large: " + bytes.length + " bytes");
+        return bytes;
     }
 
     private void respond(UUID tenantId, String sender, String text, String pushName) {

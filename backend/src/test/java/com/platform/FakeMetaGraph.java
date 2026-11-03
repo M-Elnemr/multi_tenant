@@ -50,6 +50,7 @@ public class FakeMetaGraph implements MetaGraph {
         if (path.contains("/posts?fields=message")) return Map.of("data", FB_POSTS);
         if (path.contains("/media?fields=caption")) return Map.of("data", IG_POSTS);
         if (path.contains("?fields=id,name,username,about") || path.contains("?fields=id,username,name,biography")) return Map.of("id", path.split("\\?")[0], "name", "My Shop", "username", "myshop", "about", "Cotton basics from Cairo");
+        if (path.startsWith("wamedia-")) return Map.of("url", "https://lookaside.fbsbx.com/whatsapp_business/attachments/?mid=" + path, "mime_type", "image/jpeg");   // a WhatsApp photo or voice note: its short-lived link
         if (path.contains("/phone_numbers")) return Map.of("data", java.util.List.of(Map.of("id", WABA_PHONE)));
         return Map.of("id", path.split("\\?")[0], "name", "Test Page");
     }

@@ -51,8 +51,9 @@ public class MetaChannelService {
     private final ExecutorService pool;
     private final java.util.concurrent.ScheduledExecutorService holder = Executors.newSingleThreadScheduledExecutor();
     private final InboundBurst burst;
+    private final MediaReader media;
 
-    public MetaChannelService(JdbcClient jdbc, MetaGraph graph, TokenCrypto crypto, ChatService chat, LoginThrottle throttle, AuditService audit, WhatsAppConfirmService waConfirm, WaReportService waReport, ProductShare share, com.platform.commerce.GenderService genders,
+    public MetaChannelService(JdbcClient jdbc, MetaGraph graph, TokenCrypto crypto, ChatService chat, LoginThrottle throttle, AuditService audit, WhatsAppConfirmService waConfirm, WaReportService waReport, ProductShare share, com.platform.commerce.GenderService genders, MediaReader media,
                               @Value("${app.meta.app-secret:}") String appSecret, @Value("${app.meta.verify-token:}") String verifyToken, @Value("${app.meta.async:true}") boolean async, @Value("${app.chat.burst-ms:5000}") long burstMs) {
         this.jdbc = jdbc;
         this.graph = graph;
@@ -64,6 +65,7 @@ public class MetaChannelService {
         this.waReport = waReport;
         this.share = share;
         this.genders = genders;
+        this.media = media;
         this.appSecret = appSecret == null || appSecret.isBlank() ? null : appSecret.trim();
         this.verifyToken = verifyToken == null || verifyToken.isBlank() ? null : verifyToken.trim();
         this.pool = async ? Executors.newFixedThreadPool(4) : null;
@@ -169,7 +171,7 @@ public class MetaChannelService {
                     for (JsonNode m : v.path("messages")) {
                         String from = m.path("from").asText(""), name = null;
                         for (JsonNode c : v.path("contacts")) if (from.equals(c.path("wa_id").asText())) name = c.path("profile").path("name").asText(null);   // the customer's WhatsApp profile name
-                        inbound("WHATSAPP", pnid, from, m.path("id").asText(""), whatsappText(m), name);
+                        inbound("WHATSAPP", pnid, from, m.path("id").asText(""), whatsappText(m), name, whatsappMedia(m));
                     }
                 }
             } else if ("page".equals(object) || "instagram".equals(object)) {
@@ -179,10 +181,31 @@ public class MetaChannelService {
                     JsonNode msg = ev.path("message");
                     String sender = ev.path("sender").path("id").asText("");
                     if (msg.isMissingNode() || msg.path("is_echo").asBoolean(false) || sender.equals(accountId)) continue;
-                    inbound(platform, accountId, sender, msg.path("mid").asText(""), msg.hasNonNull("text") ? msg.path("text").asText("") : null, null);
+                    inbound(platform, accountId, sender, msg.path("mid").asText(""), msg.hasNonNull("text") ? msg.path("text").asText("") : null, null, messengerMedia(msg));
                 }
             }
         }
+    }
+
+    /** A photo or voice note the customer sent, not fetched yet: on WhatsApp by its media id (the link is asked of Meta with the shop's token), on Messenger and Instagram by its link. */
+    record MediaRef(MediaReader.Kind kind, String waMediaId, String url, String mime, String caption) {}
+
+    static MediaRef whatsappMedia(JsonNode m) {
+        return switch (m.path("type").asText()) {
+            case "image" -> new MediaRef(MediaReader.Kind.IMAGE, m.path("image").path("id").asText(""), null, m.path("image").path("mime_type").asText(null), m.path("image").path("caption").asText(null));
+            case "audio" -> new MediaRef(MediaReader.Kind.AUDIO, m.path("audio").path("id").asText(""), null, m.path("audio").path("mime_type").asText(null), null);
+            default -> null;
+        };
+    }
+
+    static MediaRef messengerMedia(JsonNode msg) {
+        for (JsonNode a : msg.path("attachments")) {
+            String url = a.path("payload").path("url").asText("");
+            if (url.isEmpty()) continue;
+            if ("image".equals(a.path("type").asText())) return new MediaRef(MediaReader.Kind.IMAGE, null, url, null, null);
+            if ("audio".equals(a.path("type").asText())) return new MediaRef(MediaReader.Kind.AUDIO, null, url, null, null);
+        }
+        return null;
     }
 
     /** The text of a WhatsApp message: typed text, or the payload of a tapped template button / interactive reply (that is how "Confirm" arrives). */
@@ -244,14 +267,46 @@ public class MetaChannelService {
 
     private boolean running(UUID tenantId) { return jdbc.sql("SELECT " + com.platform.shared.TenantState.running("CAST(:t AS uuid)")).param("t", tenantId).query(Boolean.class).single(); }
 
-    private void inbound(String platform, String accountId, String sender, String mid, String text, String name) {
+    private void inbound(String platform, String accountId, String sender, String mid, String text, String name, MediaRef ref) {
         if (accountId.isEmpty() || sender.isEmpty() || mid.isEmpty()) return;
         var ch = jdbc.sql("SELECT tenant_id, token_enc, status FROM chat.channels WHERE platform = :p AND external_id = :e").param("p", platform).param("e", accountId).query().listOfRows().stream().findFirst();
         if (ch.isEmpty() || !"ACTIVE".equals(ch.get().get("status"))) return;
         if (jdbc.sql("INSERT INTO chat.meta_events (mid) VALUES (:m) ON CONFLICT DO NOTHING").param("m", mid).update() == 0) return;   // already handled
-        // a customer's quick lines are joined and answered once (see InboundBurst); media and empty messages go straight on
-        if (burst.enabled() && text != null && !text.isBlank()) { var row = ch.get(); burst.add(platform + "|" + accountId + "|" + sender, text, joined -> respond(platform, accountId, sender, joined, row, name)); return; }
-        respond(platform, accountId, sender, text, ch.get(), name);
+        var row = ch.get();
+        String key = platform + "|" + accountId + "|" + sender;
+        // a photo or voice note is read into text (a few seconds); what the customer sends meanwhile waits for it, so «بكام ده؟» is answered with the photo, in order
+        if ((text == null || text.isBlank()) && ref != null && media.enabled() && chat.enabled((UUID) row.get("tenant_id")) && mediaAllowed("media|" + key)) {
+            if (burst.enabled()) {
+                var release = burst.hold(key, joined -> respond(platform, accountId, sender, joined, row, name));
+                String read = null;
+                try { read = readMedia(platform, row, ref); } finally { release.accept(read); }
+                return;
+            }
+            text = readMedia(platform, row, ref);
+        }
+        // a customer's quick lines are joined and answered once (see InboundBurst); empty messages go straight on
+        if (burst.enabled() && text != null && !text.isBlank()) { burst.add(key, text, joined -> respond(platform, accountId, sender, joined, row, name)); return; }
+        respond(platform, accountId, sender, text, row, name);
+    }
+
+    /** At most 20 photos and voice notes read per customer in 10 minutes (each read costs a model call); past that they get the "please type" answer. */
+    private boolean mediaAllowed(String key) {
+        try { throttle.check(key, 20, Duration.ofMinutes(10)); return true; } catch (BusinessException e) { return false; }
+    }
+
+    /** The photo or voice note as text for the chat, or null when it could not be fetched or read. */
+    private String readMedia(String platform, Map<String, Object> row, MediaRef ref) {
+        try {
+            String token = crypto.decrypt((String) row.get("token_enc"));
+            int max = ref.kind() == MediaReader.Kind.IMAGE ? QwenMediaReader.MAX_IMAGE : QwenMediaReader.MAX_AUDIO;
+            java.util.function.Supplier<byte[]> bytes = "WHATSAPP".equals(platform)
+                    ? () -> media.download(String.valueOf(graph.get(ref.waMediaId(), token).get("url")), token, max)   // WhatsApp: the id gives a short-lived link that needs the token
+                    : () -> media.download(ref.url(), null, max);
+            return media.read((UUID) row.get("tenant_id"), platform, new MediaReader.Media(ref.kind(), bytes, ref.mime(), ref.caption()));
+        } catch (RuntimeException e) {
+            log.warn("Could not read a {} from {}: {}", ref.kind(), platform, e.toString());
+            return ref.caption();
+        }
     }
 
     private void respond(String platform, String accountId, String sender, String text, Map<String, Object> chRow, String name) {

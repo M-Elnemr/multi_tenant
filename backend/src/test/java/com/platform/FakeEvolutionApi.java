@@ -26,6 +26,7 @@ public class FakeEvolutionApi implements EvolutionApi {
         if (path.startsWith("/instance/connectionState")) return Map.of("instance", Map.of("state", STATE));
         if (path.startsWith("/instance/connect/")) return Map.of("base64", "data:image/png;base64,QRCODE", "pairingCode", "ABCD1234");
         if (path.startsWith("/instance/fetchInstances")) return Map.of("data", List.of(Map.of("ownerJid", "201012345678@s.whatsapp.net")));
+        if (path.startsWith("/chat/getBase64FromMediaMessage/")) return Map.of("base64", "AQID", "mimetype", "image/jpeg");   // a photo or voice note the customer sent
         if (path.startsWith("/message/sendText/")) { if (FAIL_SEND) throw new EvolutionException("send failed", 500); return Map.of("key", Map.of("id", "OUT1")); }
         return Map.of();
     }

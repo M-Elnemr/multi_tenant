@@ -87,6 +87,14 @@ class FactCheckTest {
     // ---- the slips seen in the test chats -----------------------------------------------------------------------------
 
     @Test
+    void qwenDeniedAnInStockKidsShortsWithItsColourAndSize() {
+        String customer = "عايز شورت أطفال قطن رمادي مقاس 4 سنة";
+        String reply = "يا فندم، للأسف محدش ليه شورت أطفال قطن رمادي مقاس 4 سنة حالياً في المتجر. \n\nعندنا تشكيلة واسعة من ملابس الأطفال، ممكن أبعثلك صور عشان تختار منها؟";
+        assertThat(kinds(FASH, customer, reply)).containsAnyOf("FALSE_DENIAL", "OPTION_STOCK");
+        assertThat(FactCheck.fix(customer, reply, FASH, List.of())).doesNotContain("محدش ليه");
+    }
+
+    @Test
     void largeSandwichPricedAsTheSuper() {
         String reply = "عندنا ساندوتش شاورما فراخ كبير بـ ١٤٠ جنيه، والخبز صاج أو عيش سوري أو فينو.";
         var p = FactCheck.check("عايز ساندوتش شاورما فراخ كبير", reply, REST, List.of());

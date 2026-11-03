@@ -22,7 +22,7 @@ import org.springframework.test.web.servlet.ResultActions;
 /** Facebook / Instagram / WhatsApp: connecting a shop, the signed webhook, the AI answering through the channel. Meta and the model are faked. */
 class MetaChannelsIntegrationTest extends IntegrationTestBase {
     @BeforeEach
-    void clean() { FakeAiProvider.reset(); FakeMetaGraph.reset(); }
+    void clean() { FakeAiProvider.reset(); FakeMetaGraph.reset(); FakeMediaReader.reset(); }
 
     String body(ResultActions r) throws Exception { return r.andReturn().getResponse().getContentAsString(); }
 
@@ -116,6 +116,36 @@ class MetaChannelsIntegrationTest extends IntegrationTestBase {
         String list = body(onHost(t.host(), t.access(), "GET", "/api/v1/store/orders", null));
         assertThat((Integer) JsonPath.read(list, "$.meta.total")).isEqualTo(1);
         assertThat(JsonPath.<String>read(list, "$.data[0].source")).isEqualTo("AI_CHAT");
+    }
+
+    @Test
+    void aPhotoAndAVoiceNoteOnWhatsAppAreReadIntoTheChatAndAnswered() throws Exception {
+        Tenant t = onboard("STORE");
+        String pnid = pageId();
+        connect(t, "WHATSAPP", pnid);
+        FakeMetaGraph.reset();
+        java.util.function.Function<String, String> wa = media -> "{\"object\":\"whatsapp_business_account\",\"entry\":[{\"id\":\"1\",\"changes\":[{\"field\":\"messages\",\"value\":{\"metadata\":{\"phone_number_id\":\"%s\"},\"messages\":[{\"from\":\"201011113333\",\"id\":\"wamid.%s\",%s}]}}]}]}".formatted(pnid, uniq(), media);
+        List<String> seen = new java.util.concurrent.CopyOnWriteArrayList<>();
+        java.util.function.Function<List<Turn>, Turn> answer = turns -> { seen.add(turns.get(turns.size() - 1).text()); return Turn.model("عندنا فستان وردي بـ ٤٥٠ جنيه، تحب أوريك المقاسات؟"); };
+        for (int i = 0; i < 8; i++) FakeAiProvider.SCRIPT.add(answer);   // the checks may ask for a rewrite
+
+        String photo = wa.apply("\"type\":\"image\",\"image\":{\"id\":\"wamedia-1\",\"mime_type\":\"image/jpeg\",\"caption\":\"بكام ده؟\"}");
+        webhook(photo, sign(photo)).andExpect(status().isOk());
+        assertThat(FakeMediaReader.DOWNLOADS).singleElement().asString().contains("mid=wamedia-1").contains("EAAG-secret-token-0123456789");   // the link Meta gave, fetched with the shop's token
+        assertThat(seen.get(0)).contains("[صورة من العميل: فستان وردي قصير]").contains("بكام ده؟");
+        assertThat(FakeMetaGraph.SENT.get(FakeMetaGraph.SENT.size() - 1).body().toString()).doesNotContain("أستطيع قراءة الرسائل النصية فقط");
+
+        String voice = wa.apply("\"type\":\"audio\",\"audio\":{\"id\":\"wamedia-2\",\"mime_type\":\"audio/ogg; codecs=opus\",\"voice\":true}");
+        webhook(voice, sign(voice)).andExpect(status().isOk());
+        assertThat(seen).anyMatch(x -> x.contains("🎤 عايز الفستان ده مقاس ميديم"));
+
+        // switched off: the polite "please type" answer, as before, and nothing is fetched
+        FakeMediaReader.ENABLED = false;
+        FakeMediaReader.DOWNLOADS.clear();
+        String off = wa.apply("\"type\":\"image\",\"image\":{\"id\":\"wamedia-3\",\"mime_type\":\"image/jpeg\"}");
+        webhook(off, sign(off)).andExpect(status().isOk());
+        assertThat(FakeMediaReader.DOWNLOADS).isEmpty();
+        assertThat(FakeMetaGraph.SENT.get(FakeMetaGraph.SENT.size() - 1).body().toString()).contains("أستطيع قراءة الرسائل النصية فقط");
     }
 
     @Test

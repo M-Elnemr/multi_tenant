@@ -147,6 +147,10 @@ public class ChatService {
 
     private final KnowledgeIndex knowledge;
 
+    /** How many earlier messages of the chat the model reads (12 by default; AI_HISTORY=24 doubles it for about 5% more input per call). */
+    @org.springframework.beans.factory.annotation.Value("${app.ai.history-messages:12}")
+    private int historyMessages = 12;
+
     public ChatService(JdbcClient jdbc, AiProvider ai, CatalogService catalog, StoreSearchService search, CheckoutService checkout, StoreSettingsService settings,
                        StoreFulfillmentService fulfilment, ShopperService shopper, PaymentPolicy policy, AuditService audit, SellerTools seller, com.platform.commerce.GenderService genders, com.platform.commerce.OrderService orders, @org.springframework.context.annotation.Lazy AccountNotice accountNotice, AiUsageService usageLog, AiEvents events, ChannelAi channelAi,
                        KnowledgeIndex knowledge, org.springframework.context.ApplicationEventPublisher publisher,
@@ -343,7 +347,7 @@ public class ChatService {
         if (!"TEST".equals(channel) && paused(conv)) return pausedReply(conv, text);
 
         List<Turn> turns = new ArrayList<>();
-        for (var m : jdbc.sql("SELECT role, content FROM (SELECT id, role, content FROM chat.messages WHERE conversation_id = :c ORDER BY id DESC LIMIT 12) x ORDER BY id").param("c", conv).query().listOfRows())
+        for (var m : jdbc.sql("SELECT role, content FROM (SELECT id, role, content FROM chat.messages WHERE conversation_id = :c ORDER BY id DESC LIMIT :n) x ORDER BY id").param("c", conv).param("n", Math.max(4, Math.min(historyMessages, 40))).query().listOfRows())
             turns.add("user".equals(m.get("role")) ? Turn.user((String) m.get("content")) : Turn.model((String) m.get("content")));
 
         @SuppressWarnings("unchecked") Map<String, Object>[] orderBox = new Map[1];
@@ -574,7 +578,7 @@ public class ChatService {
         String channel = (String) c.get("channel"), externalId = (String) c.get("external_id");
         UUID clientId = (UUID) c.get("client_id");
         List<Turn> turns = new ArrayList<>();
-        for (var m : jdbc.sql("SELECT role, content FROM (SELECT id, role, content FROM chat.messages WHERE conversation_id = :c ORDER BY id DESC LIMIT 12) x ORDER BY id").param("c", conv).query().listOfRows())
+        for (var m : jdbc.sql("SELECT role, content FROM (SELECT id, role, content FROM chat.messages WHERE conversation_id = :c ORDER BY id DESC LIMIT :n) x ORDER BY id").param("c", conv).param("n", Math.max(4, Math.min(historyMessages, 40))).query().listOfRows())
             turns.add("user".equals(m.get("role")) ? Turn.user((String) m.get("content")) : Turn.model((String) m.get("content")));
         String note = "[NOTE FROM THE SHOP. The customer cannot see this note.] The shop owner has now answered the question you could not answer earlier. The customer's question: «" + question
                 + "». The owner's answer: «" + ownerAnswer + "». Write your message to the customer now, in the customer's own language and dialect: give them this answer warmly and clearly, using only what the owner said "
@@ -750,7 +754,7 @@ public class ChatService {
         if (!searched && NOT_HAVE.matcher(answer).find()) problems.put("UNSEARCHED_DENIAL", "You said we do not have something without searching in this turn: call search_products for exactly what the customer asked (also by color and size) and answer from the result.");
         String norm = FastAnswers.norm(answer);
         if (BROKEN_RUN.matcher(answer).find())
-            problems.put("BROKEN_TEXT", "Your reply broke off into a run of repeated letters («لجماااا…»): write the whole reply again, short and complete.");
+            problems.put("BROKEN_TEXT", "Your reply broke off into a run of repeated letters («لجماااا…») or into another script (Chinese, Cyrillic...): write the whole reply again in the customer's language, short and complete.");
         if (EXAMPLE_LINES.stream().anyMatch(norm::contains)) problems.put("COPIED_EXAMPLE", "You copied an example sentence from your instructions word for word; it may not fit. Answer THIS customer's message in your own words.");
         if (english(last) && arabicShare(answer) > 0.5) problems.put("LANGUAGE", "The customer writes English: reply in English.");
         else if (!english(last) && arabicShare(last) > 0.6 && arabicShare(answer) < 0.2) problems.put("LANGUAGE", "The customer writes Arabic: reply in Egyptian Arabic.");
@@ -873,7 +877,7 @@ public class ChatService {
             + "|(?:shall|should|can)\\s+i\\s+(?:show|send|list)|would\\s+you\\s+like\\s+(?:me\\s+to\\s+(?:show|send|list)|to\\s+see)", Pattern.CASE_INSENSITIVE);
 
     /** The model talking about its own machinery to the customer. */
-    static final Pattern TOOL_TALK = Pattern.compile("(?:🔍|(?:جاري|جار|بجري)\\s+(?:ال)?بحث|^\\s*(?:ال)?بحث\\s+عن|اداه\\s+البحث|أداة\\s+البحث|اداة\\s+البحث|نتايج\\s+البحث|نتائج\\s+البحث|البحث\\s+(?:مرجعش|لم\\s+يرجع|مارجعش)|في\\s+نظامنا|السيستم\\s+بتاعنا|قاعده\\s+البيانات|قاعدة\\s+البيانات|the\\s+(?:search\\s+)?tool|my\\s+tools|the\\s+database|in\\s+our\\s+system)", Pattern.CASE_INSENSITIVE);
+    static final Pattern TOOL_TALK = Pattern.compile("(?:🔍|(?:جاري|جار|بجري)\\s+(?:ال)?بحث|^\\s*(?:ال)?بحث\\s+عن|اداه\\s+البحث|أداة\\s+البحث|اداة\\s+البحث|نتايج\\s+البحث|نتائج\\s+البحث|البحث\\s+(?:مرجعش|لم\\s+يرجع|مارجعش)|في\\s+نظامنا|السيستم\\s+بتاعنا|قاعده\\s+البيانات|قاعدة\\s+البيانات|(?<!\\p{L})(?:ال)?(?:كاتالوج|كتالوج|كاتلوج|كتلوج)|the\\s+(?:search\\s+)?tool|my\\s+tools|the\\s+database|in\\s+our\\s+system|\\bcatalog(?:ue)?\\b)", Pattern.CASE_INSENSITIVE);
 
     /** «بكام», «سعره كام», «how much»: the customer asks a price. */
     static final Pattern PRICE_ASKED = Pattern.compile("(?:(?<!\\p{L})بكام(?!\\p{L})|سعر(?:ه|ها|هم)?\\s+(?:كام|ايه)|ب\\s*كام|كام\\s+سعر|how\\s+much|what\\s*(?:'s|\\s+is)\\s+the\\s+price|price\\s+of)", Pattern.CASE_INSENSITIVE);
@@ -1696,7 +1700,8 @@ public class ChatService {
 
     /** A reply saying the shop has no information about something («مفيش معلومات عن السعرات», «مش مكتوب في الوصف»). */
     /** One letter (or two) repeated on and on: the model's output broke. */
-    static final Pattern BROKEN_RUN = Pattern.compile("(\\p{L}{1,2})\\1{7,}");
+    /** A run of repeated letters («لجماااا…»), or letters of a script the customer never writes in (Qwen now and then slips into Chinese). */
+    static final Pattern BROKEN_RUN = Pattern.compile("(\\p{L}{1,2})\\1{7,}|[\\p{IsHan}\\p{IsHiragana}\\p{IsKatakana}\\p{IsHangul}\\p{IsCyrillic}\\p{IsThai}]");
 
     static final Pattern NO_INFO = Pattern.compile("(?:(?:مفيش|معنديش|مش\\s+عندي|محدش\\s+عنده|معندناش|ماعندناش|مالقيتش|ملقيتش)\\s+(?:أي\\s+|اي\\s+)?(?:معلومات|معلومة|معلومه|بيانات|تفاصيل|مواصفات)|مش\\s+(?:مكتوب|مذكور|مذكوره|مذكورة)\\s+(?:في|ف)\\s+(?:الوصف|البيانات)|خارج\\s+عن\\s+(?:معلوماتنا|المعلومات)|(?:no|don'?t\\s+have)\\s+(?:detailed\\s+)?(?:information|details|specs|specifications))", Pattern.CASE_INSENSITIVE);
 
@@ -1960,6 +1965,7 @@ public class ChatService {
                 - NEVER INVENT: no products, prices, stock, discounts, delivery times, policies, «the price will rise», «last piece» (unless stock is really low), brand or import claims, guarantees, reviews or promised calls, unless a tool or the owner says so. Never say the shop has or lacks a kind of item, color or size before SHOP CATALOG or a tool result shows it; never say it lacks a color or size that allOptions lists. If the customer is vague, name our categories and ask one short question; say "we don't have it" only when nothing matches, then suggest the closest thing.
                 - Search first (search_products): each result lists its variants (ids, sizes, colors, stock), usually enough to prepare the order without get_product; for "what is on sale" use onSale=true. Do not push out-of-stock items.
                 - WHO IS IT FOR (strict): each product says who it is "for" and its category. When the words or the chat tell («رجالي»، «لابني ٥ سنين»، «ليا», a woman asking for a dress) or the shop sells it for one group, go ahead and pass audience (MEN, WOMEN, BOYS, GIRLS, BABY) to search_products. If several groups and nothing tells, ask ONE short question («ليك ولا لحد تاني؟»), or assume it is for them when they speak about themself. Ask a child's age only when the size depends on it. NEVER show a kids' product to an adult buying for themself.
+                - PHOTOS AND VOICE NOTES FROM THE CUSTOMER: «[صورة من العميل: …]» is what a photo they sent shows; a message starting «🎤» is their voice note written out (their own words). You can see and hear them this way: never say you cannot open photos or voice notes. For a product photo, search_products for that kind and colour and offer the closest real products with prices (say honestly when we do not have that exact one). A payment receipt: thank them and say the shop team will check it (flag_unanswered). A photo of a damaged or wrong item: say sorry and that the shop team will contact them (flag_unanswered).
                 - Photos: call show_products with the slugs you recommend, and whenever they ask for a photo; the shop sends each picture, price and link after your message (or a card on the website). Never write links.
                 - To close a sale you need the items (variant, quantity), the name, ONE mobile number, the full address and the payment method. Ask for EVERYTHING still missing in ONE single message as a short list, e.g. «محتاجة منك في رسالة واحدة: الاسم، رقم تليفون عليه واتساب، العنوان بالتفصيل (المحافظة، المنطقة، الشارع، رقم العمارة والشقة)، وطريقة الدفع» («محتاج» for a man). The governorate is part of the address: never ask for it as a separate question. Skip what they already told you and what SAVED DETAILS has (a returning customer only confirms the saved address).
                 - Once you have the items, name, mobile number, address and payment, call prepare_order RIGHT AWAY: never ask «الرقم ده عليه واتساب؟» as a message of its own. Leave whatsappConsent out: the summary itself tells them the confirmation comes on WhatsApp to that number and asks them to say if it has no WhatsApp. If they then say it has none, call prepare_order again with whatsappConsent=false (or with whatsappConsent=true and the other WhatsApp number they give). Never invent a number.
@@ -1980,6 +1986,7 @@ public class ChatService {
         if (!global.isEmpty()) p.append("\nPLATFORM LESSONS (how to sell well; follow them unless they conflict with the RULES):\n").append(lessonText(global));
         if (!own.isEmpty()) p.append("\nTHIS SHOP'S LESSONS (the owner's instructions for this shop; follow them unless they conflict with the RULES):\n").append(lessonText(own));
         p.append(AiProvider.CACHE_BREAK);
+        p.append(openRightNow(tenantId));
         String memo = seller.memory(tenantId, channel, externalId);
         if (!memo.isBlank()) p.append("\nWHAT YOU REMEMBER ABOUT THIS CUSTOMER (use it naturally, do not recite it):\n").append(memo).append("\n");
         p.append(addressRule(tenantId, conv, channel, externalId, clientId));
@@ -2210,25 +2217,41 @@ public class ChatService {
         try {
             if (notBlank(r.get("hours")) && !r.get("hours").toString().equals("{}")) {
                 var hours = JSON.readTree(r.get("hours").toString());
-                var now = java.time.ZonedDateTime.now(java.time.ZoneId.of("Africa/Cairo"));
-                String today = WEEK.get(now.getDayOfWeek().getValue() - 1);
                 List<String> week = new ArrayList<>();
                 for (String d : WEEK) {
                     var h = hours.path(d);
                     if (h.isMissingNode()) continue;
                     week.add(d + " " + (h.path("closed").asBoolean(false) ? "closed" : h.path("open").asText() + "-" + h.path("close").asText()));
                 }
-                var t = hours.path(today);
-                boolean openNow = false;
-                if (!t.isMissingNode() && !t.path("closed").asBoolean(false)) {
-                    var open = java.time.LocalTime.parse(t.path("open").asText("00:00")); var close = java.time.LocalTime.parse(t.path("close").asText("23:59")); var time = now.toLocalTime();
-                    openNow = close.isAfter(open) ? !time.isBefore(open) && time.isBefore(close) : !time.isBefore(open) || time.isBefore(close);   // hours that run past midnight
-                }
-                b.append("- Opening hours: ").append(String.join(", ", week)).append(". Right now (Cairo ").append(now.toLocalTime().withSecond(0).withNano(0)).append(", ").append(today).append(") the shop is ")
-                        .append(openNow ? "OPEN" : "CLOSED right now (outside opening hours). Keep helping and selling exactly as usual: answer every question and take the order; it is prepared when the shop opens (say that once). Never stop the chat or say the team will reply later").append(".\n");
+                b.append("- Opening hours: ").append(String.join(", ", week)).append(" (whether it is open right now is under RIGHT NOW below).\n");
             }
         } catch (Exception e) { log.debug("Opening hours skipped", e); }
         return b.toString();
+    }
+
+    /**
+     * Whether the shop is open at this minute (Cairo time). Kept apart from the shop's facts and after the prompt-cache break: a clock in the middle of the fixed part changed the
+     * prompt every minute, so the catalog, the lessons and the tools after it were never served from the cache.
+     */
+    String openRightNow(UUID tenantId) {
+        try {
+            String raw = jdbc.sql("SELECT working_hours::text FROM commerce.store_profiles WHERE tenant_id = :t").param("t", tenantId).query(String.class).optional().orElse(null);
+            if (!notBlank(raw) || raw.equals("{}")) return "";
+            var hours = JSON.readTree(raw);
+            var now = java.time.ZonedDateTime.now(java.time.ZoneId.of("Africa/Cairo"));
+            String today = WEEK.get(now.getDayOfWeek().getValue() - 1);
+            var t = hours.path(today);
+            boolean openNow = false;
+            if (!t.isMissingNode() && !t.path("closed").asBoolean(false)) {
+                var open = java.time.LocalTime.parse(t.path("open").asText("00:00")); var close = java.time.LocalTime.parse(t.path("close").asText("23:59")); var time = now.toLocalTime();
+                openNow = close.isAfter(open) ? !time.isBefore(open) && time.isBefore(close) : !time.isBefore(open) || time.isBefore(close);   // hours that run past midnight
+            }
+            return "\nRIGHT NOW (Cairo " + now.toLocalTime().withSecond(0).withNano(0) + ", " + today + ") the shop is "
+                    + (openNow ? "OPEN" : "CLOSED right now (outside opening hours). Keep helping and selling exactly as usual: answer every question and take the order; it is prepared when the shop opens (say that once). Never stop the chat or say the team will reply later") + ".\n";
+        } catch (Exception e) {
+            log.debug("Opening hours skipped", e);
+            return "";
+        }
     }
 
     private static boolean notBlank(Object o) { return o != null && !o.toString().isBlank(); }
