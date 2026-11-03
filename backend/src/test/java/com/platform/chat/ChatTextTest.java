@@ -250,6 +250,10 @@ class ChatTextTest {
         org.assertj.core.api.Assertions.assertThat(ChatService.STALL.matcher("الجو حر فعلاً 😅 ثواني أراجع لك المشروبات المتاحة عندنا").find()).isTrue();
         org.assertj.core.api.Assertions.assertThat(ChatService.STALL.matcher("«صحن شاورما لحمة» ربع كيلو بـ 180 جنيه.\nتحب أبعتلك السعر فور ما أرجعلك؟").find()).isTrue();   // seen live 2026-11-03
         org.assertj.core.api.Assertions.assertThat(ChatService.STALL.matcher("ثواني بس، هتأكد لك من توفر جاكيت الجينز وأرد عليك حالاً").find()).isTrue();
+        // the minimum line is left out only when the reply already has BOTH the minimum and the order's total now
+        String line = "🙏 أقل قيمة للطلب 100 جنيه، وطلبك دلوقتي 60 جنيه. تحب تضيف إيه عشان نكمل الأوردر؟";
+        org.assertj.core.api.Assertions.assertThat(ChatService.mentionsMinimum("أقل الطلب اللي هو 100 جنيه، عايز تضيف حاجة؟", line)).isFalse();
+        org.assertj.core.api.Assertions.assertThat(ChatService.mentionsMinimum("طلبك ٦٠ جنيه وأقل طلب ١٠٠ جنيه، تضيف ساندوتش؟", line)).isTrue();
         // offering to show instead of showing (seen live 2026-11-03), but not a question about an option or a real list
         org.assertj.core.api.Assertions.assertThat(ChatService.OFFER_TO_SHOW.matcher("أهلاً بيك يا فندم 🌟 تحب أعرض عليك الحلويات اللي عندنا تناسب بعد الأكل؟").find()).isTrue();
         org.assertj.core.api.Assertions.assertThat(ChatService.OFFER_TO_SHOW.matcher("تحب أرسل لك القائمة؟").find()).isTrue();

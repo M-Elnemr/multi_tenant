@@ -3242,10 +3242,19 @@ public class ChatService {
     /** «100» for 100.0, «99.5» for 99.5. */
     static String plainAmount(double v) { return v == Math.rint(v) ? String.valueOf((long) v) : String.valueOf(v); }
 
-    /** The reply already says the minimum order: the first amount of the code's line («أقل قيمة للطلب 100 …») is in it. */
+    /**
+     * The reply already says what the code's line says: EVERY amount of it is in the reply (the minimum AND the order's total now, «أقل قيمة للطلب 100 جنيه، وطلبك دلوقتي 60»).
+     * A reply that only repeats «100» leaves the customer without what is still missing (seen live 2026-11-03, on GLM and on Qwen), so the line is added.
+     */
     static boolean mentionsMinimum(String answer, String line) {
         java.util.regex.Matcher m = Pattern.compile("\\d+(?:\\.\\d+)?").matcher(line);
-        return m.find() && Pattern.compile("(?<![\\d.])" + Pattern.quote(m.group()) + "(?![\\d])").matcher(MoneyGuard.digits(answer).replace(",", "")).find();
+        String said = MoneyGuard.digits(answer).replace(",", "");
+        boolean any = false;
+        while (m.find()) {
+            any = true;
+            if (!Pattern.compile("(?<![\\d.])" + Pattern.quote(m.group()) + "(?![\\d])").matcher(said).find()) return false;
+        }
+        return any;
     }
 
     /** This variant's option values, normalised with Western digits («6 قطع», «كبير»). */
