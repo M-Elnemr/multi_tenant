@@ -98,7 +98,7 @@ public class OpenAiProvider implements AiProvider {
                         .header("Authorization", "Bearer " + key).header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body)).build(), timeout);
                 if (res.statusCode() / 100 == 2) return parse(JSON.readTree(res.body()));
                 last = new AiUnavailableException("The AI assistant is busy, try again (HTTP " + res.statusCode() + ")");
-                if (res.statusCode() != 429 && res.statusCode() / 100 != 5) break;
+                if (res.statusCode() != 429 && res.statusCode() != 408 && res.statusCode() / 100 != 5) break;   // 408: Hive's "busy, try again" (seen live 2026-11-03)
                 Thread.sleep(attempt == 0 ? 1000 : 2500);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
