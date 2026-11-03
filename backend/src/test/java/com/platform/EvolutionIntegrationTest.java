@@ -122,7 +122,7 @@ class EvolutionIntegrationTest extends IntegrationTestBase {
         java.util.List<String> seen = new java.util.concurrent.CopyOnWriteArrayList<>();
         for (int i = 0; i < 6; i++) FakeAiProvider.SCRIPT.add(turns -> { seen.add(turns.get(turns.size() - 1).text()); return Turn.model("ده فستان جميل! تحب تشوف الألوان المتاحة؟"); });
         webhook(SECRET, "{\"event\":\"messages.upsert\",\"instance\":\"%s\",\"data\":{\"key\":{\"remoteJid\":\"201055551111@s.whatsapp.net\",\"fromMe\":false,\"id\":\"%s\"},\"message\":{\"imageMessage\":{\"mimetype\":\"image/jpeg\",\"caption\":\"عندكم زيه؟\"}}}}".formatted(inst, id)).andExpect(status().isOk());
-        assertThat(FakeEvolutionApi.CALLS).anyMatch(c -> c.path().equals("/chat/getBase64FromMediaMessage/" + inst) && c.body().toString().contains(id));
+        assertThat(FakeEvolutionApi.CALLS).anyMatch(c -> c.path().equals("/chat/getBase64FromMediaMessage/" + inst) && c.body().toString().contains(id) && c.body().toString().contains("imageMessage"));   // the whole message: Evolution keeps no copy to find it by id
         assertThat(seen.get(0)).contains("[صورة من العميل: فستان وردي قصير]").contains("عندكم زيه؟");
         var sent = FakeEvolutionApi.CALLS.get(FakeEvolutionApi.CALLS.size() - 1);
         assertThat(sent.path()).isEqualTo("/message/sendText/" + inst);

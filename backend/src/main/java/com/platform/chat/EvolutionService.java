@@ -341,11 +341,16 @@ public class EvolutionService {
         try { throttle.check("media|" + key, 20, Duration.ofMinutes(10)); return true; } catch (BusinessException e) { return false; }
     }
 
-    /** The media's bytes: in the webhook when Evolution is set to include them, else asked of Evolution by the message's key. */
+    /**
+     * The media's bytes: in the webhook when Evolution is set to include them, else asked of Evolution with the whole message as the webhook gave it (its media key and link):
+     * Evolution does not keep messages here (DATABASE_SAVE_DATA_NEW_MESSAGE=false), so asking by the message id alone answers «Message not found».
+     */
+    @SuppressWarnings("unchecked")
     private byte[] mediaBytes(UUID tenantId, JsonNode m, MediaReader.Kind kind) {
         String b64 = m.path("message").path("base64").asText("");
         if (b64.isEmpty()) {
-            var res = api.call("POST", "/chat/getBase64FromMediaMessage/" + row(tenantId).get("instance"), Map.of("message", Map.of("key", Map.of("id", m.path("key").path("id").asText(""))), "convertToMp4", false));
+            Map<String, Object> whole = JSON.convertValue(m, Map.class);
+            var res = api.call("POST", "/chat/getBase64FromMediaMessage/" + row(tenantId).get("instance"), Map.of("message", whole, "convertToMp4", false));
             b64 = String.valueOf(res.getOrDefault("base64", ""));
         }
         byte[] bytes = java.util.Base64.getMimeDecoder().decode(b64.replaceFirst("^data:[^,]*,", ""));
