@@ -18,8 +18,20 @@ import org.springframework.web.bind.annotation.RestController;
 @PreAuthorize("hasAuthority('platform.chat.teach')")
 public class AiHealthController {
     private final JdbcClient jdbc;
+    private final KnowledgeIndex knowledge;
 
-    public AiHealthController(JdbcClient jdbc) { this.jdbc = jdbc; }
+    public AiHealthController(JdbcClient jdbc, KnowledgeIndex knowledge) { this.jdbc = jdbc; this.knowledge = knowledge; }
+
+    /** Search by meaning per shop: how much of each catalog is indexed, embedded and has its search words. */
+    @GetMapping("/knowledge")
+    public Map<String, Object> knowledge() { return knowledge.overview(); }
+
+    /** Brings one shop's index in step now (normally the background job does it within minutes of an edit). */
+    @org.springframework.web.bind.annotation.PostMapping("/knowledge/{tenantId}/reindex")
+    public Map<String, Object> reindex(@org.springframework.web.bind.annotation.PathVariable java.util.UUID tenantId) {
+        if (!knowledge.enabled()) throw new com.platform.shared.BusinessException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, "EMBEDDINGS_OFF", "Search by meaning is off: no embedding key, or the provider refused it a few minutes ago");
+        return knowledge.reindexNow(tenantId);
+    }
 
     @GetMapping
     public Map<String, Object> health(@RequestParam(defaultValue = "7") int days) {

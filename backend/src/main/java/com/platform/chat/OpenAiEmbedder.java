@@ -34,7 +34,8 @@ class OpenAiEmbedder implements Embedder {
         this.batch = Math.max(1, batch);
     }
 
-    /** After the provider refuses (a key not allowed the model, an account on hold) or fails, embeddings rest a while: searches go by words without waiting on a call that fails. */
+    /** After the provider refuses (a key not allowed the model, an account on hold) or fails, embeddings rest a while: searches go by words without waiting on a call that fails.
+     */
     private volatile long restUntil = 0;
 
     @Override public boolean enabled() { return !key.isEmpty() && System.currentTimeMillis() >= restUntil; }
@@ -53,18 +54,48 @@ class OpenAiEmbedder implements Embedder {
         return out;
     }
 
-    private List<float[]> call(List<String> part) {
+    /** The longest a customer waits for their words to be embedded; Alibaba usually answers one short text in well under a second. */
+    static final long QUERY_TIMEOUT_MS = 3_500;
+
+    /**
+     * One try, a few seconds at most and never more than the reply has left: a slow or failing provider costs the customer one short wait, then searches go by words for a
+     * while (30 seconds after a slow answer, 10 minutes after a refusal) instead of every reply waiting on it again.
+     */
+    @Override
+    public float[] embedQuery(String text) {
+        if (!enabled()) throw new IllegalStateException("Embeddings are off (no key or resting)");
+        long timeout = Math.min(QUERY_TIMEOUT_MS, AiBudget.remainingMs() - 3_000);
+        if (timeout < 700) throw new IllegalStateException("No time left in this reply for search by meaning");
+        try {
+            HttpResponse<String> res = http.send(request(List.of(text), timeout), HttpResponse.BodyHandlers.ofString());
+            if (res.statusCode() / 100 == 2) return parse(JSON.readTree(res.body()), 1).get(0);
+            restUntil = System.currentTimeMillis() + (res.statusCode() == 429 || res.statusCode() >= 500 ? 30_000 : 600_000);
+            throw new IllegalStateException("Embeddings HTTP " + res.statusCode() + ": " + (res.body().length() > 200 ? res.body().substring(0, 200) : res.body()));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted", e);
+        } catch (java.io.IOException e) {   // timed out or unreachable
+            restUntil = System.currentTimeMillis() + 30_000;
+            throw new IllegalStateException("Embeddings slow or unreachable: " + e.getMessage(), e);
+        }
+    }
+
+    private HttpRequest request(List<String> part, long timeoutMs) throws java.io.IOException {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
         body.put("input", part.stream().map(t -> t.length() > 6000 ? t.substring(0, 6000) : t).toList());
         body.put("dimensions", dims);
         body.put("encoding_format", "float");
+        return HttpRequest.newBuilder(URI.create(baseUrl + "/embeddings")).timeout(Duration.ofMillis(timeoutMs))
+                .header("Authorization", "Bearer " + key).header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(body))).build();
+    }
+
+    private List<float[]> call(List<String> part) {
         RuntimeException last = null;
         for (int attempt = 0; attempt < 3; attempt++) {
             try {
-                HttpResponse<String> res = http.send(HttpRequest.newBuilder(URI.create(baseUrl + "/embeddings")).timeout(Duration.ofSeconds(20))
-                        .header("Authorization", "Bearer " + key).header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(body))).build(), HttpResponse.BodyHandlers.ofString());
+                HttpResponse<String> res = http.send(request(part, 40_000), HttpResponse.BodyHandlers.ofString());
                 if (res.statusCode() / 100 == 2) return parse(JSON.readTree(res.body()), part.size());
                 last = new IllegalStateException("Embeddings HTTP " + res.statusCode() + ": " + (res.body().length() > 200 ? res.body().substring(0, 200) : res.body()));
                 if (res.statusCode() != 429 && res.statusCode() < 500) { restUntil = System.currentTimeMillis() + 600_000; break; }   // a refused key or model will not fix itself soon: rest 10 minutes

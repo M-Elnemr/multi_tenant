@@ -55,6 +55,14 @@ public class KnowledgeIndex {
         @Override protected boolean removeEldestEntry(Map.Entry<String, float[]> e) { return size() > 500; }
     });
 
+    /** The same words searched again in the same shop (search_products then shop_knowledge, or the next customer): no second call to the provider, until the index changes. */
+    private final Map<String, List<Hit>> hitCache = java.util.Collections.synchronizedMap(new LinkedHashMap<>(256, 0.75f, true) {
+        @Override protected boolean removeEldestEntry(Map.Entry<String, List<Hit>> e) { return size() > 400; }
+    });
+    /** Each shop's catalog fingerprint when its index was last complete: an unchanged shop is not read again until the half-hourly sweep. */
+    private final Map<UUID, String> synced = new ConcurrentHashMap<>();
+    private volatile long nextSweep = 0;
+
     public KnowledgeIndex(JdbcClient jdbc, Embedder embedder, @Value("${app.ai.embed.min-score:0.3}") double minScore, @Value("${app.ai.embed.per-run:300}") int embedPerRun) {
         this.jdbc = jdbc;
         this.embedder = embedder;
@@ -66,16 +74,83 @@ public class KnowledgeIndex {
 
     // ---- keeping the index in step -------------------------------------------------------------------------------------------
 
+    /**
+     * Every two minutes: each shop whose catalog or texts changed since its index was last complete is brought in step (a new shop is simply a shop that changed), and every half
+     * hour all shops are, whatever changed (an edit that went around the services, a model change). A shop that no longer sells anything leaves the index.
+     */
     @Scheduled(fixedDelayString = "${app.ai.embed.sync-every:PT2M}", initialDelayString = "PT70S")
+    public void scheduled() {
+        // on its own thread: the first fill of a big catalog takes minutes, and the app's timers (reports, reminders, backups) share one thread
+        if (running.compareAndSet(false, true))
+            worker.execute(() -> { try { syncAll(); } catch (RuntimeException e) { log.warn("Knowledge index run failed: {}", e.getMessage()); } finally { running.set(false); } });
+    }
+
+    private final java.util.concurrent.atomic.AtomicBoolean running = new java.util.concurrent.atomic.AtomicBoolean();
+    private final java.util.concurrent.ExecutorService worker = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "knowledge-index");
+        t.setDaemon(true);
+        return t;
+    });
+
+    @jakarta.annotation.PreDestroy
+    void stop() { worker.shutdownNow(); }
+
+    /** One pass over every shop (see {@link #scheduled()}); public for tests. */
     public void syncAll() {
         if (!embedder.enabled()) return;
-        for (UUID t : jdbc.sql("SELECT DISTINCT tenant_id FROM commerce.products WHERE status = 'ACTIVE'").query(UUID.class).list()) {
-            try { sync(t); } catch (RuntimeException e) { log.warn("Knowledge index of {} not synced: {}", t, e.getMessage()); }
+        boolean sweep = System.currentTimeMillis() >= nextSweep;
+        if (sweep) nextSweep = System.currentTimeMillis() + 30 * 60_000L;
+        Set<UUID> selling = new java.util.HashSet<>(jdbc.sql("SELECT DISTINCT tenant_id FROM commerce.products WHERE status = 'ACTIVE'").query(UUID.class).list());
+        for (UUID gone : jdbc.sql("SELECT DISTINCT tenant_id FROM chat.knowledge_chunks").query(UUID.class).list())
+            if (!selling.contains(gone)) { jdbc.sql("DELETE FROM chat.knowledge_chunks WHERE tenant_id = :t").param("t", gone).update(); vectors.remove(gone); synced.remove(gone); }
+        Map<UUID, String> prints = fingerprints();
+        int shops = 0, embedded = 0;
+        for (UUID t : selling) {
+            String print = prints.getOrDefault(t, "") + "|" + embedder.model();
+            if (!sweep && print.equals(synced.get(t))) continue;
+            try {
+                embedded += sync(t);
+                shops++;
+                if (complete(t)) synced.put(t, print); else synced.remove(t);
+            } catch (RuntimeException e) {
+                synced.remove(t);
+                log.warn("Knowledge index of {} not synced: {}", t, e.getMessage());
+            }
+            if (!embedder.enabled()) break;   // the provider refused or is down: the next run tries again
         }
+        if (embedded > 0) log.info("Knowledge index: {} shops checked, {} documents embedded", shops, embedded);
+    }
+
+    /** One short text per shop that changes whenever anything its documents are made of changes: products, their options and values, other names, the shop's texts, branches. */
+    private Map<UUID, String> fingerprints() {
+        Map<UUID, String> out = new HashMap<>();
+        jdbc.sql("""
+                SELECT t, md5(string_agg(x, '|' ORDER BY x)) AS fp FROM (
+                  SELECT tenant_id AS t, id::text || status || updated_at::text AS x FROM commerce.products
+                  UNION ALL SELECT p.tenant_id, o.id::text || o.name || o.sort_order FROM commerce.product_options o JOIN commerce.products p ON p.id = o.product_id
+                  UNION ALL SELECT p.tenant_id, v.id::text || v.value || v.sort_order FROM commerce.product_option_values v JOIN commerce.product_options o ON o.id = v.option_id JOIN commerce.products p ON p.id = o.product_id
+                  UNION ALL SELECT p.tenant_id, tr.product_id::text || tr.locale || tr.name FROM commerce.product_translations tr JOIN commerce.products p ON p.id = tr.product_id
+                  UNION ALL SELECT tenant_id, 'profile ' || updated_at::text FROM commerce.store_profiles
+                  UNION ALL SELECT tenant_id, id::text || is_active || updated_at::text FROM commerce.branches
+                ) z GROUP BY t
+                """).query((rs, n) -> out.put(rs.getObject("t", UUID.class), rs.getString("fp"))).list();
+        return out;
+    }
+
+    /** True when every document is embedded with the current model (a big new catalog is embedded over a few runs). */
+    private boolean complete(UUID tenantId) {
+        return jdbc.sql("SELECT count(*) = 0 FROM chat.knowledge_chunks WHERE tenant_id = :t AND (embedding IS NULL OR embed_model IS DISTINCT FROM :m)")
+                .param("t", tenantId).param("m", embedder.model()).query(Boolean.class).single();
     }
 
     /** Brings one shop's documents in step with its catalog and texts, then embeds what is new or changed. Returns how many documents were embedded. */
     public int sync(UUID tenantId) {
+        synchronized (locks.computeIfAbsent(tenantId, k -> new Object())) { return syncNow(tenantId); }   // the schedule and the reindex button never write one shop at once
+    }
+
+    private final Map<UUID, Object> locks = new ConcurrentHashMap<>();
+
+    private int syncNow(UUID tenantId) {
         List<Doc> docs = documents(tenantId);
         Map<String, String> stored = new HashMap<>();
         for (var r : jdbc.sql("SELECT source_type, source_id, chunk_no, content_hash FROM chat.knowledge_chunks WHERE tenant_id = :t").param("t", tenantId).query().listOfRows())
@@ -108,7 +183,7 @@ public class KnowledgeIndex {
         for (int i = 0; i < rows.size(); i++) {
             StringBuilder lit = new StringBuilder("{");   // a Postgres array literal: «{0.012,-0.3,…}»
             for (int k = 0; k < vs[i].length; k++) lit.append(k == 0 ? "" : ",").append(vs[i][k]);
-            jdbc.sql("UPDATE chat.knowledge_chunks SET embedding = CAST(:e AS real[]), embed_model = :m WHERE id = :i")
+            jdbc.sql("UPDATE chat.knowledge_chunks SET embedding = CAST(:e AS real[]), embed_model = :m, updated_at = now() WHERE id = :i")   // a new version: searches stop using the old vector
                     .param("e", lit.append('}').toString()).param("m", embedder.model()).param("i", rows.get(i).get("id")).update();
         }
         vectors.remove(tenantId);
@@ -196,8 +271,12 @@ public class KnowledgeIndex {
     public List<Hit> search(UUID tenantId, String query, String type, int k) {
         if (!embedder.enabled() || query == null || query.isBlank()) return List.of();
         try {
-            List<Row> rows = rows(tenantId);
+            Loaded loaded = loaded(tenantId);
+            List<Row> rows = loaded.rows();
             if (rows.isEmpty()) return List.of();
+            String cacheKey = tenantId + "|" + loaded.version() + "|" + type + "|" + k + "|" + FastAnswers.norm(query);
+            List<Hit> cached = hitCache.get(cacheKey);
+            if (cached != null) return cached;
             float[] q = queryVector(query);
             List<Hit> hits = new ArrayList<>();
             for (Row r : rows) {
@@ -216,7 +295,9 @@ public class KnowledgeIndex {
                 if (h.score() < floor || out.size() >= k) break;
                 if (seen.add(h.type() + "|" + h.sourceId())) out.add(h);   // a long shop text in pieces counts once, by its best piece
             }
-            return out;
+            List<Hit> result = List.copyOf(out);
+            hitCache.put(cacheKey, result);
+            return result;
         } catch (RuntimeException e) {
             log.warn("Search by meaning failed, words only: {}", e.getMessage());
             return List.of();
@@ -248,17 +329,19 @@ public class KnowledgeIndex {
         String key = FastAnswers.norm(query);
         float[] v = queryCache.get(key);
         if (v == null) {
-            v = embedder.embed(List.of(query))[0];
+            v = embedder.embedQuery(query);
             queryCache.put(key, v);
         }
         return v;
     }
 
-    private List<Row> rows(UUID tenantId) {
+    private List<Row> rows(UUID tenantId) { return loaded(tenantId).rows(); }
+
+    private Loaded loaded(UUID tenantId) {
         String version = jdbc.sql("SELECT count(*) || ':' || coalesce(max(updated_at)::text, '') || ':' || coalesce(max(id), 0) FROM chat.knowledge_chunks WHERE tenant_id = :t AND embedding IS NOT NULL")
                 .param("t", tenantId).query(String.class).single();
         Loaded l = vectors.get(tenantId);
-        if (l != null && l.version().equals(version)) return l.rows();
+        if (l != null && l.version().equals(version)) return l;
         List<Row> rows = new ArrayList<>();
         jdbc.sql("SELECT source_type, source_id, title, body, embedding FROM chat.knowledge_chunks WHERE tenant_id = :t AND embedding IS NOT NULL AND embed_model = :m")
                 .param("t", tenantId).param("m", embedder.model())
@@ -269,18 +352,51 @@ public class KnowledgeIndex {
                     rows.add(new Row(rs.getString("source_type"), rs.getString("source_id"), rs.getString("title"), rs.getString("body"), v));
                     return null;
                 }).list();
-        vectors.put(tenantId, new Loaded(version, List.copyOf(rows)));
-        return rows;
+        Loaded fresh = new Loaded(version, List.copyOf(rows));
+        vectors.put(tenantId, fresh);
+        return fresh;
     }
 
     /** How far the shop's index is: documents, embedded ones, the model. For the readiness page and the logs. */
     public Map<String, Object> status(UUID tenantId) {
-        var r = jdbc.sql("SELECT count(*) AS docs, count(embedding) AS embedded FROM chat.knowledge_chunks WHERE tenant_id = :t").param("t", tenantId).query().singleRow();
+        var r = jdbc.sql("SELECT count(*) AS docs, count(embedding) AS embedded, count(*) FILTER (WHERE source_type = 'PRODUCT') AS products FROM chat.knowledge_chunks WHERE tenant_id = :t")
+                .param("t", tenantId).query().singleRow();
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("enabled", embedder.enabled());
         m.put("model", embedder.enabled() ? embedder.model() : null);
         m.put("documents", r.get("docs"));
         m.put("embedded", r.get("embedded"));
+        m.put("products", r.get("products"));
+        return m;
+    }
+
+    /** Every selling shop's index, least complete first: how many products it sells, how many are indexed and embedded. For the platform's AI health page. */
+    public Map<String, Object> overview() {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("enabled", embedder.enabled());
+        m.put("model", embedder.model());
+        m.put("shops", com.platform.shared.Rows.camel(jdbc.sql("""
+                SELECT t.id AS tenant_id, t.name, t.slug,
+                       (SELECT count(*) FROM commerce.products p WHERE p.tenant_id = t.id AND p.status = 'ACTIVE') AS selling,
+                       count(k.id) FILTER (WHERE k.source_type = 'PRODUCT') AS indexed,
+                       count(k.id) FILTER (WHERE k.source_type = 'PRODUCT' AND k.embedding IS NOT NULL AND k.embed_model = :m) AS embedded,
+                       count(k.id) FILTER (WHERE k.source_type = 'SHOP') AS shop_texts, max(k.updated_at) AS updated_at
+                FROM core.tenants t LEFT JOIN chat.knowledge_chunks k ON k.tenant_id = t.id
+                WHERE EXISTS (SELECT 1 FROM commerce.products p WHERE p.tenant_id = t.id AND p.status = 'ACTIVE')
+                GROUP BY t.id, t.name, t.slug
+                ORDER BY (count(k.id) FILTER (WHERE k.source_type = 'PRODUCT' AND k.embedding IS NOT NULL AND k.embed_model = :m))::float
+                         / greatest(1, (SELECT count(*) FROM commerce.products p WHERE p.tenant_id = t.id AND p.status = 'ACTIVE')), t.name
+                LIMIT 200
+                """).param("m", embedder.model()).query().listOfRows()));
+        return m;
+    }
+
+    /** Brings one shop's index in step now (the platform's "reindex" button), whatever its fingerprint says. */
+    public Map<String, Object> reindexNow(UUID tenantId) {
+        synced.remove(tenantId);
+        int n = sync(tenantId);
+        Map<String, Object> m = status(tenantId);
+        m.put("embeddedNow", n);
         return m;
     }
 

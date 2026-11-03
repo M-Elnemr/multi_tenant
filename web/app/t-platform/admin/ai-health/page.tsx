@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { useApi } from "@/components/hooks";
+import { useAction, useApi } from "@/components/hooks";
+import { api } from "@/lib/client";
 import { useI18n } from "@/components/i18n-provider";
-import { Badge, Card, Empty, ErrorText, Loading, PageHeader, Section, Table, Tabs, Td } from "@/components/ui";
+import { Badge, Button, Card, Empty, ErrorText, Loading, PageHeader, Section, Table, Tabs, Td } from "@/components/ui";
 import { dateTime } from "@/lib/format";
 
 type DayRow = { day: string; model: string; replies: number; avgMs: number | null; p90Ms: number | null; errors: number; fallbacks: number; corrections: number };
@@ -13,6 +14,9 @@ type Problem = { createdAt: string; shop: string; model: string | null; kind: st
 type EvalRow = { model: string; kind: string; overallPct: number | null; checks: number | null; status: string; finishedAt: string; shop: string };
 type Backup = { kind: string; ok: boolean; sizeBytes: number | null; offsite: boolean; detail: string | null; createdAt: string };
 type Health = { days: number; byDay: DayRow[]; checks: CheckRow[]; shops: ShopRow[]; recentProblems: Problem[]; evalRuns: EvalRow[]; backups: Backup[] };
+
+type KnowledgeShop = { tenantId: string; name: string; slug: string; selling: number; indexed: number; embedded: number; shopTexts: number; updatedAt: string | null };
+type Knowledge = { enabled: boolean; model: string; shops: KnowledgeShop[] };
 
 const sec = (ms: number | null) => (ms == null ? "–" : `${(ms / 1000).toFixed(1)}s`);
 
@@ -77,6 +81,7 @@ export default function AiHealth() {
               )}
             </Section>
           </div>
+          <KnowledgeSection />
           <Section title={t("aih.recent")}>
             {d.recentProblems.length === 0 ? <Empty>{t("aih.none")}</Empty> : (
               <Table head={[t("aih.when"), t("aih.shop"), t("aih.model"), t("aih.kind"), t("aih.detail")]}>
@@ -87,5 +92,45 @@ export default function AiHealth() {
         </div>
       )}
     </>
+  );
+}
+
+/** Search by meaning (RAG) per shop: how much of each catalog the AI seller can find by meaning, and a button to bring one shop up to date now. */
+function KnowledgeSection() {
+  const { t, locale } = useI18n();
+  const k = useApi<Knowledge>("platform/ai-health/knowledge");
+  const [busy, setBusy] = useState<string | null>(null);
+  const reindex = useAction(async (id: string) => {
+    setBusy(id);
+    try { await api(`platform/ai-health/knowledge/${id}/reindex`, { method: "POST" }); await k.reload(); } finally { setBusy(null); }
+  });
+  const d = k.data;
+  const tone = (n: number, of: number) => (of === 0 || n >= of ? "green" : n === 0 ? "red" : "amber");
+  return (
+    <Section title={t("aih.rag")}>
+      <ErrorText error={k.error ?? reindex.error} />
+      {!d ? <Loading /> : (
+        <Card className="space-y-3">
+          <p className="text-sm">
+            {d.enabled ? <Badge tone="green">{t("aih.rag.on")}</Badge> : <Badge tone="red">{t("aih.rag.off")}</Badge>}{" "}
+            <span className="text-xs text-slate-500">{d.model}</span>
+          </p>
+          <p className="text-xs text-slate-500">{t("aih.rag.hint")}</p>
+          {d.shops.length === 0 ? <Empty>{t("aih.none")}</Empty> : (
+            <Table head={[t("aih.shop"), t("aih.rag.selling"), t("aih.rag.embedded"), t("aih.rag.texts"), t("aih.rag.updated"), ""]}>
+              {d.shops.map((s) => (
+                <tr key={s.tenantId}>
+                  <Td>{s.name}</Td><Td>{s.selling}</Td>
+                  <Td><Badge tone={tone(s.embedded, s.selling)}>{s.embedded}/{s.selling}</Badge></Td>
+                  <Td>{s.shopTexts}</Td>
+                  <Td>{s.updatedAt ? dateTime(s.updatedAt, locale) : "–"}</Td>
+                  <Td><Button size="sm" variant="secondary" disabled={!d.enabled || busy !== null} loading={busy === s.tenantId} onClick={() => reindex.run(s.tenantId)}>{t("aih.rag.reindex")}</Button></Td>
+                </tr>
+              ))}
+            </Table>
+          )}
+        </Card>
+      )}
+    </Section>
   );
 }

@@ -2513,9 +2513,14 @@ public class ChatService {
         }
         // search by meaning (RAG): «سماعة للجري» is the sport neckband, «حاجة شيك لخطوبة» the evening dresses, «جاكت» the «جاكيت». Merged with the word search by rank, so an exact
         // name stays on top and a product the words missed still comes, under the same filters (price, who it is for)
+        boolean byMeaningOnly = false;
         if (q != null && onSale == null && knowledge.enabled()) {
             List<String> meant = knowledge.productSlugs(ctx.tenantId(), q, 6);
-            if (!meant.isEmpty()) rows = byRank(rows, meantRows(ctx.tenantId(), meant, max, aud), 6);
+            if (!meant.isEmpty()) {
+                byMeaningOnly = rows.isEmpty();
+                rows = byRank(rows, meantRows(ctx.tenantId(), meant, max, aud), 6);
+                byMeaningOnly &= !rows.isEmpty();
+            }
         }
         if (rows.isEmpty() && q != null) {   // everyday Egyptian words for what the catalog names differently («حلل» are «أواني»)
             String alt = synonyms(q);
@@ -2558,6 +2563,7 @@ public class ChatService {
                     "currency", r.get("currency"), "imageUrl", r.get("imageUrl"), "imageMediaBase", r.get("imageMediaBase"), "imageMediaExt", r.get("imageMediaExt")));
         }
         var res = obj("products", out, "count", out.size());
+        if (byMeaningOnly) res.put("note", MEANING_ONLY_NOTE);
         var groups = out.stream().map(m -> m.get("for")).filter(java.util.Objects::nonNull).distinct().toList();
         if (q != null && groups.size() == 1 && out.stream().allMatch(m -> m.get("for") != null))
             res.put("audienceNote", "All these are for " + groups.get(0) + " only: do not ask who it is for (unless it is clearly a gift); recommend them.");
@@ -2566,6 +2572,14 @@ public class ChatService {
                 : "No product matched these words, so these are only other products of the shop. If the SHOP CATALOG has this kind of item, offer it; if it has nothing like it (for example shoes or jackets in a shop without them), say honestly and kindly that we do not have it, then suggest the closest RELATED kind of item we do have (for shoes: men's or women's clothes; never unrelated things like kitchen tools or pillows). Never claim we have something these results do not show.");
         return res;
     }
+
+    /**
+     * Search by meaning always finds the nearest products, also for a kind of item the shop does not sell («بيتزا» in a shawarma shop brings the cheese items): the model, which
+     * reads both, decides whether they are what was asked for.
+     */
+    static final String MEANING_ONLY_NOTE = "No product is named with these words: these are the shop's products closest in MEANING. If the customer described a need, a use or an occasion "
+            + "(«حاجة للجيم», «هدية لماما», «حاجة تدفي»), recommend the ones that fit it. If they asked for a specific KIND of item (pizza, sushi, a watch, a charger) and none of these IS that kind, "
+            + "say honestly and kindly that we do not have it, then offer the closest related one in one line. Never present a different kind of item as the one they asked for.";
 
     private List<Map<String, Object>> find(UUID tenantId, String q, String category, Long maxMinor) { return find(tenantId, q, category, maxMinor, null); }
 

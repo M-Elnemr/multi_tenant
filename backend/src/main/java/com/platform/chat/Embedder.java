@@ -13,6 +13,12 @@ public interface Embedder {
     /** The model's name, stored with every vector, so a change of model re-embeds everything. */
     String model();
 
-    /** One unit-length vector per text, in order. Throws when the provider fails (the caller falls back to words). */
+    /** One unit-length vector per text, in order, for the index: patient (retries, a long timeout). Throws when the provider fails. */
     float[][] embed(List<String> texts);
+
+    /**
+     * One customer's words while they wait for a reply: one quick try that never takes more than a few seconds or more than the reply has left. Throws when the provider is slow
+     * or fails (the caller searches by words).
+     */
+    default float[] embedQuery(String text) { return embed(List.of(text))[0]; }
 }

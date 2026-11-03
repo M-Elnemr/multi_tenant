@@ -82,6 +82,44 @@ class KnowledgeIndexIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void theScheduleSkipsShopsThatDidNotChangeAndCatchesAnEditAndAShopThatStopsSelling() throws Exception {
+        Tenant t = onboard("STORE");
+        UUID tenant = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", t.slug()).query(UUID.class).single();
+        String branch = JsonPath.read(ok(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
+        String id = product(t, branch, "شنطة سفر هارد", "شنطة سفر بعجل", 120000);
+        knowledge.syncAll();
+        assertThat(jdbc.sql("SELECT count(*) FROM chat.knowledge_chunks WHERE tenant_id = :t AND embedding IS NOT NULL AND source_type = 'PRODUCT'").param("t", tenant).query(Long.class).single()).isEqualTo(1);
+
+        // an edit: the fingerprint changes, so the next run (not a half-hourly sweep) reads the shop again
+        String before = jdbc.sql("SELECT body FROM chat.knowledge_chunks WHERE tenant_id = :t AND source_type = 'PRODUCT'").param("t", tenant).query(String.class).single();
+        onHost(t.host(), t.access(), "PATCH", "/api/v1/store/products/" + id, "{\"description\":\"شنطة سفر بعجل وقفل أرقام\"}");
+        knowledge.syncAll();
+        String after = jdbc.sql("SELECT body FROM chat.knowledge_chunks WHERE tenant_id = :t AND source_type = 'PRODUCT'").param("t", tenant).query(String.class).single();
+        assertThat(after).isNotEqualTo(before).contains("قفل أرقام");
+
+        // the shop stops selling: its index goes
+        jdbc.sql("UPDATE commerce.products SET status = 'ARCHIVED' WHERE tenant_id = :t").param("t", tenant).update();
+        knowledge.syncAll();
+        assertThat(jdbc.sql("SELECT count(*) FROM chat.knowledge_chunks WHERE tenant_id = :t").param("t", tenant).query(Long.class).single()).isZero();
+    }
+
+    @Test
+    void productsFoundOnlyByMeaningComeWithANoteSoTheSellerNeverPassesOneKindOffAsAnother() throws Exception {
+        Tenant t = onboard("STORE");
+        UUID tenant = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", t.slug()).query(UUID.class).single();
+        String branch = JsonPath.read(ok(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
+        product(t, branch, "سماعة رقبة رياضية", "نيك باند بلوتوث للجري والرياضة", 59900);
+        knowledge.sync(tenant);
+        String conv = UUID.randomUUID().toString();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("search_products", Map.of("query", "حاجة اسمع بيها وانا بجري")));   // no word of the product's name
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("عندنا سماعة رقبة رياضية"));
+        ok(onHost(t.host(), null, "POST", "/api/v1/shop/chat", "{\"conversationId\":\"%s\",\"message\":\"عايز حاجة اسمع بيها وانا بجري\"}".formatted(conv)).andExpect(status().isOk()));
+        var search = FakeAiProvider.RESULTS.stream().filter(r -> r.name().equals("search_products")).findFirst().orElseThrow().result();
+        assertThat(String.valueOf(search.get("products"))).contains("سماعة رقبة رياضية");
+        assertThat(String.valueOf(search.get("note"))).contains("closest in MEANING");
+    }
+
+    @Test
     void offWithoutAKeyTheSellerSearchesByWordsAndHasNoKnowledgeTool() throws Exception {
         FakeEmbedder.on = false;
         Tenant t = onboard("STORE");
