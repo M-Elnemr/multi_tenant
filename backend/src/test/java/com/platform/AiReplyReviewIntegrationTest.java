@@ -30,7 +30,7 @@ class AiReplyReviewIntegrationTest extends IntegrationTestBase {
     void aWrongDraftIsCorrectedAGoodOneIsKeptAndABrokenReviewKeepsTheDraft() {
         UUID id = shop();
 
-        FakeAiProvider.SCRIPT.add(turns -> Turn.model("عندنا بنطلون أطفال حلو جداً، تحب أوريك؟"));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("عندنا بنطلون أطفال حلو جداً، تحب لون إيه؟"));
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("{\"ok\":false,\"problems\":[\"kids product for an adult\"],\"reply\":\"تمام يا فندم، تحب مقاس إيه في البنطلون؟\"}"));
         assertThat(chat.reply(id, "WEB", "r1-" + uniq(), null, "عايز بنطلون").text()).isEqualTo("تمام يا فندم، تحب مقاس إيه في البنطلون؟");
         assertThat(FakeAiProvider.lastSystem).contains("senior sales manager");
@@ -38,9 +38,9 @@ class AiReplyReviewIntegrationTest extends IntegrationTestBase {
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("أكيد يا فندم، تحب مقاس إيه؟"));   // a short question with no facts is not reviewed at all
         assertThat(chat.reply(id, "WEB", "r2-" + uniq(), null, "عايز تيشيرت ليا").text()).isEqualTo("أكيد يا فندم، تحب مقاس إيه؟");
 
-        FakeAiProvider.SCRIPT.add(turns -> Turn.model("عندنا شنط جلد حلوة، تحبي أوريكي؟"));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("عندنا شنط جلد حلوة، تحبي لون إيه؟"));
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("this is not json"));
-        assertThat(chat.reply(id, "WEB", "r3-" + uniq(), null, "عندكم شنط؟").text()).isEqualTo("عندنا شنط جلد حلوة، تحبي أوريكي؟");
+        assertThat(chat.reply(id, "WEB", "r3-" + uniq(), null, "عندكم شنط؟").text()).isEqualTo("عندنا شنط جلد حلوة، تحبي لون إيه؟");
     }
 
     @Test

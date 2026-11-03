@@ -94,8 +94,8 @@ public class OpenAiProvider implements AiProvider {
             try {
                 if (throttle != null) throttle.acquire();
                 long timeout = Math.max(3_000, Math.min(CALL_TIMEOUT_MS, AiBudget.remainingMs() - 1_000));
-                HttpResponse<String> res = http.send(HttpRequest.newBuilder(URI.create(baseUrl + "/chat/completions")).timeout(Duration.ofMillis(timeout))
-                        .header("Authorization", "Bearer " + key).header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body)).build(), HttpResponse.BodyHandlers.ofString());
+                HttpResponse<String> res = send(HttpRequest.newBuilder(URI.create(baseUrl + "/chat/completions")).timeout(Duration.ofMillis(timeout))
+                        .header("Authorization", "Bearer " + key).header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body)).build(), timeout);
                 if (res.statusCode() / 100 == 2) return parse(JSON.readTree(res.body()));
                 last = new AiUnavailableException("The AI assistant is busy, try again (HTTP " + res.statusCode() + ")");
                 if (res.statusCode() != 429 && res.statusCode() / 100 != 5) break;
@@ -110,6 +110,50 @@ public class OpenAiProvider implements AiProvider {
             }
         }
         throw last != null ? last : new AiUnavailableException("The AI assistant could not be reached");
+    }
+
+    /**
+     * How long a call may go unanswered while a customer waits before the same request is sent a second time. Most GLM calls answer in 3-5 seconds, but now and then one hangs
+     * until the 20-second timeout and is retried: measured on 2026-11-03, a reply of ONE call took 35-40 seconds that way. The twin usually answers in seconds; the first good
+     * answer wins and the other is dropped. Background work (no reply budget) is never doubled.
+     */
+    static volatile long HEDGE_MS = 8_000;
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(OpenAiProvider.class);
+
+    private HttpResponse<String> send(HttpRequest req, long timeoutMs) throws Exception {
+        boolean waiting = AiBudget.remainingMs() != Long.MAX_VALUE;
+        if (!waiting || timeoutMs < HEDGE_MS + 3_000) return http.send(req, HttpResponse.BodyHandlers.ofString());
+        var first = http.sendAsync(req, HttpResponse.BodyHandlers.ofString());
+        try {
+            return unwrap(() -> first.get(HEDGE_MS, java.util.concurrent.TimeUnit.MILLISECONDS));
+        } catch (java.util.concurrent.TimeoutException slow) {
+            log.info("{} call unanswered after {} ms: sending it a second time", code, HEDGE_MS);
+        }
+        if (throttle != null) throttle.acquire();
+        var second = http.sendAsync(req, HttpResponse.BodyHandlers.ofString());
+        var winner = new java.util.concurrent.CompletableFuture<HttpResponse<String>>();
+        var finished = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.function.BiConsumer<HttpResponse<String>, Throwable> done = (r, ex) -> {
+            if (ex == null && r.statusCode() / 100 == 2) winner.complete(r);   // the first good answer
+            else if (finished.incrementAndGet() == 2) { if (ex != null) winner.completeExceptionally(ex); else winner.complete(r); }   // both failed: the last failure
+        };
+        first.whenComplete(done);
+        second.whenComplete(done);
+        try {
+            return unwrap(() -> winner.get(Math.max(1_000, timeoutMs - HEDGE_MS + 1_000), java.util.concurrent.TimeUnit.MILLISECONDS));
+        } finally {
+            first.cancel(true);
+            second.cancel(true);
+        }
+    }
+
+    private interface Get<T> { T get() throws Exception; }
+
+    /** The failure inside a future, as itself (a timeout or an I/O error), so the caller's retry treats it like a plain call's. */
+    private static <T> T unwrap(Get<T> g) throws Exception {
+        try { return g.get(); }
+        catch (java.util.concurrent.ExecutionException e) { throw e.getCause() instanceof Exception x ? x : e; }
     }
 
     // ---- request ---------------------------------------------------------------------------------------------------------------

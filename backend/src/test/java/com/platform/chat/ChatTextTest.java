@@ -248,6 +248,8 @@ class ChatTextTest {
         org.assertj.core.api.Assertions.assertThat(ChatService.STALL.matcher("Let me confirm the price for you right away").find()).isTrue();
         org.assertj.core.api.Assertions.assertThat(ChatService.STALL.matcher("ساندوتش شاورما فراخ كبير بـ ١١٠ جنيه").find()).isFalse();
         org.assertj.core.api.Assertions.assertThat(ChatService.STALL.matcher("الجو حر فعلاً 😅 ثواني أراجع لك المشروبات المتاحة عندنا").find()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(ChatService.STALL.matcher("«صحن شاورما لحمة» ربع كيلو بـ 180 جنيه.\nتحب أبعتلك السعر فور ما أرجعلك؟").find()).isTrue();   // seen live 2026-11-03
+        org.assertj.core.api.Assertions.assertThat(ChatService.STALL.matcher("ثواني بس، هتأكد لك من توفر جاكيت الجينز وأرد عليك حالاً").find()).isTrue();
         // offering to show instead of showing (seen live 2026-11-03), but not a question about an option or a real list
         org.assertj.core.api.Assertions.assertThat(ChatService.OFFER_TO_SHOW.matcher("أهلاً بيك يا فندم 🌟 تحب أعرض عليك الحلويات اللي عندنا تناسب بعد الأكل؟").find()).isTrue();
         org.assertj.core.api.Assertions.assertThat(ChatService.OFFER_TO_SHOW.matcher("تحب أرسل لك القائمة؟").find()).isTrue();

@@ -119,6 +119,19 @@ class AiChatIntegrationTest extends IntegrationTestBase {
         assertThat(FakeAiProvider.lastSystem).contains("SIZE OF WHAT THEY GET");
     }
 
+    @Test
+    void aStallThatSurvivesItsRewriteIsReplacedByWhatTheSearchFound() throws Exception {
+        Tenant t = onboard("STORE");
+        mug(t);
+        String name = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/products?q=Mug", null)), "$.data[0].name");
+        FakeAiProvider.reset();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("search_products", Map.of("query", "Mug")));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ثواني بس، هتأكد لك من المتاح وأرجعلك حالاً 🙏"));
+        for (int i = 0; i < 4; i++) FakeAiProvider.SCRIPT.add(turns -> Turn.model("لحظة يا فندم، هتأكد لك وأرد عليك"));
+        String reply = JsonPath.read(send(t, UUID.randomUUID().toString(), "عندكم مجات قهوة؟"), "$.reply");
+        assertThat(reply).contains(name).contains("100").doesNotContain("أرجعلك").doesNotContain("أرد عليك");
+    }
+
     /** Wings with «٦ قطع» / «٩ قطع» (Arabic digits in the option values), 5 of each; returns the product name and the two variant ids. */
     String[] wings(Tenant t) throws Exception {
         String branch = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");

@@ -619,7 +619,8 @@ public class ChatService {
         for (Turn t : turns) { allowed.addText(t.text()); if ("user".equals(t.role())) allowed.addFact(t.text()); }
         String answer = modelLoop(ctx, routed, system, turns, tools, rounds, allowed);
         if (answer == null || answer.isBlank() || ctx.summary()[0] != null) return answer;   // a code-written summary replaces the model's words anyway
-        answer = reviewed(ctx, routed, system, turns, rounds, answer);
+        // a draft that stalls or only offers to show will be rewritten by the checks anyway: no review first, so the rewrite has the time
+        if (!stallsOrOffers(ctx, answer)) answer = reviewed(ctx, routed, system, turns, rounds, answer);
         answer = ruleChecks(ctx, routed, system, turns, tools, rounds, allowed, answer);
         if (ctx.summary()[0] != null) return answer;
         answer = moneySafe(ctx, routed, system, turns, tools, rounds, allowed, arabic, answer);
@@ -788,8 +789,10 @@ public class ChatService {
                 && last.trim().split("\\s+").length >= 3 && ctx.summary()[0] == null)
             problems.put("OFFER_INSTEAD_OF_SHOWING", "The customer already told you what they want: do not ask whether to show it. Call search_products with their need now and name the best 2-4 products "
                     + "with their prices in this message (or say honestly we do not have it), then one short question.");
-        if (!lookedUp && STALL.matcher(answer).find())
-            problems.put("STALL", "Do not tell the customer you will check or confirm later: look it up now (search_products or get_product) and answer in this message.");
+        if (STALL.matcher(answer).find())
+            problems.put("STALL", lookedUp || searched
+                    ? "You already looked it up: give the answer from that result now. Never tell the customer you will check, confirm, send something or get back to them later."
+                    : "Do not tell the customer you will check or confirm later: look it up now (search_products or get_product) and answer in this message.");
         else if (FactCheck.UNSURE.matcher(FactCheck.light(answer)).find())
             problems.put("STALL", "Never tell the customer you cannot confirm or have no data («مفيش تأكيد», «مش قادر أتأكد», «مش لاقي بيانات»): the shop's data has the price and the stock of every option; read it (get_product) and answer plainly in this message.");
         boolean prepared = rounds.stream().anyMatch(r -> r.tools().contains("prepare_order"));
@@ -820,7 +823,9 @@ public class ChatService {
         if (problems.isEmpty()) return answer;
         for (String kind : problems.keySet()) events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:" + kind, problems.get(kind), null);
         boolean phoneDoubt = PHONE_DOUBT.matcher(answer).find() && customerGaveMobile(turns);
-        if (!canRewrite(rounds)) return factsFixed(last, falseCancel ? cancelFallback(answer) : phoneDoubt ? phoneFallback(answer) : problems.containsKey("FAKE_SUMMARY") && summaryShaped(answer) ? withoutSelfSummary(answer) : answer, shopData, touched);
+        boolean stalled = problems.containsKey("STALL") || problems.containsKey("OFFER_INSTEAD_OF_SHOWING");
+        if (!canRewrite(rounds)) return factsFixed(last, falseCancel ? cancelFallback(answer) : phoneDoubt ? phoneFallback(answer) : problems.containsKey("FAKE_SUMMARY") && summaryShaped(answer) ? withoutSelfSummary(answer)
+                : stalled ? stallFallback(ctx, answer) : answer, shopData, touched);
         log.warn("Rule check: {} (conversation {}): {}", problems.values(), ctx.conversationId(), answer);
         try {
             turns.add(Turn.model(answer));
@@ -830,6 +835,7 @@ public class ChatService {
             if (retry == null || retry.isBlank()) return factsFixed(last, falseCancel ? cancelFallback(answer) : phoneDoubt ? phoneFallback(answer) : answer, shopData, touched);
             if (CANCEL_CLAIM.matcher(retry).find() && !orderCancelled(ctx)) return cancelFallback(retry);
             if (PHONE_DOUBT.matcher(retry).find() && customerGaveMobile(turns)) return phoneFallback(retry);
+            if (stallsOrOffers(ctx, retry)) retry = stallFallback(ctx, retry);   // still «هتأكد وأرجعلك»: code says what the tools found
             if (ctx.summary()[0] == null && !rounds.stream().anyMatch(r -> r.tools().contains("prepare_order")) && summaryShaped(retry)) retry = withoutSelfSummary(retry);
             // still «سجلت طلبك» with no order: the words go, the rest of the reply stays
             if (ctx.order()[0] == null && !hasOrderOnFile(ctx)) retry = ORDER_CLAIM.matcher(retry).replaceAll(english(retry) ? "noted" : "تمام،");
@@ -982,6 +988,47 @@ public class ChatService {
         for (String m : jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u ORDER BY id").param("c", ctx.conversationId()).param("u", ctx.userMsgId()).query(String.class).list())
             for (var mn : FactCheck.mentions(m, shop.names())) out.add(mn.slug());
         return new ArrayList<>(out);
+    }
+
+    /** The draft promises to check or get back later, or offers to show what the customer asked for without naming any product or price. */
+    private boolean stallsOrOffers(Ctx ctx, String answer) {
+        if (answer == null) return false;
+        if (STALL.matcher(answer).find()) return true;
+        return OFFER_TO_SHOW.matcher(answer).find() && FactCheck.mentions(answer, shopView(ctx.tenantId()).names()).isEmpty() && !MoneyGuard.digits(answer).matches("(?s).*\\d{2,}.*");
+    }
+
+    /**
+     * When the model could not put a stall right in time: its stalling or offering sentences go, and the products the tools found this turn are listed by code (name, size, the real
+     * price, «من» when the price changes by option), so the customer never waits on «هرجعلك» or has to say «أيوه» to see them.
+     */
+    String stallFallback(Ctx ctx, String answer) {
+        boolean ar = arabicConversation(ctx.conversationId());
+        StringBuilder kept = new StringBuilder();
+        for (String sentence : answer.split("(?<=[.!؟?\\n])")) {
+            if (STALL.matcher(sentence).find() || OFFER_TO_SHOW.matcher(sentence).find()) continue;
+            kept.append(sentence);
+        }
+        String rest = kept.toString().replaceAll("[ \\t]+\\n", "\n").replaceAll("\\n{3,}", "\n\n").trim();
+        var found = new LinkedHashMap<String, Map<String, Object>>();
+        for (var p : ctx.products()) if (p.get("slug") != null) found.putIfAbsent(String.valueOf(p.get("slug")), p);
+        if (!found.isEmpty() && FactCheck.mentions(rest, shopView(ctx.tenantId()).names()).isEmpty()) {
+            List<String> slugs = found.keySet().stream().limit(3).toList();
+            Map<String, String> sizes = sizesOf(ctx.tenantId(), slugs);
+            StringBuilder list = new StringBuilder();
+            for (String slug : slugs) {
+                var p = found.get(slug);
+                var range = jdbc.sql("SELECT min(v.price_minor) AS lo, max(v.price_minor) AS hi FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE p.tenant_id = :t AND p.slug = :s AND v.status = 'ACTIVE'")
+                        .param("t", ctx.tenantId()).param("s", slug).query().singleRow();
+                if (range.get("lo") == null) continue;
+                boolean varies = !range.get("lo").equals(range.get("hi"));
+                list.append("• ").append(p.get("name")).append(sizes.get(slug) == null ? "" : " — " + sizes.get(slug)).append(ar ? (varies ? " — من " : " — بـ ") : (varies ? " — from " : " — "))
+                        .append(moneyIn(ar, range.get("lo"), p.get("currency"))).append("\n");
+            }
+            if (!list.isEmpty())
+                rest = (rest.isBlank() ? "" : rest + "\n\n") + (ar ? "المتاح عندنا:\n" : "Here is what we have:\n") + list + "\n" + (ar ? "تحب أنهي واحد؟" : "Which one would you like?");
+        }
+        if (rest.isBlank()) rest = ar ? "قولّي محتاج إيه بالظبط وأنا أوريك المتاح على طول 🌸" : "Tell me exactly what you need and I'll show you what we have right away.";
+        return rest;
     }
 
     /** Words of a question: a message with one is the model's to answer, even when it also holds the order details. */
