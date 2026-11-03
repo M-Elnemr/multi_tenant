@@ -169,14 +169,12 @@ class AiOrderByCodeIntegrationTest extends IntegrationTestBase {
         String ext = "multi-" + uniq();
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("متاحين يا فندم، ابعتلي بياناتك"));
         chat.reply(tenant, "WEB", ext, null, "عايز فستان محجبات XL وبومبر جاكيت XXL");
-        // the model's summary with the jacket in XL is refused (the dress's «XL» is not the jacket's)
+        // every detail and no question: code makes the summary before any model call, each product with its own option (the dress's «XL» is not the jacket's)
         FakeAiProvider.RESULTS.clear();
-        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", Map.of("items", List.of(Map.of("variantId", ids[0], "quantity", 1), Map.of("variantId", ids[2], "quantity", 1)),
-                "customerName", "كريم", "phone", "01012345678", "governorateCode", "GIZ", "addressLine1", "شارع التحرير عمارة ٥ شقة ٢", "area", "الدقي", "paymentMethod", "CASH_ON_DELIVERY")));
-        for (int k = 0; k < 3; k++) FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام يا فندم، هجهزلك الطلب"));
+        FakeAiProvider.SCRIPT.clear();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("SHOULD NOT BE CALLED"));
         String r = chat.reply(tenant, "WEB", ext, null, "انا كريم، الجيزة الدقي شارع التحرير عمارة ٥ شقة ٢، ٠١٠١٢٣٤٥٦٧٨، كاش").text();
-        assertThat(String.valueOf(FakeAiProvider.RESULTS.get(0).result())).contains("XXL");
-        // and code makes the right one: the dress in XL, the jacket in XXL
+        assertThat(FakeAiProvider.SCRIPT).hasSize(1);
         assertThat(r).contains("ده ملخص").contains("فستان محجبات (المقاس: XL)").contains("بومبر جاكيت (المقاس: XXL)").contains("2200");
     }
 

@@ -247,6 +247,13 @@ class ChatTextTest {
         org.assertj.core.api.Assertions.assertThat(ChatService.STALL.matcher("يا فندم، لازم نتأكد من المخزون الأول عشان أقولك صح.").find()).isTrue();
         org.assertj.core.api.Assertions.assertThat(ChatService.STALL.matcher("Let me confirm the price for you right away").find()).isTrue();
         org.assertj.core.api.Assertions.assertThat(ChatService.STALL.matcher("ساندوتش شاورما فراخ كبير بـ ١١٠ جنيه").find()).isFalse();
+        org.assertj.core.api.Assertions.assertThat(ChatService.STALL.matcher("الجو حر فعلاً 😅 ثواني أراجع لك المشروبات المتاحة عندنا").find()).isTrue();
+        // offering to show instead of showing (seen live 2026-11-03), but not a question about an option or a real list
+        org.assertj.core.api.Assertions.assertThat(ChatService.OFFER_TO_SHOW.matcher("أهلاً بيك يا فندم 🌟 تحب أعرض عليك الحلويات اللي عندنا تناسب بعد الأكل؟").find()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(ChatService.OFFER_TO_SHOW.matcher("تحب أرسل لك القائمة؟").find()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(ChatService.OFFER_TO_SHOW.matcher("Would you like me to show you our desserts?").find()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(ChatService.OFFER_TO_SHOW.matcher("تحب الأبيض ولا الأسود؟").find()).isFalse();
+        org.assertj.core.api.Assertions.assertThat(ChatService.OFFER_TO_SHOW.matcher("عندنا بسبوسة بـ ٥٠ وكنافة بـ ٧٥، تحب أنهي واحدة؟").find()).isFalse();
         org.assertj.core.api.Assertions.assertThat(ChatService.ADD_IT.matcher(FastAnswers.norm("ضيفه")).matches()).isTrue();
         org.assertj.core.api.Assertions.assertThat(ChatService.ADD_IT.matcher(FastAnswers.norm("ضيفه للاوردر")).matches()).isTrue();
         org.assertj.core.api.Assertions.assertThat(ChatService.ADD_IT.matcher(FastAnswers.norm("ضيف معاه بطاطس")).matches()).isFalse();

@@ -67,6 +67,58 @@ class AiChatIntegrationTest extends IntegrationTestBase {
         assertThat(orders(t)).isZero();   // only the summary: the customer still confirms it
     }
 
+    @Test
+    void everyDetailAndNoQuestionGetTheSummaryAtOnceWithoutTheModelButAQuestionStillGoesToIt() throws Exception {
+        Tenant t = onboard("STORE");
+        String variant = mug(t);
+        String name = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/products?q=Mug", null)), "$.data[0].name");
+        String conv = UUID.randomUUID().toString();
+        FakeAiProvider.reset();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("متاح عندنا يا فندم. ابعتلي الاسم والعنوان ورقم الموبايل."));
+        send(t, conv, "عايز " + name);
+        FakeAiProvider.reset();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("SHOULD NOT BE CALLED"));
+        String sent = send(t, conv, "انا كريم، القاهرة مدينة نصر شارع مكرم عبيد عمارة ٣ شقة ٧، ٠١٠٢٣٤٥٦٧٨٩، كاش");
+        assertThat((String) JsonPath.read(sent, "$.reply")).contains("ملخص الأوردر").contains("100").doesNotContain("SHOULD NOT");
+        assertThat(FakeAiProvider.SCRIPT).hasSize(1);   // the model was never asked
+        String internal = JsonPath.read(sent, "$.conversationId");
+        assertThat(jdbc.sql("SELECT pending -> 'items' -> 0 ->> 'variantId' FROM chat.conversations WHERE id = CAST(:c AS uuid)").param("c", internal).query(String.class).single()).isEqualTo(variant);
+        assertThat(orders(t)).isZero();   // the customer still confirms
+
+        // the same details with a question: the model answers it
+        String conv2 = UUID.randomUUID().toString();
+        FakeAiProvider.reset();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("متاح عندنا يا فندم. ابعتلي الاسم والعنوان ورقم الموبايل."));
+        send(t, conv2, "عايز " + name);
+        FakeAiProvider.reset();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("التوصيل خلال يوم أو اتنين يا فندم"));
+        send(t, conv2, "انا كريم، القاهرة مدينة نصر شارع مكرم عبيد عمارة ٣ شقة ٧، ٠١٠٢٣٤٥٦٧٨٩، كاش. التوصيل امتى؟");
+        assertThat(FakeAiProvider.SCRIPT).isEmpty();   // asked
+    }
+
+    @Test
+    void aSizeWrittenOnlyInTheDescriptionReachesTheSearchAndTheSummaryAndOneInTheNameIsNotRepeated() throws Exception {
+        Tenant t = onboard("STORE");
+        String branch = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
+        String coffee = "بن محوج " + uniq(), named = "بن سادة ٥٠٠ جرام " + uniq();
+        String v1 = JsonPath.read(body(onHost(t.host(), t.access(), "POST", "/api/v1/store/products",
+                "{\"taxonomySlug\":\"cookware\",\"name\":\"%s\",\"description\":\"بن برازيلي طازة، العبوة ٣٠٠ جرام\",\"variants\":[{\"sku\":\"C-%s\",\"priceMinor\":15000,\"optionValues\":{},\"stock\":[{\"branchId\":\"%s\",\"quantity\":9}]}]}"
+                        .formatted(coffee, uniq(), branch)).andExpect(status().isCreated())), "$.variants[0].id");
+        onHost(t.host(), t.access(), "POST", "/api/v1/store/products",
+                "{\"taxonomySlug\":\"cookware\",\"name\":\"%s\",\"description\":\"بن سادة ٥٠٠ جرام\",\"variants\":[{\"sku\":\"N-%s\",\"priceMinor\":20000,\"optionValues\":{},\"stock\":[{\"branchId\":\"%s\",\"quantity\":9}]}]}"
+                        .formatted(named, uniq(), branch)).andExpect(status().isCreated());
+        FakeAiProvider.reset();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("search_products", Map.of("query", "بن")));
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepare(v1, 0, "CASH_ON_DELIVERY")));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ده الملخص"));
+        String reply = JsonPath.read(send(t, UUID.randomUUID().toString(), "عايز " + coffee), "$.reply");
+        String found = String.valueOf(FakeAiProvider.RESULTS.get(0).result().get("products"));
+        assertThat(found).contains("size=٣٠٠ جرام");
+        assertThat(found.split("size=")).hasSize(2);   // the one with «٥٠٠ جرام» in its name gets no size field
+        assertThat(reply).contains(coffee + " — ٣٠٠ جرام");
+        assertThat(FakeAiProvider.lastSystem).contains("SIZE OF WHAT THEY GET");
+    }
+
     /** Wings with «٦ قطع» / «٩ قطع» (Arabic digits in the option values), 5 of each; returns the product name and the two variant ids. */
     String[] wings(Tenant t) throws Exception {
         String branch = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
@@ -99,6 +151,53 @@ class AiChatIntegrationTest extends IntegrationTestBase {
         send(t, UUID.randomUUID().toString(), "عايز " + w[0] + " ٦ قطع");
         assertThat(FakeAiProvider.RESULTS.get(0).result().get("error").toString()).contains("Wrong option").contains("٦ قطع");
         assertThat(orders(t)).isZero();
+    }
+
+    /** Sneakers whose NAME holds a colour («… أبيض …») and that come in white and black, size 42; returns the name and the white and black variant ids. */
+    String[] whiteNamedSneakers(Tenant t) throws Exception {
+        String branch = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
+        String name = "سنيكرز جلد أبيض " + uniq();
+        String created = body(onHost(t.host(), t.access(), "POST", "/api/v1/store/products", """
+                {"taxonomySlug":"cookware","name":"%1$s","options":[{"name":"اللون","values":["أبيض","أسود"]},{"name":"المقاس","values":["41","42"]}],
+                 "variants":[{"sku":"SW-%2$s","priceMinor":125000,"optionValues":{"اللون":"أبيض","المقاس":"42"},"stock":[{"branchId":"%3$s","quantity":5}]},
+                             {"sku":"SB-%2$s","priceMinor":125000,"optionValues":{"اللون":"أسود","المقاس":"42"},"stock":[{"branchId":"%3$s","quantity":5}]},
+                             {"sku":"SW1-%2$s","priceMinor":125000,"optionValues":{"اللون":"أبيض","المقاس":"41"},"stock":[{"branchId":"%3$s","quantity":5}]}]}
+                """.formatted(name, uniq(), branch)).andExpect(status().isCreated()));
+        return new String[]{name, JsonPath.read(created, "$.variants[0].id"), JsonPath.read(created, "$.variants[1].id")};
+    }
+
+    @Test
+    void aColourInTheProductsNameIsNotTheCustomersChoiceWhenTheyNamedAnother() throws Exception {
+        Tenant t = onboard("STORE");
+        String[] s = whiteNamedSneakers(t);
+        // the model picks white because «أبيض» is in the name, although the customer asked for black: sent back
+        FakeAiProvider.reset();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepare(s[1], 0, "CASH_ON_DELIVERY")));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام"));
+        send(t, UUID.randomUUID().toString(), "عايز " + s[0] + " أسود 42");
+        assertThat(FakeAiProvider.RESULTS.get(0).result().get("error").toString()).contains("Wrong option").contains("أسود");
+        // black is accepted
+        FakeAiProvider.reset();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepare(s[2], 0, "CASH_ON_DELIVERY")));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ده الملخص"));
+        send(t, UUID.randomUUID().toString(), "عايز " + s[0] + " أسود 42");
+        assertThat(FakeAiProvider.RESULTS.get(0).result()).doesNotContainKey("error").containsKey("summary");
+        // no colour said outside the name: white (the name's colour) still counts, as before
+        FakeAiProvider.reset();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepare(s[1], 0, "CASH_ON_DELIVERY")));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ده الملخص"));
+        send(t, UUID.randomUUID().toString(), "عايز " + s[0] + " مقاس 42");
+        assertThat(FakeAiProvider.RESULTS.get(0).result()).doesNotContainKey("error").containsKey("summary");
+
+        // the summary made by code (the model only asks again) is black too
+        String conv = UUID.randomUUID().toString();
+        FakeAiProvider.reset();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("متاح يا فندم. ابعتلي الاسم والعنوان ورقم الموبايل."));
+        send(t, conv, "عايز " + s[0] + " أسود 42");
+        FakeAiProvider.reset();
+        for (int i = 0; i < 8; i++) FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام يا أستاذ كريم، عايز تأكيد الطلب دلوقتي؟"));
+        conv = JsonPath.read(send(t, conv, "انا كريم، القاهرة مدينة نصر شارع مكرم عبيد عمارة ٣ شقة ٧، ٠١٠٢٣٤٥٦٧٨٩، كاش"), "$.conversationId");
+        assertThat(jdbc.sql("SELECT pending -> 'items' -> 0 ->> 'variantId' FROM chat.conversations WHERE id = CAST(:c AS uuid)").param("c", conv).query(String.class).single()).isEqualTo(s[2]);
     }
 
     @Test

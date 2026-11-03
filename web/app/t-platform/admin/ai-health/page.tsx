@@ -13,7 +13,8 @@ type ShopRow = { tenantId: string; name: string; slug: string; replies: number; 
 type Problem = { createdAt: string; shop: string; model: string | null; kind: string; detail: string | null };
 type EvalRow = { model: string; kind: string; overallPct: number | null; checks: number | null; status: string; finishedAt: string; shop: string };
 type Backup = { kind: string; ok: boolean; sizeBytes: number | null; offsite: boolean; detail: string | null; createdAt: string };
-type Health = { days: number; byDay: DayRow[]; checks: CheckRow[]; shops: ShopRow[]; recentProblems: Problem[]; evalRuns: EvalRow[]; backups: Backup[] };
+type Slow = { createdAt: string; shop: string; model: string | null; detail: string | null; ms: number | null };
+type Health = { days: number; byDay: DayRow[]; checks: CheckRow[]; shops: ShopRow[]; slowest?: Slow[]; recentProblems: Problem[]; evalRuns: EvalRow[]; backups: Backup[] };
 
 type KnowledgeShop = { tenantId: string; name: string; slug: string; selling: number; indexed: number; embedded: number; shopTexts: number; updatedAt: string | null };
 type Knowledge = { enabled: boolean; model: string; shops: KnowledgeShop[] };
@@ -81,6 +82,16 @@ export default function AiHealth() {
               )}
             </Section>
           </div>
+          <Section title={t("aih.slowest")}>
+            <p className="mb-2 text-xs text-slate-500">{t("aih.slowestHint")}</p>
+            {!d.slowest || d.slowest.length === 0 ? <Empty>{t("aih.none")}</Empty> : (
+              <Table head={[t("aih.when"), t("aih.shop"), t("aih.model"), t("aih.time"), t("aih.steps")]}>
+                {d.slowest.map((r, i) => <tr key={i}><Td>{dateTime(r.createdAt, locale)}</Td><Td>{r.shop}</Td><Td>{r.model ?? "–"}</Td>
+                  <Td>{(r.ms ?? 0) >= 30000 ? <Badge tone="red">{sec(r.ms)}</Badge> : (r.ms ?? 0) >= 15000 ? <Badge tone="amber">{sec(r.ms)}</Badge> : sec(r.ms)}</Td>
+                  <Td><span className="line-clamp-2 max-w-md text-xs">{r.detail}</span></Td></tr>)}
+              </Table>
+            )}
+          </Section>
           <KnowledgeSection />
           <Section title={t("aih.recent")}>
             {d.recentProblems.length === 0 ? <Empty>{t("aih.none")}</Empty> : (

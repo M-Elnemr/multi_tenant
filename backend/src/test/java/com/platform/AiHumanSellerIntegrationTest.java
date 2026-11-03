@@ -80,7 +80,7 @@ class AiHumanSellerIntegrationTest extends IntegrationTestBase {
     void twoSeparateTopicsBecomeTwoMessagesOnlyOnMessagingChannels() throws Exception {
         Tenant t = onboard("STORE");
         UUID id = tenantId(t);
-        FakeAiProvider.SCRIPT.add(turns -> Turn.model("طلبك في الطريق 🚚\n⸻\nوعندنا فساتين سواريه حلوة، تحبي أوريكي؟"));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("طلبك في الطريق 🚚\n⸻\nوعندنا فساتين سواريه حلوة، تحبي لون معين؟"));
         String web = chat.reply(id, "WEB", "split-" + uniq(), null, "طلبي فين؟\nوعندكم فساتين سواريه؟").text();
         assertThat(web).doesNotContain("⸻").contains("في الطريق").contains("سواريه");
         assertThat(ChatService.messages("طلبك في الطريق\n⸻\nوعندنا فساتين")).containsExactly("طلبك في الطريق", "وعندنا فساتين");

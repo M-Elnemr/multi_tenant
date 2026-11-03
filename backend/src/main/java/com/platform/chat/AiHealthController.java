@@ -59,6 +59,10 @@ public class AiHealthController {
                 FROM chat.ai_events e JOIN core.tenants t ON t.id = e.tenant_id WHERE e.created_at > now() - make_interval(days => :d)
                 GROUP BY 1, 2, 3 ORDER BY 5 DESC, 4 DESC LIMIT 20
                 """).param("d", d).query().listOfRows()));
+        out.put("slowest", com.platform.shared.Rows.camel(jdbc.sql("""
+                SELECT e.created_at, t.name AS shop, e.model, e.detail, e.ms, e.conversation_id FROM chat.ai_events e JOIN core.tenants t ON t.id = e.tenant_id
+                WHERE e.kind = 'REPLY' AND e.created_at > now() - make_interval(days => :d) ORDER BY e.ms DESC NULLS LAST LIMIT 15
+                """).param("d", d).query().listOfRows()));
         out.put("recentProblems", com.platform.shared.Rows.camel(jdbc.sql("""
                 SELECT e.created_at, t.name AS shop, e.model, e.kind, e.detail, e.conversation_id FROM chat.ai_events e JOIN core.tenants t ON t.id = e.tenant_id
                 WHERE e.kind <> 'REPLY' ORDER BY e.id DESC LIMIT 30

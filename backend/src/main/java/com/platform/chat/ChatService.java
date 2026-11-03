@@ -399,9 +399,11 @@ public class ChatService {
         String fallbackWhy = null;
         AiBudget.start(REPLY_BUDGET_MS);
         try {
-            answer = converse(ctx, routed, system, turns, tools, rounds, arabicChat);
+            // the customer sent every order detail for the one thing they chose, and asked nothing: code makes the summary at once (the same locks, they still confirm it), instead
+            // of the model taking 30-45 seconds to ask again before code made it anyway
+            answer = summaryFirst(ctx, turns, text) ? "" : converse(ctx, routed, system, turns, tools, rounds, arabicChat);
             // still a problem the code could not put right after its own rewrite: the other company's model answers the same message, and the reply with fewer problems goes
-            List<String> left = unresolved(ctx, text, answer, turns, rounds);
+            List<String> left = ctx.summary()[0] != null ? List.of() : unresolved(ctx, text, answer, turns, rounds);
             var other = left.isEmpty() || !AiBudget.hasLeft(18_000) || madeChanges(ctx, rounds) ? null : routed.secondOpinion();
             if (other != null) {
                 Ctx ctx2 = new Ctx(tenantId, conv, channel, externalId, clientId, userMsgId, new ArrayList<>(), orderBox, new String[1], new String[1]);
@@ -469,8 +471,10 @@ public class ChatService {
         else if (ctx.mustSay()[0] != null && answer != null && !answer.contains(ctx.mustSay()[0]) && !mentionsMinimum(answer, ctx.mustSay()[0]))
             answer = answer.strip() + "\n\n" + ctx.mustSay()[0];
         long tookMs = (System.nanoTime() - started) / 1_000_000;
-        log.info("Reply timing: model={} calls={} ms={} conversation={}", routed.code(), rounds.size(), tookMs, conv);
-        events.record(tenantId, conv, channel, routed.code(), "REPLY", rounds.size() + " calls", tookMs);
+        // which steps the reply took («3 calls: search_products > - > review»), so a slow reply shows where its time went
+        String steps = rounds.stream().map(r -> r.tools().isEmpty() ? "-" : String.join("+", r.tools())).collect(java.util.stream.Collectors.joining(" > "));
+        log.info("Reply timing: model={} calls={} ms={} steps=[{}] conversation={}", routed.code(), rounds.size(), tookMs, steps, conv);
+        events.record(tenantId, conv, channel, routed.code(), "REPLY", rounds.size() + " calls" + (steps.isEmpty() ? (ctx.summary()[0] != null ? ": summary by code" : "") : ": " + steps), tookMs);
         if (!"TEST".equals(channel)) { seller.count(tenantId); usageLog.record(tenantId, "CHAT", channel, conv, false, text, rounds, routed.code(), routed.fellBack()); }
         if (answer == null || answer.isBlank()) answer = arabicChat ? "معلش يا فندم، ممكن توضحلي أكتر حضرتك محتاج إيه؟ وأنا أساعدك على طول 🌸" : "Sorry, could you tell me a little more about what you need? I will help right away.";
         answer = polish(noLaughter(messaging(channel) ? forChannel(channel, answer) : forChannel("WEB", oneMessage(answer))), conv, tenantId, channel, externalId, clientId);
@@ -780,6 +784,10 @@ public class ChatService {
             problems.put("THIN_REPLY", "You found products but the reply names none: name the best 2-3 with their prices and the options that matter, then one short question.");
         if (TOOL_TALK.matcher(answer).find())
             problems.put("TOOL_TALK", "Never talk about your tools, the system, the catalog data or searches to the customer («أداة البحث», «النظام», «الكتالوج مش راجع»): answer like a person in the shop, from what the search found (search again with fewer words if it found nothing).");
+        if (OFFER_TO_SHOW.matcher(answer).find() && FactCheck.mentions(answer, shopView(ctx.tenantId()).names()).isEmpty() && !MoneyGuard.digits(answer).matches("(?s).*\\d{2,}.*")
+                && last.trim().split("\\s+").length >= 3 && ctx.summary()[0] == null)
+            problems.put("OFFER_INSTEAD_OF_SHOWING", "The customer already told you what they want: do not ask whether to show it. Call search_products with their need now and name the best 2-4 products "
+                    + "with their prices in this message (or say honestly we do not have it), then one short question.");
         if (!lookedUp && STALL.matcher(answer).find())
             problems.put("STALL", "Do not tell the customer you will check or confirm later: look it up now (search_products or get_product) and answer in this message.");
         else if (FactCheck.UNSURE.matcher(FactCheck.light(answer)).find())
@@ -850,7 +858,14 @@ public class ChatService {
     }
 
     /** «هتأكد وأرجعلك», «لازم نتأكد من المخزون الأول», "let me confirm the price": a promise to look instead of looking. */
-    static final Pattern STALL = Pattern.compile("(?:(?:ه|هـ)(?:تاكد|تأكد|شوف|بحث|راجع|سال|سأل)(?:لك|لك)?\\s|لازم\\s+(?:ا|أ|ن)?(?:تاكد|تأكد)|ثواني\\s+و|هرجعلك|هرد\\s+عليك|هبلغك|(?:ا|أ)?رجع\\s*لك|وارجعلك|لحظه\\s+(?:ا|أ)?(?:تاكد|تأكد|شوف|راجع)|(?:ا|أ)تاكدلك|(?:ا|أ)تأكدلك|(?:ا|أ)راجع\\s+تاني|وارد\\s+عليك|وأرد\\s+عليك|(?:ا|أ)راجع\\s+(?:المخزون|الكتالوج|السيستم)|اتاكد\\s+من\\s+المخزون|(?:ا|أ)?تاكد\\s+لك|لازم\\s+(?:ا|أ)?تحقق|محتاجين\\s+نتاكد|محتاجين\\s+نتأكد|مش\\s+عارف\\s+(?:ا|أ)?قولك|معنديش\\s+تاكيد|معنديش\\s+تأكيد|مش\\s+متاكد|مش\\s+متأكد|(?:ا|أ)?تحقق\\s+من\\s+المخزون|(?:ا|أ)?تأكد\\s+لك|هنادرك|هندور|هشوفلك\\s+و|لحظه\\s+يا\\s+فندم|لحظة\\s+يا\\s+فندم|استني\\s+(?:ثواني|دقيقه|شويه)|هبعتلك\\s+(?:التفاصيل|السعر)|let\\s+me\\s+(?:check|confirm|look)|i\\s*(?:'ll|\\s+will)\\s+(?:check|confirm|look)|one\\s+moment)", Pattern.CASE_INSENSITIVE);
+    static final Pattern STALL = Pattern.compile("(?:(?:ه|هـ)(?:تاكد|تأكد|شوف|بحث|راجع|سال|سأل)(?:لك|لك)?\\s|(?<!\\p{L})(?:ا|أ)راجع\\s*لك|لازم\\s+(?:ا|أ|ن)?(?:تاكد|تأكد)|ثواني\\s+و|هرجعلك|هرد\\s+عليك|هبلغك|(?:ا|أ)?رجع\\s*لك|وارجعلك|لحظه\\s+(?:ا|أ)?(?:تاكد|تأكد|شوف|راجع)|(?:ا|أ)تاكدلك|(?:ا|أ)تأكدلك|(?:ا|أ)راجع\\s+تاني|وارد\\s+عليك|وأرد\\s+عليك|(?:ا|أ)راجع\\s+(?:المخزون|الكتالوج|السيستم)|اتاكد\\s+من\\s+المخزون|(?:ا|أ)?تاكد\\s+لك|لازم\\s+(?:ا|أ)?تحقق|محتاجين\\s+نتاكد|محتاجين\\s+نتأكد|مش\\s+عارف\\s+(?:ا|أ)?قولك|معنديش\\s+تاكيد|معنديش\\s+تأكيد|مش\\s+متاكد|مش\\s+متأكد|(?:ا|أ)?تحقق\\s+من\\s+المخزون|(?:ا|أ)?تأكد\\s+لك|هنادرك|هندور|هشوفلك\\s+و|لحظه\\s+يا\\s+فندم|لحظة\\s+يا\\s+فندم|استني\\s+(?:ثواني|دقيقه|شويه)|هبعتلك\\s+(?:التفاصيل|السعر)|let\\s+me\\s+(?:check|confirm|look)|i\\s*(?:'ll|\\s+will)\\s+(?:check|confirm|look)|one\\s+moment)", Pattern.CASE_INSENSITIVE);
+    /**
+     * A reply that offers to show what the customer already asked for («تحب أعرض عليك الحلويات اللي عندنا؟», «أبعتلك المنيو؟») instead of showing it: the customer has to answer
+     * «أيوه» and wait again for what they could have had in this message.
+     */
+    static final Pattern OFFER_TO_SHOW = Pattern.compile("(?:تحب|تحبي|تحبوا|عايز|عايزه|عايزة|ممكن)\\s+(?:(?:ا|أ|اني|إني)\\s*)?(?:اعرض|أعرض|اوريك|أوريك|أورّيك|اوريكي|أوريكي|ابعتلك|أبعتلك|ابعت\\s*لك|أبعت\\s*لك|ارسلك|أرسلك|ارسل\\s*لك|أرسل\\s*لك|اقولك\\s+على|أقولك\\s+على|اقترحلك|أقترحلك|تشوف|تشوفي|تشوفوا)"
+            + "|(?:shall|should|can)\\s+i\\s+(?:show|send|list)|would\\s+you\\s+like\\s+(?:me\\s+to\\s+(?:show|send|list)|to\\s+see)", Pattern.CASE_INSENSITIVE);
+
     /** The model talking about its own machinery to the customer. */
     static final Pattern TOOL_TALK = Pattern.compile("(?:🔍|(?:جاري|جار|بجري)\\s+(?:ال)?بحث|^\\s*(?:ال)?بحث\\s+عن|اداه\\s+البحث|أداة\\s+البحث|اداة\\s+البحث|نتايج\\s+البحث|نتائج\\s+البحث|البحث\\s+(?:مرجعش|لم\\s+يرجع|مارجعش)|في\\s+نظامنا|السيستم\\s+بتاعنا|قاعده\\s+البيانات|قاعدة\\s+البيانات|the\\s+(?:search\\s+)?tool|my\\s+tools|the\\s+database|in\\s+our\\s+system)", Pattern.CASE_INSENSITIVE);
 
@@ -969,6 +984,27 @@ public class ChatService {
         return new ArrayList<>(out);
     }
 
+    /** Words of a question: a message with one is the model's to answer, even when it also holds the order details. */
+    static final Pattern ASKS = Pattern.compile("[؟?]|(?<!\\p{L})(?:امتى|إمتى|امتي|ازاي|إزاي|ليه|هل|فين|ايه|إيه|كام|ممكن|ينفع|when|how|why|where|what|can|could)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Before any model call: the customer's message holds their name, mobile and address (or pickup) for exactly one chosen variant, or for several named products, and asks nothing.
+     * Code makes the summary through prepare_order with every lock; true when it did (the model is then not called).
+     */
+    private boolean summaryFirst(Ctx ctx, List<Turn> turns, String text) {
+        if (text == null || ctx.summary()[0] != null || ctx.order()[0] != null || ASKS.matcher(text).find() || hasOrderOnFile(ctx)) return false;
+        try {
+            if (!detailsGivenNoSummary(ctx, turns, List.of(), text, "", true)) return false;
+            if (!orderByCode(ctx)) return false;
+            log.info("Order summary made by code before the model (conversation {})", ctx.conversationId());
+            events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), null, "ORDER_BY_CODE_FIRST", null, null);
+            return true;
+        } catch (RuntimeException e) {
+            log.warn("Summary first skipped", e);
+            return false;
+        }
+    }
+
     private static final Pattern NAME_SAID = Pattern.compile("(?:(?<!\\p{L})(?:انا|أنا|اسمي|إسمي|الاسم|الإسم|معاك)\\s*[:：]?\\s*)([^،,.\\n\\d:٠-٩]{2,40})");
     private static final Pattern PIECES = Pattern.compile("(?<![\\d.])(\\d{1,2})\\s*(?:قطع|قطعه|قطعة|حته|حتت|حتة|pieces?|pcs)(?!\\p{L})");
     private static final Pattern PICKUP_WORDS = Pattern.compile("[أإا]ستلام|[أإا]ستلم|هاجي|pick ?up|collect|بنفسي|من المحل|من الفرع", Pattern.CASE_INSENSITIVE);
@@ -996,19 +1032,23 @@ public class ChatService {
         if (chosen.size() != 1) return null;
         List<String> msgs = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u ORDER BY id").param("c", ctx.conversationId()).param("u", ctx.userMsgId()).query(String.class).list();
         String said = FastAnswers.norm(MoneyGuard.digits(String.join(" \n ", msgs)));
+        String outside = withoutProductNames(said, shopView(ctx.tenantId()));
         Map<String, Object> product;
         try { product = catalog.detailBySlug(ctx.tenantId(), chosen.get(0)); } catch (RuntimeException e) { return null; }
         // the one variant whose every option with a choice was said by the customer
         Map<String, Set<String>> values = new java.util.HashMap<>();
         List<Map<String, Object>> variants = (List<Map<String, Object>>) product.get("variants");
         for (var v : variants) for (String kv : String.valueOf(v.get("comboKey") == null ? "" : v.get("comboKey")).split("\\|")) if (kv.contains("=")) values.computeIfAbsent(kv.substring(0, kv.indexOf('=')), k -> new java.util.HashSet<>()).add(kv.substring(kv.indexOf('=') + 1));
+        // «سنيكرز جلد أبيض رجالي أسود ٤٢»: «أبيض» is only the product's name, «أسود» is the customer's choice. For each option, a value said outside the product names wins;
+        // when none is, the whole words count (a name may be the only place the customer said it)
+        Map<String, String> wordsFor = new java.util.HashMap<>();
+        values.forEach((opt, vals) -> wordsFor.put(opt, vals.stream().anyMatch(x -> saidValue(x, outside)) ? outside : said));
         List<Map<String, Object>> fit = new ArrayList<>();
         for (var v : variants) {
             boolean all = true;
             for (String kv : String.valueOf(v.get("comboKey") == null ? "" : v.get("comboKey")).split("\\|")) {
                 if (!kv.contains("=") || values.getOrDefault(kv.substring(0, kv.indexOf('=')), Set.of()).size() < 2) continue;
-                String val = FastAnswers.norm(MoneyGuard.digits(kv.substring(kv.indexOf('=') + 1)));
-                if (!Pattern.compile("(?<![\\p{L}\\d])" + Pattern.quote(val) + "(?![\\p{L}\\d])").matcher(said).find() && !(val.length() > 3 && valueSaid(val, said, false))) { all = false; break; }
+                if (!saidValue(kv.substring(kv.indexOf('=') + 1), wordsFor.getOrDefault(kv.substring(0, kv.indexOf('=')), said))) { all = false; break; }
             }
             if (all) fit.add(v);
         }
@@ -1293,6 +1333,15 @@ public class ChatService {
             if (want.entrySet().stream().allMatch(e -> e.getValue().equals(opts.get(e.getKey())))) return v;
         }
         return null;
+    }
+
+    /** Normalised customer words with every product name of the shop taken out, longest first («سنيكرز جلد أبيض رجالي أسود» → «أسود»): what is left are the customer's own choices. */
+    static String withoutProductNames(String normWords, FactCheck.Shop view) {
+        String out = " " + normWords + " ";
+        List<String> names = view.names().stream().map(n -> FastAnswers.norm(MoneyGuard.digits(n.name()))).filter(n -> n.length() > 2).distinct()
+                .sorted(java.util.Comparator.comparingInt(String::length).reversed()).toList();
+        for (String n : names) if (out.contains(n)) out = out.replace(n, " ");
+        return out.replaceAll("\\s+", " ").trim();
     }
 
     /** The customer's words, normalised, with the product names they wrote taken out (their numbers are no quantity). */
@@ -1858,6 +1907,7 @@ public class ChatService {
                 - MONEY (strict): never calculate, add, round or guess an amount; prices come only from the tools (shop currency, major units). Delivery: only from delivery_quote, as «fee X, free for orders above Y», never as this customer's final fee. For a total («كده كام؟», «هدفع كام؟») call prepare_order with the complete list (once you have their details) or quote each price and the «free above Y» rule without a sum. A placed order is answered only from ORDER ON FILE. Never invent a correction that contains numbers.
                 - CHANGING A PLACED ORDER: while ORDER ON FILE says it can still be changed, call prepare_order with changeOrder=<its number> and the COMPLETE new list (kept items plus new ones); the confirmed summary replaces the old order (one order, one delivery). NEVER place a second order for an addition. Once the shop has started it, say you will check with the shop team (flag_unanswered).
                 - CANCELLING: ask kindly in one short question why (maybe the shop can fix it: a delay, a size, the price). With a reason, call cancel_order with it: the shop calls them and the order is NOT cancelled. If they will not say, call cancel_order with noReason=true. Never say an order is cancelled unless cancel_order answered cancelled=true.
+                - SIZE OF WHAT THEY GET: when a product has a weight, volume, count or size («٣٠٠ جرام», «نصف توله», «١ لتر», «٦ قطع»: its "size" field, or in its name or options), say it with the price every time you list, recommend or quote it («بن محوج ٣٠٠ جرام بـ ١٥٠ جنيه»), so the customer knows what the price buys; never guess a size that is not written.
                 - KNOW YOUR PRODUCTS: questions about the product itself (material, washing, ironing, shrinking, fading, fit, what it goes with) you answer yourself from get_product plus common knowledge, honestly («عادةً»); never ask the owner about these.
                 - WORDS: plain, correct everyday words of the customer's dialect (a sheet «بتتغسل», never «اتمسحت»); if they ask what a word meant or point at a mistake, say sorry briefly, explain, continue.
                 - NEVER INVENT: no products, prices, stock, discounts, delivery times, policies, «the price will rise», «last piece» (unless stock is really low), brand or import claims, guarantees, reviews or promised calls, unless a tool or the owner says so. Never say the shop has or lacks a kind of item, color or size before SHOP CATALOG or a tool result shows it; never say it lacks a color or size that allOptions lists. If the customer is vague, name our categories and ask one short question; say "we don't have it" only when nothing matches, then suggest the closest thing.
@@ -1909,7 +1959,8 @@ public class ChatService {
             String combo = jdbc.sql("SELECT combo_key FROM commerce.product_variants WHERE id = :v").param("v", ln.get("variantId")).query(String.class).optional().orElse("");
             String opts = combo.isBlank() || "default".equalsIgnoreCase(combo) ? "" : " (" + combo.replace("|", ", ").replace("=", ": ") + ")";
             long unit = ((Number) ln.get("unitPriceMinor")).longValue(), qty = ((Number) ln.get("quantity")).longValue();
-            b.append("• ").append(ln.get("productName")).append(opts).append(" × ").append(qty).append(" = ").append(moneyIn(ar, unit * qty, cur)).append("\n");
+            String size = sizeOfVariant(ln.get("variantId"));   // «٣٠٠ جرام» written only in the specs or the description: the customer sees what they are buying
+            b.append("• ").append(ln.get("productName")).append(size == null ? "" : " — " + size).append(opts).append(" × ").append(qty).append(" = ").append(moneyIn(ar, unit * qty, cur)).append("\n");
             if (ln.get("note") != null) b.append(ar ? "   ملاحظة: " : "   Note: ").append(ln.get("note")).append("\n");
         }
         b.append("\n").append(ar ? "المنتجات: " : "Items: ").append(moneyIn(ar, subtotal, cur)).append("\n");
@@ -2542,7 +2593,9 @@ public class ChatService {
             if (any.isEmpty() && broad != null) any = find(ctx.tenantId(), broad, null, null);
             if (!any.isEmpty()) {
                 List<Map<String, Object>> out2 = new ArrayList<>();
-                for (var r : any) { Map<String, Object> m = obj("name", r.get("name"), "slug", r.get("slug"), "price", major(r.get("minPriceMinor")), "inStock", r.get("inStock")); describe(m, r.get("audience"), r.get("taxonomyId"), r.get("shortDescription")); out2.add(m);
+                Map<String, String> sizes2 = sizesOf(ctx.tenantId(), any.stream().map(r -> String.valueOf(r.get("slug"))).toList());
+                for (var r : any) { Map<String, Object> m = obj("name", r.get("name"), "slug", r.get("slug"), "price", major(r.get("minPriceMinor")), "inStock", r.get("inStock")); describe(m, r.get("audience"), r.get("taxonomyId"), r.get("shortDescription"));
+                    if (sizes2.get(String.valueOf(r.get("slug"))) != null) m.put("size", sizes2.get(String.valueOf(r.get("slug")))); out2.add(m);
                     ctx.products().add(obj("name", r.get("name"), "slug", r.get("slug"), "priceMinor", r.get("minPriceMinor"), "compareAtMinor", r.get("compareAtMinor"), "currency", r.get("currency"), "imageUrl", r.get("imageUrl"), "imageMediaBase", r.get("imageMediaBase"), "imageMediaExt", r.get("imageMediaExt"))); }
                 return obj("products", out2, "count", out2.size(), "note", "We DO have this kind of item, but nothing at or under that price: say so honestly, give the price of what we have, and offer it (or a discount within your maximum if the customer hesitates).");
             }
@@ -2551,8 +2604,10 @@ public class ChatService {
             return obj("products", List.of(), "count", 0, "note", "The shop has nothing matching «" + q + "». Say honestly and kindly that we do not have it. Then, only if the SHOP CATALOG has a RELATED kind of item "
                     + "(for shoes or jackets: clothes for the same person; for a kitchen item: other kitchen items), offer it in one line; never offer unrelated things (pillows or bedsheets to someone asking for a jacket). If nothing is related, ask what else they are looking for.");
         List<Map<String, Object>> out = new ArrayList<>();
+        Map<String, String> sizes = sizesOf(ctx.tenantId(), rows.stream().map(r -> String.valueOf(r.get("slug"))).toList());
         for (var r : rows) {
             Map<String, Object> m = obj("name", r.get("name"), "slug", r.get("slug"), "brand", r.get("brand"), "price", major(r.get("minPriceMinor")), "inStock", r.get("inStock"));
+            if (sizes.get(String.valueOf(r.get("slug"))) != null) m.put("size", sizes.get(String.valueOf(r.get("slug"))));
             describe(m, r.get("audience"), r.get("taxonomyId"), r.get("shortDescription"));
             if (r.get("compareAtMinor") != null) m.put("priceBeforeDiscount", major(r.get("compareAtMinor")));
             List<Map<String, Object>> vs = compactVariants(ctx.tenantId(), String.valueOf(r.get("slug")), null, 24);
@@ -2691,6 +2746,32 @@ public class ChatService {
         if (shortDescription != null && !String.valueOf(shortDescription).isBlank()) m.put("about", clip(String.valueOf(shortDescription), 200));
     }
 
+    /** Each product's size («٣٠٠ جرام», «نصف توله») when its name and options do not already say it (see {@link PackSize}), by slug; products without one are left out. */
+    Map<String, String> sizesOf(UUID tenantId, List<String> slugs) {
+        Map<String, String> out = new java.util.HashMap<>();
+        if (slugs.isEmpty()) return out;
+        jdbc.sql("""
+                SELECT p.slug, p.name, p.specs::text AS specs, p.description,
+                  (SELECT string_agg(o.name || ': ' || (SELECT string_agg(v.value, '، ') FROM commerce.product_option_values v WHERE v.option_id = o.id), ' | ') FROM commerce.product_options o WHERE o.product_id = p.id) AS opts
+                FROM commerce.products p WHERE p.tenant_id = :t AND p.slug IN (:s)
+                """).param("t", tenantId).param("s", slugs).query().listOfRows().forEach(r -> {
+            String size = PackSize.extra((String) r.get("name"), (String) r.get("opts"), r.get("specs"), (String) r.get("description"));
+            if (size != null) out.put(String.valueOf(r.get("slug")), size);
+        });
+        return out;
+    }
+
+    /** The size of a variant's product for the order summary, or null (see {@link #sizesOf}). */
+    private String sizeOfVariant(Object variantId) {
+        if (variantId == null) return null;
+        return jdbc.sql("""
+                SELECT p.name, p.specs::text AS specs, p.description,
+                  (SELECT string_agg(o.name || ': ' || (SELECT string_agg(ov.value, '، ') FROM commerce.product_option_values ov WHERE ov.option_id = o.id), ' | ') FROM commerce.product_options o WHERE o.product_id = p.id) AS opts
+                FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE v.id = CAST(:v AS uuid)
+                """).param("v", String.valueOf(variantId)).query().listOfRows().stream().findFirst()
+                .map(r -> PackSize.extra((String) r.get("name"), (String) r.get("opts"), r.get("specs"), (String) r.get("description"))).orElse(null);
+    }
+
     /** Variants of a product for the model: the ones matching {@code want} (e.g. "M black") first when given, available ones before sold-out ones, at most {@code max}. */
     @SuppressWarnings("unchecked")
     private static List<Map<String, Object>> variantsOf(Map<String, Object> product, String want, int max) {
@@ -2818,6 +2899,8 @@ public class ChatService {
         String desc = p.get("description") == null ? "" : String.valueOf(p.get("description"));
         Map<String, Object> out = obj("name", p.get("name"), "brand", p.get("brand"), "description", desc.length() > 700 ? desc.substring(0, 700) : desc, "options", options, "variants", variants, "currency", p.get("currency"));
         describe(out, p.get("audience"), p.get("taxonomyId"), null);
+        String size = sizesOf(ctx.tenantId(), List.of(String.valueOf(a.get("slug")))).get(String.valueOf(a.get("slug")));
+        if (size != null) out.put("size", size);
         String details = productDetails(ctx.tenantId(), String.valueOf(a.get("slug")));
         if (!details.isEmpty()) out.put("details", details);
         return out;
@@ -2855,7 +2938,7 @@ public class ChatService {
                     if (asked != null && FastAnswers.norm(asked.name()).startsWith(name + " "))
                         return obj("error", "The customer asked for «" + asked.name() + "» (slug " + n + "), not «" + row.get("name") + "»: use that product's variant (get_product " + n + ").");
                 }
-            List<String> changed = contradictedOptions(it.variantId(), itemWords);
+            List<String> changed = contradictedOptions(it.variantId(), itemWords, withoutProductNames(itemWords, view));
             if (!changed.isEmpty())
                 return obj("error", "Wrong option for " + variantNames(List.of(it.variantId())) + ": " + String.join("; ", changed) + ". Use the variant with what the customer said; if that one cannot be ordered (sold out, minimum order), tell them and ask, never pick another option for them.");
             // a quantity is the customer's: 2 nuggets to reach the minimum order is the model's choice, not theirs
@@ -3062,7 +3145,13 @@ public class ChatService {
      * An option of the item that the customer named another value of («٦ قطع» said, «٩ قطع» in the item): the model changed their choice. Each as «option: said, not item value»; checked even
      * with optionsConfirmed, since «any is fine» never covers a value they did say.
      */
-    List<String> contradictedOptions(UUID variantId, String customerWords) {
+    List<String> contradictedOptions(UUID variantId, String customerWords) { return contradictedOptions(variantId, customerWords, customerWords); }
+
+    /**
+     * {@code outsideNames}: the same words without the shop's product names. A value said there is the customer's choice, whatever value sits in a product's name («سنيكرز جلد أبيض
+     * رجالي أسود» chose black); only when the customer said no value of the option outside the names do the whole words decide.
+     */
+    List<String> contradictedOptions(UUID variantId, String customerWords, String outsideNames) {
         var v = jdbc.sql("SELECT combo_key, product_id FROM commerce.product_variants WHERE id = :v").param("v", variantId).query().listOfRows().stream().findFirst().orElse(null);
         if (v == null || v.get("combo_key") == null || "default".equals(v.get("combo_key"))) return List.of();
         Map<String, List<String>> values = new java.util.HashMap<>();
@@ -3074,9 +3163,12 @@ public class ChatService {
             if (i < 0) continue;
             String name = kv.substring(0, i), mine = kv.substring(i + 1);
             List<String> all = values.getOrDefault(name, List.of());
-            if (all.size() < 2 || valueSaid(FastAnswers.norm(MoneyGuard.digits(mine)), customerWords, false)) continue;
+            if (all.size() < 2) continue;
+            boolean saidOutside = all.stream().anyMatch(x -> valueSaid(FastAnswers.norm(MoneyGuard.digits(x)), outsideNames, false));
+            String words = saidOutside ? outsideNames : customerWords;
+            if (valueSaid(FastAnswers.norm(MoneyGuard.digits(mine)), words, false)) continue;
             for (String other : all)
-                if (!other.equals(mine) && valueSaid(FastAnswers.norm(MoneyGuard.digits(other)), customerWords, false)) { out.add("«" + name + "»: the customer said «" + other + "», not «" + mine + "»"); break; }
+                if (!other.equals(mine) && valueSaid(FastAnswers.norm(MoneyGuard.digits(other)), words, false)) { out.add("«" + name + "»: the customer said «" + other + "», not «" + mine + "»"); break; }
         }
         return out;
     }
