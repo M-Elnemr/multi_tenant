@@ -64,6 +64,10 @@ class PosOfflineIntegrationTest extends IntegrationTestBase {
         String boot = body(device(s, "GET", "/api/v1/store/pos/terminal/bootstrap", null).andExpect(status().isOk()));
         assertThat(JsonPath.<List<String>>read(boot, "$.catalog[*].variantId")).contains(s.shirt(), s.cap());
         assertThat(JsonPath.<String>read(boot, "$.device.code")).isEqualTo("A1");
+        // the cap was added without a barcode: it got the shop's own EAN-13, so it can be scanned and printed on a label
+        String capCode = JsonPath.<List<String>>read(boot, "$.catalog[?(@.variantId=='" + s.cap() + "')].barcode").get(0);
+        assertThat(capCode).startsWith("20").hasSize(13);
+        assertThat(com.platform.commerce.Barcodes.isEan13(capCode)).isTrue();
         assertThat(JsonPath.<List<String>>read(boot, "$.cashiers[*].userId")).contains(s.owner().toString());
         // without a terminal token the terminal's endpoints are closed, and a staff session is no substitute
         onHost(s.t().host(), s.t().access(), "GET", "/api/v1/store/pos/terminal/bootstrap", null).andExpect(status().isForbidden());

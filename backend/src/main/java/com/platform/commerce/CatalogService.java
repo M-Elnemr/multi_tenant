@@ -146,23 +146,28 @@ public class CatalogService {
             jdbc.sql("UPDATE commerce.product_variants SET combo_key = '~' || CAST(id AS varchar) WHERE id = :i").param("i", target[i]).update();
         jdbc.sql("DELETE FROM commerce.variant_option_values WHERE variant_id IN (SELECT id FROM commerce.product_variants WHERE product_id = :p)").param("p", productId).update();
 
+        long[] seq = {-1};   // the shop's internal barcode counter, read once when first needed
         for (int i = 0; i < variants.size(); i++) {
             VariantReq v = variants.get(i);
             String at = "variants[" + i + "]";
             UUID id = target[i];
+            String given = cleanBarcode(v.barcode());
+            if (given == null && id != null)   // an edit that sends no barcode keeps the one the variant has: printed labels keep scanning
+                given = jdbc.sql("SELECT barcode FROM commerce.product_variants WHERE id = :i").param("i", id).query(String.class).optional().orElse(null);
+            String bc = barcodeOrNext(tenantId, given, seq);
             try {
                 if (id == null) {
                     id = jdbc.sql("""
                             INSERT INTO commerce.product_variants (tenant_id, product_id, sku, barcode, price_minor, compare_at_price_minor, weight_grams, combo_key)
                             VALUES (:t, :p, :sku, :bc, :pr, :cp, :w, :ck) RETURNING id
-                            """).param("t", tenantId).param("p", productId).param("sku", v.sku().trim()).param("bc", cleanBarcode(v.barcode()))
+                            """).param("t", tenantId).param("p", productId).param("sku", v.sku().trim()).param("bc", bc)
                             .param("pr", v.priceMinor()).param("cp", v.compareAtPriceMinor()).param("w", v.weightGrams()).param("ck", combos.get(i)).query(UUID.class).single();
                     if (v.stock() != null) for (StockReq st : v.stock()) if (st.quantity() > 0) setInitialStock(tenantId, actor, id, st);
                 } else {
                     jdbc.sql("""
                             UPDATE commerce.product_variants SET sku = :sku, barcode = :bc, price_minor = :pr, compare_at_price_minor = :cp, weight_grams = coalesce(:w, weight_grams),
                               combo_key = :ck, status = 'ACTIVE', updated_at = now() WHERE id = :i
-                            """).param("sku", v.sku().trim()).param("bc", cleanBarcode(v.barcode())).param("pr", v.priceMinor()).param("cp", v.compareAtPriceMinor())
+                            """).param("sku", v.sku().trim()).param("bc", bc).param("pr", v.priceMinor()).param("cp", v.compareAtPriceMinor())
                             .param("w", v.weightGrams()).param("ck", combos.get(i)).param("i", id).update();
                     if (v.stock() != null) for (StockReq st : v.stock()) setStock(tenantId, actor, id, st, at);
                 }
@@ -236,15 +241,17 @@ public class CatalogService {
                 valueIds.put(o.name() + "=" + v, vid);
             }
         }
+        long[] seq = {-1};
         for (int vi = 0; vi < variants.size(); vi++) {
             VariantReq v = variants.get(vi);
             String combo = comboKey(options, v.optionValues());
+            String bc = barcodeOrNext(tenantId, cleanBarcode(v.barcode()), seq);
             UUID variantId;
             try {
                 variantId = jdbc.sql("""
                         INSERT INTO commerce.product_variants (tenant_id, product_id, sku, barcode, price_minor, compare_at_price_minor, weight_grams, combo_key)
                         VALUES (:t, :p, :sku, :bc, :pr, :cp, :w, :ck) RETURNING id
-                        """).param("t", tenantId).param("p", productId).param("sku", v.sku().trim()).param("bc", cleanBarcode(v.barcode()))
+                        """).param("t", tenantId).param("p", productId).param("sku", v.sku().trim()).param("bc", bc)
                         .param("pr", v.priceMinor()).param("cp", v.compareAtPriceMinor()).param("w", v.weightGrams()).param("ck", combo)
                         .query(UUID.class).single();
             } catch (DuplicateKeyException e) {
@@ -545,6 +552,23 @@ public class CatalogService {
     }
 
     /** A barcode is kept as typed or scanned, without spaces; an empty one means none. */
+    /**
+     * The barcode a variant is saved with: the one given, or (none given) the shop's next internal EAN-13 (20…), skipping numbers already used. Given at insert time,
+     * so the variants keep their order. {@code seq} holds the counter for one save (-1 = not read yet).
+     */
+    private String barcodeOrNext(UUID tenantId, String given, long[] seq) {
+        if (given != null) return given;
+        if (seq[0] < 0) {
+            jdbc.sql("SELECT pg_advisory_xact_lock(hashtext('barcodes:' || CAST(:t AS varchar)))").param("t", tenantId).query().singleRow();   // one shop's numbers are handed out one at a time
+            seq[0] = jdbc.sql("SELECT coalesce(max(CAST(substring(barcode, 3, 10) AS bigint)), 0) FROM commerce.product_variants WHERE tenant_id = :t AND barcode ~ '^20[0-9]{11}$'")
+                    .param("t", tenantId).query(Long.class).single();
+        }
+        String code;
+        do { code = Barcodes.internal(++seq[0]); }
+        while (jdbc.sql("SELECT count(*) FROM commerce.product_variants WHERE tenant_id = :t AND barcode = :b").param("t", tenantId).param("b", code).query(Long.class).single() > 0);
+        return code;
+    }
+
     static String cleanBarcode(String raw) {
         if (raw == null) return null;
         String b = raw.replaceAll("\\s+", "");

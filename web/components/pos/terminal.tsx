@@ -13,6 +13,7 @@ import { useWedgeScanner } from "../dashboard/pos-picker";
 import { PayPanel } from "./pay";
 import { CashMovePanel, CategorySheet, CloseShift, CountPanel, HeldPanel, InvoicesPanel, MenuSheet, OpenShift, PinPad, RegisterScreen, ReportView, ReturnPanel, SettingsPanel, SyncPanel, VariantPicker, type DrawerSummary, type MenuItem } from "./panels";
 import { Receipt, type PrintDoc } from "./receipt";
+import { CameraScan } from "./camera";
 
 type Local = { size: "58" | "80" | "A4" | null; autoPrint: boolean; sound: boolean };
 type Data = {
@@ -20,7 +21,7 @@ type Data = {
   shift: Shift | null; held: Held[]; invoices: Invoice[]; count: Count | null; failed: Op[];
   local: Local; handover: { to: string; amountMinor: number } | null; sold: Record<string, number>; recent: string[]; lastMethod: string | null;
 };
-type Panel = null | "pay" | "invoices" | "held" | "cash" | "close" | "count" | "sync" | "settings" | "switch" | "approve" | "menu" | "cats" | "x" | "keys"
+type Panel = null | "pay" | "invoices" | "held" | "cash" | "close" | "count" | "sync" | "settings" | "switch" | "approve" | "menu" | "cats" | "x" | "keys" | "camera"
   | { return: Invoice } | { edit: number } | { variants: string };
 type Product = { productId: string; name: string; variants: CatalogItem[]; minPrice: number; maxPrice: number; stock: number; sold: number };
 type Toast = { tone: "red" | "amber" | "green"; text: string; id: number };
@@ -50,6 +51,7 @@ export default function Terminal() {
   const [pendingPrice, setPendingPrice] = useState<{ index: number; line: CartLine } | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
   const [now, setNow] = useState(() => new Date());
+  const [lastScan, setLastScan] = useState<string | null>(null);
   const search = useRef<HTMLInputElement>(null);
   const lastAct = useRef(0);
 
@@ -152,10 +154,10 @@ export default function Terminal() {
   };
 
   const scan = useCallback(async (code: string) => {
-    if (!cashier || (panel !== null && panel !== "menu")) return;
+    if (!cashier || (panel !== null && panel !== "menu" && panel !== "camera")) return;
     if (done) setDone(null);   // scanning on the "sale complete" screen starts the next sale
     const it = await byCode(code);
-    if (it) { add(it); setQ(""); if (sound) beepOk(); }
+    if (it) { add(it); setQ(""); setLastScan(`${it.name}${it.label ? ` (${it.label})` : ""}`); if (sound) beepOk(); }
     else { say("red", t("term.noCode", { code })); if (sound) beepBad(); }
   }, [add, cashier, panel, done, t, say, sound]);
   useWedgeScanner((c) => void scan(c), !!cashier && !!d?.shift && (panel === null || panel === "menu"));
@@ -449,6 +451,7 @@ export default function Terminal() {
   const modals = (
     <>
       <Modal open={panel === "menu"} onClose={() => setPanel(null)} title={t("term.menu")}><MenuSheet items={menuItems} /></Modal>
+      <Modal open={panel === "camera"} onClose={() => setPanel(null)} title={t("term.camera")}>{panel === "camera" && <CameraScan last={lastScan} onCode={(c) => void scan(c)} onClose={() => setPanel(null)} />}</Modal>
       <Modal open={panel === "switch"} onClose={() => setPanel(null)} title={t("term.switch")}><PinPad cashiers={d.cashiers} title={t("term.enterPin")} onRefresh={() => sync.refresh(true)} onOk={(c) => { setCashier(c); setPanel(null); }} /></Modal>
       <Modal open={panel === "approve"} onClose={() => { setPanel(null); setPendingPrice(null); }} title={t("term.managerApprove")}>
         <p className="mb-3 text-sm text-slate-600">{pendingPrice ? t("term.priceNeedsManager") : t("term.discountOverLimit", { p: String(shop?.posMaxDiscountPct ?? 0) })}</p>
@@ -587,6 +590,7 @@ export default function Terminal() {
       <div className="grid min-h-0 min-w-0 flex-1 gap-3 p-3 lg:grid-cols-[minmax(0,1fr)_clamp(340px,34vw,440px)] print:hidden">
         {/* products */}
         <section className="flex min-h-0 min-w-0 flex-col gap-2">
+          <div className="flex min-w-0 gap-2">
           <input ref={search} value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("term.searchPh")}
             className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-base outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
             onKeyDown={async (e) => {
@@ -596,6 +600,8 @@ export default function Terminal() {
               if (shown.length === 1) { tapProduct(shown[0]); setQ(""); return; }
               if (!shown.length) { say("red", t("term.noCode", { code: q })); if (sound) beepBad(); }
             }} />
+          <button type="button" onClick={() => { setLastScan(null); setPanel("camera"); }} className="shrink-0 rounded-xl border border-slate-200 bg-white px-3.5 text-lg hover:border-brand" aria-label={t("term.camera")} title={t("term.camera")}>📷</button>
+          </div>
           <div className="flex flex-wrap gap-1.5">
             <Chip on={!cat} onClick={() => setCat("")}>{t("term.all")}</Chip>
             {d.recent.length > 0 && <Chip on={cat === RECENT} onClick={() => setCat(RECENT)}>🕘 {t("term.recent")}</Chip>}
