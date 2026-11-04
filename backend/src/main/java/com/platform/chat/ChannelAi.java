@@ -63,7 +63,7 @@ public class ChannelAi {
 
     /** The default model, Claude, GLM and Qwen (the last two picked on their own by a chat that typed their name, or by the route settings). */
     public ChannelAi(AiProvider defaultAi, AiProvider claude, AiProvider glm, AiProvider qwen, String social, String web) {
-        this.defaultAi = defaultAi;
+        this.defaultAi = defaultAi instanceof FeatureAi f ? f.backup() : defaultAi;   // chat routing: the plain default (GLM), whatever the features use
         this.claude = claude;
         this.glm = glm;
         this.qwen = qwen;

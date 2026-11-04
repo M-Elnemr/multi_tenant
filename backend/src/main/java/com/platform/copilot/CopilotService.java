@@ -128,7 +128,7 @@ public class CopilotService {
             log.warn("Copilot AI unavailable: {}", e.getMessage());
             answer = "المساعد مش متاح دلوقتي، جرّب بعد شوية. / The assistant is unavailable right now, try again shortly.";
         }
-        aiUsage.record(t, "COPILOT", null, null, false, q, rounds);
+        aiUsage.record(t, "COPILOT", null, null, false, q, rounds, com.platform.chat.FeatureAi.takeAnsweredBy(), false);   // billed at the model that answered
         if (answer == null || answer.isBlank()) answer = "ماقدرتش أجاوب على ده. جرّب تسأل بطريقة تانية. / I could not answer that. Try asking differently.";
         jdbc.sql("INSERT INTO copilot.messages (tenant_id, user_id, role, content) VALUES (:t, :u, 'assistant', :c)").param("t", t).param("u", user).param("c", answer).update();
         return answer;

@@ -117,7 +117,7 @@ public class AiUsageService {
     /** A single model call from a feature that has no chat (posts, ads, translation...). The shop is the one of the current request, when there is one. */
     public void recordCall(UUID tenantIdOrNull, String feature, AiProvider.Turn t) {
         UUID tenant = tenantIdOrNull != null ? tenantIdOrNull : TenantContext.get() == null ? null : TenantContext.get().id();
-        record(tenant, feature, null, null, false, null, List.of(new Round(t.calls().stream().map(AiProvider.ToolCall::name).toList(), t.usage())));
+        record(tenant, feature, null, null, false, null, List.of(new Round(t.calls().stream().map(AiProvider.ToolCall::name).toList(), t.usage())), FeatureAi.takeAnsweredBy(), false);
     }
 
     @Scheduled(cron = "0 30 3 * * *")
