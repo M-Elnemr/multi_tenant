@@ -4663,6 +4663,21 @@ const en: Record<string, string> = {
   "dash.limitedHint": "Use the menu to open the screens your manager gave you.",
   "dash.quietTitle": "A quiet two weeks",
   "dash.quietHint": "Your sales chart fills in as orders come in.",
+  "cl.book": "Book a visit",
+  "cl.greet": "Good to see you, {name}",
+  "cl.dayEmpty": "No appointments on the books for today — a good moment to set up your week.",
+  "cl.daySummary": "{n} appointments today, {done} done so far.",
+  "cl.inRoom": "With the doctor now",
+  "cl.nextUp": "Next up",
+  "cl.waitingN": "{n} waiting",
+  "cl.noneNext": "No one is waiting.",
+  "cl.dayProgress": "Today's progress",
+  "cl.apptsN": "{n} appointments",
+  "cl.noTodayHint": "Bookings from your website and reception will appear here in time order.",
+  "cl.needsYou": "Needs your attention",
+  "cl.unpaidTotal": "{m} still to collect",
+  "cl.weekAhead": "The week ahead",
+  "cl.noShowRate": "{n}% of visits this month",
 };
 
 const ar: Record<string, string> = {
@@ -9312,6 +9327,21 @@ const ar: Record<string, string> = {
   "dash.limitedHint": "استخدم القائمة لفتح الشاشات المسموح لك بها.",
   "dash.quietTitle": "أسبوعان هادئان",
   "dash.quietHint": "يمتلئ رسم المبيعات مع وصول الطلبات.",
+  "cl.book": "حجز موعد",
+  "cl.greet": "أهلاً بك يا {name}",
+  "cl.dayEmpty": "لا توجد مواعيد اليوم، وقت مناسب لتجهيز أسبوعك.",
+  "cl.daySummary": "{n} مواعيد اليوم، انتهى منها {done}.",
+  "cl.inRoom": "مع الطبيب الآن",
+  "cl.nextUp": "التالي",
+  "cl.waitingN": "{n} في الانتظار",
+  "cl.noneNext": "لا يوجد أحد في الانتظار.",
+  "cl.dayProgress": "تقدم اليوم",
+  "cl.apptsN": "{n} مواعيد",
+  "cl.noTodayHint": "الحجوزات من موقعك والاستقبال تظهر هنا بترتيب الوقت.",
+  "cl.needsYou": "يحتاج انتباهك",
+  "cl.unpaidTotal": "{m} لم تُحصّل بعد",
+  "cl.weekAhead": "الأسبوع القادم",
+  "cl.noShowRate": "{n}٪ من زيارات الشهر",
 };
 
 export const dictionaries: Record<Locale, Record<string, string>> = { en, ar };
