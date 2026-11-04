@@ -808,6 +808,9 @@ public class ChatService {
             problems.put("ADD_READ_AS_GUEST", "«ضيفه» means \"add it to my order\" (the product you just talked about), not a guest: ask for the options they did not choose yet, then add it.");
         if (!prepared && ctx.summary()[0] == null && CHANGE_WORDS.matcher(FastAnswers.norm(last)).find() && summaryWasShown(ctx))
             problems.put("CHANGE_NOT_APPLIED", "The customer changed the order you just summarised: call prepare_order now with the complete changed list (and the same details), so they get the updated summary. Never only say you will change it.");
+        else if (!prepared && ctx.summary()[0] == null && ctx.order()[0] == null && changeAfterDetails(ctx, last, answer))
+            problems.put("CHANGE_NOT_APPLIED", "The customer already gave their name, address and phone, and now changes or adds to the order: call prepare_order now with the complete list as it is now "
+                    + "(every item they still want, with the new quantity or option) and the same details, so they get the real summary (or the minimum order note). Ask only for an option still not chosen.");
         if (!prepared && ctx.summary()[0] == null && looksLikeSummary(answer))
             problems.put("FAKE_SUMMARY", "Never write an order summary or ask to confirm the order yourself: call prepare_order with the items and details, and the customer gets the real summary from it (ask only for what is missing).");
         if (detailsGivenNoSummary(ctx, turns, rounds, last, answer))
@@ -892,7 +895,7 @@ public class ChatService {
     /** The reply asks about an option (size, colour, bread...). */
     static final Pattern OPTION_ASK = Pattern.compile("(?:مقاس|المقاس|لون|اللون|حجم|الحجم|عيش|الخبز|خبز|السعه|الرامات|الطعم|انهي|size|colou?r|which)");
     /** A model-written summary or confirmation request («الطلب جاهز للتأكيد», «نبدأ التحضير؟»). */
-    static final Pattern FAKE_SUMMARY = Pattern.compile("(?:(?:جهزتلك|جهزت\\s+لك|حضرتلك)\\s+(?:ال)?طلبك?\\s+كالتالي|طلبك\\s+كالتالي|الطلب\\s+جاهز|جاهز\\s+للتاكيد|نبدا\\s+التحضير|ناكد\\s+الطلب|اكد\\s+الطلب|اكد\\s+الاوردر|اكد\\s+التعديل|ااكد|اكدلك\\s+الطلب\\s+كده|ملخص\\s+(?:الاوردر|الطلب)|اكتب\\s+تمام|confirm\\s+(?:your|the)\\s+(?:order|change)|order\\s+(?:is\\s+ready|summary))");
+    static final Pattern FAKE_SUMMARY = Pattern.compile("(?:(?:جهزتلك|جهزت\\s+لك|حضرتلك)\\s+(?:ال)?طلبك?\\s+كالتالي|طلبك\\s+كالتالي|(?:ال)?(?:طلب|اوردر)\\s+كالتالي|اجهزلك\\s+(?:ال)?(?:اوردر|طلب)\\s+ب(?:\\s|$)|اؤكد\\s+(?:ال)?(?:اوردر|طلب)|الطلب\\s+جاهز|جاهز\\s+للتاكيد|نبدا\\s+التحضير|ناكد\\s+الطلب|اكد\\s+الطلب|اكد\\s+الاوردر|اكد\\s+التعديل|ااكد|اكدلك\\s+الطلب\\s+كده|ملخص\\s+(?:الاوردر|الطلب)|اكتب\\s+تمام|confirm\\s+(?:your|the)\\s+(?:order|change)|order\\s+(?:is\\s+ready|summary))");
 
     /** «خليها عادي», «غيّر», «بدل», «شيل», «زوّد», «خليهم ٣»: a change to the order. */
     static final Pattern CHANGE_WORDS = Pattern.compile("(?:(?<!\\p{L})(?:خليها|خليه|خليهم|خليني|غير|غيرها|غيره|بدل|بدلها|شيل|شيلها|شيله|زود|زودها|نقص|قلل|مش\\s+عايز|عايزها|عايزه)(?!\\p{L})|\\b(?:change|instead|remove|make\\s+it)\\b)");
@@ -932,6 +935,36 @@ public class ChatService {
         return jdbc.sql("SELECT pending -> 'items' IS NOT NULL FROM chat.conversations WHERE id = :c").param("c", ctx.conversationId()).query(Boolean.class).optional().orElse(false)
                 && isSummary(jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'assistant' AND id < :u ORDER BY id DESC LIMIT 1").param("c", ctx.conversationId()).param("u", ctx.userMsgId())
                         .query(String.class).optional().orElse(null));
+    }
+
+    /**
+     * «خليهم ٢», «وضيف معاه هوت دوج», «خليها أبيض بدل أسود» after the customer sent their mobile and address in an earlier message (no order placed yet): the order changed, so a new
+     * summary is due. Seen in the final Qwen exam 2026-11-04: «تمام، هيكون عدد ٢» with no summary, or a list written by the model. A real question for an option still to choose is fine.
+     */
+    private boolean changeAfterDetails(Ctx ctx, String last, String answer) {
+        if (last == null || answer == null) return false;
+        String n = FastAnswers.norm(last);
+        if (!CHANGE_WORDS.matcher(n).find() && !ONLY_ADD_WORDS.matcher(n).find()) return false;
+        List<String> earlier = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id < :u ORDER BY id DESC LIMIT 8").param("c", ctx.conversationId()).param("u", ctx.userMsgId()).query(String.class).list();
+        boolean details = earlier.stream().anyMatch(m -> MoneyGuard.digits(m).replaceAll("[\\s-]", "").matches("(?s).*(?<!\\d)(?:\\+?20)?01[0125]\\d{8}(?!\\d).*")
+                && (ADDRESS_WORDS.matcher(m).find() || PICKUP_WORDS.matcher(FastAnswers.norm(m)).find()));
+        if (!details || hasOrderOnFile(ctx)) return false;
+        FactCheck.Shop shop = shopView(ctx.tenantId());
+        List<String> chosen = chosenInChat(ctx, shop);
+        if (chosen.isEmpty()) return false;
+        return !asksOption(answer, chosen, shop);
+    }
+
+    /** The reply's question is about an option still to choose (size, colour, spice...) of a product that has that choice. */
+    private static boolean asksOption(String answer, List<String> chosen, FactCheck.Shop shop) {
+        for (String q : answer.split("(?<=[؟?])")) {
+            if (!(q.contains("؟") || q.contains("?"))) continue;
+            String[] parts = q.split("[.!\\n:—]");
+            String n = FastAnswers.norm(parts[parts.length - 1]);
+            if (n.matches("(?s).*(?:مقاس|لون|حجم|انهي|اي نوع|نوع|عادي ولا|size|colou?r|which).*")
+                    && chosen.stream().anyMatch(s -> { var p = shop.product(s); return p == null || p.variants().size() > 1; })) return true;
+        }
+        return false;
     }
 
     private static final Pattern TOTAL_LINE = Pattern.compile("(?m)^\\s*(?:(?:الإجمالي|الاجمالي|الإجمالى|المجموع|Total)\\s*[:：]|(?:ال)?(?:إجمالي|اجمالي)\\s+(?:الطلب|الاوردر|الأوردر))", Pattern.CASE_INSENSITIVE);   // «إجمالي الطلب 230 جنيه» too (Qwen)

@@ -22,6 +22,14 @@ class ChatTextTest {
     }
 
     @Test
+    void listsTheModelWroteWithItsOwnConfirmationAreSummaries() {
+        // Qwen, final exam 2026-11-04: an added dress answered with its own list and «أؤكد الأوردر؟», and «هجهزلك طلبك كالتالي» with a fries line nobody asked for
+        assertThat(ChatService.looksLikeSummary("تمام يا فندم، هضيفهولك مع التيشيرت.\n\nتحب أجهزلك الأوردر بـ:\n- تيشيرت أطفال أبيض 8 سنة (250 جنيه)\n- فستان سهرة كحلي S (1500 جنيه)\n\nأؤكد الأوردر؟")).isTrue();
+        assertThat(ChatService.looksLikeSummary("تمام يا أستاذ كريم. هجهزلك طلبك كالتالي:\n\n- 2x براونيز بالشوكولاتة (60 جنيه للواحد)\n- 1x بطاطس مقلية صغير (30 جنيه)")).isTrue();
+        assertThat(ChatService.looksLikeSummary("عندنا فستان سهرة كحلي S بـ 1500 جنيه، تحب أضيفه؟")).isFalse();
+    }
+
+    @Test
     void aNumberedSelfWrittenSummaryIsASummary() {
         // Qwen, live exam: «خليهم ٢» answered with its own summary, a drink nobody asked for and a total it added up
         String qwen = "تمام يا أستاذ كريم، جهزتلك طلبك كالتالي:\n\n1. ساندوتش شيش طاووق فينو × 2 (بـ 90 جنيه للواحد)\n2. مشروب غازي كانز × 2\n\nإجمالي الطلب 230 جنيه. التوصيل لمدينة نصر 25 جنيه.\n\nتحب نجهزهولك دلوقتي؟";
