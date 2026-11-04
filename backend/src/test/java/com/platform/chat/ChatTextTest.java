@@ -22,6 +22,25 @@ class ChatTextTest {
     }
 
     @Test
+    void theHourAskedAboutIsReadAndCheckedAgainstHoursPastMidnight() throws Exception {
+        assertThat(ChatService.askedHour("انتو فاتحين الساعة ٣ الفجر؟")).isEqualTo(3);
+        assertThat(ChatService.askedHour("فاتحين ١١ بالليل؟")).isEqualTo(23);
+        assertThat(ChatService.askedHour("شغالين الساعة 2 الضهر؟")).isEqualTo(14);
+        assertThat(ChatService.askedHour("are you open at 1 am?")).isEqualTo(1);
+        assertThat(ChatService.askedHour("فاتحين النهارده؟")).isNull();
+        var hours = new com.fasterxml.jackson.databind.ObjectMapper().readTree("{\"mon\":{\"open\":\"12:00\",\"close\":\"02:00\"},\"tue\":{\"open\":\"12:00\",\"close\":\"02:00\"}}");
+        assertThat(ChatService.openAt(hours, 1, java.time.LocalTime.of(3, 0))).isFalse();   // Tuesday 3 a.m.: Monday's hours ended at 2
+        assertThat(ChatService.openAt(hours, 1, java.time.LocalTime.of(1, 0))).isTrue();    // Tuesday 1 a.m.: still Monday's night
+        assertThat(ChatService.openAt(hours, 1, java.time.LocalTime.of(23, 0))).isTrue();
+        assertThat(ChatService.openAt(hours, 0, java.time.LocalTime.of(1, 0))).isFalse();   // Monday 1 a.m.: Sunday has no hours
+    }
+
+    @Test
+    void askingForTheWhatsappNumberToSendTheCollectionIsAStall() {
+        assertThat(ChatService.STALL.matcher("ممكن تبعتلي رقم الواتساب عشان ابعتلك التشكيلة المتاحة؟").find()).isTrue();
+    }
+
+    @Test
     void listsTheModelWroteWithItsOwnConfirmationAreSummaries() {
         // Qwen, final exam 2026-11-04: an added dress answered with its own list and «أؤكد الأوردر؟», and «هجهزلك طلبك كالتالي» with a fries line nobody asked for
         assertThat(ChatService.looksLikeSummary("تمام يا فندم، هضيفهولك مع التيشيرت.\n\nتحب أجهزلك الأوردر بـ:\n- تيشيرت أطفال أبيض 8 سنة (250 جنيه)\n- فستان سهرة كحلي S (1500 جنيه)\n\nأؤكد الأوردر؟")).isTrue();

@@ -778,6 +778,8 @@ public class ChatService {
             problems.put("PICTURE_ONLY", "Do not just point at the pictures: name the products in words with their price and the colors/sizes that matter (and any size advice asked for), then one short question.");
         if (CLOSED_STOP.matcher(answer).find())
             problems.put("CLOSED_STOP", "Being outside opening hours does not stop you: answer the customer's question now and keep selling; only mention once that the order is prepared when the shop opens.");
+        String hoursProblem = hoursAnswerWrong(ctx.tenantId(), last, answer);
+        if (hoursProblem != null) problems.put("HOURS_WRONG", hoursProblem);
         if (CARD_OFFER.matcher(answer).find() && !cardAccepted(ctx.tenantId()))
             problems.put("CARD_OFFER", "This shop takes cash on delivery only: never offer card, Visa or wallet payment.");
         boolean falseCancel = CANCEL_CLAIM.matcher(answer).find() && !orderCancelled(ctx);
@@ -873,7 +875,7 @@ public class ChatService {
     }
 
     /** «هتأكد وأرجعلك», «لازم نتأكد من المخزون الأول», "let me confirm the price": a promise to look instead of looking. */
-    static final Pattern STALL = Pattern.compile("(?:محدش\\s+\\S+\\s+(?:ال)?مخا?زن|(?:ا|أ)?(?:تاكد|تأكد)\\s+(?:ان|إن|أن)\\s+عندنا|(?:ه|هـ)(?:تاكد|تأكد|شوف|بحث|راجع|سال|سأل)(?:لك|لك)?\\s|(?<!\\p{L})(?:ا|أ)راجع\\s*لك|لازم\\s+(?:ا|أ|ن)?(?:تاكد|تأكد)|ثواني\\s+و|هرجعلك|هرد\\s+عليك|هبلغك|(?:ا|أ)?رجع\\s*لك|وارجعلك|لحظه\\s+(?:ا|أ)?(?:تاكد|تأكد|شوف|راجع)|(?:ا|أ)تاكدلك|(?:ا|أ)تأكدلك|(?:ا|أ)راجع\\s+تاني|وارد\\s+عليك|وأرد\\s+عليك|(?:ا|أ)راجع\\s+(?:المخزون|الكتالوج|السيستم)|اتاكد\\s+من\\s+المخزون|(?:ا|أ)?تاكد\\s+لك|لازم\\s+(?:ا|أ)?تحقق|محتاجين\\s+نتاكد|محتاجين\\s+نتأكد|مش\\s+عارف\\s+(?:ا|أ)?قولك|معنديش\\s+تاكيد|معنديش\\s+تأكيد|مش\\s+متاكد|مش\\s+متأكد|(?:ا|أ)?تحقق\\s+من\\s+المخزون|(?:ا|أ)?تأكد\\s+لك|هنادرك|هندور|هشوفلك\\s+و|لحظه\\s+يا\\s+فندم|لحظة\\s+يا\\s+فندم|استني\\s+(?:ثواني|دقيقه|شويه)|هبعتلك\\s+(?:التفاصيل|السعر)|let\\s+me\\s+(?:check|confirm|look)|i\\s*(?:'ll|\\s+will)\\s+(?:check|confirm|look)|one\\s+moment)", Pattern.CASE_INSENSITIVE);
+    static final Pattern STALL = Pattern.compile("(?:محدش\\s+\\S+\\s+(?:ال)?مخا?زن|(?:ا|أ)?(?:تاكد|تأكد)\\s+(?:ان|إن|أن)\\s+عندنا|(?:ه|هـ)(?:تاكد|تأكد|شوف|بحث|راجع|سال|سأل)(?:لك|لك)?\\s|(?<!\\p{L})(?:ا|أ)راجع\\s*لك|لازم\\s+(?:ا|أ|ن)?(?:تاكد|تأكد)|ثواني\\s+و|هرجعلك|هرد\\s+عليك|هبلغك|(?:ا|أ)?رجع\\s*لك|وارجعلك|لحظه\\s+(?:ا|أ)?(?:تاكد|تأكد|شوف|راجع)|(?:ا|أ)تاكدلك|(?:ا|أ)تأكدلك|(?:ا|أ)راجع\\s+تاني|وارد\\s+عليك|وأرد\\s+عليك|(?:ا|أ)راجع\\s+(?:المخزون|الكتالوج|السيستم)|اتاكد\\s+من\\s+المخزون|(?:ا|أ)?تاكد\\s+لك|لازم\\s+(?:ا|أ)?تحقق|محتاجين\\s+نتاكد|محتاجين\\s+نتأكد|مش\\s+عارف\\s+(?:ا|أ)?قولك|معنديش\\s+تاكيد|معنديش\\s+تأكيد|مش\\s+متاكد|مش\\s+متأكد|(?:ا|أ)?تحقق\\s+من\\s+المخزون|(?:ا|أ)?تأكد\\s+لك|هنادرك|هندور|هشوفلك\\s+و|لحظه\\s+يا\\s+فندم|لحظة\\s+يا\\s+فندم|استني\\s+(?:ثواني|دقيقه|شويه)|هبعتلك\\s+(?:التفاصيل|السعر)|واتساب\\s+(?:عشان|علشان)\\s+(?:ا|أ)?(?:بعتلك|ابعتلك|أبعتلك|ارسلك|أرسلك)|let\\s+me\\s+(?:check|confirm|look)|i\\s*(?:'ll|\\s+will)\\s+(?:check|confirm|look)|one\\s+moment)", Pattern.CASE_INSENSITIVE);
     /**
      * A reply that offers to show what the customer already asked for («تحب أعرض عليك الحلويات اللي عندنا؟», «أبعتلك المنيو؟») instead of showing it: the customer has to answer
      * «أيوه» and wait again for what they could have had in this message.
@@ -2276,6 +2278,60 @@ public class ChatService {
             log.debug("Opening hours skipped", e);
             return "";
         }
+    }
+
+    private static final Pattern HOUR_ASKED = Pattern.compile("(?:فاتحين|فاتح|مفتوحين|شغالين|بتفتحوا|بتقفلوا|open)\\D{0,15}?(\\d{1,2})(?::\\d{2})?\\s*(الفجر|بالليل|الصبح|صباحا|الظهر|الضهر|العصر|المغرب|العشاء|بليل|مساء|am|pm)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern SAYS_YES = Pattern.compile("^(?:يا\\s+فندم\\s+)?(?:ايوه|ايوا|اه|نعم|اكيد|طبعا|yes|sure)(?!\\p{L})");
+    private static final Pattern SAYS_NO = Pattern.compile("^(?:يا\\s+فندم\\s+)?(?:لا|للاسف|احنا\\s+مقفولين|no|sorry)(?!\\p{L})");
+
+    /** «فاتحين الساعة ٣ الفجر؟», «open at 2 am?»: the hour of the day asked about (0-23), or null when there is none or it is not clear whether it is day or night. */
+    static Integer askedHour(String customer) {
+        if (customer == null) return null;
+        var m = HOUR_ASKED.matcher(FastAnswers.norm(MoneyGuard.digits(customer)));
+        if (!m.find()) return null;
+        int h = Integer.parseInt(m.group(1));
+        if (h < 1 || h > 12) return null;
+        return switch (m.group(2).toLowerCase(java.util.Locale.ROOT)) {
+            case "الفجر", "الصبح", "صباحا", "am" -> h == 12 ? 0 : h;
+            case "الظهر", "الضهر" -> h <= 4 ? h + 12 : h;
+            case "بالليل", "بليل" -> h == 12 ? 0 : h <= 5 ? h : h + 12;
+            default -> h == 12 ? 12 : h + 12;   // العصر, المغرب, العشاء, مساء, pm
+        };
+    }
+
+    /** Whether hours {@code {"mon":{"open":"12:00","close":"02:00"}...}} have the shop open at {@code time} on day {@code day} (0 = Monday), counting yesterday's hours that run past midnight. */
+    static boolean openAt(com.fasterxml.jackson.databind.JsonNode hours, int day, java.time.LocalTime time) {
+        var t = hours.path(WEEK.get(day));
+        if (!t.isMissingNode() && !t.path("closed").asBoolean(false)) {
+            var open = java.time.LocalTime.parse(t.path("open").asText("00:00")); var close = java.time.LocalTime.parse(t.path("close").asText("23:59"));
+            if (close.isAfter(open) ? !time.isBefore(open) && time.isBefore(close) : !time.isBefore(open)) return true;
+        }
+        var y = hours.path(WEEK.get((day + 6) % 7));
+        if (y.isMissingNode() || y.path("closed").asBoolean(false)) return false;
+        var open = java.time.LocalTime.parse(y.path("open").asText("00:00")); var close = java.time.LocalTime.parse(y.path("close").asText("23:59"));
+        return !close.isAfter(open) && time.isBefore(close);
+    }
+
+    /**
+     * «انتو فاتحين الساعة ٣ الفجر؟» answered «أيوه، بنشتغل من الظهر لحد ٢ الفجر» (Qwen, final exam 2026-11-04): a yes or no that the shop's own hours (today's, Cairo) contradict.
+     * Null when fine.
+     */
+    private String hoursAnswerWrong(UUID tenantId, String customer, String answer) {
+        Integer h = askedHour(customer);
+        if (h == null || answer == null) return null;
+        try {
+            String raw = jdbc.sql("SELECT working_hours::text FROM commerce.store_profiles WHERE tenant_id = :t").param("t", tenantId).query(String.class).optional().orElse(null);
+            if (!notBlank(raw) || raw.equals("{}")) return null;
+            var hours = JSON.readTree(raw);
+            int day = java.time.ZonedDateTime.now(java.time.ZoneId.of("Africa/Cairo")).getDayOfWeek().getValue() - 1;
+            boolean open = openAt(hours, day, java.time.LocalTime.of(h, 0));
+            String a = FastAnswers.norm(answer);
+            if (!open && SAYS_YES.matcher(a).find())
+                return "The shop is CLOSED at " + h + ":00 (check the opening hours you were given): answer «no» first, give the real opening hours, and say the order can still be taken now and is prepared when the shop opens.";
+            if (open && SAYS_NO.matcher(a).find())
+                return "The shop is OPEN at " + h + ":00 (check the opening hours you were given): answer «yes» and give the real opening hours.";
+        } catch (Exception e) { log.debug("Hours check skipped", e); }
+        return null;
     }
 
     private static boolean notBlank(Object o) { return o != null && !o.toString().isBlank(); }
