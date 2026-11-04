@@ -104,7 +104,7 @@ public class PosSyncService {
                        (v.status = 'ACTIVE' AND p.status = 'ACTIVE') AS active,
                        coalesce(i.quantity_on_hand - i.quantity_reserved, 0) AS stock,
                        coalesce(tx.name_ar, '') AS category_ar, coalesce(tx.name_en, '') AS category_en,
-                       (SELECT coalesce(m.url, '/api/bff/files/' || m.file_id || '/content?variant=medium') FROM commerce.product_media m WHERE m.product_id = p.id AND (m.url IS NOT NULL OR m.file_id IS NOT NULL) ORDER BY (m.variant_id = v.id) DESC NULLS LAST, m.sort_order LIMIT 1) AS image
+                       CAST(NULL AS varchar) AS image   -- the till shows no pictures (simpler screen, more products on it, a lighter download)
                 FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id
                 LEFT JOIN commerce.inventory_items i ON i.variant_id = v.id AND i.branch_id = :b
                 LEFT JOIN commerce.taxonomy tx ON tx.id = p.taxonomy_id

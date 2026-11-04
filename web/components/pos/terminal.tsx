@@ -22,7 +22,7 @@ type Data = {
 };
 type Panel = null | "pay" | "invoices" | "held" | "cash" | "close" | "count" | "sync" | "settings" | "switch" | "approve" | "menu" | "cats" | "x" | "keys"
   | { return: Invoice } | { edit: number } | { variants: string };
-type Product = { productId: string; name: string; image: string | null; variants: CatalogItem[]; minPrice: number; maxPrice: number; stock: number; sold: number };
+type Product = { productId: string; name: string; variants: CatalogItem[]; minPrice: number; maxPrice: number; stock: number; sold: number };
 type Toast = { tone: "red" | "amber" | "green"; text: string; id: number };
 
 const IDLE_LOCK_MS = 15 * 60_000;
@@ -102,11 +102,10 @@ export default function Terminal() {
     const by = new Map<string, Product>();
     for (const c of d?.catalog ?? []) {
       if (!c.active) continue;
-      const p = by.get(c.productId) ?? { productId: c.productId, name: c.name, image: c.image, variants: [], minPrice: c.priceMinor, maxPrice: c.priceMinor, stock: 0, sold: 0 };
+      const p = by.get(c.productId) ?? { productId: c.productId, name: c.name, variants: [], minPrice: c.priceMinor, maxPrice: c.priceMinor, stock: 0, sold: 0 };
       p.variants.push(c);
       p.minPrice = Math.min(p.minPrice, c.priceMinor); p.maxPrice = Math.max(p.maxPrice, c.priceMinor);
       p.stock += Math.max(0, c.stock); p.sold += d?.sold[c.variantId] ?? 0;
-      if (!p.image && c.image) p.image = c.image;
       by.set(c.productId, p);
     }
     return [...by.values()];
@@ -600,15 +599,15 @@ export default function Terminal() {
           <div className="flex flex-wrap gap-1.5">
             <Chip on={!cat} onClick={() => setCat("")}>{t("term.all")}</Chip>
             {d.recent.length > 0 && <Chip on={cat === RECENT} onClick={() => setCat(RECENT)}>🕘 {t("term.recent")}</Chip>}
-            {topCats.map((c) => <Chip key={c} on={cat === c} onClick={() => setCat(c)}>{c}</Chip>)}
-            {cats.length > topCats.length && <Chip on={otherCat} onClick={() => setPanel("cats")}>{otherCat ? cat : t("term.more")} ▾</Chip>}
+            {topCats.map((c, i) => <Chip key={c} on={cat === c} onClick={() => setCat(c)} wide={i >= 2}>{c}</Chip>)}
+            {cats.length > 2 && <Chip on={otherCat || (topCats.indexOf(cat) >= 2)} onClick={() => setPanel("cats")} narrow>{otherCat || topCats.indexOf(cat) >= 2 ? cat : t("term.more")} ▾</Chip>}
+            {cats.length > topCats.length && <Chip on={otherCat} onClick={() => setPanel("cats")} wide>{otherCat ? cat : t("term.more")} ▾</Chip>}
           </div>
           <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-2 gap-2 overflow-y-auto overflow-x-hidden pb-24 sm:grid-cols-3 lg:pb-0 xl:grid-cols-4 2xl:grid-cols-5">
             {shown.map((p) => (
-              <button key={p.productId} type="button" onClick={() => tapProduct(p)} className="flex min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white text-start shadow-sm transition active:scale-[0.98] hover:border-brand">
-                {/* eslint-disable-next-line @next/next/no-img-element -- plain image: served from the offline cache, no optimizer round-trip */}
-                {p.image ? <img src={p.image} alt="" loading="lazy" className="aspect-[4/3] w-full object-cover" /> : <div className="flex aspect-[4/3] w-full items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 text-2xl font-bold text-slate-400">{p.name.slice(0, 1)}</div>}
-                <div className="flex min-w-0 flex-1 flex-col p-2">
+              <button key={p.productId} type="button" onClick={() => tapProduct(p)} className="flex min-h-[5.5rem] min-w-0 flex-col rounded-xl border border-slate-200 bg-white text-start shadow-sm transition active:scale-[0.98] hover:border-brand">
+                {/* no pictures: text tiles keep the till simple and fit more products on the screen */}
+                <div className="flex min-w-0 flex-1 flex-col p-2.5">
                   <span className="line-clamp-2 text-sm font-semibold leading-tight">{p.name}</span>
                   {p.variants.length > 1 && <span className="text-[11px] text-slate-500">{t("term.options", { n: String(p.variants.length) })}</span>}
                   <span className="mt-auto flex min-w-0 items-center justify-between gap-1 pt-1">
@@ -711,4 +710,7 @@ function LineEditor({ line, currency, onSave, onRemove, onClose }: { line: CartL
 }
 
 function Center({ children }: { children: React.ReactNode }) { return <div className="flex min-w-0 flex-1 items-center justify-center p-4" style={{ minHeight: "60dvh" }}>{children}</div>; }
-function Chip({ children, on, onClick }: { children: React.ReactNode; on: boolean; onClick: () => void }) { return <button type="button" onClick={onClick} className={`max-w-[11rem] truncate rounded-full px-3 py-1.5 text-xs font-semibold ${on ? "bg-brand text-white" : "bg-white text-slate-700 ring-1 ring-slate-200"}`}>{children}</button>; }
+/** A category chip; {@code wide}: only on wider screens (phones show two and «More»), {@code narrow}: only on phones. */
+function Chip({ children, on, onClick, wide, narrow }: { children: React.ReactNode; on: boolean; onClick: () => void; wide?: boolean; narrow?: boolean }) {
+  return <button type="button" onClick={onClick} className={`max-w-[11rem] truncate rounded-full px-3 py-1.5 text-xs font-semibold ${wide ? "hidden sm:inline-block" : ""} ${narrow ? "sm:hidden" : ""} ${on ? "bg-brand text-white" : "bg-white text-slate-700 ring-1 ring-slate-200"}`}>{children}</button>;
+}
