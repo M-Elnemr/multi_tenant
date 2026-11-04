@@ -11,6 +11,11 @@ export function stable(text: string): string {
   return text.replace(/[\u200e\u200f\u061c]/g, "").replace(/[\u202f\u00a0]/g, "\u00a0");
 }
 
+/** A plain count in the visitor's digits (Arabic-Indic in Arabic, like money). */
+export function num(n: number, locale: Locale): string {
+  return stable(new Intl.NumberFormat(intl(locale)).format(n));
+}
+
 /** Money is stored as integer minor units (piastres): 19999 -> 199.99 */
 export function money(minor: number | null | undefined, currency: string, locale: Locale): string {
   if (minor === null || minor === undefined) return "-";

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Cairo } from "next/font/google";
+import { Cairo, IBM_Plex_Sans_Arabic, Inter_Tight } from "next/font/google";
 import "./globals.css";
 import { I18nProvider } from "@/components/i18n-provider";
 import { headers } from "next/headers";
@@ -10,6 +10,13 @@ import { resolveHost } from "@/lib/tenant";
 import { readableBrand } from "@/lib/color";
 
 const cairo = Cairo({ subsets: ["arabic", "latin"], variable: "--font-cairo", display: "swap" });
+// Display faces for headings and numbers (see .font-display in globals.css): editorial Latin + Arabic.
+const interTight = Inter_Tight({ subsets: ["latin"], variable: "--font-inter-tight", display: "swap", weight: ["500", "600", "700"] });
+const plexAr = IBM_Plex_Sans_Arabic({ subsets: ["arabic"], variable: "--font-plex-ar", display: "swap", weight: ["500", "600", "700"] });
+
+// Dark theme is for the workspace screens only (dashboards, POS, admin); public sites keep their template's look.
+// Runs before paint so a dark-mode user never sees a white flash.
+const THEME_BOOT = `try{var p=location.pathname;if(/^\\/(dashboard|admin|pos)(\\/|$)/.test(p)){var t=localStorage.getItem("dash-theme")||"light";if(t==="dark"||(t==="system"&&matchMedia("(prefers-color-scheme: dark)").matches))document.documentElement.setAttribute("data-theme","dark")}}catch(e){}`;
 
 export const viewport: Viewport = { themeColor: "#1f6a99", width: "device-width", initialScale: 1, viewportFit: "cover", interactiveWidget: "resizes-content" };
 
@@ -50,7 +57,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     if (info.branding.secondary_color && HEX.test(info.branding.secondary_color)) style["--brand-2"] = readableBrand(info.branding.secondary_color, 3);
   }
   return (
-    <html lang={locale} dir={dir(locale)} style={style} className={cairo.variable}>
+    <html lang={locale} dir={dir(locale)} style={style} className={`${cairo.variable} ${interTight.variable} ${plexAr.variable}`} suppressHydrationWarning>
+      <head><script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} /></head>
       <body className="min-h-dvh antialiased">
         <I18nProvider locale={locale} currency={info.kind === "TENANT" ? info.currency : "EGP"} timezone={info.kind === "TENANT" ? info.timezone : "Africa/Cairo"} tenantType={info.kind === "TENANT" ? info.type : null} siteName={info.kind === "TENANT" ? info.name : ""} whiteLabel={info.kind === "TENANT" && !!info.whiteLabel}>
           {children}

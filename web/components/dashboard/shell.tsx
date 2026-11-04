@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState, useSyncExternalStore } from "react";
-import { motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useApi, useMe } from "../hooks";
 import { useI18n } from "../i18n-provider";
 import { LogoutButton } from "../logout-button";
@@ -14,7 +14,8 @@ import { SwRegister, useOnline } from "../sw";
 import { fileUrl } from "@/lib/media";
 import { SubscriptionBar, useBillingStatus } from "./subscription-bar";
 import { NavTitleContext } from "./section";
-import { matches as textMatches, words } from "@/lib/pos/search";
+import { CommandPalette } from "./command";
+import { ThemeToggle, useWorkspaceTheme } from "../theme-toggle";
 
 /**
  * `screen` is the access screen (hidden / read / write per employee) that opens the item; `perm` is for items outside that list (staff); `write` also needs write access to
@@ -35,7 +36,7 @@ function NavIcon({ icon, className }: { icon?: string; className?: string }) {
 function TenantMark({ className = "h-10 w-10" }: { className?: string }) {
   const b = useApi<{ logoFileId?: string }>("tenant/branding");
   /* eslint-disable-next-line @next/next/no-img-element */
-  return <img src={b.data?.logoFileId ? fileUrl(b.data.logoFileId, "thumb") : "/api/monogram"} alt="" className={`${className} shrink-0 rounded-xl object-cover shadow-sm ring-1 ring-black/5`} />;
+  return <img src={b.data?.logoFileId ? fileUrl(b.data.logoFileId, "thumb") : "/api/monogram"} alt="" className={`${className} shrink-0 rounded-[9px] object-cover ring-1 ring-line`} />;
 }
 
 const COLLAPSE_KEY = "dashSidebarMini";
@@ -45,6 +46,7 @@ const readFlag = (key: string) => { try { return localStorage.getItem(key) === "
 const setFlag = (key: string, on: boolean) => { try { localStorage.setItem(key, on ? "1" : "0"); } catch { /* ignore */ } listeners.forEach((l) => l()); };
 const readCollapsed = () => readFlag(COLLAPSE_KEY);
 const readAdvanced = () => readFlag(ADVANCED_KEY);
+const noopSub = () => () => {};
 const subscribe = (cb: () => void) => { listeners.add(cb); return () => { listeners.delete(cb); }; };
 
 /** Sidebar dashboard used by shop owners, doctors and staff. Items are hidden without the permission (the backend enforces it regardless). */
@@ -54,7 +56,7 @@ export function DashboardShell(props: { nav: NavItem[]; children: React.ReactNod
 }
 
 function Shell({ nav, children }: { nav: NavItem[]; children: React.ReactNode }) {
-  const { t, siteName, locale, whiteLabel } = useI18n();
+  const { t, siteName, locale, whiteLabel, tenantType } = useI18n();
   const path = usePathname();
   const tabNow = useSearchParams().get("tab");
   const router = useRouter();
@@ -67,7 +69,14 @@ function Shell({ nav, children }: { nav: NavItem[]; children: React.ReactNode })
   const collapsed = useSyncExternalStore(subscribe, readCollapsed, () => false);
   const toggleCollapsed = () => setFlag(COLLAPSE_KEY, !collapsed);
   const advancedOpen = useSyncExternalStore(subscribe, readAdvanced, () => false);
-  const [query, setQuery] = useState("");
+  const [cmd, setCmd] = useState(false);
+  const isMac = useSyncExternalStore(noopSub, () => /Mac|iPhone|iPad/.test(navigator.platform), () => false);
+  useWorkspaceTheme();
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setCmd((v) => !v); } };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, []);
   useEffect(() => { if (ready && !me) router.replace(`/dashboard/login?next=${encodeURIComponent(path)}`); }, [ready, me, path, router]);
   useEffect(() => {
     if (!open) return;
@@ -83,7 +92,7 @@ function Shell({ nav, children }: { nav: NavItem[]; children: React.ReactNode })
   const onPay = path.startsWith("/dashboard/billing/pay");
   const canPay = ready && !!me && can("billing.manage");
   useEffect(() => { if (disabled && canPay && !onPay) router.replace("/dashboard/billing/pay"); }, [disabled, canPay, onPay, router]);
-  if (!ready || !me || customerOnly) return <div className="p-6"><Loading /></div>;
+  if (!ready || !me || customerOnly) return <div className="mx-auto max-w-6xl p-6 lg:p-10"><Loading /></div>;
 
   const open_ = (n: NavItem) => (!n.screen || canSee(n.screen)) && (!n.write || !n.screen || canWrite(n.screen)) && (!n.perm || (Array.isArray(n.perm) ? n.perm.some(can) : can(n.perm)));
   const allowed = nav.filter((n) => (!disabled || n.href.startsWith("/dashboard/billing")) && open_(n));
@@ -104,100 +113,115 @@ function Shell({ nav, children }: { nav: NavItem[]; children: React.ReactNode })
   const fullName = `${me.firstName} ${me.lastName}`.trim();
   const hour = new Date().getHours();
   const bell = (cls: string) => (
-    <Link href="/dashboard/notifications" className={`relative rounded-xl p-2.5 text-slate-600 transition hover:bg-brand-soft hover:text-brand ${cls}`} aria-label={t("nav.notifications")}>
-      <Icon name="bell" />
-      {count > 0 && <span className="absolute end-1 top-1 flex h-4 min-w-4 animate-pop items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white ring-2 ring-white">{count}</span>}
+    <Link href="/dashboard/notifications" className={`relative grid h-9 w-9 place-items-center rounded-[10px] text-muted transition hover:bg-[color-mix(in_srgb,var(--ink)_6%,transparent)] hover:text-ink pointer-coarse:h-11 pointer-coarse:w-11 ${cls}`} aria-label={t("nav.notifications")}>
+      <Icon name="bell" className="h-[18px] w-[18px]" />
+      {count > 0 && <span className="absolute -end-0.5 -top-0.5 flex h-4 min-w-4 animate-pop items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white ring-2 ring-surface">{count > 99 ? "99+" : count}</span>}
     </Link>
   );
   const langLink = (
-    <a href={`/api/lang?l=${locale === "ar" ? "en" : "ar"}`} className="inline-flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-600 transition hover:bg-brand-soft hover:text-brand"><Icon name="globe" className="h-4 w-4" />{locale === "ar" ? "EN" : "عربي"}</a>
+    <a href={`/api/lang?l=${locale === "ar" ? "en" : "ar"}`} className="inline-flex h-9 items-center gap-1.5 rounded-[10px] px-2.5 text-xs font-semibold text-muted transition hover:bg-[color-mix(in_srgb,var(--ink)_6%,transparent)] hover:text-ink"><Icon name="globe" className="h-4 w-4" />{locale === "ar" ? "EN" : "عربي"}</a>
   );
   const mini = collapsed; // icon-only sidebar (desktop only)
   const link = (n: NavItem) => {
     const active = isActive(n);
     return (
-      <Link key={n.href} href={n.href} onClick={() => { setOpen(false); setQuery(""); }} title={mini ? t(n.label) : undefined} className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors duration-200 ${mini ? "lg:justify-center lg:px-0" : ""} ${active ? "text-white" : "text-slate-600 hover:bg-brand-soft hover:text-brand-dark"}`}>
-        {active && (reduce ? <span className="absolute inset-0 rounded-xl bg-brand-gradient shadow-brand" /> : <motion.span layoutId="nav-active" transition={{ type: "spring", stiffness: 420, damping: 36 }} className="absolute inset-0 rounded-xl bg-brand-gradient shadow-brand" />)}
-        <span className={`relative transition-transform duration-200 ${active ? "" : "group-hover:scale-110"}`}><NavIcon icon={n.icon} /></span>
-        <span className={`relative truncate ${mini ? "lg:hidden" : ""}`}>{t(n.label)}</span>
+      <Link key={n.href} href={n.href} onClick={() => setOpen(false)} title={mini ? t(n.label) : undefined} aria-current={active ? "page" : undefined}
+        className={`group relative flex items-center gap-2.5 rounded-[9px] px-2.5 py-[7px] text-[13.5px] font-medium transition-colors duration-150 ${mini ? "lg:justify-center lg:px-0 lg:py-2" : ""} ${active ? "text-ink" : "text-muted hover:bg-[color-mix(in_srgb,var(--ink)_5%,transparent)] hover:text-ink"}`}>
+        {active && (
+          <motion.span layoutId="nav-active" transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 520, damping: 40 }} className="absolute inset-0 rounded-[9px] bg-surface shadow-[0_0_0_1px_var(--line),0_1px_3px_rgb(16_18_24/.07)]">
+            <span className="absolute inset-y-2 start-0 w-[3px] rounded-full bg-brand" />
+          </motion.span>
+        )}
+        <span className={`relative ${active ? "text-brand" : "text-faint group-hover:text-ink-2"} transition-colors`}><NavIcon icon={n.icon} className="h-[18px] w-[18px]" /></span>
+        <span className={`relative truncate ${active ? "font-semibold" : ""} ${mini ? "lg:hidden" : ""}`}>{t(n.label)}</span>
       </Link>
     );
   };
-  const ws = words(query);
-  const found = (n: NavItem) => ws.length === 0 || textMatches(ws, t(n.label), n.group ? t(n.group) : null);
   const list = (rows: NavItem[], sub: boolean) => {
     const out: React.ReactNode[] = [];
     let lastGroup: string | undefined;
     rows.forEach((n) => {
-      if (n.group && n.group !== lastGroup) out.push(mini ? <div key={`g-${n.group}-${n.href}`} className="mx-3 my-2 hidden border-t border-slate-200/70 lg:block" /> : null, <div key={`h-${n.group}-${n.href}`} className={`${sub ? "nav-subsection" : "nav-section"} ${mini ? "lg:hidden" : ""}`}>{t(n.group)}</div>);
+      if (n.group && n.group !== lastGroup) out.push(mini ? <div key={`g-${n.group}-${n.href}`} className="mx-3 my-2.5 hidden border-t border-line lg:block" /> : null, <div key={`h-${n.group}-${n.href}`} className={`${sub ? "nav-subsection" : "nav-section"} ${mini ? "lg:hidden" : ""}`}>{t(n.group)}</div>);
       lastGroup = n.group;
       out.push(link(n));
     });
     return out;
   };
-  const main = allowed.filter((n) => !n.advanced && found(n));
-  const expert = allowed.filter((n) => n.advanced && found(n));
-  // the expert screens stay folded until asked for, the open screen is one of them, or a search found some
-  const showExpert = advancedOpen || !!current?.advanced || ws.length > 0;
-  const searchable = allowed.length > 12;
+  const main = allowed.filter((n) => !n.advanced);
+  const expert = allowed.filter((n) => n.advanced);
+  // the expert screens stay folded until asked for, or the open screen is one of them
+  const showExpert = advancedOpen || !!current?.advanced;
   const items: React.ReactNode[] = [...list(main, false)];
   if (expert.length > 0) {
     items.push(
       <button key="advanced" type="button" onClick={() => setFlag(ADVANCED_KEY, !advancedOpen)} aria-expanded={showExpert} title={mini ? t("navgrp.advanced") : undefined}
-        className={`mt-3 flex w-full items-center gap-3 rounded-xl border border-dashed border-slate-300 px-3 py-2.5 text-start text-sm font-semibold text-slate-600 transition hover:border-brand/40 hover:bg-brand-soft hover:text-brand-dark ${mini ? "lg:justify-center lg:px-0" : ""}`}>
-        <NavIcon icon="settings" />
-        <span className={`min-w-0 flex-1 ${mini ? "lg:hidden" : ""}`}><span className="block truncate">{t("navgrp.advanced")}</span><span className="block truncate text-[11px] font-normal text-slate-500">{t("nav.advancedHint")}</span></span>
-        <Icon name="arrow" className={`h-4 w-4 shrink-0 transition-transform ${mini ? "lg:hidden" : ""} ${showExpert ? "-rotate-90" : "rotate-90"}`} />
+        className={`mt-4 flex w-full items-center gap-2.5 rounded-[10px] border border-dashed border-line-strong px-2.5 py-2 text-start text-[13px] font-semibold text-muted transition hover:border-brand/40 hover:text-ink ${mini ? "lg:justify-center lg:px-0" : ""}`}>
+        <NavIcon icon="sliders" className="h-[18px] w-[18px]" />
+        <span className={`min-w-0 flex-1 ${mini ? "lg:hidden" : ""}`}><span className="block truncate">{t("navgrp.advanced")}</span><span className="block truncate text-[11px] font-normal text-faint">{t("nav.advancedHint")}</span></span>
+        <Icon name="chevron" className={`h-4 w-4 shrink-0 transition-transform duration-200 ${mini ? "lg:hidden" : ""} ${showExpert ? "rotate-90" : "flip-rtl"}`} />
       </button>,
     );
-    if (showExpert) items.push(<div key="advanced-list" className="mt-1 space-y-0.5 border-s-2 border-slate-200/80 ps-1">{list(expert, true)}</div>);
+    items.push(
+      <AnimatePresence key="advanced-list" initial={false}>
+        {showExpert && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: reduce ? 0 : 0.22, ease: [0.2, 0.8, 0.2, 1] }} className="overflow-hidden">
+            <div className="mt-1 space-y-px border-s border-line ps-1.5">{list(expert, true)}</div>
+          </motion.div>
+        )}
+      </AnimatePresence>,
+    );
   }
-  if (ws.length > 0 && main.length === 0 && expert.length === 0) items.push(<p key="none" className="px-3 py-4 text-sm text-slate-500">{t("nav.noMatch")}</p>);
   const quickOnes = allowed.filter((n) => n.quick);
   const quick = (quickOnes.length > 0 ? quickOnes : allowed).slice(0, 4);
+  const commandItems = allowed.map((n) => ({ href: n.href, label: t(n.label), group: n.group ? t(n.group) : n.advanced ? t("navgrp.advanced") : undefined, icon: n.icon }));
+  const role = tenantType === "CLINIC" ? "clinic" : tenantType === "LAWYER" ? "lawyer" : "store";
+  const searchBtn = (cls = "") => (
+    <button type="button" onClick={() => setCmd(true)} className={`group flex h-9 items-center gap-2 rounded-[10px] bg-surface px-3 text-[13px] text-faint shadow-[0_0_0_1px_var(--line-strong)] transition hover:text-muted ${cls}`}>
+      <Icon name="search" className="h-4 w-4" /><span className="min-w-0 flex-1 truncate text-start">{t("nav.search")}</span><span className="kbd hidden sm:inline-flex">{isMac ? "⌘" : "Ctrl"} K</span>
+    </button>
+  );
 
   return (
-    <div className="min-h-dvh lg:flex print:block">
+    <div data-role={role} className="min-h-dvh bg-canvas lg:flex print:block">
+      <CommandPalette open={cmd} onClose={() => setCmd(false)} items={commandItems} />
       {/* phone top bar */}
-      <header className="glass sticky top-0 z-30 flex items-center justify-between border-b border-slate-200/70 px-3 py-2.5 print:hidden lg:hidden">
-        <button onClick={() => setOpen(true)} aria-label="Menu" className="rounded-xl p-2 text-slate-700 transition hover:bg-brand-soft active:scale-95"><Icon name="menu" className="h-6 w-6" /></button>
-        <span className="flex min-w-0 items-center gap-2 font-bold"><TenantMark className="h-7 w-7" /><span className="truncate text-ink">{current ? t(current.label) : siteName}</span></span>
-        {bell("")}
+      <header className="glass sticky top-0 z-30 flex items-center justify-between gap-2 px-2.5 py-2 hairline-b print:hidden lg:hidden">
+        <button onClick={() => setOpen(true)} aria-label="Menu" className="grid h-11 w-11 place-items-center rounded-[10px] text-ink-2 transition active:scale-95"><Icon name="menu" className="h-[22px] w-[22px]" /></button>
+        <span className="flex min-w-0 items-center gap-2"><TenantMark className="h-7 w-7" /><span className="truncate font-display text-[15px] font-semibold text-ink">{current ? t(current.label) : siteName}</span></span>
+        <span className="flex items-center"><button onClick={() => setCmd(true)} aria-label={t("nav.search")} className="grid h-11 w-11 place-items-center rounded-[10px] text-muted"><Icon name="search" className="h-[19px] w-[19px]" /></button>{bell("")}</span>
       </header>
 
-      {/* the phone menu lives in a screen-sized clipping box: a closed drawer parked outside the screen must never make the page wider than the phone (it pushed the bottom bar's last tab off-screen) */}
+      {/* the phone menu lives in a screen-sized clipping box: a closed drawer parked outside the screen must never make the page wider than the phone */}
       <div className={`fixed inset-0 z-40 overflow-hidden lg:pointer-events-auto lg:contents ${open ? "" : "pointer-events-none"}`}>
-      <div onClick={() => setOpen(false)} className={`absolute inset-0 z-40 bg-slate-900/40 backdrop-blur-sm transition-opacity duration-300 lg:hidden ${open ? "opacity-100" : "pointer-events-none opacity-0"}`} aria-hidden />
+      <div onClick={() => setOpen(false)} className={`absolute inset-0 z-40 bg-[rgb(10_12_16/.4)] backdrop-blur-[2px] transition-opacity duration-300 lg:hidden ${open ? "opacity-100" : "pointer-events-none opacity-0"}`} aria-hidden />
 
-      <aside className={`sidebar-bg absolute inset-y-0 start-0 z-50 flex w-72 flex-col border-e border-slate-200/70 p-4 shadow-2xl transition-[transform,width] duration-300 ease-out print:hidden lg:pointer-events-auto lg:sticky lg:top-0 lg:z-20 lg:h-screen lg:shrink-0 lg:translate-x-0! lg:shadow-none ${mini ? "lg:w-[4.75rem] lg:px-3" : "lg:w-64"} ${open ? "translate-x-0" : "ltr:-translate-x-full rtl:translate-x-full"}`}>
-        <div className={`mb-4 flex items-center justify-between gap-2 ${mini ? "lg:flex-col" : ""}`}>
-          <Link href="/" className="flex min-w-0 items-center gap-3">
-            <TenantMark />
-            <span className={`min-w-0 ${mini ? "lg:hidden" : ""}`}><span className="block truncate text-[15px] font-bold leading-tight text-ink">{siteName}</span><span className="block truncate text-[11px] text-slate-500">{t("dash.controlPanel")}</span></span>
+      <aside className={`sidebar-bg absolute inset-y-0 start-0 z-50 flex w-[17rem] flex-col border-e border-line px-3 pb-3 pt-3.5 shadow-[var(--shadow-float)] transition-[transform,width] duration-300 ease-[cubic-bezier(.2,.8,.2,1)] print:hidden lg:pointer-events-auto lg:sticky lg:top-0 lg:z-20 lg:h-screen lg:shrink-0 lg:translate-x-0! lg:shadow-none ${mini ? "lg:w-[4.25rem] lg:px-2" : "lg:w-[15.5rem]"} ${open ? "translate-x-0" : "ltr:-translate-x-full rtl:translate-x-full"}`}>
+        <div className={`mb-3 flex items-center justify-between gap-2 px-1 ${mini ? "lg:flex-col lg:px-0" : ""}`}>
+          <Link href="/" className="group flex min-w-0 items-center gap-2.5 rounded-[10px] p-1 transition hover:bg-[color-mix(in_srgb,var(--ink)_5%,transparent)]">
+            <TenantMark className="h-8 w-8" />
+            <span className={`min-w-0 ${mini ? "lg:hidden" : ""}`}><span className="block truncate text-[14px] font-semibold leading-tight text-ink">{siteName}</span><span className="flex items-center gap-1 truncate text-[11px] text-faint">{t("dash.controlPanel")}<Icon name="external" className="h-3 w-3 opacity-0 transition group-hover:opacity-100" /></span></span>
           </Link>
-          <button onClick={() => setOpen(false)} aria-label="Close" className="rounded-xl p-2 text-slate-500 hover:bg-slate-100 lg:hidden"><Icon name="close" /></button>
+          <button onClick={() => setOpen(false)} aria-label="Close" className="grid h-10 w-10 place-items-center rounded-[10px] text-muted hover:bg-surface lg:hidden"><Icon name="close" className="h-5 w-5" /></button>
         </div>
-        {searchable && (
-          <div className={`relative mb-2 ${mini ? "lg:hidden" : ""}`}>
-            <Icon name="search" className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); }} placeholder={t("nav.search")} aria-label={t("nav.search")}
-              className="w-full rounded-xl border border-slate-200 bg-white/80 py-2 pe-3 ps-9 text-sm outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20" />
-          </div>
-        )}
-        <nav className="-mx-1 flex-1 space-y-0.5 overflow-y-auto px-1 pb-2">{items}</nav>
-        <div className="mt-3 space-y-3 border-t border-slate-200/70 pt-3">
-          <div className={`flex items-center gap-3 ${mini ? "lg:justify-center" : ""}`}>
-            <Avatar name={fullName} />
-            <div className={`min-w-0 ${mini ? "lg:hidden" : ""}`}>
-              <p className="truncate text-sm font-semibold">{fullName}</p>
-              <p className="truncate text-xs text-slate-500">{me.roles.map((r) => t(`role.${r}`)).join(", ")}</p>
+        <div className={`mb-2 px-0.5 ${mini ? "lg:hidden" : ""}`}>{searchBtn("w-full")}</div>
+        {mini && <button onClick={() => setCmd(true)} aria-label={t("nav.search")} className="mx-auto mb-2 hidden h-9 w-9 place-items-center rounded-[10px] text-muted hover:bg-surface lg:grid"><Icon name="search" className="h-[18px] w-[18px]" /></button>}
+        <nav className="-mx-1 flex-1 space-y-px overflow-y-auto px-1 pb-2 [scrollbar-width:none]">{items}</nav>
+        <div className="mt-2 space-y-2 border-t border-line pt-3">
+          <div className={`flex items-center gap-2.5 rounded-[10px] px-1.5 ${mini ? "lg:justify-center lg:px-0" : ""}`}>
+            <Avatar name={fullName} className="h-8 w-8 text-xs" />
+            <div className={`min-w-0 flex-1 ${mini ? "lg:hidden" : ""}`}>
+              <p className="truncate text-[13px] font-semibold text-ink">{fullName}</p>
+              <p className="truncate text-[11px] text-faint">{me.roles.map((r) => t(`role.${r}`)).join(", ")}</p>
             </div>
           </div>
-          <div className={`flex items-center justify-between ${mini ? "lg:flex-col lg:gap-2" : ""}`}>
+          <div className={`flex items-center justify-between gap-1 ${mini ? "lg:flex-col" : ""}`}>
             <LogoutButton />
-            <button onClick={toggleCollapsed} aria-label={mini ? "Expand" : "Collapse"} className="hidden rounded-xl p-2 text-slate-500 transition hover:bg-brand-soft hover:text-brand lg:block"><Icon name="arrow" className={`h-4 w-4 ${(mini ? locale !== "ar" : locale === "ar") ? "" : "rotate-180"}`} /></button>
+            <div className={`flex items-center ${mini ? "lg:flex-col" : ""}`}>
+              <ThemeToggle className="lg:hidden" />
+              <button onClick={toggleCollapsed} aria-label={mini ? "Expand" : "Collapse"} className="hidden h-9 w-9 place-items-center rounded-[10px] text-muted transition hover:bg-surface hover:text-ink lg:grid"><Icon name="layout" className={`h-4 w-4 ${(mini ? locale !== "ar" : locale === "ar") ? "" : "-scale-x-100"}`} /></button>
+            </div>
           </div>
-          {!whiteLabel && <div className={mini ? "lg:hidden" : ""}><PoweredBy label={t("brand.powered")} name={t("brand.name")} /></div>}
+          {!whiteLabel && <div className={`px-1 ${mini ? "lg:hidden" : ""}`}><PoweredBy label={t("brand.powered")} name={t("brand.name")} /></div>}
         </div>
       </aside>
       </div>
@@ -205,23 +229,40 @@ function Shell({ nav, children }: { nav: NavItem[]; children: React.ReactNode })
       <div className="flex min-w-0 flex-1 flex-col">
         {can("billing.manage") && <SubscriptionBar status={billing.data} />}
         {/* desktop top bar */}
-        <header className="glass sticky top-0 z-20 hidden items-center justify-between gap-4 border-b border-slate-200/60 px-8 py-3 print:hidden lg:flex">
-          <p className="text-sm text-slate-500">{hour < 12 ? t("dash.morning") : t("dash.hello")}, <b className="font-semibold text-ink">{me.firstName}</b></p>
-          <div className="flex items-center gap-1">{langLink}{bell("")}</div>
+        <header className="glass sticky top-0 z-20 hidden h-14 items-center justify-between gap-4 px-8 hairline-b print:hidden lg:flex">
+          <div className="flex min-w-0 items-center gap-2 text-[13px]">
+            <span className="text-faint">{hour < 12 ? t("dash.morning") : t("dash.hello")}, <span className="font-medium text-ink-2">{me.firstName}</span></span>
+            {current && <><Icon name="chevron" className="h-3.5 w-3.5 text-faint flip-rtl" /><span className="truncate font-semibold text-ink">{t(current.label)}</span></>}
+          </div>
+          <div className="flex items-center gap-1">{searchBtn("w-56 me-2")}{langLink}<ThemeToggle />{bell("")}</div>
         </header>
-        <motion.main key={path} initial={reduce ? false : { opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }} className="min-w-0 flex-1 overflow-x-clip p-4 pb-24 sm:p-6 lg:p-8 lg:pb-8 print:p-0"><SwRegister />{!online && <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 print:hidden">📡 {t("offline.dashboard")}</div>}{disabled && !canPay ? <div className="mx-auto max-w-md rounded-2xl border border-red-200 bg-red-50 p-6 text-center"><h1 className="text-lg font-bold text-red-800">{t("sub.disabledTitle")}</h1><p className="mt-2 text-sm text-red-700">{t("sub.ownerOnly")}</p></div> : blocked ? <div className="mx-auto max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-center"><h1 className="text-lg font-bold text-ink">{t("dash.noAccess")}</h1><p className="mt-2 text-sm text-slate-600">{t("dash.noAccessHint")}</p></div> : <NavTitleContext.Provider value={current ? t(current.label) : null}>{children}</NavTitleContext.Provider>}</motion.main>
+        <motion.main key={path} initial={reduce ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.28, ease: [0.2, 0.8, 0.2, 1] }} className="mx-auto w-full min-w-0 max-w-[90rem] flex-1 overflow-x-clip p-4 pb-24 sm:p-6 lg:px-10 lg:py-8 print:p-0">
+          <SwRegister />
+          {!online && <div className="mb-4 flex items-center gap-2 rounded-[12px] bg-amber-50 px-4 py-2.5 text-sm text-amber-900 ring-1 ring-inset ring-amber-600/20 print:hidden"><Icon name="alert" className="h-4 w-4" />{t("offline.dashboard")}</div>}
+          {disabled && !canPay
+            ? <div className="mx-auto mt-10 max-w-md rounded-[16px] bg-surface p-8 text-center shadow-card"><span className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-[14px] bg-red-50 text-red-600"><Icon name="alert" /></span><h1 className="font-display text-lg font-semibold text-ink">{t("sub.disabledTitle")}</h1><p className="mt-2 text-sm text-muted">{t("sub.ownerOnly")}</p></div>
+            : blocked
+              ? <div className="mx-auto mt-10 max-w-md rounded-[16px] bg-surface p-8 text-center shadow-card"><span className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-[14px] bg-slate-100 text-slate-600"><Icon name="shield" /></span><h1 className="font-display text-lg font-semibold text-ink">{t("dash.noAccess")}</h1><p className="mt-2 text-sm text-muted">{t("dash.noAccessHint")}</p></div>
+              : <NavTitleContext.Provider value={current ? t(current.label) : null}>{children}</NavTitleContext.Provider>}
+        </motion.main>
       </div>
 
       {/* phone quick bar */}
-      <nav className="glass fixed inset-x-0 bottom-0 z-30 flex justify-around border-t border-slate-200/70 px-1 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-1.5 print:hidden lg:hidden">
-        {quick.map((n) => (
-          <Link key={n.href} href={n.href} className={`flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-xl py-1 text-[11px] font-medium transition active:scale-95 ${isActive(n) ? "text-brand" : "text-slate-500"}`}>
-            <span className={`rounded-full px-4 py-1 transition-colors ${isActive(n) ? "bg-brand-soft-2" : ""}`}><NavIcon icon={n.icon} className="h-5 w-5" /></span>
-            <span className="max-w-full truncate">{t(n.label)}</span>
-          </Link>
-        ))}
-        <button onClick={() => setOpen(true)} className="flex min-w-0 flex-1 flex-col items-center gap-0.5 py-1 text-[11px] font-medium text-slate-500 active:scale-95">
-          <span className="px-4 py-1"><Icon name="menu" className="h-5 w-5" /></span>
+      <nav className="glass fixed inset-x-0 bottom-0 z-30 flex justify-around px-1 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-1 print:hidden lg:hidden" style={{ boxShadow: "inset 0 1px 0 var(--line)" }}>
+        {quick.map((n) => {
+          const on = isActive(n);
+          return (
+            <Link key={n.href} href={n.href} className={`relative flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-xl py-1 text-[10.5px] font-medium transition active:scale-95 ${on ? "text-ink" : "text-faint"}`}>
+              <span className="relative grid h-8 w-14 place-items-center">
+                {on && <motion.span layoutId="quick-active" transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 500, damping: 38 }} className="absolute inset-0 rounded-full bg-brand-soft-2" />}
+                <span className={`relative ${on ? "text-brand" : ""}`}><NavIcon icon={n.icon} className="h-5 w-5" /></span>
+              </span>
+              <span className="max-w-full truncate">{t(n.label)}</span>
+            </Link>
+          );
+        })}
+        <button onClick={() => setOpen(true)} className="flex min-w-0 flex-1 flex-col items-center gap-0.5 py-1 text-[10.5px] font-medium text-faint active:scale-95">
+          <span className="grid h-8 w-14 place-items-center"><Icon name="menu" className="h-5 w-5" /></span>
           <span>{t("common.more")}</span>
         </button>
       </nav>
