@@ -21,7 +21,7 @@ export function SendModePicker({ value, onChange, disabled, paidHint }: { value:
   const { t } = useI18n();
   const router = useRouter();
   const own = useOwnNumber();
-  const goSettings = () => router.push("/dashboard/settings#whatsapp-own");
+  const goSettings = () => router.push("/dashboard/settings?tab=whatsapp#whatsapp-own");
   const base = "flex-1 rounded-2xl border p-3 text-start transition disabled:opacity-60";
   return (
     <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label={t("sm.title")}>

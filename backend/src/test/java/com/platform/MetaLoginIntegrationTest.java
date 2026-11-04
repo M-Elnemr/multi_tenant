@@ -35,7 +35,7 @@ class MetaLoginIntegrationTest extends IntegrationTestBase {
         Tenant t = onboard("STORE");
         onHost(t.host(), t.access(), "GET", "/api/v1/store/ai/meta/available", null).andExpect(jsonPath("$.available").value(true));
         String location = callback("goodcode", state(t, t.access())).andExpect(status().isFound()).andReturn().getResponse().getHeader("Location");
-        assertThat(location).startsWith("https://" + t.host() + "/dashboard/ai?connect=");
+        assertThat(location).startsWith("https://" + t.host() + "/dashboard/ai?tab=channels&connect=");
         String id = location.substring(location.indexOf("connect=") + 8);
 
         String found = body(onHost(t.host(), t.access(), "GET", "/api/v1/store/ai/meta/pending/" + id, null).andExpect(status().isOk()));
@@ -58,8 +58,8 @@ class MetaLoginIntegrationTest extends IntegrationTestBase {
         callback("goodcode", good.substring(0, good.length() - 3) + "AAA").andExpect(status().isBadRequest());
         callback("goodcode", "garbage").andExpect(status().isBadRequest());
         // a failed exchange and a cancelled login send the owner back with an error flag instead of an exception page
-        assertThat(callback("badcode", state(a, a.access())).andExpect(status().isFound()).andReturn().getResponse().getHeader("Location")).endsWith("/dashboard/ai?metaError=failed");
-        assertThat(callback("", state(a, a.access())).andExpect(status().isFound()).andReturn().getResponse().getHeader("Location")).endsWith("/dashboard/ai?metaError=denied");
+        assertThat(callback("badcode", state(a, a.access())).andExpect(status().isFound()).andReturn().getResponse().getHeader("Location")).endsWith("/dashboard/ai?tab=channels&metaError=failed");
+        assertThat(callback("", state(a, a.access())).andExpect(status().isFound()).andReturn().getResponse().getHeader("Location")).endsWith("/dashboard/ai?tab=channels&metaError=denied");
 
         String location = callback("goodcode", good).andReturn().getResponse().getHeader("Location");
         String id = location.substring(location.indexOf("connect=") + 8);

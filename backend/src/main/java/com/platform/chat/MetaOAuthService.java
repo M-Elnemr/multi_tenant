@@ -83,21 +83,21 @@ public class MetaOAuthService {
         UUID tenantId = UUID.fromString(st[0]), userId = UUID.fromString(st[1]);
         String host = jdbc.sql("SELECT host FROM core.tenant_domains WHERE tenant_id = :t ORDER BY is_primary DESC, created_at LIMIT 1").param("t", tenantId).query(String.class).optional()
                 .orElseThrow(() -> BusinessException.notFound("TENANT_NOT_FOUND", "Shop not found"));
-        String back = "https://" + host + "/dashboard/ai";
-        if (code == null || code.isBlank()) return back + "?metaError=denied";
+        String back = "https://" + host + "/dashboard/ai?tab=channels";   // the menu item that holds the channel picker
+        if (code == null || code.isBlank()) return back + "&metaError=denied";
         try {
             String shortToken = String.valueOf(graph.get("oauth/access_token?client_id=" + enc(appId) + "&client_secret=" + enc(appSecret) + "&redirect_uri=" + enc(redirectUri()) + "&code=" + enc(code), null).get("access_token"));
             String userToken = String.valueOf(graph.get("oauth/access_token?grant_type=fb_exchange_token&client_id=" + enc(appId) + "&client_secret=" + enc(appSecret) + "&fb_exchange_token=" + enc(shortToken), null).get("access_token"));
             List<Item> items = discover(userToken);
-            if (items.isEmpty()) return back + "?metaError=nothing";
+            if (items.isEmpty()) return back + "&metaError=nothing";
             UUID id = jdbc.sql("INSERT INTO chat.oauth_pending (tenant_id, user_id, payload_enc) VALUES (:t, :u, :p) RETURNING id").param("t", tenantId).param("u", userId).param("p", crypto.encrypt(JSON.writeValueAsString(items))).query(UUID.class).single();
-            return back + "?connect=" + id;
+            return back + "&connect=" + id;
         } catch (MetaGraph.MetaException e) {
             log.warn("Facebook login exchange failed: {}", e.getMessage());
-            return back + "?metaError=failed";
+            return back + "&metaError=failed";
         } catch (Exception e) {
             log.warn("Facebook login failed", e);
-            return back + "?metaError=failed";
+            return back + "&metaError=failed";
         }
     }
 

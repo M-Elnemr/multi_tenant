@@ -55,7 +55,7 @@ export function AiChannels({ write, pendingId, metaError }: { write: boolean; pe
     <div className="max-w-2xl space-y-5">
       <Alert tone="amber">{t("ai.channelsTest")}</Alert>
       {metaError && <Alert tone="red">{t(`ai.metaError.${metaError}`)}</Alert>}
-      {write && pendingId && <Picker pendingId={pendingId} onDone={() => { router.replace("/dashboard/ai"); void reload(); }} />}
+      {write && pendingId && <Picker pendingId={pendingId} onDone={() => { router.replace("/dashboard/ai?tab=channels"); void reload(); }} />}
       {write && (
         <div className="space-y-2 rounded-xl border bg-white p-4">
           <Button onClick={() => void start.run()} loading={start.loading} disabled={!login.data?.available}>{t("ai.loginFacebook")}</Button>

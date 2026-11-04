@@ -5,7 +5,8 @@ import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
-import { Alert, Button, Empty, ErrorText, Loading, PageHeader, Tabs } from "@/components/ui";
+import { Alert, Button, Empty, ErrorText, Loading, PageHeader } from "@/components/ui";
+import { useNavTitle, useSection } from "@/components/dashboard/section";
 import { AccountsView, CustomersView } from "@/components/dashboard/channels/accounts";
 import { CountryFlag, ProviderMark, type Account } from "@/components/dashboard/channels/common";
 import { InsightsView } from "@/components/dashboard/channels/insights";
@@ -25,7 +26,8 @@ function Channels() {
   const canManage = me.canWrite("integrations");
   const { data, error, loading, reload } = useApi<Account[]>("store/integrations/accounts");
   const accounts = (data ?? []).filter((a) => a.kind === "MARKETPLACE" || a.kind === "STORE_PLATFORM");
-  const [tab, setTab] = useState<Tab>("insights");
+  const [tab, setTab] = useSection<Tab>(["insights", "orders", "products", "customers", "platforms"], "insights");
+  const title = useNavTitle(t("ch.title"));
   const [picked, setPicked] = useState<string | null>(null);
   const account = accounts.find((a) => a.id === picked) ?? null;
   const accountId = account?.id ?? null;
@@ -37,7 +39,7 @@ function Channels() {
   return (
     <>
       <PageHeader
-        title={t("ch.title")}
+        title={title}
         subtitle={t("ch.subtitle")}
         actions={canManage ? <Link href="/dashboard/channels/connect"><Button>＋ {t("ch.connect")}</Button></Link> : undefined}
       />
@@ -52,7 +54,7 @@ function Channels() {
         </Empty>
       ) : (
         <div className="space-y-5">
-          <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" role="tablist" aria-label={t("ch.platform")}>
+          <div className="flex flex-wrap gap-2" role="tablist" aria-label={t("ch.platform")}>
             <button role="tab" aria-selected={!account} onClick={() => setPicked(null)} className={`flex shrink-0 items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition ${!account ? "border-brand bg-brand-soft text-brand-dark" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"}`}>
               <span aria-hidden>▦</span>{t("ch.allPlatforms")}<span className="rounded-full bg-white/70 px-1.5 text-xs">{accounts.length}</span>
             </button>
@@ -65,10 +67,7 @@ function Channels() {
               </button>
             ))}
           </div>
-          <Tabs<Tab>
-            tabs={[{ key: "insights", label: t("ch.tab.insights") }, { key: "orders", label: t("ch.tab.orders"), count: newOrders || undefined }, { key: "products", label: t("ch.tab.products") }, { key: "customers", label: t("ch.tab.customers") }, { key: "platforms", label: t("ch.tab.platforms") }]}
-            value={tab} onChange={setTab}
-          />
+          {tab !== "orders" && newOrders > 0 && <button type="button" onClick={() => setTab("orders")} className="block w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-start text-sm font-semibold text-amber-900 hover:bg-amber-100">🛒 {t("nav.mpOrders")}: {newOrders} ›</button>}
           {tab === "insights" && <InsightsView accountId={accountId} onPick={(id) => setPicked(id)} onGo={(to, id) => { setPicked(id); setTab(to); }} />}
           {tab === "orders" && <OrdersView accountId={accountId} />}
           {tab === "products" && <ListingsView accountId={accountId} canImport={canManage} />}

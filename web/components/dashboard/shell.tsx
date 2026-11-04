@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState, useSyncExternalStore } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { useApi, useMe } from "../hooks";
 import { useI18n } from "../i18n-provider";
@@ -13,9 +13,19 @@ import { Avatar, Loading } from "../ui";
 import { SwRegister, useOnline } from "../sw";
 import { fileUrl } from "@/lib/media";
 import { SubscriptionBar, useBillingStatus } from "./subscription-bar";
+import { NavTitleContext } from "./section";
+import { matches as textMatches, words } from "@/lib/pos/search";
 
-/** `screen` is the access screen (hidden / read / write per employee) that opens the item; `perm` is for items outside that list (staff). `group` is an i18n key (navgrp.*) for the section heading the item sits under; consecutive items with the same group share one heading. */
-export type NavItem = { href: string; label: string; perm?: string | string[]; screen?: string | string[]; icon?: string; group?: string };
+/**
+ * `screen` is the access screen (hidden / read / write per employee) that opens the item; `perm` is for items outside that list (staff); `write` also needs write access to
+ * `screen`. `group` is an i18n key (navgrp.*) for the section heading the item sits under; consecutive items with the same group share one heading. An `href` may carry
+ * `?tab=` to open one part of a screen directly (the menu stays flat: no tabs inside screens). `advanced` items live in the folded «Advanced» section at the end, for the
+ * screens that need experience; `quick` items fill the phone's bottom bar.
+ */
+export type NavItem = { href: string; label: string; perm?: string | string[]; screen?: string | string[]; write?: boolean; icon?: string; group?: string; advanced?: boolean; quick?: boolean };
+
+const pathOf = (n: NavItem) => n.href.split("?")[0];
+const tabOf = (n: NavItem) => new URLSearchParams(n.href.split("?")[1] ?? "").get("tab");
 
 function NavIcon({ icon, className }: { icon?: string; className?: string }) {
   return hasIcon(icon) ? <Icon name={icon} className={className ?? "h-[19px] w-[19px]"} /> : <span aria-hidden>{icon ?? "•"}</span>;
@@ -29,23 +39,35 @@ function TenantMark({ className = "h-10 w-10" }: { className?: string }) {
 }
 
 const COLLAPSE_KEY = "dashSidebarMini";
+const ADVANCED_KEY = "dashNavAdvanced";
 const listeners = new Set<() => void>();
-const readCollapsed = () => { try { return localStorage.getItem(COLLAPSE_KEY) === "1"; } catch { return false; } };   // storage can be blocked: stay expanded
+const readFlag = (key: string) => { try { return localStorage.getItem(key) === "1"; } catch { return false; } };   // storage can be blocked: the default is used
+const setFlag = (key: string, on: boolean) => { try { localStorage.setItem(key, on ? "1" : "0"); } catch { /* ignore */ } listeners.forEach((l) => l()); };
+const readCollapsed = () => readFlag(COLLAPSE_KEY);
+const readAdvanced = () => readFlag(ADVANCED_KEY);
 const subscribe = (cb: () => void) => { listeners.add(cb); return () => { listeners.delete(cb); }; };
 
 /** Sidebar dashboard used by shop owners, doctors and staff. Items are hidden without the permission (the backend enforces it regardless). */
-export function DashboardShell({ nav, children }: { nav: NavItem[]; children: React.ReactNode }) {
+export function DashboardShell(props: { nav: NavItem[]; children: React.ReactNode }) {
+  // the menu reads `?tab=` to light the right item, which needs a suspense boundary in the app router
+  return <Suspense fallback={<div className="p-6"><Loading /></div>}><Shell {...props} /></Suspense>;
+}
+
+function Shell({ nav, children }: { nav: NavItem[]; children: React.ReactNode }) {
   const { t, siteName, locale, whiteLabel } = useI18n();
   const path = usePathname();
+  const tabNow = useSearchParams().get("tab");
   const router = useRouter();
-  const { me, ready, can, canSee } = useMe();
+  const { me, ready, can, canSee, canWrite } = useMe();
   const unread = useApi<{ count: number }>("notifications/unread-count");
   const billing = useBillingStatus(ready && !!me);
   const reduce = useReducedMotion();
   const [open, setOpen] = useState(false);
   const online = useOnline();
   const collapsed = useSyncExternalStore(subscribe, readCollapsed, () => false);
-  const toggleCollapsed = () => { try { localStorage.setItem(COLLAPSE_KEY, collapsed ? "0" : "1"); } catch { /* ignore */ } listeners.forEach((l) => l()); };
+  const toggleCollapsed = () => setFlag(COLLAPSE_KEY, !collapsed);
+  const advancedOpen = useSyncExternalStore(subscribe, readAdvanced, () => false);
+  const [query, setQuery] = useState("");
   useEffect(() => { if (ready && !me) router.replace(`/dashboard/login?next=${encodeURIComponent(path)}`); }, [ready, me, path, router]);
   useEffect(() => {
     if (!open) return;
@@ -63,13 +85,21 @@ export function DashboardShell({ nav, children }: { nav: NavItem[]; children: Re
   useEffect(() => { if (disabled && canPay && !onPay) router.replace("/dashboard/billing/pay"); }, [disabled, canPay, onPay, router]);
   if (!ready || !me || customerOnly) return <div className="p-6"><Loading /></div>;
 
-  const open_ = (n: NavItem) => (!n.screen || canSee(n.screen)) && (!n.perm || (Array.isArray(n.perm) ? n.perm.some(can) : can(n.perm)));
+  const open_ = (n: NavItem) => (!n.screen || canSee(n.screen)) && (!n.write || !n.screen || canWrite(n.screen)) && (!n.perm || (Array.isArray(n.perm) ? n.perm.some(can) : can(n.perm)));
   const allowed = nav.filter((n) => (!disabled || n.href.startsWith("/dashboard/billing")) && open_(n));
+  // The items for the screen that is open: the longest matching path (so /products/labels is not /products), then the one whose ?tab= is the open part.
+  const hitsIn = (list: NavItem[]) => {
+    const hits = list.filter((n) => { const p = pathOf(n); return p === "/dashboard" ? path === p : path === p || path.startsWith(p + "/"); });
+    const longest = Math.max(0, ...hits.map((n) => pathOf(n).length));
+    return hits.filter((n) => pathOf(n).length === longest);
+  };
+  const pick = (same: NavItem[]) => same.find((n) => tabOf(n) === tabNow) ?? same.find((n) => !tabOf(n)) ?? same[0];
   // Typing the address of a screen the owner hid shows "no access" (the backend refuses the data regardless).
-  const here = [...nav].sort((a, b) => b.href.length - a.href.length).find((n) => (n.href === "/dashboard" ? path === n.href : path === n.href || path.startsWith(n.href + "/")));
-  const blocked = !!here && !open_(here);
-  const isActive = (n: NavItem) => (n.href === "/dashboard" ? path === n.href : path.startsWith(n.href));
-  const current = allowed.find(isActive);
+  const sameAll = hitsIn(nav);
+  const exact = tabNow ? sameAll.find((n) => tabOf(n) === tabNow) : undefined;
+  const blocked = sameAll.length > 0 && (exact ? !open_(exact) : !sameAll.some(open_));
+  const current = pick(hitsIn(allowed));
+  const isActive = (n: NavItem) => n === current;
   const count = unread.data?.count ?? 0;
   const fullName = `${me.firstName} ${me.lastName}`.trim();
   const hour = new Date().getHours();
@@ -86,21 +116,45 @@ export function DashboardShell({ nav, children }: { nav: NavItem[]; children: Re
   const link = (n: NavItem) => {
     const active = isActive(n);
     return (
-      <Link key={n.href} href={n.href} onClick={() => setOpen(false)} title={mini ? t(n.label) : undefined} className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors duration-200 ${mini ? "lg:justify-center lg:px-0" : ""} ${active ? "text-white" : "text-slate-600 hover:bg-brand-soft hover:text-brand-dark"}`}>
+      <Link key={n.href} href={n.href} onClick={() => { setOpen(false); setQuery(""); }} title={mini ? t(n.label) : undefined} className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors duration-200 ${mini ? "lg:justify-center lg:px-0" : ""} ${active ? "text-white" : "text-slate-600 hover:bg-brand-soft hover:text-brand-dark"}`}>
         {active && (reduce ? <span className="absolute inset-0 rounded-xl bg-brand-gradient shadow-brand" /> : <motion.span layoutId="nav-active" transition={{ type: "spring", stiffness: 420, damping: 36 }} className="absolute inset-0 rounded-xl bg-brand-gradient shadow-brand" />)}
         <span className={`relative transition-transform duration-200 ${active ? "" : "group-hover:scale-110"}`}><NavIcon icon={n.icon} /></span>
         <span className={`relative truncate ${mini ? "lg:hidden" : ""}`}>{t(n.label)}</span>
       </Link>
     );
   };
-  const items: React.ReactNode[] = [];
-  let lastGroup: string | undefined;
-  allowed.forEach((n) => {
-    if (n.group && n.group !== lastGroup) items.push(mini ? <div key={`g-${n.group}-${n.href}`} className="mx-3 my-2 hidden border-t border-slate-200/70 lg:block" /> : null, <div key={`h-${n.group}-${n.href}`} className={`nav-section ${mini ? "lg:hidden" : ""}`}>{t(n.group)}</div>);
-    lastGroup = n.group;
-    items.push(link(n));
-  });
-  const quick = allowed.slice(0, 4);
+  const ws = words(query);
+  const found = (n: NavItem) => ws.length === 0 || textMatches(ws, t(n.label), n.group ? t(n.group) : null);
+  const list = (rows: NavItem[], sub: boolean) => {
+    const out: React.ReactNode[] = [];
+    let lastGroup: string | undefined;
+    rows.forEach((n) => {
+      if (n.group && n.group !== lastGroup) out.push(mini ? <div key={`g-${n.group}-${n.href}`} className="mx-3 my-2 hidden border-t border-slate-200/70 lg:block" /> : null, <div key={`h-${n.group}-${n.href}`} className={`${sub ? "nav-subsection" : "nav-section"} ${mini ? "lg:hidden" : ""}`}>{t(n.group)}</div>);
+      lastGroup = n.group;
+      out.push(link(n));
+    });
+    return out;
+  };
+  const main = allowed.filter((n) => !n.advanced && found(n));
+  const expert = allowed.filter((n) => n.advanced && found(n));
+  // the expert screens stay folded until asked for, the open screen is one of them, or a search found some
+  const showExpert = advancedOpen || !!current?.advanced || ws.length > 0;
+  const searchable = allowed.length > 12;
+  const items: React.ReactNode[] = [...list(main, false)];
+  if (expert.length > 0) {
+    items.push(
+      <button key="advanced" type="button" onClick={() => setFlag(ADVANCED_KEY, !advancedOpen)} aria-expanded={showExpert} title={mini ? t("navgrp.advanced") : undefined}
+        className={`mt-3 flex w-full items-center gap-3 rounded-xl border border-dashed border-slate-300 px-3 py-2.5 text-start text-sm font-semibold text-slate-600 transition hover:border-brand/40 hover:bg-brand-soft hover:text-brand-dark ${mini ? "lg:justify-center lg:px-0" : ""}`}>
+        <NavIcon icon="settings" />
+        <span className={`min-w-0 flex-1 ${mini ? "lg:hidden" : ""}`}><span className="block truncate">{t("navgrp.advanced")}</span><span className="block truncate text-[11px] font-normal text-slate-500">{t("nav.advancedHint")}</span></span>
+        <Icon name="arrow" className={`h-4 w-4 shrink-0 transition-transform ${mini ? "lg:hidden" : ""} ${showExpert ? "-rotate-90" : "rotate-90"}`} />
+      </button>,
+    );
+    if (showExpert) items.push(<div key="advanced-list" className="mt-1 space-y-0.5 border-s-2 border-slate-200/80 ps-1">{list(expert, true)}</div>);
+  }
+  if (ws.length > 0 && main.length === 0 && expert.length === 0) items.push(<p key="none" className="px-3 py-4 text-sm text-slate-500">{t("nav.noMatch")}</p>);
+  const quickOnes = allowed.filter((n) => n.quick);
+  const quick = (quickOnes.length > 0 ? quickOnes : allowed).slice(0, 4);
 
   return (
     <div className="min-h-dvh lg:flex print:block">
@@ -123,7 +177,14 @@ export function DashboardShell({ nav, children }: { nav: NavItem[]; children: Re
           </Link>
           <button onClick={() => setOpen(false)} aria-label="Close" className="rounded-xl p-2 text-slate-500 hover:bg-slate-100 lg:hidden"><Icon name="close" /></button>
         </div>
-        <nav className="-mx-1 flex-1 space-y-0.5 overflow-y-auto px-1">{items}</nav>
+        {searchable && (
+          <div className={`relative mb-2 ${mini ? "lg:hidden" : ""}`}>
+            <Icon name="search" className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); }} placeholder={t("nav.search")} aria-label={t("nav.search")}
+              className="w-full rounded-xl border border-slate-200 bg-white/80 py-2 pe-3 ps-9 text-sm outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20" />
+          </div>
+        )}
+        <nav className="-mx-1 flex-1 space-y-0.5 overflow-y-auto px-1 pb-2">{items}</nav>
         <div className="mt-3 space-y-3 border-t border-slate-200/70 pt-3">
           <div className={`flex items-center gap-3 ${mini ? "lg:justify-center" : ""}`}>
             <Avatar name={fullName} />
@@ -148,7 +209,7 @@ export function DashboardShell({ nav, children }: { nav: NavItem[]; children: Re
           <p className="text-sm text-slate-500">{hour < 12 ? t("dash.morning") : t("dash.hello")}, <b className="font-semibold text-ink">{me.firstName}</b></p>
           <div className="flex items-center gap-1">{langLink}{bell("")}</div>
         </header>
-        <motion.main key={path} initial={reduce ? false : { opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }} className="min-w-0 flex-1 overflow-x-clip p-4 pb-24 sm:p-6 lg:p-8 lg:pb-8 print:p-0"><SwRegister />{!online && <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 print:hidden">📡 {t("offline.dashboard")}</div>}{disabled && !canPay ? <div className="mx-auto max-w-md rounded-2xl border border-red-200 bg-red-50 p-6 text-center"><h1 className="text-lg font-bold text-red-800">{t("sub.disabledTitle")}</h1><p className="mt-2 text-sm text-red-700">{t("sub.ownerOnly")}</p></div> : blocked ? <div className="mx-auto max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-center"><h1 className="text-lg font-bold text-ink">{t("dash.noAccess")}</h1><p className="mt-2 text-sm text-slate-600">{t("dash.noAccessHint")}</p></div> : children}</motion.main>
+        <motion.main key={path} initial={reduce ? false : { opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }} className="min-w-0 flex-1 overflow-x-clip p-4 pb-24 sm:p-6 lg:p-8 lg:pb-8 print:p-0"><SwRegister />{!online && <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 print:hidden">📡 {t("offline.dashboard")}</div>}{disabled && !canPay ? <div className="mx-auto max-w-md rounded-2xl border border-red-200 bg-red-50 p-6 text-center"><h1 className="text-lg font-bold text-red-800">{t("sub.disabledTitle")}</h1><p className="mt-2 text-sm text-red-700">{t("sub.ownerOnly")}</p></div> : blocked ? <div className="mx-auto max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-center"><h1 className="text-lg font-bold text-ink">{t("dash.noAccess")}</h1><p className="mt-2 text-sm text-slate-600">{t("dash.noAccessHint")}</p></div> : <NavTitleContext.Provider value={current ? t(current.label) : null}>{children}</NavTitleContext.Provider>}</motion.main>
       </div>
 
       {/* phone quick bar */}

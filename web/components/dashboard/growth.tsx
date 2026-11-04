@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useSection } from "./section";
 import { api } from "@/lib/client";
 import { dateOnly, money } from "@/lib/format";
 import { useAction, useApi } from "../hooks";
 import { useI18n } from "../i18n-provider";
 import MessageComposer from "./message-composer";
 import { useOwnNumber } from "./send-mode";
-import { Alert, Badge, Button, Card, ErrorText, Field, Input, Loading, Select, Tabs, Textarea } from "../ui";
+import { Alert, Badge, Button, Card, ErrorText, Field, Input, Loading, Select, Textarea } from "../ui";
 
 // ---- loyalty -----------------------------------------------------------------------------------------------------------------
 
@@ -78,7 +79,7 @@ export function SegmentsTab() {
     setDone(t("gr.sentResult2", { queued: r.queued, push: r.pushSent, cost: money(r.costMinor, currency, locale) }));
     setMsg(""); setImage(null); setVersions([]); await Promise.all([hist.reload(), seg.reload()]);
   });
-  const chooseWay = (w: Way) => { if (w === "FREE" && !own.linked) { router.push("/dashboard/settings#whatsapp-own"); return; } setWay(w); };
+  const chooseWay = (w: Way) => { if (w === "FREE" && !own.linked) { router.push("/dashboard/settings?tab=whatsapp#whatsapp-own"); return; } setWay(w); };
   const suggest = useAction(async () => { const r = await api<{ variants: string[] }>("store/broadcasts/variants", { body: { message: msg, count: 3 } }); setVersions((cur) => [...cur, ...r.variants].slice(0, 5)); });
   const resume = useAction(async (id: string) => { await api(`store/broadcasts/${id}/resume`, { body: {} }); await hist.reload(); });
   const cancel = useAction(async (id: string) => { await api(`store/broadcasts/${id}/cancel`, { body: {} }); await hist.reload(); });
@@ -267,7 +268,7 @@ export function BuilderTab() {
     <div className="space-y-5">
       <Card className="space-y-3">
         <div><h2 className="font-medium">{t("gr.social")}</h2><p className="mt-1 text-sm text-slate-500">{t("gr.socialHint")}</p></div>
-        {sources.data && sources.data.length === 0 && <Alert tone="blue">{t("gr.socialNone")} <a href="/dashboard/channels" className="font-semibold underline">{t("gr.socialConnect")}</a></Alert>}
+        {sources.data && sources.data.length === 0 && <Alert tone="blue">{t("gr.socialNone")} <a href="/dashboard/channels?tab=platforms" className="font-semibold underline">{t("gr.socialConnect")}</a></Alert>}
         {sources.data && sources.data.length > 0 && (
           <>
             {sources.data.length > 1 && (
@@ -306,11 +307,9 @@ export function BuilderTab() {
 }
 
 export default function GrowthView() {
-  const { t } = useI18n();
-  const [tab, setTab] = useState<"loyalty" | "segments" | "feeds" | "exp" | "builder">("segments");
+  const [tab] = useSection(["segments", "loyalty", "feeds", "exp", "builder"] as const, "segments");
   return (
     <div className="space-y-5">
-      <Tabs tabs={[{ key: "segments", label: t("gr.tab.segments") }, { key: "loyalty", label: t("gr.tab.loyalty") }, { key: "feeds", label: t("gr.tab.feeds") }, { key: "exp", label: t("gr.tab.exp") }, { key: "builder", label: t("gr.tab.builder") }]} value={tab} onChange={setTab} />
       {tab === "segments" ? <SegmentsTab /> : tab === "loyalty" ? <LoyaltyTab /> : tab === "feeds" ? <FeedsTab /> : tab === "exp" ? <ExperimentsTab /> : <BuilderTab />}
     </div>
   );

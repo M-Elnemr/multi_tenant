@@ -8,6 +8,7 @@ import { Chips, SearchBox } from "@/components/dashboard/filters";
 import { DateRangePicker, rangeQuery, type DateRange } from "@/components/date-range";
 import { Badge, Button, ErrorText, Field, Input, Loading, Modal, PageHeader, Pager, Select, Table, Tabs, Td } from "@/components/ui";
 import { dateTime } from "@/lib/format";
+import { useNavTitle, useSection } from "@/components/dashboard/section";
 import { useFieldErrors } from "@/lib/use-field-errors";
 
 type Row = { branchId: string; branchName: string; variantId: string; sku: string; productId: string; productName: string; comboKey: string; quantityOnHand: number; quantityReserved: number; available: number; lowStockThreshold: number };
@@ -18,7 +19,7 @@ const label = (combo: string) => combo.replace(/\|/g, " / ").replace(/[^/|]*=/g,
 
 export default function Inventory() {
   const { t, locale } = useI18n();
-  const [tab, setTab] = useState<"stock" | "moves">("stock");
+  const [tab] = useSection(["stock", "moves"] as const, "stock");
   const [low, setLow] = useState(false);
   const [q, setQ] = useState("");
   const [branch, setBranch] = useState("");
@@ -42,8 +43,7 @@ export default function Inventory() {
 
   return (
     <>
-      <PageHeader title={t("nav.inventory")} subtitle={t("inv.subtitle")} />
-      <div className="mb-4"><Tabs value={tab} onChange={setTab} tabs={[{ key: "stock", label: t("inv.tabStock") }, { key: "moves", label: t("inv.tabMoves") }]} /></div>
+      <PageHeader title={useNavTitle(t("nav.inventory"))} subtitle={t("inv.subtitle")} />
       {tab === "moves" ? <Movements locale={locale} /> : (
         <>
           <div className="mb-3 flex flex-wrap items-center gap-2 rounded-2xl bg-white p-3 shadow-card">

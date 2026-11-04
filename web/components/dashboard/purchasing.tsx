@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { useSection } from "./section";
 import { api } from "@/lib/client";
 import { dateOnly, money, toMinor } from "@/lib/format";
 import { useAction, useApi } from "../hooks";
 import { useI18n } from "../i18n-provider";
-import { Alert, Badge, Button, Card, Empty, ErrorText, Field, Input, Loading, Select, Tabs } from "../ui";
+import { Alert, Badge, Button, Card, Empty, ErrorText, Field, Input, Loading, Select } from "../ui";
 
 type Po = { id: string; number: string; status: string; totalMinor: number; supplierName?: string | null; itemCount: number; createdAt: string };
 type PoItem = { id: string; productName: string; sku: string; comboKey?: string; quantity: number; unitCostMinor: number };
@@ -107,11 +108,9 @@ function Transfers() {
 }
 
 export default function Purchasing() {
-  const { t } = useI18n();
-  const [tab, setTab] = useState<"orders" | "suppliers" | "transfers">("orders");
+  const [tab] = useSection(["orders", "suppliers", "transfers"] as const, "orders");
   return (
     <div className="space-y-5">
-      <Tabs tabs={[{ key: "orders", label: t("po.tab.orders") }, { key: "suppliers", label: t("po.tab.suppliers") }, { key: "transfers", label: t("po.tab.transfers") }]} value={tab} onChange={setTab} />
       {tab === "orders" ? <Orders /> : tab === "suppliers" ? <Suppliers /> : <Transfers />}
     </div>
   );

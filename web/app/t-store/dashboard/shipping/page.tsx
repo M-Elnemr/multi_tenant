@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { useNavTitle, useSection } from "@/components/dashboard/section";
 import { api } from "@/lib/client";
 import { Page, useAction, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
-import { Alert, Badge, Button, Card, Empty, ErrorText, Input, Loading, Modal, PageHeader, Pager, Table, Tabs, Td } from "@/components/ui";
+import { Alert, Badge, Button, Card, Empty, ErrorText, Input, Loading, Modal, PageHeader, Pager, Table, Td } from "@/components/ui";
 import { dateTime, money } from "@/lib/format";
 import { AccountStatus, CountryChips, CountryFlag, ProviderMark, type Account, type CatalogItem, type Country } from "@/components/dashboard/channels/common";
 import { ConnectForm } from "@/components/dashboard/channels/connect-form";
@@ -33,7 +34,7 @@ function Shipments({ canManage }: { canManage: boolean }) {
               <tr key={s.id}>
                 <Td>{s.trackingUrl ? <a href={s.trackingUrl} target="_blank" rel="noreferrer" dir="ltr" className="font-mono text-brand hover:underline">{s.trackingNumber}</a> : <span dir="ltr" className="font-mono">{s.trackingNumber}</span>}<div className="text-xs text-slate-400">{dateTime(s.createdAt, locale)}</div></Td>
                 <Td><span className="flex items-center gap-2"><ProviderMark provider={s.provider} name={s.carrier} className="h-7 w-7 text-[10px]" />{s.carrier} <CountryFlag code={s.country} /></span></Td>
-                <Td>{s.orderId ? <Link href={`/dashboard/orders/${s.orderId}`} className="font-mono text-brand">{s.orderNumber}</Link> : s.channelOrderNumber ? <Link href="/dashboard/channels" className="font-mono text-brand">#{s.channelOrderNumber}</Link> : "—"}</Td>
+                <Td>{s.orderId ? <Link href={`/dashboard/orders/${s.orderId}`} className="font-mono text-brand">{s.orderNumber}</Link> : s.channelOrderNumber ? <Link href="/dashboard/channels?tab=orders" className="font-mono text-brand">#{s.channelOrderNumber}</Link> : "—"}</Td>
                 <Td><Badge tone={TONE[s.status] ?? "blue"}>{t(`ship.status.${s.status}`)}</Badge></Td>
                 <Td className="max-w-[220px] text-xs text-slate-600">{s.lastEvent || "—"}{s.lastEventAt && <div className="text-slate-400">{dateTime(s.lastEventAt, locale)}</div>}</Td>
                 <Td>{s.codMinor > 0 ? money(s.codMinor, currency, locale) : "—"}</Td>
@@ -102,12 +103,12 @@ export default function ShippingPage() {
   const { t } = useI18n();
   const me = useMe();
   const canManage = me.canWrite("shipping");
-  const [tab, setTab] = useState<"shipments" | "carriers">("shipments");
+  const [tab] = useSection(["shipments", "carriers"] as const, "shipments");
+  const title = useNavTitle(t("ship.title"));
   return (
     <>
-      <PageHeader title={t("ship.title")} subtitle={t("ship.subtitle")} />
+      <PageHeader title={title} subtitle={t("ship.subtitle")} />
       <div className="space-y-5">
-        <Tabs tabs={[{ key: "shipments", label: t("ship.shipments") }, { key: "carriers", label: t("ship.carriers") }]} value={tab} onChange={setTab} />
         {tab === "shipments" ? <Shipments canManage={canManage} /> : <Carriers canManage={canManage} />}
       </div>
     </>

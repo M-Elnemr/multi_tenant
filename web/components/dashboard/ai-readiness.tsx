@@ -11,8 +11,8 @@ type Readiness = { score: number; checks: Check[]; products: number };
 
 const WHERE: Record<string, string> = {
   products: "/dashboard/products", prices: "/dashboard/products", photos: "/dashboard/products", descriptions: "/dashboard/products", details: "/dashboard/products",
-  categories: "/dashboard/products", delivery: "/dashboard/shipping", returns: "/dashboard/settings", hours: "/dashboard/settings", shippingText: "/dashboard/settings",
-  address: "/dashboard/settings", lessons: "/dashboard/ai",
+  categories: "/dashboard/products", delivery: "/dashboard/settings?tab=sales#shipping", returns: "/dashboard/settings?tab=profile", hours: "/dashboard/settings?tab=profile#contact", shippingText: "/dashboard/settings?tab=profile",
+  address: "/dashboard/settings?tab=profile#contact", lessons: "/dashboard/ai?tab=lessons",
 };
 
 /** How ready the shop's data is for the assistant: it only says what the shop wrote, so the gaps that cost the most come first, each with where to fix it. */
@@ -39,7 +39,7 @@ export function AiReadiness() {
           {(open ? missing : missing.slice(0, 3)).map((c) => (
             <li key={c.key} className="flex items-start justify-between gap-3 text-sm">
               <span className="text-slate-700">• {t(`ready.${c.key}`)}{c.count ? ` (${c.count})` : ""}</span>
-              <Link href={WHERE[c.key] ?? "/dashboard/settings"} className="shrink-0 text-xs font-semibold text-brand underline">{t("ready.fix")}</Link>
+              <Link href={WHERE[c.key] ?? "/dashboard/settings?tab=profile"} className="shrink-0 text-xs font-semibold text-brand underline">{t("ready.fix")}</Link>
             </li>
           ))}
         </ul>

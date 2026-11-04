@@ -2,6 +2,7 @@
 
 import { shipName } from "@/lib/ship-name";
 import { useEffect, useState } from "react";
+import { useNavTitle, useSection } from "@/components/dashboard/section";
 import { api } from "@/lib/client";
 import { toMinor, money } from "@/lib/format";
 import BrandingCard from "@/components/dashboard/branding";
@@ -17,7 +18,7 @@ import { BranchesCard, ContactCard, MarketingCard, SetupChecklist, type StorePro
 import { CategoryPicker, categoriesValid, type CategoryOption } from "@/components/category-picker";
 import { useAction, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
-import { Alert, Button, Card, ErrorText, Field, Input, PageHeader, Select, Table, Tabs, Td, Textarea } from "@/components/ui";
+import { Alert, Button, Card, ErrorText, Field, Input, PageHeader, Select, Table, Td, Textarea } from "@/components/ui";
 
 type Profile = StoreProfile & { categories?: { code: string }[]; otherCategory?: string | null; shippingPolicy?: string; returnPolicy?: string; privacyPolicy?: string; termsText?: string };
 type Pm = { method: string; enabled: boolean };
@@ -39,12 +40,17 @@ export default function StoreSettings() {
   const [edited, setP] = useState<Profile | null>(null);
   const p = edited ?? profile.data;
   const [saved, setSaved] = useState(false);
-  const [tab, setTab] = useState<Tab>("profile");
+  // each part is its own side-menu item (flat menu); an old link with only #card opens the part that holds that card
+  const tabs: Tab[] = ["profile", "look", "sales", "marketing", ...(can("ai.read") || can("ai.manage") ? ["whatsapp" as Tab] : []), ...(can("branch.manage") ? ["branches" as Tab] : [])];
+  const [tab, setTab] = useSection<Tab>(tabs, "profile");
+  const title = useNavTitle(t("nav.settings"));
   useEffect(() => {
     const id = window.location.hash.slice(1);
     if (!ANCHOR_TAB[id]) return;
-    setTimeout(() => { setTab(ANCHOR_TAB[id]); setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" }), 150); }, 0);
-  }, []);
+    if (!new URLSearchParams(window.location.search).get("tab") && ANCHOR_TAB[id] !== "profile") { setTab(ANCHOR_TAB[id], id); return; }
+    const h = setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" }), 250);
+    return () => clearTimeout(h);
+  }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
   const show = (k: Tab) => tab === k;
   const saveProfile = useAction(async () => { await api("store/profile", { method: "PATCH", body: { storeName: p?.storeName, shortDescription: p?.shortDescription, about: p?.about, shippingPolicy: p?.shippingPolicy, returnPolicy: p?.returnPolicy, privacyPolicy: p?.privacyPolicy, termsText: p?.termsText, minOrderMinor: p?.minOrderMinor, taxId: p?.taxId, vatIncluded: p?.vatIncluded, vatPercent: p?.vatPercent, returnWindowDays: p?.returnWindowDays } }); setSaved(true); });
   const catList = useApi<CategoryOption[]>(readSettings ? "store/business-categories" : null);
@@ -63,11 +69,10 @@ export default function StoreSettings() {
 
   return (
     <>
-      <PageHeader title={t("nav.settings")} actions={can("settings.manage") ? <a href="/?edit=1" className="inline-flex items-center gap-2 rounded-xl bg-brand-gradient px-4 py-2 text-sm font-semibold text-white shadow-brand transition hover:brightness-110 active:scale-95">✨ {t("site.customize")}</a> : undefined} />
+      <PageHeader title={title} actions={can("settings.manage") ? <a href="/?edit=1" className="inline-flex items-center gap-2 rounded-xl bg-brand-gradient px-4 py-2 text-sm font-semibold text-white shadow-brand transition hover:brightness-110 active:scale-95">✨ {t("site.customize")}</a> : undefined} />
       <fieldset disabled={!canWrite("settings")} className="m-0 min-w-0 border-0 p-0">
       <div className="space-y-6">
-        {profile.data && <SetupChecklist profile={profile.data} hasLogo={!!brand.data?.logoFileId} />}
-        <Tabs<Tab> tabs={[{ key: "profile", label: t("settings.tab.profile") }, { key: "look", label: t("settings.tab.look") }, { key: "sales", label: t("settings.tab.sales") }, { key: "marketing", label: t("settings.tab.marketing") }, ...(can("ai.read") || can("ai.manage") ? [{ key: "whatsapp" as Tab, label: t("settings.tab.whatsapp") }] : []), ...(can("branch.manage") ? [{ key: "branches" as Tab, label: t("settings.tab.branches") }] : [])]} value={tab} onChange={setTab} />
+        {show("profile") && profile.data && <SetupChecklist profile={profile.data} hasLogo={!!brand.data?.logoFileId} />}
         {show("profile") && profile.data && <section id="contact"><ContactCard key={JSON.stringify(profile.data.workingHours) + profile.data.coverFileId} profile={profile.data} reload={profile.reload} /></section>}
         {show("profile") && p && (
           <Card className="space-y-4">

@@ -93,6 +93,7 @@ img { -webkit-user-drag: none; }
 .hero-card > * { position: relative; }
 .sidebar-bg { background: linear-gradient(180deg, #fff, color-mix(in srgb, var(--brand) 3%, white)); }
 .nav-section { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #8696a8; padding: 0.9rem 0.75rem 0.35rem; }
+.nav-subsection { font-size: 0.66rem; font-weight: 700; color: #94a3b8; padding: 0.7rem 0.75rem 0.2rem; }
 .dot-grid { background-image: radial-gradient(color-mix(in srgb, var(--brand) 18%, transparent) 1px, transparent 1px); background-size: 18px 18px; }
 .hover-lift { transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s ease, border-color 0.25s ease; }
 .hover-lift:hover { transform: translateY(-3px); box-shadow: var(--shadow-lift); }

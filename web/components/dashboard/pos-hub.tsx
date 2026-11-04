@@ -7,6 +7,7 @@ import { money } from "@/lib/format";
 import { useAction, useApi, useMe } from "../hooks";
 import { useI18n } from "../i18n-provider";
 import { Alert, Badge, Button, Card, Empty, ErrorText, Field, Input, Loading, Modal, Select, Stat } from "../ui";
+import { useSection } from "./section";
 
 type Device = { id: string; name: string; code: string; branchName: string; receiptSize: string | null; lastSeenAt: string | null; revokedAt: string | null; openIssues: number };
 type Member = { userId: string; name: string; hasPin: boolean; canRefund: boolean; canCash: boolean; canManage: boolean };
@@ -28,7 +29,6 @@ export default function PosHub() {
   const { t, locale, currency } = useI18n();
   const { can } = useMe();
   const manage = can("pos.manage");
-  const [tab, setTab] = useState<Tab>("today");
   const issues = useApi<Issue[]>(manage ? "store/pos/issues" : null);
   const devices = useApi<Device[]>(manage ? "store/pos/devices" : null);
   const m: M = (v, cur = currency) => money(v ?? 0, cur, locale);
@@ -39,25 +39,20 @@ export default function PosHub() {
     ...(can("inventory.adjust") || manage ? [{ key: "counts" as Tab, label: t("ph.counts") }] : []),
     ...(manage ? [{ key: "settings" as Tab, label: t("ph.settings") }] : []),
   ];
+  // each part has its own item in the side menu (flat menu), so the hub shows one part at a time with no tab bar
+  const [tab] = useSection<Tab>(tabs.map((x) => x.key), "today");
   const noTerminals = manage && devices.data && devices.data.filter((x) => !x.revokedAt).length === 0;
   return (
     <div className="min-w-0 space-y-5">
-      <Card className="flex flex-wrap items-center justify-between gap-3">
+      {tab === "today" && <Card className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0"><h2 className="text-lg font-bold">{t("ph.openTitle")}</h2><p className="text-sm text-slate-600">{t("ph.openHint")}</p></div>
         <div className="flex flex-wrap gap-2">
           <Link href="/pos" className="inline-flex items-center rounded-xl bg-brand-gradient px-5 py-2.5 text-sm font-bold text-white shadow-brand">{t("ph.openTerminal")} ↗</Link>
           <Link href="/dashboard/products/labels" className="inline-flex items-center rounded-xl border bg-white px-4 py-2 text-sm font-semibold hover:bg-slate-50">{t("pos.labels")}</Link>
         </div>
-      </Card>
-      {noTerminals && <GetStarted />}
-      <div role="tablist" className="flex flex-wrap gap-1.5">
-        {tabs.map((x) => (
-          <button key={x.key} role="tab" aria-selected={tab === x.key} type="button" onClick={() => setTab(x.key)}
-            className={`rounded-xl px-3.5 py-2 text-sm font-semibold transition ${tab === x.key ? "bg-brand text-white shadow-brand" : "bg-white text-slate-700 ring-1 ring-slate-200 hover:ring-brand/40"}`}>
-            {x.label}{x.count ? <span className={`ms-1.5 rounded-full px-1.5 text-xs ${tab === x.key ? "bg-white/25" : "bg-amber-100 text-amber-800"}`}>{x.count}</span> : null}
-          </button>
-        ))}
-      </div>
+      </Card>}
+      {noTerminals && (tab === "today" || tab === "terminals") && <GetStarted />}
+      {tab !== "issues" && !!issues.data?.length && <Link href="/dashboard/pos?tab=issues" className="block rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-900 hover:bg-amber-100">⚠️ {t("ph.issues")}: {issues.data.length} ›</Link>}
       {tab === "today" && <Today m={m} />}
       {tab === "shifts" && <Shifts m={m} />}
       {tab === "terminals" && <Terminals list={devices} />}

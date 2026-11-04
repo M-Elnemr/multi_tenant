@@ -151,14 +151,14 @@ export function SetupChecklist({ profile, hasLogo }: { profile: StoreProfile; ha
   const prods = useApi<{ meta?: { total: number } }>("store/products?pageSize=1");
   const ships = useApi<unknown[]>(can("shipping.manage") ? "store/shipping-methods" : null);
   const steps: Step[] = [
-    { key: "logo", done: hasLogo, href: "/dashboard/settings#branding" },
-    { key: "phone", done: !!profile.supportPhone, href: "/dashboard/settings#contact" },
-    { key: "whatsapp", done: !!profile.whatsapp, href: "/dashboard/settings#contact" },
-    { key: "address", done: !!profile.addressText, href: "/dashboard/settings#contact" },
-    { key: "hours", done: !!profile.workingHours && Object.keys(profile.workingHours).length > 0, href: "/dashboard/settings#contact" },
-    { key: "branch", done: (branches.data?.length ?? 0) > 0, href: "/dashboard/settings#branches" },
+    { key: "logo", done: hasLogo, href: "/dashboard/settings?tab=look#branding" },
+    { key: "phone", done: !!profile.supportPhone, href: "/dashboard/settings?tab=profile#contact" },
+    { key: "whatsapp", done: !!profile.whatsapp, href: "/dashboard/settings?tab=profile#contact" },
+    { key: "address", done: !!profile.addressText, href: "/dashboard/settings?tab=profile#contact" },
+    { key: "hours", done: !!profile.workingHours && Object.keys(profile.workingHours).length > 0, href: "/dashboard/settings?tab=profile#contact" },
+    { key: "branch", done: (branches.data?.length ?? 0) > 0, href: "/dashboard/settings?tab=branches#branches" },
     { key: "product", done: (prods.data?.meta?.total ?? 0) > 0, href: "/dashboard/products/new" },
-    { key: "shipping", done: (ships.data?.length ?? 0) > 0, href: "/dashboard/settings#shipping" },
+    { key: "shipping", done: (ships.data?.length ?? 0) > 0, href: "/dashboard/settings?tab=sales#shipping" },
   ];
   const done = steps.filter((s) => s.done).length;
   if (done === steps.length) return null;

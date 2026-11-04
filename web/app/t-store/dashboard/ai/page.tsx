@@ -12,6 +12,7 @@ import { AiReadiness } from "@/components/dashboard/ai-readiness";
 import { useAction, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Alert, Button, ErrorText, Field, Input, PageHeader, Select } from "@/components/ui";
+import { useNavTitle, useSection } from "@/components/dashboard/section";
 
 type Settings = { enabled: boolean; tone: string; maxDiscountPct: number; greeting: string | null };
 type Tab = "test" | "lessons" | "channels" | "whatsapp" | "settings";
@@ -27,7 +28,9 @@ function AiAssistant() {
   const metaError = params.get("metaError");
   const me = useMe();
   const write = me.canWrite("ai");
-  const [tab, setTab] = useState<Tab>(pendingId || metaError ? "channels" : write ? "test" : "lessons");
+  // each part is its own side-menu item; a Facebook/WhatsApp connect coming back lands on the channels part
+  const [tab] = useSection<Tab>(write ? ["test", "lessons", "channels", "whatsapp", "settings"] : ["lessons", "channels", "whatsapp", "settings"], pendingId || metaError ? "channels" : write ? "test" : "lessons");
+  const title = useNavTitle(t("ai.title"));
   const [teach, setTeach] = useState<{ question: string; answer: string; n: number } | null>(null);
 
   const send = useCallback((message: string) => api<{ conversationId: string; reply: string }>("store/ai/test", { body: { message } }), []);
@@ -36,13 +39,8 @@ function AiAssistant() {
 
   return (
     <>
-      <PageHeader title={t("ai.title")} subtitle={t("ai.subtitle")} />
-      <AiReadiness />
-      <div className="mb-4 flex gap-1 overflow-x-auto border-b [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {([["test", "ai.tabTest"], ["lessons", "ai.tabLessons"], ["channels", "ai.tabChannels"], ["whatsapp", "wa.tab"], ["settings", "ai.tabSettings"]] as const).filter(([k]) => k !== "test" || write).map(([k, label]) => (
-          <button key={k} type="button" onClick={() => setTab(k)} className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-4 py-2 text-sm font-semibold ${tab === k ? "border-brand text-brand" : "border-transparent text-slate-500"}`}>{t(label)}</button>
-        ))}
-      </div>
+      <PageHeader title={title} subtitle={t("ai.subtitle")} />
+      {(tab === "test" || tab === "lessons") && <AiReadiness />}
       {tab === "test" && (
         <div className="grid gap-4 lg:grid-cols-2">
           <div>

@@ -25,7 +25,7 @@ export function ShipModal({ orderId, channelOrderId, country, codMinor, currency
   return (
     <Modal open onClose={onClose} title={t("ship.shipWith")}>
       {carriers.loading && !carriers.data ? <Loading /> : ordered.length === 0 ? (
-        <div className="space-y-4"><Alert tone="amber">{t("ship.noCarriers")}</Alert><Link href="/dashboard/shipping"><Button>{t("ship.connectCarrier")}</Button></Link></div>
+        <div className="space-y-4"><Alert tone="amber">{t("ship.noCarriers")}</Alert><Link href="/dashboard/shipping?tab=carriers"><Button>{t("ship.connectCarrier")}</Button></Link></div>
       ) : (
         <form onSubmit={(e) => { e.preventDefault(); void ship.run(); }} className="space-y-4">
           <div role="radiogroup" className="space-y-2">
