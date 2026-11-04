@@ -7,6 +7,9 @@ import { API_BASE, refreshTokens } from "@/lib/backend";
  * visitor's host (tenant) and the access token from the httpOnly session cookie, and stores tokens the API returns.
  */
 const FORWARD_HEADERS = ["content-type", "idempotency-key"];
+/** A till terminal's own token lives in this httpOnly cookie; it is sent to the API only on the terminal's endpoints (its data and its sync). */
+const DEVICE_COOKIE = "pos_device";
+const DEVICE_PATHS = /^store\/pos\/(terminal|sync)\//;
 
 async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
   const { path } = await ctx.params;
@@ -18,6 +21,14 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
   if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
     const origin = req.headers.get("origin");
     if (!origin || new URL(origin).host !== host) return NextResponse.json({ code: "FORBIDDEN", message: "Cross-site request blocked" }, { status: 403 });
+  }
+
+  const terminal = DEVICE_PATHS.test(upstreamPath);
+  if (upstreamPath === "store/pos/terminal/forget" && req.method === "POST") {
+    // this browser stops being a till terminal (the manager can also revoke it from the dashboard)
+    const out = NextResponse.json({ ok: true });
+    out.cookies.set(DEVICE_COOKIE, "", { httpOnly: true, path: "/", maxAge: 0 });
+    return out;
   }
 
   const session = await getSession();
@@ -39,6 +50,8 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
     if (v) headers.set(h, v);
   }
   if (session.accessToken) headers.set("Authorization", `Bearer ${session.accessToken}`);
+  const deviceToken = req.cookies.get(DEVICE_COOKIE)?.value;
+  if (terminal && deviceToken) headers.set("X-Pos-Device", deviceToken);
 
   const hasBody = !["GET", "HEAD"].includes(req.method);
   // Logout revokes the server-side session: the refresh token never leaves the cookie, so inject it here.
@@ -84,14 +97,25 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
       else data = { ...data, tokens: undefined, user: tokens.user };
     }
   }
+  // registering this browser as a till terminal: its token goes into an httpOnly cookie for years, never to the page
+  let deviceTokenToSet: string | null = null;
+  if (upstreamPath === "store/pos/devices" && req.method === "POST" && upstream.ok && data && typeof data.token === "string") {
+    deviceTokenToSet = data.token;
+    data = { ...data, token: undefined };
+  }
   if (upstreamPath === "auth/logout") {
     session.destroy();
   }
-  if (upstream.status === 401 && session.accessToken && upstreamPath !== "auth/login") {
+  if (upstream.status === 401 && session.accessToken && upstreamPath !== "auth/login" && !terminal) {
     // token no longer valid server-side: drop the cookie so the UI sends the visitor to log in
     session.destroy();
   }
-  return NextResponse.json(data ?? {}, { status: upstream.status });
+  const res = NextResponse.json(data ?? {}, { status: upstream.status });
+  if (deviceTokenToSet) {
+    const secure = process.env.NODE_ENV === "production" && process.env.SESSION_SECURE !== "false";
+    res.cookies.set(DEVICE_COOKIE, deviceTokenToSet, { httpOnly: true, secure, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 365 * 5 });
+  }
+  return res;
 }
 
 export const GET = handle;

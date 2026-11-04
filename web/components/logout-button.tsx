@@ -5,6 +5,7 @@ import { api } from "@/lib/client";
 import { useT } from "./i18n-provider";
 import { Icon } from "./icons";
 import { Button } from "./ui";
+import { forgetPrivateCopies } from "./sw";
 
 export function LogoutButton({ className }: { className?: string }) {
   const t = useT();
@@ -12,6 +13,7 @@ export function LogoutButton({ className }: { className?: string }) {
   return (
     <Button variant="ghost" size="sm" className={className} onClick={async () => {
       await api("auth/logout", { body: {} }).catch(() => undefined);
+      forgetPrivateCopies();
       router.replace("/");
       router.refresh();
     }}>

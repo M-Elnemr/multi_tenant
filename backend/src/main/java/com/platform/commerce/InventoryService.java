@@ -159,6 +159,8 @@ public class InventoryService {
     }
 
     void restock(UUID tenantId, UUID branchId, UUID variantId, int qty, UUID orderId) {
+        jdbc.sql("INSERT INTO commerce.inventory_items (tenant_id, branch_id, variant_id) VALUES (:t, :b, :v) ON CONFLICT (branch_id, variant_id) DO NOTHING")   // a piece sold when the shelf had no row yet comes back too
+                .param("t", tenantId).param("b", branchId).param("v", variantId).update();
         jdbc.sql("UPDATE commerce.inventory_items SET quantity_on_hand = quantity_on_hand + :q, updated_at = now() WHERE tenant_id = :t AND branch_id = :b AND variant_id = :v")
                 .param("q", qty).param("t", tenantId).param("b", branchId).param("v", variantId).update();
         movement(tenantId, branchId, variantId, "RETURN", qty, "order", orderId, "Customer return", null);
@@ -199,6 +201,38 @@ public class InventoryService {
                 .param("q", qty).param("t", tenantId).param("b", branchId).param("v", variantId).update();
         if (n == 0) throw BusinessException.conflict("INSUFFICIENT_STOCK", "Not enough stock for one of the items");
         movement(tenantId, branchId, variantId, "SALE", -qty, "order", orderId, "Point of sale", null);
+    }
+
+    /**
+     * A till sale made with no internet arrives after the money was taken: it is never refused. Stock goes down as far as it can (never below what is reserved for open orders,
+     * the table refuses less than nothing); the pieces it could not cover are returned so the sale is flagged for the manager. Returns the pieces not covered.
+     */
+    int sellCoveringWhatIsThere(UUID tenantId, UUID branchId, UUID variantId, int qty, UUID orderId) {
+        Integer free = jdbc.sql("SELECT quantity_on_hand - quantity_reserved FROM commerce.inventory_items WHERE tenant_id = :t AND branch_id = :b AND variant_id = :v FOR UPDATE")
+                .param("t", tenantId).param("b", branchId).param("v", variantId).query(Integer.class).optional().orElse(null);
+        int take = free == null ? 0 : Math.max(0, Math.min(qty, free));
+        if (take > 0) {
+            jdbc.sql("UPDATE commerce.inventory_items SET quantity_on_hand = quantity_on_hand - :q, updated_at = now() WHERE tenant_id = :t AND branch_id = :b AND variant_id = :v")
+                    .param("q", take).param("t", tenantId).param("b", branchId).param("v", variantId).update();
+            movement(tenantId, branchId, variantId, "SALE", -take, "order", orderId, "Point of sale", null);
+        }
+        return qty - take;
+    }
+
+    /** A stock count applied: the shelf moves by {@code delta} (never below what is reserved). Returns the change really made. */
+    int applyCount(UUID tenantId, UUID actor, UUID branchId, UUID variantId, int delta, UUID countId) {
+        if (delta == 0) return 0;
+        jdbc.sql("INSERT INTO commerce.inventory_items (tenant_id, branch_id, variant_id) VALUES (:t, :b, :v) ON CONFLICT (branch_id, variant_id) DO NOTHING")
+                .param("t", tenantId).param("b", branchId).param("v", variantId).update();
+        var row = jdbc.sql("SELECT quantity_on_hand, quantity_reserved FROM commerce.inventory_items WHERE tenant_id = :t AND branch_id = :b AND variant_id = :v FOR UPDATE")
+                .param("t", tenantId).param("b", branchId).param("v", variantId).query().singleRow();
+        int onHand = ((Number) row.get("quantity_on_hand")).intValue(), reserved = ((Number) row.get("quantity_reserved")).intValue();
+        int applied = Math.max(delta, reserved - onHand);
+        if (applied == 0) return 0;
+        jdbc.sql("UPDATE commerce.inventory_items SET quantity_on_hand = quantity_on_hand + :d, updated_at = now() WHERE tenant_id = :t AND branch_id = :b AND variant_id = :v")
+                .param("d", applied).param("t", tenantId).param("b", branchId).param("v", variantId).update();
+        movement(tenantId, branchId, variantId, "COUNT", applied, "stock_count", countId, "Stock count", actor);
+        return applied;
     }
 
     private void movement(UUID tenantId, UUID branchId, UUID variantId, String type, int delta, String refType, UUID refId, String reason, UUID actor) {

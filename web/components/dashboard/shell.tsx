@@ -10,6 +10,7 @@ import { LogoutButton } from "../logout-button";
 import { PoweredBy } from "../brand";
 import { Icon, hasIcon } from "../icons";
 import { Avatar, Loading } from "../ui";
+import { SwRegister, useOnline } from "../sw";
 import { fileUrl } from "@/lib/media";
 import { SubscriptionBar, useBillingStatus } from "./subscription-bar";
 
@@ -42,6 +43,7 @@ export function DashboardShell({ nav, children }: { nav: NavItem[]; children: Re
   const billing = useBillingStatus(ready && !!me);
   const reduce = useReducedMotion();
   const [open, setOpen] = useState(false);
+  const online = useOnline();
   const collapsed = useSyncExternalStore(subscribe, readCollapsed, () => false);
   const toggleCollapsed = () => { try { localStorage.setItem(COLLAPSE_KEY, collapsed ? "0" : "1"); } catch { /* ignore */ } listeners.forEach((l) => l()); };
   useEffect(() => { if (ready && !me) router.replace(`/dashboard/login?next=${encodeURIComponent(path)}`); }, [ready, me, path, router]);
@@ -146,7 +148,7 @@ export function DashboardShell({ nav, children }: { nav: NavItem[]; children: Re
           <p className="text-sm text-slate-500">{hour < 12 ? t("dash.morning") : t("dash.hello")}, <b className="font-semibold text-ink">{me.firstName}</b></p>
           <div className="flex items-center gap-1">{langLink}{bell("")}</div>
         </header>
-        <motion.main key={path} initial={reduce ? false : { opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }} className="min-w-0 flex-1 overflow-x-clip p-4 pb-24 sm:p-6 lg:p-8 lg:pb-8 print:p-0">{disabled && !canPay ? <div className="mx-auto max-w-md rounded-2xl border border-red-200 bg-red-50 p-6 text-center"><h1 className="text-lg font-bold text-red-800">{t("sub.disabledTitle")}</h1><p className="mt-2 text-sm text-red-700">{t("sub.ownerOnly")}</p></div> : blocked ? <div className="mx-auto max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-center"><h1 className="text-lg font-bold text-ink">{t("dash.noAccess")}</h1><p className="mt-2 text-sm text-slate-600">{t("dash.noAccessHint")}</p></div> : children}</motion.main>
+        <motion.main key={path} initial={reduce ? false : { opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }} className="min-w-0 flex-1 overflow-x-clip p-4 pb-24 sm:p-6 lg:p-8 lg:pb-8 print:p-0"><SwRegister />{!online && <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 print:hidden">📡 {t("offline.dashboard")}</div>}{disabled && !canPay ? <div className="mx-auto max-w-md rounded-2xl border border-red-200 bg-red-50 p-6 text-center"><h1 className="text-lg font-bold text-red-800">{t("sub.disabledTitle")}</h1><p className="mt-2 text-sm text-red-700">{t("sub.ownerOnly")}</p></div> : blocked ? <div className="mx-auto max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-center"><h1 className="text-lg font-bold text-ink">{t("dash.noAccess")}</h1><p className="mt-2 text-sm text-slate-600">{t("dash.noAccessHint")}</p></div> : children}</motion.main>
       </div>
 
       {/* phone quick bar */}

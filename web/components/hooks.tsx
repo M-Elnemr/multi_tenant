@@ -48,14 +48,22 @@ export function useAction<A extends unknown[], R>(fn: (...args: A) => Promise<R>
 
 export type Me = { id: string; firstName: string; lastName: string; phone?: string; email?: string; roles: string[]; permissions: string[]; mustChangePassword?: boolean; screens?: Record<string, "READ" | "WRITE"> };
 
+/** The signed-in person as last seen online (cleared on logout), so the dashboard opens with no internet. */
+export const ME_KEY = "dash-me";
+
 export function useMe() {
   const [state, setState] = useState<{ me: Me | null; ready: boolean }>({ me: null, ready: false });
   useEffect(() => {
     let alive = true;
     const load = () => {
       api<Me>("auth/me")
-        .then((me) => alive && setState({ me, ready: true }))
-        .catch(() => alive && setState({ me: null, ready: true }));
+        .then((me) => { try { localStorage.setItem(ME_KEY, JSON.stringify(me)); } catch { /* private mode */ } if (alive) setState({ me, ready: true }); })
+        .catch((e: ApiError) => {
+          // no internet: the dashboard keeps working read-only as the person last seen signed in (only a real "signed out" answer signs them out)
+          let last: Me | null = null;
+          if (e?.code === "NETWORK") { try { last = JSON.parse(localStorage.getItem(ME_KEY) ?? "null"); } catch { last = null; } }
+          if (alive) setState({ me: last, ready: true });
+        });
     };
     load();
     window.addEventListener("auth:changed", load);

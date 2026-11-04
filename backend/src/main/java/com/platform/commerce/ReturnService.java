@@ -71,10 +71,26 @@ public class ReturnService {
     }
 
     @Transactional
-    public Map<String, Object> create(UUID t, UUID actor, ReturnReq r) {
+    public Map<String, Object> create(UUID t, UUID actor, ReturnReq r) { return create(t, actor, r, null, null, null, null); }
+
+    /**
+     * A return from a till terminal (sent later when it was made with no internet): {@code opId} makes it apply once; the refund is recorded with {@code refundMethod}
+     * (cash from the drawer, usually). With {@code exceeded} given, pieces beyond what may still be returned are left out and listed there instead of refusing the whole return
+     * (the customer already got their money at the counter: the manager sees what did not add up).
+     */
+    @Transactional
+    public Map<String, Object> create(UUID t, UUID actor, ReturnReq r, UUID opId, UUID shiftId, String refundMethod, List<Map<String, Object>> exceeded) {
         if (r == null || r.orderId() == null || r.items() == null || r.items().isEmpty()) throw BusinessException.badRequest("VALIDATION_ERROR", "Choose what is being returned");
+        if (opId != null) {
+            var done = jdbc.sql("SELECT id, refund_minor FROM commerce.order_returns WHERE op_id = :p").param("p", opId).query().listOfRows();
+            if (!done.isEmpty()) return Map.of("returnId", done.get(0).get("id"), "refundMinor", done.get(0).get("refund_minor"), "duplicate", true);
+        }
         var order = orders.lockForUpdate(t, r.orderId());
-        if (!"ARRIVED".equals(order.get("status"))) throw BusinessException.conflict("RETURN_NOT_ALLOWED", "Only delivered orders can have items returned");
+        if (!"ARRIVED".equals(order.get("status"))) {
+            if (exceeded == null) throw BusinessException.conflict("RETURN_NOT_ALLOWED", "Only delivered orders can have items returned");
+            for (Item it : r.items()) if (it != null) exceeded.add(Map.of("orderItemId", String.valueOf(it.orderItemId()), "quantity", it.quantity(), "why", "order is " + order.get("status")));
+            return Map.of("returnId", "", "refundMinor", 0, "nothingApplied", true);
+        }
         var lines = new LinkedHashMap<UUID, Map<String, Object>>();
         for (var row : jdbc.sql("""
                 SELECT i.id, i.variant_id, i.branch_id, i.sku_snapshot, i.product_name_snapshot, i.variant_name_snapshot, i.quantity, i.unit_price_minor, i.line_total_minor,
@@ -93,6 +109,12 @@ public class ReturnService {
         for (var e : take.entrySet()) {
             var l = lines.get(e.getKey());
             int qty = ((Number) l.get("quantity")).intValue(), returned = ((Number) l.get("returned")).intValue();
+            if (e.getValue() > qty - returned && exceeded != null) {
+                int ok = Math.max(0, qty - returned);
+                exceeded.add(Map.of("orderItemId", String.valueOf(e.getKey()), "name", String.valueOf(l.get("product_name_snapshot")), "asked", e.getValue(), "returnable", ok));
+                e.setValue(ok);
+                if (ok == 0) continue;
+            }
             if (e.getValue() > qty - returned) throw new BusinessException(org.springframework.http.HttpStatus.CONFLICT, "RETURN_EXCEEDS_SOLD", "More pieces than were sold, or already returned: " + l.get("product_name_snapshot"));
             long unit = Math.round(((Number) l.get("line_total_minor")).doubleValue() / qty);
             long lineAmount = unit * e.getValue();
@@ -102,6 +124,8 @@ public class ReturnService {
             cl.put("quantity", e.getValue()); cl.put("unitMinor", unit); cl.put("totalMinor", lineAmount);
             creditLines.add(cl);
         }
+        take.values().removeIf(q -> q <= 0);
+        if (take.isEmpty()) return Map.of("returnId", "", "refundMinor", 0, "nothingApplied", true);
         String reason = r.reason() == null || r.reason().isBlank() ? null : r.reason().trim();
         if (reason != null && reason.length() > 300) reason = reason.substring(0, 300);
 
@@ -112,8 +136,8 @@ public class ReturnService {
                 """).param("o", r.orderId()).query(Long.class).single();
         long refund = Math.max(0, Math.min(amount, refundable));
 
-        UUID returnId = jdbc.sql("INSERT INTO commerce.order_returns (tenant_id, order_id, refund_minor, reason, created_by) VALUES (:t, :o, :a, :r, :u) RETURNING id")
-                .param("t", t).param("o", r.orderId()).param("a", refund).param("r", reason).param("u", actor).query(UUID.class).single();
+        UUID returnId = jdbc.sql("INSERT INTO commerce.order_returns (tenant_id, order_id, refund_minor, reason, created_by, op_id, pos_shift_id, refund_method) VALUES (:t, :o, :a, :r, :u, :op, :sh, :m) RETURNING id")
+                .param("t", t).param("o", r.orderId()).param("a", refund).param("r", reason).param("u", actor).param("op", opId).param("sh", shiftId).param("m", refundMethod).query(UUID.class).single();
         for (var e : take.entrySet()) {
             var l = lines.get(e.getKey());
             long unit = Math.round(((Number) l.get("line_total_minor")).doubleValue() / ((Number) l.get("quantity")).intValue());
@@ -125,7 +149,7 @@ public class ReturnService {
 
         boolean all = lines.entrySet().stream().allMatch(en -> ((Number) en.getValue().get("returned")).intValue() + take.getOrDefault(en.getKey(), 0) >= ((Number) en.getValue().get("quantity")).intValue());
         if (all) orders.markFullyReturned(t, order, actor, reason == null ? "All items returned" : reason);
-        if (refund > 0) orders.refund(t, actor, r.orderId(), refund, reason == null ? "Item return" : reason);
+        if (refund > 0) orders.refund(t, actor, r.orderId(), refund, reason == null ? "Item return" : reason, refundMethod);
 
         Map<String, Object> note = invoices.creditNoteForReturn(t, actor, r.orderId(), returnId, creditLines, amount, reason);
         audit.record(actor, t, "ORDER_ITEMS_RETURNED", "order", r.orderId(), "{\"returnId\":\"" + returnId + "\",\"refundMinor\":" + refund + "}");

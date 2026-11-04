@@ -190,13 +190,18 @@ public class OrderService {
     }
 
     @Transactional
-    public Map<String, Object> refund(UUID tenantId, UUID actor, UUID orderId, long amountMinor, String reason) {
+    public Map<String, Object> refund(UUID tenantId, UUID actor, UUID orderId, long amountMinor, String reason) { return refund(tenantId, actor, orderId, amountMinor, reason, null); }
+
+    /** {@code method}: how the money went back when it is not the way it came in (a till return paid in cash from the drawer); null = as it was paid. */
+    public Map<String, Object> refund(UUID tenantId, UUID actor, UUID orderId, long amountMinor, String reason, String method) {
         var o = lock(tenantId, orderId);
         if (!Set.of("PAID", "PARTIALLY_REFUNDED").contains((String) o.get("payment_status")))
             throw BusinessException.badRequest("REFUND_NOT_ALLOWED", "This order has no paid amount to refund");
-        var pay = jdbc.sql("SELECT id, amount_minor, provider, method, currency FROM commerce.order_payments WHERE order_id = :o AND kind = 'PAYMENT' AND status = 'SUCCEEDED'")
-                .param("o", orderId).query().listOfRows().stream().findFirst().orElseThrow(() -> BusinessException.badRequest("REFUND_NOT_ALLOWED", "No successful payment"));
-        long paid = ((Number) pay.get("amount_minor")).longValue();
+        var pays = jdbc.sql("SELECT id, amount_minor, provider, method, currency FROM commerce.order_payments WHERE order_id = :o AND kind = 'PAYMENT' AND status = 'SUCCEEDED' ORDER BY created_at, id")
+                .param("o", orderId).query().listOfRows();
+        if (pays.isEmpty()) throw BusinessException.badRequest("REFUND_NOT_ALLOWED", "No successful payment");
+        var pay = pays.stream().filter(p -> method != null && method.equals(p.get("method"))).findFirst().orElse(pays.get(0));   // a till sale paid part cash, part card: the refund links to the payment of its own kind
+        long paid = pays.stream().mapToLong(p -> ((Number) p.get("amount_minor")).longValue()).sum();
         long refunded = jdbc.sql("SELECT coalesce(sum(amount_minor),0) FROM commerce.order_payments WHERE order_id = :o AND kind = 'REFUND' AND status = 'SUCCEEDED'").param("o", orderId).query(Long.class).single();
         if (amountMinor <= 0 || refunded + amountMinor > paid)
             throw BusinessException.badRequest("REFUND_EXCEEDS_PAID", "Refund exceeds the paid amount");
@@ -204,7 +209,7 @@ public class OrderService {
         jdbc.sql("""
                 INSERT INTO commerce.order_payments (order_id, tenant_id, kind, original_payment_id, provider, method, amount_minor, currency, status, idempotency_key)
                 VALUES (:o, :t, 'REFUND', :p, :pv, :m, :a, :c, 'SUCCEEDED', :k)
-                """).param("o", orderId).param("t", tenantId).param("p", pay.get("id")).param("pv", pay.get("provider")).param("m", pay.get("method"))
+                """).param("o", orderId).param("t", tenantId).param("p", pay.get("id")).param("pv", pay.get("provider")).param("m", method != null ? method : pay.get("method"))
                 .param("a", amountMinor).param("c", pay.get("currency")).param("k", "refund-" + UUID.randomUUID()).update();
         boolean full = refunded + amountMinor == paid;
         jdbc.sql("UPDATE commerce.orders SET payment_status = :s, updated_at = now() WHERE id = :o").param("s", full ? "REFUNDED" : "PARTIALLY_REFUNDED").param("o", orderId).update();
