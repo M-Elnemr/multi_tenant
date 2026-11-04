@@ -92,6 +92,30 @@ class AiUsageIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void customersPhotosAndVoiceNotesAreCountedPerShopAndInAllWithTheirCost() throws Exception {
+        String admin = platformToken();
+        Tenant shop = onboard("STORE");
+        UUID id = idOf(shop);
+        String today = LocalDate.now(ZoneId.of("Africa/Cairo")).toString();
+
+        usage.recordMedia(id, "WHATSAPP", "IMAGE", null, "image: a black t-shirt", new Usage(2000, 50, 0, 0), "qwen");
+        usage.recordMedia(id, "WHATSAPP", "AUDIO", 20, "voice 20s: عايز الشورت", Usage.NONE, "qwen");   // the US workspace reports no tokens: billed by the second
+
+        String s = onHost("platform.test", admin, "GET", "/api/v1/platform/ai-usage/shops/" + id + "?day=" + today, null).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(JsonPath.<Number>read(s, "$.media.day.images").intValue()).isEqualTo(1);
+        assertThat(JsonPath.<Number>read(s, "$.media.day.voiceNotes").intValue()).isEqualTo(1);
+        assertThat(JsonPath.<Number>read(s, "$.media.day.voiceSeconds").intValue()).isEqualTo(20);
+        double voice = JsonPath.<Number>read(s, "$.media.day.voiceCostUsd").doubleValue(), image = JsonPath.<Number>read(s, "$.media.day.imageCostUsd").doubleValue();
+        assertThat(voice).isCloseTo(20 * 0.000035, org.assertj.core.data.Offset.offset(1e-9));
+        assertThat(image).isCloseTo((2000 * 0.03 + 50 * 0.13) / 1_000_000, org.assertj.core.data.Offset.offset(1e-9));
+        assertThat(JsonPath.<Number>read(s, "$.totals.costUsd").doubleValue()).isCloseTo(voice + image, org.assertj.core.data.Offset.offset(1e-9));   // the shop's total counts the voice seconds too
+
+        String all = onHost("platform.test", admin, "GET", "/api/v1/platform/ai-usage?day=" + today, null).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(JsonPath.<Number>read(all, "$.media.month.voiceNotes").intValue()).isGreaterThanOrEqualTo(1);
+        assertThat(JsonPath.<List<String>>read(all, "$.media.shopsMonth[*].tenantId")).contains(id.toString());
+    }
+
+    @Test
     void aDayRunsFromCairoMidnightToCairoMidnight() throws Exception {
         String admin = platformToken();
         Tenant shop = onboard("STORE");

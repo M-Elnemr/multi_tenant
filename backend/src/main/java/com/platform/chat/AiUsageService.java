@@ -47,17 +47,27 @@ public class AiUsageService {
     public AiUsageService(JdbcClient jdbc, @Value("${app.ai.usage-retention-days:90}") int retentionDays,
                           @Value("${app.ai.price.anthropic.input:0.10}") double aIn, @Value("${app.ai.price.anthropic.output:0.50}") double aOut, @Value("${app.ai.price.anthropic.cached:0.01}") double aCached, @Value("${app.ai.price.anthropic.cache-write:0.20}") double aWrite,
                           @Value("${app.ai.price.glm.input:0.05}") double zIn, @Value("${app.ai.price.glm.output:0.17}") double zOut, @Value("${app.ai.price.glm.cached:0.01}") double zCached,
-                          @Value("${app.ai.price.qwen.input:0.03}") double qIn, @Value("${app.ai.price.qwen.output:0.13}") double qOut, @Value("${app.ai.price.qwen.cached:0.006}") double qCached) {
+                          @Value("${app.ai.price.qwen.input:0.03}") double qIn, @Value("${app.ai.price.qwen.output:0.13}") double qOut, @Value("${app.ai.price.qwen.cached:0.006}") double qCached,
+                          @Value("${app.ai.price.asr-per-second:0.000035}") double asrPerSecond) {
         this.jdbc = jdbc; this.retentionDays = retentionDays;
         this.anthropic = new Price(aIn, aOut, aCached, aWrite);
         this.glm = new Price(zIn, zOut, zCached, zIn);
         this.qwen = new Price(qIn, qOut, qCached, qIn);
+        this.asrPerSecond = asrPerSecond;
+        String full = rowCost();
         this.sums = "count(*) FILTER (WHERE NOT instant) AS requests, count(*) FILTER (WHERE instant) AS instant, coalesce(sum(model_calls),0) AS model_calls, "
                 + "coalesce(sum(input_tokens),0) AS input, coalesce(sum(output_tokens),0) AS output, coalesce(sum(cached_tokens),0) AS cached, coalesce(sum(cache_write_tokens),0) AS cache_write, "
-                + "count(*) FILTER (WHERE fallback) AS fallbacks, coalesce(sum(" + cost("input_tokens", "output_tokens", "cached_tokens", "cache_write_tokens", "model") + "), 0) AS cost_usd";
+                + "count(*) FILTER (WHERE fallback) AS fallbacks, coalesce(sum(" + full + "), 0) AS cost_usd, "
+                + "count(*) FILTER (WHERE media_kind = 'IMAGE') AS images, count(*) FILTER (WHERE media_kind = 'AUDIO') AS voice_notes, coalesce(sum(media_seconds), 0) AS voice_seconds, "
+                + "coalesce(sum(" + full + ") FILTER (WHERE media_kind IS NOT NULL), 0) AS media_cost_usd";
     }
 
-    private String rowCost() { return cost("input_tokens", "output_tokens", "cached_tokens", "cache_write_tokens", "model"); }
+    private final double asrPerSecond;
+
+    /** A row's cost: its tokens, plus the seconds of a voice note (speech recognition is billed by the second). */
+    private String rowCost() { return "(" + cost("input_tokens", "output_tokens", "cached_tokens", "cache_write_tokens", "model") + " + " + audioCost("") + ")"; }
+
+    private String audioCost(String alias) { return "(CASE WHEN " + alias + "media_kind = 'AUDIO' THEN coalesce(" + alias + "media_seconds, 0) * " + asrPerSecond + " ELSE 0 END)"; }
 
     /** SQL for the cost in USD of one row (or one model round): each model is priced with its own prices, rows with no model with the default provider's. */
     private String cost(String in, String out, String cached, String write, String model) {
@@ -74,6 +84,10 @@ public class AiUsageService {
 
     /** {@code model} is the answering model's code (null = the default model); {@code fallback} is true when the routed model failed and the default one answered. */
     public void record(UUID tenantId, String feature, String channel, UUID conversationId, boolean instant, String preview, List<Round> rounds, String model, boolean fallback) {
+        insert(tenantId, feature, channel, conversationId, instant, preview, rounds, model, fallback, null, null);
+    }
+
+    private void insert(UUID tenantId, String feature, String channel, UUID conversationId, boolean instant, String preview, List<Round> rounds, String model, boolean fallback, String mediaKind, Integer mediaSeconds) {
         try {
             int in = 0, out = 0, cached = 0, written = 0;
             List<Map<String, Object>> calls = new ArrayList<>();
@@ -86,11 +100,18 @@ public class AiUsageService {
             String clip = preview == null ? null : preview.replaceAll("\\s+", " ").trim();
             if (clip != null && clip.length() > 80) clip = clip.substring(0, 80);
             jdbc.sql("""
-                    INSERT INTO chat.ai_usage_log (tenant_id, feature, channel, conversation_id, instant, model_calls, input_tokens, output_tokens, cached_tokens, cache_write_tokens, calls, preview, model, fallback)
-                    VALUES (:t, :f, :ch, :cv, :i, :mc, :in, :out, :k, :w, CAST(:calls AS jsonb), :p, :md, :fb)
+                    INSERT INTO chat.ai_usage_log (tenant_id, feature, channel, conversation_id, instant, model_calls, input_tokens, output_tokens, cached_tokens, cache_write_tokens, calls, preview, model, fallback, media_kind, media_seconds)
+                    VALUES (:t, :f, :ch, :cv, :i, :mc, :in, :out, :k, :w, CAST(:calls AS jsonb), :p, :md, :fb, :mk, :ms)
                     """).param("t", tenantId).param("f", feature).param("ch", channel).param("cv", conversationId).param("i", instant).param("mc", rounds.size())
-                    .param("in", in).param("out", out).param("k", cached).param("w", written).param("calls", JSON.writeValueAsString(calls)).param("p", clip).param("md", model).param("fb", fallback).update();
+                    .param("in", in).param("out", out).param("k", cached).param("w", written).param("calls", JSON.writeValueAsString(calls)).param("p", clip).param("md", model).param("fb", fallback).param("mk", mediaKind).param("ms", mediaSeconds).update();
         } catch (Exception e) { log.warn("AI usage not recorded: {}", e.toString()); }
+    }
+
+    /**
+     * A customer's photo or voice note read by the AI ({@code kind} IMAGE or AUDIO): its tokens, and for a voice note its length in seconds, so its cost is counted per shop.
+     */
+    public void recordMedia(UUID tenantId, String channel, String kind, Integer seconds, String preview, AiProvider.Usage u, String model) {
+        insert(tenantId, "MEDIA", channel, null, false, preview, List.of(new Round(List.of(kind.toLowerCase(java.util.Locale.ROOT)), u)), model, false, kind, seconds);
     }
 
     /** A single model call from a feature that has no chat (posts, ads, translation...). The shop is the one of the current request, when there is one. */
@@ -146,6 +167,7 @@ public class AiUsageService {
         for (var r : rows("SELECT extract(hour FROM created_at AT TIME ZONE 'Africa/Cairo')::int AS hour, " + sums + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to" + tf + " GROUP BY 1", p)) found.put(((Number) r.get("hour")).intValue(), r);
         List<Map<String, Object>> out = new ArrayList<>();
         for (int h = 0; h < 24; h++) out.add(found.getOrDefault(h, Map.of("hour", h, "requests", 0L, "instant", 0L, "modelCalls", 0L, "input", 0L, "output", 0L, "cached", 0L, "cacheWrite", 0L, "fallbacks", 0L, "costUsd", 0.0)));
+        for (var r : out) if (!r.containsKey("images")) { var m = new LinkedHashMap<>(r); m.put("images", 0L); m.put("voiceNotes", 0L); m.put("voiceSeconds", 0L); m.put("mediaCostUsd", 0.0); out.set(out.indexOf(r), m); }
         return out;
     }
 
@@ -154,7 +176,7 @@ public class AiUsageService {
         Map<String, Object> p = new LinkedHashMap<>(Map.of("f", start(day), "to", start(day.plusDays(1))));
         if (tenant != null) p.put("t", tenant);
         if (model != null) p.put("m", model);
-        String roundCost = cost("(c ->> 'in')::int", "(c ->> 'out')::int", "(c ->> 'cached')::int", "coalesce((c ->> 'write')::int, 0)", "l.model");
+        String roundCost = "(" + cost("(c ->> 'in')::int", "(c ->> 'out')::int", "(c ->> 'cached')::int", "coalesce((c ->> 'write')::int, 0)", "l.model") + " + " + audioCost("l.") + ")";   // a media row has one round
         return rows("""
                 SELECT coalesce(nullif(array_to_string(ARRAY(SELECT jsonb_array_elements_text(c -> 'tools')), ', '), ''), '(final answer)') AS step, l.feature, count(*) AS rounds,
                   sum((c ->> 'in')::int) AS input, sum((c ->> 'out')::int) AS output, sum((c ->> 'cached')::int) AS cached, sum(coalesce((c ->> 'write')::int, 0)) AS cache_write,
@@ -162,6 +184,27 @@ public class AiUsageService {
                   ) AS cost_usd
                 FROM chat.ai_usage_log l, jsonb_array_elements(l.calls) c
                 WHERE l.created_at >= :f AND l.created_at < :to""" + tf + " GROUP BY 1, 2 ORDER BY sum((c ->> 'in')::int) + sum((c ->> 'out')::int) DESC", p);
+    }
+
+    /**
+     * Customers' photos and voice notes read by the AI: on the day and over the 30 days up to it, in all and per shop (count, seconds of voice, cost in USD).
+     */
+    private Map<String, Object> media(LocalDate day, UUID tenant) {
+        String m = "count(*) FILTER (WHERE media_kind = 'IMAGE') AS images, count(*) FILTER (WHERE media_kind = 'AUDIO') AS voice_notes, coalesce(sum(media_seconds), 0) AS voice_seconds, "
+                + "coalesce(sum(" + rowCost() + ") FILTER (WHERE media_kind = 'IMAGE'), 0) AS image_cost_usd, coalesce(sum(" + rowCost() + ") FILTER (WHERE media_kind = 'AUDIO'), 0) AS voice_cost_usd, "
+                + "coalesce(sum(" + rowCost() + "), 0) AS cost_usd";
+        String tf = tenant == null ? "" : " AND l.tenant_id = :t";
+        Map<String, Object> pd = new LinkedHashMap<>(Map.of("f", start(day), "to", start(day.plusDays(1))));
+        Map<String, Object> pm = new LinkedHashMap<>(Map.of("f", start(day.minusDays(29)), "to", start(day.plusDays(1))));
+        if (tenant != null) { pd.put("t", tenant); pm.put("t", tenant); }
+        String from = " FROM chat.ai_usage_log l WHERE l.media_kind IS NOT NULL AND l.created_at >= :f AND l.created_at < :to" + tf;
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("prices", Map.of("asrPerSecond", asrPerSecond));
+        out.put("day", rows("SELECT " + m + from, pd).get(0));
+        out.put("month", rows("SELECT " + m + from, pm).get(0));
+        out.put("shopsMonth", rows("SELECT l.tenant_id, coalesce(t.name, '—') AS name, " + m + " FROM chat.ai_usage_log l LEFT JOIN core.tenants t ON t.id = l.tenant_id WHERE l.media_kind IS NOT NULL AND l.created_at >= :f AND l.created_at < :to" + tf
+                + " GROUP BY l.tenant_id, t.name ORDER BY count(*) DESC", pm));
+        return out;
     }
 
     /** The whole platform on one day. */
@@ -189,6 +232,7 @@ public class AiUsageService {
                  FROM chat.ai_usage_log l LEFT JOIN core.tenants t ON t.id = l.tenant_id WHERE l.created_at >= :f AND l.created_at < :to""" + mfl + """
                  GROUP BY l.tenant_id, t.name ORDER BY sum(l.input_tokens + l.output_tokens) DESC
                 """, p));
+        out.put("media", media(day, null));
         out.put("series", rows("SELECT (created_at AT TIME ZONE 'Africa/Cairo')::date AS day, " + sums + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to GROUP BY 1 ORDER BY 1".replace("GROUP BY 1 ORDER BY 1", mf + " GROUP BY 1 ORDER BY 1"),
                 model == null ? Map.of("f", start(day.minusDays(29)), "to", start(day.plusDays(1))) : Map.of("f", start(day.minusDays(29)), "to", start(day.plusDays(1)), "m", model)));
         return out;
@@ -214,6 +258,7 @@ public class AiUsageService {
         out.put("byStep", steps(day, tenantId, model));
         out.put("byModel", rows("SELECT coalesce(model, '" + DEFAULT_MODEL + "') AS model, " + sums + " FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to AND tenant_id = :t GROUP BY 1 ORDER BY sum(input_tokens + output_tokens) DESC", allModels));
         out.put("byHour", hours(day, tenantId, model));
+        out.put("media", media(day, tenantId));
         out.put("conversations", rows("""
                 SELECT conversation_id, max(channel) AS channel, max(model) AS model, min(created_at) AS first_at, max(created_at) AS last_at, (array_agg(preview ORDER BY id) FILTER (WHERE preview IS NOT NULL))[1] AS first_message, """ + sums + " " + """
                  FROM chat.ai_usage_log WHERE created_at >= :f AND created_at < :to AND tenant_id = :t AND conversation_id IS NOT NULL""" + mf + """

@@ -10,8 +10,11 @@ type Price = { input: number; output: number; cached: number; cacheWrite: number
 type ModelKey = "all" | "glm" | "qwen" | "anthropic";
 const MODELS: { key: Exclude<ModelKey, "all">; label: string }[] = [{ key: "glm", label: "GLM" }, { key: "qwen", label: "Qwen" }, { key: "anthropic", label: "Claude" }];
 type Prices = { provider: string; models: Record<string, Price> };
-type Shop = Sums & { tenantId: string | null; name: string; conversations: number };
+type Shop = Sums & { tenantId: string | null; name: string; conversations: number; images?: number; voiceNotes?: number; voiceSeconds?: number; mediaCostUsd?: number };
+type MediaSums = { images: number; voiceNotes: number; voiceSeconds: number; imageCostUsd: number; voiceCostUsd: number; costUsd: number };
+type Media = { prices: { asrPerSecond: number }; day: MediaSums; month: MediaSums; shopsMonth: (MediaSums & { tenantId: string | null; name: string })[] };
 type Day = {
+  media: Media;
   day: string; prices: Prices; totals: Sums; byModel: (Sums & { model: string })[]; byHour: (Sums & { hour: number })[]; series: (Sums & { day: string })[]; shops: Shop[];
   byFeature: (Sums & { feature: string })[]; byChannel: (Sums & { channel: string })[]; byStep: { step: string; feature: string; rounds: number; input: number; output: number; cached: number; cacheWrite: number; costUsd: number }[];
 };
@@ -56,6 +59,17 @@ export default function AiUsage() {
   const cost = (x: { costUsd: number }) => x.costUsd;
   const usd = (v: number) => `$${v < 1 ? v.toFixed(4) : v.toFixed(2)}`;
   const time = (iso: string) => new Date(iso).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Cairo" });
+  const mediaStats = (m: Media) => (
+    <Section title={t("aiu.media.title")}>
+      <p className="mb-3 text-xs text-slate-500">{t("aiu.media.hint", { p: String(m.prices.asrPerSecond) })}</p>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {([["aiu.media.today", m.day], ["aiu.media.month", m.month]] as [string, MediaSums][]).flatMap(([label, x]) => [
+          <Stat key={`${label}-i`} label={`${t("aiu.media.images")} · ${t(label)}`} value={n(x.images)} icon="file" hint={usd(x.imageCostUsd)} />,
+          <Stat key={`${label}-v`} label={`${t("aiu.media.voice")} · ${t(label)}`} value={n(x.voiceNotes)} icon="chat" hint={`${t("aiu.media.seconds", { n: n(x.voiceSeconds) })} · ${usd(x.voiceCostUsd)}`} />,
+        ])}
+      </div>
+    </Section>
+  );
   const feature = (f: string) => { const k = `aiu.f.${f}`; const v = t(k); return v === k ? f : v; };
   const hourMax = useMemo(() => Math.max(1, ...(data.data?.byHour ?? []).map(total)), [data.data]);
 
@@ -130,6 +144,22 @@ export default function AiUsage() {
             <Stat label={t("aiu.cost")} value={usd(cost(d.totals))} icon="wallet" tone="red" hint={d.byModel.map((m) => m.model).join(" + ")} />
           </div>
 
+          {d.media && mediaStats(d.media)}
+          {d.media && d.media.shopsMonth.length > 0 && (
+            <Section title={t("aiu.media.perShop")}>
+              <Table head={[t("aiu.shop"), t("aiu.media.images"), t("aiu.media.voice"), t("aiu.cost")]}>
+                {d.media.shopsMonth.map((s) => (
+                  <tr key={s.tenantId ?? "none"}>
+                    <Td className="font-semibold">{s.tenantId ? s.name : t("aiu.platformLevel")}</Td>
+                    <Td>{n(s.images)} · {usd(s.imageCostUsd)}</Td>
+                    <Td>{n(s.voiceNotes)} ({t("aiu.media.seconds", { n: n(s.voiceSeconds) })}) · {usd(s.voiceCostUsd)}</Td>
+                    <Td className="font-semibold">{usd(s.costUsd)}</Td>
+                  </tr>
+                ))}
+              </Table>
+            </Section>
+          )}
+
           <Card>
             <p className="mb-1 text-sm font-semibold text-ink">{t("aiu.prices")}</p>
             <p className="text-xs text-slate-500" dir="ltr">{Object.entries(d.prices.models).map(([m, x]) => `${m}: ${x.input} in · ${x.output} out · ${x.cached} cached · ${x.cacheWrite} cache write`).join("   |   ")} ($/1M)</p>
@@ -155,7 +185,7 @@ export default function AiUsage() {
 
           <div className="flex flex-wrap items-center justify-between gap-3">
             <Tabs tabs={[{ key: "shops", label: t("aiu.shops"), count: d.shops.length }, { key: "steps", label: t("aiu.steps") }, { key: "features", label: t("aiu.features") }, { key: "models", label: t("aiu.models"), count: d.byModel.length }, { key: "channels", label: t("aiu.channels") }]} value={tab} onChange={setTab} />
-            {tab === "shops" && d.shops.length > 0 && <Button variant="secondary" size="sm" onClick={() => download(`ai-usage-${day}.csv`, [["shop", "conversations", "requests", "instant", "model_calls", "input", "output", "cached", "est_cost_usd"], ...d.shops.map((s) => [s.name, s.conversations, s.requests, s.instant, s.modelCalls, s.input, s.output, s.cached, cost(s).toFixed(4)])])}>{t("aiu.csv")}</Button>}
+            {tab === "shops" && d.shops.length > 0 && <Button variant="secondary" size="sm" onClick={() => download(`ai-usage-${day}.csv`, [["shop", "conversations", "requests", "instant", "model_calls", "input", "output", "cached", "photos", "voice_notes", "voice_seconds", "media_cost_usd", "est_cost_usd"], ...d.shops.map((s) => [s.name, s.conversations, s.requests, s.instant, s.modelCalls, s.input, s.output, s.cached, s.images ?? 0, s.voiceNotes ?? 0, s.voiceSeconds ?? 0, (s.mediaCostUsd ?? 0).toFixed(4), cost(s).toFixed(4)])])}>{t("aiu.csv")}</Button>}
           </div>
 
           {tab === "shops" && (d.shops.length === 0 ? <Empty>{t("aiu.none")}</Empty> : (
@@ -188,6 +218,7 @@ export default function AiUsage() {
                     <Stat label={t("aiu.instant")} value={n(sd.totals.instant)} tone="green" />
                     <Stat label={t("aiu.cost")} value={usd(cost(sd.totals))} tone="red" hint={`${t("aiu.cacheHit")} ${pct(sd.totals.cached, sd.totals.input)}`} />
                   </div>
+                  {sd.media && mediaStats(sd.media)}
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <Tabs tabs={[{ key: "conversations", label: t("aiu.conversations"), count: sd.conversations.length }, { key: "steps", label: t("aiu.steps") }, { key: "features", label: t("aiu.features") }, { key: "models", label: t("aiu.models") }, { key: "other", label: t("aiu.other"), count: sd.other.length }]} value={shopTab} onChange={setShopTab} />
                     {shopTab === "conversations" && sd.conversations.length > 0 && <Button variant="secondary" size="sm" onClick={() => download(`ai-usage-${sd.shop.name}-${day}.csv`, [["conversation", "channel", "first_message", "from", "to", "requests", "instant", "model_calls", "input", "output", "cached", "est_cost_usd"], ...sd.conversations.map((c) => [c.conversationId, c.channel ?? "", c.firstMessage ?? "", c.firstAt, c.lastAt, c.requests, c.instant, c.modelCalls, c.input, c.output, c.cached, cost(c).toFixed(4)])])}>{t("aiu.csv")}</Button>}

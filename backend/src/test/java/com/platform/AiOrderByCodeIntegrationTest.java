@@ -85,6 +85,57 @@ class AiOrderByCodeIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void aSummaryTheModelMadeWithTheOldQuantityIsPutRightByCode() throws Exception {
+        // Qwen, final exam 2026-11-04: «خليهم ٢» answered with a new summary that still said × 1
+        Shop s = shop();
+        String ext = "qty-" + uniq();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepare(List.of(s.small()))));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ok"));
+        chat.reply(s.id(), "WEB", ext, null, "عايز ساندوتش شاورما عادي");
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepare(List.of(s.small()))));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ok"));
+        String r = chat.reply(s.id(), "WEB", ext, null, "خليهم ٢").text();
+        assertThat(r).contains("ملخص").contains("× 2").contains("170");
+    }
+
+    @Test
+    void aBareNumberThatIsAlsoAPackSizeIsAskedAbout() throws Exception {
+        Tenant t = onboard("STORE");
+        String branch = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
+        String strips = body(onHost(t.host(), t.access(), "POST", "/api/v1/store/products", """
+                {"taxonomySlug":"cookware","name":"استربس فراخ","options":[{"name":"العدد","values":["5 قطع","8 قطع"]}],
+                 "variants":[{"sku":"ST5-%s","priceMinor":14000,"optionValues":{"العدد":"5 قطع"},"stock":[{"branchId":"%s","quantity":30}]},
+                             {"sku":"ST8-%s","priceMinor":20000,"optionValues":{"العدد":"8 قطع"},"stock":[{"branchId":"%s","quantity":30}]}]}
+                """.formatted(uniq(), branch, uniq(), branch)).andExpect(status().isCreated()));
+        UUID id = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", t.slug()).query(UUID.class).single();
+        String five = JsonPath.<String>read(strips, "$.variants[0].comboKey").contains("5") ? JsonPath.read(strips, "$.variants[0].id") : JsonPath.read(strips, "$.variants[1].id");
+        String ext = "pack-" + uniq();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepare(List.of(five))));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ok"));
+        chat.reply(id, "WEB", ext, null, "عايز استربس فراخ 5 قطع");
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام يا فندم 👌"));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام يا فندم 👌"));
+        String r = chat.reply(id, "WEB", ext, null, "خليهم 8").text();
+        assertThat(r).startsWith("تقصد 8 ×").contains("استربس فراخ").contains("8 قطع").doesNotContain("ملخص");
+    }
+
+    @Test
+    void aChangeToAnOrderBelowTheMinimumIsAppliedAndTheNewTotalIsSaid() throws Exception {
+        // Qwen, final exam 2026-11-04: «لا غيرها لـ كبيرة» after the minimum note, answered with a suggestion and no new total
+        Shop s = shop();
+        jdbc.sql("UPDATE commerce.store_profiles SET min_order_minor = 20000 WHERE tenant_id = :t").param("t", s.id()).update();
+        String ext = "minchg-" + uniq();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("متاح يا فندم بـ ٨٥ جنيه"));
+        chat.reply(s.id(), "WEB", ext, null, "عايز ساندوتش شاورما عادي");
+        for (int i = 0; i < 3; i++) FakeAiProvider.SCRIPT.add(turns -> Turn.model("أقل قيمة للطلب ٢٠٠ جنيه، تحب تضيف إيه؟"));
+        String told = chat.reply(s.id(), "WEB", ext, null, "انا كريم، الجيزة الدقي شارع التحرير عمارة ٥ شقة ٢، ٠١٠١٢٣٤٥٦٧٨، كاش").text();
+        assertThat(told).contains("200").doesNotContain("ده ملخص");
+        for (int i = 0; i < 3; i++) FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام يا فندم، تحب تضيف بيبسي؟"));
+        String r = chat.reply(s.id(), "WEB", ext, null, "لا غيرها لـ كبير بدل عادي").text();
+        assertThat(r).contains("200").contains("110").doesNotContain("ده ملخص");
+    }
+
+    @Test
     void anItemTakenOutAfterTheSummaryGetsTheNewSummaryByCode() throws Exception {
         Shop s = shop();
         String r = change(s, List.of(s.small(), s.pepsi()), "عايز ساندوتش شاورما عادي وبيبسي كانز", "شيل البيبسي كانز وخلي الساندوتش بس");

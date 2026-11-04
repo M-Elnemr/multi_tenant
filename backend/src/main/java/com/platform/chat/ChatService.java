@@ -430,9 +430,21 @@ public class ChatService {
             }
             // the customer changed the order just summarised («ضيف X», «شيل X», «خليهم ٢», «خليها كبير») and no new summary came: code applies the change (the customer confirms it as usual)
             boolean placedOrCancelled = rounds.stream().anyMatch(r -> r.tools().stream().anyMatch(t -> t.equals("place_order") || t.equals("cancel_order")));   // a flag to the owner is no reason to skip
+            boolean prepared = rounds.stream().anyMatch(r -> r.tools().contains("prepare_order"));
+            String[] ask = new String[1];
             if (ctx.summary()[0] == null && ctx.order()[0] == null && !placedOrCancelled && ORDER_CHANGE.matcher(FastAnswers.norm(text)).find() && summaryWasShown(ctx)) {
-                try { if (changeByCode(ctx, text)) log.info("Order change made by code (conversation {})", conv); } catch (RuntimeException e) { log.warn("Change by code skipped", e); }
+                try { if (changeByCode(ctx, text, false, ask)) log.info("Order change made by code (conversation {})", conv); } catch (RuntimeException e) { log.warn("Change by code skipped", e); }
+            } else if (ctx.summary()[0] != null && ctx.order()[0] == null && !placedOrCancelled && ORDER_CHANGE.matcher(FastAnswers.norm(text)).find() && summaryWasShown(ctx) && quantityMissed(ctx, text)) {
+                // the model made the new summary but kept the old quantity («خليهم ٢» answered with × 1, Qwen in the final exam): code applies the number
+                String modelSummary = ctx.summary()[0];
+                try { if (changeByCode(ctx, text, false, ask)) log.info("Quantity put right by code (conversation {})", conv); else ctx.summary()[0] = modelSummary; } catch (RuntimeException e) { ctx.summary()[0] = modelSummary; log.warn("Quantity by code skipped", e); }
+            } else if (ctx.summary()[0] == null && ctx.order()[0] == null && !placedOrCancelled && !prepared && ORDER_CHANGE.matcher(FastAnswers.norm(text)).find() && belowMinimumShown(ctx)) {
+                // a change to the order just told to be below the minimum («لا غيرها لـ كبيرة»): code applies it, and the customer hears the new total (or gets the summary)
+                ctx.mustSay()[0] = null;
+                try { if (changeByCode(ctx, text, true, ask)) log.info("Below-minimum order changed by code (conversation {})", conv); } catch (RuntimeException e) { log.warn("Below-minimum change skipped", e); }
+                if (ctx.summary()[0] == null && ctx.mustSay()[0] != null) answer = ctx.mustSay()[0];
             }
+            if (ask[0] != null) { ctx.summary()[0] = null; answer = ask[0]; }   // a question instead of a summary that may be the wrong one
             // details given, the minimum told, and now an item added to reach it: code makes the first summary from what they named
             if (ctx.summary()[0] == null && ctx.order()[0] == null && !placedOrCancelled && !summaryWasShown(ctx)) {
                 try { if (minimumReachedByCode(ctx, text)) log.info("Order summary made by code after the minimum (conversation {})", conv); } catch (RuntimeException e) { log.warn("Minimum order by code skipped", e); }
@@ -829,6 +841,8 @@ public class ChatService {
             if (f.kind().equals("CHECK_ERROR")) { log.warn("Fact check error: {}", f.note()); events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK_ERROR", f.note(), null); continue; }
             problems.putIfAbsent(f.kind(), f.note());
         }
+        String noSize = inventedSize(last, answer, shopData);
+        if (noSize != null) problems.put("INVENTED_SIZE", noSize);
         String switched = switchedProduct(ctx, shopData, last, answer);
         if (switched != null) problems.put("SWITCHED_PRODUCT", switched);
         if (problems.isEmpty()) return answer;
@@ -931,6 +945,64 @@ public class ChatService {
         if (now.isEmpty() || now.stream().anyMatch(m -> was.contains(m.slug()))) return null;
         String name = shop.names().stream().filter(n -> was.contains(n.slug())).map(FactCheck.Named::name).findFirst().orElse("");
         return "The customer changed an option of «" + name + "» (the product just talked about); your reply switched to another product. Answer about «" + name + "» with that option: its price and stock (get_product).";
+    }
+
+    /** The summary made this turn has one item (or the one named) whose quantity is not the bare number the customer just said («خليهم ٢»). */
+    @SuppressWarnings("unchecked")
+    private boolean quantityMissed(Ctx ctx, String last) {
+        String raw = jdbc.sql("SELECT pending::text FROM chat.conversations WHERE id = :c").param("c", ctx.conversationId()).query(String.class).optional().orElse(null);
+        if (raw == null) return false;
+        try {
+            Map<String, Object> pend = JSON.readValue(raw, new TypeReference<LinkedHashMap<String, Object>>() {});
+            if (!(pend.get("items") instanceof List<?> l) || l.size() != 1) return false;
+            Map<String, Object> it = (Map<String, Object>) l.get(0);
+            String vid = String.valueOf(it.get("variantId"));
+            String combo = jdbc.sql("SELECT coalesce(combo_key, '') FROM commerce.product_variants WHERE id = CAST(:v AS uuid)").param("v", vid).query(String.class).optional().orElse("");
+            var ms = FactCheck.mentions(last, shopView(ctx.tenantId()).names());
+            if (ms.stream().map(FactCheck.Mention::slug).distinct().count() > 1) return false;
+            String bare = MoneyGuard.digits(withoutNames(last, ms)).replaceAll("(?i)\\d+(?:[.,]\\d+)?\\s*(?:%|٪|جنيه|جنية|ج(?!\\p{L})|egp|le(?!\\p{L})|pounds?)", " ");   // «5%», «50 جنيه» are no quantity
+            var q = quantityIn(bare, combo);
+            return q.isPresent() && it.get("quantity") instanceof Number n && n.intValue() != q.get() && !CHANGE_OPTION_WORDS.matcher(FastAnswers.norm(last)).find();
+        } catch (Exception e) { return false; }
+    }
+
+    /** «بدل», «مش», «غير»: the message changes an option, so a number in it may be the option («خليها ٨ قطع بدل ٥»). */
+    private static final Pattern CHANGE_OPTION_WORDS = Pattern.compile("(?<!\\p{L})(?:بدل|مش|غير|غيرها|غيره|instead)(?!\\p{L})");
+
+    /** The customer was just told the order is below the minimum (the draft is kept, and the last reply spoke of the minimum). */
+    private boolean belowMinimumShown(Ctx ctx) {
+        boolean kept = jdbc.sql("SELECT below_minimum IS NOT NULL FROM chat.conversations WHERE id = :c").param("c", ctx.conversationId()).query(Boolean.class).optional().orElse(false);
+        if (!kept) return false;
+        String before = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'assistant' AND id < :u ORDER BY id DESC LIMIT 1").param("c", ctx.conversationId()).param("u", ctx.userMsgId())
+                .query(String.class).optional().orElse(null);
+        return before != null && MINIMUM_WORDS.matcher(FastAnswers.norm(before)).find();
+    }
+
+    private static final Pattern LETTER_SIZE = Pattern.compile("(?<![A-Za-z0-9])((?:[2-5]X|X{0,3})L|X{0,2}S|M)(?![A-Za-z])");
+
+    /**
+     * «فستان … XXL» for a dress that stops at XL, answered «المقاس ده بيغطي الـ XXL» (Qwen, final exam 2026-11-04): a letter size the customer asked for, which the one product they named
+     * does not come in, said again in the reply without a «no». Null when fine.
+     */
+    static String inventedSize(String customer, String answer, FactCheck.Shop shop) {
+        if (customer == null || answer == null) return null;
+        var sm = LETTER_SIZE.matcher(customer.toUpperCase(java.util.Locale.ROOT));
+        if (!sm.find()) return null;
+        String size = sm.group(1);
+        var ms = FactCheck.mentions(customer, shop.names()).stream().map(FactCheck.Mention::slug).distinct().toList();
+        if (ms.size() != 1) return null;
+        FactCheck.Product p = shop.product(ms.get(0));
+        if (p == null) return null;
+        Set<String> sizes = new java.util.LinkedHashSet<>();
+        for (var v : p.variants()) for (String val : v.options().values()) { var m = LETTER_SIZE.matcher(val.toUpperCase(java.util.Locale.ROOT)); if (m.matches()) sizes.add(m.group(1)); }
+        if (sizes.isEmpty() || sizes.contains(size)) return null;
+        for (String sentence : answer.split("(?<=[.!؟?\\n،,])")) {
+            if (!Pattern.compile("(?<![A-Za-z0-9])" + size + "(?![A-Za-z])").matcher(sentence.toUpperCase(java.util.Locale.ROOT)).find()) continue;
+            if (FactCheck.NEG.matcher(FactCheck.light(sentence)).find() || NOT_HAVE.matcher(sentence).find()) continue;
+            return "«" + p.name() + "» does not come in " + size + ": its sizes are " + String.join(", ", sizes) + ". Say plainly that " + size + " is not available (never that another size covers or fits it), "
+                    + "give the real sizes, and offer the closest one or a similar product that has " + size + ".";
+        }
+        return null;
     }
 
     private boolean summaryWasShown(Ctx ctx) {
@@ -1298,8 +1370,14 @@ public class ChatService {
      * needs said, a new quantity of the one item, or another value of one option of the one item. Anything unclear is left to the model. True when the new summary was made.
      */
     @SuppressWarnings("unchecked")
-    private boolean changeByCode(Ctx ctx, String last) {
-        String raw = jdbc.sql("SELECT pending::text FROM chat.conversations WHERE id = :c").param("c", ctx.conversationId()).query(String.class).optional().orElse(null);
+    private boolean changeByCode(Ctx ctx, String last) { return changeByCode(ctx, last, false, new String[1]); }
+
+    /**
+     * {@code belowMinimum}: the change is to the order the customer was told is below the minimum (kept in {@code below_minimum}), not to a summary. {@code ask} receives a question
+     * when the customer's words are ambiguous («خليهم ٨» when the product also comes in «٨ قطع»).
+     */
+    private boolean changeByCode(Ctx ctx, String last, boolean belowMinimum, String[] ask) {
+        String raw = jdbc.sql("SELECT " + (belowMinimum ? "below_minimum" : "pending") + "::text FROM chat.conversations WHERE id = :c").param("c", ctx.conversationId()).query(String.class).optional().orElse(null);
         if (raw == null) return false;
         Map<String, Object> pend;
         try { pend = JSON.readValue(raw, new TypeReference<LinkedHashMap<String, Object>>() {}); } catch (Exception e) { return false; }
@@ -1361,6 +1439,17 @@ public class ChatService {
             }
             // 4. a new quantity («خليهم ٢», «عايز اتنين منهم», «خليها قطعتين»), never a number inside a product's name («آيفون 15», «X12»)
             var q = quantityIn(withoutNames(last, ms), combo);
+            if (q.isPresent() && swapped == null) {
+                String other = countOption(vid, q.get());
+                if (other != null) {   // «خليهم ٨»: eight boxes, or the box of 8 pieces?
+                    String nm = jdbc.sql("SELECT p.name FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE v.id = CAST(:v AS uuid)").param("v", vid).query(String.class).optional().orElse("");
+                    String cur = base.values().stream().filter(x -> PIECES.matcher(FastAnswers.norm(MoneyGuard.digits(x))).find()).findFirst().orElse(String.join("، ", base.values()));
+                    ask[0] = arabicConversation(ctx.conversationId())
+                            ? "تقصد " + q.get() + " × «" + nm + "» (" + cur + ") ولا «" + nm + "» " + other + "؟"
+                            : "Do you mean " + q.get() + " × «" + nm + "» (" + cur + ") or «" + nm + "» " + other + "?";
+                    return false;
+                }
+            }
             if (q.isPresent() && q.get() != ((Number) one.get("quantity")).intValue()) {
                 one.put("quantity", q.get());
                 qtyConfirmed = changed = true;
@@ -1387,6 +1476,19 @@ public class ChatService {
         if (r.get("error") != null || ctx.summary()[0] == null) { log.info("Change by code refused (conversation {}): {}", ctx.conversationId(), r.get("error")); return false; }
         events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), null, "CHANGE_BY_CODE", last.length() > 120 ? last.substring(0, 120) : last, null);
         return true;
+    }
+
+    /** Another value of this variant's product that is {@code n} pieces («٨ قطع»), or null: a bare «خليهم ٨» could then mean that option as well as a quantity. */
+    private String countOption(String variantId, int n) {
+        List<String> values = jdbc.sql("""
+                SELECT DISTINCT ov.value FROM commerce.product_option_values ov JOIN commerce.product_options op ON op.id = ov.option_id
+                WHERE op.product_id = (SELECT product_id FROM commerce.product_variants WHERE id = CAST(:v AS uuid))
+                """).param("v", variantId).query(String.class).list();
+        for (String v : values) {
+            var m = PIECES.matcher(FastAnswers.norm(MoneyGuard.digits(v)));
+            if (m.find() && Integer.parseInt(m.group(1)) == n) return v;
+        }
+        return null;
     }
 
     /**
@@ -3242,6 +3344,12 @@ public class ChatService {
             boolean ar = arabicConversation(ctx.conversationId());
             ctx.mustSay()[0] = ar ? "🙏 أقل قيمة للطلب " + min + " جنيه، وطلبك دلوقتي " + now + " جنيه. تحب تضيف إيه عشان نكمل الأوردر؟"
                     : "🙏 The minimum order is " + min + " EGP and your order is " + now + " EGP now. What would you like to add so we can complete it?";
+            try {
+                Map<String, Object> draft = obj("items", items.stream().map(i -> obj("variantId", i.variantId().toString(), "quantity", i.quantity(), "note", i.note())).toList(),
+                        "name", name, "phone", phone.replace(" ", ""), "pickup", pickup, "governorate", pickup ? "" : gov, "line1", line1, "area", area, "landmark", text(a, "landmark"),
+                        "paymentMethod", pm, "notes", text(a, "notes"), "coupon", text(a, "couponCode"));
+                jdbc.sql("UPDATE chat.conversations SET below_minimum = CAST(:p AS jsonb) WHERE id = :c").param("p", json(draft)).param("c", ctx.conversationId()).update();
+            } catch (RuntimeException ex) { log.debug("Below-minimum draft not kept", ex); }
             return obj("error", "The minimum order value is " + min + " and this order is " + now + ": tell the customer exactly that and ask what they want to add (you may suggest one or two items). "
                     + "Never raise a quantity or add an item they did not ask for.");
         }
@@ -3257,7 +3365,7 @@ public class ChatService {
                 "name", name, "phone", phone.replace(" ", ""), "pickup", pickup, "governorate", pickup ? "" : gov, "line1", line1, "area", area, "landmark", text(a, "landmark"),
                 "replaces", change == null ? null : String.valueOf(onFile.get("id")), "replacesNumber", change == null ? null : onFile.get("number"),
                 "paymentMethod", pm, "extraDiscountMinor", extra, "discountPct", pct, "notes", text(a, "notes"), "totalMinor", total, "currency", quote.get("currency"), "whatsapp", waNumber, "coupon", text(a, "couponCode"), "userMsgId", ctx.userMsgId());
-        jdbc.sql("UPDATE chat.conversations SET pending = CAST(:p AS jsonb) WHERE id = :c").param("p", json(pending)).param("c", ctx.conversationId()).update();
+        jdbc.sql("UPDATE chat.conversations SET pending = CAST(:p AS jsonb), below_minimum = NULL WHERE id = :c").param("p", json(pending)).param("c", ctx.conversationId()).update();
 
         List<Map<String, Object>> lines = new ArrayList<>();
         for (var ln : (List<Map<String, Object>>) quote.get("lines")) lines.add(obj("product", ln.get("productName"), "quantity", ln.get("quantity"), "unitPrice", major(ln.get("unitPriceMinor"))));

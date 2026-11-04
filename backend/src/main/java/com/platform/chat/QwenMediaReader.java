@@ -69,7 +69,7 @@ public class QwenMediaReader implements MediaReader {
                 body.put("messages", List.of(Map.of("role", "user", "content", content)));
                 body.put("max_tokens", 250);
                 body.put("enable_thinking", false);
-                String said = call(tenantId, channel, body, "image", 30);
+                String said = call(tenantId, channel, body, "image", 30, "IMAGE", null);
                 return said == null ? caption : PHOTO + clean(said) + "]" + (caption == null ? "" : "\n" + caption);
             }
             if (bytes.length > MAX_AUDIO) return caption;
@@ -79,7 +79,8 @@ public class QwenMediaReader implements MediaReader {
             body.put("stream", false);
             body.put("asr_options", Map.of("enable_itn", false));
             Integer secs = oggSeconds(bytes);
-            String said = call(tenantId, channel, body, secs == null ? "voice" : "voice " + secs + "s", 40);
+            if (secs == null) secs = Math.max(1, bytes.length / 3000);   // not Ogg (Messenger's mp4/aac): about 24 kbit/s, an estimate for the cost
+            String said = call(tenantId, channel, body, "voice " + secs + "s", 40, "AUDIO", secs);
             return said == null ? caption : VOICE + said.trim() + (caption == null ? "" : "\n" + caption);
         } catch (RuntimeException e) {
             log.warn("Could not read a customer's {}: {}", media.kind(), e.toString());
@@ -88,7 +89,7 @@ public class QwenMediaReader implements MediaReader {
     }
 
     /** One request; the reply's text, or null. */
-    private String call(UUID tenantId, String channel, Map<String, Object> body, String what, int timeoutS) {
+    private String call(UUID tenantId, String channel, Map<String, Object> body, String what, int timeoutS, String kind, Integer seconds) {
         try {
             HttpRequest req = HttpRequest.newBuilder(URI.create(baseUrl + "/chat/completions")).timeout(Duration.ofSeconds(timeoutS))
                     .header("Authorization", "Bearer " + key).header("Content-Type", "application/json")
@@ -102,8 +103,9 @@ public class QwenMediaReader implements MediaReader {
             JsonNode c = root.path("choices").path(0).path("message").path("content");
             String text = c.isTextual() ? c.asText() : c.isArray() ? c.findValuesAsText("text").stream().reduce("", (a, b) -> a + b) : "";
             JsonNode u = root.path("usage");
-            usage.record(tenantId, "MEDIA", channel, null, false, what + ": " + text, List.of(new AiUsageService.Round(List.of(what),
-                    new AiProvider.Usage(u.path("prompt_tokens").asInt(0), u.path("completion_tokens").asInt(0), u.path("prompt_tokens_details").path("cached_tokens").asInt(0), 0))), "qwen", false);
+            if (seconds != null && u.path("seconds").asInt(0) > 0) seconds = u.path("seconds").asInt();   // the Singapore workspace says the billed seconds
+            usage.recordMedia(tenantId, channel, kind, seconds, what + ": " + text,
+                    new AiProvider.Usage(u.path("prompt_tokens").asInt(0), u.path("completion_tokens").asInt(0), u.path("prompt_tokens_details").path("cached_tokens").asInt(0), 0), "qwen");
             return text.isBlank() ? null : text;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

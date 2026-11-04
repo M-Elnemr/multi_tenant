@@ -705,4 +705,13 @@ class FactCheckTest {
             }
         }
     }
+
+    @Test
+    void aSizeTheProductLacksIsNeverSaidToBeCovered() {
+        // Qwen, final exam 2026-11-04: «المقاس ده بيغطي حتتة الـ XXL» for a dress that stops at XL
+        String bad = "عندنا الفستان متوفر بمقاسات S, M, L, و XL، والمقاس ده بيغطي حتتة الـ XXL (مقاس ٤٦).";
+        org.assertj.core.api.Assertions.assertThat(ChatService.inventedSize("عايز فستان قصير بكم منفوخ XXL", bad, FASH)).contains("XXL").contains("XL");
+        org.assertj.core.api.Assertions.assertThat(ChatService.inventedSize("عايز فستان قصير بكم منفوخ XXL", "للأسف الفستان مش متاح XXL، مقاساته S و M و L و XL.", FASH)).isNull();
+        org.assertj.core.api.Assertions.assertThat(ChatService.inventedSize("عايز فستان قصير بكم منفوخ XL", "متاح XL بـ 650 جنيه", FASH)).isNull();
+    }
 }
