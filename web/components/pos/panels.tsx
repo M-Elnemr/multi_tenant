@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { money } from "@/lib/format";
 import { denominations, toMinor } from "@/lib/pos/money";
 import { cashierByPin } from "@/lib/pos/pin";
+import { matches, words } from "@/lib/pos/search";
 import type { CatalogItem, Cashier, Count, Held, Invoice, Op, Shift } from "@/lib/pos/db";
 import { useI18n } from "../i18n-provider";
 import { Alert, Button, Field, Input, Select } from "../ui";
@@ -139,7 +140,7 @@ export function CloseShift({ shift, summary, currency, cashiers, onClose, onPrin
   if (askPin) return <PinPad cashiers={cashiers.filter((c) => c.userId !== shift.cashierId)} title={t("term.nextCashierPin")} onOk={(c) => { setNext(c); setAskPin(false); }} />;
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-2 text-sm">
+      <div className="grid gap-2 text-sm sm:grid-cols-2">
         <Line k={t("term.openingFloat")} v={m(summary.floatMinor)} />
         <Line k={t("term.cashSales")} v={m(summary.cashSalesMinor)} />
         <Line k={t("term.cashRefunds")} v={`-${m(summary.cashRefundsMinor)}`} />
@@ -152,9 +153,10 @@ export function CloseShift({ shift, summary, currency, cashiers, onClose, onPrin
         <p className="mb-2 text-sm font-semibold">{t("term.countByNote")}</p>
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
           {denominations(currency).map((d) => (
-            <label key={d} className="rounded-xl border border-slate-200 p-2 text-center text-xs">
-              <span className="block font-bold">{m(d)}</span>
-              <input dir="ltr" inputMode="numeric" className="mt-1 w-full rounded-lg border border-slate-200 px-1 py-1 text-center text-sm" value={byNote[d] ?? ""} onChange={(e) => setByNote({ ...byNote, [d]: e.target.value.replace(/\D/g, "") })} />
+            <label key={d} className="min-w-0 rounded-xl border border-slate-200 p-2 text-center text-xs">
+              <span className="block truncate font-bold">{m(d)}</span>
+              <input dir="ltr" inputMode="numeric" className="mt-1 w-full min-w-0 rounded-lg border border-slate-200 px-1 py-1 text-center text-sm" value={byNote[d] ?? ""} onChange={(e) => setByNote({ ...byNote, [d]: e.target.value.replace(/\D/g, "") })} />
+              {(parseInt(byNote[d] || "0", 10) || 0) > 0 && <span className="mt-0.5 block truncate text-[11px] text-slate-500">= {m(d * (parseInt(byNote[d] || "0", 10) || 0))}</span>}
             </label>
           ))}
         </div>
@@ -171,7 +173,7 @@ export function CloseShift({ shift, summary, currency, cashiers, onClose, onPrin
         ? <p className="text-sm">{t("term.handTo")}: <b>{next.name}</b> <button type="button" className="text-brand" onClick={() => setNext(null)}>({t("term.change2")})</button></p>
         : <Button variant="secondary" className="w-full" onClick={() => setAskPin(true)}>{t("term.nextCashierSign")}</Button>)}
       <Field label={t("term.note")}><Input value={note} onChange={(e) => setNote(e.target.value)} /></Field>
-      <div className="flex gap-2">
+      <div className="sticky bottom-0 -mx-1 flex gap-2 bg-white px-1 pt-2">
         <Button variant="secondary" onClick={onPrintX}>{t("term.printX")}</Button>
         <Button className="flex-1" disabled={kind === "NEXT_CASHIER" && !next} onClick={() => onClose(counted, Object.fromEntries(Object.entries(byNote).filter(([, c]) => c).map(([k, c]) => [k, parseInt(c, 10) || 0])), note, { kind, to: next })}>{t("term.closeShiftBtn")}</Button>
       </div>
@@ -179,7 +181,7 @@ export function CloseShift({ shift, summary, currency, cashiers, onClose, onPrin
   );
 }
 
-function Line({ k, v }: { k: string; v: string }) { return <div className="flex justify-between rounded-lg bg-slate-50 px-3 py-2"><span className="text-slate-600">{k}</span><b className="tabular-nums">{v}</b></div>; }
+function Line({ k, v }: { k: string; v: string }) { return <div className="flex min-w-0 justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2"><span className="min-w-0 truncate text-slate-600">{k}</span><b className="shrink-0 tabular-nums">{v}</b></div>; }
 
 // ---- invoices and returns ----------------------------------------------------------------------------------------------------
 
@@ -192,8 +194,8 @@ export function InvoicesPanel({ invoices, currency, onReprint, onReturn, findRem
   const [open, setOpen] = useState<Invoice | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const list = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    return invoices.filter((i) => !s || i.number.toLowerCase().includes(s) || (i.customerName ?? "").toLowerCase().includes(s) || (i.phone ?? "").includes(s)).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 80);
+    const ws = words(q);
+    return invoices.filter((i) => matches(ws, i.number, i.customerName, i.phone)).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 80);
   }, [invoices, q]);
   if (open) {
     const left = open.lines.reduce((n, l) => n + l.qty - l.returned, 0);
@@ -215,9 +217,9 @@ export function InvoicesPanel({ invoices, currency, onReprint, onReturn, findRem
   }
   return (
     <div className="space-y-3">
-      <div className="flex gap-2">
-        <Input autoFocus value={q} onChange={(e) => { setQ(e.target.value); setMsg(null); }} placeholder={t("term.invoiceSearch")} dir="ltr" />
-        <Button variant="secondary" onClick={async () => {
+      <div className="flex min-w-0 gap-2">
+        <Input autoFocus value={q} onChange={(e) => { setQ(e.target.value); setMsg(null); }} placeholder={t("term.invoiceSearch")} className="min-w-0" />
+        <Button variant="secondary" className="shrink-0" onClick={async () => {
           if (!q.trim()) return;
           setMsg(null);
           try { const r = await findRemote(q.trim()); if (r) setOpen(r); else setMsg(t("term.notFound")); } catch (e) { setMsg((e as Error).message === "offline" ? t("term.needOnlineSearch") : t("term.notFound")); }
@@ -227,8 +229,8 @@ export function InvoicesPanel({ invoices, currency, onReprint, onReturn, findRem
       <ul className="max-h-[60vh] divide-y overflow-y-auto rounded-xl border">
         {list.length === 0 && <li className="p-6 text-center text-sm text-slate-500">{t("term.noInvoices")}</li>}
         {list.map((i) => (
-          <li key={i.id}><button type="button" onClick={() => setOpen(i)} className="flex w-full items-center justify-between gap-2 p-3 text-start text-sm hover:bg-slate-50">
-            <span><b dir="ltr">{i.number}</b><span className="ms-2 text-xs text-slate-500">{new Date(i.at).toLocaleTimeString(locale === "ar" ? "ar-EG" : "en-GB", { hour: "2-digit", minute: "2-digit" })}</span>{!i.synced && <span className="ms-2 text-xs text-amber-600">● {t("term.notSynced")}</span>}</span>
+          <li key={i.id}><button type="button" onClick={() => setOpen(i)} className="flex w-full min-w-0 items-center justify-between gap-2 p-3 text-start text-sm hover:bg-slate-50">
+            <span className="min-w-0 truncate"><b dir="ltr">{i.number}</b><span className="ms-2 text-xs text-slate-500">{new Date(i.at).toLocaleTimeString(locale === "ar" ? "ar-EG" : "en-GB", { hour: "2-digit", minute: "2-digit" })}</span>{!i.synced && <span className="ms-2 text-xs text-amber-600">● {t("term.notSynced")}</span>}</span>
             <span className="font-bold tabular-nums">{money(i.totalMinor, i.currency ?? currency, locale)}</span>
           </button></li>
         ))}
@@ -308,8 +310,8 @@ export function CountPanel({ count, catalog, onStart, onSet, onSend, find }: {
       </div>
     );
   }
-  const s = q.trim().toLowerCase();
-  const results = s ? catalog.filter((c) => c.active && (c.name.toLowerCase().includes(s) || c.sku.toLowerCase() === s || c.barcode === q.trim())).slice(0, 8) : [];
+  const ws = words(q);
+  const results = ws.length ? catalog.filter((c) => c.active && matches(ws, c.name, c.label, c.sku, c.barcode)).slice(0, 8) : [];
   const lines = Object.entries(count.lines);
   const diffs = lines.filter(([, l]) => l.counted !== l.expected).length;
   const nameOf = (id: string) => { const c = catalog.find((x) => x.variantId === id); return c ? `${c.name}${c.label ? ` (${c.label})` : ""}` : id.slice(0, 8); };
@@ -367,9 +369,9 @@ export function SyncPanel({ pending, failed, online, lastSync, onSync, onDismiss
   );
 }
 
-export function SettingsPanel({ size, shopSize, autoPrint, onSize, onAutoPrint, deviceName, branchName, onForget, canForget }: {
-  size: "58" | "80" | "A4" | null; shopSize: string; autoPrint: boolean; deviceName: string; branchName: string; canForget: boolean;
-  onSize: (s: "58" | "80" | "A4" | null) => void; onAutoPrint: (v: boolean) => void; onForget: () => void;
+export function SettingsPanel({ size, shopSize, autoPrint, sound, onSize, onAutoPrint, onSound, deviceName, branchName, onForget, canForget }: {
+  size: "58" | "80" | "A4" | null; shopSize: string; autoPrint: boolean; sound: boolean; deviceName: string; branchName: string; canForget: boolean;
+  onSize: (s: "58" | "80" | "A4" | null) => void; onAutoPrint: (v: boolean) => void; onSound: (v: boolean) => void; onForget: () => void;
 }) {
   const { t } = useI18n();
   return (
@@ -381,10 +383,113 @@ export function SettingsPanel({ size, shopSize, autoPrint, onSize, onAutoPrint, 
         </Select>
       </Field>
       <label className="flex items-center gap-2"><input type="checkbox" checked={autoPrint} onChange={(e) => onAutoPrint(e.target.checked)} /> {t("term.autoPrint")}</label>
+      <label className="flex items-center gap-2"><input type="checkbox" checked={sound} onChange={(e) => onSound(e.target.checked)} /> {t("term.sound")}</label>
       <div className="border-t pt-3">
         <Button variant="danger" disabled={!canForget} onClick={onForget}>{t("term.forget")}</Button>
         <p className="mt-1 text-xs text-slate-500">{canForget ? t("term.forgetHint") : t("term.forgetBlocked")}</p>
       </div>
+    </div>
+  );
+}
+
+// ---- the menu, variants, categories, X report -------------------------------------------------------------------------
+
+export type MenuItem = { key: string; label: string; icon: string; onClick: () => void; badge?: string | number; tone?: "danger" };
+
+/** Everything that is not selling, as big buttons (no crowded top bar, nothing to scroll sideways). */
+export function MenuSheet({ items }: { items: MenuItem[] }) {
+  return (
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+      {items.map((i) => (
+        <button key={i.key} type="button" onClick={i.onClick} className={`relative flex min-h-20 min-w-0 flex-col items-center justify-center gap-1 rounded-2xl border p-3 text-center text-sm font-semibold active:scale-[0.98] ${i.tone === "danger" ? "border-red-200 bg-red-50 text-red-700" : "border-slate-200 bg-white hover:border-brand"}`}>
+          <span className="text-2xl leading-none">{i.icon}</span><span className="line-clamp-2">{i.label}</span>
+          {i.badge ? <span className="absolute end-2 top-2 rounded-full bg-amber-500 px-1.5 text-[11px] font-bold text-white">{i.badge}</span> : null}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** «Size: M, Colour: Black» → { Size: "M", Colour: "Black" }; null when the label is not option pairs. */
+function options(label: string | null): Record<string, string> | null {
+  if (!label) return null;
+  const out: Record<string, string> = {};
+  for (const part of label.split(/,\s*/)) {
+    const i = part.indexOf(":");
+    if (i <= 0) return null;
+    out[part.slice(0, i).trim()] = part.slice(i + 1).trim();
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+/** A product that comes in sizes or colours: pick each option as chips, see that one's price and stock, add it (a quantity too). */
+export function VariantPicker({ variants, currency, onAdd }: { variants: CatalogItem[]; currency: string; onAdd: (v: CatalogItem, qty: number) => void }) {
+  const { t, locale } = useI18n();
+  const parsed = variants.map((v) => ({ v, o: options(v.label) }));
+  const structured = parsed.every((p) => p.o);
+  const names = structured ? [...new Set(parsed.flatMap((p) => Object.keys(p.o!)))] : [];
+  const [pick, setPick] = useState<Record<string, string>>({});
+  const [qty, setQty] = useState(1);
+  const chosen = structured ? parsed.find((p) => names.every((n) => pick[n] && p.o![n] === pick[n]))?.v ?? null : null;
+  const valuesOf = (n: string) => [...new Set(parsed.map((p) => p.o![n]).filter(Boolean))];
+  // a value is shown faded when no variant with the other picks so far has it in stock
+  const stockFor = (n: string, val: string) => parsed.filter((p) => p.o![n] === val && names.every((k) => k === n || !pick[k] || p.o![k] === pick[k])).reduce((s, p) => s + Math.max(0, p.v.stock), 0);
+  if (!structured) {
+    return (
+      <ul className="divide-y rounded-xl border">
+        {variants.map((v) => (
+          <li key={v.variantId}><button type="button" onClick={() => onAdd(v, 1)} className="flex w-full min-w-0 items-center justify-between gap-2 p-3 text-start text-sm hover:bg-slate-50">
+            <span className="min-w-0 truncate">{v.label ?? v.sku}</span><span className="shrink-0"><b className="tabular-nums">{money(v.priceMinor, currency, locale)}</b> <span className={v.stock > 0 ? "text-xs text-slate-500" : "text-xs font-bold text-red-600"}>· {v.stock}</span></span>
+          </button></li>
+        ))}
+      </ul>
+    );
+  }
+  return (
+    <div className="space-y-4">
+      {names.map((n) => (
+        <div key={n}>
+          <p className="mb-1.5 text-sm font-semibold text-slate-700">{n}</p>
+          <div className="flex flex-wrap gap-2">
+            {valuesOf(n).map((val) => {
+              const on = pick[n] === val, st = stockFor(n, val);
+              return <button key={val} type="button" onClick={() => setPick({ ...pick, [n]: val })} className={`min-w-12 rounded-xl border px-3 py-2 text-sm font-semibold ${on ? "border-brand bg-brand text-white" : st > 0 ? "border-slate-200 bg-white" : "border-dashed border-slate-300 bg-slate-50 text-slate-400"}`}>{val}</button>;
+            })}
+          </div>
+        </div>
+      ))}
+      <div className="flex items-center justify-between rounded-xl bg-slate-50 p-3 text-sm">
+        {chosen ? <><span>{t("term.stockNow")} <b className={chosen.stock > 0 ? "" : "text-red-600"}>{chosen.stock}</b></span><b className="text-lg tabular-nums">{money(chosen.priceMinor, currency, locale)}</b></> : <span className="text-slate-500">{t("term.pickOptions")}</span>}
+      </div>
+      <div className="flex gap-2">
+        <div className="flex items-center rounded-xl border" dir="ltr">
+          <button type="button" className="h-11 w-11 text-lg" onClick={() => setQty(Math.max(1, qty - 1))}>−</button>
+          <span className="w-8 text-center font-bold">{qty}</span>
+          <button type="button" className="h-11 w-11 text-lg" onClick={() => setQty(qty + 1)}>+</button>
+        </div>
+        <Button className="flex-1" disabled={!chosen} onClick={() => chosen && onAdd(chosen, qty)}>{t("term.addToCart")}</Button>
+      </div>
+    </div>
+  );
+}
+
+export function CategorySheet({ cats, current, onPick }: { cats: string[]; current: string; onPick: (c: string) => void }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {cats.map((c) => <button key={c} type="button" onClick={() => onPick(c)} className={`rounded-full px-3.5 py-2 text-sm font-semibold ${current === c ? "bg-brand text-white" : "bg-white ring-1 ring-slate-200"}`}>{c}</button>)}
+    </div>
+  );
+}
+
+/** The X report on screen first (printing is one tap away). */
+export function ReportView({ rows, onPrint }: { rows: [string, string][]; onPrint: () => void }) {
+  const { t } = useI18n();
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1 text-sm">
+        {rows.map(([k, v], i) => k === "—" ? <hr key={i} className="my-2 border-dashed" /> : <div key={i} className="flex min-w-0 justify-between gap-3"><span className="min-w-0 truncate text-slate-600">{k}</span><b className="shrink-0 tabular-nums">{v}</b></div>)}
+      </div>
+      <Button className="w-full" onClick={onPrint}>{t("term.print")}</Button>
     </div>
   );
 }

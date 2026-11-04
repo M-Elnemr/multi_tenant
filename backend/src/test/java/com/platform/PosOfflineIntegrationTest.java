@@ -132,6 +132,9 @@ class PosOfflineIntegrationTest extends IntegrationTestBase {
         String again = push(s, List.of(Map.of("opId", rid1, "seq", 3, "type", "RETURN", "at", java.time.OffsetDateTime.now().toString(), "cashierId", s.owner().toString(),
                 "payload", Map.of("orderId", order.toString(), "shiftId", shift.toString(), "refundMethod", "CASH", "items", List.of(Map.of("variantId", s.cap(), "qty", 1))))));
         assertThat(JsonPath.<Boolean>read(again, "$.results[0].duplicate")).isTrue();
+        String day = body(onHost(s.t().host(), s.t().access(), "GET", "/api/v1/store/pos/summary", null).andExpect(status().isOk()));
+        assertThat(JsonPath.<List<Object>>read(day, "$.byHour")).hasSize(1);
+        assertThat(JsonPath.<Number>read(day, "$.byHour[0].totalMinor").longValue()).isEqualTo(30000);
         String report = body(onHost(s.t().host(), s.t().access(), "GET", "/api/v1/store/pos/shifts/" + shift, null).andExpect(status().isOk()));
         assertThat(JsonPath.<Number>read(report, "$.totals.totalMinor").longValue()).isEqualTo(30000);
     }

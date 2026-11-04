@@ -89,6 +89,8 @@ public class PosReportService {
                 .param("t", t).param("tz", tz).param("d", d).query().listOfRows()));
         out.put("returns", Rows.camel(jdbc.sql("SELECT count(*) AS returns, coalesce(sum(r.refund_minor), 0) AS refund_minor FROM commerce.order_returns r JOIN commerce.orders o ON o.id = r.order_id WHERE o.tenant_id = :t AND o.source = 'POS' AND (r.created_at AT TIME ZONE :tz)::date = :d")
                 .param("t", t).param("tz", tz).param("d", d).query().singleRow()));
+        out.put("byHour", Rows.camel(jdbc.sql("SELECT extract(hour FROM coalesce(o.client_created_at, o.created_at) AT TIME ZONE :tz)::int AS hour, count(*) AS sales, sum(o.total_minor) AS total_minor FROM commerce.orders o WHERE" + where + " GROUP BY 1 ORDER BY 1")
+                .param("t", t).param("tz", tz).param("d", d).query().listOfRows()));
         out.put("topItems", Rows.camel(jdbc.sql("SELECT i.product_name_snapshot AS name, i.variant_name_snapshot AS label, sum(i.quantity) AS qty, sum(i.line_total_minor) AS total_minor FROM commerce.order_items i JOIN commerce.orders o ON o.id = i.order_id WHERE" + where + " GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 15")
                 .param("t", t).param("tz", tz).param("d", d).query().listOfRows()));
         return out;

@@ -13,14 +13,14 @@ type Row = { method: string; amount: string };
  * Taking the money: one method (cash with the change worked out, card or transfer) or several (part cash, part card). Cash can be more than what is due (the change);
  * card and transfer only up to what is left.
  */
-export function PayPanel({ totalMinor, currency, methods, onPay, onCancel, busy }: {
-  totalMinor: number; currency: string; methods: string[]; busy: boolean;
+export function PayPanel({ totalMinor, currency, methods, onPay, onCancel, busy, lastMethod }: {
+  totalMinor: number; currency: string; methods: string[]; busy: boolean; lastMethod?: string | null;
   onPay: (payments: Payment[], tenderedMinor: number, changeMinor: number) => void; onCancel: () => void;
 }) {
   const { t, locale } = useI18n();
   const m = (v: number) => money(v, currency, locale);
   const [split, setSplit] = useState(false);
-  const [method, setMethod] = useState(methods.includes("CASH") ? "CASH" : methods[0]);
+  const [method, setMethod] = useState(lastMethod && methods.includes(lastMethod) ? lastMethod : methods.includes("CASH") ? "CASH" : methods[0]);
   const [tendered, setTendered] = useState("");
   const [rows, setRows] = useState<Row[]>([{ method: "CASH", amount: "" }, { method: methods.find((x) => x !== "CASH") ?? "CARD_POS", amount: "" }]);
 
@@ -77,13 +77,20 @@ export function PayPanel({ totalMinor, currency, methods, onPay, onCancel, busy 
             <div className="space-y-2">
               <label className="block text-sm font-semibold text-slate-700">{t("term.tendered")}</label>
               <Input autoFocus dir="ltr" inputMode="decimal" value={tendered} onChange={(e) => setTendered(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") confirm(); }} placeholder={(totalMinor / 100).toFixed(2)} className="text-2xl font-bold" />
-              <div className="flex flex-wrap gap-2">
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
                 {quickCash(totalMinor, currency).map((v) => (
-                  <button key={v} type="button" onClick={() => setTendered((v / 100).toString())} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold tabular-nums hover:border-brand">{m(v)}</button>
+                  <button key={v} type="button" onClick={() => setTendered((v / 100).toString())} className="min-w-0 truncate rounded-xl border border-slate-200 bg-white px-2 py-2.5 text-sm font-semibold tabular-nums hover:border-brand">{v === totalMinor ? t("term.exact") : m(v)}</button>
                 ))}
               </div>
-              <div className={`flex items-center justify-between rounded-xl p-3 text-lg font-bold ${single.ok ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-700"}`}>
-                <span>{single.ok ? t("term.change") : t("term.notEnough")}</span><span className="tabular-nums">{single.ok ? m(single.change) : m(totalMinor - single.given)}</span>
+              {/* a number pad for touch screens: the same field as the keyboard */}
+              <div className="grid grid-cols-4 gap-2 [@media(pointer:fine)]:hidden" dir="ltr">
+                {["1", "2", "3", "⌫", "4", "5", "6", "00", "7", "8", "9", ".", "0"].map((k) => (
+                  <button key={k} type="button" onClick={() => setTendered((cur) => k === "⌫" ? cur.slice(0, -1) : k === "." && cur.includes(".") ? cur : (cur + k).replace(/^0+(?=\d)/, ""))}
+                    className={`h-12 rounded-xl border border-slate-200 bg-white text-lg font-bold active:scale-95 ${k === "0" ? "col-span-2" : ""}`}>{k}</button>
+                ))}
+              </div>
+              <div className={`flex items-center justify-between rounded-2xl p-4 font-extrabold ${single.ok ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-700"}`}>
+                <span className="text-base">{single.ok ? t("term.change") : t("term.notEnough")}</span><span className="text-3xl tabular-nums">{single.ok ? m(single.change) : m(totalMinor - single.given)}</span>
               </div>
             </div>
           )}
@@ -91,11 +98,11 @@ export function PayPanel({ totalMinor, currency, methods, onPay, onCancel, busy 
       ) : (
         <div className="space-y-2">
           {rows.map((r, i) => (
-            <div key={i} className="flex gap-2">
-              <select value={r.method} onChange={(e) => setRows(rows.map((x, k) => (k === i ? { ...x, method: e.target.value } : x)))} className="w-36 rounded-xl border border-slate-200 bg-white px-2 text-sm">
+            <div key={i} className="flex min-w-0 gap-2">
+              <select value={r.method} onChange={(e) => setRows(rows.map((x, k) => (k === i ? { ...x, method: e.target.value } : x)))} className="w-32 shrink-0 rounded-xl border border-slate-200 bg-white px-2 text-sm">
                 {methods.map((x) => <option key={x} value={x}>{t(`pay.${x}`)}</option>)}
               </select>
-              <Input dir="ltr" inputMode="decimal" value={r.amount} onChange={(e) => setRows(rows.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)))} placeholder="0.00" />
+              <Input dir="ltr" inputMode="decimal" value={r.amount} onChange={(e) => setRows(rows.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)))} placeholder="0.00" className="min-w-0" />
               {rows.length > 2 && <button type="button" className="px-2 text-slate-400" onClick={() => setRows(rows.filter((_, k) => k !== i))}>✕</button>}
             </div>
           ))}
