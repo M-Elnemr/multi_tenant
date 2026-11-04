@@ -136,6 +136,23 @@ class AiOrderByCodeIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void aChangeBelowTheMinimumIsAppliedEvenWhenTheModelSentABadId() throws Exception {
+        // Qwen, re-exam 2026-11-04: «خليها قطعتين» answered with prepare_order on a wrong id (refused) and «طلبك جاهز» written by the model
+        Shop s = shop();
+        jdbc.sql("UPDATE commerce.store_profiles SET min_order_minor = 15000 WHERE tenant_id = :t").param("t", s.id()).update();
+        String ext = "minbad-" + uniq();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("متاح يا فندم بـ ٨٥ جنيه"));
+        chat.reply(s.id(), "WEB", ext, null, "عايز ساندوتش شاورما عادي");
+        for (int i = 0; i < 3; i++) FakeAiProvider.SCRIPT.add(turns -> Turn.model("أقل قيمة للطلب ١٥٠ جنيه، تحب تضيف إيه؟"));
+        chat.reply(s.id(), "WEB", ext, null, "انا كريم، الجيزة الدقي شارع التحرير عمارة ٥ شقة ٢، ٠١٠١٢٣٤٥٦٧٨، كاش");
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", Map.of("items", List.of(Map.of("variantId", "00000000-0000-0000-0000-000000000000", "quantity", 2)), "customerName", "كريم", "phone", "01012345678",
+                "governorateCode", "GIZ", "addressLine1", "شارع التحرير عمارة ٥ شقة ٢", "area", "الدقي", "paymentMethod", "CASH_ON_DELIVERY")));
+        for (int i = 0; i < 3; i++) FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام يا أستاذ كريم، طلبك جاهز: ٢ ساندوتش بـ ١٧٠ جنيه"));
+        String r = chat.reply(s.id(), "WEB", ext, null, "خليهم ٢").text();
+        assertThat(r).contains("ده ملخص").contains("× 2").contains("170");
+    }
+
+    @Test
     void anItemTakenOutAfterTheSummaryGetsTheNewSummaryByCode() throws Exception {
         Shop s = shop();
         String r = change(s, List.of(s.small(), s.pepsi()), "عايز ساندوتش شاورما عادي وبيبسي كانز", "شيل البيبسي كانز وخلي الساندوتش بس");

@@ -430,7 +430,6 @@ public class ChatService {
             }
             // the customer changed the order just summarised («ضيف X», «شيل X», «خليهم ٢», «خليها كبير») and no new summary came: code applies the change (the customer confirms it as usual)
             boolean placedOrCancelled = rounds.stream().anyMatch(r -> r.tools().stream().anyMatch(t -> t.equals("place_order") || t.equals("cancel_order")));   // a flag to the owner is no reason to skip
-            boolean prepared = rounds.stream().anyMatch(r -> r.tools().contains("prepare_order"));
             String[] ask = new String[1];
             if (ctx.summary()[0] == null && ctx.order()[0] == null && !placedOrCancelled && ORDER_CHANGE.matcher(FastAnswers.norm(text)).find() && summaryWasShown(ctx)) {
                 try { if (changeByCode(ctx, text, false, ask)) log.info("Order change made by code (conversation {})", conv); } catch (RuntimeException e) { log.warn("Change by code skipped", e); }
@@ -438,7 +437,7 @@ public class ChatService {
                 // the model made the new summary but kept the old quantity («خليهم ٢» answered with × 1, Qwen in the final exam): code applies the number
                 String modelSummary = ctx.summary()[0];
                 try { if (changeByCode(ctx, text, false, ask)) log.info("Quantity put right by code (conversation {})", conv); else ctx.summary()[0] = modelSummary; } catch (RuntimeException e) { ctx.summary()[0] = modelSummary; log.warn("Quantity by code skipped", e); }
-            } else if (ctx.summary()[0] == null && ctx.order()[0] == null && !placedOrCancelled && !prepared && ORDER_CHANGE.matcher(FastAnswers.norm(text)).find() && belowMinimumShown(ctx)) {
+            } else if (ctx.summary()[0] == null && ctx.order()[0] == null && !placedOrCancelled && ctx.mustSay()[0] == null && ORDER_CHANGE.matcher(FastAnswers.norm(text)).find() && belowMinimumShown(ctx)) {   // a prepare_order the model got wrong (a bad id) is no reason to skip
                 // a change to the order just told to be below the minimum («لا غيرها لـ كبيرة»): code applies it, and the customer hears the new total (or gets the summary)
                 ctx.mustSay()[0] = null;
                 try { if (changeByCode(ctx, text, true, ask)) log.info("Below-minimum order changed by code (conversation {})", conv); } catch (RuntimeException e) { log.warn("Below-minimum change skipped", e); }
@@ -911,7 +910,7 @@ public class ChatService {
     /** The reply asks about an option (size, colour, bread...). */
     static final Pattern OPTION_ASK = Pattern.compile("(?:مقاس|المقاس|لون|اللون|حجم|الحجم|عيش|الخبز|خبز|السعه|الرامات|الطعم|انهي|size|colou?r|which)");
     /** A model-written summary or confirmation request («الطلب جاهز للتأكيد», «نبدأ التحضير؟»). */
-    static final Pattern FAKE_SUMMARY = Pattern.compile("(?:(?:جهزتلك|جهزت\\s+لك|حضرتلك)\\s+(?:ال)?طلبك?\\s+كالتالي|طلبك\\s+كالتالي|(?:ال)?(?:طلب|اوردر)\\s+كالتالي|اجهزلك\\s+(?:ال)?(?:اوردر|طلب)\\s+ب(?:\\s|$)|اؤكد\\s+(?:ال)?(?:اوردر|طلب)|الطلب\\s+جاهز|جاهز\\s+للتاكيد|نبدا\\s+التحضير|ناكد\\s+الطلب|اكد\\s+الطلب|اكد\\s+الاوردر|اكد\\s+التعديل|ااكد|اكدلك\\s+الطلب\\s+كده|ملخص\\s+(?:الاوردر|الطلب)|اكتب\\s+تمام|confirm\\s+(?:your|the)\\s+(?:order|change)|order\\s+(?:is\\s+ready|summary))");
+    static final Pattern FAKE_SUMMARY = Pattern.compile("(?:(?:جهزتلك|جهزت\\s+لك|حضرتلك)\\s+(?:ال)?طلبك?\\s+كالتالي|طلبك\\s+كالتالي|طلبك\\s+جاهز|(?:ال)?(?:طلب|اوردر)\\s+كالتالي|اجهزلك\\s+(?:ال)?(?:اوردر|طلب)\\s+ب(?:\\s|$)|اؤكد\\s+(?:ال)?(?:اوردر|طلب)|الطلب\\s+جاهز|جاهز\\s+للتاكيد|نبدا\\s+التحضير|ناكد\\s+الطلب|اكد\\s+الطلب|اكد\\s+الاوردر|اكد\\s+التعديل|ااكد|اكدلك\\s+الطلب\\s+كده|ملخص\\s+(?:الاوردر|الطلب)|اكتب\\s+تمام|confirm\\s+(?:your|the)\\s+(?:order|change)|order\\s+(?:is\\s+ready|summary))");
 
     /** «خليها عادي», «غيّر», «بدل», «شيل», «زوّد», «خليهم ٣»: a change to the order. */
     static final Pattern CHANGE_WORDS = Pattern.compile("(?:(?<!\\p{L})(?:خليها|خليه|خليهم|خليني|غير|غيرها|غيره|بدل|بدلها|شيل|شيلها|شيله|زود|زودها|نقص|قلل|مش\\s+عايز|عايزها|عايزه)(?!\\p{L})|\\b(?:change|instead|remove|make\\s+it)\\b)");

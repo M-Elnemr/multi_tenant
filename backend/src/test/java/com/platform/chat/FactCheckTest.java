@@ -714,4 +714,10 @@ class FactCheckTest {
         org.assertj.core.api.Assertions.assertThat(ChatService.inventedSize("عايز فستان قصير بكم منفوخ XXL", "للأسف الفستان مش متاح XXL، مقاساته S و M و L و XL.", FASH)).isNull();
         org.assertj.core.api.Assertions.assertThat(ChatService.inventedSize("عايز فستان قصير بكم منفوخ XL", "متاح XL بـ 650 جنيه", FASH)).isNull();
     }
+
+    @Test
+    void weHaveNotInTheOtherWordOrderIsADenialToo() {
+        // Qwen, re-exam 2026-11-04: «عندنا مش مياه معدنية» for water the shop sells
+        org.assertj.core.api.Assertions.assertThat(kinds(REST, "عايز مياه معدنية صغيرة ٦٠٠ مل", "عندنا مش مياه معدنية، إحنا شاورما سوري ومشويات على الفحم.")).contains("FALSE_DENIAL");
+    }
 }

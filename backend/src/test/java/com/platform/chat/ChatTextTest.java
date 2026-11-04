@@ -46,6 +46,7 @@ class ChatTextTest {
         assertThat(ChatService.looksLikeSummary("تمام يا فندم، هضيفهولك مع التيشيرت.\n\nتحب أجهزلك الأوردر بـ:\n- تيشيرت أطفال أبيض 8 سنة (250 جنيه)\n- فستان سهرة كحلي S (1500 جنيه)\n\nأؤكد الأوردر؟")).isTrue();
         assertThat(ChatService.looksLikeSummary("تمام يا أستاذ كريم. هجهزلك طلبك كالتالي:\n\n- 2x براونيز بالشوكولاتة (60 جنيه للواحد)\n- 1x بطاطس مقلية صغير (30 جنيه)")).isTrue();
         assertThat(ChatService.looksLikeSummary("عندنا فستان سهرة كحلي S بـ 1500 جنيه، تحب أضيفه؟")).isFalse();
+        assertThat(ChatService.looksLikeSummary("تمام يا أستاذ كريم، طلبك جاهز: ٢ قطعة بسبوسة بالقشطة بـ ١٠٠ جنيه")).isTrue();
     }
 
     @Test
