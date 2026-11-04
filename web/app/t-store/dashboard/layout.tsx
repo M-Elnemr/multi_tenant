@@ -16,8 +16,16 @@ const NAV: NavItem[] = [
   { href: "/dashboard/shipping?tab=shipments", label: "nav.shipments", group: "navgrp.sell", screen: "shipping", icon: "navigate" },
   { href: "/dashboard/invoices", label: "nav.invoices", group: "navgrp.sell", perm: "invoice.manage", icon: "receipt" },
 
+  // Core business: the AI replies on social and WhatsApp
+  { href: "/dashboard/conversations", label: "nav.inbox", group: "navgrp.ai", screen: "ai", icon: "chat" },
+  { href: "/dashboard/ai?tab=channels", label: "nav.aiChannels", group: "navgrp.ai", screen: "ai", icon: "link" },
+  { href: "/dashboard/ai?tab=whatsapp", label: "nav.aiWhatsapp", group: "navgrp.ai", screen: "ai", icon: "phone" },
+  { href: "/dashboard/settings?tab=whatsapp", label: "nav.ownWhatsapp", group: "navgrp.ai", perm: ["ai.read", "ai.manage"], icon: "phone" },
+  { href: "/dashboard/ai?tab=test", label: "nav.aiTest", group: "navgrp.ai", screen: "ai", write: true, icon: "sparkles" },
+  { href: "/dashboard/ai?tab=lessons", label: "nav.aiTeach", group: "navgrp.ai", screen: "ai", icon: "award" },
+  { href: "/dashboard/ai?tab=settings", label: "nav.aiSettings", group: "navgrp.ai", screen: "ai", icon: "settings" },
+
   // Customers and messages
-  { href: "/dashboard/conversations", label: "nav.inbox", group: "navgrp.service", screen: "ai", icon: "chat" },
   { href: "/dashboard/customers", label: "nav.customers", group: "navgrp.service", screen: "customers", icon: "users" },
   { href: "/dashboard/questions", label: "nav.questions", group: "navgrp.service", screen: "ai", icon: "mail" },
   { href: "/dashboard/reviews", label: "nav.reviews", group: "navgrp.service", screen: "reviews", icon: "star" },
@@ -38,10 +46,6 @@ const NAV: NavItem[] = [
   { href: "/dashboard/reports?tab=sales", label: "nav.salesReport", group: "navgrp.reports", perm: "report.read", icon: "trending" },
   { href: "/dashboard/reports?tab=products", label: "nav.profitReport", group: "navgrp.reports", perm: "report.read", icon: "wallet" },
   { href: "/dashboard/copilot", label: "nav.copilot", group: "navgrp.reports", perm: "copilot.use", icon: "sparkles" },
-
-  // The AI seller
-  { href: "/dashboard/ai?tab=test", label: "nav.aiTest", group: "navgrp.ai", screen: "ai", write: true, icon: "sparkles" },
-  { href: "/dashboard/ai?tab=lessons", label: "nav.aiTeach", group: "navgrp.ai", screen: "ai", icon: "award" },
 
   // Setup
   { href: "/dashboard/settings?tab=profile", label: "nav.shopDetails", group: "navgrp.setup", screen: "settings", icon: "home" },
@@ -77,10 +81,6 @@ const NAV: NavItem[] = [
   { href: "/dashboard/channels?tab=customers", label: "nav.mpCustomers", group: "navgrp.advChannels", screen: "integrations", icon: "users", advanced: true },
   { href: "/dashboard/channels?tab=platforms", label: "nav.mpPlatforms", group: "navgrp.advChannels", screen: "integrations", icon: "link", advanced: true },
   // Advanced: the AI and WhatsApp connections
-  { href: "/dashboard/ai?tab=channels", label: "nav.aiChannels", group: "navgrp.advAi", screen: "ai", icon: "link", advanced: true },
-  { href: "/dashboard/ai?tab=whatsapp", label: "nav.aiWhatsapp", group: "navgrp.advAi", screen: "ai", icon: "phone", advanced: true },
-  { href: "/dashboard/settings?tab=whatsapp", label: "nav.ownWhatsapp", group: "navgrp.advAi", perm: ["ai.read", "ai.manage"], icon: "phone", advanced: true },
-  { href: "/dashboard/ai?tab=settings", label: "nav.aiSettings", group: "navgrp.advAi", screen: "ai", icon: "settings", advanced: true },
   // Advanced: deeper reports
   { href: "/dashboard/reports?tab=customers", label: "nav.customerReport", group: "navgrp.advReports", perm: "report.read", icon: "users", advanced: true },
   { href: "/dashboard/reports?tab=operations", label: "nav.opsReport", group: "navgrp.advReports", perm: "report.read", icon: "chart", advanced: true },
