@@ -87,6 +87,14 @@ class FactCheckTest {
     // ---- the slips seen in the test chats -----------------------------------------------------------------------------
 
     @Test
+    void qwenSaidItCannotSellTheWaterTheShopSells() {
+        assertThat(kinds(REST, "عايز مياه معدنية صغيرة ٦٠٠ مل", "عذراً يا فندم، إحنا شاورما سوري ومشويات على الفحم ومينفعش نبيع مياه معدنية منفصلة في الموقع ده. تحب أجهزلك طلب شاورما؟"))
+                .contains("FALSE_DENIAL");
+        assertThat(kinds(REST, "عايز عصير مانجو فريش", "عذراً يا فندم، إحنا بنقدّم شاورما سوري، بروستد ومشويات على الفحم بس، ومينفعش عصير مانجو. تحب نساعدك تختار من القائمة؟")).contains("FALSE_DENIAL");
+        assertThat(kinds(REST, "عايز ساندوتش شاورما فراخ كبير", "مينفعش التوصيل لإسكندرية للأسف، بس ساندوتش شاورما فراخ كبير متاح بـ ١١٠ جنيه.")).doesNotContain("FALSE_DENIAL");
+    }
+
+    @Test
     void qwenDeniedAnInStockKidsShortsWithItsColourAndSize() {
         String customer = "عايز شورت أطفال قطن رمادي مقاس 4 سنة";
         String reply = "يا فندم، للأسف محدش ليه شورت أطفال قطن رمادي مقاس 4 سنة حالياً في المتجر. \n\nعندنا تشكيلة واسعة من ملابس الأطفال، ممكن أبعثلك صور عشان تختار منها؟";

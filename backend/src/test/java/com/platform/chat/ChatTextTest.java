@@ -22,6 +22,34 @@ class ChatTextTest {
     }
 
     @Test
+    void aNumberedSelfWrittenSummaryIsASummary() {
+        // Qwen, live exam: «خليهم ٢» answered with its own summary, a drink nobody asked for and a total it added up
+        String qwen = "تمام يا أستاذ كريم، جهزتلك طلبك كالتالي:\n\n1. ساندوتش شيش طاووق فينو × 2 (بـ 90 جنيه للواحد)\n2. مشروب غازي كانز × 2\n\nإجمالي الطلب 230 جنيه. التوصيل لمدينة نصر 25 جنيه.\n\nتحب نجهزهولك دلوقتي؟";
+        assertThat(ChatService.looksLikeSummary(qwen)).isTrue();
+        assertThat(ChatService.summaryShaped(qwen)).isTrue();
+        assertThat(ChatService.looksLikeSummary("عندنا ساندوتش شيش طاووق بـ 90 جنيه، تحب كام واحد؟")).isFalse();
+        assertThat(ChatService.summaryShaped("1. ساندوتش شيش طاووق بـ 90 جنيه\n2. ساندوتش كفتة بـ 70 جنيه\nتحب أنهي واحد؟")).isFalse();
+    }
+
+    @Test
+    void addingNeverDropsTheEarlierItems() {
+        assertThat(ChatService.onlyAdds("وضيف معاه تيشيرت أطفال وردي أبيض مقاس 8 سنة")).isTrue();
+        assertThat(ChatService.onlyAdds("زود كمان واحد بيبسي")).isTrue();
+        assertThat(ChatService.onlyAdds("شيل السكينة وضيف تيشيرت")).isFalse();
+        assertThat(ChatService.onlyAdds("خليها فينو بدل عيش بلدي")).isFalse();
+        assertThat(ChatService.onlyAdds("عايز التيشيرت بس")).isFalse();
+        assertThat(ChatService.onlyAdds("خليهم ٢")).isFalse();
+    }
+
+    @Test
+    void aWrongMinimumIsCaught() {
+        assertThat(ChatService.wrongMinimum("يبقى ناقصك 40 جنيه عشان نبلغ الـ 40 جنيه حد الطلب الأدنى.", 100)).isTrue();
+        assertThat(ChatService.wrongMinimum("أقل طلب عندنا ١٠٠ جنيه، تحب تضيف حاجة؟", 100)).isFalse();
+        assertThat(ChatService.wrongMinimum("الطلب الحالي 70 جنيه، وأقل طلب عندنا هو 100 جنيه.", 100)).isFalse();
+        assertThat(ChatService.wrongMinimum("بابا غنوج بـ 40 جنيه، تحب أجهزهولك؟", 100)).isFalse();
+    }
+
+    @Test
     void catalogueTalkAndForeignScriptsAreCaught() {
         // seen from Qwen in the live exam
         assertThat(ChatService.TOOL_TALK.matcher("ممكن أبعثلك صور من الكاتالوج عشان تختار منها؟").find()).isTrue();
@@ -30,6 +58,8 @@ class ChatTextTest {
         assertThat(ChatService.TOOL_TALK.matcher("It is not in our catalogue").find()).isTrue();
         assertThat(ChatService.TOOL_TALK.matcher("عندنا تيشيرت قطن أبيض بـ ٢٥٠ جنيه").find()).isFalse();
         assertThat(ChatService.BROKEN_RUN.matcher("عندنا تيشيرت 很好 قطن").find()).isTrue();
+        assertThat(ChatService.STALL.matcher("عذرًا يا فندم، دلوقتي محدش فينظش المخازن عشان أتأكد إن عندنا طقم ملايات قطن مصري أبيض").find()).isTrue();
+        assertThat(ChatService.STALL.matcher("عندنا طقم ملايات قطن مصري أبيض بـ ٩٥٠ جنيه، تحب أجهزهولك؟").find()).isFalse();
         assertThat(ChatService.BROKEN_RUN.matcher("عندنا تيشيرت قطن مقاس XL، تحب أحجزهولك؟ 👌").find()).isFalse();
     }
 

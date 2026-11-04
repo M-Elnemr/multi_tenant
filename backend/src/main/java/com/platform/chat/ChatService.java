@@ -787,6 +787,8 @@ public class ChatService {
         if (!ctx.products().isEmpty() && answer.length() < 90 && !MoneyGuard.digits(answer).matches("(?s).*\\d{2,}.*") && relatedProducts(ctx.tenantId(), last).size() > 0
                 && FactCheck.mentions(answer, shopView(ctx.tenantId()).names()).isEmpty())
             problems.put("THIN_REPLY", "You found products but the reply names none: name the best 2-3 with their prices and the options that matter, then one short question.");
+        if (settings.publicProfile(ctx.tenantId()).get("minOrderMinor") instanceof Number mo && wrongMinimum(answer, mo.longValue() / 100))
+            problems.put("MINIMUM_WRONG", "The shop's minimum order is " + (mo.longValue() / 100) + ": say that exact amount (and the order's total so far from prepare_order) or do not mention the minimum.");
         if (TOOL_TALK.matcher(answer).find())
             problems.put("TOOL_TALK", "Never talk about your tools, the system, the catalog data or searches to the customer («أداة البحث», «النظام», «الكتالوج مش راجع»): answer like a person in the shop, from what the search found (search again with fewer words if it found nothing).");
         if (OFFER_TO_SHOW.matcher(answer).find() && FactCheck.mentions(answer, shopView(ctx.tenantId()).names()).isEmpty() && !MoneyGuard.digits(answer).matches("(?s).*\\d{2,}.*")
@@ -868,7 +870,7 @@ public class ChatService {
     }
 
     /** «هتأكد وأرجعلك», «لازم نتأكد من المخزون الأول», "let me confirm the price": a promise to look instead of looking. */
-    static final Pattern STALL = Pattern.compile("(?:(?:ه|هـ)(?:تاكد|تأكد|شوف|بحث|راجع|سال|سأل)(?:لك|لك)?\\s|(?<!\\p{L})(?:ا|أ)راجع\\s*لك|لازم\\s+(?:ا|أ|ن)?(?:تاكد|تأكد)|ثواني\\s+و|هرجعلك|هرد\\s+عليك|هبلغك|(?:ا|أ)?رجع\\s*لك|وارجعلك|لحظه\\s+(?:ا|أ)?(?:تاكد|تأكد|شوف|راجع)|(?:ا|أ)تاكدلك|(?:ا|أ)تأكدلك|(?:ا|أ)راجع\\s+تاني|وارد\\s+عليك|وأرد\\s+عليك|(?:ا|أ)راجع\\s+(?:المخزون|الكتالوج|السيستم)|اتاكد\\s+من\\s+المخزون|(?:ا|أ)?تاكد\\s+لك|لازم\\s+(?:ا|أ)?تحقق|محتاجين\\s+نتاكد|محتاجين\\s+نتأكد|مش\\s+عارف\\s+(?:ا|أ)?قولك|معنديش\\s+تاكيد|معنديش\\s+تأكيد|مش\\s+متاكد|مش\\s+متأكد|(?:ا|أ)?تحقق\\s+من\\s+المخزون|(?:ا|أ)?تأكد\\s+لك|هنادرك|هندور|هشوفلك\\s+و|لحظه\\s+يا\\s+فندم|لحظة\\s+يا\\s+فندم|استني\\s+(?:ثواني|دقيقه|شويه)|هبعتلك\\s+(?:التفاصيل|السعر)|let\\s+me\\s+(?:check|confirm|look)|i\\s*(?:'ll|\\s+will)\\s+(?:check|confirm|look)|one\\s+moment)", Pattern.CASE_INSENSITIVE);
+    static final Pattern STALL = Pattern.compile("(?:محدش\\s+\\S+\\s+(?:ال)?مخا?زن|(?:ا|أ)?(?:تاكد|تأكد)\\s+(?:ان|إن|أن)\\s+عندنا|(?:ه|هـ)(?:تاكد|تأكد|شوف|بحث|راجع|سال|سأل)(?:لك|لك)?\\s|(?<!\\p{L})(?:ا|أ)راجع\\s*لك|لازم\\s+(?:ا|أ|ن)?(?:تاكد|تأكد)|ثواني\\s+و|هرجعلك|هرد\\s+عليك|هبلغك|(?:ا|أ)?رجع\\s*لك|وارجعلك|لحظه\\s+(?:ا|أ)?(?:تاكد|تأكد|شوف|راجع)|(?:ا|أ)تاكدلك|(?:ا|أ)تأكدلك|(?:ا|أ)راجع\\s+تاني|وارد\\s+عليك|وأرد\\s+عليك|(?:ا|أ)راجع\\s+(?:المخزون|الكتالوج|السيستم)|اتاكد\\s+من\\s+المخزون|(?:ا|أ)?تاكد\\s+لك|لازم\\s+(?:ا|أ)?تحقق|محتاجين\\s+نتاكد|محتاجين\\s+نتأكد|مش\\s+عارف\\s+(?:ا|أ)?قولك|معنديش\\s+تاكيد|معنديش\\s+تأكيد|مش\\s+متاكد|مش\\s+متأكد|(?:ا|أ)?تحقق\\s+من\\s+المخزون|(?:ا|أ)?تأكد\\s+لك|هنادرك|هندور|هشوفلك\\s+و|لحظه\\s+يا\\s+فندم|لحظة\\s+يا\\s+فندم|استني\\s+(?:ثواني|دقيقه|شويه)|هبعتلك\\s+(?:التفاصيل|السعر)|let\\s+me\\s+(?:check|confirm|look)|i\\s*(?:'ll|\\s+will)\\s+(?:check|confirm|look)|one\\s+moment)", Pattern.CASE_INSENSITIVE);
     /**
      * A reply that offers to show what the customer already asked for («تحب أعرض عليك الحلويات اللي عندنا؟», «أبعتلك المنيو؟») instead of showing it: the customer has to answer
      * «أيوه» and wait again for what they could have had in this message.
@@ -890,7 +892,7 @@ public class ChatService {
     /** The reply asks about an option (size, colour, bread...). */
     static final Pattern OPTION_ASK = Pattern.compile("(?:مقاس|المقاس|لون|اللون|حجم|الحجم|عيش|الخبز|خبز|السعه|الرامات|الطعم|انهي|size|colou?r|which)");
     /** A model-written summary or confirmation request («الطلب جاهز للتأكيد», «نبدأ التحضير؟»). */
-    static final Pattern FAKE_SUMMARY = Pattern.compile("(?:الطلب\\s+جاهز|جاهز\\s+للتاكيد|نبدا\\s+التحضير|ناكد\\s+الطلب|اكد\\s+الطلب|اكد\\s+الاوردر|اكد\\s+التعديل|ااكد|اكدلك\\s+الطلب\\s+كده|ملخص\\s+(?:الاوردر|الطلب)|اكتب\\s+تمام|confirm\\s+(?:your|the)\\s+(?:order|change)|order\\s+(?:is\\s+ready|summary))");
+    static final Pattern FAKE_SUMMARY = Pattern.compile("(?:(?:جهزتلك|جهزت\\s+لك|حضرتلك)\\s+(?:ال)?طلبك?\\s+كالتالي|طلبك\\s+كالتالي|الطلب\\s+جاهز|جاهز\\s+للتاكيد|نبدا\\s+التحضير|ناكد\\s+الطلب|اكد\\s+الطلب|اكد\\s+الاوردر|اكد\\s+التعديل|ااكد|اكدلك\\s+الطلب\\s+كده|ملخص\\s+(?:الاوردر|الطلب)|اكتب\\s+تمام|confirm\\s+(?:your|the)\\s+(?:order|change)|order\\s+(?:is\\s+ready|summary))");
 
     /** «خليها عادي», «غيّر», «بدل», «شيل», «زوّد», «خليهم ٣»: a change to the order. */
     static final Pattern CHANGE_WORDS = Pattern.compile("(?:(?<!\\p{L})(?:خليها|خليه|خليهم|خليني|غير|غيرها|غيره|بدل|بدلها|شيل|شيلها|شيله|زود|زودها|نقص|قلل|مش\\s+عايز|عايزها|عايزه)(?!\\p{L})|\\b(?:change|instead|remove|make\\s+it)\\b)");
@@ -932,8 +934,8 @@ public class ChatService {
                         .query(String.class).optional().orElse(null));
     }
 
-    private static final Pattern TOTAL_LINE = Pattern.compile("(?m)^\\s*(?:الإجمالي|الاجمالي|الإجمالى|المجموع|Total)\\s*[:：]", Pattern.CASE_INSENSITIVE);
-    private static final Pattern ITEM_LINE = Pattern.compile("(?m)^\\s*[•\\-*]\\s*.+(?:×|x\\s*\\d|=\\s*[0-9٠-٩])");
+    private static final Pattern TOTAL_LINE = Pattern.compile("(?m)^\\s*(?:(?:الإجمالي|الاجمالي|الإجمالى|المجموع|Total)\\s*[:：]|(?:ال)?(?:إجمالي|اجمالي)\\s+(?:الطلب|الاوردر|الأوردر))", Pattern.CASE_INSENSITIVE);   // «إجمالي الطلب 230 جنيه» too (Qwen)
+    private static final Pattern ITEM_LINE = Pattern.compile("(?m)^\\s*(?:[•\\-*]|[0-9٠-٩]{1,2}[.)\\-])\\s*.+(?:×|x\\s*\\d|=\\s*[0-9٠-٩])");   // bullets or a numbered list («1. … × 2»)
 
     /** A summary the model wrote itself: confirmation words, or the shape of one (item lines and a total line), whatever it is called. */
     static boolean looksLikeSummary(String answer) {
@@ -2063,17 +2065,6 @@ public class ChatService {
                 .query(String.class).list().stream().anyMatch(m -> MoneyGuard.digits(m).replaceAll("\\D", "").contains(tail));
     }
 
-    /** The WhatsApp number the model passed is the customer's own number, possibly mis-copied by a digit or two: then the number they wrote is the one meant. */
-    private static boolean assumedOrSame(String passed, String written) {
-        String p = passed == null ? "" : MoneyGuard.digits(passed).replaceAll("\\D", "");
-        if (p.isEmpty()) return true;
-        String w = written.substring(written.length() - 9);
-        p = p.length() >= 9 ? p.substring(p.length() - 9) : p;
-        int diff = 0;
-        for (int i = 0; i < Math.min(p.length(), w.length()); i++) if (p.charAt(i) != w.charAt(i)) diff++;
-        return p.length() < 9 || diff <= 2;
-    }
-
     /** The summary tells the customer the confirmation comes on WhatsApp to the number they gave, and to say so if it has none (instead of a question of its own before the summary). */
     static String withWhatsAppNote(String summary) {
         boolean ar = summary.contains("أأكد الأوردر؟");
@@ -2977,6 +2968,23 @@ public class ChatService {
     }
 
     @SuppressWarnings("unchecked")
+    /**
+     * The variant the model meant: its id as given when it is one of this shop's, else the shop's only variant whose id starts with the same 8 hex digits (Qwen now and then
+     * mis-copies the tail of a long id, and every refusal costs the customer another model call); null when neither.
+     */
+    private UUID variantRef(UUID tenantId, Object raw) {
+        String given = raw == null ? "" : String.valueOf(raw).trim().toLowerCase(java.util.Locale.ROOT);
+        try {
+            UUID id = UUID.fromString(given);
+            if (jdbc.sql("SELECT EXISTS (SELECT 1 FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE v.id = :v AND p.tenant_id = :t)").param("v", id).param("t", tenantId).query(Boolean.class).single()) return id;
+        } catch (IllegalArgumentException ignored) { /* not a whole id: try its start */ }
+        String hex = given.replaceAll("[^0-9a-f]", "");
+        if (hex.length() < 8) return null;
+        List<UUID> hits = jdbc.sql("SELECT v.id FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE p.tenant_id = :t AND replace(v.id::text, '-', '') LIKE :h LIMIT 2")
+                .param("t", tenantId).param("h", hex.substring(0, 8) + "%").query(UUID.class).list();
+        return hits.size() == 1 ? hits.get(0) : null;
+    }
+
     private Map<String, Object> prepareOrder(Ctx ctx, Map<String, Object> a) {
         UUID tenantId = ctx.tenantId();
         List<CheckoutService.Item> items = new ArrayList<>();
@@ -2984,7 +2992,8 @@ public class ChatService {
         for (Object o : l) {
             Map<String, Object> m = (Map<String, Object>) o;
             UUID vid;
-            try { vid = UUID.fromString(String.valueOf(m.get("variantId"))); } catch (IllegalArgumentException e) { return obj("error", "Invalid variantId" + realVariantIds(ctx)); }
+            vid = variantRef(tenantId, m.get("variantId"));
+            if (vid == null) return obj("error", "Invalid variantId" + realVariantIds(ctx));
             int q = m.get("quantity") instanceof Number n ? n.intValue() : 1;
             if (q < 1 || q > 50) return obj("error", "Quantity must be between 1 and 50");
             items.add(new CheckoutService.Item(vid, q, m.get("note") == null ? null : String.valueOf(m.get("note"))));
@@ -3064,7 +3073,9 @@ public class ChatService {
             earlier = pendingVariants(ctx.conversationId());
             earlierWhat = "the last summary";
         }
-        if (earlier != null && !Boolean.TRUE.equals(a.get("dropsEarlierItems"))) {
+        // «وضيف معاه …» adds: a model that passes dropsEarlierItems anyway (Qwen did) would silently lose the earlier items
+        boolean drops = Boolean.TRUE.equals(a.get("dropsEarlierItems")) && !onlyAdds(customerText(ctx));
+        if (earlier != null && !drops) {
             var chosen = items.stream().map(CheckoutService.Item::variantId).collect(java.util.stream.Collectors.toSet());
             List<UUID> missing = earlier.stream().filter(v -> !chosen.contains(v)).distinct().toList();
             if (!missing.isEmpty())
@@ -3120,7 +3131,8 @@ public class ChatService {
             final String tail = last9;
             boolean said = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u").param("c", ctx.conversationId()).param("u", ctx.userMsgId())
                     .query(String.class).list().stream().anyMatch(m -> MoneyGuard.digits(m).replaceAll("\\D", "").contains(tail));
-            if (!said && written != null && assumedOrSame(waRaw, written)) { waNumber = PhoneNormalizer.normalize(written); said = true; }
+            // a number the customer never wrote (mis-copied or made up): the mobile they did write is the one used; the summary asks them to say if it has no WhatsApp
+            if (!said && written != null) { waNumber = PhoneNormalizer.normalize(written); said = true; }
             if (!said) return obj("error", "That WhatsApp number was not given by the customer. Ask them for it and use exactly what they wrote.");
         }
 
@@ -3269,6 +3281,14 @@ public class ChatService {
      * The reply already says what the code's line says: EVERY amount of it is in the reply (the minimum AND the order's total now, «أقل قيمة للطلب 100 جنيه، وطلبك دلوقتي 60»).
      * A reply that only repeats «100» leaves the customer without what is still missing (seen live 2026-11-03, on GLM and on Qwen), so the line is added.
      */
+    private static final Pattern MINIMUM_WORDS = Pattern.compile("(?:(?:ال)?حد\\s+(?:ال)?(?:طلب\\s+)?(?:ال)?ادني|اقل\\s+(?:قيمه\\s+)?(?:لل|ل)?(?:طلب|اوردر)|minimum\\s+order)");
+
+    /** The reply speaks of the minimum order but never says the shop's real one («نبلغ الـ 40 جنيه حد الطلب الأدنى» when it is 100). */
+    static boolean wrongMinimum(String answer, long minimumMajor) {
+        if (answer == null || minimumMajor <= 0 || !MINIMUM_WORDS.matcher(FastAnswers.norm(answer)).find()) return false;
+        return !Pattern.compile("(?<![\\d.,])" + minimumMajor + "(?![\\d])").matcher(MoneyGuard.digits(answer).replaceAll("(?<=\\d)[,٬](?=\\d{3})", "")).find();
+    }
+
     static boolean mentionsMinimum(String answer, String line) {
         java.util.regex.Matcher m = Pattern.compile("\\d+(?:\\.\\d+)?").matcher(line);
         String said = MoneyGuard.digits(answer).replace(",", "");
@@ -3346,6 +3366,21 @@ public class ChatService {
     }
 
     /** The variants of the summary the customer was last shown and has not confirmed yet, or null. */
+    private static final Pattern ONLY_ADD_WORDS = Pattern.compile("(?<!\\p{L})(?:و|ف)?(?:ضيف|ضيفي|ضيفلي|ضيفيلي|ضيفه|ضيفها|ضيفهم|زود|زودلي|كمان|برضه|بالاضافه|add|also|plus)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
+    private static final Pattern SWAP_WORDS = Pattern.compile("(?<!\\p{L})(?:و|ف)?(?:شيل|شيلي|شيله|شيلها|الغي|الغيه|الغيها|امسح|بلاش|من\\s+غير|بدل|بدال|مكان|غير|غيرها|غيره|استبدل|بس|لا\\s+خلاص|remove|instead|without|drop|swap|replace|only)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
+
+    /** The customer's words only add to the order («وضيف معاه تيشيرت»): nothing in them removes, swaps or replaces an earlier item. */
+    static boolean onlyAdds(String customer) {
+        if (customer == null) return false;
+        String n = FastAnswers.norm(customer);
+        return ONLY_ADD_WORDS.matcher(n).find() && !SWAP_WORDS.matcher(n).find();
+    }
+
+    /** The customer's message being answered. */
+    private String customerText(Ctx ctx) {
+        return jdbc.sql("SELECT content FROM chat.messages WHERE id = :u").param("u", ctx.userMsgId()).query(String.class).optional().orElse("");
+    }
+
     private List<UUID> pendingVariants(UUID conv) {
         String raw = jdbc.sql("SELECT pending::text FROM chat.conversations WHERE id = :c").param("c", conv).query(String.class).optional().orElse(null);
         if (raw == null || !raw.contains("\"items\"")) return null;

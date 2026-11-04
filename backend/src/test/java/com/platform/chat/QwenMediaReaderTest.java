@@ -25,4 +25,16 @@ class QwenMediaReaderTest {
         assertThat(off.read(UUID.randomUUID(), "WHATSAPP", media)).isEqualTo("بكام ده؟");
         assertThat(fetched[0]).isFalse();
     }
+
+    @Test
+    void aWhatsAppVoiceNoteKnowsItsLength() throws Exception {
+        byte[] ogg = getClass().getResourceAsStream("/media/voice.ogg").readAllBytes();
+        assertThat(QwenMediaReader.oggSeconds(ogg)).isBetween(3, 6);
+        assertThat(QwenMediaReader.oggSeconds(new byte[]{1, 2, 3})).isNull();
+    }
+
+    @Test
+    void aDescriptionIsOneLineWithoutChineseSlips() {
+        assertThat(QwenMediaReader.clean("رفوف عليها ملابس، وش领军 معرّقة.\nمفيش أسعار")).isEqualTo("رفوف عليها ملابس، وش معرّقة. مفيش أسعار");
+    }
 }

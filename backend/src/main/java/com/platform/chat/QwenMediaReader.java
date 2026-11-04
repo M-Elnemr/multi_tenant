@@ -30,7 +30,8 @@ public class QwenMediaReader implements MediaReader {
             A customer of an online shop sent this photo in their chat with the shop. In 1-3 short lines, tell the shop's salesperson what it shows, in Egyptian Arabic \
             (in English if the customer's caption is English): the product (kind, colour, pattern, material, who it is for), and copy exactly any product name, price, size or text \
             written on it. A screenshot of a product page or a chat: the product name, price, colour and size it shows. A payment receipt or money transfer: say so, with the amount. \
-            Anything else (a person, a place, a received item that is damaged or wrong): say what it is. Only what is visible; no greeting, no advice.""";
+            Anything else (a person, a place, a received item that is damaged or wrong): say what it is. Only what is visible; no greeting, no advice.
+            اكتب الوصف بالعربي المصري (حتى لو الكلام اللي على الصورة إنجليزي)، إلا لو تعليق العميل بالإنجليزي.""";
 
     private final AiUsageService usage;
     private final String key, baseUrl, visionModel, asrModel;
@@ -69,7 +70,7 @@ public class QwenMediaReader implements MediaReader {
                 body.put("max_tokens", 250);
                 body.put("enable_thinking", false);
                 String said = call(tenantId, channel, body, "image", 30);
-                return said == null ? caption : PHOTO + said.replaceAll("\\s*\\n+\\s*", " ").trim() + "]" + (caption == null ? "" : "\n" + caption);
+                return said == null ? caption : PHOTO + clean(said) + "]" + (caption == null ? "" : "\n" + caption);
             }
             if (bytes.length > MAX_AUDIO) return caption;
             Map<String, Object> body = new LinkedHashMap<>();
@@ -77,7 +78,8 @@ public class QwenMediaReader implements MediaReader {
             body.put("messages", List.of(Map.of("role", "user", "content", List.of(Map.of("type", "input_audio", "input_audio", Map.of("data", "data:" + mime + ";base64," + Base64.getEncoder().encodeToString(bytes)))))));
             body.put("stream", false);
             body.put("asr_options", Map.of("enable_itn", false));
-            String said = call(tenantId, channel, body, "voice", 40);
+            Integer secs = oggSeconds(bytes);
+            String said = call(tenantId, channel, body, secs == null ? "voice" : "voice " + secs + "s", 40);
             return said == null ? caption : VOICE + said.trim() + (caption == null ? "" : "\n" + caption);
         } catch (RuntimeException e) {
             log.warn("Could not read a customer's {}: {}", media.kind(), e.toString());
@@ -110,6 +112,26 @@ public class QwenMediaReader implements MediaReader {
             log.warn("Reading a {} failed: {}", what, e.toString());
             return null;
         }
+    }
+
+    /**
+     * The length of an Ogg Opus voice note (WhatsApp's) in seconds, from the last page's granule position (48 kHz), or null for another format. Speech recognition is billed by
+     * the second and the US workspace reports no usage, so the length goes into the usage row's preview.
+     */
+    static Integer oggSeconds(byte[] b) {
+        for (int i = b.length - 27; i >= 0; i--) {
+            if (b[i] == 'O' && b[i + 1] == 'g' && b[i + 2] == 'g' && b[i + 3] == 'S') {
+                long g = 0;
+                for (int k = 7; k >= 0; k--) g = (g << 8) | (b[i + 6 + k] & 0xFF);
+                return g <= 0 ? null : (int) Math.max(1, Math.round(g / 48000.0));
+            }
+        }
+        return null;
+    }
+
+    /** One line, without the Chinese or Japanese characters Qwen now and then slips into Arabic («وش领军»). */
+    static String clean(String said) {
+        return said.replaceAll("[\\p{IsHan}\\p{IsHiragana}\\p{IsKatakana}\\p{IsHangul}]+", "").replaceAll("\\s*\\n+\\s*", " ").replaceAll(" {2,}", " ").trim();
     }
 
     /** «audio/ogg; codecs=opus» -> «audio/ogg»; a missing type is guessed from the kind. */
