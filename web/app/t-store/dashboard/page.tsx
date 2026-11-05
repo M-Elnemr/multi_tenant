@@ -94,7 +94,7 @@ export default function StoreOverview() {
             {days.length > 1 && days.some((d) => d.salesMinor > 0) && <div className="-mx-1 mt-6 opacity-90"><Sparkline values={days.map((d) => d.salesMinor)} height={56} color="rgb(255 255 255 / .85)" /></div>}
             {can("settings.manage") && (
               <div className="mt-6 flex flex-wrap gap-2">
-                <a href="/?edit=1" className="press inline-flex h-9 items-center gap-2 rounded-[10px] bg-white px-3.5 text-[13px] font-semibold text-[#101218] transition hover:bg-white/90"><Icon name="edit" className="h-4 w-4" />{t("site.customize")}</a>
+                <a href="/?edit=1" className="press inline-flex h-9 items-center gap-2 rounded-[10px] bg-[#fff] px-3.5 text-[13px] font-semibold text-[#101218] transition hover:bg-[#fff]/90"><Icon name="edit" className="h-4 w-4" />{t("site.customize")}</a>
                 <Link href="/dashboard/products/new" className="press inline-flex h-9 items-center gap-2 rounded-[10px] bg-white/10 px-3.5 text-[13px] font-semibold text-white ring-1 ring-inset ring-white/15 transition hover:bg-white/15"><Icon name="plus" className="h-4 w-4" />{t("dash.addProduct")}</Link>
                 <Link href="/dashboard/pos" className="press inline-flex h-9 items-center gap-2 rounded-[10px] bg-white/10 px-3.5 text-[13px] font-semibold text-white ring-1 ring-inset ring-white/15 transition hover:bg-white/15"><Icon name="receipt" className="h-4 w-4" />{t("dash.openPos")}</Link>
               </div>

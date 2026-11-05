@@ -99,7 +99,7 @@ export function TemplateGallery({ ids, looks, profilePath, prefix, fallback, cat
                 <button onClick={() => { setOpen(id); setDevice("desktop"); }} className="relative block w-full text-start" aria-label={`${t("tpl.preview")} ${t(`${prefix}.${id}`)}`}>
                   <LiveFrame id={id} width={1280} height={900} className="transition duration-500 group-hover:brightness-[.97]" />
                   <span className="absolute inset-0 flex items-end justify-center bg-gradient-to-t from-black/45 via-transparent to-transparent pb-4 opacity-0 transition duration-300 group-hover:opacity-100">
-                    <span className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-[13px] font-semibold text-[#101218] shadow-lg"><Icon name="eye" className="h-4 w-4" />{t("gal.livePreview")}</span>
+                    <span className="inline-flex items-center gap-2 rounded-full bg-[#fff] px-4 py-2 text-[13px] font-semibold text-[#101218] shadow-lg"><Icon name="eye" className="h-4 w-4" />{t("gal.livePreview")}</span>
                   </span>
                   {on && <span className="absolute start-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-emerald-500 px-2.5 py-1 text-[11px] font-bold text-white shadow"><Icon name="check" className="h-3 w-3" />{t("tpl.current")}</span>}
                 </button>
@@ -140,7 +140,7 @@ export function TemplateGallery({ ids, looks, profilePath, prefix, fallback, cat
                 <button onClick={() => step(1)} className="grid h-9 w-9 place-items-center rounded-full bg-white/10 hover:bg-white/20" aria-label={t("common.next")}><Icon name="chevron" className="h-4 w-4 flip-rtl" /></button>
                 <a href={`/?tpl=${open}`} target="_blank" rel="noreferrer" className="hidden h-9 items-center gap-1.5 rounded-full bg-white/10 px-3 text-[13px] font-semibold hover:bg-white/20 sm:inline-flex"><Icon name="external" className="h-4 w-4" />{t("gal.newTab")}</a>
                 {open === current ? <span className="inline-flex h-9 items-center gap-1.5 rounded-full bg-emerald-500 px-3.5 text-[13px] font-bold"><Icon name="check" className="h-4 w-4" />{t("tpl.current")}</span>
-                  : <button onClick={() => void save.run(open)} disabled={save.loading} className="inline-flex h-9 items-center gap-1.5 rounded-full bg-white px-4 text-[13px] font-bold text-[#101218] transition hover:bg-white/90 disabled:opacity-60">{t("tpl.use")}</button>}
+                  : <button onClick={() => void save.run(open)} disabled={save.loading} className="inline-flex h-9 items-center gap-1.5 rounded-full bg-[#fff] px-4 text-[13px] font-bold text-[#101218] transition hover:bg-[#fff]/90 disabled:opacity-60">{t("tpl.use")}</button>}
               </div>
             </div>
             <div className="flex min-h-0 flex-1 items-start justify-center overflow-auto px-3 pb-6 sm:px-6">
