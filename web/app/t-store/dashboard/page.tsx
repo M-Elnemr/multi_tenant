@@ -43,7 +43,7 @@ export default function StoreOverview() {
   const productCount = products.data?.meta?.total;
   const orderCount = recent.data?.meta?.total;
   const steps: { done: boolean; label: string; hint: string; href: string; icon: IconName }[] = [
-    { done: (productCount ?? 1) > 0, label: t("onb.products"), hint: t("onb.productsHint"), href: "/dashboard/products", icon: "box" },
+    { done: (productCount ?? 1) > 0, label: t("onb.products"), hint: t("onb.productsHint"), href: "/dashboard/welcome", icon: "box" },   // the guided setup: AI builder, Facebook/Instagram import or manual
     { done: !!branding.data?.logoFileId, label: t("onb.look"), hint: t("onb.lookHint"), href: "/dashboard/settings?tab=look", icon: "palette" },
     { done: !aiOn || (channels.data?.length ?? 1) > 0, label: t("onb.channels"), hint: t("onb.channelsHint"), href: "/dashboard/ai?tab=channels", icon: "chat" },
     { done: (orderCount ?? 1) > 0, label: t("onb.order"), hint: t("onb.orderHint"), href: "/?edit=1", icon: "bag" },

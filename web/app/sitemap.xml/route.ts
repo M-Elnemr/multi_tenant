@@ -12,6 +12,8 @@ export async function GET(req: Request) {
   const proto = req.headers.get("x-forwarded-proto") ?? (/^(localhost|127\.)/.test(host) ? "http" : "https");
   const base = `${proto}://${host}`;
   const urls: string[] = [`${base}/`, `${base}/products`];
+  // the platform site: the shop landing ("/"; "/shop" points its canonical there), the doctors landing, pricing and sign-up
+  if (info.kind === "PLATFORM") urls.splice(1, 1, `${base}/tabib`, `${base}/pricing`, `${base}/register`);
   if (info.kind === "TENANT" && info.type === "STORE") {
     const cats = await backendJson<Cat[]>("/shop/categories").catch(() => [] as Cat[]);
     for (const c of cats) urls.push(`${base}/c/${encodeURIComponent(c.slug)}`);

@@ -93,6 +93,8 @@ function Shell({ nav, children }: { nav: NavItem[]; children: React.ReactNode })
   const canPay = ready && !!me && can("billing.manage");
   useEffect(() => { if (disabled && canPay && !onPay) router.replace("/dashboard/billing/pay"); }, [disabled, canPay, onPay, router]);
   if (!ready || !me || customerOnly) return <div className="mx-auto max-w-6xl p-6 lg:p-10"><Loading /></div>;
+  // The first-run setup (/dashboard/welcome) is a focused full-screen journey: signed in, but without the menu around it.
+  if (path === "/dashboard/welcome" && !disabled) return <>{children}</>;
 
   const open_ = (n: NavItem) => (!n.screen || canSee(n.screen)) && (!n.write || !n.screen || canWrite(n.screen)) && (!n.perm || (Array.isArray(n.perm) ? n.perm.some(can) : can(n.perm)));
   const allowed = nav.filter((n) => (!disabled || n.href.startsWith("/dashboard/billing")) && open_(n));

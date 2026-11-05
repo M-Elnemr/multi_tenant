@@ -12,18 +12,19 @@ import { money } from "@/lib/format";
 
 export type Plan = { code: string; name: string; tenantType: "STORE" | "CLINIC" | "LAWYER"; priceMinor: number; currency: string; interval?: string; features: Record<string, boolean | number> };
 
-export function PricingPlans({ plans }: { plans: Plan[] }) {
+/** The plans per business type. `types` limits it (a landing page shows only its own vertical, without the type heading). */
+export function PricingPlans({ plans, types = ["STORE", "CLINIC", "LAWYER"] }: { plans: Plan[]; types?: Plan["tenantType"][] }) {
   const { t, locale } = useI18n();
   const [cycle, setCycle] = useState<Cycle>("month");
   return (
     <>
       <div className="mt-8 flex justify-center"><CycleToggle value={cycle} onChange={setCycle} /></div>
-      {(["STORE", "CLINIC", "LAWYER"] as const).map((type) => {
+      {types.map((type) => {
         const list = plans.filter((x) => x.tenantType === type && (x.priceMinor === 0 || (x.interval === "YEAR") === (cycle === "year")));
         if (list.length === 0) return null;
         return (
           <section key={type} className="mt-12">
-            <h2 className="mb-5 flex items-center gap-2 text-xl font-bold"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-soft text-brand"><Icon name={type === "STORE" ? "bag" : type === "LAWYER" ? "scale" : "stethoscope"} className="h-5 w-5" /></span>{type === "STORE" ? t("type.store") : type === "LAWYER" ? t("type.lawyer") : t("type.clinic")}</h2>
+            {types.length > 1 && <h2 className="mb-5 flex items-center gap-2 text-xl font-bold"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-soft text-brand"><Icon name={type === "STORE" ? "bag" : type === "LAWYER" ? "scale" : "stethoscope"} className="h-5 w-5" /></span>{type === "STORE" ? t("type.store") : type === "LAWYER" ? t("type.lawyer") : t("type.clinic")}</h2>}
             <div className={`grid gap-5 ${list.length === 3 ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
               {list.map((p) => {
                 const free = p.priceMinor === 0;
@@ -43,7 +44,7 @@ export function PricingPlans({ plans }: { plans: Plan[] }) {
                 );
               })}
             </div>
-            <div className="mt-5"><AppBenefits kind={type} /></div>
+            {types.length > 1 && <div className="mt-5"><AppBenefits kind={type} /></div>}
           </section>
         );
       })}

@@ -1,6 +1,6 @@
 import { backendJson } from "@/lib/backend";
 import { getT } from "@/lib/i18n-server";
-import { type Plan, PricingPlans } from "./plans";
+import { type Plan, PricingPlans } from "@/components/landing/pricing-plans";
 
 export default async function Pricing() {
   const { t } = await getT();

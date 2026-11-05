@@ -1,6 +1,9 @@
 import { currentHost } from "@/lib/backend";
 import { resolveHost } from "@/lib/tenant";
+import type { Metadata } from "next";
 import { RegisterWizard } from "./wizard";
+
+export const metadata: Metadata = { title: "Start free · ابدأ مجانًا" };
 
 export default async function Register({ searchParams }: { searchParams: Promise<{ type?: string }> }) {
   const { type } = await searchParams;

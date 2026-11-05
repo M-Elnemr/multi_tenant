@@ -1,0 +1,233 @@
+/**
+ * Copy for the doctors & clinics landing page (elmanassa.shop/tabib). Healthcare only: no shop or AI-selling messaging.
+ * Every claim maps to a real feature: appointments with statuses and a day timeline, waiting-room queue with a "your turn" notification,
+ * patient files (visits, prescriptions, lab requests; patients upload results), one patient ID with QR and linked children, services and prices,
+ * doctors' schedules, branches and team permissions, month reports, the clinic website with six designs, listing in the patient app's doctor
+ * directory, works on a weak connection, mobile app. Online booking from the website is NOT promised (it is off platform-wide): patients
+ * find the clinic and call or WhatsApp; reception books in seconds.
+ */
+export type ClinicCopy = typeof en;
+
+const en = {
+  meta: {
+    title: "Elmanassa for doctors: clinic management and your clinic website",
+    description: "Appointments, waiting room, patient files, prescriptions and a beautiful clinic website, in one calm system for doctors and clinics.",
+  },
+  nav: { features: "Features", website: "Your website", how: "How it works", pricing: "Pricing", faq: "Questions", shops: "For shops", login: "Log in", cta: "Start free" },
+  hero: {
+    eyebrow: "For doctors & clinics",
+    title1: "Your clinic,",
+    title2: "calm and in order.",
+    sub: "Appointments, the waiting room, patient files and your clinic's website, in one place. Less paperwork for your team, a better visit for every patient.",
+    cta: "Start free",
+    cta2: "See how it works",
+    trust: ["14 days free", "Arabic & English", "Works on a weak connection"],
+    today: "Today",
+    next: "Next patient",
+    inRoom: "In the room",
+    waiting: "waiting",
+    turn: "Your turn is next",
+  },
+  stats: [
+    { value: 6, label: "website designs" },
+    { value: 1, label: "patient ID for the whole family" },
+    { value: 24, suffix: "/7", label: "your clinic online" },
+  ],
+  features: {
+    eyebrow: "Clinic management",
+    title: "Everything the clinic runs on",
+    sub: "Built with doctors and receptionists, so the day flows from the first call to the last prescription.",
+    items: [
+      { icon: "calendar", title: "Appointments", body: "Book in seconds, see the whole day at a glance, and follow each visit from booked to done." },
+      { icon: "queue", title: "Waiting room", body: "A live queue. Patients get a notification when it's their turn, so the waiting room stays calm." },
+      { icon: "patients", title: "Patient files", body: "Visits, diagnoses, prescriptions and lab requests, all in one file you can open in a second." },
+      { icon: "flask", title: "Lab results", body: "Patients upload their results from their phone and you're notified straight away." },
+      { icon: "qr", title: "One patient ID", body: "Each patient has a single ID with a QR code; children are linked to their parent." },
+      { icon: "print", title: "Printable prescriptions", body: "Clean prescriptions with your clinic's name, ready to print or share." },
+    ],
+  },
+  booking: {
+    eyebrow: "Appointments",
+    title: "A day that runs itself",
+    sub: "See who's in the room, who's next and who's waiting. Every appointment moves through clear steps, so nothing gets lost between the desk and the doctor.",
+    statuses: ["Booked", "Confirmed", "Arrived", "With doctor", "Done"],
+    slots: [
+      { time: "10:00", name: "Mona Adel", type: "Consultation", status: 4 },
+      { time: "10:30", name: "Youssef Samir", type: "Follow-up", status: 3 },
+      { time: "11:00", name: "Hana Mostafa", type: "Consultation", status: 2 },
+      { time: "11:30", name: "Karim Ali", type: "Follow-up", status: 1 },
+    ],
+    sample: "Example day",
+  },
+  patients: {
+    eyebrow: "Patient management",
+    title: "The whole story, one tap away",
+    sub: "Every visit, prescription and lab request in a single, tidy file. Families share one account, children linked to their parent.",
+    file: { age: "34 years", visits: "Visits", rx: "Prescription", lab: "Lab request", uploaded: "Result uploaded by patient", name: "Mona Adel", last: "Last visit" },
+  },
+  website: {
+    eyebrow: "Your clinic website",
+    title: "A website patients trust, ready in minutes",
+    sub: "Pick from six designs made for clinics: a personal doctor brand, dental, dermatology, a medical center and more. Your doctors, services, prices, hours and location, always up to date.",
+    designs: ["Clear", "Luxe", "Persona", "Dental", "Derma", "Center"],
+    points: ["Your doctors with photos and specialties", "Services and prices", "Hours, branches and directions", "Call and WhatsApp in one tap"],
+    directory: "Your doctors also appear in the Elmanassa patient app's doctor directory, where patients search by specialty, city and fee.",
+  },
+  services: {
+    eyebrow: "Services & schedules",
+    title: "Your services, prices and hours, in your hands",
+    items: [
+      { icon: "services", title: "Services and prices", body: "Consultation, follow-up and every procedure, each with its own price and duration." },
+      { icon: "clock", title: "Doctors' schedules", body: "Working days and hours per doctor and branch, plus days off." },
+      { icon: "building", title: "Branches and team", body: "Several branches and a team with the right permissions for each role." },
+    ],
+  },
+  insights: {
+    eyebrow: "Insights",
+    title: "Know how the clinic is doing",
+    sub: "Revenue, completed visits, new patients, no-shows and unpaid visits, month by month.",
+    kpis: [
+      { label: "Visits this month", value: 412 },
+      { label: "New patients", value: 87 },
+      { label: "No-show rate", value: 4, suffix: "%" },
+    ],
+    sample: "Example figures",
+  },
+  how: {
+    eyebrow: "How it works",
+    title: "Up and running this afternoon",
+    steps: [
+      { title: "Create your clinic", body: "Your clinic's name and your mobile number. Your website goes live on its own address." },
+      { title: "Add doctors and services", body: "Specialties, prices and working hours. Pick your website design." },
+      { title: "Invite your team", body: "Give your receptionist and assistants their own sign-in and permissions." },
+      { title: "Welcome patients", body: "Book, manage the queue and keep every file in order, on the computer or the mobile app." },
+    ],
+  },
+  pricing: { eyebrow: "Pricing", title: "Honest plans for every clinic", sub: "Every plan starts with 14 days free, no card needed." },
+  faq: {
+    title: "Questions doctors ask",
+    items: [
+      { q: "Is my patients' data private?", a: "Yes. Each clinic's data is kept separate, only your team can see it, and every member gets only the permissions you give them." },
+      { q: "Can patients book online?", a: "Patients find you on your website and in the patient app and reach you by call or WhatsApp in one tap; your receptionist books them in seconds. Online self-booking is coming later." },
+      { q: "Does it work if the internet is weak?", a: "Yes. The clinic keeps working on a weak connection and syncs when the connection is back." },
+      { q: "Can I run several branches or doctors?", a: "Yes. Add branches, doctors with their own schedules, and a team with different permissions." },
+      { q: "Do I need a developer for the website?", a: "No. Your website is created with your account. Pick a design and fill in your doctors, services and hours." },
+      { q: "Is there a mobile app?", a: "Yes. The doctor and the receptionist can run the day from the mobile app, and patients have their own app." },
+    ],
+  },
+  final: { title: "Give your clinic the calm it deserves", sub: "Set up in minutes. Free for 14 days.", cta: "Start free", cta2: "See pricing" },
+  footer: { tag: "Clinic management and clinic websites for doctors in Egypt and the Arab world.", product: "For clinics", company: "Platform", privacy: "Privacy", deleteAccount: "Delete account", shops: "Elmanassa for shops" },
+};
+
+const ar: ClinicCopy = {
+  meta: {
+    title: "المنصة للأطباء: إدارة العيادة وموقع عيادتك",
+    description: "المواعيد وقاعة الانتظار وملفات المرضى والروشتات وموقع أنيق لعيادتك، في نظام واحد هادئ للأطباء والعيادات.",
+  },
+  nav: { features: "المميزات", website: "موقعك", how: "كيف يعمل", pricing: "الأسعار", faq: "الأسئلة", shops: "للمتاجر", login: "دخول", cta: "ابدأ مجانًا" },
+  hero: {
+    eyebrow: "للأطباء والعيادات",
+    title1: "عيادتك،",
+    title2: "هادئة ومنظّمة.",
+    sub: "المواعيد وقاعة الانتظار وملفات المرضى وموقع عيادتك، في مكان واحد. ورق أقل لفريقك، وزيارة أفضل لكل مريض.",
+    cta: "ابدأ مجانًا",
+    cta2: "شاهد كيف يعمل",
+    trust: ["١٤ يوم مجانًا", "عربي وإنجليزي", "يعمل مع ضعف الإنترنت"],
+    today: "اليوم",
+    next: "المريض التالي",
+    inRoom: "في غرفة الكشف",
+    waiting: "في الانتظار",
+    turn: "دورك التالي",
+  },
+  stats: [
+    { value: 6, label: "تصميمات لموقعك" },
+    { value: 1, label: "رقم مريض واحد للعائلة كلها" },
+    { value: 24, suffix: "/٧", label: "عيادتك أونلاين" },
+  ],
+  features: {
+    eyebrow: "إدارة العيادة",
+    title: "كل ما تحتاجه العيادة لتعمل",
+    sub: "مصمَّم مع أطباء وسكرتارية، علشان اليوم يمشي بسلاسة من أول مكالمة لآخر روشتة.",
+    items: [
+      { icon: "calendar", title: "المواعيد", body: "احجز في ثوانٍ، شوف اليوم كله بنظرة، وتابع كل زيارة من الحجز حتى الانتهاء." },
+      { icon: "queue", title: "قاعة الانتظار", body: "دور مباشر. المريض يوصله إشعار لما يجي دوره، فتفضل قاعة الانتظار هادئة." },
+      { icon: "patients", title: "ملفات المرضى", body: "الزيارات والتشخيص والروشتات وطلبات التحاليل، كلها في ملف واحد يفتح في ثانية." },
+      { icon: "flask", title: "نتائج التحاليل", body: "المريض يرفع نتيجته من موبايله، ويوصلك إشعار فورًا." },
+      { icon: "qr", title: "رقم مريض موحّد", body: "لكل مريض رقم واحد مع كود QR، والأطفال مرتبطون بولي الأمر." },
+      { icon: "print", title: "روشتات للطباعة", body: "روشتات أنيقة باسم عيادتك، جاهزة للطباعة أو المشاركة." },
+    ],
+  },
+  booking: {
+    eyebrow: "المواعيد",
+    title: "يوم يمشي لوحده",
+    sub: "اعرف مين في غرفة الكشف، ومين التالي، ومين منتظر. كل موعد بيمر بخطوات واضحة، فمفيش حاجة بتضيع بين الاستقبال والدكتور.",
+    statuses: ["محجوز", "مؤكد", "وصل", "مع الدكتور", "انتهى"],
+    slots: [
+      { time: "10:00", name: "منى عادل", type: "كشف", status: 4 },
+      { time: "10:30", name: "يوسف سمير", type: "إعادة", status: 3 },
+      { time: "11:00", name: "هنا مصطفى", type: "كشف", status: 2 },
+      { time: "11:30", name: "كريم علي", type: "إعادة", status: 1 },
+    ],
+    sample: "يوم توضيحي",
+  },
+  patients: {
+    eyebrow: "إدارة المرضى",
+    title: "القصة كاملة، بضغطة واحدة",
+    sub: "كل زيارة وروشتة وطلب تحليل في ملف واحد منظّم. العائلة على حساب واحد، والأطفال مرتبطون بولي الأمر.",
+    file: { age: "٣٤ سنة", visits: "الزيارات", rx: "روشتة", lab: "طلب تحليل", uploaded: "نتيجة رفعها المريض", name: "منى عادل", last: "آخر زيارة" },
+  },
+  website: {
+    eyebrow: "موقع عيادتك",
+    title: "موقع يثق فيه المرضى، جاهز في دقائق",
+    sub: "اختار من ستة تصميمات معمولة للعيادات: علامة شخصية للطبيب، أسنان، جلدية، مركز طبي وغيرها. أطباؤك وخدماتك وأسعارك ومواعيدك وموقعك، محدّثة دايمًا.",
+    designs: ["Clear", "Luxe", "Persona", "Dental", "Derma", "Center"],
+    points: ["أطباؤك بالصور والتخصصات", "الخدمات والأسعار", "المواعيد والفروع والاتجاهات", "اتصال وواتساب بضغطة واحدة"],
+    directory: "أطباؤك يظهرون كمان في دليل الأطباء داخل تطبيق المرضى من المنصة، حيث يبحث المرضى بالتخصص والمدينة وسعر الكشف.",
+  },
+  services: {
+    eyebrow: "الخدمات والمواعيد",
+    title: "خدماتك وأسعارك ومواعيدك، في إيدك",
+    items: [
+      { icon: "services", title: "الخدمات والأسعار", body: "الكشف والإعادة وكل إجراء، بسعره ومدته." },
+      { icon: "clock", title: "جداول الأطباء", body: "أيام وساعات العمل لكل طبيب وفرع، والإجازات." },
+      { icon: "building", title: "الفروع والفريق", body: "أكثر من فرع، وفريق بالصلاحيات المناسبة لكل دور." },
+    ],
+  },
+  insights: {
+    eyebrow: "المؤشرات",
+    title: "اعرف أداء عيادتك",
+    sub: "الإيرادات والزيارات المكتملة والمرضى الجدد ونسبة عدم الحضور والزيارات غير المدفوعة، شهرًا بشهر.",
+    kpis: [
+      { label: "زيارات الشهر", value: 412 },
+      { label: "مرضى جدد", value: 87 },
+      { label: "نسبة عدم الحضور", value: 4, suffix: "٪" },
+    ],
+    sample: "أرقام توضيحية",
+  },
+  how: {
+    eyebrow: "كيف يعمل",
+    title: "جاهز من النهاردة",
+    steps: [
+      { title: "أنشئ عيادتك", body: "اسم العيادة ورقم موبايلك. موقعك يشتغل على رابطه الخاص." },
+      { title: "أضف الأطباء والخدمات", body: "التخصصات والأسعار ومواعيد العمل. واختار تصميم موقعك." },
+      { title: "ادعُ فريقك", body: "لكل سكرتير ومساعد دخول خاص وصلاحيات." },
+      { title: "استقبل مرضاك", body: "احجز، نظّم الدور، وخلّي كل ملف مرتب، على الكمبيوتر أو تطبيق الموبايل." },
+    ],
+  },
+  pricing: { eyebrow: "الأسعار", title: "باقات واضحة لكل عيادة", sub: "كل الباقات تبدأ بـ ١٤ يوم مجانًا، بدون بطاقة." },
+  faq: {
+    title: "أسئلة الأطباء",
+    items: [
+      { q: "هل بيانات مرضاي آمنة؟", a: "أيوه. بيانات كل عيادة منفصلة، ولا يراها إلا فريقك، وكل عضو له الصلاحيات اللي أنت تحددها فقط." },
+      { q: "هل المرضى يقدروا يحجزوا أونلاين؟", a: "المرضى بيلاقوك على موقعك وفي تطبيق المرضى ويتواصلوا معاك باتصال أو واتساب بضغطة، والسكرتارية تحجز لهم في ثوانٍ. الحجز الذاتي أونلاين قادم لاحقًا." },
+      { q: "هل يعمل لو الإنترنت ضعيف؟", a: "أيوه. العيادة تكمل شغلها مع ضعف الإنترنت، والبيانات تتزامن لما الاتصال يرجع." },
+      { q: "أقدر أدير أكثر من فرع أو طبيب؟", a: "أيوه. أضف الفروع والأطباء بجداولهم، وفريق بصلاحيات مختلفة." },
+      { q: "محتاج مبرمج للموقع؟", a: "لا. موقعك يتعمل مع حسابك. اختار التصميم واملأ بيانات أطبائك وخدماتك ومواعيدك." },
+      { q: "فيه تطبيق موبايل؟", a: "أيوه. الطبيب والسكرتارية يديروا اليوم من تطبيق الموبايل، وللمرضى تطبيقهم الخاص." },
+    ],
+  },
+  final: { title: "امنح عيادتك الهدوء اللي تستحقه", sub: "تجهيز في دقائق. مجانًا لمدة ١٤ يوم.", cta: "ابدأ مجانًا", cta2: "شاهد الأسعار" },
+  footer: { tag: "إدارة العيادات ومواقع العيادات للأطباء في مصر والعالم العربي.", product: "للعيادات", company: "المنصة", privacy: "الخصوصية", deleteAccount: "حذف الحساب", shops: "المنصة للمتاجر" },
+};
+
+export const clinicCopy = (locale: string): ClinicCopy => (locale === "ar" ? ar : en);
