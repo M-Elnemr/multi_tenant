@@ -2,7 +2,7 @@ import Link from "next/link";
 import { HoursList } from "@/components/shop/hours";
 import { ShopProductCard, type ShopProduct } from "@/components/shop/product-card";
 import { OfferStrip, type OfferBanner } from "@/components/shop/offer-strip";
-import { buildTree, type ShopBranch, type ShopCategory, type ShopProfile } from "@/components/shop/types";
+import { buildTree, type ShopBranch, type ShopCategory } from "@/components/shop/types";
 import { backendJson } from "@/lib/backend";
 import { governorateName } from "@/lib/governorates";
 import { fileUrl } from "@/lib/media";

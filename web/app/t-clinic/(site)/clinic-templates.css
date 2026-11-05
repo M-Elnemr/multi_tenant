@@ -88,3 +88,5 @@ html[lang="ar"] .clinic[data-template="derma"] .c-title { font-style: normal; }
 .clinic[data-template="center"] .c-btn { border-radius: 10px; }
 .clinic[data-template="center"] .c-card { border-radius: 14px; }
 .clinic[data-template="center"] .c-hero { background: linear-gradient(160deg, color-mix(in srgb, var(--brand) 92%, #0f2440), #0f2440); }
+.clinic[data-template="luxe"] .c-announce { background: #0a111b; color: var(--gold); border-bottom: 1px solid var(--c-line); }
+.clinic:has(.s-preview-bar) .c-header { top: 2.25rem; }

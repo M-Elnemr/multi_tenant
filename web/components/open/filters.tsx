@@ -4,9 +4,10 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { GOVERNORATES } from "@/lib/governorates";
-import { money } from "@/lib/format";
 import type { OpenFacets } from "@/lib/open-types";
 import { Icon } from "../icons";
+import { PriceRange } from "../price-range";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useI18n } from "../i18n-provider";
 
 type Fixed = { category?: string; shop?: string };
@@ -77,20 +78,26 @@ function Panel({ facets, fixed, basePath }: { facets: OpenFacets; fixed: Fixed; 
       </Group>
 
       <Group title={t("open.f.price")}>
-        <div className="flex items-center gap-2">
-          <input value={min} onChange={(e) => setMin(e.target.value.replace(/[^0-9.]/g, ""))} inputMode="decimal" placeholder={facets.priceMinMinor !== null ? String(Math.floor(facets.priceMinMinor / 100)) : "0"} aria-label={t("open.f.min")} className="o-input !min-h-10 !px-3 !py-2 text-center" onKeyDown={(e) => e.key === "Enter" && applyPrice()} />
-          <span className="text-[var(--o-mute)]">–</span>
-          <input value={max} onChange={(e) => setMax(e.target.value.replace(/[^0-9.]/g, ""))} inputMode="decimal" placeholder={facets.priceMaxMinor !== null ? String(Math.ceil(facets.priceMaxMinor / 100)) : "∞"} aria-label={t("open.f.max")} className="o-input !min-h-10 !px-3 !py-2 text-center" onKeyDown={(e) => e.key === "Enter" && applyPrice()} />
-          <button type="button" onClick={applyPrice} className="o-btn o-btn-dark o-btn-sm shrink-0 !px-3.5" aria-label={t("open.f.apply")}><Icon name="check" className="h-4 w-4" /></button>
-        </div>
-        {facets.priceMinMinor !== null && facets.priceMaxMinor !== null && <p className="mt-2 text-xs text-[var(--o-mute)]">{money(facets.priceMinMinor, "EGP", locale)} – {money(facets.priceMaxMinor, "EGP", locale)}</p>}
+        {facets.priceMinMinor !== null && facets.priceMaxMinor !== null && facets.priceMaxMinor > facets.priceMinMinor ? (
+          <PriceRange key={`${sp.get("minPrice")}-${sp.get("maxPrice")}-${facets.priceMinMinor}-${facets.priceMaxMinor}`} min={facets.priceMinMinor} max={facets.priceMaxMinor}
+            value={[sp.get("minPrice") ? Number(sp.get("minPrice")) : null, sp.get("maxPrice") ? Number(sp.get("maxPrice")) : null]}
+            onCommit={(lo, hi) => set({ minPrice: lo === null ? null : String(lo), maxPrice: hi === null ? null : String(hi) })}
+            currency="EGP" locale={locale} labels={{ min: t("open.f.min"), max: t("open.f.max") }} accent="var(--o-accent)" />
+        ) : (
+          <div className="flex items-center gap-2">
+            <input value={min} onChange={(e) => setMin(e.target.value.replace(/[^0-9.]/g, ""))} inputMode="decimal" placeholder="0" aria-label={t("open.f.min")} className="o-input !min-h-10 !px-3 !py-2 text-center" onKeyDown={(e) => e.key === "Enter" && applyPrice()} />
+            <span className="text-[var(--o-mute)]">–</span>
+            <input value={max} onChange={(e) => setMax(e.target.value.replace(/[^0-9.]/g, ""))} inputMode="decimal" placeholder="∞" aria-label={t("open.f.max")} className="o-input !min-h-10 !px-3 !py-2 text-center" onKeyDown={(e) => e.key === "Enter" && applyPrice()} />
+            <button type="button" onClick={applyPrice} className="o-btn o-btn-dark o-btn-sm shrink-0 !px-3.5" aria-label={t("open.f.apply")}><Icon name="check" className="h-4 w-4" /></button>
+          </div>
+        )}
       </Group>
 
       <Group title={t("open.f.rating")}>
         <div className="grid gap-1.5">
           {[4, 3].map((r) => (
             <button key={r} type="button" onClick={() => set({ minRating: sp.get("minRating") === String(r) ? null : String(r) })} data-active={sp.get("minRating") === String(r)} className="o-chip w-fit">
-              <span className="o-stars">{"★".repeat(r)}</span>{t("open.f.andUp")}
+              <span className="o-stars inline-flex">{Array.from({ length: r }).map((_, i) => <Icon key={i} name="star" className="h-3.5 w-3.5 fill-current" />)}</span>{t("open.f.andUp")}
             </button>
           ))}
         </div>
@@ -179,27 +186,60 @@ export function FiltersButton({ facets, fixed, basePath, activeCount, total }: {
   const { t } = useI18n();
   const clear = useClear(basePath);
   const [open, setOpen] = useState(false);
+  const reduce = useReducedMotion();
   useEffect(() => { document.body.style.overflow = open ? "hidden" : ""; return () => { document.body.style.overflow = ""; }; }, [open]);
   return (
     <>
-      <div className="lg:hidden"><button type="button" onClick={() => setOpen(true)} className="o-btn o-btn-ghost o-btn-sm"><Icon name="settings" className="h-4 w-4" />{t("open.f.title")}{activeCount > 0 && <span className="grid h-5 min-w-5 place-items-center rounded-full bg-[var(--o-accent)] px-1 text-[11px] font-black text-white">{activeCount}</span>}</button></div>
-      {open && (
-        <>
-          <div className="o-sheet-back" onClick={() => setOpen(false)} />
-          <div className="o-sheet" role="dialog" aria-modal="true" aria-label={t("open.f.title")}>
-            <div className="flex items-center justify-between border-b border-[var(--o-line)] px-5 py-4">
-              <p className="text-lg font-extrabold">{t("open.f.title")}</p>
-              <button type="button" onClick={() => setOpen(false)} aria-label={t("common.close")} className="grid h-10 w-10 place-items-center rounded-xl hover:bg-[var(--o-soft)]"><Icon name="close" className="h-5 w-5" /></button>
-            </div>
-            <div className="flex-1 overflow-y-auto px-5"><Panel facets={facets} fixed={fixed} basePath={basePath} /></div>
-            <div className="grid grid-cols-[auto_1fr] gap-3 border-t border-[var(--o-line)] p-4">
-              <button type="button" onClick={() => { clear(); setOpen(false); }} className="o-btn o-btn-ghost">{t("open.f.clear")}</button>
-              <button type="button" onClick={() => setOpen(false)} className="o-btn">{t("open.f.show", { n: total })}</button>
-            </div>
-          </div>
-        </>
-      )}
+      <div className="lg:hidden"><button type="button" onClick={() => setOpen(true)} className="o-btn o-btn-ghost o-btn-sm"><Icon name="sliders" className="h-4 w-4" />{t("open.f.title")}{activeCount > 0 && <span className="grid h-5 min-w-5 place-items-center rounded-full bg-[var(--o-accent)] px-1 text-[11px] font-black text-white">{activeCount}</span>}</button></div>
+      <AnimatePresence>
+        {open && (
+          <>
+            <motion.div className="o-sheet-back" onClick={() => setOpen(false)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduce ? 0 : 0.2 }} />
+            <motion.div className="o-sheet !animate-none" role="dialog" aria-modal="true" aria-label={t("open.f.title")}
+              initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 380, damping: 38 }}
+              drag={reduce ? false : "y"} dragConstraints={{ top: 0, bottom: 0 }} dragElastic={{ top: 0, bottom: 0.6 }} onDragEnd={(_, i) => { if (i.offset.y > 120 || i.velocity.y > 600) setOpen(false); }}>
+              <div className="mx-auto mt-2.5 h-1.5 w-11 rounded-full bg-[var(--o-line)]" />
+              <div className="flex items-center justify-between px-5 pb-3 pt-2">
+                <p className="text-lg font-extrabold">{t("open.f.title")}{activeCount > 0 && <span className="ms-2 rounded-full bg-[var(--o-accent)] px-2 py-0.5 text-xs font-black text-white">{activeCount}</span>}</p>
+                <button type="button" onClick={() => setOpen(false)} aria-label={t("common.close")} className="grid h-10 w-10 place-items-center rounded-xl hover:bg-[var(--o-soft)]"><Icon name="close" className="h-5 w-5" /></button>
+              </div>
+              <div className="border-y border-[var(--o-line)] px-5 py-3"><SortChips basePath={basePath} /></div>
+              <div className="flex-1 overflow-y-auto overscroll-contain px-5"><Panel facets={facets} fixed={fixed} basePath={basePath} /></div>
+              <div className="grid grid-cols-[auto_1fr] gap-3 border-t border-[var(--o-line)] p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+                <button type="button" onClick={() => { clear(); setOpen(false); }} disabled={activeCount === 0} className="o-btn o-btn-ghost disabled:opacity-40">{t("open.f.clear")}</button>
+                <button type="button" onClick={() => setOpen(false)} className="o-btn">{t("open.f.show", { n: total })}</button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </>
+  );
+}
+
+const SORTS = (hasQ: boolean) => [...(hasQ ? ["relevance"] : ["recommended"]), "popular", "newest", "price_asc", "price_desc", "discount", "rating"];
+
+/** Sort as one-tap chips inside the phone filter sheet (the sliding pill shows the choice). */
+function SortChips({ basePath }: { basePath: string }) {
+  const { t } = useI18n();
+  const router = useRouter();
+  const sp = useSearchParams();
+  const reduce = useReducedMotion();
+  const options = SORTS(!!sp.get("q"));
+  const cur = options.includes(sp.get("sort") ?? "") ? sp.get("sort")! : options[0];
+  return (
+    <div>
+      <p className="mb-2 text-xs font-bold text-[var(--o-mute)]">{t("open.sort.label")}</p>
+      <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
+        {options.map((o) => (
+          <button key={o} type="button" onClick={() => { const p = new URLSearchParams(sp.toString()); p.set("sort", o); p.delete("page"); router.push(`${basePath}?${p.toString()}`, { scroll: false }); }}
+            className={`relative shrink-0 rounded-full px-3.5 py-2 text-[13px] font-bold transition ${o === cur ? "text-white" : "bg-[var(--o-soft)] text-[var(--o-ink)]"}`}>
+            {o === cur && <motion.span layoutId="o-sort-pill" transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 500, damping: 38 }} className="absolute inset-0 rounded-full bg-[var(--o-ink)]" />}
+            <span className="relative">{t(`open.sort.${o}`)}</span>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -207,8 +247,7 @@ export function SortSelect({ basePath }: { basePath: string }) {
   const { t } = useI18n();
   const router = useRouter();
   const sp = useSearchParams();
-  const hasQ = !!sp.get("q");
-  const options = [...(hasQ ? ["relevance"] : ["recommended"]), "popular", "newest", "price_asc", "price_desc", "discount", "rating"];
+  const options = SORTS(!!sp.get("q"));
   const cur = sp.get("sort") ?? options[0];
   return (
     <label className="flex items-center gap-2 text-sm">

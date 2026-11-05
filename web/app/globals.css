@@ -342,3 +342,10 @@ img { -webkit-user-drag: none; }
 
 /* Command palette kbd hint */
 .kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 1.35rem; height: 1.35rem; padding: 0 .3rem; border-radius: 5px; font-size: .6875rem; font-weight: 600; color: var(--muted); background: var(--surface); box-shadow: 0 0 0 1px var(--line-strong), 0 1px 0 var(--line-strong); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* Dual-thumb price slider (components/price-range.tsx): only the thumbs take pointer events, so both can be dragged on one track */
+.price-thumb::-webkit-slider-thumb { -webkit-appearance: none; pointer-events: auto; width: 22px; height: 22px; border-radius: 999px; background: #fff; border: 2px solid var(--accent, var(--brand)); box-shadow: 0 2px 6px rgb(0 0 0 / .18); cursor: grab; transition: transform .15s ease; }
+.price-thumb::-webkit-slider-thumb:active { transform: scale(1.15); cursor: grabbing; }
+.price-thumb::-moz-range-thumb { pointer-events: auto; width: 20px; height: 20px; border-radius: 999px; background: #fff; border: 2px solid var(--accent, var(--brand)); box-shadow: 0 2px 6px rgb(0 0 0 / .18); cursor: grab; }
+.price-thumb:focus-visible::-webkit-slider-thumb { outline: 3px solid color-mix(in srgb, var(--accent, var(--brand)) 35%, transparent); outline-offset: 2px; }
+.price-thumb::-webkit-slider-runnable-track { background: transparent; }

@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'mode.dart';
+import 'doctors/directory.dart';
 import 'patient_id.dart';
 import 'push.dart';
 import 'shop/shop.dart';
@@ -305,11 +306,17 @@ class _MyClinicsState extends State<MyClinics> {
         builder: (context, all, reload) {
           final clinics = all.cast<Map<String, dynamic>>().where((t) => t['type'] == 'CLINIC' && t['host'] != null).toList();
           WidgetsBinding.instance.addPostFrameCallback((_) { _startPush(clinics); _maybeAutoOpen(clinics, reload); });
-          if (clinics.isEmpty) return Center(child: Padding(padding: const EdgeInsets.all(32), child: Text(s.ar ? 'لا توجد عيادة مسجّل بها هذا الحساب بعد. العيادة هي من تضيفك.' : 'No clinic has added you yet. Your clinic registers you.', textAlign: TextAlign.center)));
+          if (clinics.isEmpty) {
+            return ListView(children: [
+              FindDoctorBanner(api: widget.platform),
+              Padding(padding: const EdgeInsets.all(32), child: Text(s.ar ? 'لا توجد عيادة مسجّل بها هذا الحساب بعد. العيادة هي من تضيفك.' : 'No clinic has added you yet. Your clinic registers you.', textAlign: TextAlign.center)),
+            ]);
+          }
           // One clinic: go straight in.
           return RefreshIndicator(
             onRefresh: reload,
             child: ListView(children: [
+              FindDoctorBanner(api: widget.platform),
               PatientIdCard(api: widget.platform),
               for (final c in clinics)
                 Card(
@@ -327,6 +334,37 @@ class _MyClinicsState extends State<MyClinics> {
             ]),
           );
         },
+      ),
+    );
+  }
+}
+
+/// Entry to the doctor directory: a calm card at the top of the clinics list.
+class FindDoctorBanner extends StatelessWidget {
+  const FindDoctorBanner({super.key, required this.api});
+  final ApiClient api;
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: PressScale(
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => DoctorDirectory(api: api))),
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(gradient: LinearGradient(colors: [cs.primary, Color.lerp(cs.primary, const Color(0xFF0B2A22), .35)!]), borderRadius: BorderRadius.circular(24)),
+          child: Row(children: [
+            Container(width: 52, height: 52, decoration: BoxDecoration(color: Colors.white.withValues(alpha: .16), borderRadius: BorderRadius.circular(16)), child: const Icon(Icons.person_search_rounded, color: Colors.white, size: 28)),
+            const SizedBox(width: 14),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(s.ar ? 'ابحث عن طبيب' : 'Find a doctor', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 2),
+              Text(s.ar ? 'بالتخصص والمدينة وسعر الكشف' : 'By specialty, city and fee', style: TextStyle(color: Colors.white.withValues(alpha: .8))),
+            ])),
+            Icon(Directionality.of(context) == TextDirection.rtl ? Icons.arrow_back_rounded : Icons.arrow_forward_rounded, color: Colors.white),
+          ]),
+        ),
       ),
     );
   }

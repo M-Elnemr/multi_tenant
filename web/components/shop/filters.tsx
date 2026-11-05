@@ -4,8 +4,8 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { Icon } from "../icons";
+import { PriceRange } from "../price-range";
 import { useI18n } from "../i18n-provider";
-import { money } from "@/lib/format";
 import type { CategoryNode } from "./types";
 
 export type Facets = {
@@ -76,13 +76,18 @@ function Panel({ tree, activeSlug, facets, currency }: { tree: CategoryNode[]; a
       </div>
       <div>
         <h3 className="mb-2 text-sm font-extrabold">{t("filter.price")} ({currency})</h3>
-        <div className="flex items-center gap-2">
-          <input value={min} onChange={(e) => setMin(e.target.value)} inputMode="decimal" dir="ltr" placeholder={facets.priceMinMinor != null ? String(Math.floor(facets.priceMinMinor / 100)) : "0"} className="s-input !py-2 text-center" aria-label={t("filter.min")} />
-          <span className="text-[var(--s-mute)]">–</span>
-          <input value={max} onChange={(e) => setMax(e.target.value)} inputMode="decimal" dir="ltr" placeholder={facets.priceMaxMinor != null ? String(Math.ceil(facets.priceMaxMinor / 100)) : "∞"} className="s-input !py-2 text-center" aria-label={t("filter.max")} />
-        </div>
-        {facets.priceMinMinor != null && facets.priceMaxMinor != null && <p className="mt-1.5 text-xs text-[var(--s-mute)]">{money(facets.priceMinMinor, currency, locale)} – {money(facets.priceMaxMinor, currency, locale)}</p>}
-        <button onClick={() => set({ minPrice: minor(min), maxPrice: minor(max) })} className="s-btn s-btn-ghost s-btn-sm mt-2 w-full">{t("filter.apply")}</button>
+        {facets.priceMinMinor != null && facets.priceMaxMinor != null && facets.priceMaxMinor > facets.priceMinMinor ? (
+          <PriceRange key={`${sp.get("minPrice")}-${sp.get("maxPrice")}`} min={facets.priceMinMinor} max={facets.priceMaxMinor} currency={currency} locale={locale}
+            value={[sp.get("minPrice") ? Number(sp.get("minPrice")) : null, sp.get("maxPrice") ? Number(sp.get("maxPrice")) : null]}
+            onCommit={(lo, hi) => set({ minPrice: lo === null ? null : String(lo), maxPrice: hi === null ? null : String(hi) })} labels={{ min: t("filter.min"), max: t("filter.max") }} />
+        ) : (<>
+          <div className="flex items-center gap-2">
+            <input value={min} onChange={(e) => setMin(e.target.value)} inputMode="decimal" dir="ltr" placeholder="0" className="s-input !py-2 text-center" aria-label={t("filter.min")} />
+            <span className="text-[var(--s-mute)]">–</span>
+            <input value={max} onChange={(e) => setMax(e.target.value)} inputMode="decimal" dir="ltr" placeholder="∞" className="s-input !py-2 text-center" aria-label={t("filter.max")} />
+          </div>
+          <button onClick={() => set({ minPrice: minor(min), maxPrice: minor(max) })} className="s-btn s-btn-ghost s-btn-sm mt-2 w-full">{t("filter.apply")}</button>
+        </>)}
       </div>
       {facets.brands.length > 0 && (
         <div>
@@ -160,7 +165,7 @@ export function FilterSheet(props: PanelProps) {
   const [open, setOpen] = useState(false);
   return (
     <div className="lg:hidden">
-      <button onClick={() => setOpen(true)} className="s-btn s-btn-ghost s-btn-sm"><Icon name="menu" className="h-4 w-4" />{t("filter.title")}</button>
+      <button onClick={() => setOpen(true)} className="s-btn s-btn-ghost s-btn-sm"><Icon name="sliders" className="h-4 w-4" />{t("filter.title")}</button>
       {open && (
         <div className="fixed inset-0 z-50" role="dialog" aria-modal>
           <div className="absolute inset-0 animate-fade-in bg-black/40" onClick={() => setOpen(false)} />

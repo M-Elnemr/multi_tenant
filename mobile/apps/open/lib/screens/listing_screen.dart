@@ -247,6 +247,40 @@ class _FilterSheetState extends State<_FilterSheet> {
         cur.isEmpty ? d.remove(k) : d[k] = cur.join(',');
       });
 
+  /// Price: a range slider bounded by the real prices of the results (facets), with the two values shown live; typed boxes when there is no range.
+  Widget _priceRange(Map<String, dynamic> f) {
+    final lo = f['priceMinMinor'] == null ? null : n(f['priceMinMinor']).toDouble();
+    final hi = f['priceMaxMinor'] == null ? null : n(f['priceMaxMinor']).toDouble();
+    if (lo == null || hi == null || hi <= lo) {
+      return Row(children: [
+        Expanded(child: TextField(controller: _min, keyboardType: TextInputType.number, textAlign: TextAlign.center, decoration: const InputDecoration(hintText: '0'), onChanged: (v) => v.isEmpty ? d.remove('minPrice') : d['minPrice'] = '${((num.tryParse(v) ?? 0) * 100).round()}')),
+        const Padding(padding: EdgeInsets.symmetric(horizontal: 10), child: Text('–')),
+        Expanded(child: TextField(controller: _max, keyboardType: TextInputType.number, textAlign: TextAlign.center, decoration: const InputDecoration(hintText: '∞'), onChanged: (v) => v.isEmpty ? d.remove('maxPrice') : d['maxPrice'] = '${((num.tryParse(v) ?? 0) * 100).round()}')),
+      ]);
+    }
+    final a = (d['minPrice'] == null ? lo : n(d['minPrice']).toDouble()).clamp(lo, hi);
+    final b = (d['maxPrice'] == null ? hi : n(d['maxPrice']).toDouble()).clamp(lo, hi);
+    String fmt(double v) => '${(v / 100).round()} ${AppLocale.isAr ? 'ج.م' : 'EGP'}';
+    Widget bubble(String t) => AnimatedSwitcher(
+          duration: const Duration(milliseconds: 150),
+          child: Container(key: ValueKey(t), padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7), decoration: BoxDecoration(color: kAccent.withValues(alpha: .08), borderRadius: BorderRadius.circular(12)), child: Text(t, textDirection: TextDirection.ltr, style: const TextStyle(fontWeight: FontWeight.w900, color: kAccent))),
+        );
+    return Column(children: [
+      Row(children: [bubble(fmt(a)), const Expanded(child: Divider(indent: 10, endIndent: 10)), bubble(fmt(b))]),
+      SliderTheme(
+        data: SliderTheme.of(context).copyWith(activeTrackColor: kAccent, inactiveTrackColor: kLine, thumbColor: Colors.white, overlayColor: kAccent.withValues(alpha: .12), trackHeight: 4,
+            rangeThumbShape: const RoundRangeSliderThumbShape(enabledThumbRadius: 11, elevation: 3)),
+        child: RangeSlider(
+          min: lo, max: hi, values: RangeValues(a, b), divisions: 60,
+          onChanged: (r) => setState(() {
+            r.start <= lo ? d.remove('minPrice') : d['minPrice'] = '${r.start.round()}';
+            r.end >= hi ? d.remove('maxPrice') : d['maxPrice'] = '${r.end.round()}';
+          }),
+        ),
+      ),
+    ]);
+  }
+
   Widget _group(String title, Widget child) => Padding(padding: const EdgeInsets.only(bottom: 20), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15)), const SizedBox(height: 10), child]));
 
   @override
@@ -288,11 +322,7 @@ class _FilterSheetState extends State<_FilterSheet> {
               items: [DropdownMenuItem(value: '', child: Text(tr('open.f.anywhere'))), for (final g in kGovernorates) DropdownMenuItem(value: g.code, child: Text(AppLocale.isAr ? g.ar : g.en))],
               onChanged: (v) => setState(() => (v == null || v.isEmpty) ? d.remove('governorate') : d['governorate'] = v),
             )),
-            _group(tr('open.f.price'), Row(children: [
-              Expanded(child: TextField(controller: _min, keyboardType: TextInputType.number, textAlign: TextAlign.center, decoration: InputDecoration(hintText: f['priceMinMinor'] == null ? '0' : '${(n(f['priceMinMinor']) / 100).floor()}'), onChanged: (v) => v.isEmpty ? d.remove('minPrice') : d['minPrice'] = '${((num.tryParse(v) ?? 0) * 100).round()}')),
-              const Padding(padding: EdgeInsets.symmetric(horizontal: 10), child: Text('–')),
-              Expanded(child: TextField(controller: _max, keyboardType: TextInputType.number, textAlign: TextAlign.center, decoration: InputDecoration(hintText: f['priceMaxMinor'] == null ? '∞' : '${(n(f['priceMaxMinor']) / 100).ceil()}'), onChanged: (v) => v.isEmpty ? d.remove('maxPrice') : d['maxPrice'] = '${((num.tryParse(v) ?? 0) * 100).round()}')),
-            ])),
+            _group(tr('open.f.price'), _priceRange(f)),
             _group(tr('open.f.rating'), Wrap(spacing: 8, children: [for (final r in [4, 3]) OChip(label: '$r★ ${tr('open.f.andUp')}', active: d['minRating'] == '$r', onTap: () => setState(() => d['minRating'] == '$r' ? d.remove('minRating') : d['minRating'] = '$r'))])),
             _group(tr('open.f.offers'), Column(children: [
               for (final (k, label) in [('onSale', tr('open.f.onSale')), ('freeShipping', tr('open.f.freeShipping')), ('inStock', tr('open.f.inStock'))])
@@ -304,7 +334,18 @@ class _FilterSheetState extends State<_FilterSheet> {
               for (final c in colors)
                 GestureDetector(
                   onTap: () => _toggleCsv('color', s(c['code'])),
-                  child: Container(width: 40, height: 40, decoration: BoxDecoration(shape: BoxShape.circle, color: hexColor0(s(c['hex'])), border: Border.all(color: _csv('color').contains(s(c['code'])) ? kAccent : kLine, width: _csv('color').contains(s(c['code'])) ? 3 : 1.5)), child: _csv('color').contains(s(c['code'])) ? const Icon(Icons.check_rounded, color: Colors.white, size: 18) : null),
+                  child: AnimatedScale(
+                    scale: _csv('color').contains(s(c['code'])) ? 1.12 : 1,
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutBack,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 220),
+                      width: 40, height: 40,
+                      decoration: BoxDecoration(shape: BoxShape.circle, color: hexColor0(s(c['hex'])), border: Border.all(color: _csv('color').contains(s(c['code'])) ? kAccent : kLine, width: _csv('color').contains(s(c['code'])) ? 3 : 1.5),
+                          boxShadow: _csv('color').contains(s(c['code'])) ? [BoxShadow(color: kAccent.withValues(alpha: .35), blurRadius: 10, offset: const Offset(0, 4))] : const []),
+                      child: AnimatedSwitcher(duration: const Duration(milliseconds: 180), child: _csv('color').contains(s(c['code'])) ? const Icon(Icons.check_rounded, key: ValueKey(1), color: Colors.white, size: 18) : const SizedBox.shrink(key: ValueKey(0))),
+                    ),
+                  ),
                 ),
             ])),
             if (sizes.isNotEmpty) _group(tr('open.f.sizes'), Wrap(spacing: 8, runSpacing: 8, children: [for (final z in sizes) OChip(label: localName(z), active: _csv('size').contains(s(z['code'])), onTap: () => _toggleCsv('size', s(z['code'])))])),
