@@ -44,7 +44,6 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
   const [dirn, setDirn] = useState(1);
   const [name, setName] = useState("");
   const [manualSlug, setManualSlug] = useState<string | null>(null);
-  const [editSlug, setEditSlug] = useState(false);
   // The address is made for the owner: from the name when it has latin letters, else a short random one (an Arabic name has none).
   const [rand] = useState(() => Math.random().toString(36).slice(2, 6));
   const [suffix, setSuffix] = useState("");
@@ -239,18 +238,16 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
                       </div>
                     )}
                   </Field>
-                  <div className="rounded-2xl border border-black/[.07] bg-white p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-semibold">{t("reg2.yourAddress")}</p>
-                      <button type="button" onClick={() => setEditSlug(!editSlug)} className="text-xs font-semibold" style={{ color: th.accent }}>{t("reg2.change")}</button>
-                    </div>
+                  <div>
+                    <label htmlFor="reg-slug" className="text-sm font-semibold">{t("reg2.yourAddress")}</label>
+                    <p className="mt-0.5 text-xs text-slate-500">{t("register.addressHint")}</p>
                     <div dir="ltr" className="mt-2">
-                      {editSlug ? (
-                        <div className="flex items-center gap-2">
-                          <Input value={slug} onChange={(e) => setManualSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))} required minLength={3} maxLength={40} autoCapitalize="none" autoCorrect="off" spellCheck={false} autoFocus />
-                          <span className="whitespace-nowrap text-sm text-slate-500">.{rootDomain}</span>
-                        </div>
-                      ) : <p className="truncate font-mono text-sm text-slate-700">{host}</p>}
+                      {/* always editable, pre-filled with the suggested address */}
+                      <div className={`flex items-center overflow-hidden rounded-xl border bg-white transition focus-within:ring-4 ${avail === "taken" || avail === "invalid" ? "border-red-300 focus-within:ring-red-100" : "border-black/10 focus-within:border-black/30 focus-within:ring-black/5"}`}>
+                        <input id="reg-slug" value={slug} onChange={(e) => setManualSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))} required minLength={3} maxLength={40}
+                          autoCapitalize="none" autoCorrect="off" spellCheck={false} suppressHydrationWarning className="h-12 min-w-0 flex-1 bg-transparent ps-3.5 font-mono text-sm text-slate-800 outline-none" />
+                        <span className="shrink-0 whitespace-nowrap border-s border-black/[.06] bg-slate-50 px-3 py-3.5 font-mono text-sm text-slate-500">.{rootDomain}</span>
+                      </div>
                       <p className={`mt-1.5 text-xs ${avail === "ok" ? "text-emerald-600" : avail === "checking" || avail === "idle" ? "text-slate-500" : "text-red-600"}`}>
                         {avail === "checking" ? t("register.checking") : avail === "ok" ? `✓ ${t("register.available")}` : avail === "taken" ? t("register.taken") : avail === "invalid" ? t("register.invalidSlug") : " "}
                       </p>
