@@ -27,12 +27,12 @@ export default function StoreOverview() {
   const channels = useApi<Channel[]>(aiOn ? "store/ai/channels" : null);
   const branding = useApi<{ logoFileId?: string }>("tenant/branding");
   const [metric, setMetric] = useState<"sales" | "orders">("sales");
+  const [yKey] = useState(() => new Date(Date.now() - 86400000).toLocaleDateString("en-CA", { timeZone: timezone }));
   if (summary.loading && !summary.data) return <Loading />;
   const s = summary.data;
   const fmt = (n: number) => money(n, currency, locale);
   const days = s?.salesByDay ?? [];
   // compare today's sales with yesterday's entry (by the shop's calendar day), only when yesterday sold something
-  const yKey = new Date(Date.now() - 86400000).toLocaleDateString("en-CA", { timeZone: timezone });
   const yesterday = days.find((d) => d.day === yKey);
   const vsYesterday = s && yesterday && yesterday.salesMinor > 0 ? pct(s.salesTodayMinor, yesterday.salesMinor) : null;
   const firstHalf = days.slice(0, Math.floor(days.length / 2)).reduce((a, d) => a + d.salesMinor, 0);

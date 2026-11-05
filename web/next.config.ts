@@ -11,9 +11,9 @@ const nextConfig: NextConfig = {
         headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          { key: "X-Frame-Options", value: "DENY" },
-          // the parts of a content policy that cannot break a page: nobody can frame us or inject a <base>/<object>, and forms only post to this site
-          { key: "Content-Security-Policy", value: "frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'" },
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },   // only the site itself may frame it (the template gallery previews the live site)
+          // the parts of a content policy that cannot break a page: only this same site can frame us or inject a <base>/<object>, and forms only post to this site
+          { key: "Content-Security-Policy", value: "frame-ancestors 'self'; base-uri 'self'; object-src 'none'; form-action 'self'" },
           { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=()" },
         ],
       },

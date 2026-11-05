@@ -1,0 +1,90 @@
+/* Clinic website templates. Composition comes from components/clinic/templates.ts (hero, doctors, services); this file sets each design's palette,
+   type and finish under .clinic[data-template]. «center» keeps the original coloured hero (a structured medical centre). */
+
+.clinic { --c-display: var(--font-display-stack); }
+.clinic .c-display { font-family: var(--c-display); }
+/* light heroes: the open/closed pill sits on paper, not on colour */
+.clinic :is(.c-hero-split, .c-hero-dental, .c-hero-arch, .c-hero-persona) .c-status { background: var(--c-card); color: var(--c-ink); border: 1px solid var(--c-line); backdrop-filter: none; }
+.clinic .c-hero-split { background: radial-gradient(50rem 26rem at 100% 0%, color-mix(in srgb, var(--brand) 10%, transparent), transparent 70%); }
+.clinic .c-hero-full .c-status { background: rgb(255 255 255 / .1); }
+.clinic .c-quote { font-family: var(--c-display); color: var(--c-ink); }
+.clinic .c-facts b { color: var(--c-ink); }
+@keyframes c-smile { 0%, 100% { border-radius: 40% 60% 55% 45% / 50% 45% 55% 50%; } 50% { border-radius: 55% 45% 40% 60% / 45% 55% 50% 50%; } }
+.clinic .c-smile { animation: c-smile 12s ease-in-out infinite; }
+.clinic .c-float-book, .clinic .c-badge-float { animation: fade-up .7s .4s cubic-bezier(.2,.8,.2,1) both; }
+@media (prefers-reduced-motion: reduce) { .clinic .c-smile { animation: none; } }
+
+/* ───────── clear: modern minimal healthcare ───────── */
+.clinic[data-template="clear"] { --c-bg: #f7fafb; --c-display: var(--font-display-stack); }
+.clinic[data-template="clear"] h1, .clinic[data-template="clear"] .c-title { font-family: var(--c-display); letter-spacing: -0.025em; }
+
+/* ───────── luxe: private medical luxury (navy, ivory, gold) ───────── */
+.clinic[data-template="luxe"] {
+  --c-bg: #0e1622; --c-card: #142031; --c-ink: #efe6d2; --c-mute: #a39a87; --c-line: rgb(200 169 106 / .22); --c-soft: rgb(200 169 106 / .1);
+  --c-radius: 4px; --c-shadow: none; --c-shadow-lg: 0 40px 80px -40px rgb(0 0 0 / .7); --gold: #c8a96a; --brand: #c8a96a;
+  --c-display: var(--f-cormorant), var(--f-reem), serif; background: var(--c-bg); color: var(--c-ink); color-scheme: dark;
+}
+.clinic[data-template="luxe"] h1, .clinic[data-template="luxe"] h2, .clinic[data-template="luxe"] h3, .clinic[data-template="luxe"] .c-title { font-family: var(--c-display); font-weight: 500; }
+.clinic[data-template="luxe"] .c-title { font-size: clamp(2rem, 4vw, 3rem); }
+.clinic[data-template="luxe"] .c-title::after { background: var(--gold); height: 1px; width: 4rem; }
+.clinic[data-template="luxe"] .c-eyebrow { color: var(--gold); letter-spacing: .35em; font-weight: 500; }
+.clinic[data-template="luxe"] .c-btn { border-radius: 0; background: var(--gold); color: #0e1622; box-shadow: none; letter-spacing: .08em; }
+.clinic[data-template="luxe"] .c-btn-white { background: var(--gold); color: #0e1622; }
+.clinic[data-template="luxe"] .c-btn-glass, .clinic[data-template="luxe"] .c-btn-ghost { background: transparent; color: var(--c-ink); border: 1px solid var(--gold); }
+.clinic[data-template="luxe"] .c-card { background: var(--c-card); border-color: var(--c-line); border-radius: 4px; }
+.clinic[data-template="luxe"] .c-chip { background: transparent; color: var(--gold); border: 1px solid var(--c-line); border-radius: 0; }
+.clinic[data-template="luxe"] .c-header { background: rgb(14 22 34 / .82); border-color: var(--c-line); }
+.clinic[data-template="luxe"] .c-header a, .clinic[data-template="luxe"] .c-nav a { color: var(--c-ink) !important; }
+.clinic[data-template="luxe"] .c-nav a:hover { background: var(--c-soft); color: var(--gold) !important; }
+.clinic[data-template="luxe"] footer { background: #0a111b; border-color: var(--c-line); }
+.clinic[data-template="luxe"] footer, .clinic[data-template="luxe"] footer * { color: var(--c-mute); }
+.clinic[data-template="luxe"] .c-mobilebar { background: rgb(14 22 34 / .94); border-color: var(--c-line); }
+.clinic[data-template="luxe"] .bg-white { background: var(--c-card) !important; }
+.clinic[data-template="luxe"] .c-step-n { background: transparent; border: 1px solid var(--gold); color: var(--gold); }
+.clinic[data-template="luxe"] .c-avatar { background: linear-gradient(135deg, #1c2a40, #0e1622); color: var(--gold); }
+
+/* ───────── persona: the doctor's own editorial page ───────── */
+.clinic[data-template="persona"] {
+  --c-bg: #f6f3ee; --c-card: #ffffff; --c-ink: #1a1d22; --c-mute: #6c6a66; --c-line: #e6e0d6; --c-soft: #ece6dc; --c-radius: 20px;
+  --c-display: var(--f-playfair), var(--f-amiri), serif; background: var(--c-bg);
+}
+.clinic[data-template="persona"] h1, .clinic[data-template="persona"] h2, .clinic[data-template="persona"] .c-title { font-family: var(--c-display); font-weight: 600; }
+.clinic[data-template="persona"] .c-title::after { margin-inline: auto; height: 2px; }
+.clinic[data-template="persona"] .c-eyebrow { letter-spacing: .25em; }
+.clinic[data-template="persona"] .c-btn { border-radius: 999px; background: var(--c-ink); box-shadow: none; }
+.clinic[data-template="persona"] .c-btn:hover { background: var(--brand); }
+.clinic[data-template="persona"] .c-btn-ghost { background: transparent; color: var(--c-ink); border: 1px solid var(--c-ink); }
+.clinic[data-template="persona"] .c-quote { font-style: italic; }
+html[lang="ar"] .clinic[data-template="persona"] .c-quote { font-style: normal; }
+
+/* ───────── dental: bright, aqua, polished ───────── */
+.clinic[data-template="dental"] {
+  --c-bg: #ffffff; --c-card: #ffffff; --c-ink: #0d2b3a; --c-mute: #5a7180; --c-line: #e3eef2; --c-soft: #e9f8fa; --c-radius: 26px;
+  --brand: #19b6c9; --brand-2: #3b82f6; --c-display: var(--font-display-stack);
+}
+.clinic[data-template="dental"] .c-hero-dental { background: radial-gradient(40rem 26rem at 90% 10%, #e3f7fa, transparent 70%), radial-gradient(30rem 20rem at 0% 100%, #eef4ff, transparent 70%); }
+.clinic[data-template="dental"] h1, .clinic[data-template="dental"] .c-title { font-family: var(--c-display); letter-spacing: -0.02em; }
+.clinic[data-template="dental"] .c-btn { background: linear-gradient(135deg, var(--brand), var(--brand-2)); }
+.clinic[data-template="dental"] .c-icon { border-radius: 999px; }
+
+/* ───────── derma: wellness & dermatology (blush, sand, arch) ───────── */
+.clinic[data-template="derma"] {
+  --c-bg: #f8f1ec; --c-card: #fffaf7; --c-ink: #3d2c2a; --c-mute: #8a746f; --c-line: #eadbd2; --c-soft: #f2e4dc; --c-radius: 28px;
+  --brand: #c98b7a; --brand-2: #b07b6b; --c-display: var(--f-cormorant), var(--f-amiri), serif;
+}
+.clinic[data-template="derma"] h1, .clinic[data-template="derma"] h2, .clinic[data-template="derma"] h3, .clinic[data-template="derma"] .c-title { font-family: var(--c-display); font-weight: 500; }
+.clinic[data-template="derma"] .c-title { font-size: clamp(2rem, 4vw, 2.9rem); font-style: italic; }
+html[lang="ar"] .clinic[data-template="derma"] .c-title { font-style: normal; }
+.clinic[data-template="derma"] .c-eyebrow { letter-spacing: .3em; font-weight: 600; }
+.clinic[data-template="derma"] .c-btn { background: var(--c-ink); box-shadow: none; }
+.clinic[data-template="derma"] .c-btn:hover { background: var(--brand); }
+.clinic[data-template="derma"] .c-btn-ghost { background: transparent; border: 1px solid var(--c-ink); color: var(--c-ink); }
+.clinic[data-template="derma"] .c-card { border-radius: 999px 999px 28px 28px; }
+.clinic[data-template="derma"] .c-card.c-lift, .clinic[data-template="derma"] details.c-card { border-radius: 28px; }
+
+/* ───────── center: structured multi-department medical centre ───────── */
+.clinic[data-template="center"] { --c-bg: #f3f6fa; --c-ink: #0f2440; --c-radius: 14px; --c-display: var(--font-display-stack); }
+.clinic[data-template="center"] h1, .clinic[data-template="center"] .c-title { font-family: var(--c-display); letter-spacing: -0.02em; }
+.clinic[data-template="center"] .c-btn { border-radius: 10px; }
+.clinic[data-template="center"] .c-card { border-radius: 14px; }
+.clinic[data-template="center"] .c-hero { background: linear-gradient(160deg, color-mix(in srgb, var(--brand) 92%, #0f2440), #0f2440); }

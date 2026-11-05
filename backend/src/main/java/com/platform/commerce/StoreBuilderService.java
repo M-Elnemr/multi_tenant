@@ -46,7 +46,7 @@ public class StoreBuilderService {
         String cur = jdbc.sql("SELECT default_currency FROM core.tenants WHERE id = :t").param("t", t).query(String.class).single();
         String system = "You help a small online shop owner in the Middle East start their shop. From the owner's description write: a one-sentence shop description (max 120 chars) and an 'about' paragraph (max 400 chars), and up to 8 realistic starter products. "
                 + "Write in " + (ar ? "Arabic (friendly Egyptian-neutral wording)" : "English") + ". Prices are integers in " + cur + " units (not cents) and must be plausible for this market; do not invent brands, certifications or claims. "
-                + "Reply with ONLY a JSON object {\"shortDescription\": string, \"about\": string, \"template\": one of original|atelier|souq|midnight|bloom|oud, \"products\": [{\"name\": string max 80, \"description\": string max 300, \"price\": integer}]}.";
+                + "Reply with ONLY a JSON object {\"shortDescription\": string, \"about\": string, \"template\": one of original (clean, any shop)|atelier (fashion, editorial)|street (streetwear)|grove (natural, skincare, handmade)|midnight (tech, electronics)|maison (home, lifestyle)|feast (restaurant, food)|bloom (kids, beauty, playful)|oud (perfume, abayas)|souq (big catalogue, groceries), \"products\": [{\"name\": string max 80, \"description\": string max 300, \"price\": integer}]}.";
         Map<String, Object> m;
         try { var turn = ai.next(system, List.of(AiProvider.Turn.user(d)), List.of()); aiUsage.recordCall(t, "STORE_BUILDER", turn); m = AiTextHelper.json(turn.text()); }
         catch (AiProvider.AiUnavailableException e) { throw new BusinessException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, "AI_UNAVAILABLE", "The AI assistant could not be reached, try again"); }
@@ -69,7 +69,7 @@ public class StoreBuilderService {
         out.put("about", about);
         out.put("descriptionSaved", wrote);
         String tpl = m.get("template") instanceof String s ? s : "original";
-        out.put("suggestedTemplate", List.of("original", "atelier", "souq", "midnight", "bloom", "oud").contains(tpl) ? tpl : "original");
+        out.put("suggestedTemplate", StoreSettingsService.TEMPLATES.contains(tpl) ? tpl : "original");
         List<Map<String, Object>> created = new ArrayList<>();
         if (m.get("products") instanceof List<?> l) {
             for (Object o : l) {

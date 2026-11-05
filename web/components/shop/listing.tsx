@@ -6,6 +6,8 @@ import { currentHost } from "@/lib/backend";
 import { FilterSheet, FilterSidebar, SortSelect, type Facets } from "./filters";
 import { ShopProductCard, type ShopProduct } from "./product-card";
 import { buildTree, pathTo, type ShopCategory } from "./types";
+import { shopLook } from "@/lib/shop-look";
+import { Icon } from "../icons";
 
 export type ListingParams = { q?: string; category?: string; page?: string; sort?: string; minPrice?: string; maxPrice?: string; brand?: string; inStock?: string; onSale?: string; minRating?: string; audience?: string; color?: string; size?: string; condition?: string };
 type PageData = { data: ShopProduct[]; meta: { page: number; pageSize: number; total: number; hasNext: boolean } };
@@ -21,7 +23,8 @@ export async function Listing({ params, category }: { params: ListingParams; cat
   if (slug) qs.set("category", slug);
   qs.set("lang", locale);
   const fq = new URLSearchParams(); if (params.q) fq.set("q", params.q); if (slug) fq.set("category", slug);
-  const [cats, res, facets] = await Promise.all([
+  const [{ look }, cats, res, facets] = await Promise.all([
+    shopLook(),
     backendJson<ShopCategory[]>(`/shop/categories?lang=${locale}`).catch(() => [] as ShopCategory[]),
     backendJson<PageData>(`/shop/products?${qs}`).catch(() => ({ data: [], meta: { page: 1, pageSize: 12, total: 0, hasNext: false } }) as PageData),
     backendJson<Facets>(`/shop/products/facets?${fq}`).catch(() => ({ brands: [], priceMinMinor: null, priceMaxMinor: null, total: 0 }) as Facets),
@@ -54,9 +57,9 @@ export async function Listing({ params, category }: { params: ListingParams; cat
         <FilterSidebar tree={tree} activeSlug={slug} facets={facets} currency={currency} />
         <div className="min-w-0 flex-1">
           {res.data.length === 0 ? (
-            <div className="s-card grid place-items-center gap-3 p-14 text-center"><span className="text-5xl">🔍</span><p className="text-lg font-extrabold">{t("shop.noResults")}</p><p className="text-sm text-[var(--s-mute)]">{t("shop.noResultsHint")}</p><Link href="/products" className="s-btn s-btn-sm mt-2">{t("shop.allProducts")}</Link></div>
+            <div className="s-card grid place-items-center gap-3 p-14 text-center"><span className="grid h-14 w-14 place-items-center rounded-full bg-[var(--s-soft)] text-[var(--s-mute)]"><Icon name="search" className="h-6 w-6" /></span><p className="text-lg font-extrabold">{t("shop.noResults")}</p><p className="text-sm text-[var(--s-mute)]">{t("shop.noResultsHint")}</p><Link href="/products" className="s-btn s-btn-sm mt-2">{t("shop.allProducts")}</Link></div>
           ) : (
-            <div className="s-grid stagger grid grid-cols-2 gap-3 sm:gap-5 md:grid-cols-3">{res.data.map((p, i) => <div key={p.id} style={{ "--i": i } as React.CSSProperties}><ShopProductCard p={p} locale={locale} labels={labels} /></div>)}</div>
+            <div className={`s-grid stagger grid ${look.grid === "list" ? "gap-3 xl:grid-cols-2" : look.card === "overlay" || look.card === "tall" || look.card === "arch" ? "grid-cols-2 gap-x-4 gap-y-8 md:grid-cols-3" : "grid-cols-2 gap-3 sm:gap-5 md:grid-cols-3"}`}>{res.data.map((p, i) => <div key={p.id} style={{ "--i": i } as React.CSSProperties}><ShopProductCard p={p} locale={locale} labels={labels} variant={look.card} /></div>)}</div>
           )}
           {pages > 1 && (
             <div className="mt-10 flex items-center justify-center gap-3 text-sm font-bold">

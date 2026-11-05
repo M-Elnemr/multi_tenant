@@ -8,6 +8,7 @@ const NAV: NavItem[] = [
   { href: "/dashboard/patients", label: "nav.patients", group: "navgrp.records", screen: "patients", icon: "patients" },
   { href: "/dashboard/schedule", label: "nav.schedule", group: "navgrp.setup", screen: "schedule", icon: "clock" },
   { href: "/dashboard/services", label: "nav.services", group: "navgrp.setup", screen: ["schedule", "appointments"], icon: "services" },
+  { href: "/dashboard/website", label: "nav.websiteDesign", group: "navgrp.setup", screen: "settings", write: true, icon: "palette" },
   { href: "/dashboard/settings", label: "nav.settings", group: "navgrp.setup", screen: ["settings", "schedule"], icon: "settings" },
   { href: "/dashboard/domains", label: "nav.domains", group: "navgrp.account", screen: "domains", icon: "globe" },
   { href: "/dashboard/staff", label: "nav.staff", group: "navgrp.account", perm: "staff.manage", icon: "users" },

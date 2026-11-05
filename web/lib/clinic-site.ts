@@ -11,6 +11,7 @@ export type ClinicBranch = {
   workingHours?: WeekHours; latitude?: number | null; longitude?: number | null;
 };
 export type ClinicSite = {
+  template?: string;
   clinicName: string; about?: string; phone?: string; email?: string; addressText?: string; bookingEnabled: boolean; patientPortalEnabled?: boolean; queueCount?: number;
   tagline?: string; whatsapp?: string; extraPhones?: string[]; facebookUrl?: string; instagramUrl?: string; tiktokUrl?: string; websiteUrl?: string; mapsUrl?: string;
   workingHours?: WeekHours; coverFileId?: string | null; gallery?: string[]; announcement?: string; isOpen?: boolean; closedMessage?: string; insurance?: string[];

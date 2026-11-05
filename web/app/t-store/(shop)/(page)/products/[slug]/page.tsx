@@ -8,6 +8,7 @@ import { money } from "@/lib/format";
 import { getT } from "@/lib/i18n-server";
 import { mediaUrl } from "@/lib/media";
 import { ProductBuy, type ProductDetail } from "./buy";
+import { shopLook } from "@/lib/shop-look";
 
 /** Route params arrive percent-encoded (Arabic slugs), so decode before encoding for the backend path. */
 const clean = (s: string) => { try { return decodeURIComponent(s); } catch { return s; } };
@@ -35,8 +36,8 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const p = await load(slug);
   if (!p) notFound();
   const { t, locale } = await getT();
-  const [prof, related, together] = await Promise.all([
-    backendJson<{ profile: ShopProfile }>("/shop/profile").catch(() => null),
+  const [look, related, together] = await Promise.all([
+    shopLook(),
     backendJson<ShopProduct[]>(`/shop/products/${encodeURIComponent(clean(slug))}/related?lang=${locale}`).catch(() => [] as ShopProduct[]),
     backendJson<{ id: string; name: string; slug: string; currency: string; priceMinor: number }[]>(`/shop/products/${encodeURIComponent(clean(slug))}/together`).catch(() => []),
   ]);
@@ -56,7 +57,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
         <Link href="/" className="hover:text-[var(--brand)]">{t("shop.home")}</Link><span>/</span><Link href="/products" className="hover:text-[var(--brand)]">{t("shop.allProducts")}</Link>
         {crumbs.map((c) => <span key={c.id} className="flex items-center gap-1.5"><span>/</span><Link href={`/c/${c.slug}`} className="hover:text-[var(--brand)]">{c.name}</Link></span>)}
       </nav>
-      <ProductBuy product={p} whatsapp={prof?.profile.whatsapp} storeName={prof?.profile.storeName ?? ""} isOpen={prof?.profile.isOpen !== false} returnDays={prof?.profile.returnWindowDays ?? 14} />
+      <ProductBuy product={p} whatsapp={look.profile?.whatsapp} storeName={look.profile?.storeName ?? ""} isOpen={look.profile?.isOpen !== false} returnDays={look.profile?.returnWindowDays ?? 14} />
       {together.length > 0 && (
         <section className="mt-12">
           <h2 className="s-section-title mb-5">{t("product.together")}</h2>
@@ -79,7 +80,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
       {related.length > 0 && (
         <section className="mt-16">
           <h2 className="s-section-title mb-5">{t("product.related")}</h2>
-          <div className="grid grid-cols-2 gap-3 sm:gap-5 md:grid-cols-4">{related.slice(0, 4).map((r) => <ShopProductCard key={r.id} p={r} locale={locale} labels={labels} />)}</div>
+          <div className={look.look.card === "row" ? "grid gap-3 md:grid-cols-2" : "grid grid-cols-2 gap-3 sm:gap-5 md:grid-cols-4"}>{related.slice(0, 4).map((r) => <ShopProductCard key={r.id} p={r} locale={locale} labels={labels} variant={look.look.card} />)}</div>
         </section>
       )}
     </>

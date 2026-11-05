@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { AboutSection, ContactBand, DoctorsSection, FaqSection, GallerySection, Hero, HowSection, InsuranceSection, ServicesSection, VisitSection, mainPhone } from "@/components/clinic/sections";
+import { AboutSection, ContactBand, DoctorsSection, FaqSection, GallerySection, HowSection, InsuranceSection, ServicesSection, VisitSection, mainPhone } from "@/components/clinic/sections";
 import { backendJson, currentHost } from "@/lib/backend";
 import { DAYS } from "@/lib/hours";
 import { getT } from "@/lib/i18n-server";
@@ -9,6 +9,9 @@ import { fileUrl } from "@/lib/media";
 import { CLINIC_SECTIONS, arrange } from "@/lib/site-layout";
 import { wantsEdit } from "@/lib/edit-mode";
 import { EditBar, EditFrame, EditProvider } from "@/components/site-edit";
+import { siteTemplate } from "@/lib/site-template";
+import { CLINIC_TEMPLATE_IDS, clinicLookOf } from "@/components/clinic/templates";
+import { ClinicHero, DoctorsDirectory, DoctorsPortrait, ServicesList } from "@/components/clinic/variants";
 
 const load = () => backendJson<ClinicSite>("/clinic/public/profile");
 
@@ -29,6 +32,8 @@ export default async function ClinicHome({ searchParams }: { searchParams?: Prom
   const logo = info.kind === "TENANT" ? (info.branding as { logo_file_id?: string }).logo_file_id ?? null : null;
   const book = p.bookingEnabled ? "/book" : undefined;
   const phone = mainPhone(p);
+  const { id: tplId } = await siteTemplate(p.template, CLINIC_TEMPLATE_IDS, "clear");
+  const look = clinicLookOf(tplId);
   const sameAs = [p.facebookUrl, p.instagramUrl, p.tiktokUrl, p.websiteUrl].filter(Boolean);
   const ld = {
     "@context": "https://schema.org", "@type": "MedicalClinic", name: p.clinicName, description: p.tagline || p.about, telephone: phone || undefined, email: p.email || undefined,
@@ -37,10 +42,12 @@ export default async function ClinicHome({ searchParams }: { searchParams?: Prom
     medicalSpecialty: p.doctors.flatMap((d) => d.specialties.map((s) => s.nameEn)).filter((x, i, a) => a.indexOf(x) === i),
   };
   const nodes: Record<(typeof CLINIC_SECTIONS)[number], React.ReactNode> = {
-    hero: <Hero p={p} t={t} logoId={logo} hrefBook={book} />,
+    hero: <ClinicHero kind={look.hero} p={p} t={t} locale={locale} logoId={logo} hrefBook={book} />,
     about: <AboutSection p={p} t={t} />,
-    services: <ServicesSection services={p.services} t={t} locale={locale} hrefBook={book} />,
-    doctors: <DoctorsSection doctors={p.doctors} t={t} locale={locale} phone={phone} hrefBook={book} />,
+    services: look.services === "list" ? <ServicesList services={p.services} t={t} locale={locale} hrefBook={book} /> : <ServicesSection services={p.services} t={t} locale={locale} hrefBook={book} />,
+    doctors: look.doctors === "portrait" ? <DoctorsPortrait doctors={p.doctors} t={t} locale={locale} hrefBook={book} />
+      : look.doctors === "directory" ? <DoctorsDirectory doctors={p.doctors} t={t} locale={locale} hrefBook={book} />
+      : <DoctorsSection doctors={p.doctors} t={t} locale={locale} phone={phone} hrefBook={book} />,
     how: <HowSection t={t} />,
     visit: <VisitSection p={p} t={t} />,
     gallery: <GallerySection ids={p.gallery ?? []} t={t} />,

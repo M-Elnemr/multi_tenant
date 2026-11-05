@@ -9,6 +9,7 @@ import { Icon } from "../icons";
 import { useI18n } from "../i18n-provider";
 import { SearchBox } from "./search-box";
 import { buildTree, type CategoryNode, type ShopCategory } from "./types";
+import type { HeaderKind } from "./templates/registry";
 
 /** Men / Women / Kids shortcuts: the standard "for whom" filter applied to the whole shop. */
 const FOR_LINKS = [{ key: "MEN", value: "MEN" }, { key: "WOMEN", value: "WOMEN" }, { key: "KIDS", value: "BOYS,GIRLS,BABY" }];
@@ -89,18 +90,33 @@ function DrawerNode({ node, depth, close }: { node: CategoryNode; depth: number;
   );
 }
 
-export function ShopHeader({ name, logoUrl, announcement, closedMessage, isOpen, categories }: { name: string; logoUrl: string | null; announcement?: string; closedMessage?: string; isOpen: boolean; categories: ShopCategory[] }) {
+export function ShopHeader({ name, logoUrl, announcement, closedMessage, isOpen, categories, variant = "bar" }: { name: string; logoUrl: string | null; announcement?: string; closedMessage?: string; isOpen: boolean; categories: ShopCategory[]; variant?: HeaderKind }) {
   const { t, locale } = useI18n();
   const [drawer, setDrawer] = useState(false);
+  // the overlay header sits transparent on the hero photo and turns solid once the page scrolls
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    if (variant !== "overlay" && variant !== "pill") return;
+    const on = () => setScrolled(window.scrollY > 40);
+    on();
+    window.addEventListener("scroll", on, { passive: true });
+    return () => window.removeEventListener("scroll", on);
+  }, [variant]);
   const [test, setTest] = useState<string | null>(null);   // the text of the running announcement test, if any
   useEffect(() => { void pickAnnouncement().then(setTest); }, []);
   const bar = test ?? announcement;
   const tree = buildTree(categories);
+  const topline = (
+    <>
+      {!isOpen && <div className="s-topline flex items-center justify-center gap-2 bg-[var(--s-ink)] px-4 py-2 text-center text-sm font-semibold text-white"><Icon name="moon" className="h-4 w-4" />{closedMessage || t("shop.closedNow")}</div>}
+      {bar && isOpen && <div className="s-topline s-announce overflow-hidden bg-brand-gradient px-4 py-2 text-center text-sm font-bold text-white">{bar}</div>}
+    </>
+  );
   return (
     <>
-      {!isOpen && <div className="bg-[var(--s-ink)] px-4 py-2 text-center text-sm font-semibold text-white">🌙 {closedMessage || t("shop.closedNow")}</div>}
-      {bar && isOpen && <div className="bg-brand-gradient px-4 py-2 text-center text-sm font-bold text-white">{bar}</div>}
-      <header className="s-header sticky top-0 z-40 border-b border-[var(--s-line)] bg-[var(--s-bg)]/90 backdrop-blur-xl">
+      {variant !== "overlay" && topline}
+      <header data-variant={variant} data-scrolled={scrolled ? "true" : "false"} className="s-header sticky top-0 z-40 border-b border-[var(--s-line)] bg-[var(--s-bg)]/90 backdrop-blur-xl transition-[background,color,border-color,box-shadow] duration-300">
+        {variant === "overlay" && topline}
         <div className="s-container s-header-row flex items-center gap-2 py-3 sm:gap-3">
           <button onClick={() => setDrawer(true)} aria-label={t("shop.menu")} className="grid h-11 w-11 place-items-center rounded-full transition hover:bg-[var(--s-soft)] lg:hidden"><Icon name="menu" className="h-6 w-6" /></button>
           <Link href="/" className="s-brand min-w-0 flex-1 md:flex-none"><Logo name={name} logoUrl={logoUrl} /></Link>
@@ -111,14 +127,14 @@ export function ShopHeader({ name, logoUrl, announcement, closedMessage, isOpen,
             <CartButton />
           </div>
         </div>
-        <div className="s-container pb-3 md:hidden"><SearchBox className="s-search-m" /></div>
+        <div className="s-search-row s-container pb-3 md:hidden"><SearchBox className="s-search-m" /></div>
         <nav className="s-nav hidden border-t border-[var(--s-line)] lg:block">
           <div className="s-container flex items-center gap-1 py-1.5">
             <Link href="/products" className="rounded-full px-4 py-2 text-sm font-extrabold" style={{ color: "var(--brand)" }}>{t("shop.allProducts")}</Link>
             {FOR_LINKS.map((f) => <Link key={f.key} href={`/products?audience=${f.value}`} className="rounded-full bg-[var(--s-soft)] px-3.5 py-1.5 text-sm font-extrabold transition hover:text-[var(--brand)]">{t(`audience.${f.key}`)}</Link>)}
             {tree.slice(0, 6).map((n) => <MegaItem key={n.id} node={n} />)}
             <span className="ms-auto flex items-center gap-1">
-              <Link href="/products?onSale=true" className="rounded-full px-4 py-2 text-sm font-extrabold text-[#e5484d] transition hover:bg-red-50">🔥 {t("shop.offers")}</Link>
+              <Link href="/products?onSale=true" className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-extrabold text-[#e5484d] transition hover:bg-red-50"><Icon name="tag" className="h-4 w-4" />{t("shop.offers")}</Link>
               <Link href="/branches" className="rounded-full px-4 py-2 text-sm font-bold transition hover:bg-[var(--s-soft)]">{t("shop.branches")}</Link>
               <Link href="/contact" className="rounded-full px-4 py-2 text-sm font-bold transition hover:bg-[var(--s-soft)]">{t("shop.contact")}</Link>
             </span>
@@ -132,7 +148,7 @@ export function ShopHeader({ name, logoUrl, announcement, closedMessage, isOpen,
             <div className="flex items-center justify-between border-b border-[var(--s-line)] p-4"><Logo name={name} logoUrl={logoUrl} size="h-9 w-9" /><button onClick={() => setDrawer(false)} aria-label={t("common.close")} className="grid h-10 w-10 place-items-center rounded-full hover:bg-[var(--s-soft)]"><Icon name="close" /></button></div>
             <div className="flex-1 space-y-1 overflow-y-auto p-4">
               <Link href="/products" onClick={() => setDrawer(false)} className="block py-2.5 text-[15px] font-extrabold" style={{ color: "var(--brand)" }}>{t("shop.allProducts")}</Link>
-              <Link href="/products?onSale=true" onClick={() => setDrawer(false)} className="block py-2.5 text-[15px] font-extrabold text-[#e5484d]">🔥 {t("shop.offers")}</Link>
+              <Link href="/products?onSale=true" onClick={() => setDrawer(false)} className="flex items-center gap-2 py-2.5 text-[15px] font-extrabold text-[#e5484d]"><Icon name="tag" className="h-4 w-4" />{t("shop.offers")}</Link>
               <div className="flex gap-2 py-1.5">{FOR_LINKS.map((f) => <Link key={f.key} href={`/products?audience=${f.value}`} onClick={() => setDrawer(false)} className="s-chip flex-1 justify-center">{t(`audience.${f.key}`)}</Link>)}</div>
               <div className="my-2 border-t border-[var(--s-line)]" />
               {tree.map((n) => <DrawerNode key={n.id} node={n} depth={0} close={() => setDrawer(false)} />)}

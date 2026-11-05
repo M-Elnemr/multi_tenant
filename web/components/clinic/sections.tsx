@@ -19,9 +19,9 @@ export const WhatsAppGlyph = ({ className = "h-5 w-5" }: { className?: string })
 export const mainPhone = (p: ClinicSite) => p.phone || p.extraPhones?.[0] || p.branches.find((b) => b.phone)?.phone || "";
 export const directionsUrl = (p: ClinicSite) =>
   p.mapsUrl || p.branches.find((b) => b.mapsUrl)?.mapsUrl || (p.addressText ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.addressText)}` : "");
-const specialtyNames = (d: ClinicDoctor, locale: Locale) => d.specialties.map((s) => (s.code === "other" && d.otherSpecialty ? d.otherSpecialty : locale === "ar" ? s.nameAr : s.nameEn));
+export const specialtyNames = (d: ClinicDoctor, locale: Locale) => d.specialties.map((s) => (s.code === "other" && d.otherSpecialty ? d.otherSpecialty : locale === "ar" ? s.nameAr : s.nameEn));
 
-function SectionHead({ eyebrow, title, sub }: { eyebrow?: string; title: string; sub?: string }) {
+export function SectionHead({ eyebrow, title, sub }: { eyebrow?: string; title: string; sub?: string }) {
   return (
     <Reveal className="mb-8 text-center sm:mb-10">
       {eyebrow && <p className="c-eyebrow">{eyebrow}</p>}

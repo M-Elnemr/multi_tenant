@@ -12,6 +12,12 @@ import { getT } from "@/lib/i18n-server";
 import { resolveHost } from "@/lib/tenant";
 import { ScrollHeader, ScrollProgress } from "@/components/clinic/motion";
 import "./clinic.css";
+import "./clinic-templates.css";
+import { siteTemplate } from "@/lib/site-template";
+import { CLINIC_TEMPLATE_IDS, clinicLookOf } from "@/components/clinic/templates";
+import { PreviewBar } from "@/components/shop/templates/preview-bar";
+import { PreviewLinks } from "@/components/shop/templates/preview-links";
+import { templateFontVars } from "@/components/shop/templates/fonts";
 
 export default async function ClinicSiteLayout({ children }: { children: React.ReactNode }) {
   const { t, locale } = await getT();
@@ -30,8 +36,11 @@ export default async function ClinicSiteLayout({ children }: { children: React.R
     { href: "/#contact", label: t("csite.contact") },
   ].filter(Boolean) as { href: string; label: string }[] : [];
   const phone = p ? mainPhone(p) : "";
+  const tpl = await siteTemplate(p?.template, CLINIC_TEMPLATE_IDS, "clear");
   return (
-    <div className="clinic flex min-h-dvh flex-col">
+    <div className={`clinic flex min-h-dvh flex-col ${templateFontVars}`} data-template={tpl.id} data-dark={clinicLookOf(tpl.id).dark ? "" : undefined}>
+      {tpl.previewing && !tpl.inFrame && <PreviewBar label={t("tpl.previewing", { name: t(`ctpl.${tpl.id}`) })} exit={t("tpl.exitPreview")} />}
+      {tpl.inFrame && <PreviewLinks tpl={tpl.id} />}
       {p && <Announcement p={p} t={t} />}
       <ScrollProgress />
       <ScrollHeader>
@@ -50,7 +59,7 @@ export default async function ClinicSiteLayout({ children }: { children: React.R
           </div>
         </div>
       </ScrollHeader>
-      <VisitTracker />
+      {!tpl.inFrame && <VisitTracker />}
       <main className="flex-1 pb-24 md:pb-0">{children}</main>
       <footer className="mt-20 border-t border-[var(--c-line)] bg-white">
         <div className="c-container grid gap-8 py-10 md:grid-cols-3">

@@ -42,6 +42,9 @@ public class ClinicSettingsService {
         return m;
     }
 
+    /** Website designs a clinic can pick; must match the CHECK in V79 and web/components/clinic/templates.ts. */
+    public static final java.util.Set<String> TEMPLATES = java.util.Set.of("clear", "luxe", "persona", "dental", "derma", "center");
+
     private static final Map<String, String> IDENTITY_TEXT = Map.ofEntries(
             Map.entry("tagline", "tagline"), Map.entry("whatsapp", "whatsapp"), Map.entry("facebookUrl", "facebook_url"), Map.entry("instagramUrl", "instagram_url"),
             Map.entry("tiktokUrl", "tiktok_url"), Map.entry("websiteUrl", "website_url"), Map.entry("mapsUrl", "maps_url"), Map.entry("announcement", "announcement"),
@@ -50,7 +53,7 @@ public class ClinicSettingsService {
     /** The website-facing identity of the clinic: contact channels, hours, cover/gallery, announcement, insurance, FAQs. */
     Map<String, Object> identity(UUID tenantId) {
         Map<String, Object> m = Rows.camel(jdbc.sql("SELECT tagline, whatsapp, extra_phones::text AS extra_phones, facebook_url, instagram_url, tiktok_url, website_url, maps_url, working_hours::text AS working_hours, "
-                + "cover_file_id, gallery::text AS gallery, announcement, is_open, closed_message, insurance::text AS insurance, faqs::text AS faqs, established_year, site_layout::text AS site_layout FROM medical.clinic_profiles WHERE tenant_id = :t")
+                + "cover_file_id, gallery::text AS gallery, announcement, is_open, closed_message, insurance::text AS insurance, faqs::text AS faqs, established_year, site_layout::text AS site_layout, template FROM medical.clinic_profiles WHERE tenant_id = :t")
                 .param("t", tenantId).query().singleRow());
         m.put("extraPhones", Rows.jsonList(m.get("extraPhones")));
         m.put("workingHours", Rows.json(m.get("workingHours")));
@@ -71,6 +74,10 @@ public class ClinicSettingsService {
             q.put(e.getKey(), val);
         }
         if (f.get("isOpen") instanceof Boolean b) { set.append("is_open = :isOpen, "); q.put("isOpen", b); }
+        if (f.get("template") instanceof String tpl) {
+            if (!TEMPLATES.contains(tpl)) throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown template");
+            set.append("template = :template, "); q.put("template", tpl);
+        }
         if (f.containsKey("establishedYear")) {
             Object y = f.get("establishedYear");
             Integer year = y instanceof Number n ? n.intValue() : null;
