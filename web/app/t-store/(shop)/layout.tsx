@@ -23,10 +23,12 @@ export default async function ShopLayout({ children }: { children: React.ReactNo
   const { t, locale } = await getT();
   const info = await resolveHost(await currentHost());
   const name = info.kind === "TENANT" ? info.name : "";
-  const [look, categories, branches] = await Promise.all([
+  const [look, categories, branches, audiences] = await Promise.all([
     shopLook(),
     backendJson<ShopCategory[]>(`/shop/categories?lang=${locale}`).catch(() => [] as ShopCategory[]),
     backendJson<ShopBranch[]>("/shop/branches").catch(() => [] as ShopBranch[]),
+    // who the shop's products are for (only audiences that really have products): drives the Men / Women / Kids shortcuts
+    backendJson<{ audiences?: { audience: string; n: number }[] }>("/shop/products/facets").then((f) => (f.audiences ?? []).filter((a) => a.n > 0).map((a) => a.audience)).catch(() => [] as string[]),
   ]);
   const p: ShopProfile = look.profile ?? { storeName: name };
   const storeName = p.storeName || name;
@@ -37,7 +39,7 @@ export default async function ShopLayout({ children }: { children: React.ReactNo
       {look.previewing && !look.inFrame && <PreviewBar label={t("tpl.previewing", { name: t(`tpl.${look.template}`) })} exit={t("tpl.exitPreview")} />}
       {look.inFrame && <PreviewLinks tpl={look.template} />}
       <SwRegister />
-      <ShopHeader name={storeName} logoUrl={logoUrl} announcement={p.announcement} closedMessage={p.closedMessage} isOpen={p.isOpen !== false} categories={categories} variant={look.look.header} />
+      <ShopHeader name={storeName} logoUrl={logoUrl} announcement={p.announcement} closedMessage={p.closedMessage} isOpen={p.isOpen !== false} categories={categories} audiences={audiences} variant={look.look.header} />
       {!look.inFrame && <VisitTracker />}
       <main className="flex-1 pb-chrome">{children}</main>
       <ShopFooter p={p} name={storeName} logoUrl={logoUrl} branches={branches} t={t} poweredLabel={info.kind === "TENANT" && info.whiteLabel ? "" : t("brand.powered")} poweredName={t("brand.name")} />

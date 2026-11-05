@@ -12,7 +12,16 @@ import { buildTree, type CategoryNode, type ShopCategory } from "./types";
 import type { HeaderKind } from "./templates/registry";
 
 /** Men / Women / Kids shortcuts: the standard "for whom" filter applied to the whole shop. */
-const FOR_LINKS = [{ key: "MEN", value: "MEN" }, { key: "WOMEN", value: "WOMEN" }, { key: "KIDS", value: "BOYS,GIRLS,BABY" }];
+const FOR_LINKS = [{ key: "MEN", value: "MEN", has: ["MEN"] }, { key: "WOMEN", value: "WOMEN", has: ["WOMEN"] }, { key: "KIDS", value: "BOYS,GIRLS,BABY", has: ["BOYS", "GIRLS", "BABY"] }];
+
+/**
+ * Only the shortcuts this shop can fill: a link appears when some product is marked for that audience, and the row shows only when there are at least
+ * two (a shop selling only women's clothes, or electronics, food, beauty… with no audience set, gets no Men / Women / Kids row at all).
+ */
+function forLinks(audiences: string[]) {
+  const links = FOR_LINKS.filter((f) => f.has.some((a) => audiences.includes(a)));
+  return links.length >= 2 ? links : [];
+}
 
 function Logo({ name, logoUrl, size = "h-10 w-10" }: { name: string; logoUrl: string | null; size?: string }) {
   return (
@@ -90,7 +99,7 @@ function DrawerNode({ node, depth, close }: { node: CategoryNode; depth: number;
   );
 }
 
-export function ShopHeader({ name, logoUrl, announcement, closedMessage, isOpen, categories, variant = "bar" }: { name: string; logoUrl: string | null; announcement?: string; closedMessage?: string; isOpen: boolean; categories: ShopCategory[]; variant?: HeaderKind }) {
+export function ShopHeader({ name, logoUrl, announcement, closedMessage, isOpen, categories, audiences = [], variant = "bar" }: { name: string; logoUrl: string | null; announcement?: string; closedMessage?: string; isOpen: boolean; categories: ShopCategory[]; audiences?: string[]; variant?: HeaderKind }) {
   const { t, locale } = useI18n();
   const [drawer, setDrawer] = useState(false);
   // the overlay header sits transparent on the hero photo and turns solid once the page scrolls
@@ -106,6 +115,7 @@ export function ShopHeader({ name, logoUrl, announcement, closedMessage, isOpen,
   useEffect(() => { void pickAnnouncement().then(setTest); }, []);
   const bar = test ?? announcement;
   const tree = buildTree(categories);
+  const audienceLinks = forLinks(audiences);
   const topline = (
     <>
       {!isOpen && <div className="s-topline flex items-center justify-center gap-2 bg-[var(--s-ink)] px-4 py-2 text-center text-sm font-semibold text-white"><Icon name="moon" className="h-4 w-4" />{closedMessage || t("shop.closedNow")}</div>}
@@ -131,7 +141,7 @@ export function ShopHeader({ name, logoUrl, announcement, closedMessage, isOpen,
         <nav className="s-nav hidden border-t border-[var(--s-line)] lg:block">
           <div className="s-container flex items-center gap-1 py-1.5">
             <Link href="/products" className="rounded-full px-4 py-2 text-sm font-extrabold" style={{ color: "var(--brand)" }}>{t("shop.allProducts")}</Link>
-            {FOR_LINKS.map((f) => <Link key={f.key} href={`/products?audience=${f.value}`} className="rounded-full bg-[var(--s-soft)] px-3.5 py-1.5 text-sm font-extrabold transition hover:text-[var(--brand)]">{t(`audience.${f.key}`)}</Link>)}
+            {audienceLinks.map((f) => <Link key={f.key} href={`/products?audience=${f.value}`} className="rounded-full bg-[var(--s-soft)] px-3.5 py-1.5 text-sm font-extrabold transition hover:text-[var(--brand)]">{t(`audience.${f.key}`)}</Link>)}
             {tree.slice(0, 6).map((n) => <MegaItem key={n.id} node={n} />)}
             <span className="ms-auto flex items-center gap-1">
               <Link href="/products?onSale=true" className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-extrabold text-[#e5484d] transition hover:bg-red-50"><Icon name="tag" className="h-4 w-4" />{t("shop.offers")}</Link>
@@ -149,7 +159,7 @@ export function ShopHeader({ name, logoUrl, announcement, closedMessage, isOpen,
             <div className="flex-1 space-y-1 overflow-y-auto p-4">
               <Link href="/products" onClick={() => setDrawer(false)} className="block py-2.5 text-[15px] font-extrabold" style={{ color: "var(--brand)" }}>{t("shop.allProducts")}</Link>
               <Link href="/products?onSale=true" onClick={() => setDrawer(false)} className="flex items-center gap-2 py-2.5 text-[15px] font-extrabold text-[#e5484d]"><Icon name="tag" className="h-4 w-4" />{t("shop.offers")}</Link>
-              <div className="flex gap-2 py-1.5">{FOR_LINKS.map((f) => <Link key={f.key} href={`/products?audience=${f.value}`} onClick={() => setDrawer(false)} className="s-chip flex-1 justify-center">{t(`audience.${f.key}`)}</Link>)}</div>
+              {audienceLinks.length > 0 && <div className="flex gap-2 py-1.5">{audienceLinks.map((f) => <Link key={f.key} href={`/products?audience=${f.value}`} onClick={() => setDrawer(false)} className="s-chip flex-1 justify-center">{t(`audience.${f.key}`)}</Link>)}</div>}
               <div className="my-2 border-t border-[var(--s-line)]" />
               {tree.map((n) => <DrawerNode key={n.id} node={n} depth={0} close={() => setDrawer(false)} />)}
               <div className="my-2 border-t border-[var(--s-line)]" />
