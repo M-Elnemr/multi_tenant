@@ -56,7 +56,7 @@ public class SegmentService {
     private final com.platform.chat.AiUsageService aiUsage;
 
     public SegmentService(JdbcClient jdbc, MetaChannelService channels, MetaGraph graph, AuditService audit, EvolutionService evolution, WalletService wallet, NotificationService notifications, OpenUrls urls, com.platform.chat.AiProvider ai, com.platform.core.auth.LoginThrottle throttle, com.platform.chat.AiUsageService aiUsage,
-                          @Value("${app.whatsapp.broadcast-price-minor:300}") long priceMinor, @Value("${app.integrations.scheduler.enabled:true}") boolean scheduler, @Value("${app.broadcast.free-gap-min-seconds:8}") int gapMin, @Value("${app.broadcast.free-gap-max-seconds:25}") int gapMax,
+                          @Value("${app.whatsapp.broadcast-price-minor:50}") long priceMinor, @Value("${app.integrations.scheduler.enabled:true}") boolean scheduler, @Value("${app.broadcast.free-gap-min-seconds:8}") int gapMin, @Value("${app.broadcast.free-gap-max-seconds:25}") int gapMax,
                           @Value("${app.broadcast.free-daily-cap:500}") int dailyCap, @Value("${app.broadcast.quiet-from-hour:22}") int quietFrom, @Value("${app.broadcast.quiet-to-hour:8}") int quietTo) {
         this.aiUsage = aiUsage;
         this.gapMin = Math.max(0, gapMin);

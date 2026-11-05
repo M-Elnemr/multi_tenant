@@ -13,13 +13,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Prepaid WhatsApp credit. Amounts are in piasters (100 = 1 EGP). The balance can never go below zero: a debit is one conditional UPDATE, so two
+ * Prepaid points (1 point = 1 EGP): AI conversations and WhatsApp messages are paid from here. Amounts are in piasters (100 = 1 EGP = 1 point). The balance can never go below zero: a debit is one conditional UPDATE, so two
  * jobs or two requests can never spend the same money, and every change is written to a ledger.
  */
 @Service
 public class WalletService {
     public static final long MIN_TOPUP_MINOR = 1_000;        // 10 EGP
     public static final long MAX_TOPUP_MINOR = 5_000_000;    // 50,000 EGP
+    public static final long WELCOME_POINTS_MINOR = 10_000;  // 100 free points, once per shop
 
     private final JdbcClient jdbc;
     private final NotificationService notifications;
@@ -49,11 +50,15 @@ public class WalletService {
 
     /** Spends money if the balance covers it; false (and nothing changes) when it does not. */
     @Transactional
-    public boolean tryDebit(UUID tenantId, long amountMinor, String ref, String note) {
+    public boolean tryDebit(UUID tenantId, long amountMinor, String ref, String note) { return tryDebit(tenantId, amountMinor, "MESSAGE", ref, note); }
+
+    /** Same, with the ledger kind (MESSAGE for WhatsApp messages, AI for AI conversations). */
+    @Transactional
+    public boolean tryDebit(UUID tenantId, long amountMinor, String kind, String ref, String note) {
         Long after = jdbc.sql("UPDATE billing.wallets SET balance_minor = balance_minor - :a WHERE tenant_id = :t AND balance_minor >= :a RETURNING balance_minor")
                 .param("t", tenantId).param("a", amountMinor).query(Long.class).optional().orElse(null);
         if (after == null) return false;
-        entry(tenantId, "MESSAGE", -amountMinor, after, ref, note, null);
+        entry(tenantId, kind, -amountMinor, after, ref, note, null);
         return true;
     }
 
@@ -151,7 +156,7 @@ public class WalletService {
 
     private void notifyAdmins(UUID tenantId, long amountMinor) {
         String name = jdbc.sql("SELECT name FROM core.tenants WHERE id = :t").param("t", tenantId).query(String.class).optional().orElse("");
-        String title = "طلب شحن رصيد واتساب";
+        String title = "طلب شحن نقاط";
         String body = name + " - " + (amountMinor / 100) + " EGP";
         var admins = jdbc.sql("""
                 SELECT DISTINCT pr.user_id FROM core.user_platform_roles pr JOIN core.role_permissions rp ON rp.role_id = pr.role_id

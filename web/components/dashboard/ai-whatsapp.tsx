@@ -7,6 +7,7 @@ import { useI18n } from "@/components/i18n-provider";
 import { Alert, Button, ErrorText, Field, Input, StatusBadge } from "@/components/ui";
 import { dateTime, money } from "@/lib/format";
 import { SendModePicker, useOwnNumber, type SendMode } from "./send-mode";
+import { PointsWallet } from "./points-wallet";
 import { WabaDialog } from "./waba-dialog";
 
 type Overview = {
@@ -29,7 +30,6 @@ export function AiWhatsApp({ write }: { write: boolean }) {
   const log = useApi<Msg[]>("store/ai/whatsapp/messages");
   const [edit, setEdit] = useState<Partial<Overview["settings"]>>({});
   const [saved, setSaved] = useState(false);
-  const [amount, setAmount] = useState(10000);
   const [wabaOpen, setWabaOpen] = useState(false);
   const own = useOwnNumber();
   const f = data ? { ...data.settings, ...edit } : null;
@@ -40,7 +40,6 @@ export function AiWhatsApp({ write }: { write: boolean }) {
     setEdit({}); setSaved(true); await reload();
   });
   const templates = useAction(async (path: string) => { await api(`store/ai/whatsapp/${path}`, { body: {} }); await reload(); });
-  const topup = useAction(async () => { await api("store/ai/whatsapp/topups", { body: { amountMinor: amount } }); await reload(); });
   if (!data || !f) return null;
   const ready = Object.values(data.readiness).every(Boolean);
   const price = money(data.priceMinor, "EGP", locale);
@@ -80,19 +79,7 @@ export function AiWhatsApp({ write }: { write: boolean }) {
         {write && <Button type="submit" loading={save.loading}>{t("common.save")}</Button>}
       </form>
 
-      <section className="space-y-3 rounded-xl border bg-white p-4">
-        <div className="flex items-center justify-between"><h3 className="font-semibold">{t("wa.credit")}</h3><p className="text-2xl font-extrabold text-brand">{money(data.balanceMinor, "EGP", locale)}</p></div>
-        {write && (
-          <div className="flex flex-wrap items-end gap-2">
-            {[5000, 10000, 20000, 50000].map((a) => <button key={a} type="button" onClick={() => setAmount(a)} className={`rounded-full border px-3 py-1.5 text-sm font-semibold ${amount === a ? "border-brand bg-brand-soft text-brand" : ""}`}>{money(a, "EGP", locale)}</button>)}
-            <Input className="w-28" type="number" min={10} value={Math.round(amount / 100)} onChange={(e) => setAmount(Math.max(0, Number(e.target.value) || 0) * 100)} aria-label={t("wa.amount")} />
-            <Button onClick={() => void topup.run()} loading={topup.loading} disabled={amount < 1000}>{t("wa.requestTopup")}</Button>
-          </div>
-        )}
-        <ErrorText error={topup.error} />
-        <p className="text-xs text-slate-500">{t("wa.topupHint")}</p>
-        <ul className="space-y-1 text-sm">{data.topups.map((r) => <li key={r.id} className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2"><span>{money(r.amountMinor, "EGP", locale)} · <span className="text-xs text-slate-500">{dateTime(r.createdAt, locale)}</span></span><StatusBadge status={r.status} /></li>)}</ul>
-      </section>
+      <PointsWallet write={write} />
 
       <section className="space-y-3 rounded-xl border bg-white p-4">
         <h3 className="font-semibold">{t("wa.templates")}</h3>

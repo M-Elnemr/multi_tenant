@@ -27,9 +27,12 @@ public class BillingService {
     private final int graceDays;
     private final org.springframework.context.ApplicationEventPublisher events;
     private final com.platform.core.tenant.TenantDirectory directory;
+    private final WalletService wallet;
 
     public BillingService(JdbcClient jdbc, PlatformProperties props, List<PaymentProvider> providers, AuditService audit,
-                          @Value("${app.billing.grace-days:14}") int graceDays, org.springframework.context.ApplicationEventPublisher events, com.platform.core.tenant.TenantDirectory directory) {
+                          @Value("${app.billing.grace-days:14}") int graceDays, org.springframework.context.ApplicationEventPublisher events, com.platform.core.tenant.TenantDirectory directory,
+                          WalletService wallet) {
+        this.wallet = wallet;
         this.events = events;
         this.directory = directory;
         this.jdbc = jdbc;
@@ -45,12 +48,14 @@ public class BillingService {
     @EventListener
     public void onTenantCreated(TenantCreatedEvent e) {
         String planCode = e.type().name() + "_FREE";
-        Instant end = Instant.now().plus(props.trialDays(), ChronoUnit.DAYS);
+        boolean store = "STORE".equals(e.type().name());   // shops have no subscription: free forever, they pay with points
+        Instant end = store ? Instant.now().plus(36_500, ChronoUnit.DAYS) : Instant.now().plus(props.trialDays(), ChronoUnit.DAYS);
         jdbc.sql("""
                 INSERT INTO billing.tenant_subscriptions (tenant_id, plan_id, status, current_period_end)
-                SELECT :t, id, 'TRIALING', :e FROM billing.subscription_plans WHERE code = :c
-                """).param("t", e.tenantId()).param("c", planCode).param("e", java.sql.Timestamp.from(end)).update();
-        event(e.tenantId(), "TRIAL_STARTED", "{\"plan\":\"" + planCode + "\"}");
+                SELECT :t, id, :s, :e FROM billing.subscription_plans WHERE code = :c
+                """).param("t", e.tenantId()).param("c", planCode).param("s", store ? "ACTIVE" : "TRIALING").param("e", java.sql.Timestamp.from(end)).update();
+        event(e.tenantId(), store ? "FREE_PLAN_STARTED" : "TRIAL_STARTED", "{\"plan\":\"" + planCode + "\"}");
+        if (store) wallet.credit(e.tenantId(), WalletService.WELCOME_POINTS_MINOR, "GIFT", "welcome-100", "100 free points", null);
     }
 
     public List<Map<String, Object>> plans(String tenantType) {
@@ -337,7 +342,7 @@ public class BillingService {
         out.put("pendingPlanCode", sub.get("pending_plan_code"));
         out.put("graceEnd", graceEnd.toString());
         out.put("daysLeft", Math.max(daysLeft, 0));
-        out.put("trial", "TRIALING".equals(subStatus) || String.valueOf(sub.get("plan_code")).endsWith("_FREE"));
+        out.put("trial", !"STORE".equals(sub.get("tenant_type")) && ("TRIALING".equals(subStatus) || String.valueOf(sub.get("plan_code")).endsWith("_FREE")));
         return out;
     }
 

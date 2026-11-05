@@ -146,6 +146,11 @@ public class ChatService {
     private final String reviewModel;
 
     private final KnowledgeIndex knowledge;
+    private final com.platform.billing.WalletService wallet;
+
+    /** What one AI conversation costs, in piasters (100 = 1 point = 1 EGP). */
+    @org.springframework.beans.factory.annotation.Value("${app.ai.conversation-price-minor:100}")
+    private long aiConversationPrice = 100;
 
     /** How many earlier messages of the chat the model reads (12 by default; AI_HISTORY=24 doubles it for about 5% more input per call). */
     @org.springframework.beans.factory.annotation.Value("${app.ai.history-messages:12}")
@@ -153,10 +158,11 @@ public class ChatService {
 
     public ChatService(JdbcClient jdbc, AiProvider ai, CatalogService catalog, StoreSearchService search, CheckoutService checkout, StoreSettingsService settings,
                        StoreFulfillmentService fulfilment, ShopperService shopper, PaymentPolicy policy, AuditService audit, SellerTools seller, com.platform.commerce.GenderService genders, com.platform.commerce.OrderService orders, @org.springframework.context.annotation.Lazy AccountNotice accountNotice, AiUsageService usageLog, AiEvents events, ChannelAi channelAi,
-                       KnowledgeIndex knowledge, org.springframework.context.ApplicationEventPublisher publisher,
+                       KnowledgeIndex knowledge, org.springframework.context.ApplicationEventPublisher publisher, @org.springframework.context.annotation.Lazy com.platform.billing.WalletService wallet,
                        @org.springframework.beans.factory.annotation.Value("${app.ai.name-probe:false}") boolean nameProbe,
                        @org.springframework.beans.factory.annotation.Value("${app.ai.review.enabled:true}") boolean review,
                        @org.springframework.beans.factory.annotation.Value("${app.ai.review.model:}") String reviewModel) {
+        this.wallet = wallet;
         this.review = review;
         this.reviewModel = reviewModel == null || reviewModel.isBlank() ? null : reviewModel.trim();
         this.usageLog = usageLog;
@@ -183,31 +189,87 @@ public class ChatService {
 
     // ---- settings --------------------------------------------------------------------------------------------
 
+    /** The channels the AI auto-reply can answer on: WhatsApp, Messenger (FACEBOOK), Instagram and the shop website. */
+    public static final List<String> AI_CHANNELS = List.of("WHATSAPP", "FACEBOOK", "INSTAGRAM", "WEB");
+
     public Map<String, Object> getSettings(UUID tenantId) {
-        var r = jdbc.sql("SELECT enabled, tone, max_discount_pct, greeting FROM chat.settings WHERE tenant_id = :t").param("t", tenantId).query().listOfRows().stream().findFirst();
+        var r = jdbc.sql("SELECT enabled, tone, max_discount_pct, greeting, array_to_string(channels, ',') AS channels FROM chat.settings WHERE tenant_id = :t").param("t", tenantId).query().listOfRows().stream().findFirst();
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("enabled", r.map(x -> x.get("enabled")).orElse(true));
         m.put("tone", r.map(x -> x.get("tone")).orElse("FRIENDLY"));
         m.put("maxDiscountPct", r.map(x -> x.get("max_discount_pct")).orElse(0));
         m.put("greeting", r.map(x -> x.get("greeting")).orElse(null));
+        m.put("channels", r.map(x -> x.get("channels") == null || ((String) x.get("channels")).isBlank() ? List.<String>of() : List.of(((String) x.get("channels")).split(","))).orElse(AI_CHANNELS));
+        m.put("pointsMinor", wallet.balance(tenantId));
+        m.put("conversationPriceMinor", aiConversationPrice);
+        m.put("conversationMessages", CONVERSATION_MESSAGES);
         return m;
     }
 
     public Map<String, Object> saveSettings(UUID tenantId, UUID actor, Boolean enabled, String tone, Integer maxDiscountPct, String greeting) {
+        return saveSettings(tenantId, actor, enabled, tone, maxDiscountPct, greeting, null);
+    }
+
+    public Map<String, Object> saveSettings(UUID tenantId, UUID actor, Boolean enabled, String tone, Integer maxDiscountPct, String greeting, List<String> channels) {
         if (tone != null && !List.of("FRIENDLY", "FORMAL", "SHORT").contains(tone)) throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown tone");
         if (maxDiscountPct != null && (maxDiscountPct < 0 || maxDiscountPct > 50)) throw BusinessException.badRequest("VALIDATION_ERROR", "The maximum discount must be between 0 and 50");
         if (greeting != null && greeting.length() > 300) throw BusinessException.badRequest("VALIDATION_ERROR", "The greeting is too long");
+        if (channels != null && !AI_CHANNELS.containsAll(channels)) throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown channel");
+        String ch = channels == null ? null : String.join(",", AI_CHANNELS.stream().filter(channels::contains).toList());
         jdbc.sql("""
-                INSERT INTO chat.settings (tenant_id, enabled, tone, max_discount_pct, greeting) VALUES (:t, coalesce(:e, TRUE), coalesce(:tone, 'FRIENDLY'), coalesce(:d, 0), :g)
+                INSERT INTO chat.settings (tenant_id, enabled, tone, max_discount_pct, greeting, channels)
+                VALUES (:t, coalesce(:e, TRUE), coalesce(:tone, 'FRIENDLY'), coalesce(:d, 0), :g, CASE WHEN :setc THEN CAST(string_to_array(:ch, ',') AS varchar(20)[]) ELSE '{WHATSAPP,FACEBOOK,INSTAGRAM,WEB}' END)
                 ON CONFLICT (tenant_id) DO UPDATE SET enabled = coalesce(:e, chat.settings.enabled), tone = coalesce(:tone, chat.settings.tone),
-                  max_discount_pct = coalesce(:d, chat.settings.max_discount_pct), greeting = CASE WHEN :setg THEN :g ELSE chat.settings.greeting END, updated_at = now()
-                """).param("t", tenantId).param("e", enabled).param("tone", tone).param("d", maxDiscountPct).param("g", greeting == null || greeting.isBlank() ? null : greeting.trim()).param("setg", greeting != null).update();
+                  max_discount_pct = coalesce(:d, chat.settings.max_discount_pct), greeting = CASE WHEN :setg THEN :g ELSE chat.settings.greeting END,
+                  channels = CASE WHEN :setc THEN CAST(string_to_array(:ch, ',') AS varchar(20)[]) ELSE chat.settings.channels END, updated_at = now()
+                """).param("t", tenantId).param("e", enabled).param("tone", tone).param("d", maxDiscountPct).param("g", greeting == null || greeting.isBlank() ? null : greeting.trim()).param("setg", greeting != null)
+                .param("setc", ch != null).param("ch", ch == null ? "" : ch).update();
         audit.record(actor, tenantId, "SETTINGS_CHANGED", "ai", null, null);
         return getSettings(tenantId);
     }
 
     /** The owner's switch AND the model being configured. */
     public boolean enabled(UUID tenantId) { return ai.available() && Boolean.TRUE.equals(getSettings(tenantId).get("enabled")); }
+
+    /** Same, and the owner picked this channel for the auto-reply. */
+    @SuppressWarnings("unchecked")
+    public boolean enabled(UUID tenantId, String channel) {
+        if (!ai.available()) return false;
+        var st = getSettings(tenantId);
+        return Boolean.TRUE.equals(st.get("enabled")) && ((List<String>) st.get("channels")).contains(channel);
+    }
+
+    /** The shop has points for at least one more AI conversation. */
+    public boolean hasPoints(UUID tenantId) { return wallet.balance(tenantId) >= aiConversationPrice; }
+
+    // ---- AI conversation metering ----------------------------------------------------------------------------
+
+    /** One AI conversation = up to 20 messages (customer + AI, about 10 replies); a longer chat counts as 2, 3... conversations. */
+    static final int CONVERSATION_MESSAGES = 20;
+    private final java.util.concurrent.ConcurrentHashMap<UUID, Long> toldNoPoints = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Counts this turn (the customer's message + the reply) and, when it opens a new 20-message block, takes 1 point from the wallet.
+     * False when the wallet cannot pay for it: nothing is counted and the AI does not answer.
+     */
+    private boolean chargeTurn(UUID tenantId, UUID conv) {
+        var row = jdbc.sql("UPDATE chat.conversations SET ai_msgs = ai_msgs + 2 WHERE id = :c RETURNING ai_msgs, ai_units").param("c", conv).query().listOfRows().get(0);
+        int msgs = ((Number) row.get("ai_msgs")).intValue(), units = ((Number) row.get("ai_units")).intValue();
+        int need = (msgs + CONVERSATION_MESSAGES - 1) / CONVERSATION_MESSAGES;
+        if (need <= units) return true;
+        if (jdbc.sql("UPDATE chat.conversations SET ai_units = :n WHERE id = :c AND ai_units < :n").param("n", need).param("c", conv).update() == 0) return true;   // a parallel reply already paid for this block
+        if (wallet.tryDebit(tenantId, (long) (need - units) * aiConversationPrice, "AI", conv.toString(), "AI conversation")) return true;
+        jdbc.sql("UPDATE chat.conversations SET ai_units = :u, ai_msgs = greatest(ai_msgs - 2, 0) WHERE id = :c").param("u", units).param("c", conv).update();
+        long now = System.currentTimeMillis();
+        Long last = toldNoPoints.get(tenantId);
+        if (last == null || now - last > 12 * 3_600_000L) {   // the owner hears it at most twice a day
+            toldNoPoints.put(tenantId, now);
+            try {
+                wallet.notifyOwner(tenantId, "نقاطك خلصت — الرد الآلي متوقف", "اشحن نقاط عشان المساعد الذكي يرجع يرد على عملائك. الرسائل الجديدة مستنياك في صندوق المحادثات.", "POINTS_EMPTY");
+            } catch (RuntimeException e) { log.debug("points notice failed: {}", e.getMessage()); }
+        }
+        return false;
+    }
 
     public boolean available() { return ai.available(); }
 
@@ -345,6 +407,11 @@ public class ChatService {
         long userMsgId = jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'user', :x) RETURNING id").param("c", conv).param("x", text).query(Long.class).single();
         // the shop team took this chat over: the assistant stays quiet until they hand it back (or two hours pass without them writing)
         if (!"TEST".equals(channel) && paused(conv)) return pausedReply(conv, text);
+        // the AI answers only while the shop has points: 1 point per conversation (each block of 20 messages)
+        if (!"TEST".equals(channel) && !chargeTurn(tenantId, conv)) {
+            flagForHuman(tenantId, conv, channel, "NO_POINTS", text, null);
+            return pausedReply(conv, text);
+        }
 
         List<Turn> turns = new ArrayList<>();
         for (var m : jdbc.sql("SELECT role, content FROM (SELECT id, role, content FROM chat.messages WHERE conversation_id = :c ORDER BY id DESC LIMIT :n) x ORDER BY id").param("c", conv).param("n", Math.max(4, Math.min(historyMessages, 40))).query().listOfRows())

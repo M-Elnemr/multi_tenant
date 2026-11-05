@@ -41,7 +41,7 @@ public class WhatsAppAutoConfirmService {
     private final long priceMinor;
 
     public WhatsAppAutoConfirmService(JdbcClient jdbc, MetaGraph graph, MetaChannelService channels, WhatsAppConfirmService confirm, WalletService wallet, AuditService audit,
-                                      @Value("${app.whatsapp.message-price-minor:100}") long priceMinor, EvolutionService evolution) {
+                                      @Value("${app.whatsapp.message-price-minor:50}") long priceMinor, EvolutionService evolution) {
         this.evolution = evolution;
         this.jdbc = jdbc;
         this.graph = graph;

@@ -43,6 +43,7 @@ class WhatsAppAutoConfirmIntegrationTest extends IntegrationTestBase {
     /** A shop with a connected WhatsApp number, approved templates, the service on and credit of 10 EGP. */
     Shop shop() throws Exception {
         Tenant t = onboard("STORE");
+        jdbc.sql("UPDATE billing.wallets SET balance_minor = 0 WHERE tenant_id = (SELECT id FROM core.tenants WHERE slug = :s)").param("s", t.slug()).update();   // start without the 100 free points
         String pnid = uid();
         onHost(t.host(), t.access(), "POST", "/api/v1/store/ai/channels",
                 "{\"platform\":\"WHATSAPP\",\"externalId\":\"%s\",\"accessToken\":\"EAAG-secret-token-0123456789\",\"pageId\":\"108291058819688\"}".formatted(pnid)).andExpect(status().isCreated());

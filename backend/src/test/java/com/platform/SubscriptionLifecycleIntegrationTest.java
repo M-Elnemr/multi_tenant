@@ -29,16 +29,12 @@ class SubscriptionLifecycleIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void standardShopCannotUseACustomDomainButProfessionalAndFreeCan() throws Exception {
-        Tenant shop = onboard("STORE");   // free trial: everything included
+    void everyPlanIncludesTheCustomDomain() throws Exception {
+        Tenant shop = onboard("STORE");   // free forever: everything included
         onHost(shop.host(), shop.access(), "POST", "/api/v1/tenant/domains", "{\"host\":\"www.free-" + uniq() + ".com\"}").andExpect(status().isCreated());
-
-        billing.activatePlan(idOf(shop), billing.planId("STORE_STANDARD"), 30);
-        onHost(shop.host(), shop.access(), "POST", "/api/v1/tenant/domains", "{\"host\":\"www.std-" + uniq() + ".com\"}")
-                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("FEATURE_NOT_AVAILABLE"));
-
-        billing.activatePlan(idOf(shop), billing.planId("STORE_PRO"), 30);
-        onHost(shop.host(), shop.access(), "POST", "/api/v1/tenant/domains", "{\"host\":\"www.pro-" + uniq() + ".com\"}").andExpect(status().isCreated());
+        Tenant clinic = onboard("CLINIC");
+        billing.activatePlan(idOf(clinic), billing.planId("CLINIC_PRO"), 30);
+        onHost(clinic.host(), clinic.access(), "POST", "/api/v1/tenant/domains", "{\"host\":\"www.pro-" + uniq() + ".com\"}").andExpect(status().isCreated());
     }
 
     @Test
@@ -52,17 +48,17 @@ class SubscriptionLifecycleIntegrationTest extends IntegrationTestBase {
     @Test
     void payRequestNeedsAPhoneIsNotDuplicatedAndPlatformCanActivateIt() throws Exception {
         String admin = platformToken("PLATFORM_OWNER");
-        Tenant shop = onboard("STORE");
-        // the clinic-only plan is refused for a shop, the free plan cannot be "paid"
-        onHost(shop.host(), shop.access(), "POST", "/api/v1/billing/pay-requests", "{\"planCode\":\"CLINIC_PRO\"}").andExpect(status().isBadRequest());
-        onHost(shop.host(), shop.access(), "POST", "/api/v1/billing/pay-requests", "{\"planCode\":\"STORE_FREE\"}").andExpect(status().isBadRequest());
+        Tenant shop = onboard("CLINIC");
+        // the lawyer-only plan is refused for a clinic, the free plan cannot be "paid"
+        onHost(shop.host(), shop.access(), "POST", "/api/v1/billing/pay-requests", "{\"planCode\":\"LAWYER_PRO\"}").andExpect(status().isBadRequest());
+        onHost(shop.host(), shop.access(), "POST", "/api/v1/billing/pay-requests", "{\"planCode\":\"CLINIC_FREE\"}").andExpect(status().isBadRequest());
 
-        String first = onHost(shop.host(), shop.access(), "POST", "/api/v1/billing/pay-requests", "{\"planCode\":\"STORE_STANDARD\",\"phone\":\"" + shop.phone() + "\"}")
+        String first = onHost(shop.host(), shop.access(), "POST", "/api/v1/billing/pay-requests", "{\"planCode\":\"CLINIC_PRO\",\"phone\":\"" + shop.phone() + "\"}")
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("NEW")).andReturn().getResponse().getContentAsString();
         String id = JsonPath.read(first, "$.id");
         // pressing again (and choosing the better plan) reuses the one open request
-        onHost(shop.host(), shop.access(), "POST", "/api/v1/billing/pay-requests", "{\"planCode\":\"STORE_PRO\"}")
-                .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(id)).andExpect(jsonPath("$.planCode").value("STORE_PRO")).andExpect(jsonPath("$.amountMinor").value(75000));
+        onHost(shop.host(), shop.access(), "POST", "/api/v1/billing/pay-requests", "{\"planCode\":\"CLINIC_PRO_YEARLY\"}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(id)).andExpect(jsonPath("$.planCode").value("CLINIC_PRO_YEARLY")).andExpect(jsonPath("$.amountMinor").value(250000));
         assertThat(jdbc.sql("SELECT count(*) FROM billing.pay_requests WHERE tenant_id = :t").param("t", idOf(shop)).query(Long.class).single()).isEqualTo(1);
 
         // the platform owner sees it with the owner's contact, marks it paid -> the shop is on Professional for 30 days
@@ -71,7 +67,7 @@ class SubscriptionLifecycleIntegrationTest extends IntegrationTestBase {
         onHost("platform.test", admin, "GET", "/api/v1/platform/overview", null).andExpect(jsonPath("$.newPayRequests").isNumber());
         onHost("platform.test", shop.access(), "GET", "/api/v1/platform/pay-requests", null).andExpect(status().isForbidden());
         onHost("platform.test", admin, "POST", "/api/v1/platform/pay-requests/" + id, "{\"status\":\"PAID\",\"adminNote\":\"cash\"}").andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PAID"));
-        onHost(shop.host(), shop.access(), "GET", "/api/v1/billing/subscription", null).andExpect(jsonPath("$.status").value("ACTIVE")).andExpect(jsonPath("$.planCode").value("STORE_PRO"));
+        onHost(shop.host(), shop.access(), "GET", "/api/v1/billing/subscription", null).andExpect(jsonPath("$.status").value("ACTIVE")).andExpect(jsonPath("$.planCode").value("CLINIC_PRO_YEARLY"));
     }
 
     @Test
@@ -89,7 +85,7 @@ class SubscriptionLifecycleIntegrationTest extends IntegrationTestBase {
         onHost(clinic.host(), patient.token(), "GET", "/api/v1/portal/me", null).andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("TENANT_DISABLED"));
 
         // the admin gives the clinic Professional for 30 days: it works again
-        onHost("platform.test", admin, "POST", "/api/v1/platform/tenants/" + id + "/plan", "{\"planCode\":\"STORE_PRO\"}").andExpect(status().isBadRequest());
+        onHost("platform.test", admin, "POST", "/api/v1/platform/tenants/" + id + "/plan", "{\"planCode\":\"LAWYER_PRO\"}").andExpect(status().isBadRequest());
         onHost("platform.test", admin, "POST", "/api/v1/platform/tenants/" + id + "/plan", "{\"planCode\":\"CLINIC_PRO\",\"days\":30}").andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ACTIVE")).andExpect(jsonPath("$.subscription.planCode").value("CLINIC_PRO"));
         onHost(clinic.host(), null, "GET", "/api/v1/clinic/public/profile", null).andExpect(status().isOk());
@@ -133,12 +129,12 @@ class SubscriptionLifecycleIntegrationTest extends IntegrationTestBase {
     @Test
     void yearlyPlanGivesTwoMonthsFreeAndActivatesForAYear() throws Exception {
         String admin = platformToken("PLATFORM_OWNER");
-        Tenant shop = onboard("STORE");
+        Tenant shop = onboard("CLINIC");
         onHost(shop.host(), null, "GET", "/api/v1/billing/plans", null).andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.code=='STORE_STANDARD_YEARLY')].priceMinor").value(500000))
-                .andExpect(jsonPath("$[?(@.code=='STORE_PRO_YEARLY')].priceMinor").value(750000));
-        String req = onHost(shop.host(), shop.access(), "POST", "/api/v1/billing/pay-requests", "{\"planCode\":\"STORE_PRO_YEARLY\",\"phone\":\"" + shop.phone() + "\"}")
-                .andExpect(status().isOk()).andExpect(jsonPath("$.amountMinor").value(750000)).andReturn().getResponse().getContentAsString();
+                .andExpect(jsonPath("$[?(@.code=='CLINIC_PRO')].priceMinor").value(25000))
+                .andExpect(jsonPath("$[?(@.code=='CLINIC_PRO_YEARLY')].priceMinor").value(250000));
+        String req = onHost(shop.host(), shop.access(), "POST", "/api/v1/billing/pay-requests", "{\"planCode\":\"CLINIC_PRO_YEARLY\",\"phone\":\"" + shop.phone() + "\"}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.amountMinor").value(250000)).andReturn().getResponse().getContentAsString();
         onHost("platform.test", admin, "POST", "/api/v1/platform/pay-requests/" + JsonPath.read(req, "$.id"), "{\"status\":\"PAID\"}").andExpect(status().isOk());
         long days = jdbc.sql("SELECT extract(day FROM (current_period_end - now()))::bigint FROM billing.tenant_subscriptions WHERE tenant_id = :t").param("t", idOf(shop)).query(Long.class).single();
         assertThat(days).isBetween(363L, 365L);
@@ -185,10 +181,10 @@ class SubscriptionLifecycleIntegrationTest extends IntegrationTestBase {
         String admin = platformToken("PLATFORM_OWNER");
         String phoneToken = "admin-phone-" + uniq();
         onHost("platform.test", admin, "POST", "/api/v1/me/devices", "{\"token\":\"" + phoneToken + "\",\"platform\":\"android\"}").andExpect(status().is2xxSuccessful());
-        Tenant shop = onboard("STORE");   // signing up tells the operators too (TENANT_CREATED), so count from here
+        Tenant shop = onboard("CLINIC");   // signing up tells the operators too (TENANT_CREATED), so count from here
         long before = ((Number) JsonPath.read(onHost("platform.test", admin, "GET", "/api/v1/notifications/unread-count", null).andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), "$.count")).longValue();
 
-        onHost(shop.host(), shop.access(), "POST", "/api/v1/billing/pay-requests", "{\"planCode\":\"STORE_STANDARD\",\"phone\":\"" + shop.phone() + "\"}").andExpect(status().isOk());
+        onHost(shop.host(), shop.access(), "POST", "/api/v1/billing/pay-requests", "{\"planCode\":\"CLINIC_PRO\",\"phone\":\"" + shop.phone() + "\"}").andExpect(status().isOk());
 
         long after = ((Number) JsonPath.read(onHost("platform.test", admin, "GET", "/api/v1/notifications/unread-count", null).andReturn().getResponse().getContentAsString(), "$.count")).longValue();
         assertThat(after).isEqualTo(before + 1);
@@ -207,38 +203,38 @@ class SubscriptionLifecycleIntegrationTest extends IntegrationTestBase {
 
     @Test
     void upgradingAPaidPlanCreditsTheUnusedDaysOrWaitsForNextPeriod() throws Exception {
-        Tenant shop = onboard("STORE");
+        Tenant shop = onboard("CLINIC");
         String admin = platformToken("PLATFORM_OWNER");
         UUID id = idOf(shop);
-        billing.activatePlan(id, billing.planId("STORE_STANDARD"), 30);
-        // 15 of the 30 days are left: the credit is half of the 500 EGP plan, so the 750 plan costs 500 more
+        billing.activatePlan(id, billing.planId("CLINIC_PRO"), 30);
+        // 15 of the 30 days are left: the credit is half of the 250 EGP month, so the 2,500 EGP year costs 2,375 now
         jdbc.sql("UPDATE billing.tenant_subscriptions SET current_period_start = now() - interval '15 days', current_period_end = now() + interval '15 days' - interval '1 hour' WHERE tenant_id = :t").param("t", id).update();
-        onHost(shop.host(), shop.access(), "GET", "/api/v1/billing/upgrade-quote?planCode=STORE_PRO", null).andExpect(status().isOk())
-                .andExpect(jsonPath("$.upgrade").value(true)).andExpect(jsonPath("$.remainingDays").value(15)).andExpect(jsonPath("$.creditMinor").value(25000)).andExpect(jsonPath("$.dueNowMinor").value(50000));
+        onHost(shop.host(), shop.access(), "GET", "/api/v1/billing/upgrade-quote?planCode=CLINIC_PRO_YEARLY", null).andExpect(status().isOk())
+                .andExpect(jsonPath("$.upgrade").value(true)).andExpect(jsonPath("$.remainingDays").value(15)).andExpect(jsonPath("$.creditMinor").value(12500)).andExpect(jsonPath("$.dueNowMinor").value(237500));
 
-        // upgrade now: pays the difference; once marked paid the new plan starts today for a full period (not +30 on the old end)
-        String now = onHost(shop.host(), shop.access(), "POST", "/api/v1/billing/pay-requests", "{\"planCode\":\"STORE_PRO\",\"phone\":\"" + shop.phone() + "\",\"timing\":\"NOW\"}")
-                .andExpect(status().isOk()).andExpect(jsonPath("$.amountMinor").value(50000)).andExpect(jsonPath("$.creditMinor").value(25000)).andReturn().getResponse().getContentAsString();
+        // upgrade now: pays the difference; once marked paid the new plan starts today for a full period (not added to the old end)
+        String now = onHost(shop.host(), shop.access(), "POST", "/api/v1/billing/pay-requests", "{\"planCode\":\"CLINIC_PRO_YEARLY\",\"phone\":\"" + shop.phone() + "\",\"timing\":\"NOW\"}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.amountMinor").value(237500)).andExpect(jsonPath("$.creditMinor").value(12500)).andReturn().getResponse().getContentAsString();
         onHost("platform.test", admin, "POST", "/api/v1/platform/pay-requests/" + JsonPath.read(now, "$.id"), "{\"status\":\"PAID\"}").andExpect(status().isOk());
         long days = jdbc.sql("SELECT extract(day FROM (current_period_end - now()))::bigint FROM billing.tenant_subscriptions WHERE tenant_id = :t").param("t", id).query(Long.class).single();
-        assertThat(days).isBetween(28L, 30L);
+        assertThat(days).isBetween(363L, 365L);
 
         // next period: nothing is paid now and the plan does not change; it can only be scheduled, never "paid"
-        jdbc.sql("UPDATE billing.tenant_subscriptions SET plan_id = (SELECT id FROM billing.subscription_plans WHERE code = 'STORE_STANDARD'), current_period_start = now() - interval '10 days', current_period_end = now() + interval '20 days' WHERE tenant_id = :t").param("t", id).update();
-        String next = onHost(shop.host(), shop.access(), "POST", "/api/v1/billing/pay-requests", "{\"planCode\":\"STORE_PRO\",\"phone\":\"" + shop.phone() + "\",\"timing\":\"NEXT_PERIOD\"}")
-                .andExpect(status().isOk()).andExpect(jsonPath("$.timing").value("NEXT_PERIOD")).andExpect(jsonPath("$.amountMinor").value(75000)).andReturn().getResponse().getContentAsString();
+        jdbc.sql("UPDATE billing.tenant_subscriptions SET plan_id = (SELECT id FROM billing.subscription_plans WHERE code = 'CLINIC_PRO'), current_period_start = now() - interval '10 days', current_period_end = now() + interval '20 days' WHERE tenant_id = :t").param("t", id).update();
+        String next = onHost(shop.host(), shop.access(), "POST", "/api/v1/billing/pay-requests", "{\"planCode\":\"CLINIC_PRO_YEARLY\",\"phone\":\"" + shop.phone() + "\",\"timing\":\"NEXT_PERIOD\"}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.timing").value("NEXT_PERIOD")).andExpect(jsonPath("$.amountMinor").value(250000)).andReturn().getResponse().getContentAsString();
         String nextId = JsonPath.read(next, "$.id");
         onHost("platform.test", admin, "POST", "/api/v1/platform/pay-requests/" + nextId, "{\"status\":\"PAID\"}").andExpect(status().isBadRequest());
         onHost("platform.test", admin, "POST", "/api/v1/platform/pay-requests/" + nextId, "{\"status\":\"SCHEDULED\"}").andExpect(status().isOk());
-        onHost(shop.host(), shop.access(), "GET", "/api/v1/billing/status", null).andExpect(jsonPath("$.planCode").value("STORE_STANDARD")).andExpect(jsonPath("$.pendingPlanCode").value("STORE_PRO"));
+        onHost(shop.host(), shop.access(), "GET", "/api/v1/billing/status", null).andExpect(jsonPath("$.planCode").value("CLINIC_PRO")).andExpect(jsonPath("$.pendingPlanCode").value("CLINIC_PRO_YEARLY"));
 
         // the platform owner switching the plan of a running paid business keeps the end date
-        onHost("platform.test", admin, "POST", "/api/v1/platform/tenants/" + id + "/plan", "{\"planCode\":\"STORE_PRO\"}").andExpect(status().isOk());
+        onHost("platform.test", admin, "POST", "/api/v1/platform/tenants/" + id + "/plan", "{\"planCode\":\"CLINIC_PRO_YEARLY\"}").andExpect(status().isOk());
         long left = jdbc.sql("SELECT extract(day FROM (current_period_end - now()))::bigint FROM billing.tenant_subscriptions WHERE tenant_id = :t").param("t", id).query(Long.class).single();
         assertThat(left).isBetween(18L, 20L);
 
         // "days" is the final number of days left, not an addition
-        onHost("platform.test", admin, "POST", "/api/v1/platform/tenants/" + id + "/plan", "{\"planCode\":\"STORE_STANDARD\",\"days\":10}").andExpect(status().isOk());
+        onHost("platform.test", admin, "POST", "/api/v1/platform/tenants/" + id + "/plan", "{\"planCode\":\"CLINIC_PRO\",\"days\":10}").andExpect(status().isOk());
         long ten = jdbc.sql("SELECT extract(day FROM (current_period_end - now()))::bigint FROM billing.tenant_subscriptions WHERE tenant_id = :t").param("t", id).query(Long.class).single();
         assertThat(ten).isBetween(8L, 10L);
     }

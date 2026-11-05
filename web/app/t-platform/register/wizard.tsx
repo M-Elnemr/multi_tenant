@@ -166,6 +166,7 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
                 <span className="mb-5 grid h-12 w-12 place-items-center rounded-2xl text-white" style={{ background: THEME[v].accent }}><Icon name={icon} className="h-6 w-6" /></span>
                 <p className="font-display text-lg font-bold">{t(title)}</p>
                 <p className="mt-1 text-sm leading-relaxed text-slate-500">{t(desc)}</p>
+                <p className="mt-4 inline-flex rounded-lg px-2.5 py-1 text-xs font-bold" style={{ background: `color-mix(in srgb, ${THEME[v].accent} 12%, transparent)`, color: THEME[v].accent }}>{t(v === "STORE" ? "reg2.priceStore" : "reg2.priceHosting")}</p>
                 <span className="mt-5 inline-flex items-center gap-1 text-sm font-semibold" style={{ color: THEME[v].accent }}>{t("reg2.next")}<Icon name="arrow" className="h-4 w-4 flip-rtl transition group-hover:translate-x-1 rtl:group-hover:-translate-x-1" /></span>
               </motion.button>
             ))}
@@ -176,7 +177,8 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
   }
 
   const host = `${slug}.${rootDomain}`;
-  const gets = type === "STORE" ? ["reg2.getStore1", "reg2.getStore2", "reg2.getStore3", "reg2.getStore4"] : type === "CLINIC" ? ["reg2.getClinic1", "reg2.getClinic2", "reg2.getClinic3", "reg2.getStore4"] : ["reg2.getLawyer1", "reg2.getLawyer2", "reg2.getLawyer3", "reg2.getStore4"];
+  const gets = type === "STORE" ? ["reg2.getStore1", "reg2.getStore2", "reg2.getStore3", "reg2.getStore4"] : type === "CLINIC" ? ["reg2.getClinic1", "reg2.getClinic2", "reg2.getClinic3", "reg2.getHosting4"] : ["reg2.getLawyer1", "reg2.getLawyer2", "reg2.getLawyer3", "reg2.getHosting4"];
+  const bill = type === "STORE" ? ["reg2.billStore1", "reg2.billStore2", "reg2.billStore3", "reg2.billStore4"] : ["reg2.billHosting1", "reg2.billHosting2", "reg2.billHosting3"];
 
   return (
     <div className="grid min-h-dvh lg:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)]">
@@ -252,6 +254,12 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
                         {avail === "checking" ? t("register.checking") : avail === "ok" ? `✓ ${t("register.available")}` : avail === "taken" ? t("register.taken") : avail === "invalid" ? t("register.invalidSlug") : " "}
                       </p>
                     </div>
+                  </div>
+                  <div className="rounded-2xl border border-black/[.07] bg-white p-4">
+                    <p className="flex items-center gap-2 text-sm font-bold"><Icon name="wallet" className="h-4 w-4" style={{ color: th.accent }} />{t("reg2.billTitle")}</p>
+                    <ul className="mt-2.5 space-y-1.5">
+                      {bill.map((k) => <li key={k} className="flex items-start gap-2 text-[13px] leading-relaxed text-slate-600"><Icon name="check" className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: th.accent }} />{t(k)}</li>)}
+                    </ul>
                   </div>
                   <ErrorText error={create.error} />
                   <div className="flex gap-2">

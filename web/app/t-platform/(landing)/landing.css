@@ -190,3 +190,10 @@ html[lang="ar"] .lp-law .lp-h2, html[lang="ar"] .lp-law .lp-h1 { font-family: va
   .lp *, .lp *::before, .lp *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
   .lp-marquee-track { animation: none; }
 }
+
+/* usage calculator slider */
+.lp-range { -webkit-appearance: none; appearance: none; height: 8px; border-radius: 999px; outline: none; cursor: pointer; }
+.lp-range::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; border-radius: 999px; background: #fff; border: 3px solid var(--lp-accent, #7c5cff); box-shadow: 0 4px 12px rgb(13 17 23 / .25); transition: transform .15s ease; }
+.lp-range::-webkit-slider-thumb:hover { transform: scale(1.12); }
+.lp-range::-moz-range-thumb { width: 18px; height: 18px; border-radius: 999px; background: #fff; border: 3px solid var(--lp-accent, #7c5cff); box-shadow: 0 4px 12px rgb(13 17 23 / .25); }
+.lp-range:focus-visible { box-shadow: 0 0 0 3px rgb(124 92 255 / .35); }

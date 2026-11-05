@@ -1,15 +1,15 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { Icon } from "@/components/icons";
-import { backendJson } from "@/lib/backend";
 import { getT } from "@/lib/i18n-server";
-import { type Plan, PricingPlans } from "../pricing-plans";
 import { Faq, Head, LandingFooter } from "../common";
 import { Reveal, SplitWords } from "../kit";
 import { LandingNav } from "../nav";
 import { ChatDemo } from "./chat-demo";
 import { shopCopy } from "./copy";
+import { ShopPricing } from "./pricing";
 import { CatalogBuilder, ChannelsHub, DashPreview, HeroStage, InsightsPanel } from "./visuals";
+import { WinBack, WinBackCompare, WinBackJourney } from "./winback";
 
 /** SEO for both addresses of this page: "/" and "/shop" render the same thing, so both point search engines at "/". */
 export async function shopLandingMetadata(): Promise<Metadata> {
@@ -26,12 +26,11 @@ export async function shopLandingMetadata(): Promise<Metadata> {
 
 /**
  * The shop-owner landing page (elmanassa.shop and elmanassa.shop/shop). AI-first: a dark, immersive story of the AI seller,
- * alternating with light "business" chapters. Only real capabilities (see copy.ts); prices come from the billing plans.
+ * alternating with light "business" chapters. Only real capabilities (see copy.ts); prices come from lib/pricing.ts (mirrors the backend).
  */
 export async function ShopLanding() {
   const { t, locale } = await getT();
   const c = shopCopy(locale);
-  const plans = await backendJson<Plan[]>("/billing/plans").catch(() => [] as Plan[]);
   const shopName = locale === "ar" ? "بوتيك نور" : "Nour Boutique";
   const register = "/register?type=STORE";
   const jsonLd = {
@@ -44,7 +43,7 @@ export async function ShopLanding() {
     <div className="lp lp-shop">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify([jsonLd, faqLd]).replace(/</g, "\\u003c") }} />
       <LandingNav tone="shop" brand={t("brand.name")} locale={locale} login={c.nav.login} cta={c.nav.cta} ctaHref={register}
-        links={[{ href: "#demo", label: c.nav.demo }, { href: "#features", label: c.nav.features }, { href: "#how", label: c.nav.how }, { href: "#pricing", label: c.nav.pricing }, { href: "#faq", label: c.nav.faq }]}
+        links={[{ href: "#demo", label: c.nav.demo }, { href: "#features", label: c.nav.features }, { href: "#winback", label: c.nav.winback }, { href: "#pricing", label: c.nav.pricing }, { href: "#faq", label: c.nav.faq }]}
         other={{ href: "/tabib", label: c.nav.clinics }} />
 
       {/* ---------------- hero ---------------- */}
@@ -169,6 +168,39 @@ export async function ShopLanding() {
         </div>
       </section>
 
+      {/* ---------------- win back old customers (WhatsApp offers) ---------------- */}
+      <section id="winback" className="lp-dark lp-section relative overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(45%_40%_at_85%_15%,rgb(37_211_102/.16),transparent_70%),radial-gradient(40%_40%_at_10%_80%,rgb(124_92_255/.16),transparent_70%)]" aria-hidden />
+        <div className="relative mx-auto max-w-7xl px-4 sm:px-6">
+          <div className="grid items-end gap-8 lg:grid-cols-[1.3fr_0.7fr]">
+            <Reveal><Head eyebrow={c.winback.eyebrow} title={c.winback.title} sub={c.winback.sub} /></Reveal>
+            <Reveal delay={0.1}>
+              <div className="w-fit rounded-3xl border border-[#25d366]/40 bg-[#25d366]/10 px-6 py-5 lg:ms-auto">
+                <p className="font-display text-4xl font-extrabold text-[#5ef09a]">{c.winback.price}</p>
+                <p className="mt-1 text-sm font-medium text-white/70">{c.winback.priceUnit}</p>
+              </div>
+            </Reveal>
+          </div>
+          <div className="mt-16"><WinBack w={c.winback} locale={locale} /></div>
+          <div className="mt-20 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {c.winback.points.map((m, i) => (
+              <Reveal key={m.title} delay={i * 0.07}>
+                <div className="h-full rounded-[1.5rem] border border-white/8 bg-white/[.03] p-6 transition hover:-translate-y-1 hover:border-white/15">
+                  <span className="grid h-11 w-11 place-items-center rounded-xl bg-[#25d366]/12 text-[#5ef09a]"><Icon name={m.icon} className="h-5 w-5" /></span>
+                  <p className="mt-5 font-display text-lg font-bold text-white">{m.title}</p>
+                  <p className="mt-1.5 text-sm leading-relaxed text-white/60">{m.body}</p>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+          <Reveal><h3 className="mt-24 text-center font-display text-2xl font-bold text-white sm:text-3xl">{c.winback.journeyTitle}</h3></Reveal>
+          <div className="mt-12"><WinBackJourney w={c.winback} locale={locale} /></div>
+          <Reveal><h3 className="mt-24 text-center font-display text-2xl font-bold text-white sm:text-3xl">{c.winback.compareTitle}</h3></Reveal>
+          <Reveal delay={0.1}><div className="mx-auto mt-10 max-w-4xl"><WinBackCompare w={c.winback} /></div></Reveal>
+          <Reveal><p className="mx-auto mt-10 flex max-w-2xl items-start justify-center gap-2 text-center text-sm text-white/50"><Icon name="shield" className="mt-0.5 h-4 w-4 shrink-0" />{c.winback.note}</p></Reveal>
+        </div>
+      </section>
+
       {/* ---------------- how it works ---------------- */}
       <section id="how" className="lp-dark lp-section relative overflow-hidden">
         <div className="lp-glow lp-glow-lime" aria-hidden />
@@ -191,7 +223,7 @@ export async function ShopLanding() {
       <section id="pricing" className="lp-light lp-section lp-curve-top">
         <div className="mx-auto max-w-5xl px-4 sm:px-6">
           <Reveal><Head eyebrow={c.pricing.eyebrow} title={c.pricing.title} sub={c.pricing.sub} center /></Reveal>
-          {plans.length > 0 ? <PricingPlans plans={plans} types={["STORE"]} /> : <p className="mt-10 text-center"><Link href="/pricing" className="font-semibold underline">{c.final.cta2}</Link></p>}
+          <ShopPricing p={c.pricing} locale={locale} register={register} />
         </div>
       </section>
       <section id="faq" className="lp-light pb-28">

@@ -6,6 +6,7 @@ import { api } from "@/lib/client";
 import { ChatPanel } from "@/components/shop/live-chat";
 import { AiChannels } from "@/components/dashboard/ai-channels";
 import { AiWhatsApp } from "@/components/dashboard/ai-whatsapp";
+import { PointsWallet } from "@/components/dashboard/points-wallet";
 import { AiLessons } from "@/components/dashboard/ai-lessons";
 import { Unanswered } from "@/components/dashboard/unanswered";
 import { AiReadiness } from "@/components/dashboard/ai-readiness";
@@ -14,7 +15,8 @@ import { useI18n } from "@/components/i18n-provider";
 import { Alert, Button, ErrorText, Field, Input, PageHeader, Select } from "@/components/ui";
 import { useNavTitle, useSection } from "@/components/dashboard/section";
 
-type Settings = { enabled: boolean; tone: string; maxDiscountPct: number; greeting: string | null };
+type Settings = { enabled: boolean; tone: string; maxDiscountPct: number; greeting: string | null; channels: string[] };
+const AI_CHANNELS = [["WHATSAPP", "pts.chWhatsapp"], ["FACEBOOK", "pts.chMessenger"], ["INSTAGRAM", "pts.chInstagram"], ["WEB", "pts.chWeb"]] as const;
 type Tab = "test" | "lessons" | "channels" | "whatsapp" | "settings";
 
 export default function AiAssistantPage() {
@@ -71,15 +73,28 @@ function SettingsForm({ write }: { write: boolean }) {
   const setF = (v: Settings) => setEdit(v);
   const save = useAction(async () => {
     if (!f) return;
-    await api("store/ai/settings", { method: "PUT", body: { enabled: f.enabled, tone: f.tone, maxDiscountPct: f.maxDiscountPct, greeting: f.greeting ?? "" } });
+    await api("store/ai/settings", { method: "PUT", body: { enabled: f.enabled, tone: f.tone, maxDiscountPct: f.maxDiscountPct, greeting: f.greeting ?? "", channels: f.channels } });
     setSaved(true);
     await reload();
   });
   if (!f) return null;
+  const toggle = (c: string) => setF({ ...f, channels: f.channels.includes(c) ? f.channels.filter((x) => x !== c) : [...f.channels, c] });
   return (
-    <form onSubmit={(e) => { e.preventDefault(); setSaved(false); void save.run(); }} className="max-w-xl space-y-4 rounded-xl border bg-white p-5">
+    <div className="max-w-xl space-y-4">
+    <form onSubmit={(e) => { e.preventDefault(); setSaved(false); void save.run(); }} className="space-y-4 rounded-xl border bg-white p-5">
       <fieldset disabled={!write} className="space-y-4 disabled:opacity-70">
         <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={f.enabled} onChange={(e) => setF({ ...f, enabled: e.target.checked })} />{t("ai.enabled")}</label>
+        <div>
+          <p className="text-sm font-medium">{t("pts.channels")}</p>
+          <p className="mt-0.5 text-xs text-slate-500">{t("pts.channelsHint")}</p>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            {AI_CHANNELS.map(([c, label]) => (
+              <label key={c} className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition ${f.channels.includes(c) ? "border-brand bg-brand-soft text-brand" : "border-slate-200"}`}>
+                <input type="checkbox" checked={f.channels.includes(c)} onChange={() => toggle(c)} />{t(label)}
+              </label>
+            ))}
+          </div>
+        </div>
         <Field label={t("ai.tone")}>
           <Select value={f.tone} onChange={(e) => setF({ ...f, tone: e.target.value })}>{["FRIENDLY", "FORMAL", "SHORT"].map((x) => <option key={x} value={x}>{t(`ai.tone.${x}`)}</option>)}</Select>
         </Field>
@@ -92,5 +107,7 @@ function SettingsForm({ write }: { write: boolean }) {
       {saved && <Alert tone="green">{t("ai.saved")}</Alert>}
       {write && <Button type="submit" loading={save.loading}>{t("common.save")}</Button>}
     </form>
+    <PointsWallet write={write} />
+    </div>
   );
 }

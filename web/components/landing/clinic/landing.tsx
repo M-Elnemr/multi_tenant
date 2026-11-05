@@ -2,9 +2,8 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { Icon } from "@/components/icons";
 import { templateFontVars } from "@/components/shop/templates/fonts";
-import { backendJson } from "@/lib/backend";
 import { getT } from "@/lib/i18n-server";
-import { type Plan, PricingPlans } from "../pricing-plans";
+import { ClinicHostingPricing } from "../hosting-pricing";
 import { Faq, Head, LandingFooter } from "../common";
 import { Counter, Reveal, SplitWords } from "../kit";
 import { LandingNav } from "../nav";
@@ -30,11 +29,10 @@ export async function clinicLandingMetadata(): Promise<Metadata> {
 export async function ClinicLanding() {
   const { t, locale } = await getT();
   const c = clinicCopy(locale);
-  const plans = await backendJson<Plan[]>("/billing/plans").catch(() => [] as Plan[]);
   const register = "/register?type=CLINIC";
   const fmt = (n: number) => n.toLocaleString(locale === "ar" ? "ar-EG" : "en-US");
   const ld = [
-    { "@context": "https://schema.org", "@type": "SoftwareApplication", name: `${t("brand.name")} · ${c.hero.eyebrow}`, applicationCategory: "BusinessApplication", applicationSubCategory: "Medical practice management", operatingSystem: "Web, Android, iOS", description: c.meta.description, offers: { "@type": "Offer", price: "0", priceCurrency: "EGP" } },
+    { "@context": "https://schema.org", "@type": "SoftwareApplication", name: `${t("brand.name")} · ${c.hero.eyebrow}`, applicationCategory: "BusinessApplication", applicationSubCategory: "Medical practice management", operatingSystem: "Web, Android, iOS", description: c.meta.description, offers: { "@type": "Offer", price: "250", priceCurrency: "EGP", description: c.pricing.title } },
     { "@context": "https://schema.org", "@type": "FAQPage", mainEntity: c.faq.items.map((f) => ({ "@type": "Question", name: f.q, acceptedAnswer: { "@type": "Answer", text: f.a } })) },
   ];
   return (
@@ -173,7 +171,7 @@ export async function ClinicLanding() {
       <section id="pricing" className="lp-section bg-[#fbf9f4]">
         <div className="mx-auto max-w-5xl px-4 sm:px-6">
           <Reveal><Head eyebrow={c.pricing.eyebrow} title={c.pricing.title} sub={c.pricing.sub} center /></Reveal>
-          {plans.length > 0 ? <PricingPlans plans={plans} types={["CLINIC"]} /> : <p className="mt-10 text-center"><Link href="/pricing" className="font-semibold underline">{c.final.cta2}</Link></p>}
+          <ClinicHostingPricing p={c.pricing} register={register} />
         </div>
       </section>
       <section id="faq" className="bg-[#fbf9f4] pb-28">

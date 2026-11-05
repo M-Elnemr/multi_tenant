@@ -49,7 +49,7 @@ public class CartRecoveryService {
     private final boolean scheduler;
 
     public CartRecoveryService(JdbcClient jdbc, MetaChannelService channels, MetaGraph graph, WalletService wallet, OpenUrls urls, AuditService audit,
-                               @Value("${app.whatsapp.marketing-price-minor:300}") long priceMinor, @Value("${app.integrations.scheduler.enabled:true}") boolean scheduler, com.platform.chat.EvolutionService evolution, GenderService genders) {
+                               @Value("${app.whatsapp.marketing-price-minor:50}") long priceMinor, @Value("${app.integrations.scheduler.enabled:true}") boolean scheduler, com.platform.chat.EvolutionService evolution, GenderService genders) {
         this.genders = genders;
         this.evolution = evolution;
         this.jdbc = jdbc;

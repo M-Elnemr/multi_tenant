@@ -275,7 +275,7 @@ public class MetaChannelService {
         var row = ch.get();
         String key = platform + "|" + accountId + "|" + sender;
         // a photo or voice note is read into text (a few seconds); what the customer sends meanwhile waits for it, so «بكام ده؟» is answered with the photo, in order
-        if ((text == null || text.isBlank()) && ref != null && media.enabled() && chat.enabled((UUID) row.get("tenant_id")) && mediaAllowed("media|" + key)) {
+        if ((text == null || text.isBlank()) && ref != null && media.enabled() && chat.enabled((UUID) row.get("tenant_id"), platform) && chat.hasPoints((UUID) row.get("tenant_id")) && mediaAllowed("media|" + key)) {
             if (burst.enabled()) {
                 var release = burst.hold(key, joined -> respond(platform, accountId, sender, joined, row, name));
                 String read = null;
@@ -315,7 +315,7 @@ public class MetaChannelService {
         String token = crypto.decrypt((String) chRow.get("token_enc"));
         if ("WHATSAPP".equals(platform)) jdbc.sql("INSERT INTO chat.wa_windows (tenant_id, number, last_inbound_at) VALUES (:t, :n, now()) ON CONFLICT (tenant_id, number) DO UPDATE SET last_inbound_at = now()")
                 .param("t", tenantId).param("n", sender.replaceAll("\\D", "")).update();
-        boolean aiOn = chat.enabled(tenantId);
+        boolean aiOn = chat.enabled(tenantId, platform);
         String answer;
         List<ProductShare.Card> cards = List.of();
         if (text == null || text.isBlank()) {

@@ -110,16 +110,16 @@ class NotificationsIntegrationTest extends IntegrationTestBase {
 
     @Test
     void nonPaymentWarnsTheOwnerWithoutBlockingTheJob() throws Exception {
-        Tenant store = onboard("STORE");
+        Tenant store = onboard("CLINIC");
         UUID tenantId = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", store.slug()).query(UUID.class).single();
         jdbc.sql("UPDATE billing.tenant_subscriptions SET current_period_end = now() - interval '1 hour' WHERE tenant_id = :t").param("t", tenantId).update();
-        billing.expiryCheck();   // a free trial that ends unpaid switches the business off at once
+        billing.expiryCheck();   // a free first month that ends unpaid switches the business off at once
         assertThat(types(store.host(), store.access())).contains("SUBSCRIPTION_SUSPENDED");
 
         // a paid period that ends starts the renew wait, with its own warning
-        Tenant paid = onboard("STORE");
+        Tenant paid = onboard("CLINIC");
         UUID paidId = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", paid.slug()).query(UUID.class).single();
-        billing.activatePlan(paidId, billing.planId("STORE_STANDARD"), 30);
+        billing.activatePlan(paidId, billing.planId("CLINIC_PRO"), 30);
         jdbc.sql("UPDATE billing.tenant_subscriptions SET current_period_end = now() - interval '1 hour' WHERE tenant_id = :t").param("t", paidId).update();
         billing.expiryCheck();
         assertThat(types(paid.host(), paid.access())).contains("SUBSCRIPTION_PAST_DUE");

@@ -10,6 +10,7 @@ import { dateOnly, money } from "@/lib/format";
 import { planLabel } from "./pay-screen";
 import { PlanBenefits } from "../plan-benefits";
 import { type Cycle, CycleToggle } from "../cycle-toggle";
+import { PointsWallet } from "./points-wallet";
 
 type Sub = { status: string; planCode: string; planName: string; priceMinor: number; currency: string; currentPeriodEnd: string; cancelAtPeriodEnd: boolean };
 type Plan = { code: string; name: string; priceMinor: number; currency: string; interval?: string; features: Record<string, boolean | number> };
@@ -25,6 +26,18 @@ export default function BillingPage() {
 
   if (sub.loading && !sub.data) return <Loading />;
   const s = sub.data;
+  // shops have no subscription: free forever, they pay AI conversations and WhatsApp messages with points
+  if (s?.planCode.startsWith("STORE")) return (
+    <>
+      <PageHeader title={t("billing.title")} />
+      <Card className="mb-6">
+        <p className="text-sm text-slate-500">{t("billing.currentPlan")}</p>
+        <p className="text-xl font-semibold">{t("pts.freeShop")}</p>
+        <p className="mt-1 text-sm text-slate-500">{t("pts.freeShopHint")}</p>
+      </Card>
+      <PointsWallet write />
+    </>
+  );
   return (
     <>
       <PageHeader title={t("billing.title")} />

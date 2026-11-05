@@ -71,7 +71,7 @@ export function SegmentsTab() {
   const [versions, setVersions] = useState<string[]>([]);
   const [done, setDone] = useState<string | null>(null);
   const pv = det.data?.preview;
-  const price = seg.data?.messagePriceMinor ?? 300;
+  const price = seg.data?.messagePriceMinor ?? 50;
   const paidCost = (pv?.reachableNow ?? 0) * price;
   const lowCredit = way === "PAID" && !!seg.data && paidCost > seg.data.balanceMinor;
   const send = useAction(async () => {

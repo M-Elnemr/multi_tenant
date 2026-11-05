@@ -135,8 +135,8 @@ class LawyerIntegrationTest extends IntegrationTestBase {
                 .andExpect(jsonPath("$.screens.billing").doesNotExist()).andExpect(jsonPath("$.screens.domains").doesNotExist()).andExpect(jsonPath("$.screens.cases").exists());
         onHost(t.host(), t.access(), "GET", "/api/v1/billing/subscription", null).andExpect(status().isForbidden());
         onHost(t.host(), null, "GET", "/api/v1/tenant/context", null).andExpect(jsonPath("$.whiteLabel").value(true));
-        // lawyers' Professional plan is 300 EGP a month
-        assertThat(jdbc.sql("SELECT price_minor FROM billing.subscription_plans WHERE code = 'LAWYER_PRO'").query(Long.class).single()).isEqualTo(30000L);
+        // lawyers: the first month is free, then 250 EGP a month for hosting
+        assertThat(jdbc.sql("SELECT price_minor FROM billing.subscription_plans WHERE code = 'LAWYER_PRO'").query(Long.class).single()).isEqualTo(25000L);
     }
 
     @Test

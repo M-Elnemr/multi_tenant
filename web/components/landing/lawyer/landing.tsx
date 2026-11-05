@@ -2,9 +2,8 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { Icon } from "@/components/icons";
 import { templateFontVars } from "@/components/shop/templates/fonts";
-import { backendJson } from "@/lib/backend";
 import { getT } from "@/lib/i18n-server";
-import { type Plan, PricingPlans } from "../pricing-plans";
+import { LawyerHostingPricing } from "../hosting-pricing";
 import { Faq, Head, LandingFooter } from "../common";
 import { Reveal, SplitWords } from "../kit";
 import { LandingNav } from "../nav";
@@ -30,11 +29,10 @@ export async function lawyerLandingMetadata(): Promise<Metadata> {
 export async function LawyerLanding() {
   const { t, locale } = await getT();
   const c = lawyerCopy(locale);
-  const plans = await backendJson<Plan[]>("/billing/plans").catch(() => [] as Plan[]);
   const register = "/register?type=LAWYER";
   const fmt = (n: number) => n.toLocaleString(locale === "ar" ? "ar-EG" : "en-US");
   const ld = [
-    { "@context": "https://schema.org", "@type": "SoftwareApplication", name: `${t("brand.name")} · ${c.hero.eyebrow}`, applicationCategory: "BusinessApplication", applicationSubCategory: "Legal practice management", operatingSystem: "Web, Android, iOS", description: c.meta.description, offers: { "@type": "Offer", price: "0", priceCurrency: "EGP" } },
+    { "@context": "https://schema.org", "@type": "SoftwareApplication", name: `${t("brand.name")} · ${c.hero.eyebrow}`, applicationCategory: "BusinessApplication", applicationSubCategory: "Legal practice management", operatingSystem: "Web, Android, iOS", description: c.meta.description, offers: { "@type": "Offer", price: "250", priceCurrency: "EGP", description: c.pricing.title } },
     { "@context": "https://schema.org", "@type": "FAQPage", mainEntity: c.faq.items.map((f) => ({ "@type": "Question", name: f.q, acceptedAnswer: { "@type": "Answer", text: f.a } })) },
   ];
   return (
@@ -149,7 +147,7 @@ export async function LawyerLanding() {
       <section id="pricing" className="lp-section">
         <div className="mx-auto max-w-5xl px-4 sm:px-6">
           <Reveal><Head eyebrow={c.pricing.eyebrow} title={c.pricing.title} sub={c.pricing.sub} center /></Reveal>
-          {plans.length > 0 ? <PricingPlans plans={plans} types={["LAWYER"]} /> : <p className="mt-10 text-center"><Link href="/pricing" className="font-semibold underline">{c.final.cta2}</Link></p>}
+          <LawyerHostingPricing p={c.pricing} register={register} />
         </div>
       </section>
       <section id="faq" className="pb-28">

@@ -320,7 +320,7 @@ public class EvolutionService {
         String name = m.path("pushName").asText(""), burstKey = tenantId + "|" + sender;
         // a photo or voice note is read into text (a few seconds); what the customer sends meanwhile waits for it, so «بكام ده؟» is answered with the photo, in order
         MediaReader.Kind kind = msg.has("imageMessage") ? MediaReader.Kind.IMAGE : msg.has("audioMessage") ? MediaReader.Kind.AUDIO : null;
-        if ((text == null || text.isBlank()) && kind != null && media.enabled() && chat.enabled(tenantId) && mediaAllowed(burstKey)) {
+        if ((text == null || text.isBlank()) && kind != null && media.enabled() && chat.enabled(tenantId, "WHATSAPP") && chat.hasPoints(tenantId) && mediaAllowed(burstKey)) {
             JsonNode part = msg.path(kind == MediaReader.Kind.IMAGE ? "imageMessage" : "audioMessage");
             var ref = new MediaReader.Media(kind, () -> mediaBytes(tenantId, m, kind), part.path("mimetype").asText(null), part.path("caption").asText(null));
             if (burst.enabled()) {
@@ -359,7 +359,7 @@ public class EvolutionService {
     }
 
     private void respond(UUID tenantId, String sender, String text, String pushName) {
-        boolean aiOn = chat.enabled(tenantId);
+        boolean aiOn = chat.enabled(tenantId, "WHATSAPP");
         String answer;
         List<ProductShare.Card> cards = List.of();
         try {

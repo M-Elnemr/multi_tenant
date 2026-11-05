@@ -27,21 +27,36 @@ class BillingIntegrationTest extends IntegrationTestBase {
 
     @Test
     void newTenantStartsFreeTrialAndPlansAreListedForItsType() throws Exception {
-        Tenant t = onboard("STORE");
+        // a clinic gets a free first month, then 250 EGP a month (yearly = 10 months)
+        Tenant t = onboard("CLINIC");
         onHost(t.host(), t.access(), "GET", "/api/v1/billing/subscription", null)
-                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("TRIALING")).andExpect(jsonPath("$.planCode").value("STORE_FREE"));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("TRIALING")).andExpect(jsonPath("$.planCode").value("CLINIC_FREE"));
         onHost(t.host(), null, "GET", "/api/v1/billing/plans", null)
-                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(5)).andExpect(jsonPath("$[0].tenantType").value("STORE"))
-                .andExpect(jsonPath("$[0].priceMinor").value(0)).andExpect(jsonPath("$[1].priceMinor").value(50000)).andExpect(jsonPath("$[2].priceMinor").value(500000))   // Standard yearly = 10 months
-                .andExpect(jsonPath("$[3].priceMinor").value(75000)).andExpect(jsonPath("$[4].priceMinor").value(750000));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(3)).andExpect(jsonPath("$[0].tenantType").value("CLINIC"))
+                .andExpect(jsonPath("$[0].priceMinor").value(0)).andExpect(jsonPath("$[1].priceMinor").value(25000)).andExpect(jsonPath("$[2].priceMinor").value(250000));
+        UUID clinicId = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", t.slug()).query(UUID.class).single();
+        long days = jdbc.sql("SELECT round(extract(epoch FROM current_period_end - now()) / 86400) FROM billing.tenant_subscriptions WHERE tenant_id = :t").param("t", clinicId).query(Long.class).single();
+        assertThat(days).isEqualTo(30);
         // custom domains are part of the trial (Pro features)
         onHost(t.host(), t.access(), "POST", "/api/v1/tenant/domains", "{\"host\":\"www.trial-" + uniq() + ".com\"}").andExpect(status().isCreated());
+
+        // a shop has no subscription to pay: free forever, everything included, with 100 free points once
+        Tenant shop = onboard("STORE");
+        UUID shopId = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", shop.slug()).query(UUID.class).single();
+        onHost(shop.host(), shop.access(), "GET", "/api/v1/billing/subscription", null)
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ACTIVE")).andExpect(jsonPath("$.planCode").value("STORE_FREE"));
+        onHost(shop.host(), shop.access(), "GET", "/api/v1/billing/status", null).andExpect(jsonPath("$.state").value("OK")).andExpect(jsonPath("$.trial").value(false));
+        onHost(shop.host(), null, "GET", "/api/v1/billing/plans", null).andExpect(jsonPath("$.length()").value(1)).andExpect(jsonPath("$[0].priceMinor").value(0));
+        assertThat(jdbc.sql("SELECT balance_minor FROM billing.wallets WHERE tenant_id = :t").param("t", shopId).query(Long.class).single()).isEqualTo(10_000L);
+        billing.expiryCheck();
+        assertThat(jdbc.sql("SELECT status FROM billing.tenant_subscriptions WHERE tenant_id = :t").param("t", shopId).query(String.class).single()).isEqualTo("ACTIVE");
+        onHost(shop.host(), shop.access(), "POST", "/api/v1/tenant/domains", "{\"host\":\"www.shop-" + uniq() + ".com\"}").andExpect(status().isCreated());
     }
 
     @Test
     void payingTheSinglePlanViaWebhookIsIdempotent() throws Exception {
-        Tenant t = onboard("STORE");
-        String invoice = payInvoice(t, "STORE_PRO");
+        Tenant t = onboard("CLINIC");
+        String invoice = payInvoice(t, "CLINIC_PRO");
         String evt = "evt_" + uniq();
         String body = "{\"eventId\":\"%s\",\"type\":\"payment.succeeded\",\"invoiceId\":\"%s\"}".formatted(evt, invoice);
 
@@ -58,7 +73,7 @@ class BillingIntegrationTest extends IntegrationTestBase {
         }
         assertThat(jdbc.sql("SELECT count(*) FROM billing.webhook_events WHERE event_id = :e").param("e", evt).query(Long.class).single()).isEqualTo(1);
         onHost(t.host(), t.access(), "GET", "/api/v1/billing/subscription", null)
-                .andExpect(jsonPath("$.status").value("ACTIVE")).andExpect(jsonPath("$.planCode").value("STORE_PRO"));
+                .andExpect(jsonPath("$.status").value("ACTIVE")).andExpect(jsonPath("$.planCode").value("CLINIC_PRO"));
         onHost(t.host(), t.access(), "GET", "/api/v1/billing/invoices", null).andExpect(jsonPath("$[0].status").value("PAID"));
         assertThat(jdbc.sql("SELECT status FROM core.tenants WHERE id = (SELECT tenant_id FROM billing.subscription_invoices WHERE id = :i)")
                 .param("i", UUID.fromString(invoice)).query(String.class).single()).isEqualTo("ACTIVE");
@@ -86,15 +101,15 @@ class BillingIntegrationTest extends IntegrationTestBase {
 
     @Test
     void freeTrialEndDisablesTheBusinessAtOnceButNeverDeletesData() throws Exception {
-        Tenant t = onboard("STORE");
+        Tenant t = onboard("CLINIC");
         UUID tenantId = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", t.slug()).query(UUID.class).single();
         jdbc.sql("UPDATE billing.tenant_subscriptions SET current_period_end = now() - interval '1 hour' WHERE tenant_id = :t").param("t", tenantId).update();
         billing.expiryCheck();
         assertThat(jdbc.sql("SELECT status FROM core.tenants WHERE id = :t").param("t", tenantId).query(String.class).single()).isEqualTo("SUSPENDED");
         assertThat(jdbc.sql("SELECT status FROM billing.tenant_subscriptions WHERE tenant_id = :t").param("t", tenantId).query(String.class).single()).isEqualTo("EXPIRED");
         // disabled: the site is closed to everyone, the owner can still sign in and see / ask for a plan
-        onHost(t.host(), null, "GET", "/api/v1/shop/profile", null).andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("TENANT_DISABLED"));
-        onHost(t.host(), t.access(), "POST", "/api/v1/tenant/members", "{\"firstName\":\"x\",\"phone\":\"" + nextPhone() + "\",\"role\":\"STORE_MANAGER\"}")
+        onHost(t.host(), null, "GET", "/api/v1/clinic/public/profile", null).andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("TENANT_DISABLED"));
+        onHost(t.host(), t.access(), "POST", "/api/v1/tenant/members", "{\"firstName\":\"x\",\"phone\":\"" + nextPhone() + "\",\"role\":\"RECEPTIONIST\"}")
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("TENANT_DISABLED"));
         onHost(t.host(), t.access(), "GET", "/api/v1/billing/status", null).andExpect(status().isOk()).andExpect(jsonPath("$.state").value("DISABLED"));
         assertThat(jdbc.sql("SELECT count(*) FROM core.tenants WHERE id = :t").param("t", tenantId).query(Long.class).single()).isEqualTo(1);
@@ -102,16 +117,16 @@ class BillingIntegrationTest extends IntegrationTestBase {
 
     @Test
     void paidPeriodEndWaitsForRenewForFourteenDaysThenDisables() throws Exception {
-        Tenant t = onboard("STORE");
+        Tenant t = onboard("CLINIC");
         UUID tenantId = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", t.slug()).query(UUID.class).single();
-        billing.activatePlan(tenantId, billing.planId("STORE_STANDARD"), 30);
-        onHost(t.host(), t.access(), "GET", "/api/v1/billing/status", null).andExpect(jsonPath("$.state").value("OK")).andExpect(jsonPath("$.planCode").value("STORE_STANDARD"));
+        billing.activatePlan(tenantId, billing.planId("CLINIC_PRO"), 30);
+        onHost(t.host(), t.access(), "GET", "/api/v1/billing/status", null).andExpect(jsonPath("$.state").value("OK")).andExpect(jsonPath("$.planCode").value("CLINIC_PRO"));
 
         jdbc.sql("UPDATE billing.tenant_subscriptions SET current_period_end = now() - interval '1 hour' WHERE tenant_id = :t").param("t", tenantId).update();
         billing.expiryCheck();
         assertThat(jdbc.sql("SELECT status FROM core.tenants WHERE id = :t").param("t", tenantId).query(String.class).single()).isEqualTo("PAST_DUE");
         onHost(t.host(), t.access(), "GET", "/api/v1/billing/status", null).andExpect(jsonPath("$.state").value("WAIT_RENEW")).andExpect(jsonPath("$.daysLeft").value(14));
-        onHost(t.host(), null, "GET", "/api/v1/shop/profile", null).andExpect(status().isOk());   // still open while waiting for renew
+        onHost(t.host(), null, "GET", "/api/v1/clinic/public/profile", null).andExpect(status().isOk());   // still open while waiting for renew
 
         jdbc.sql("UPDATE billing.tenant_subscriptions SET current_period_end = now() - interval '13 days' WHERE tenant_id = :t").param("t", tenantId).update();
         billing.expiryCheck();
@@ -120,6 +135,6 @@ class BillingIntegrationTest extends IntegrationTestBase {
         jdbc.sql("UPDATE billing.tenant_subscriptions SET current_period_end = now() - interval '15 days' WHERE tenant_id = :t").param("t", tenantId).update();
         billing.expiryCheck();
         assertThat(jdbc.sql("SELECT status FROM core.tenants WHERE id = :t").param("t", tenantId).query(String.class).single()).isEqualTo("SUSPENDED");
-        onHost(t.host(), null, "GET", "/api/v1/shop/profile", null).andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("TENANT_DISABLED"));
+        onHost(t.host(), null, "GET", "/api/v1/clinic/public/profile", null).andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("TENANT_DISABLED"));
     }
 }

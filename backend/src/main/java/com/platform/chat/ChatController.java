@@ -44,7 +44,7 @@ public class ChatController {
 
     public record SendRequest(String conversationId, String message) {}
     public record TestRequest(String message) {}
-    public record SettingsRequest(Boolean enabled, String tone, Integer maxDiscountPct, String greeting) {}
+    public record SettingsRequest(Boolean enabled, String tone, Integer maxDiscountPct, String greeting, List<String> channels) {}
     public record LessonRequest(String instruction, String exampleQuestion, String exampleAnswer) {}
 
     private static UUID clientOrNull(Authentication a) {
@@ -68,7 +68,7 @@ public class ChatController {
     public Map<String, Object> config() {
         UUID t = StoreContext.tenantId();
         var s = chat.getSettings(t);
-        return Map.of("enabled", chat.available() && Boolean.TRUE.equals(s.get("enabled")), "greeting", s.get("greeting") == null ? "" : s.get("greeting"));
+        return Map.of("enabled", chat.enabled(t, "WEB") && chat.hasPoints(t), "greeting", s.get("greeting") == null ? "" : s.get("greeting"));
     }
 
     @GetMapping("/api/v1/shop/chat/history")
@@ -81,7 +81,7 @@ public class ChatController {
     public Map<String, Object> send(@RequestBody SendRequest r, Authentication a, HttpServletRequest req) {
         UUID t = StoreContext.openTenantId();
         if (r.conversationId() == null || !CONV_ID.matcher(r.conversationId()).matches()) throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid conversation");
-        if (!chat.enabled(t)) throw new BusinessException(HttpStatus.SERVICE_UNAVAILABLE, "CHAT_DISABLED", "Live chat is not available right now");
+        if (!chat.enabled(t, "WEB")) throw new BusinessException(HttpStatus.SERVICE_UNAVAILABLE, "CHAT_DISABLED", "Live chat is not available right now");
         // per chat: nobody types more than 30 messages in 10 minutes; per address a much higher ceiling, because many mobile customers share one carrier address
         throttle.check("chat-conv10|" + r.conversationId(), 30, Duration.ofMinutes(10));
         throttle.check("chat-ip|" + ClientInfo.ip(req), 300, Duration.ofMinutes(10));
@@ -98,7 +98,7 @@ public class ChatController {
     @PutMapping("/api/v1/store/ai/settings")
     @PreAuthorize("hasAuthority('ai.manage')")
     public Map<String, Object> saveSettings(@RequestBody SettingsRequest r, Authentication a) {
-        return chat.saveSettings(StoreContext.tenantId(), (UUID) a.getPrincipal(), r.enabled(), r.tone(), r.maxDiscountPct(), r.greeting());
+        return chat.saveSettings(StoreContext.tenantId(), (UUID) a.getPrincipal(), r.enabled(), r.tone(), r.maxDiscountPct(), r.greeting(), r.channels());
     }
 
     /** How ready the shop's data is for the assistant: a score and what to fill in. */

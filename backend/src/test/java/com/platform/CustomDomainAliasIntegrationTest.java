@@ -40,7 +40,7 @@ class CustomDomainAliasIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void anotherBusinessCannotTakeTheOtherSpellingAndAPlanWithoutDomainsStopsBoth() throws Exception {
+    void anotherBusinessCannotTakeTheOtherSpelling() throws Exception {
         Tenant a = onboard("STORE");
         Tenant b = onboard("CLINIC");
         String root = "c" + uniq() + ".com";
@@ -49,9 +49,6 @@ class CustomDomainAliasIntegrationTest extends IntegrationTestBase {
         verify(root);
         onHost("www." + root, null, "GET", "/api/v1/shop/profile", null).andExpect(status().isOk());
 
-        UUID id = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", a.slug()).query(UUID.class).single();
-        billing.activatePlan(id, billing.planId("STORE_STANDARD"), 30);   // Standard has no custom domain: both spellings stop
-        for (var h : new String[] {root, "www." + root}) onHost(h, null, "GET", "/api/v1/shop/profile", null).andExpect(status().isNotFound());
         assertThat(jdbc.sql("SELECT count(*) FROM core.tenant_domains WHERE host = :h").param("h", root).query(Long.class).single()).isEqualTo(1);
     }
 }
