@@ -122,7 +122,7 @@ html[lang="ar"] .lp-eyebrow { letter-spacing: 0; font-size: .9rem; }
 .lp-footer { color: inherit; }
 .lp-sticky-cta { position: fixed; inset-inline: 0; bottom: 0; z-index: 40; padding: .75rem 1rem calc(.75rem + var(--safe-b, 0px)); background: rgb(7 9 13 / .85); backdrop-filter: blur(16px); border-top: 1px solid rgb(255 255 255 / .08); }
 .lp-shop { padding-bottom: 0; }
-@media (max-width: 639px) { .lp-shop, .lp-clinic { padding-bottom: 4.5rem; } }
+@media (max-width: 639px) { .lp-shop, .lp-clinic, .lp-law { padding-bottom: 4.5rem; } }
 
 /* Pricing cards on the shop page use the shop accent */
 .lp-shop .lp-light .bg-brand-gradient { background: #0d1117; box-shadow: 0 10px 30px -12px rgb(13 17 23 / .6); }
@@ -156,6 +156,35 @@ html[lang="ar"] .lp-clinic .lp-h2 { font-family: var(--f-messiri), var(--font-pl
 .lp-clinic #pricing .text-brand { color: #0f5e57; }
 .lp-clinic #pricing .border-brand { border-color: #0f5e57; }
 .lp-clinic .lp-cta-ghost { color: #10302d; }
+
+/* ---------- lawyer: deep navy, brass, ivory; classical serif ---------- */
+.lp-law { background: #f8f5ee; color: #14213d; }
+.lp-classic { font-family: var(--f-cormorant), var(--f-amiri), var(--font-plex-ar), serif !important; letter-spacing: -0.01em; }
+html[lang="ar"] .lp-classic { font-family: var(--f-amiri), var(--font-plex-ar), serif !important; letter-spacing: 0; }
+.lp-law .lp-h1 { font-weight: 600; }
+.lp-law .lp-h2 { font-family: var(--f-cormorant), var(--f-amiri), var(--font-plex-ar), serif; font-weight: 600; letter-spacing: -0.01em; }
+html[lang="ar"] .lp-law .lp-h2, html[lang="ar"] .lp-law .lp-h1 { font-family: var(--f-amiri), var(--font-plex-ar), serif; font-weight: 700; letter-spacing: 0; line-height: 1.45; }
+.lp-law .lp-eyebrow { color: #8a6a3a; }
+.lp-law-navy { background: #14213d; color: #f5efe0; }
+.lp-law-navy .lp-eyebrow { color: #d9b97f; }
+.lp-law-navy .lp-lead { opacity: .75; }
+.lp-law-lines { position: absolute; inset: 0; z-index: -1; pointer-events: none; opacity: .5;
+  background: repeating-linear-gradient(90deg, rgb(217 185 127 / .06) 0 1px, transparent 1px 120px), radial-gradient(50% 60% at 80% 30%, rgb(176 141 87 / .2), transparent 70%); }
+.lp-law .lp-cta { color: #14213d; background: linear-gradient(180deg, #e2c58f, #b08d57); border-radius: 4px; box-shadow: 0 14px 34px -14px rgb(176 141 87 / .8); }
+.lp-law .lp-cta:hover { transform: translateY(-2px); filter: brightness(1.05); }
+.lp-law .lp-cta-ghost { border-radius: 4px; }
+.lp-law #pricing .lp-cta, .lp-law #pricing .bg-brand-gradient { background: #14213d; color: #f5efe0; box-shadow: 0 10px 30px -12px rgb(20 33 61 / .6); }
+.lp-law #pricing .text-brand { color: #8a6a3a; }
+.lp-law #pricing .border-brand { border-color: #b08d57; }
+.lp-nav-law { color: #f5efe0; }
+.lp-nav-law[data-solid="true"] { background: rgb(20 33 61 / .9); backdrop-filter: blur(16px); border-color: rgb(217 185 127 / .15); }
+.lp-nav-law .lp-nav-pill { background: rgb(217 185 127 / .14); }
+.lp-folder { position: relative; border-radius: 4px 14px 14px 14px; background: #fbf8f1; padding: 1.5rem; border: 1px solid rgb(176 141 87 / .3); box-shadow: 0 50px 90px -40px rgb(0 0 0 / .6); }
+.lp-folder-tab { position: absolute; top: -1.85rem; inset-inline-start: -1px; border-radius: 10px 10px 0 0; background: #fbf8f1; border: 1px solid rgb(176 141 87 / .3); border-bottom: 0; padding: .35rem 1rem; font-size: .75rem; font-weight: 700; color: #8a6a3a; }
+.lp-ivory-card { border-radius: 14px; background: #fbf8f1; border: 1px solid rgb(20 33 61 / .08); box-shadow: 0 40px 80px -45px rgb(20 33 61 / .45); }
+.lp-law-cell { padding: 2.2rem 1.8rem; border-bottom: 1px solid rgb(20 33 61 / .12); border-inline-end: 1px solid rgb(20 33 61 / .12); transition: background-color .4s ease; }
+.lp-law-cell:hover { background: #fbf8f1; }
+.lp-sticky-law { background: rgb(20 33 61 / .94); border-top-color: rgb(217 185 127 / .2); }
 
 @media (prefers-reduced-motion: reduce) {
   .lp *, .lp *::before, .lp *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }

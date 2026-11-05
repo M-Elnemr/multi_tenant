@@ -220,7 +220,7 @@ export async function ShopLanding() {
         <LandingFooter brand={t("brand.name")} tag={c.footer.tag} copyright={t("brand.name")}
           cols={[
             { title: c.footer.product, links: [{ href: "#demo", label: c.nav.demo }, { href: "#features", label: c.nav.features }, { href: "/pricing", label: c.nav.pricing }, { href: register, label: c.nav.cta }] },
-            { title: c.footer.company, links: [{ href: "/tabib", label: c.footer.clinics }, { href: "/login", label: c.nav.login }, { href: "/privacy", label: c.footer.privacy }, { href: "/delete-account", label: c.footer.deleteAccount }] },
+            { title: c.footer.company, links: [{ href: "/tabib", label: c.footer.clinics }, { href: "/mohami", label: c.footer.lawyers }, { href: "/login", label: c.nav.login }, { href: "/privacy", label: c.footer.privacy }, { href: "/delete-account", label: c.footer.deleteAccount }] },
           ]} />
       </div>
       {/* phones: one thumb-reach call to action */}

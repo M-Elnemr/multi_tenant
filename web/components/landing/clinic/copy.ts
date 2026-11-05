@@ -116,7 +116,7 @@ const en = {
     ],
   },
   final: { title: "Give your clinic the calm it deserves", sub: "Set up in minutes. Free for 14 days.", cta: "Start free", cta2: "See pricing" },
-  footer: { tag: "Clinic management and clinic websites for doctors in Egypt and the Arab world.", product: "For clinics", company: "Platform", privacy: "Privacy", deleteAccount: "Delete account", shops: "Elmanassa for shops" },
+  footer: { tag: "Clinic management and clinic websites for doctors in Egypt and the Arab world.", product: "For clinics", company: "Platform", privacy: "Privacy", deleteAccount: "Delete account", shops: "Elmanassa for shops", lawyers: "Elmanassa for lawyers" },
 };
 
 const ar: ClinicCopy = {
@@ -227,7 +227,7 @@ const ar: ClinicCopy = {
     ],
   },
   final: { title: "امنح عيادتك الهدوء اللي تستحقه", sub: "تجهيز في دقائق. مجانًا لمدة ١٤ يوم.", cta: "ابدأ مجانًا", cta2: "شاهد الأسعار" },
-  footer: { tag: "إدارة العيادات ومواقع العيادات للأطباء في مصر والعالم العربي.", product: "للعيادات", company: "المنصة", privacy: "الخصوصية", deleteAccount: "حذف الحساب", shops: "المنصة للمتاجر" },
+  footer: { tag: "إدارة العيادات ومواقع العيادات للأطباء في مصر والعالم العربي.", product: "للعيادات", company: "المنصة", privacy: "الخصوصية", deleteAccount: "حذف الحساب", shops: "المنصة للمتاجر", lawyers: "المنصة للمحامين" },
 };
 
 export const clinicCopy = (locale: string): ClinicCopy => (locale === "ar" ? ar : en);

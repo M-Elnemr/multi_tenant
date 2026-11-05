@@ -155,7 +155,7 @@ const en = {
     ],
   },
   final: { title: "Hire your AI seller today", sub: "Set up in minutes. Free for 14 days.", cta: "Start free", cta2: "See pricing" },
-  footer: { tag: "AI-powered shops for Egypt and the Arab world.", product: "Product", company: "Platform", privacy: "Privacy", deleteAccount: "Delete account", clinics: "Elmanassa for clinics" },
+  footer: { tag: "AI-powered shops for Egypt and the Arab world.", product: "Product", company: "Platform", privacy: "Privacy", deleteAccount: "Delete account", clinics: "Elmanassa for clinics", lawyers: "Elmanassa for lawyers" },
 };
 
 const ar: ShopCopy = {
@@ -305,7 +305,7 @@ const ar: ShopCopy = {
     ],
   },
   final: { title: "عيّن بائعك الذكي النهاردة", sub: "تجهيز في دقائق. مجانًا لمدة ١٤ يوم.", cta: "ابدأ مجانًا", cta2: "شاهد الأسعار" },
-  footer: { tag: "متاجر بالذكاء الاصطناعي لمصر والعالم العربي.", product: "المنتج", company: "المنصة", privacy: "الخصوصية", deleteAccount: "حذف الحساب", clinics: "المنصة للعيادات" },
+  footer: { tag: "متاجر بالذكاء الاصطناعي لمصر والعالم العربي.", product: "المنتج", company: "المنصة", privacy: "الخصوصية", deleteAccount: "حذف الحساب", clinics: "المنصة للعيادات", lawyers: "المنصة للمحامين" },
 };
 
 export const shopCopy = (locale: string): ShopCopy => (locale === "ar" ? ar : en);

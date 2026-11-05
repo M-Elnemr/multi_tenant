@@ -12,10 +12,10 @@ export type NavLink = { href: string; label: string };
 
 /**
  * The landing pages' header: transparent over the hero, a glass bar once the page scrolls. `tone` picks the vertical's look
- * ("shop" is dark/AI, "clinic" is calm paper). Section links highlight while that section is on screen.
+ * ("shop" is dark/AI, "clinic" is calm paper, "lawyer" is navy and brass). Section links highlight while that section is on screen.
  */
 export function LandingNav({ tone, brand, links, other, login, cta, ctaHref, locale }: {
-  tone: "shop" | "clinic"; brand: string; links: NavLink[]; other: NavLink; login: string; cta: string; ctaHref: string; locale: string;
+  tone: "shop" | "clinic" | "lawyer"; brand: string; links: NavLink[]; other: NavLink; login: string; cta: string; ctaHref: string; locale: string;
 }) {
   const { scrollY } = useScroll();
   const [solid, setSolid] = useState(false);
@@ -31,8 +31,8 @@ export function LandingNav({ tone, brand, links, other, login, cta, ctaHref, loc
     : <Link href="/login" className="lp-nav-link">{login}</Link>;
   return (
     <>
-      <ScrollBar className={dark ? "bg-[linear-gradient(90deg,#7c5cff,#22d3ee,#a3e635)]" : "bg-[#0f5e57]"} />
-      <header data-solid={solid || open} className={`lp-nav fixed inset-x-0 top-0 z-50 ${dark ? "lp-nav-dark" : "lp-nav-light"}`}>
+      <ScrollBar className={dark ? "bg-[linear-gradient(90deg,#7c5cff,#22d3ee,#a3e635)]" : tone === "lawyer" ? "bg-[#b08d57]" : "bg-[#0f5e57]"} />
+      <header data-solid={solid || open} className={`lp-nav fixed inset-x-0 top-0 z-50 ${dark ? "lp-nav-dark" : tone === "lawyer" ? "lp-nav-law" : "lp-nav-light"}`}>
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
           <Link href="/" className="flex items-center gap-2.5" aria-label={brand}>
             <LogoMark className="h-9 w-9" />

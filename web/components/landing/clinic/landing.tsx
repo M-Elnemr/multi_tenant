@@ -202,7 +202,7 @@ export async function ClinicLanding() {
         <LandingFooter brand={t("brand.name")} tag={c.footer.tag} copyright={t("brand.name")}
           cols={[
             { title: c.footer.product, links: [{ href: "#features", label: c.nav.features }, { href: "#website", label: c.nav.website }, { href: "#pricing", label: c.nav.pricing }, { href: register, label: c.nav.cta }] },
-            { title: c.footer.company, links: [{ href: "/", label: c.footer.shops }, { href: "/login", label: c.nav.login }, { href: "/privacy", label: c.footer.privacy }, { href: "/delete-account", label: c.footer.deleteAccount }] },
+            { title: c.footer.company, links: [{ href: "/", label: c.footer.shops }, { href: "/mohami", label: c.footer.lawyers }, { href: "/login", label: c.nav.login }, { href: "/privacy", label: c.footer.privacy }, { href: "/delete-account", label: c.footer.deleteAccount }] },
           ]} />
       </div>
       <div className="lp-sticky-cta lp-sticky-clinic sm:hidden"><Link href={register} className="lp-cta w-full justify-center py-3.5">{c.hero.cta}<Icon name="arrow" className="h-4 w-4 flip-rtl" /></Link></div>

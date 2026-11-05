@@ -143,7 +143,7 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
 
   const topBar = (
     <div className="flex items-center justify-between gap-3 px-5 py-4 sm:px-8">
-      <Link href={type === "CLINIC" ? "/tabib" : "/"} className="flex items-center gap-2"><LogoMark className="h-8 w-8" /><span className="font-display font-bold">{t("brand.name")}</span></Link>
+      <Link href={type === "CLINIC" ? "/tabib" : type === "LAWYER" ? "/mohami" : "/"} className="flex items-center gap-2"><LogoMark className="h-8 w-8" /><span className="font-display font-bold">{t("brand.name")}</span></Link>
       <div className="flex items-center gap-1 text-sm">
         <a href={`/api/lang?l=${locale === "ar" ? "en" : "ar"}`} className="rounded-full px-3 py-1.5 font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900">{locale === "ar" ? "EN" : "عربي"}</a>
         {!done && <Link href="/login" className="rounded-full px-3 py-1.5 font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900">{t("nav.login")}</Link>}
