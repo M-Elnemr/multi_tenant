@@ -362,7 +362,7 @@ class FindDoctorBanner extends StatelessWidget {
               const SizedBox(height: 2),
               Text(s.ar ? 'بالتخصص والمدينة وسعر الكشف' : 'By specialty, city and fee', style: TextStyle(color: Colors.white.withValues(alpha: .8))),
             ])),
-            Icon(Directionality.of(context) == TextDirection.rtl ? Icons.arrow_back_rounded : Icons.arrow_forward_rounded, color: Colors.white),
+            const Icon(Icons.arrow_forward_rounded, color: Colors.white),
           ]),
         ),
       ),

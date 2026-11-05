@@ -92,7 +92,8 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       body: ListView(padding: EdgeInsets.zero, children: [
         GradientHeader(
-          height: 300,
+          // the status bar's height is added: a fixed 300 overflowed on phones with a tall status bar / cut-out
+          height: 300 + MediaQuery.paddingOf(context).top,
           child: SafeArea(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),

@@ -130,6 +130,7 @@ class _DoctorDirectoryState extends State<DoctorDirectory> {
             SliverToBoxAdapter(
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 220),
+                layoutBuilder: (cur, prev) => Stack(alignment: AlignmentDirectional.centerStart, children: [...prev, if (cur != null) cur]),
                 child: Padding(
                   key: ValueKey('$_total-$_loading'),
                   padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
