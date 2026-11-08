@@ -31,7 +31,7 @@ import org.springframework.stereotype.Service;
 public class MetaOAuthService {
     private static final Logger log = LoggerFactory.getLogger(MetaOAuthService.class);
     private static final ObjectMapper JSON = new ObjectMapper();
-    private static final String SCOPES = "pages_show_list,pages_messaging,pages_manage_metadata,pages_read_engagement,instagram_basic,instagram_manage_messages,business_management,whatsapp_business_management,whatsapp_business_messaging,pages_manage_posts,instagram_content_publish,ads_management,ads_read";
+    private static final String SCOPES = "pages_show_list,pages_messaging,pages_manage_metadata,pages_read_engagement,pages_read_user_content,pages_manage_engagement,instagram_manage_comments,instagram_basic,instagram_manage_messages,business_management,whatsapp_business_management,whatsapp_business_messaging,pages_manage_posts,instagram_content_publish,ads_management,ads_read";
 
     public record Item(String kind, String id, String name, String token, String linkedId, String detail) {}
 

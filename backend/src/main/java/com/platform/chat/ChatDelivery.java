@@ -24,22 +24,27 @@ public class ChatDelivery {
         this.share = share;
     }
 
-    public Result send(UUID tenantId, String channel, String externalId, String text, List<Map<String, Object>> products) {
+    public Result send(UUID tenantId, String channel, String externalId, String text, List<Map<String, Object>> products) { return send(tenantId, channel, externalId, text, products, null); }
+
+    /** Same, with a picture the shop attached (sent with the text as its caption; the website chat shows it from the saved message). */
+    public Result send(UUID tenantId, String channel, String externalId, String text, List<Map<String, Object>> products, String imageUrl) {
         if (channel == null || externalId == null) return new Result("SAVED", null);
+        boolean image = imageUrl != null && !imageUrl.isBlank();
         if ("WHATSAPP".equals(channel)) {
             boolean ok;
             if (evolution.connected(tenantId)) {
                 ok = true;
-                for (String part : MetaChannelService.chunks(text, 3000)) ok &= evolution.sendFree(tenantId, externalId, part);
+                if (image) ok = evolution.deliver(tenantId, externalId, text, imageUrl) != EvolutionService.Delivery.FAILED;
+                else for (String part : MetaChannelService.chunks(text, 3000)) ok &= evolution.sendFree(tenantId, externalId, part);
                 if (ok) for (var card : share.pick(tenantId, text, products == null ? List.of() : products)) {   // the pictures of the products the message mentions, like in any reply
                     if (evolution.deliver(tenantId, externalId, card.caption(), card.imageUrl()) == EvolutionService.Delivery.FAILED && card.imageUrl() != null) evolution.deliver(tenantId, externalId, card.caption(), null);
                 }
-            } else ok = meta.deliver(tenantId, "WHATSAPP", externalId, text);
+            } else ok = meta.deliver(tenantId, "WHATSAPP", externalId, text, image ? imageUrl : null);
             return ok ? new Result("SENT", null)
                       : new Result("FAILED", "The message could not be sent on WhatsApp (the number is not linked, or the 24-hour window with this customer is closed). Copy the message and send it from your phone.");
         }
         if ("FACEBOOK".equals(channel) || "INSTAGRAM".equals(channel)) {
-            boolean ok = meta.deliver(tenantId, channel, externalId, text);
+            boolean ok = meta.deliver(tenantId, channel, externalId, text, image ? imageUrl : null);
             return ok ? new Result("SENT", null) : new Result("FAILED", "The message could not be sent: the 24-hour window with this customer is closed or the page is not connected. Copy the message and reply from the page inbox.");
         }
         return new Result("SAVED", null);   // the website chat: the message is in the chat, and an open chat window picks it up

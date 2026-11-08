@@ -25,8 +25,9 @@ public class FakeMetaGraph implements MetaGraph {
     /** What Meta says about the message templates, and whether sending a template fails. */
     public static volatile String TEMPLATE_STATUS = "APPROVED";
     public static volatile boolean FAIL_TEMPLATE_SEND = false;
+    public static volatile boolean FAIL_TEXT_SEND = false;
 
-    public static synchronized void reset() { SENT.clear(); TEMPLATE_STATUS = "APPROVED"; FAIL_TEMPLATE_SEND = false; }
+    public static synchronized void reset() { SENT.clear(); TEMPLATE_STATUS = "APPROVED"; FAIL_TEMPLATE_SEND = false; FAIL_TEXT_SEND = false; }
 
     @Override
     public synchronized Map<String, Object> get(String path, String token) {
@@ -65,6 +66,7 @@ public class FakeMetaGraph implements MetaGraph {
         }
         if (path.endsWith("/photos")) { SENT.add(new Sent(path, token, body)); return Map.of("id", "photo-1", "post_id", "page_post-1"); }
         if ("template".equals(body.get("type")) && FAIL_TEMPLATE_SEND) throw new MetaException("Template send failed");
+        if (FAIL_TEXT_SEND && ("text".equals(body.get("type")) || body.get("message") instanceof Map<?, ?> mm && mm.containsKey("text"))) throw new MetaException("(#10) Message failed to send");
         SENT.add(new Sent(path, token, body));
         return Map.of("ok", true, "messages", java.util.List.of(Map.of("id", "wamid.TEST")));
     }

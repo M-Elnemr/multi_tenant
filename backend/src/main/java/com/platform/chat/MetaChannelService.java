@@ -40,6 +40,8 @@ public class MetaChannelService {
     private final MetaGraph graph;
     private final TokenCrypto crypto;
     private final ChatService chat;
+    @org.springframework.beans.factory.annotation.Autowired @org.springframework.context.annotation.Lazy
+    private CommentService comments;
     private final LoginThrottle throttle;
     private final AuditService audit;
     private final WhatsAppConfirmService waConfirm;
@@ -104,7 +106,7 @@ public class MetaChannelService {
             if ("WHATSAPP".equals(p) && info.get("display_phone_number") != null) { phone = String.valueOf(info.get("display_phone_number")); name += " " + phone; }
             String subscribeTo = "FACEBOOK".equals(p) ? ext : (pageId == null || pageId.isBlank() ? null : pageId.trim());   // Instagram: its linked page; WhatsApp: its business account
             if (subscribeTo != null) {
-                try { graph.post(subscribeTo + "/subscribed_apps", token, "WHATSAPP".equals(p) ? Map.of() : Map.of("subscribed_fields", "messages")); } catch (MetaGraph.MetaException e) { log.warn("Could not subscribe {} to webhooks: {}", subscribeTo, e.getMessage()); }
+                try { graph.post(subscribeTo + "/subscribed_apps", token, "WHATSAPP".equals(p) ? Map.of() : Map.of("subscribed_fields", "messages,feed")); } catch (MetaGraph.MetaException e) { log.warn("Could not subscribe {} to webhooks: {}", subscribeTo, e.getMessage()); }
             }
         } catch (MetaGraph.MetaException e) {
             String m = e.getMessage() == null ? "" : e.getMessage();
@@ -177,6 +179,9 @@ public class MetaChannelService {
             } else if ("page".equals(object) || "instagram".equals(object)) {
                 String platform = "page".equals(object) ? "FACEBOOK" : "INSTAGRAM";
                 String accountId = entry.path("id").asText("");
+                for (JsonNode change : entry.path("changes")) {   // comments on the shop's posts and ads
+                    try { comments.onChange(platform, accountId, change); } catch (RuntimeException e) { log.warn("Comment webhook failed: {}", e.getMessage()); }
+                }
                 for (JsonNode ev : entry.path("messaging")) {
                     JsonNode msg = ev.path("message");
                     String sender = ev.path("sender").path("id").asText("");
@@ -411,6 +416,8 @@ public class MetaChannelService {
     /** Sends due follow-ups and back-in-stock alerts, only while the channel's 24 h window with that customer is open; anything else is skipped, never sent as a paid message. */
     @Scheduled(fixedDelay = 300_000, initialDelay = 120_000)
     public void sendDue() {
+        // a chat a person handles (taken over or paused) gets no automatic follow-up from the assistant
+        jdbc.sql("UPDATE chat.follow_ups f SET status = 'SKIPPED' FROM chat.conversations c WHERE c.id = f.conversation_id AND f.status = 'PENDING' AND f.due_at <= now() AND (c.takeover OR coalesce(c.ai_paused_until > now(), FALSE) OR c.status = 'CLOSED')").update();
         for (var f : jdbc.sql("SELECT f.id, f.tenant_id, f.body, c.channel, c.external_id FROM chat.follow_ups f JOIN chat.conversations c ON c.id = f.conversation_id WHERE f.status = 'PENDING' AND f.due_at <= now() AND EXISTS (SELECT 1 FROM core.tenants tn WHERE tn.id = f.tenant_id AND tn.status NOT IN ('SUSPENDED','CANCELLED','ARCHIVED')) LIMIT 100").query().listOfRows()) {
             boolean ok = deliver((UUID) f.get("tenant_id"), (String) f.get("channel"), (String) f.get("external_id"), (String) f.get("body"));
             jdbc.sql("UPDATE chat.follow_ups SET status = :s WHERE id = :i").param("s", ok ? "SENT" : "SKIPPED").param("i", f.get("id")).update();
@@ -426,7 +433,10 @@ public class MetaChannelService {
         }
     }
 
-    boolean deliver(UUID tenantId, String platform, String to, String text) {
+    boolean deliver(UUID tenantId, String platform, String to, String text) { return deliver(tenantId, platform, to, text, null); }
+
+    /** Same, with a picture (the text goes as its caption; when the picture cannot be sent, the text alone). */
+    boolean deliver(UUID tenantId, String platform, String to, String text, String imageUrl) {
         try {
             var ch = jdbc.sql("SELECT external_id, token_enc FROM chat.channels WHERE tenant_id = :t AND platform = :p AND status = 'ACTIVE' ORDER BY created_at LIMIT 1").param("t", tenantId).param("p", platform).query().listOfRows().stream().findFirst();
             if (ch.isEmpty()) return false;
@@ -434,7 +444,9 @@ public class MetaChannelService {
                     ? jdbc.sql("SELECT EXISTS (SELECT 1 FROM chat.wa_windows WHERE tenant_id = :t AND number = :n AND last_inbound_at > now() - interval '23 hours')").param("t", tenantId).param("n", to.replaceAll("\\D", "")).query(Boolean.class).single()
                     : jdbc.sql("SELECT EXISTS (SELECT 1 FROM chat.conversations c JOIN chat.messages m ON m.conversation_id = c.id AND m.role = 'user' WHERE c.tenant_id = :t AND c.channel = :p AND c.external_id = :e AND m.created_at > now() - interval '23 hours')").param("t", tenantId).param("p", platform).param("e", to).query(Boolean.class).single();
             if (!open) return false;
-            send(platform, (String) ch.get().get("external_id"), to, crypto.decrypt((String) ch.get().get("token_enc")), text);
+            String account = (String) ch.get().get("external_id"), token = crypto.decrypt((String) ch.get().get("token_enc"));
+            if (imageUrl != null && !imageUrl.isBlank()) sendCard(platform, account, to, token, new ProductShare.Card(imageUrl, text == null ? "" : text, null));
+            else send(platform, account, to, token, text);
             return true;
         } catch (RuntimeException e) {
             log.warn("Could not send the promised {} message: {}", platform, e.getMessage());

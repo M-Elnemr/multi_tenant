@@ -147,6 +147,7 @@ public class ChatService {
 
     private final KnowledgeIndex knowledge;
     private final com.platform.billing.WalletService wallet;
+    private final ChatTimeline timeline;
 
     /** What one AI conversation costs, in piasters (100 = 1 point = 1 EGP). */
     @org.springframework.beans.factory.annotation.Value("${app.ai.conversation-price-minor:100}")
@@ -158,11 +159,12 @@ public class ChatService {
 
     public ChatService(JdbcClient jdbc, AiProvider ai, CatalogService catalog, StoreSearchService search, CheckoutService checkout, StoreSettingsService settings,
                        StoreFulfillmentService fulfilment, ShopperService shopper, PaymentPolicy policy, AuditService audit, SellerTools seller, com.platform.commerce.GenderService genders, com.platform.commerce.OrderService orders, @org.springframework.context.annotation.Lazy AccountNotice accountNotice, AiUsageService usageLog, AiEvents events, ChannelAi channelAi,
-                       KnowledgeIndex knowledge, org.springframework.context.ApplicationEventPublisher publisher, @org.springframework.context.annotation.Lazy com.platform.billing.WalletService wallet,
+                       KnowledgeIndex knowledge, org.springframework.context.ApplicationEventPublisher publisher, @org.springframework.context.annotation.Lazy com.platform.billing.WalletService wallet, ChatTimeline timeline,
                        @org.springframework.beans.factory.annotation.Value("${app.ai.name-probe:false}") boolean nameProbe,
                        @org.springframework.beans.factory.annotation.Value("${app.ai.review.enabled:true}") boolean review,
                        @org.springframework.beans.factory.annotation.Value("${app.ai.review.model:}") String reviewModel) {
         this.wallet = wallet;
+        this.timeline = timeline;
         this.review = review;
         this.reviewModel = reviewModel == null || reviewModel.isBlank() ? null : reviewModel.trim();
         this.usageLog = usageLog;
@@ -193,12 +195,13 @@ public class ChatService {
     public static final List<String> AI_CHANNELS = List.of("WHATSAPP", "FACEBOOK", "INSTAGRAM", "WEB");
 
     public Map<String, Object> getSettings(UUID tenantId) {
-        var r = jdbc.sql("SELECT enabled, tone, max_discount_pct, greeting, array_to_string(channels, ',') AS channels FROM chat.settings WHERE tenant_id = :t").param("t", tenantId).query().listOfRows().stream().findFirst();
+        var r = jdbc.sql("SELECT enabled, tone, max_discount_pct, greeting, agent_name, array_to_string(channels, ',') AS channels FROM chat.settings WHERE tenant_id = :t").param("t", tenantId).query().listOfRows().stream().findFirst();
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("enabled", r.map(x -> x.get("enabled")).orElse(true));
         m.put("tone", r.map(x -> x.get("tone")).orElse("FRIENDLY"));
         m.put("maxDiscountPct", r.map(x -> x.get("max_discount_pct")).orElse(0));
         m.put("greeting", r.map(x -> x.get("greeting")).orElse(null));
+        m.put("agentName", r.map(x -> x.get("agent_name")).orElse(null));
         m.put("channels", r.map(x -> x.get("channels") == null || ((String) x.get("channels")).isBlank() ? List.<String>of() : List.of(((String) x.get("channels")).split(","))).orElse(AI_CHANNELS));
         m.put("pointsMinor", wallet.balance(tenantId));
         m.put("conversationPriceMinor", aiConversationPrice);
@@ -211,6 +214,14 @@ public class ChatService {
     }
 
     public Map<String, Object> saveSettings(UUID tenantId, UUID actor, Boolean enabled, String tone, Integer maxDiscountPct, String greeting, List<String> channels) {
+        return saveSettings(tenantId, actor, enabled, tone, maxDiscountPct, greeting, channels, null);
+    }
+
+    /** {@code agentName}: the name the AI introduces itself with («معاك محمد من ليلان ستور»); "" removes it, null keeps it. */
+    public Map<String, Object> saveSettings(UUID tenantId, UUID actor, Boolean enabled, String tone, Integer maxDiscountPct, String greeting, List<String> channels, String agentName) {
+        if (agentName != null && agentName.trim().length() > 30) throw BusinessException.badRequest("VALIDATION_ERROR", "The assistant's name is too long (up to 30 characters)");
+        if (agentName != null) jdbc.sql("INSERT INTO chat.settings (tenant_id, agent_name) VALUES (:t, :a) ON CONFLICT (tenant_id) DO UPDATE SET agent_name = :a, updated_at = now()")
+                .param("t", tenantId).param("a", agentName.isBlank() ? null : agentName.trim()).update();
         if (tone != null && !List.of("FRIENDLY", "FORMAL", "SHORT").contains(tone)) throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown tone");
         if (maxDiscountPct != null && (maxDiscountPct < 0 || maxDiscountPct > 50)) throw BusinessException.badRequest("VALIDATION_ERROR", "The maximum discount must be between 0 and 50");
         if (greeting != null && greeting.length() > 300) throw BusinessException.badRequest("VALIDATION_ERROR", "The greeting is too long");
@@ -378,7 +389,7 @@ public class ChatService {
 
     public List<Map<String, Object>> history(UUID tenantId, String channel, String externalId) {
         List<Map<String, Object>> rows = new ArrayList<>(com.platform.shared.Rows.camel(jdbc.sql("""
-                SELECT m.role, m.content FROM chat.messages m JOIN chat.conversations c ON c.id = m.conversation_id
+                SELECT m.role, m.content, m.media_url FROM chat.messages m JOIN chat.conversations c ON c.id = m.conversation_id
                 WHERE c.tenant_id = :t AND c.channel = :c AND c.external_id = :e ORDER BY m.id DESC LIMIT 60
                 """).param("t", tenantId).param("c", channel).param("e", externalId).query().listOfRows()));
         java.util.Collections.reverse(rows);
@@ -398,13 +409,18 @@ public class ChatService {
         if (text.isEmpty()) throw BusinessException.badRequest("VALIDATION_ERROR", "Write a message");
         if (text.length() > 1000) throw BusinessException.badRequest("VALIDATION_ERROR", "The message is too long");
         UUID conv = conversation(tenantId, channel, externalId, clientId);
-        String shown = firstName(displayName);
+        String shown = DummyName.check(displayName) ? null : firstName(displayName);   // a handle like «x7k_29» is not a name: the AI asks for the real one
         if (shown != null) jdbc.sql("UPDATE chat.conversations SET display_name = :n WHERE id = :c AND display_name IS DISTINCT FROM :n").param("n", shown).param("c", conv).update();
         String named = statedName(text);
         if (named != null) jdbc.sql("UPDATE chat.conversations SET display_name = :n WHERE id = :c").param("n", named).param("c", conv).update();
         String said = statedGender(text);
         if (said != null) jdbc.sql("UPDATE chat.conversations SET gender = :g WHERE id = :c").param("g", said).param("c", conv).update();
         long userMsgId = jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'user', :x) RETURNING id").param("c", conv).param("x", text).query(Long.class).single();
+        if (!"TEST".equals(channel)) {
+            String phone = "WHATSAPP".equals(channel) ? null : statedPhone(text);   // a mobile number the customer gave (website, Messenger, Instagram): shown in the inbox, links the customer
+            if (phone != null) jdbc.sql("UPDATE chat.conversations SET contact_phone = :p WHERE id = :c").param("p", phone).param("c", conv).update();
+            timeline.judgeMood(tenantId, conv);
+        }
         // the shop team took this chat over: the assistant stays quiet until they hand it back (or two hours pass without them writing)
         if (!"TEST".equals(channel) && paused(conv)) return pausedReply(conv, text);
         // the AI answers only while the shop has points: 1 point per conversation (each block of 20 messages)
@@ -453,7 +469,7 @@ public class ChatService {
             return new Reply(conv, answer, null, ctx.products());
         }
         boolean first = turns.stream().noneMatch(t -> "model".equals(t.role()));
-        var instant = FastAnswers.answer(text, first, (String) getSettings(tenantId).get("greeting"));
+        var instant = FastAnswers.answer(text, first, introGreeting(tenantId, conv, channel, externalId, clientId, text));
         if (instant.isPresent()) {
             answer = instant.get();
             if (!"TEST".equals(channel)) usageLog.record(tenantId, "CHAT", channel, conv, true, text, List.of(), null, false);
@@ -564,6 +580,10 @@ public class ChatService {
         ctx.products().removeIf(p -> !seenCards.add(p.get("slug")));   // one card per product
         String replyWords = FastAnswers.norm(answer);
         if (!messaging(channel)) ctx.products().removeIf(p -> !Boolean.TRUE.equals(p.get("send")) && !replyWords.contains(FastAnswers.norm(String.valueOf(p.get("name")))));   // the website shows cards only for what the reply is about
+        if (!"TEST".equals(channel) && !stillAiTurn(conv, userMsgId)) {   // a person took over while the model was thinking: their word wins, the AI's answer is dropped
+            log.info("AI answer dropped: the team took conversation {} over during the reply", conv);
+            return new Reply(conv, "", orderBox[0], List.of());
+        }
         long saved = jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x) RETURNING id").param("c", conv).param("x", answer).query(Long.class).single();
         if (ctx.summary()[0] != null) markSummary(conv, saved);
         jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();
@@ -573,7 +593,35 @@ public class ChatService {
     // ---- hand-over to the shop team ----------------------------------------------------------------------------------------
 
     private boolean paused(UUID conv) {
-        return jdbc.sql("SELECT coalesce(ai_paused_until > now(), FALSE) FROM chat.conversations WHERE id = :c").param("c", conv).query(Boolean.class).optional().orElse(false);
+        return jdbc.sql("SELECT takeover OR coalesce(ai_paused_until > now(), FALSE) FROM chat.conversations WHERE id = :c").param("c", conv).query(Boolean.class).optional().orElse(false);
+    }
+
+    /**
+     * Still the AI's turn? Checked right before an AI answer is saved and sent: a person may have taken the chat over, paused the AI or written to the customer while the model
+     * was thinking (up to tens of seconds). Then the AI's answer is dropped, so it never talks over the team.
+     */
+    boolean stillAiTurn(UUID conv, long sinceMessageId) {
+        return jdbc.sql("""
+                SELECT NOT (c.takeover OR coalesce(c.ai_paused_until > now(), FALSE))
+                   AND NOT EXISTS (SELECT 1 FROM chat.messages m WHERE m.conversation_id = c.id AND m.by_owner AND m.id > :m)
+                FROM chat.conversations c WHERE c.id = :c
+                """).param("c", conv).param("m", sinceMessageId).query(Boolean.class).optional().orElse(false);
+    }
+
+    /** True while a person handles the chat (takeover or a timed pause): the channel senders check it once more right before sending. */
+    public boolean humanHandles(UUID tenantId, String channel, String externalId) {
+        return jdbc.sql("SELECT coalesce(bool_or(takeover OR coalesce(ai_paused_until > now(), FALSE)), FALSE) FROM chat.conversations WHERE tenant_id = :t AND channel = :ch AND external_id = :e")
+                .param("t", tenantId).param("ch", channel).param("e", externalId).query(Boolean.class).single();
+    }
+
+    private static final Pattern EG_MOBILE = Pattern.compile("(?<!\\d)(?:\\+?20|0020|0)?(1[0125]\\d{8})(?!\\d)");
+
+    /** An Egyptian mobile number in the customer's message («01012345678», «+20 10 1234 5678», Arabic digits too), as +20…, or null. */
+    static String statedPhone(String text) {
+        if (text == null) return null;
+        String d = MoneyGuard.digits(text).replaceAll("(?<=\\d)[\\s.-](?=\\d)", "");
+        var m = EG_MOBILE.matcher(d);
+        return m.find() ? "+20" + m.group(1) : null;
     }
 
     static final String PAUSED_AR = "وصلت رسالتك 🙏 حد من فريق المحل هيرد عليك هنا في أقرب وقت.";
@@ -582,6 +630,8 @@ public class ChatService {
     /** While the team handles the chat, the customer is told once that a person will answer here; later messages get no automatic reply at all (an empty one). */
     private Reply pausedReply(UUID conv, String text) {
         jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();
+        // a person took the chat over on purpose: they answer themself, the AI does not even send its «someone will reply» note
+        if (jdbc.sql("SELECT takeover FROM chat.conversations WHERE id = :c").param("c", conv).query(Boolean.class).optional().orElse(false)) return new Reply(conv, "", null, List.of());
         boolean told = jdbc.sql("SELECT count(*) > 0 FROM chat.messages WHERE conversation_id = :c AND role = 'assistant' AND content IN (:a, :e) AND created_at > (SELECT coalesce(max(created_at), 'epoch') FROM chat.messages WHERE conversation_id = :c AND by_owner)")
                 .param("c", conv).param("a", PAUSED_AR).param("e", PAUSED_EN).query(Boolean.class).single();
         if (told) return new Reply(conv, "", null, List.of());
@@ -2195,6 +2245,7 @@ public class ChatService {
         String memo = seller.memory(tenantId, channel, externalId);
         if (!memo.isBlank()) p.append("\nWHAT YOU REMEMBER ABOUT THIS CUSTOMER (use it naturally, do not recite it):\n").append(memo).append("\n");
         p.append(addressRule(tenantId, conv, channel, externalId, clientId));
+        p.append(identityRule(tenantId, conv, channel, externalId, clientId, shopName, (String) s.get("agentName")));
         if ("WHATSAPP".equals(channel) && externalId != null) p.append("\nTHE CUSTOMER IS CHATTING WITH YOU ON WHATSAPP from the number +").append(externalId.replaceAll("\\D", "")).append(". NEVER ask for a phone number and NEVER ask about WhatsApp confirmation: this number is used for both and is filled in for you, and the customer's \"yes\" to the order summary is the confirmation. In your single message with the missing details ask only for what is still missing among the name, the full address (governorate included) and the payment method: when SAVED DETAILS exist, never ask for the name or the address, only confirm the saved address.\n");
         if (clientId != null) p.append(clientFacts(clientId));
         else p.append("The customer is a guest (not signed in): collect their name, phone and address from the chat; they will be saved as a customer of this shop.\n");
@@ -2599,6 +2650,17 @@ public class ChatService {
         return String.join("; ", parts);
     }
 
+    /** The shop's products that match a text (a comment, a post caption), as prompt lines with their real prices and options; "" when none match. */
+    public String productFacts(UUID tenantId, String text) {
+        List<Map<String, Object>> rows = relatedProducts(tenantId, text);
+        StringBuilder b = new StringBuilder();
+        for (var r : rows) b.append(productLine(tenantId, r));
+        return b.toString();
+    }
+
+    /** The shop's name as customers see it. */
+    public String shopName(UUID tenantId) { return String.valueOf(settings.publicProfile(tenantId).getOrDefault("storeName", "")); }
+
     /** For a shop too big to list in full: the products matching the customer's newest message, found in code, so a model that forgets to search still sees the right ones. */
     private String productsForMessage(UUID tenantId, String text) {
         List<Map<String, Object>> rows = relatedProducts(tenantId, text);
@@ -2709,6 +2771,51 @@ public class ChatService {
         b.append("- Use the name with أستاذ/أستاذة naturally: in the greeting, when you recommend, and when you thank or confirm; not in every message (about once every three messages). Otherwise «حضرتك» / «يا فندم». In English use the first name politely (\"Sure, Mona\").\n");
         b.append("- ALWAYS respectful: NEVER the bare name («يا ").append(name == null ? "محمد" : name).append("» alone), never casual or street words («يا باشا»، «يا راجل»، «يا عم»، «يا معلم»، «يا بني»، «يا حبيبي»), never laugh at the customer («هههه», 😄 at their expense), never joke about a mistake of yours. If the customer corrects how you address them («أنا راجل مش بنت»), apologise in a few words and use the right form from then on.\n");
         return b.toString();
+    }
+
+    /**
+     * Who the AI is and what it still needs to learn about the customer, like a real salesperson: it introduces itself by the name the shop gave it, asks the customer's name
+     * at the start when it is not known (no customer record, no usable profile name, or a dummy Messenger / Instagram handle), and on the website chat asks early for a mobile
+     * number too, so the shop can reach them. Each is asked once, politely, without holding back answers.
+     */
+    private String identityRule(UUID tenantId, UUID conv, String channel, String externalId, UUID clientId, String shopName, String agentName) {
+        StringBuilder b = new StringBuilder("\nWHO YOU ARE AND WHAT TO LEARN ABOUT THE CUSTOMER:\n");
+        if (agentName != null && !agentName.isBlank())
+            b.append("- Your name is ").append(agentName.trim()).append(" and you work at ").append(shopName).append(". When you greet a customer for the first time, introduce yourself warmly (e.g. «وعليكم السلام، معاك ")
+             .append(agentName.trim()).append(" من ").append(shopName).append("»). If asked, you are ").append(agentName.trim()).append(" from the shop team; never say you are a bot unless asked directly.\n");
+        boolean nameKnown = customerName(tenantId, conv, channel, externalId, clientId) != null;
+        long asked = jdbc.sql("SELECT count(*) FROM chat.messages WHERE conversation_id = :c AND role = 'assistant'").param("c", conv).query(Long.class).single();
+        if (!nameKnown) b.append(asked < 4
+                ? "- The customer's name is NOT known: in your first or second reply, after greeting, ask for it naturally once («أتشرف باسم حضرتك؟» / \"May I have your name?\"), then keep helping. Use it (with أستاذ/أستاذة) once they tell you.\n"
+                : "- The customer's name is not known; if it comes up naturally you may ask once, but never insist.\n");
+        if ("WEB".equals(channel) && clientId == null) {
+            String phone = jdbc.sql("SELECT contact_phone FROM chat.conversations WHERE id = :c").param("c", conv).query(String.class).optional().orElse(null);
+            if (phone == null) b.append(asked < 8
+                    ? "- Website chat and no phone number yet: early in the chat (after you have their name, or with your first answer when they ask a question), ask politely once for their mobile number so the shop can reach them («ممكن رقم موبايل حضرتك عشان نقدر نتواصل معاك؟»). Never refuse to help without it.\n"
+                    : "- No phone number yet: ask for it when the customer wants to order or be contacted.\n");
+            else b.append("- Their mobile number is ").append(phone).append(" (they gave it in this chat): do not ask for it again.\n");
+        }
+        return b.length() > 55 ? b.toString() : "";
+    }
+
+    /**
+     * The instant answer to a first «السلام عليكم» / «أهلاً»: returns the salam, introduces the AI by its name when the shop gave one, and asks the customer's name when it is
+     * not known («وعليكم السلام 🌸 معاك محمد من ليلان ستور، أتشرف باسم حضرتك؟»). Without an agent name and with a known customer, the shop's own greeting (if any) is used.
+     */
+    private String introGreeting(UUID tenantId, UUID conv, String channel, String externalId, UUID clientId, String text) {
+        var st = getSettings(tenantId);
+        String agent = (String) st.get("agentName"), own = (String) st.get("greeting");
+        boolean nameKnown = customerName(tenantId, conv, channel, externalId, clientId) != null;
+        if ((agent == null || agent.isBlank()) && nameKnown) return own;
+        boolean ar = !english(text);
+        String shop = String.valueOf(settings.publicProfile(tenantId).getOrDefault("storeName", ""));
+        StringBuilder g = new StringBuilder();
+        if (agent == null || agent.isBlank()) g.append(own != null && !own.isBlank() ? own.trim() : ar ? "أهلاً بحضرتك 🌸" : "Hello! 🌸");
+        else if (ar) g.append(text.contains("السلام") || text.contains("سلام") ? "وعليكم السلام ورحمة الله 🌸 " : "أهلاً بحضرتك 🌸 ").append("معاك ").append(agent.trim()).append(" من ").append(shop);
+        else g.append("Hello! 🌸 I'm ").append(agent.trim()).append(" from ").append(shop).append('.');
+        if (!nameKnown) g.append(ar ? (g.toString().trim().endsWith("🌸") ? " " : "، ") + "أتشرف باسم حضرتك؟" : " May I have your name?");
+        else g.append(ar ? "، تحب أساعدك في إيه؟" : " How can I help you today?");
+        return g.toString().replace(" ،", "،");
     }
 
     private String clientFacts(UUID clientId) {

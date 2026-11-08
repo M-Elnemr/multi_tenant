@@ -44,7 +44,7 @@ public class ChatController {
 
     public record SendRequest(String conversationId, String message) {}
     public record TestRequest(String message) {}
-    public record SettingsRequest(Boolean enabled, String tone, Integer maxDiscountPct, String greeting, List<String> channels) {}
+    public record SettingsRequest(Boolean enabled, String tone, Integer maxDiscountPct, String greeting, List<String> channels, String agentName) {}
     public record LessonRequest(String instruction, String exampleQuestion, String exampleAnswer) {}
 
     private static UUID clientOrNull(Authentication a) {
@@ -98,7 +98,7 @@ public class ChatController {
     @PutMapping("/api/v1/store/ai/settings")
     @PreAuthorize("hasAuthority('ai.manage')")
     public Map<String, Object> saveSettings(@RequestBody SettingsRequest r, Authentication a) {
-        return chat.saveSettings(StoreContext.tenantId(), (UUID) a.getPrincipal(), r.enabled(), r.tone(), r.maxDiscountPct(), r.greeting(), r.channels());
+        return chat.saveSettings(StoreContext.tenantId(), (UUID) a.getPrincipal(), r.enabled(), r.tone(), r.maxDiscountPct(), r.greeting(), r.channels(), r.agentName());
     }
 
     /** How ready the shop's data is for the assistant: a score and what to fill in. */
