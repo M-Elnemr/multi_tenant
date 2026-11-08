@@ -49,22 +49,22 @@ export function VariantMatrix({ options, rows, onRows, branches, errUnder, err, 
   return (
     <div className="space-y-3">
       {matrix.length > 1 && (
-        <div className="flex flex-wrap items-end gap-2 rounded-xl bg-slate-50 p-3">
-          <label className="space-y-1"><span className="block text-xs font-semibold text-slate-500">{t("matrix.priceAll")}</span>
+        <div className="flex flex-wrap items-end gap-2 rounded-xl bg-surface-2 p-3">
+          <label className="space-y-1"><span className="block text-xs font-semibold text-muted">{t("matrix.priceAll")}</span>
             <div className="flex gap-1"><Input className="!w-28" dir="ltr" inputMode="decimal" value={bulk.price} onChange={(e) => setBulk({ ...bulk, price: e.target.value })} />
               <Button type="button" size="sm" variant="secondary" disabled={!bulk.price} onClick={() => all((r) => ({ ...r, price: bulk.price }))}>{t("matrix.apply")}</Button></div></label>
-          <label className="space-y-1"><span className="block text-xs font-semibold text-slate-500">{t("matrix.addAll")}</span>
+          <label className="space-y-1"><span className="block text-xs font-semibold text-muted">{t("matrix.addAll")}</span>
             <div className="flex gap-1"><Input className="!w-24" dir="ltr" inputMode="numeric" placeholder="+5" value={bulk.add} onChange={(e) => setBulk({ ...bulk, add: e.target.value })} />
               <Button type="button" size="sm" variant="secondary" disabled={!Number(bulk.add) || !branches[0]} onClick={() => all((r) => ({ ...r, stock: { ...r.stock, [branches[0].id]: String(Math.max(0, (Number(r.stock[branches[0].id]) || 0) + Number(bulk.add))) } }))}>{t("matrix.apply")}</Button></div></label>
-          <label className="space-y-1"><span className="block text-xs font-semibold text-slate-500">{t("matrix.skuAll")}</span>
+          <label className="space-y-1"><span className="block text-xs font-semibold text-muted">{t("matrix.skuAll")}</span>
             <div className="flex gap-1"><Input className="!w-28" dir="ltr" placeholder="TSHIRT" value={bulk.sku} onChange={(e) => setBulk({ ...bulk, sku: e.target.value })} />
               <Button type="button" size="sm" variant="secondary" disabled={!bulk.sku.trim()} onClick={() => all((r, c) => ({ ...r, sku: r.sku || [bulk.sku.trim().toUpperCase(), ...options.map((o) => slug(c[o.name]))].join("-") }))}>{t("matrix.makeSku")}</Button></div></label>
-          <span className="ms-auto rounded-full bg-white px-3 py-1.5 text-xs font-bold text-slate-600 shadow-sm">{t("matrix.totalPieces", { n: grand })}</span>
+          <span className="ms-auto rounded-full bg-surface px-3 py-1.5 text-xs font-bold text-ink-2 shadow-sm">{t("matrix.totalPieces", { n: grand })}</span>
         </div>
       )}
-      <div className="overflow-x-auto rounded-xl border border-slate-100">
+      <div className="overflow-x-auto rounded-xl border border-line">
         <table className="w-full min-w-[640px] text-sm">
-          <thead className="bg-slate-50/80 text-xs text-slate-500">
+          <thead className="bg-surface-2 text-xs text-muted">
             <tr>
               {options.length > 0 && <th className="p-2 text-start">{t("products.combination")}</th>}
               <th className="p-2 text-start">{t("products.price")}</th>
@@ -74,7 +74,7 @@ export function VariantMatrix({ options, rows, onRows, branches, errUnder, err, 
               {branches.map((b) => <th key={b.id} className="p-2 text-start">{branches.length > 1 ? b.name : t("products.stock")}</th>)}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-line">
             {matrix.map((c, i) => {
               const r = rowOf(c);
               const at = `variants[${i}]`;
@@ -84,7 +84,7 @@ export function VariantMatrix({ options, rows, onRows, branches, errUnder, err, 
                 <tr key={keyOf(c)} data-field={at} className={rowErr ? "bg-red-50/60" : ""}>
                   {options.length > 0 && (
                     <td className="p-2 align-top">
-                      <div className="flex flex-wrap gap-1">{options.map((o) => <span key={o.name} className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">{c[o.name]}</span>)}</div>
+                      <div className="flex flex-wrap gap-1">{options.map((o) => <span key={o.name} className="rounded-md bg-surface-2 px-2 py-0.5 text-xs font-semibold text-ink-2">{c[o.name]}</span>)}</div>
                       {!r.id && edit && <span className="mt-1 inline-block rounded bg-emerald-50 px-1.5 text-[10px] font-bold text-emerald-700">{t("matrix.new")}</span>}
                       {rowErr && <p className="mt-1 flex items-start gap-1 text-xs font-medium text-red-600"><Icon name="alert" className="mt-px h-3 w-3 shrink-0" />{rowErr}</p>}
                     </td>
@@ -100,12 +100,12 @@ export function VariantMatrix({ options, rows, onRows, branches, errUnder, err, 
                     return (
                       <td key={b.id} className={`p-1.5 ${cell("stock")}`}>
                         <div className="flex items-center gap-1">
-                          <button type="button" onClick={() => step(-1)} className="grid h-9 w-8 place-items-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label="-1">−</button>
+                          <button type="button" onClick={() => step(-1)} className="grid h-9 w-8 place-items-center rounded-lg border border-line text-ink-2 hover:bg-surface-2" aria-label="-1">−</button>
                           <Input name={`${at}.stock`} className="!w-16 text-center" dir="ltr" inputMode="numeric" value={r.stock[b.id] ?? ""} placeholder="0" onChange={(e) => setRow(c, { stock: { ...r.stock, [b.id]: e.target.value.replace(/[^0-9]/g, "") } })} />
-                          <button type="button" onClick={() => step(1)} className="grid h-9 w-8 place-items-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label="+1">+</button>
+                          <button type="button" onClick={() => step(1)} className="grid h-9 w-8 place-items-center rounded-lg border border-line text-ink-2 hover:bg-surface-2" aria-label="+1">+</button>
                         </div>
                         {edit && was !== undefined && now !== was && <p className={`mt-0.5 text-[11px] font-bold ${now > was ? "text-emerald-600" : "text-amber-600"}`}>{now > was ? "+" : ""}{now - was}</p>}
-                        {edit && (r.reserved?.[b.id] ?? 0) > 0 && <p className="mt-0.5 text-[11px] text-slate-500">{t("matrix.reserved", { n: r.reserved![b.id] })}</p>}
+                        {edit && (r.reserved?.[b.id] ?? 0) > 0 && <p className="mt-0.5 text-[11px] text-muted">{t("matrix.reserved", { n: r.reserved![b.id] })}</p>}
                       </td>
                     );
                   })}

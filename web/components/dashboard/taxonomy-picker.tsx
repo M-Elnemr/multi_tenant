@@ -36,40 +36,40 @@ export function TaxonomyPicker({ value, onChange }: { value: TaxonomyNode | null
       <div className="flex items-center gap-2 rounded-xl px-3 py-2.5 transition hover:bg-brand-soft">
         <button type="button" className="min-w-0 flex-1 text-start" onClick={() => (n.hasChildren && !showCrumb ? setPath([...path, n]) : choose(n))}>
           <span className="font-medium">{n.icon ? `${n.icon} ` : ""}{n.name}</span>
-          {showCrumb && <span className="block truncate text-xs text-slate-500">{n.breadcrumb}</span>}
+          {showCrumb && <span className="block truncate text-xs text-muted">{n.breadcrumb}</span>}
         </button>
         {n.hasChildren && !showCrumb && n.level >= 2 && <Button type="button" size="sm" variant="secondary" onClick={() => choose(n)}>{t("taxonomy.pickThis")}</Button>}
-        {n.hasChildren && !showCrumb && <span className="text-slate-400" aria-hidden>{locale === "ar" ? "‹" : "›"}</span>}
+        {n.hasChildren && !showCrumb && <span className="text-faint" aria-hidden>{locale === "ar" ? "‹" : "›"}</span>}
       </div>
     </li>
   );
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-start text-sm transition hover:border-brand">
-        <span className={value ? "font-medium" : "text-slate-400"}>{value ? value.breadcrumb : t("taxonomy.choose")}</span><span className="text-brand">{t("taxonomy.change")}</span>
+      <button type="button" onClick={() => setOpen(true)} className="flex w-full items-center justify-between gap-3 rounded-xl border border-line-strong bg-surface px-3.5 py-2.5 text-start text-sm transition hover:border-brand">
+        <span className={value ? "font-medium" : "text-faint"}>{value ? value.breadcrumb : t("taxonomy.choose")}</span><span className="text-brand">{t("taxonomy.change")}</span>
       </button>
       <Modal open={open} onClose={() => setOpen(false)} title={suggest ? t("taxonomy.suggestTitle") : t("taxonomy.title")} wide>
         {suggest ? <SuggestForm onDone={() => setSuggest(false)} /> : (
           <div className="space-y-4">
             <Input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("taxonomy.searchHint")} />
             {results ? (
-              <ul className="max-h-80 overflow-y-auto">{results.map((n) => row(n, true))}{results.length === 0 && <li className="p-4 text-center text-sm text-slate-500">{t("taxonomy.noMatch")}</li>}</ul>
+              <ul className="max-h-80 overflow-y-auto">{results.map((n) => row(n, true))}{results.length === 0 && <li className="p-4 text-center text-sm text-muted">{t("taxonomy.noMatch")}</li>}</ul>
             ) : (
               <>
                 {path.length === 0 && (suggested.data?.length ?? 0) > 0 && (
-                  <div><p className="mb-2 text-xs font-semibold text-slate-500">{t("taxonomy.forYourShop")}</p><div className="flex flex-wrap gap-2">{suggested.data!.slice(0, 18).map((n) => <button key={n.id} type="button" onClick={() => choose(n)} className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm transition hover:border-brand hover:bg-brand-soft">{n.name}</button>)}</div></div>
+                  <div><p className="mb-2 text-xs font-semibold text-muted">{t("taxonomy.forYourShop")}</p><div className="flex flex-wrap gap-2">{suggested.data!.slice(0, 18).map((n) => <button key={n.id} type="button" onClick={() => choose(n)} className="rounded-full border border-line-strong bg-surface px-3 py-1.5 text-sm transition hover:border-brand hover:bg-brand-soft">{n.name}</button>)}</div></div>
                 )}
                 <div>
                   <div className="mb-2 flex flex-wrap items-center gap-1 text-sm">
                     <button type="button" onClick={() => setPath([])} className="font-semibold text-brand">{t("taxonomy.all")}</button>
-                    {path.map((n, i) => <span key={n.id} className="flex items-center gap-1"><span className="text-slate-400">/</span><button type="button" onClick={() => setPath(path.slice(0, i + 1))} className="font-semibold text-brand">{n.name}</button></span>)}
+                    {path.map((n, i) => <span key={n.id} className="flex items-center gap-1"><span className="text-faint">/</span><button type="button" onClick={() => setPath(path.slice(0, i + 1))} className="font-semibold text-brand">{n.name}</button></span>)}
                   </div>
                   <ul className="max-h-72 overflow-y-auto rounded-xl border">{(children.data ?? []).map((n) => row(n, false))}</ul>
                 </div>
               </>
             )}
-            <p className="text-sm text-slate-500">{t("taxonomy.missing")} <button type="button" onClick={() => setSuggest(true)} className="font-semibold text-brand underline">{t("taxonomy.suggest")}</button></p>
+            <p className="text-sm text-muted">{t("taxonomy.missing")} <button type="button" onClick={() => setSuggest(true)} className="font-semibold text-brand underline">{t("taxonomy.suggest")}</button></p>
           </div>
         )}
       </Modal>
@@ -86,7 +86,7 @@ function SuggestForm({ onDone }: { onDone: () => void }) {
   if (sent) return <div className="space-y-4"><Alert tone="green">{t("taxonomy.suggestSent")}</Alert><Button type="button" onClick={onDone}>{t("taxonomy.back")}</Button></div>;
   return (
     <form onSubmit={(e) => { e.preventDefault(); void send.run(); }} className="space-y-4">
-      <p className="text-sm text-slate-600">{t("taxonomy.suggestHint")}</p>
+      <p className="text-sm text-ink-2">{t("taxonomy.suggestHint")}</p>
       <Field label={t("taxonomy.suggestName")}><Input value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} /></Field>
       <Field label={t("taxonomy.suggestNote")}><Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} /></Field>
       <ErrorText error={send.error} />

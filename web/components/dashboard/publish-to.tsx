@@ -27,13 +27,13 @@ function OfferGrid({ rows, get, set, currency }: { rows: { key: string; label: s
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[420px] text-sm">
-        <thead><tr className="text-xs text-slate-500"><th className="py-1 text-start font-medium">{t("products.variant")}</th><th className="px-2 text-start font-medium">{t("ch.price")} ({currency})</th><th className="px-2 text-start font-medium">{t("ch.compareAt")}</th><th className="px-2 text-start font-medium">{t("ch.quantity")}</th></tr></thead>
+        <thead><tr className="text-xs text-muted"><th className="py-1 text-start font-medium">{t("products.variant")}</th><th className="px-2 text-start font-medium">{t("ch.price")} ({currency})</th><th className="px-2 text-start font-medium">{t("ch.compareAt")}</th><th className="px-2 text-start font-medium">{t("ch.quantity")}</th></tr></thead>
         <tbody>
           {rows.map((r) => {
             const o = get(r.key);
             return (
               <tr key={r.key}>
-                <td className="max-w-[160px] truncate py-1.5 pe-2 text-slate-600">{r.label || "—"}</td>
+                <td className="max-w-[160px] truncate py-1.5 pe-2 text-ink-2">{r.label || "—"}</td>
                 <td className="px-2 py-1.5"><Input inputMode="decimal" value={o.price} onChange={(e) => set(r.key, { price: e.target.value })} aria-label={t("ch.price")} /></td>
                 <td className="px-2 py-1.5"><Input inputMode="decimal" value={o.compare} onChange={(e) => set(r.key, { compare: e.target.value })} aria-label={t("ch.compareAt")} /></td>
                 <td className="px-2 py-1.5"><Input inputMode="numeric" value={o.qty} onChange={(e) => set(r.key, { qty: e.target.value })} aria-label={t("ch.quantity")} /></td>
@@ -49,11 +49,11 @@ function OfferGrid({ rows, get, set, currency }: { rows: { key: string; label: s
 function PlatformCard({ a, checked, onToggle, children, note }: { a: Account; checked: boolean; onToggle: (on: boolean) => void; children: React.ReactNode; note?: React.ReactNode }) {
   const { t } = useI18n();
   return (
-    <div className={`rounded-2xl border p-4 transition ${checked ? "border-brand/50 bg-brand-soft/30" : "border-slate-200 bg-white"}`}>
+    <div className={`rounded-2xl border p-4 transition ${checked ? "border-brand/50 bg-brand-soft/30" : "border-line bg-surface"}`}>
       <label className="flex cursor-pointer items-center gap-3">
         <input type="checkbox" className="h-5 w-5" checked={checked} onChange={(e) => onToggle(e.target.checked)} />
         <ProviderMark provider={a.provider} name={a.name} className="h-9 w-9 text-xs" />
-        <span className="min-w-0 flex-1 font-semibold">{a.name} <CountryFlag code={a.country} /><span className="block truncate text-xs font-normal text-slate-500">{a.label}</span></span>
+        <span className="min-w-0 flex-1 font-semibold">{a.name} <CountryFlag code={a.country} /><span className="block truncate text-xs font-normal text-muted">{a.label}</span></span>
         {a.status === "ERROR" && <Badge tone="red">{t("ch.status.ERROR")}</Badge>}
       </label>
       {note}
@@ -70,12 +70,12 @@ export function PublishToNew({ rows, value, onChange }: { rows: DraftRow[]; valu
   const { accounts, loading } = usePublishAccounts();
   if (loading) return null;
   if (accounts.length === 0) {
-    return <Card className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-bold">{t("pub.title")}</h2><p className="text-sm text-slate-500">{t("pub.noPlatforms")}</p></div><Link href="/dashboard/channels/connect" className="rounded-xl bg-brand-soft px-4 py-2 text-sm font-semibold text-brand-dark">{t("ch.connect")}</Link></Card>;
+    return <Card className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-bold">{t("pub.title")}</h2><p className="text-sm text-muted">{t("pub.noPlatforms")}</p></div><Link href="/dashboard/channels/connect" className="rounded-xl bg-brand-soft px-4 py-2 text-sm font-semibold text-brand-dark">{t("ch.connect")}</Link></Card>;
   }
   const on = (id: string) => value[id]?.on ?? true;
   return (
     <Card className="space-y-4">
-      <div><h2 className="font-bold">{t("pub.title")}</h2><p className="text-sm text-slate-500">{t("pub.hint")}</p></div>
+      <div><h2 className="font-bold">{t("pub.title")}</h2><p className="text-sm text-muted">{t("pub.hint")}</p></div>
       {accounts.map((a) => (
         <PlatformCard key={a.id} a={a} checked={on(a.id)} onToggle={(v) => onChange({ ...value, [a.id]: { ...value[a.id], on: v } })} note={!a.can.includes("CREATE") ? <p className="mt-2 text-xs text-amber-700">{t("pub.linkOnly")}</p> : undefined}>
           <OfferGrid rows={rows} currency={a.currency}
@@ -130,13 +130,13 @@ export function PublishToExisting({ productId }: { productId: string }) {
   if (!plan.data) return <ErrorText error={plan.error} />;
   const { variants, accounts } = plan.data;
   if (accounts.length === 0) {
-    return <Card className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-bold">{t("pub.title")}</h2><p className="text-sm text-slate-500">{t("pub.noPlatforms")}</p></div><Link href="/dashboard/channels/connect" className="rounded-xl bg-brand-soft px-4 py-2 text-sm font-semibold text-brand-dark">{t("ch.connect")}</Link></Card>;
+    return <Card className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-bold">{t("pub.title")}</h2><p className="text-sm text-muted">{t("pub.noPlatforms")}</p></div><Link href="/dashboard/channels/connect" className="rounded-xl bg-brand-soft px-4 py-2 text-sm font-semibold text-brand-dark">{t("ch.connect")}</Link></Card>;
   }
   const rows = variants.map((v) => ({ key: v.id, label: v.comboKey || v.sku }));
   const picked = accounts.filter((a) => state[a.id]?.on ?? a.listings.length > 0).length;
   return (
     <Card className="space-y-4">
-      <div><h2 className="font-bold">{t("pub.title")}</h2><p className="text-sm text-slate-500">{t("pub.hintExisting")}</p></div>
+      <div><h2 className="font-bold">{t("pub.title")}</h2><p className="text-sm text-muted">{t("pub.hintExisting")}</p></div>
       {accounts.map((a) => {
         const published = a.listings.length;
         const checked = state[a.id]?.on ?? published > 0;
