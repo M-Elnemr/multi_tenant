@@ -6,26 +6,29 @@ import { fromMinor, money, toMinor } from "@/lib/format";
 import { useFieldErrors } from "@/lib/use-field-errors";
 import { useAction, useApi } from "../hooks";
 import { useI18n } from "../i18n-provider";
-import { Icon } from "../icons";
+import { Icon, type IconName } from "../icons";
+import { Switch } from "../overlay";
+import { useToast } from "../toast";
 import { Button, ErrorText, Field, Input, Select, Textarea } from "../ui";
+import { SaveBar } from "./product-editor-bits";
 import { TaxonomyPicker, type TaxonomyNode } from "./taxonomy-picker";
 
 export const OFFER_TYPES = ["PERCENT_OFF", "FIXED_OFF", "FLASH_SALE", "BUY_X_GET_Y", "BUNDLE_PRICE", "TIERED_QTY", "ORDER_THRESHOLD", "FREE_SHIPPING", "GIFT_WITH_PURCHASE", "FIRST_ORDER", "COUPON"] as const;
 export type OfferType = (typeof OFFER_TYPES)[number];
 
-/** Look of each type: emoji, gradient, and whether it works on items (sale price) or on the cart. */
-export const TYPE_LOOK: Record<OfferType, { emoji: string; from: string; to: string; scope: "item" | "cart" | "code" }> = {
-  PERCENT_OFF: { emoji: "🏷️", from: "#f43f5e", to: "#fb923c", scope: "item" },
-  FIXED_OFF: { emoji: "💸", from: "#10b981", to: "#14b8a6", scope: "item" },
-  FLASH_SALE: { emoji: "⚡", from: "#f59e0b", to: "#ef4444", scope: "item" },
-  BUY_X_GET_Y: { emoji: "🎁", from: "#8b5cf6", to: "#ec4899", scope: "cart" },
-  BUNDLE_PRICE: { emoji: "📦", from: "#0ea5e9", to: "#6366f1", scope: "cart" },
-  TIERED_QTY: { emoji: "📈", from: "#22c55e", to: "#84cc16", scope: "cart" },
-  ORDER_THRESHOLD: { emoji: "🛒", from: "#06b6d4", to: "#3b82f6", scope: "cart" },
-  FREE_SHIPPING: { emoji: "🚚", from: "#0d9488", to: "#22d3ee", scope: "cart" },
-  GIFT_WITH_PURCHASE: { emoji: "🎀", from: "#ec4899", to: "#f472b6", scope: "cart" },
-  FIRST_ORDER: { emoji: "👋", from: "#6366f1", to: "#a855f7", scope: "cart" },
-  COUPON: { emoji: "🎟️", from: "#475569", to: "#0f172a", scope: "code" },
+/** Look of each type: icon, gradient, and whether it works on items (sale price) or on the cart. */
+export const TYPE_LOOK: Record<OfferType, { icon: IconName; from: string; to: string; scope: "item" | "cart" | "code" }> = {
+  PERCENT_OFF: { icon: "tag", from: "#f43f5e", to: "#fb923c", scope: "item" },
+  FIXED_OFF: { icon: "wallet", from: "#10b981", to: "#14b8a6", scope: "item" },
+  FLASH_SALE: { icon: "bolt", from: "#f59e0b", to: "#ef4444", scope: "item" },
+  BUY_X_GET_Y: { icon: "star", from: "#8b5cf6", to: "#ec4899", scope: "cart" },
+  BUNDLE_PRICE: { icon: "box", from: "#0ea5e9", to: "#6366f1", scope: "cart" },
+  TIERED_QTY: { icon: "trending", from: "#22c55e", to: "#84cc16", scope: "cart" },
+  ORDER_THRESHOLD: { icon: "cart", from: "#06b6d4", to: "#3b82f6", scope: "cart" },
+  FREE_SHIPPING: { icon: "truck", from: "#0d9488", to: "#22d3ee", scope: "cart" },
+  GIFT_WITH_PURCHASE: { icon: "award", from: "#ec4899", to: "#f472b6", scope: "cart" },
+  FIRST_ORDER: { icon: "users", from: "#6366f1", to: "#a855f7", scope: "cart" },
+  COUPON: { icon: "coupon", from: "#475569", to: "#0f172a", scope: "code" },
 };
 
 export type Offer = {
@@ -45,7 +48,7 @@ const num = (v: unknown) => (v === undefined || v === null || v === "" ? "" : St
 export { offerSummary } from "@/lib/offers";
 import { offerSummary } from "@/lib/offers";
 
-/** The type gallery: one big tappable card per kind of offer. */
+/** The type gallery: one tappable card per kind of offer. */
 export function TypePicker({ onPick }: { onPick: (t: OfferType) => void }) {
   const { t } = useI18n();
   const groups: { title: string; types: OfferType[] }[] = [
@@ -57,18 +60,18 @@ export function TypePicker({ onPick }: { onPick: (t: OfferType) => void }) {
     <div className="space-y-7">
       {groups.map((g) => (
         <div key={g.title}>
-          <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-slate-500">{g.title}</h3>
+          <h3 className="eyebrow mb-3">{g.title}</h3>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {g.types.map((ty, i) => {
               const l = TYPE_LOOK[ty];
               return (
-                <button key={ty} type="button" onClick={() => onPick(ty)} style={{ animationDelay: `${i * 50}ms` }}
-                  className="group relative animate-fade-up overflow-hidden rounded-2xl bg-white p-5 text-start shadow-card ring-1 ring-slate-100 transition hover:-translate-y-1 hover:shadow-lift hover:ring-brand/30">
-                  <span className="pointer-events-none absolute -end-8 -top-8 h-28 w-28 rounded-full opacity-15 blur-xl transition group-hover:opacity-30" style={{ background: `linear-gradient(135deg, ${l.from}, ${l.to})` }} />
-                  <span className="mb-3 grid h-12 w-12 place-items-center rounded-2xl text-2xl text-white shadow-lg" style={{ background: `linear-gradient(135deg, ${l.from}, ${l.to})` }}>{l.emoji}</span>
-                  <p className="font-bold text-ink">{t(`offer.type.${ty}`)}</p>
-                  <p className="mt-1 text-sm leading-relaxed text-slate-500">{t(`offer.desc.${ty}`)}</p>
-                  <p className="mt-3 inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{t(`offer.ex.${ty}`)}</p>
+                <button key={ty} type="button" onClick={() => onPick(ty)} style={{ animationDelay: `${i * 40}ms` }}
+                  className="group relative animate-fade-up overflow-hidden rounded-[18px] bg-surface p-5 text-start shadow-card transition hover:-translate-y-0.5 hover:shadow-[0_0_0_1px_var(--line-strong),0_14px_30px_-18px_rgb(16_18_24/.25)] motion-reduce:transition-none motion-reduce:hover:translate-y-0">
+                  <span className="mb-3 grid h-11 w-11 place-items-center rounded-[13px] text-white shadow-[0_8px_18px_-8px_rgb(16_18_24/.4)]" style={{ background: `linear-gradient(135deg, ${l.from}, ${l.to})` }}><Icon name={l.icon} className="h-5 w-5" /></span>
+                  <p className="font-display text-[15px] font-semibold text-ink">{t(`offer.type.${ty}`)}</p>
+                  <p className="mt-1 text-[13px] leading-relaxed text-muted">{t(`offer.desc.${ty}`)}</p>
+                  <p className="mt-3 inline-flex rounded-full bg-surface-2 px-2.5 py-1 text-xs font-semibold text-ink-2 ring-1 ring-line">{t(`offer.ex.${ty}`)}</p>
+                  <Icon name="arrow" className="absolute end-4 top-5 h-4 w-4 text-faint transition group-hover:text-ink flip-rtl" />
                 </button>
               );
             })}
@@ -96,12 +99,12 @@ function ProductPicker({ value, onChange, products }: { value: string[]; onChang
         ))}
       </div>
       <Input placeholder={t("offer.searchProducts")} value={q} onChange={(e) => setQ(e.target.value)} />
-      <div className="max-h-52 overflow-y-auto rounded-xl border border-slate-100">
+      <div className="max-h-52 overflow-y-auto rounded-[12px] border border-line">
         {res.data?.data.map((p) => {
           const on = value.includes(p.id);
           return (
             <button key={p.id} type="button" onClick={() => onChange(on ? value.filter((x) => x !== p.id) : [...value, p.id], on ? products.filter((x) => x.id !== p.id) : [...products, p])}
-              className={`flex w-full items-center justify-between gap-2 border-b border-slate-50 px-3 py-2.5 text-start text-sm last:border-0 ${on ? "bg-brand-soft font-semibold text-brand-dark" : "hover:bg-slate-50"}`}>
+              className={`flex w-full items-center justify-between gap-2 border-b border-line px-3 py-2.5 text-start text-sm last:border-0 ${on ? "bg-brand-soft font-semibold text-brand-dark" : "hover:bg-surface-2"}`}>
               <span className="truncate">{p.name}</span>{on && <Icon name="check" className="h-4 w-4" />}
             </button>
           );
@@ -124,32 +127,32 @@ function Preview({ type, name, badge, config, endsAt, fmt }: { type: OfferType; 
   const p2 = (n: number) => String(n).padStart(2, "0");
   return (
     <div className="space-y-3">
-      <p className="text-xs font-bold uppercase tracking-wider text-slate-500">{t("offer.preview")}</p>
+      <p className="text-xs font-bold uppercase tracking-wider text-muted">{t("offer.preview")}</p>
       {(type === "FLASH_SALE" || l.scope === "cart" || type === "FREE_SHIPPING") && (
-        <div className="overflow-hidden rounded-2xl p-4 text-white shadow-lg" style={{ background: `linear-gradient(120deg, ${l.from}, ${l.to})` }}>
-          <p className="text-xs font-semibold opacity-90">{l.emoji} {name || t(`offer.type.${type}`)}</p>
+        <div className="overflow-hidden rounded-[18px] p-4 text-white shadow-lg" style={{ background: `linear-gradient(120deg, ${l.from}, ${l.to})` }}>
+          <p className="flex items-center gap-1.5 text-xs font-semibold opacity-90"><Icon name={l.icon} className="h-3.5 w-3.5" />{name || t(`offer.type.${type}`)}</p>
           <p className="mt-1 text-lg font-extrabold leading-tight">{offerSummary({ type, config }, t, fmt) || t(`offer.type.${type}`)}</p>
           {type === "FLASH_SALE" && endsAt && <div className="mt-3 flex gap-1.5 font-mono text-lg font-bold" dir="ltr">{[hh, mm, ss].map((n, i) => <span key={i} className="rounded-lg bg-black/25 px-2 py-1">{p2(n)}</span>)}</div>}
         </div>
       )}
       {l.scope !== "code" && (
-        <div className="mx-auto w-52 overflow-hidden rounded-2xl bg-white shadow-card ring-1 ring-slate-100">
-          <div className="relative grid h-36 place-items-center bg-gradient-to-br from-slate-100 to-slate-200 text-5xl">👕
+        <div className="mx-auto w-52 overflow-hidden rounded-[18px] bg-surface shadow-card ring-1 ring-line">
+          <div className="relative grid h-36 place-items-center bg-gradient-to-br from-slate-100 to-slate-200 text-faint"><Icon name="bag" className="h-12 w-12" />
             {(badge || sale !== null) && <span className="absolute start-2 top-2 rounded-full px-2.5 py-1 text-xs font-extrabold text-white shadow" style={{ background: `linear-gradient(135deg, ${l.from}, ${l.to})` }}>{badge || (config.percent ? `-${config.percent}%` : t("offer.badgeSale"))}</span>}
           </div>
           <div className="p-3">
-            <p className="text-sm font-semibold text-slate-800">{t("offer.sampleProduct")}</p>
+            <p className="text-sm font-semibold text-ink">{t("offer.sampleProduct")}</p>
             {sale !== null ? (
-              <p className="mt-1 flex items-baseline gap-2"><span className="text-base font-extrabold text-rose-600">{fmt(sale)}</span><span className="text-xs text-slate-400 line-through">{fmt(price)}</span></p>
+              <p className="mt-1 flex items-baseline gap-2"><span className="text-base font-extrabold text-rose-600">{fmt(sale)}</span><span className="text-xs text-faint line-through">{fmt(price)}</span></p>
             ) : <p className="mt-1 text-base font-extrabold text-ink">{fmt(price)}</p>}
             {l.scope === "cart" && <p className="mt-1.5 rounded-lg bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-700">{offerSummary({ type, config }, t, fmt)}</p>}
           </div>
         </div>
       )}
       {type === "COUPON" && (
-        <div className="relative mx-auto flex w-64 items-center gap-3 rounded-2xl border-2 border-dashed border-slate-300 bg-white p-4">
-          <span className="text-3xl">🎟️</span>
-          <div><p className="font-mono text-lg font-extrabold tracking-widest text-ink" dir="ltr">{String(config.code || "SAVE10").toUpperCase()}</p><p className="text-xs text-slate-500">{offerSummary({ type, config }, t, fmt)}</p></div>
+        <div className="relative mx-auto flex w-64 items-center gap-3 rounded-[18px] border-2 border-dashed border-line-strong bg-surface p-4">
+          <span className="grid h-11 w-11 place-items-center rounded-[13px] bg-surface-2 text-ink-2"><Icon name="coupon" className="h-5 w-5" /></span>
+          <div><p className="font-mono text-lg font-extrabold tracking-widest text-ink" dir="ltr">{String(config.code || "SAVE10").toUpperCase()}</p><p className="text-xs text-muted">{offerSummary({ type, config }, t, fmt)}</p></div>
         </div>
       )}
     </div>
@@ -160,6 +163,7 @@ function Preview({ type, name, badge, config, endsAt, fmt }: { type: OfferType; 
 export function OfferForm({ type, initial, onSaved, onBack }: { type: OfferType; initial?: Offer; onSaved: () => void; onBack?: () => void }) {
   const { t, locale, currency } = useI18n();
   const fmt = (m: number) => money(m, currency, locale);
+  const toast = useToast();
   const fe = useFieldErrors();
   const c0 = (initial?.config ?? {}) as Record<string, unknown>;
   const [f, setF] = useState({
@@ -215,12 +219,13 @@ export function OfferForm({ type, initial, onSaved, onBack }: { type: OfferType;
         else await api("store/offers", { body });
       }
     } catch (e) { if (!fe.fromError(e)) throw e; return; }
+    if (initial) toast(t("offer.updatedMsg"));
     onSaved();
   });
 
-  const cardCls = "space-y-4 rounded-2xl bg-white p-5 shadow-card";
+  const cardCls = "space-y-4 rounded-[18px] bg-surface p-5 shadow-card";
   const section = (title: string, children: ReactNode, step?: number) => (
-    <section className={cardCls}><h3 className="flex items-center gap-2 font-bold text-ink">{step && <span className="grid h-6 w-6 place-items-center rounded-full bg-brand text-xs text-white">{step}</span>}{title}</h3>{children}</section>
+    <section className={cardCls}><h3 className="flex items-center gap-2.5 font-display text-[15px] font-semibold text-ink">{step && <span className="grid h-6 w-6 place-items-center rounded-full bg-ink text-xs text-surface tnum">{step}</span>}{title}</h3>{children}</section>
   );
   const discountKind = (
     <div className="grid gap-3 sm:grid-cols-2">
@@ -232,10 +237,10 @@ export function OfferForm({ type, initial, onSaved, onBack }: { type: OfferType;
   return (
     <form onSubmit={(e) => { e.preventDefault(); void save.run(false); }} className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
       <div className="space-y-5">
-        <div className="flex items-center gap-3 rounded-2xl p-4 text-white shadow-lg" style={{ background: `linear-gradient(120deg, ${look.from}, ${look.to})` }}>
-          <span className="text-3xl">{look.emoji}</span>
-          <div className="min-w-0 flex-1"><p className="text-lg font-extrabold">{t(`offer.type.${type}`)}</p><p className="text-sm opacity-90">{t(`offer.desc.${type}`)}</p></div>
-          {onBack && !initial && <button type="button" onClick={onBack} className="rounded-xl bg-white/20 px-3 py-2 text-sm font-semibold hover:bg-white/30">{t("offer.changeType")}</button>}
+        <div className="flex items-center gap-3.5 rounded-[18px] bg-surface p-4 shadow-card">
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[14px] text-white shadow-[0_8px_18px_-8px_rgb(16_18_24/.4)]" style={{ background: `linear-gradient(135deg, ${look.from}, ${look.to})` }}><Icon name={look.icon} className="h-6 w-6" /></span>
+          <div className="min-w-0 flex-1"><p className="font-display text-[16px] font-semibold text-ink">{t(`offer.type.${type}`)}</p><p className="text-[13px] text-muted">{t(`offer.desc.${type}`)}</p></div>
+          {onBack && !initial && <Button type="button" variant="secondary" size="sm" onClick={onBack}>{t("offer.changeType")}</Button>}
         </div>
 
         {section(t("offer.s.basics"), (
@@ -271,10 +276,10 @@ export function OfferForm({ type, initial, onSaved, onBack }: { type: OfferType;
             {type === "TIERED_QTY" && (
               <div data-field="config.tiers" className="space-y-2">
                 {tiers.map((tr, i) => (
-                  <div key={i} className="flex items-center gap-2 rounded-xl bg-slate-50 p-2 text-sm">
-                    <span className="text-slate-500">{t("offer.tierBuy")}</span><Input dir="ltr" inputMode="numeric" className="!w-20" value={tr.minQty} onChange={(e) => setTiers(tiers.map((x, k) => (k === i ? { ...x, minQty: e.target.value } : x)))} />
-                    <span className="text-slate-500">{t("offer.tierGet")}</span><Input dir="ltr" inputMode="numeric" className="!w-20" value={tr.percent} onChange={(e) => setTiers(tiers.map((x, k) => (k === i ? { ...x, percent: e.target.value } : x)))} /><span>%</span>
-                    <button type="button" className="ms-auto grid h-8 w-8 place-items-center rounded-full text-slate-400 hover:bg-white hover:text-red-500" onClick={() => setTiers(tiers.filter((_, k) => k !== i))}><Icon name="close" className="h-4 w-4" /></button>
+                  <div key={i} className="flex items-center gap-2 rounded-[12px] bg-surface-2 p-2 text-sm">
+                    <span className="text-muted">{t("offer.tierBuy")}</span><Input dir="ltr" inputMode="numeric" className="!w-20" value={tr.minQty} onChange={(e) => setTiers(tiers.map((x, k) => (k === i ? { ...x, minQty: e.target.value } : x)))} />
+                    <span className="text-muted">{t("offer.tierGet")}</span><Input dir="ltr" inputMode="numeric" className="!w-20" value={tr.percent} onChange={(e) => setTiers(tiers.map((x, k) => (k === i ? { ...x, percent: e.target.value } : x)))} /><span>%</span>
+                    <button type="button" className="ms-auto grid h-8 w-8 place-items-center rounded-full text-faint hover:bg-surface hover:text-red-500" onClick={() => setTiers(tiers.filter((_, k) => k !== i))}><Icon name="close" className="h-4 w-4" /></button>
                   </div>
                 ))}
                 {fe.err("config.tiers") && <p className="text-xs font-medium text-red-600">{fe.err("config.tiers")}</p>}
@@ -288,7 +293,7 @@ export function OfferForm({ type, initial, onSaved, onBack }: { type: OfferType;
             {type === "ORDER_THRESHOLD" && f.discountType === "PERCENT" && <Field label={t("offer.maxDiscount", { c: currency })}><Input dir="ltr" inputMode="decimal" value={f.maxDiscount} onChange={(e) => set({ maxDiscount: e.target.value })} placeholder={t("offer.optional")} /></Field>}
             {type === "GIFT_WITH_PURCHASE" && (
               <div data-field="config.giftVariantId" className="space-y-2">
-                <p className="text-sm font-semibold text-slate-700">{t("offer.giftPick")}</p>
+                <p className="text-sm font-semibold text-ink-2">{t("offer.giftPick")}</p>
                 <ProductPicker value={gift.productId ? [gift.productId] : []} products={products} onChange={(ids, ps) => { const id = ids[ids.length - 1] ?? ""; setGift({ productId: id, variantId: "" }); setProducts(ps); }} />
                 {giftProduct.data && <Select value={gift.variantId} onChange={(e) => setGift({ ...gift, variantId: e.target.value })}><option value="">{t("offer.giftWhich")}</option>{giftProduct.data.variants.filter((v) => v.status === "ACTIVE").map((v) => <option key={v.id} value={v.id}>{v.comboKey.replace(/\|/g, " / ").replace(/[^/|]*=/g, "") || t("offer.giftOnly")}</option>)}</Select>}
                 {fe.err("config.giftVariantId") && <p className="text-xs font-medium text-red-600">{fe.err("config.giftVariantId")}</p>}
@@ -307,7 +312,7 @@ export function OfferForm({ type, initial, onSaved, onBack }: { type: OfferType;
             {f.appliesTo === "CATEGORIES" && type !== "BUNDLE_PRICE" && (
               <div data-field="categoryIds" className="space-y-2">
                 <div className="flex flex-wrap gap-1.5">{cats.map((c) => <span key={c.id} className="inline-flex items-center gap-1 rounded-full bg-brand-soft py-1 pe-1 ps-3 text-xs font-semibold text-brand-dark">{c.name}<button type="button" className="grid h-5 w-5 place-items-center rounded-full hover:bg-brand/20" onClick={() => setCats(cats.filter((x) => x.id !== c.id))}><Icon name="close" className="h-3 w-3" /></button></span>)}
-                  {(initial?.categoryIds?.length ?? 0) > 0 && cats.length === 0 && <span className="text-xs text-slate-500">{t("offer.catsKept", { n: initial!.categoryIds!.length })}</span>}</div>
+                  {(initial?.categoryIds?.length ?? 0) > 0 && cats.length === 0 && <span className="text-xs text-muted">{t("offer.catsKept", { n: initial!.categoryIds!.length })}</span>}</div>
                 <TaxonomyPicker value={null} onChange={(n: TaxonomyNode) => { if (!cats.some((c) => c.id === n.id)) setCats([...cats, { id: n.id, name: n.name || n.breadcrumb }]); fe.clear("categoryIds"); }} />
                 {fe.err("categoryIds") && <p className="text-xs font-medium text-red-600">{fe.err("categoryIds")}</p>}
               </div>
@@ -336,19 +341,19 @@ export function OfferForm({ type, initial, onSaved, onBack }: { type: OfferType;
         {type !== "COUPON" && section(t("offer.s.show"), (
           <>
             <Field name="badgeText" error={fe.err("badgeText")} label={t("offer.badge")} hint={t("offer.badgeHint")}><Input value={f.badgeText} maxLength={40} onChange={(e) => set({ badgeText: e.target.value })} placeholder={t(`offer.badgePh.${look.scope}`)} /></Field>
-            <label className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3 text-sm"><span><b className="block text-slate-800">{t("offer.banner")}</b><span className="text-xs text-slate-500">{t("offer.bannerHint")}</span></span><input type="checkbox" className="h-5 w-5 accent-[var(--brand)]" checked={f.showBanner} onChange={(e) => set({ showBanner: e.target.checked })} /></label>
-            {look.scope === "cart" && <label className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3 text-sm"><span><b className="block text-slate-800">{t("offer.stackable")}</b><span className="text-xs text-slate-500">{t("offer.stackableHint")}</span></span><input type="checkbox" className="h-5 w-5 accent-[var(--brand)]" checked={f.stackable} onChange={(e) => set({ stackable: e.target.checked })} /></label>}
+            <div className="flex items-center justify-between gap-3 rounded-[12px] bg-surface-2 p-3 text-sm"><span><b className="block text-ink">{t("offer.banner")}</b><span className="text-xs text-muted">{t("offer.bannerHint")}</span></span><Switch checked={f.showBanner} onChange={(v) => set({ showBanner: v })} label={t("offer.banner")} /></div>
+            {look.scope === "cart" && <div className="flex items-center justify-between gap-3 rounded-[12px] bg-surface-2 p-3 text-sm"><span><b className="block text-ink">{t("offer.stackable")}</b><span className="text-xs text-muted">{t("offer.stackableHint")}</span></span><Switch checked={f.stackable} onChange={(v) => set({ stackable: v })} label={t("offer.stackable")} /></div>}
           </>
         ), 5)}
 
-        {fe.any ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{t("form.fixMarked")}</div> : <ErrorText error={save.error} />}
-        <div className="sticky bottom-3 z-10 flex flex-wrap gap-2 rounded-2xl bg-white/90 p-2 shadow-lift backdrop-blur">
-          <Button type="submit" loading={save.loading}>{initial ? t("common.save") : type === "COUPON" ? t("offer.createCoupon") : t("offer.launch")}</Button>
-          {type !== "COUPON" && !initial && <Button type="button" variant="secondary" disabled={save.loading} onClick={() => save.run(true)}>{t("offer.saveDraft")}</Button>}
-        </div>
+        {!fe.any && <ErrorText error={save.error} />}
+        <SaveBar saving={save.loading} error={fe.any} dirty>
+          {type !== "COUPON" && !initial && <Button type="button" variant="secondary" disabled={save.loading} onClick={() => void save.run(true)}>{t("offer.saveDraft")}</Button>}
+          <Button type="submit" variant="ink" loading={save.loading}>{initial ? t("common.save") : type === "COUPON" ? t("offer.createCoupon") : t("offer.launch")}</Button>
+        </SaveBar>
       </div>
-      <aside className="lg:sticky lg:top-20 lg:self-start">
-        <div className="rounded-2xl bg-gradient-to-b from-slate-50 to-white p-4 shadow-card ring-1 ring-slate-100">
+      <aside className="min-w-0 lg:sticky lg:top-20 lg:self-start">
+        <div className="rounded-[18px] bg-surface p-4 shadow-card">
           <Preview type={type} name={f.name} badge={f.badgeText} config={type === "COUPON" ? { ...config(), code: f.code } : config()} endsAt={f.endsAt ? new Date(f.endsAt).toISOString() : ""} fmt={fmt} />
         </div>
       </aside>

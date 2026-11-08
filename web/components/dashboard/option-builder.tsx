@@ -1,6 +1,7 @@
 "use client";
 
 import { useApi } from "../hooks";
+import { Icon } from "../icons";
 import { useI18n } from "../i18n-provider";
 import { Button, Input, Select } from "../ui";
 
@@ -28,11 +29,11 @@ export function OptionBuilder({ options, onChange, scales }: { options: OptionDr
     <div className="space-y-4">
       {options.map((o, i) => (
         <div key={i} className="space-y-2 rounded-xl border p-3">
-          <div className="flex items-center justify-between"><p className="text-sm font-semibold">{o.kind === "COLOR" ? t("options.color") : o.kind === "SIZE" ? t("options.size") : t("options.custom")}</p><Button type="button" variant="ghost" size="sm" onClick={() => onChange(options.filter((_, k) => k !== i))}>✕</Button></div>
+          <div className="flex items-center justify-between"><p className="text-sm font-semibold">{o.kind === "COLOR" ? t("options.color") : o.kind === "SIZE" ? t("options.size") : t("options.custom")}</p><Button type="button" variant="ghost" size="sm" onClick={() => onChange(options.filter((_, k) => k !== i))} aria-label={t("common.remove")}><Icon name="close" className="h-4 w-4" /></Button></div>
           {o.kind === "COLOR" && (
             <div className="flex flex-wrap gap-2">{attrs.data?.colors.map((c) => {
               const on = o.values.includes(c.nameAr);
-              return <button key={c.code} type="button" onClick={() => toggle(i, c.nameAr)} className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition ${on ? "border-brand bg-brand-soft font-semibold" : "border-slate-300 hover:border-brand"}`}>
+              return <button key={c.code} type="button" onClick={() => toggle(i, c.nameAr)} className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition ${on ? "border-brand bg-brand-soft font-semibold" : "border-line-strong hover:border-brand"}`}>
                 <span className="h-4 w-4 rounded-full border border-black/15" style={{ background: c.hex ?? "conic-gradient(red, yellow, lime, aqua, blue, magenta, red)" }} />{c.name}</button>;
             })}</div>
           )}
@@ -41,7 +42,7 @@ export function OptionBuilder({ options, onChange, scales }: { options: OptionDr
               {allScales.length > 1 && <Select className="max-w-60" value={o.scale} onChange={(e) => set(i, { scale: e.target.value, values: [] })}>{allScales.map((sc) => <option key={sc} value={sc}>{t(`scale.${sc}`)}</option>)}</Select>}
               <div className="flex flex-wrap gap-2">{(attrs.data?.sizes[o.scale] ?? []).map((z) => {
                 const on = o.values.includes(z.nameAr);
-                return <button key={z.code} type="button" onClick={() => toggle(i, z.nameAr)} className={`rounded-full border px-3.5 py-1.5 text-sm transition ${on ? "border-brand bg-brand text-white" : "border-slate-300 hover:border-brand"}`}>{z.name}</button>;
+                return <button key={z.code} type="button" onClick={() => toggle(i, z.nameAr)} className={`rounded-full border px-3.5 py-1.5 text-sm transition ${on ? "border-brand bg-brand text-white" : "border-line-strong hover:border-brand"}`}>{z.name}</button>;
               })}</div>
             </>
           )}
