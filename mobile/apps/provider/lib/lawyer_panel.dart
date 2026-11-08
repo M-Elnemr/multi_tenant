@@ -6,6 +6,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:platform_core/platform_core.dart';
 
 import 'common.dart';
+import 'theme/templates.dart';
 import 'clinic_panel.dart' show NotificationsScreen;
 import 'domains_billing.dart';
 import 'forms.dart';
@@ -90,41 +91,30 @@ class LawyerHome extends StatelessWidget {
       builder: (context, both, reload) {
         final o = Map<String, dynamic>.from(both[0] as Map);
         final agenda = _maps(both[1]);
-        Widget kpi(String label, String value, IconData icon, Color color, {String? hint}) => Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [Container(width: 34, height: 34, decoration: BoxDecoration(color: color.withValues(alpha: .12), borderRadius: BorderRadius.circular(10)), child: Icon(icon, color: color, size: 19)), const Spacer()]),
-              const SizedBox(height: 8),
-              Text(value, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 22)),
-              Text(label, style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 12)),
-              if (hint != null) Text(hint, style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 11)),
-            ])));
+        Widget kpi(String label, String value, IconData icon, Color color, {String? hint}) => TemplateStatTile(label: label, text: value, icon: icon, color: color, hint: hint);
         return RefreshIndicator(
           onRefresh: reload,
           child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 32), children: [
-            Container(
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFF0B1D3A), Color(0xFF1E3A5F)]), borderRadius: BorderRadius.circular(22)),
-              child: Row(children: [
-                const Text('⚖️', style: TextStyle(fontSize: 34)),
-                const SizedBox(width: 12),
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(_l('أجندة اليوم', "Today's agenda"), style: const TextStyle(color: Color(0xFFC9A227), fontWeight: FontWeight.w800)),
-                  Text(_l('${agenda.length} موعد اليوم', '${agenda.length} items today'), style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
-                ])),
-              ]),
+            TemplateHero(
+              overline: _l('أجندة اليوم', "Today's agenda"),
+              value: agenda.length,
+              format: (v) => _l('${v.round()} موعد اليوم', '${v.round()} items today'),
+              figures: [
+                HeroFigure(_l('طلبات للمراجعة', 'To review'), (o['pendingBookings'] as num?) ?? 0),
+                HeroFigure(_l('قضايا متداولة', 'Open cases'), (o['openCases'] as num?) ?? 0),
+              ],
             ),
-            const SizedBox(height: 10),
-            GridView.count(crossAxisCount: 2, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), mainAxisSpacing: 6, crossAxisSpacing: 6, childAspectRatio: 1.35, children: [
-              kpi(_l('طلبات للمراجعة', 'Requests to review'), '${o['pendingBookings'] ?? 0}', Icons.event_available_rounded, const Color(0xFFD98200)),
-              kpi(_l('قضايا متداولة', 'Open cases'), '${o['openCases'] ?? 0}', Icons.work_rounded, const Color(0xFF2563EB), hint: _l('${o['underStudy'] ?? 0} تحت الدراسة', '${o['underStudy'] ?? 0} under study')),
-              kpi(_l('نسبة الكسب', 'Win rate'), o['winRate'] == null ? '—' : '${o['winRate']}%', Icons.emoji_events_rounded, const Color(0xFF1E9E5A), hint: _l('${o['won'] ?? 0} كسب · ${o['lost'] ?? 0} خسارة', '${o['won'] ?? 0} won · ${o['lost'] ?? 0} lost')),
-              kpi(_l('أتعاب مستحقة', 'Fees due'), s.money((o['dueMinor'] as num?) ?? 0, ctx.currency), Icons.receipt_long_rounded, const Color(0xFFD14343), hint: _l('المحصل هذا الشهر ${s.money((o['collectedThisMonthMinor'] as num?) ?? 0, ctx.currency)}', 'This month ${s.money((o['collectedThisMonthMinor'] as num?) ?? 0, ctx.currency)}')),
-            ]),
-            const SizedBox(height: 14),
-            Text(_l('اليوم', 'Today'), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
+            const SizedBox(height: 12),
+            templateGrid(context, [
+              kpi(_l('طلبات للمراجعة', 'Requests to review'), '${o['pendingBookings'] ?? 0}', Icons.event_available_rounded, const Color(0xFFB7791F)),
+              kpi(_l('قضايا متداولة', 'Open cases'), '${o['openCases'] ?? 0}', Icons.work_rounded, const Color(0xFF14213D), hint: _l('${o['underStudy'] ?? 0} تحت الدراسة', '${o['underStudy'] ?? 0} under study')),
+              kpi(_l('نسبة الكسب', 'Win rate'), o['winRate'] == null ? '—' : '${o['winRate']}%', Icons.emoji_events_rounded, const Color(0xFF1E7E4F), hint: _l('${o['won'] ?? 0} كسب · ${o['lost'] ?? 0} خسارة', '${o['won'] ?? 0} won · ${o['lost'] ?? 0} lost')),
+              kpi(_l('أتعاب مستحقة', 'Fees due'), s.money((o['dueMinor'] as num?) ?? 0, ctx.currency), Icons.receipt_long_rounded, const Color(0xFFB03A2E), hint: _l('المحصل هذا الشهر ${s.money((o['collectedThisMonthMinor'] as num?) ?? 0, ctx.currency)}', 'This month ${s.money((o['collectedThisMonthMinor'] as num?) ?? 0, ctx.currency)}')),
+            ], aspect: 1.2),
+            TemplateSectionTitle(_l('اليوم', 'Today')),
             if (agenda.isEmpty) Padding(padding: const EdgeInsets.all(20), child: Center(child: Text(_l('☕ لا مواعيد اليوم', '☕ Nothing today'), style: const TextStyle(color: Color(0xFF6B7C8D))))),
             for (final i in agenda) _CalTile(ctx: ctx, item: i, onChanged: reload),
-            const SizedBox(height: 14),
-            Text(_l('الجلسات والمواعيد القادمة', 'Coming hearings & deadlines'), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
+            TemplateSectionTitle(_l('الجلسات والمواعيد القادمة', 'Coming hearings & deadlines')),
             for (final u in _maps(o['upcoming'])) Card(child: ListTile(
               leading: CircleAvatar(backgroundColor: const Color(0x226366F1), child: Text('${DateTime.parse('${u['startsAt']}').toLocal().day}', style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF4338CA)))),
               title: Text('${u['description']}', style: const TextStyle(fontWeight: FontWeight.w800)),
@@ -227,11 +217,11 @@ class _LawyerScheduleState extends State<LawyerSchedule> {
             onTap: () => setState(() => _day = d),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200), width: 54,
-              decoration: BoxDecoration(color: d == _day ? const Color(0xFF0B1D3A) : Theme.of(context).cardColor, borderRadius: BorderRadius.circular(16), border: Border.all(color: d.year == now.year && d.month == now.month && d.day == now.day ? const Color(0xFFC9A227) : Colors.transparent, width: 2)),
+              decoration: BoxDecoration(color: d == _day ? const Color(0xFF14213D) : Theme.of(context).cardColor, borderRadius: BorderRadius.circular(16), border: Border.all(color: d.year == now.year && d.month == now.month && d.day == now.day ? const Color(0xFFB08D57) : Colors.transparent, width: 2)),
               child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                 Text(_ar ? const ['ن', 'ث', 'ر', 'خ', 'ج', 'س', 'ح'][d.weekday - 1] : const ['M', 'T', 'W', 'T', 'F', 'S', 'S'][d.weekday - 1], style: TextStyle(fontSize: 12, color: d == _day ? Colors.white70 : const Color(0xFF6B7C8D))),
                 Text('${d.day}', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: d == _day ? Colors.white : null)),
-                if (countOn(d) > 0) Container(margin: const EdgeInsets.only(top: 2), padding: const EdgeInsets.symmetric(horizontal: 6), decoration: BoxDecoration(color: const Color(0xFFC9A227), borderRadius: BorderRadius.circular(8)), child: Text('${countOn(d)}', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Color(0xFF0B1D3A)))),
+                if (countOn(d) > 0) Container(margin: const EdgeInsets.only(top: 2), padding: const EdgeInsets.symmetric(horizontal: 6), decoration: BoxDecoration(color: const Color(0xFFB08D57), borderRadius: BorderRadius.circular(8)), child: Text('${countOn(d)}', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Color(0xFF14213D)))),
               ]),
             ),
           )),
@@ -1044,7 +1034,7 @@ class _ClientAppCard extends StatelessWidget {
     final on = c['portalEnabled'] == true, hasPhone = '${c['phone'] ?? ''}'.isNotEmpty, write = ctx.canWrite('clients');
     return Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Row(children: [
-        const Icon(Icons.phone_iphone_rounded, color: Color(0xFF0B1D3A)),
+        const Icon(Icons.phone_iphone_rounded, color: Color(0xFF14213D)),
         const SizedBox(width: 8),
         Expanded(child: Text(_l('تطبيق الموكل', 'Client app'), style: const TextStyle(fontWeight: FontWeight.w900))),
         Container(padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3), decoration: BoxDecoration(color: (on ? const Color(0xFF1E9E5A) : const Color(0xFF6B7C8D)).withValues(alpha: .12), borderRadius: BorderRadius.circular(20)),
@@ -1205,7 +1195,7 @@ class _LawyerFinanceState extends State<LawyerFinance> {
           const SizedBox(height: 8),
           SizedBox(height: 150, child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
             for (final m in monthly) Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 2), child: Column(mainAxisAlignment: MainAxisAlignment.end, children: [
-              Flexible(child: FractionallySizedBox(heightFactor: ((m['collectedMinor'] as num) / maxV).toDouble().clamp(0.02, 1.0), child: Container(decoration: BoxDecoration(gradient: const LinearGradient(begin: Alignment.bottomCenter, end: Alignment.topCenter, colors: [Color(0xFF0B1D3A), Color(0xFFC9A227)]), borderRadius: BorderRadius.circular(6))))),
+              Flexible(child: FractionallySizedBox(heightFactor: ((m['collectedMinor'] as num) / maxV).toDouble().clamp(0.02, 1.0), child: Container(decoration: BoxDecoration(gradient: const LinearGradient(begin: Alignment.bottomCenter, end: Alignment.topCenter, colors: [Color(0xFF14213D), Color(0xFFB08D57)]), borderRadius: BorderRadius.circular(6))))),
               const SizedBox(height: 4),
               Text('${m['month']}'.substring(5), style: const TextStyle(fontSize: 10, color: Color(0xFF6B7C8D))),
             ]))),
@@ -1382,7 +1372,7 @@ class LawyerSettings extends StatelessWidget {
   Widget build(BuildContext context) => ListView(padding: const EdgeInsets.all(16), children: [
         if (ctx.canWrite('settings')) _WhatsAppReportCard(ctx: ctx),
         Card(child: ListTile(
-          leading: const Icon(Icons.public_rounded, color: Color(0xFFC9A227)),
+          leading: const Icon(Icons.public_rounded, color: Color(0xFFB08D57)),
           title: Text(_l('موقعك', 'Your website'), style: const TextStyle(fontWeight: FontWeight.w900)),
           subtitle: Text(ctx.host, textDirection: TextDirection.ltr, textAlign: TextAlign.start),
           trailing: Wrap(children: [IconButton(onPressed: () => launch('https://${ctx.host}'), icon: const Icon(Icons.open_in_new_rounded)), IconButton(tooltip: _l('تصميم موقعي', 'Design my website'), onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => Scaffold(appBar: AppBar(title: Text(_l('موقعي', 'My website'))), body: LawyerWebsite(ctx: ctx)))), icon: const Icon(Icons.design_services_rounded))]),
@@ -1520,7 +1510,7 @@ class _LawyerWebsiteState extends State<LawyerWebsite> {
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Row(children: [Icon(icon, size: 20, color: const Color(0xFFC9A227)), const SizedBox(width: 8), Expanded(child: Text(_l(ar, en), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15)))]),
+            Row(children: [Icon(icon, size: 20, color: const Color(0xFFB08D57)), const SizedBox(width: 8), Expanded(child: Text(_l(ar, en), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15)))]),
             if (hintAr != null) Padding(padding: const EdgeInsets.only(top: 4), child: Text(_l(hintAr, hintEn!), style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 12.5))),
             const SizedBox(height: 12),
             ...children,
@@ -1543,9 +1533,9 @@ class _LawyerWebsiteState extends State<LawyerWebsite> {
         ListView(padding: const EdgeInsets.fromLTRB(14, 14, 14, 96), children: [
           Card(
             margin: const EdgeInsets.only(bottom: 12),
-            color: const Color(0xFF0B1D3A),
+            color: const Color(0xFF14213D),
             child: ListTile(
-              leading: const Icon(Icons.public_rounded, color: Color(0xFFC9A227)),
+              leading: const Icon(Icons.public_rounded, color: Color(0xFFB08D57)),
               title: Text(_l('موقعك على الإنترنت', 'Your website'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
               subtitle: Text(ctx.host, textDirection: TextDirection.ltr, textAlign: TextAlign.start, style: const TextStyle(color: Color(0xFFCBD5E1))),
               trailing: IconButton(tooltip: _l('افتح الموقع', 'Open the website'), onPressed: () => launch('https://${ctx.host}'), icon: const Icon(Icons.open_in_new_rounded, color: Colors.white)),
@@ -1561,7 +1551,7 @@ class _LawyerWebsiteState extends State<LawyerWebsite> {
                     child: Container(
                       width: 170,
                       margin: const EdgeInsetsDirectional.only(end: 10),
-                      decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), border: Border.all(color: tpl == t.$1 ? const Color(0xFFC9A227) : const Color(0xFFE2E8F0), width: tpl == t.$1 ? 2.5 : 1)),
+                      decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), border: Border.all(color: tpl == t.$1 ? const Color(0xFFB08D57) : const Color(0xFFE2E8F0), width: tpl == t.$1 ? 2.5 : 1)),
                       clipBehavior: Clip.antiAlias,
                       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                         Container(
@@ -1577,7 +1567,7 @@ class _LawyerWebsiteState extends State<LawyerWebsite> {
                               Container(height: 6, width: 70, decoration: BoxDecoration(color: Colors.white.withValues(alpha: .4), borderRadius: BorderRadius.circular(4))),
                             ]),
                             PositionedDirectional(end: 0, bottom: 0, child: Container(height: 18, width: 44, decoration: BoxDecoration(color: t.$7, borderRadius: BorderRadius.circular(6)))),
-                            if (tpl == t.$1) const PositionedDirectional(start: 0, bottom: 0, child: CircleAvatar(radius: 11, backgroundColor: Colors.white, child: Icon(Icons.check_rounded, size: 16, color: Color(0xFF0B1D3A)))),
+                            if (tpl == t.$1) const PositionedDirectional(start: 0, bottom: 0, child: CircleAvatar(radius: 11, backgroundColor: Colors.white, child: Icon(Icons.check_rounded, size: 16, color: Color(0xFF14213D)))),
                           ]),
                         ),
                         Padding(
@@ -1669,7 +1659,7 @@ class _LawyerWebsiteState extends State<LawyerWebsite> {
                     DropdownButton<int>(
                       value: [5, 4, 3].contains(row['rating']) ? row['rating'] as int : 5,
                       underline: const SizedBox.shrink(),
-                      items: [for (final r in [5, 4, 3]) DropdownMenuItem(value: r, child: Text('★' * r, style: const TextStyle(color: Color(0xFFC9A227))))],
+                      items: [for (final r in [5, 4, 3]) DropdownMenuItem(value: r, child: Text('★' * r, style: const TextStyle(color: Color(0xFFB08D57))))],
                       onChanged: (v) { row['rating'] = v; _redraw(); },
                     ),
                   ]),
@@ -1704,7 +1694,7 @@ class _LawyerWebsiteState extends State<LawyerWebsite> {
           start: 14, end: 14, bottom: 14,
           child: SafeArea(
             child: FilledButton.icon(
-              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52), backgroundColor: const Color(0xFF0B1D3A), foregroundColor: Colors.white),
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52), backgroundColor: const Color(0xFF14213D), foregroundColor: Colors.white),
               onPressed: !_dirty || _saving ? null : _save,
               icon: _saving ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.publish_rounded),
               label: Text(_dirty ? _l('نشر التعديلات على موقعي', 'Publish changes') : _l('كل التعديلات منشورة', 'Everything is published'), style: const TextStyle(fontWeight: FontWeight.w900)),

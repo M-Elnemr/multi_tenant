@@ -18,6 +18,7 @@ import 'register.dart';
 import 'shell.dart';
 import 'single_business.dart';
 import 'store_panel.dart';
+import 'theme/templates.dart';
 
 
 Future<void> main() async {
@@ -31,16 +32,20 @@ class ProviderApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => ValueListenableBuilder<Locale>(
         valueListenable: AppLocale.notifier,
-        builder: (context, locale, _) => MaterialApp(
+        builder: (context, locale, _) => ValueListenableBuilder<AppTemplate?>(
+        valueListenable: activeTemplate,
+        builder: (context, tpl, _) => MaterialApp(
           title: SingleBusiness.appTitle,
           debugShowCheckedModeBanner: false,
           navigatorKey: navigatorKey,
-          theme: themeFor(null, seed: AppBrand.primary),
+          // the business that is open decides the look (shop / clinic / lawyer); sign-in and the picker keep the platform look
+          theme: tpl == null ? themeFor(null, seed: AppBrand.primary) : themeOfTemplate(tpl),
           locale: locale,
           localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],
           supportedLocales: const [Locale('ar'), Locale('en')],
           builder: (context, child) => BillingBarHost(child: child),
           home: const Root(),
+        ),
         ),
       );
 }
@@ -376,9 +381,12 @@ class _BusinessHomeState extends State<BusinessHome> with WidgetsBindingObserver
   late bool _disabled = widget.business['status'] == 'SUSPENDED';   // unpaid subscription: only the pay screen is available
   Timer? _billingTimer;
 
+  late final AppTemplate _tpl = templateFor(widget.business['type'] as String?);
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) { activeTemplate.value = _tpl; });
     _unreadTimer = Timer.periodic(const Duration(seconds: 30), (_) { _pollUnread(); });
     _pollUnread();
     ApiClient.tenantDisabled.addListener(_onDisabled);
@@ -398,6 +406,7 @@ class _BusinessHomeState extends State<BusinessHome> with WidgetsBindingObserver
 
   @override
   void dispose() {
+    WidgetsBinding.instance.addPostFrameCallback((_) { activeTemplate.value = null; });
     _timer?.cancel();
     _unreadTimer?.cancel();
     _billingTimer?.cancel();
@@ -473,9 +482,8 @@ class _BusinessHomeState extends State<BusinessHome> with WidgetsBindingObserver
   Widget build(BuildContext context) {
     final s = S.of(context);
     final b = widget.business;
-    final color = hexColor(b['primaryColor']);
     return Theme(
-      data: themeFor(null, seed: color),
+      data: themeOfTemplate(_tpl),
       child: Scaffold(
         appBar: AppBar(
           centerTitle: false,
