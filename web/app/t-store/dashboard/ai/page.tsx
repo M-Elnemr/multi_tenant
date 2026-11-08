@@ -12,10 +12,13 @@ import { Unanswered } from "@/components/dashboard/unanswered";
 import { AiReadiness } from "@/components/dashboard/ai-readiness";
 import { useAction, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
-import { Alert, Button, ErrorText, Field, Input, PageHeader, Select } from "@/components/ui";
+import { Alert, ErrorText, Field, Input, PageHeader, Select } from "@/components/ui";
+import { Switch } from "@/components/overlay";
+import { useToast } from "@/components/toast";
+import { ChoiceTile, SaveBar, SettingsCard, ToggleRow, HeaderLink } from "@/components/dashboard/kit";
 import { useNavTitle, useSection } from "@/components/dashboard/section";
 
-type Settings = { enabled: boolean; tone: string; maxDiscountPct: number; greeting: string | null; channels: string[] };
+type Settings = { enabled: boolean; tone: string; maxDiscountPct: number; greeting: string | null; channels: string[]; agentName?: string | null };
 const AI_CHANNELS = [["WHATSAPP", "pts.chWhatsapp"], ["FACEBOOK", "pts.chMessenger"], ["INSTAGRAM", "pts.chInstagram"], ["WEB", "pts.chWeb"]] as const;
 type Tab = "test" | "lessons" | "channels" | "whatsapp" | "settings";
 
@@ -41,13 +44,13 @@ function AiAssistant() {
 
   return (
     <>
-      <PageHeader title={title} subtitle={t("ai.subtitle")} />
+      <PageHeader eyebrow={t("ai.title")} title={title} subtitle={t("ai.subtitle")} actions={<HeaderLink href="/dashboard/inbox" icon="chat">{t("nav.inbox")}</HeaderLink>} />
       {(tab === "test" || tab === "lessons") && <AiReadiness />}
       {tab === "test" && (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-5 lg:grid-cols-2">
           <div>
             <Alert tone="blue">{t("ai.testHint")}</Alert>
-            <div className="mt-3 flex h-[32rem] flex-col overflow-hidden rounded-2xl border bg-white">
+            <div className="mt-3 flex h-[32rem] flex-col overflow-hidden rounded-[18px] bg-surface ring-1 ring-line">
               <ChatPanel className="flex-1" greeting={t("chat.greeting")} send={send} load={load} onReset={reset} onTeach={(question, answer) => { setTeach({ question, answer, n: Date.now() }); }} />
             </div>
           </div>
@@ -56,7 +59,7 @@ function AiAssistant() {
           </div>
         </div>
       )}
-      {tab === "lessons" && <div className="max-w-2xl"><AiLessons key={teach?.n ?? 0} base="store/ai/lessons" title={t("ai.teachTitle")} canWrite={write} prefill={teach} /><p className="mt-4 text-xs text-slate-500">{t("ai.platformLessons")}</p><Unanswered canWrite={write} /></div>}
+      {tab === "lessons" && <div className="max-w-3xl"><AiLessons key={teach?.n ?? 0} base="store/ai/lessons" title={t("ai.teachTitle")} canWrite={write} prefill={teach} /><p className="mt-4 text-xs text-muted">{t("ai.platformLessons")}</p><Unanswered canWrite={write} /></div>}
       {tab === "channels" && <AiChannels write={write} pendingId={pendingId} metaError={metaError} />}
       {tab === "whatsapp" && <AiWhatsApp write={write} />}
       {tab === "settings" && <SettingsForm write={write} />}
@@ -66,48 +69,57 @@ function AiAssistant() {
 
 function SettingsForm({ write }: { write: boolean }) {
   const { t } = useI18n();
+  const toast = useToast();
   const { data, reload } = useApi<Settings>("store/ai/settings");
   const [edit, setEdit] = useState<Partial<Settings>>({});
-  const [saved, setSaved] = useState(false);
   const f = data ? { ...data, ...edit } : null;
-  const setF = (v: Settings) => setEdit(v);
+  const dirty = Object.keys(edit).length > 0;
+  const setF = (v: Partial<Settings>) => setEdit({ ...edit, ...v });
   const save = useAction(async () => {
     if (!f) return;
-    await api("store/ai/settings", { method: "PUT", body: { enabled: f.enabled, tone: f.tone, maxDiscountPct: f.maxDiscountPct, greeting: f.greeting ?? "", channels: f.channels } });
-    setSaved(true);
+    await api("store/ai/settings", { method: "PUT", body: { enabled: f.enabled, tone: f.tone, maxDiscountPct: f.maxDiscountPct, greeting: f.greeting ?? "", channels: f.channels, agentName: (f.agentName ?? "").trim() } });
     await reload();
+    setEdit({});
+    toast(t("ai.saved"));
   });
-  if (!f) return null;
-  const toggle = (c: string) => setF({ ...f, channels: f.channels.includes(c) ? f.channels.filter((x) => x !== c) : [...f.channels, c] });
+  if (!f) return <div className="max-w-3xl space-y-4"><div className="skeleton h-40 rounded-[18px]" /><div className="skeleton h-56 rounded-[18px]" /></div>;
+  const toggle = (c: string) => setF({ channels: f.channels.includes(c) ? f.channels.filter((x) => x !== c) : [...f.channels, c] });
   return (
-    <div className="max-w-xl space-y-4">
-    <form onSubmit={(e) => { e.preventDefault(); setSaved(false); void save.run(); }} className="space-y-4 rounded-xl border bg-white p-5">
-      <fieldset disabled={!write} className="space-y-4 disabled:opacity-70">
-        <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={f.enabled} onChange={(e) => setF({ ...f, enabled: e.target.checked })} />{t("ai.enabled")}</label>
-        <div>
-          <p className="text-sm font-medium">{t("pts.channels")}</p>
-          <p className="mt-0.5 text-xs text-slate-500">{t("pts.channelsHint")}</p>
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            {AI_CHANNELS.map(([c, label]) => (
-              <label key={c} className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition ${f.channels.includes(c) ? "border-brand bg-brand-soft text-brand" : "border-slate-200"}`}>
-                <input type="checkbox" checked={f.channels.includes(c)} onChange={() => toggle(c)} />{t(label)}
-              </label>
-            ))}
-          </div>
-        </div>
-        <Field label={t("ai.tone")}>
-          <Select value={f.tone} onChange={(e) => setF({ ...f, tone: e.target.value })}>{["FRIENDLY", "FORMAL", "SHORT"].map((x) => <option key={x} value={x}>{t(`ai.tone.${x}`)}</option>)}</Select>
-        </Field>
-        <Field label={t("ai.maxDiscount")} hint={t("ai.maxDiscountHint")}>
-          <Input type="number" min={0} max={50} value={f.maxDiscountPct} onChange={(e) => setF({ ...f, maxDiscountPct: Math.max(0, Math.min(50, Number(e.target.value) || 0)) })} />
-        </Field>
-        <Field label={t("ai.greeting")}><Input maxLength={300} value={f.greeting ?? ""} onChange={(e) => setF({ ...f, greeting: e.target.value })} /></Field>
-      </fieldset>
-      <ErrorText error={save.error} />
-      {saved && <Alert tone="green">{t("ai.saved")}</Alert>}
-      {write && <Button type="submit" loading={save.loading}>{t("common.save")}</Button>}
-    </form>
-    <PointsWallet write={write} />
+    <div className="max-w-3xl space-y-5">
+      <form onSubmit={(e) => { e.preventDefault(); void save.run(); }} className="space-y-5">
+        <fieldset disabled={!write} className="space-y-5 disabled:opacity-80">
+          <SettingsCard tone="ai" icon="sparkles" title={t("ai.enabled")} description={t("pts.freeShopHint")} action={<Switch checked={f.enabled} onChange={(v) => setF({ enabled: v })} disabled={!write} label={t("ai.enabled")} />}>
+            <div>
+              <p className="text-[13px] font-semibold text-ink">{t("pts.channels")}</p>
+              <p className="mt-0.5 text-[12.5px] text-muted">{t("pts.channelsHint")}</p>
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {AI_CHANNELS.map(([c, label]) => <ChoiceTile key={c} on={f.channels.includes(c)} onClick={() => toggle(c)} disabled={!write}>{t(label)}</ChoiceTile>)}
+              </div>
+            </div>
+          </SettingsCard>
+
+          <SettingsCard icon="users" title={t("ai.identityTitle")} description={t("ai.identityHint")}>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label={t("ai.agentName")} hint={t("ai.agentNameHint")}>
+                <Input maxLength={30} value={f.agentName ?? ""} onChange={(e) => setF({ agentName: e.target.value })} placeholder={t("ai.agentNamePh")} />
+              </Field>
+              <Field label={t("ai.tone")}>
+                <Select value={f.tone} onChange={(e) => setF({ tone: e.target.value })}>{["FRIENDLY", "FORMAL", "SHORT"].map((x) => <option key={x} value={x}>{t(`ai.tone.${x}`)}</option>)}</Select>
+              </Field>
+            </div>
+            <div className="mt-4"><Field label={t("ai.greeting")}><Input maxLength={300} value={f.greeting ?? ""} onChange={(e) => setF({ greeting: e.target.value })} /></Field></div>
+          </SettingsCard>
+
+          <SettingsCard icon="tag" title={t("ai.maxDiscount")} description={t("ai.maxDiscountHint")}>
+            <ToggleRow title={t("ai.maxDiscount")} control={
+              <div className="relative"><Input className="w-24 pe-8 tnum" type="number" min={0} max={50} value={f.maxDiscountPct} onChange={(e) => setF({ maxDiscountPct: Math.max(0, Math.min(50, Number(e.target.value) || 0)) })} /><span className="pointer-events-none absolute inset-y-0 end-3 grid place-items-center text-xs font-semibold text-faint">%</span></div>
+            } />
+          </SettingsCard>
+        </fieldset>
+        <ErrorText error={save.error} />
+        {write && <SaveBar dirty={dirty} saving={save.loading} onDiscard={() => setEdit({})} />}
+      </form>
+      <PointsWallet write={write} />
     </div>
   );
 }
