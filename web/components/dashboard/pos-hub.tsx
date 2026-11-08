@@ -6,8 +6,12 @@ import { api } from "@/lib/client";
 import { money } from "@/lib/format";
 import { useAction, useApi, useMe } from "../hooks";
 import { useI18n } from "../i18n-provider";
-import { Alert, Badge, Button, Card, Empty, ErrorText, Field, Input, Loading, Modal, Select, Stat } from "../ui";
+import { Icon } from "../icons";
+import { ConfirmDialog } from "../overlay";
+import { useToast } from "../toast";
+import { Alert, Badge, Button, Empty, ErrorText, Field, Input, KpiStrip, Loading, Modal, Select } from "../ui";
 import { useSection } from "./section";
+import { Block, Notice, Panel, Rise, RowMenu } from "./sell/kit";
 
 type Device = { id: string; name: string; code: string; branchName: string; receiptSize: string | null; lastSeenAt: string | null; revokedAt: string | null; openIssues: number };
 type Member = { userId: string; name: string; hasPin: boolean; canRefund: boolean; canCash: boolean; canManage: boolean };
@@ -44,15 +48,12 @@ export default function PosHub() {
   const noTerminals = manage && devices.data && devices.data.filter((x) => !x.revokedAt).length === 0;
   return (
     <div className="min-w-0 space-y-5">
-      {tab === "today" && <Card className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0"><h2 className="text-lg font-bold">{t("ph.openTitle")}</h2><p className="text-sm text-slate-600">{t("ph.openHint")}</p></div>
-        <div className="flex flex-wrap gap-2">
-          <Link href="/pos" className="inline-flex items-center rounded-xl bg-brand-gradient px-5 py-2.5 text-sm font-bold text-white shadow-brand">{t("ph.openTerminal")} ↗</Link>
-          <Link href="/dashboard/products/labels" className="inline-flex items-center rounded-xl border bg-white px-4 py-2 text-sm font-semibold hover:bg-slate-50">{t("pos.labels")}</Link>
-        </div>
-      </Card>}
       {noTerminals && (tab === "today" || tab === "terminals") && <GetStarted />}
-      {tab !== "issues" && !!issues.data?.length && <Link href="/dashboard/pos?tab=issues" className="block rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-900 hover:bg-amber-100">⚠️ {t("ph.issues")}: {issues.data.length} ›</Link>}
+      {tab !== "issues" && !!issues.data?.length && (
+        <Notice icon="alert" action={<Link href="/dashboard/pos?tab=issues" className="inline-flex items-center gap-1 text-[12.5px] font-semibold text-amber-900 hover:underline">{t("ph.issues")}<Icon name="chevron" className="h-3.5 w-3.5 flip-rtl" /></Link>}>
+          <span className="font-semibold">{t("ph.issues")}: <span className="tnum">{issues.data.length}</span></span>
+        </Notice>
+      )}
       {tab === "today" && <Today m={m} />}
       {tab === "shifts" && <Shifts m={m} />}
       {tab === "terminals" && <Terminals list={devices} />}
@@ -68,25 +69,26 @@ function GetStarted() {
   const { t } = useI18n();
   const steps = [t("ph.gs1"), t("ph.gs2"), t("ph.gs3")];
   return (
-    <Card className="border border-brand/20 bg-brand-soft/40">
-      <p className="mb-3 font-bold">{t("ph.gsTitle")}</p>
+    <Panel className="bg-[linear-gradient(135deg,color-mix(in_srgb,var(--brand)_7%,transparent),transparent)] p-5">
+      <p className="mb-3 font-display text-[15px] font-semibold text-ink">{t("ph.gsTitle")}</p>
       <ol className="grid gap-3 sm:grid-cols-3">
-        {steps.map((s, i) => <li key={i} className="flex min-w-0 gap-3 rounded-xl bg-white p-3 text-sm"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand font-bold text-white">{i + 1}</span><span className="min-w-0">{s}</span></li>)}
+        {steps.map((s, i) => <li key={i} className="flex min-w-0 gap-3 rounded-[14px] bg-surface p-3 text-[13px] ring-1 ring-line"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-ink text-[12px] font-bold text-surface">{i + 1}</span><span className="min-w-0 text-ink-2">{s}</span></li>)}
       </ol>
-    </Card>
+    </Panel>
   );
 }
 
-/** A card of label/value pairs: 1 column on phones, more on wider screens (instead of wide tables that scroll sideways). */
+/** Label/value pairs: 1 column on phones, more on wider screens (instead of wide tables that scroll sideways). */
 function Pairs({ items, cols = "sm:grid-cols-2 lg:grid-cols-4" }: { items: [string, React.ReactNode][]; cols?: string }) {
   return (
-    <dl className={`grid gap-x-4 gap-y-1.5 text-sm ${cols}`}>
-      {items.map(([k, v], i) => <div key={i} className="flex min-w-0 justify-between gap-2 sm:block"><dt className="shrink-0 text-xs text-slate-500">{k}</dt><dd className="min-w-0 truncate font-semibold tabular-nums">{v}</dd></div>)}
+    <dl className={`grid gap-x-4 gap-y-2 text-sm ${cols}`}>
+      {items.map(([k, v], i) => <div key={i} className="flex min-w-0 justify-between gap-2 sm:block"><dt className="shrink-0 text-[11.5px] text-muted">{k}</dt><dd className="min-w-0 truncate font-semibold text-ink tnum">{v}</dd></div>)}
     </dl>
   );
 }
 
-function Row({ k, v }: { k: string; v: string }) { return <div className="flex min-w-0 justify-between gap-3 border-b border-slate-100 py-1.5 text-sm last:border-0"><span className="min-w-0 truncate text-slate-600">{k}</span><b className="shrink-0 tabular-nums">{v}</b></div>; }
+function Line({ k, v }: { k: string; v: string }) { return <div className="flex min-w-0 justify-between gap-3 border-b border-line py-2 text-[13.5px] last:border-0"><span className="min-w-0 truncate text-ink-2">{k}</span><b className="shrink-0 text-ink tnum">{v}</b></div>; }
+const dash = <p className="py-2 text-sm text-faint">—</p>;
 
 function Today({ m }: { m: M }) {
   const { t } = useI18n();
@@ -97,34 +99,36 @@ function Today({ m }: { m: M }) {
   const hours = d.byHour ?? [];
   const peak = Math.max(1, ...hours.map((h) => h.totalMinor));
   return (
-    <div className="min-w-0 space-y-4">
-      <Input type="date" value={day || d.day} onChange={(e) => setDay(e.target.value)} className="max-w-48" />
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label={t("ph.sales")} value={d.totals.sales} icon="bag" hint={d.totals.offlineSales ? t("ph.offlineSales", { n: String(d.totals.offlineSales) }) : undefined} />
-        <Stat label={t("ph.revenue")} value={m(d.totals.totalMinor)} icon="wallet" tone="green" />
-        <Stat label={t("ph.discounts")} value={m(d.totals.discountMinor)} icon="tag" tone="amber" />
-        <Stat label={t("ph.returns")} value={`${d.returns.returns} · ${m(d.returns.refundMinor)}`} icon="return" tone="red" />
+    <Rise className="min-w-0 space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Input type="date" value={day || d.day} onChange={(e) => setDay(e.target.value)} className="max-w-48" aria-label={t("term.date")} />
+        <Link href="/dashboard/products/labels" className="inline-flex h-10 items-center gap-1.5 rounded-[11px] px-3.5 text-[13px] font-semibold text-ink-2 ring-1 ring-line-strong hover:bg-surface"><Icon name="tag" className="h-4 w-4" />{t("pos.labels")}</Link>
       </div>
+      <KpiStrip items={[
+        { label: t("ph.sales"), value: d.totals.sales, icon: "bag", tone: "brand", hint: d.totals.offlineSales ? t("ph.offlineSales", { n: String(d.totals.offlineSales) }) : undefined },
+        { label: t("ph.revenue"), value: m(d.totals.totalMinor), icon: "wallet", tone: "green" },
+        { label: t("ph.discounts"), value: m(d.totals.discountMinor), icon: "tag", tone: "amber" },
+        { label: t("ph.returns"), value: `${d.returns.returns} · ${m(d.returns.refundMinor)}`, icon: "return", tone: "red" },
+      ]} />
       {hours.length > 0 && (
-        <Card>
-          <p className="mb-3 font-semibold">{t("ph.byHour")}</p>
+        <Block title={t("ph.byHour")} icon="chart">
           <div className="flex h-32 min-w-0 items-end gap-1" dir="ltr">
             {Array.from({ length: 24 }, (_, h) => hours.find((x) => x.hour === h)).map((x, h) => (
               <div key={h} className="group relative flex h-full min-w-0 flex-1 items-end" title={x ? `${h}:00 · ${x.sales} · ${m(x.totalMinor)}` : `${h}:00`}>
-                <div className={`w-full rounded-t ${x ? "bg-brand/70 group-hover:bg-brand" : "bg-slate-100"}`} style={{ height: `${x ? Math.max(4, (x.totalMinor / peak) * 100) : 2}%` }} />
+                <div className={`w-full rounded-t-[4px] transition-colors ${x ? "bg-brand/70 group-hover:bg-brand" : "bg-[color-mix(in_srgb,var(--ink)_7%,transparent)]"}`} style={{ height: `${x ? Math.max(4, (x.totalMinor / peak) * 100) : 2}%` }} />
               </div>
             ))}
           </div>
-          <div className="mt-1 flex justify-between text-[10px] text-slate-400" dir="ltr"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>
-        </Card>
+          <div className="mt-1.5 flex justify-between text-[10px] text-faint tnum" dir="ltr"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>
+        </Block>
       )}
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card><p className="mb-2 font-semibold">{t("ph.byMethod")}</p>{d.byMethod.map((x) => <Row key={x.method} k={t(`pay.${x.method}`)} v={m(x.amountMinor)} />)}{!d.byMethod.length && <p className="text-sm text-slate-500">—</p>}</Card>
-        <Card><p className="mb-2 font-semibold">{t("ph.byCashier")}</p>{d.byCashier.map((x) => <Row key={x.name} k={`${x.name} (${x.sales})`} v={m(x.totalMinor)} />)}{!d.byCashier.length && <p className="text-sm text-slate-500">—</p>}</Card>
-        <Card><p className="mb-2 font-semibold">{t("ph.byTerminal")}</p>{d.byDevice.map((x) => <Row key={x.name} k={`${x.name} (${x.sales})`} v={m(x.totalMinor)} />)}{!d.byDevice.length && <p className="text-sm text-slate-500">—</p>}</Card>
+      <div className="grid gap-5 lg:grid-cols-3">
+        <Block title={t("ph.byMethod")}>{d.byMethod.map((x) => <Line key={x.method} k={t(`pay.${x.method}`)} v={m(x.amountMinor)} />)}{!d.byMethod.length && dash}</Block>
+        <Block title={t("ph.byCashier")}>{d.byCashier.map((x) => <Line key={x.name} k={`${x.name} (${x.sales})`} v={m(x.totalMinor)} />)}{!d.byCashier.length && dash}</Block>
+        <Block title={t("ph.byTerminal")}>{d.byDevice.map((x) => <Line key={x.name} k={`${x.name} (${x.sales})`} v={m(x.totalMinor)} />)}{!d.byDevice.length && dash}</Block>
       </div>
-      <Card><p className="mb-2 font-semibold">{t("ph.topItems")}</p>{d.topItems.map((x, i) => <Row key={i} k={`${x.qty} × ${x.name}${x.label ? ` (${x.label})` : ""}`} v={m(x.totalMinor)} />)}{!d.topItems.length && <p className="text-sm text-slate-500">—</p>}</Card>
-    </div>
+      <Block title={t("ph.topItems")} icon="star">{d.topItems.map((x, i) => <Line key={i} k={`${x.qty} × ${x.name}${x.label ? ` (${x.label})` : ""}`} v={m(x.totalMinor)} />)}{!d.topItems.length && dash}</Block>
+    </Rise>
   );
 }
 
@@ -133,8 +137,8 @@ function Shifts({ m }: { m: M }) {
   const list = useApi<ShiftRow[]>("store/pos/shifts");
   const [open, setOpen] = useState<string | null>(null);
   const detail = useApi<Record<string, unknown>>(open ? `store/pos/shifts/${open}` : null);
-  if (!list.data) return list.error ? <ErrorText error={list.error} /> : <Loading />;
-  if (!list.data.length) return <Empty>{t("ph.noShifts")}</Empty>;
+  if (!list.data) return list.error ? <ErrorText error={list.error} /> : <Loading variant="cards" />;
+  if (!list.data.length) return <Empty icon="clock" title={t("ph.noShifts")} />;
   const r = detail.data as null | { byMethod: { method: string; sales: number; amountMinor: number }[]; returns: { refundMethod: string; returns: number; refundMinor: number }[];
     cashMoves: { kind: string; amountMinor: number; reason: string; at: string; byName: string }[]; totals: { sales: number; totalMinor: number; discountMinor: number }; expectedNowMinor: number;
     topItems: { name: string; label: string | null; qty: number; totalMinor: number }[]; currency: string; openingFloatMinor: number; countedCashMinor: number | null; differenceMinor: number | null; status: string; note: string | null };
@@ -142,11 +146,11 @@ function Shifts({ m }: { m: M }) {
     <>
       <div className="grid gap-3 xl:grid-cols-2">
         {list.data.map((s) => (
-          <button key={s.id} type="button" onClick={() => setOpen(s.id)} className="min-w-0 rounded-2xl bg-white p-4 text-start shadow-card transition hover:ring-2 hover:ring-brand/30">
-            <div className="mb-2 flex min-w-0 items-center justify-between gap-2">
-              <div className="min-w-0"><b className="block truncate">{s.cashierName}</b><span className="block truncate text-xs text-slate-500">{s.deviceName} · {when(s.openedAt, locale)}{s.closedAt ? ` → ${when(s.closedAt, locale)}` : ""}</span></div>
+          <button key={s.id} type="button" onClick={() => setOpen(s.id)} className="min-w-0 rounded-[18px] bg-surface p-4 text-start ring-1 ring-line transition hover:ring-line-strong hover:shadow-[var(--shadow-float)]">
+            <div className="mb-3 flex min-w-0 items-center justify-between gap-2">
+              <div className="min-w-0"><b className="block truncate text-ink">{s.cashierName}</b><span className="block truncate text-[12px] text-muted">{s.deviceName} · {when(s.openedAt, locale)}{s.closedAt ? ` → ${when(s.closedAt, locale)}` : ""}</span></div>
               {s.status === "OPEN" ? <Badge tone="green">{t("ph.open")}</Badge> : s.differenceMinor === null ? null : (
-                <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-bold ${s.differenceMinor === 0 ? "bg-emerald-50 text-emerald-700" : s.differenceMinor > 0 ? "bg-sky-50 text-sky-700" : "bg-red-50 text-red-700"}`}>
+                <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-bold ring-1 ring-inset ${s.differenceMinor === 0 ? "bg-emerald-50 text-emerald-700 ring-emerald-600/15" : s.differenceMinor > 0 ? "bg-sky-50 text-sky-700 ring-sky-600/15" : "bg-red-50 text-red-700 ring-red-600/15"}`}>
                   {s.differenceMinor === 0 ? t("term.balanced") : `${s.differenceMinor > 0 ? t("term.over") : t("term.short")} ${m(Math.abs(s.differenceMinor), s.currency)}`}
                 </span>
               )}
@@ -157,19 +161,19 @@ function Shifts({ m }: { m: M }) {
       </div>
       <Modal open={!!open} onClose={() => setOpen(null)} title={t("ph.shiftReport")} wide>
         {!r ? <Loading /> : (
-          <div className="space-y-3 text-sm">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <Stat label={t("ph.sales")} value={`${r.totals.sales}`} hint={m(r.totals.totalMinor, r.currency)} />
-              <Stat label={t("ph.float")} value={m(r.openingFloatMinor, r.currency)} />
-              <Stat label={t("ph.expected")} value={m(r.expectedNowMinor, r.currency)} />
-              <Stat label={t("ph.counted")} value={r.countedCashMinor === null ? "—" : m(r.countedCashMinor, r.currency)} tone={r.differenceMinor && r.differenceMinor < 0 ? "red" : "green"} hint={r.differenceMinor === null ? undefined : `${t("ph.difference")}: ${m(r.differenceMinor, r.currency)}`} />
-            </div>
-            <Card><p className="mb-1 font-semibold">{t("ph.byMethod")}</p>{r.byMethod.map((x) => <Row key={x.method} k={`${t(`pay.${x.method}`)} (${x.sales})`} v={m(x.amountMinor, r.currency)} />)}</Card>
-            {r.returns.length > 0 && <Card><p className="mb-1 font-semibold">{t("ph.returns")}</p>{r.returns.map((x, i) => <Row key={i} k={`${t(`pay.${x.refundMethod ?? "CASH"}`)} (${x.returns})`} v={`-${m(x.refundMinor, r.currency)}`} />)}</Card>}
-            {r.cashMoves.length > 0 && <Card><p className="mb-1 font-semibold">{t("ph.cashMoves")}</p>{r.cashMoves.map((x, i) => <Row key={i} k={`${t(`term.cash.${x.kind}`)} · ${x.reason ?? ""} · ${x.byName}`} v={m(x.amountMinor, r.currency)} />)}</Card>}
-            <Card><p className="mb-1 font-semibold">{t("ph.topItems")}</p>{r.topItems.map((x, i) => <Row key={i} k={`${x.qty} × ${x.name}${x.label ? ` (${x.label})` : ""}`} v={m(x.totalMinor, r.currency)} />)}</Card>
-            {r.note && <p className="text-slate-600">📝 {r.note}</p>}
-            <Button variant="secondary" onClick={() => window.print()}>{t("pos.print")}</Button>
+          <div className="space-y-4 text-sm">
+            <KpiStrip items={[
+              { label: t("ph.sales"), value: `${r.totals.sales}`, hint: m(r.totals.totalMinor, r.currency) },
+              { label: t("ph.float"), value: m(r.openingFloatMinor, r.currency) },
+              { label: t("ph.expected"), value: m(r.expectedNowMinor, r.currency) },
+              { label: t("ph.counted"), value: r.countedCashMinor === null ? "—" : m(r.countedCashMinor, r.currency), hint: r.differenceMinor === null ? undefined : `${t("ph.difference")}: ${m(r.differenceMinor, r.currency)}` },
+            ]} />
+            <Block title={t("ph.byMethod")}>{r.byMethod.map((x) => <Line key={x.method} k={`${t(`pay.${x.method}`)} (${x.sales})`} v={m(x.amountMinor, r.currency)} />)}</Block>
+            {r.returns.length > 0 && <Block title={t("ph.returns")}>{r.returns.map((x, i) => <Line key={i} k={`${t(`pay.${x.refundMethod ?? "CASH"}`)} (${x.returns})`} v={`-${m(x.refundMinor, r.currency)}`} />)}</Block>}
+            {r.cashMoves.length > 0 && <Block title={t("ph.cashMoves")}>{r.cashMoves.map((x, i) => <Line key={i} k={`${t(`term.cash.${x.kind}`)} · ${x.reason ?? ""} · ${x.byName}`} v={m(x.amountMinor, r.currency)} />)}</Block>}
+            <Block title={t("ph.topItems")}>{r.topItems.map((x, i) => <Line key={i} k={`${x.qty} × ${x.name}${x.label ? ` (${x.label})` : ""}`} v={m(x.totalMinor, r.currency)} />)}</Block>
+            {r.note && <p className="rounded-[12px] bg-canvas px-3 py-2 text-ink-2">{r.note}</p>}
+            <Button variant="secondary" onClick={() => window.print()}><Icon name="print" className="h-4 w-4" />{t("pos.print")}</Button>
           </div>
         )}
       </Modal>
@@ -179,31 +183,35 @@ function Shifts({ m }: { m: M }) {
 
 function Terminals({ list }: { list: ReturnType<typeof useApi<Device[]>> }) {
   const { t, locale } = useI18n();
+  const toast = useToast();
   const [edit, setEdit] = useState<Device | null>(null);
+  const [drop, setDrop] = useState<Device | null>(null);
   const [openedAt] = useState(() => Date.now());   // "online now" means seen in the 3 minutes before this tab was opened
-  const save = useAction(async (d: Device, name: string, size: string) => { await api(`store/pos/devices/${d.id}`, { method: "PATCH", body: { name, receiptSize: size } }); setEdit(null); await list.reload(); });
-  const revoke = useAction(async (d: Device) => { await api(`store/pos/devices/${d.id}/revoke`, { body: {} }); await list.reload(); });
-  if (!list.data) return list.error ? <ErrorText error={list.error} /> : <Loading />;
+  const save = useAction(async (d: Device, name: string, size: string) => { await api(`store/pos/devices/${d.id}`, { method: "PATCH", body: { name, receiptSize: size } }); setEdit(null); toast(t("common.saved")); await list.reload(); });
+  const revoke = useAction(async (d: Device) => { await api(`store/pos/devices/${d.id}/revoke`, { body: {} }); toast(t("ph.revoked")); setDrop(null); await list.reload(); });
+  if (!list.data) return list.error ? <ErrorText error={list.error} /> : <Loading variant="cards" />;
   const live = (d: Device) => !!d.lastSeenAt && openedAt - new Date(d.lastSeenAt).getTime() < 3 * 60_000;
   return (
-    <div className="min-w-0 space-y-3">
+    <div className="min-w-0 space-y-4">
       <Alert tone="blue">{t("ph.registerHint")}</Alert>
-      {!list.data.length ? <Empty>{t("ph.noTerminals")}</Empty> : (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      {!list.data.length ? <Empty icon="monitor" title={t("ph.noTerminals")} /> : (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {list.data.map((d) => (
-            <div key={d.id} className={`min-w-0 space-y-3 rounded-2xl bg-white p-4 shadow-card ${d.revokedAt ? "opacity-60" : ""}`}>
-              <div className="flex min-w-0 items-center justify-between gap-2">
-                <div className="min-w-0"><b className="block truncate">{d.name}</b><span className="text-xs text-slate-500" dir="ltr">{d.code}</span></div>
-                {d.revokedAt ? <Badge tone="red">{t("ph.revoked")}</Badge> : <span className={`flex shrink-0 items-center gap-1.5 text-xs font-semibold ${live(d) ? "text-emerald-700" : "text-slate-500"}`}><span className={`h-2 w-2 rounded-full ${live(d) ? "bg-emerald-500" : "bg-slate-300"}`} />{live(d) ? t("ph.liveNow") : t("ph.notLive")}</span>}
+            <Panel key={d.id} as="div" className={`min-w-0 space-y-4 p-4 ${d.revokedAt ? "opacity-60" : ""}`}>
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[12px] bg-canvas text-ink-2 ring-1 ring-line"><Icon name="monitor" className="h-5 w-5" /></span>
+                <div className="min-w-0 flex-1"><b className="block truncate text-ink">{d.name}</b><span className="text-[12px] text-muted" dir="ltr">{d.code}</span></div>
+                {d.revokedAt ? <Badge tone="red">{t("ph.revoked")}</Badge> : <span className={`flex shrink-0 items-center gap-1.5 text-xs font-semibold ${live(d) ? "text-emerald-700" : "text-muted"}`}><span className={`h-2 w-2 rounded-full ${live(d) ? "bg-emerald-500" : "bg-line-strong"}`} />{live(d) ? t("ph.liveNow") : t("ph.notLive")}</span>}
+                {!d.revokedAt && <RowMenu label={t("inbox.more")} items={[{ label: t("common.edit"), icon: "edit", onSelect: () => setEdit(d) }, "divider", { label: t("ph.revoke"), icon: "xcircle", danger: true, onSelect: () => setDrop(d) }]} />}
               </div>
               <Pairs cols="grid-cols-1 sm:grid-cols-2" items={[[t("ph.branch"), d.branchName], [t("ph.receipt"), d.receiptSize ? (d.receiptSize === "A4" ? "A4" : `${d.receiptSize}mm`) : t("term.shopDefault")], [t("ph.lastSeen"), when(d.lastSeenAt, locale)], [t("ph.issues"), d.openIssues > 0 ? <Badge tone="amber">{d.openIssues}</Badge> : "—"]]} />
-              {!d.revokedAt && <div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" onClick={() => setEdit(d)}>{t("common.edit")}</Button><Button size="sm" variant="danger" loading={revoke.loading} onClick={() => { if (confirm(t("ph.revokeConfirm"))) void revoke.run(d); }}>{t("ph.revoke")}</Button></div>}
-            </div>
+            </Panel>
           ))}
         </div>
       )}
       <ErrorText error={revoke.error} />
       {edit && <EditTerminal d={edit} onClose={() => setEdit(null)} onSave={(n, s) => void save.run(edit, n, s)} busy={save.loading} error={save.error} />}
+      <ConfirmDialog open={!!drop} onClose={() => setDrop(null)} danger title={t("ph.revoke")} body={t("ph.revokeConfirm")} confirmLabel={t("ph.revoke")} cancelLabel={t("common.cancel")} loading={revoke.loading} onConfirm={() => { if (drop) void revoke.run(drop); }} />
     </div>
   );
 }
@@ -226,25 +234,30 @@ function EditTerminal({ d, onClose, onSave, busy, error }: { d: Device; onClose:
 
 function Cashiers() {
   const { t } = useI18n();
+  const toast = useToast();
   const list = useApi<Member[]>("store/pos/team");
   const [who, setWho] = useState<Member | null>(null);
   const [pin, setPin] = useState("");
-  const save = useAction(async () => { if (!who) return; await api(`store/pos/team/${who.userId}/pin`, { method: "PUT", body: { pin } }); setWho(null); setPin(""); await list.reload(); });
-  const clear = useAction(async (mm: Member) => { await api(`store/pos/team/${mm.userId}/pin`, { method: "DELETE" }); await list.reload(); });
-  if (!list.data) return list.error ? <ErrorText error={list.error} /> : <Loading />;
+  const save = useAction(async () => { if (!who) return; await api(`store/pos/team/${who.userId}/pin`, { method: "PUT", body: { pin } }); setWho(null); setPin(""); toast(t("ph.pinSet")); await list.reload(); });
+  const clear = useAction(async (mm: Member) => { await api(`store/pos/team/${mm.userId}/pin`, { method: "DELETE" }); toast(t("ph.clearPin")); await list.reload(); });
+  if (!list.data) return list.error ? <ErrorText error={list.error} /> : <Loading variant="cards" />;
   return (
-    <div className="min-w-0 space-y-3">
+    <div className="min-w-0 space-y-4">
       <Alert tone="blue">{t("ph.pinHint")}</Alert>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {list.data.map((x) => (
-          <div key={x.userId} className="min-w-0 space-y-2 rounded-2xl bg-white p-4 shadow-card">
-            <div className="flex min-w-0 items-center justify-between gap-2"><b className="min-w-0 truncate">{x.name}</b>{x.hasPin ? <Badge tone="green">{t("ph.pinSet")}</Badge> : <Badge tone="amber">{t("ph.noPin")}</Badge>}</div>
+          <Panel key={x.userId} as="div" className="min-w-0 space-y-3 p-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-canvas text-[13px] font-bold text-ink-2 ring-1 ring-line">{x.name.trim().slice(0, 1).toUpperCase()}</span>
+              <b className="min-w-0 flex-1 truncate text-ink">{x.name}</b>
+              {x.hasPin ? <Badge tone="green">{t("ph.pinSet")}</Badge> : <Badge tone="amber">{t("ph.noPin")}</Badge>}
+            </div>
             <div className="flex flex-wrap gap-1">{x.canManage && <Badge tone="blue">{t("ph.rManage")}</Badge>}{x.canRefund && <Badge>{t("ph.rRefund")}</Badge>}{x.canCash && <Badge>{t("ph.rCash")}</Badge>}</div>
-            <div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" onClick={() => { setWho(x); setPin(""); }}>{x.hasPin ? t("ph.changePin") : t("ph.setPin")}</Button>{x.hasPin && <Button size="sm" variant="ghost" loading={clear.loading} onClick={() => void clear.run(x)}>{t("ph.clearPin")}</Button>}</div>
-          </div>
+            <div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" onClick={() => { setWho(x); setPin(""); }}><Icon name="lock" className="h-3.5 w-3.5" />{x.hasPin ? t("ph.changePin") : t("ph.setPin")}</Button>{x.hasPin && <Button size="sm" variant="ghost" loading={clear.loading} onClick={() => void clear.run(x)}>{t("ph.clearPin")}</Button>}</div>
+          </Panel>
         ))}
       </div>
-      <p className="text-xs text-slate-500">{t("ph.whoIsCashier")}</p>
+      <p className="text-xs text-muted">{t("ph.whoIsCashier")}</p>
       <Modal open={!!who} onClose={() => setWho(null)} title={`${t("ph.setPin")} · ${who?.name ?? ""}`}>
         <div className="space-y-3">
           <Field label={t("ph.pin")} hint={t("ph.pinRule")}><Input dir="ltr" inputMode="numeric" maxLength={6} value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))} /></Field>
@@ -258,40 +271,43 @@ function Cashiers() {
 
 function Issues({ data, error, reload }: { data: Issue[] | null; error: unknown; reload: () => Promise<void> }) {
   const { t, locale } = useI18n();
-  const resolve = useAction(async (ids: string[]) => { for (const id of ids) await api(`store/pos/issues/${id}/resolve`, { body: {} }); await reload(); });
+  const toast = useToast();
+  const resolve = useAction(async (ids: string[]) => { for (const id of ids) await api(`store/pos/issues/${id}/resolve`, { body: {} }); toast(t("ph.resolve")); await reload(); });
   const groups = useMemo(() => {
     const g = new Map<string, Issue[]>();
     for (const i of data ?? []) g.set(i.kind, [...(g.get(i.kind) ?? []), i]);
     return [...g.entries()];
   }, [data]);
-  if (!data) return error ? <ErrorText error={error} /> : <Loading />;
-  if (!data.length) return <Empty>{t("ph.noIssues")}</Empty>;
+  if (!data) return error ? <ErrorText error={error} /> : <Loading variant="list" />;
+  if (!data.length) return <Empty icon="check" title={t("ph.noIssues")} />;
   return (
-    <div className="min-w-0 space-y-4">
-      <p className="text-sm text-slate-600">{t("ph.issuesHint")}</p>
+    <div className="min-w-0 space-y-5">
+      <p className="text-sm text-muted">{t("ph.issuesHint")}</p>
       {groups.map(([kind, list]) => (
-        <div key={kind} className="space-y-2">
+        <section key={kind} className="space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2"><Badge tone={kind === "NEGATIVE_STOCK" || kind === "FAILED" ? "red" : "amber"}>{t(`ph.kind.${kind}`)}</Badge><span className="text-sm text-slate-500">{list.length}</span></div>
+            <div className="flex items-center gap-2"><Badge tone={kind === "NEGATIVE_STOCK" || kind === "FAILED" ? "red" : "amber"}>{t(`ph.kind.${kind}`)}</Badge><span className="text-sm text-muted tnum">{list.length}</span></div>
             <div className="flex gap-2">
-              {kind === "NEGATIVE_STOCK" && <Link href="/dashboard/inventory" className="rounded-lg border px-3 py-1.5 text-xs font-semibold hover:bg-slate-50">{t("ph.openStock")}</Link>}
+              {kind === "NEGATIVE_STOCK" && <Link href="/dashboard/inventory" className="inline-flex h-8 items-center rounded-[9px] px-3 text-[13px] font-semibold text-ink-2 ring-1 ring-line-strong hover:bg-surface">{t("ph.openStock")}</Link>}
               <Button size="sm" variant="secondary" loading={resolve.loading} onClick={() => void resolve.run(list.map((x) => x.id))}>{t("ph.resolveAll")}</Button>
             </div>
           </div>
-          {list.map((i) => {
-            let d: Record<string, unknown> = {};
-            try { d = JSON.parse(i.detail); } catch { d = {}; }
-            return (
-              <Card key={i.id} className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0 flex-1 text-sm">
-                  <p className="break-words">{issueText(i.kind, d, t)}</p>
-                  <span className="text-xs text-slate-500">{i.deviceName} · {when(i.createdAt, locale)}</span>
+          <Panel as="div" className="divide-y divide-line">
+            {list.map((i) => {
+              let d: Record<string, unknown> = {};
+              try { d = JSON.parse(i.detail); } catch { d = {}; }
+              return (
+                <div key={i.id} className="flex flex-wrap items-start justify-between gap-3 px-4 py-3">
+                  <div className="min-w-0 flex-1 text-sm">
+                    <p className="break-words text-ink">{issueText(i.kind, d, t)}</p>
+                    <span className="text-xs text-muted">{i.deviceName} · {when(i.createdAt, locale)}</span>
+                  </div>
+                  <Button size="sm" variant="ghost" loading={resolve.loading} onClick={() => void resolve.run([i.id])}><Icon name="check" className="h-3.5 w-3.5" />{t("ph.resolve")}</Button>
                 </div>
-                <Button size="sm" variant="ghost" loading={resolve.loading} onClick={() => void resolve.run([i.id])}>{t("ph.resolve")}</Button>
-              </Card>
-            );
-          })}
-        </div>
+              );
+            })}
+          </Panel>
+        </section>
       ))}
       <ErrorText error={resolve.error} />
     </div>
@@ -313,22 +329,24 @@ function issueText(kind: string, d: Record<string, unknown>, t: (k: string, p?: 
 
 function Counts({ m }: { m: M }) {
   const { t, locale } = useI18n();
+  const toast = useToast();
   const { can } = useMe();
   const list = useApi<CountRow[]>("store/pos/counts");
   const [open, setOpen] = useState<string | null>(null);
+  const [confirmApply, setConfirmApply] = useState(false);
   const detail = useApi<{ status: string; lines: { variantId: string; name: string; sku: string; comboKey: string | null; expectedAtCount: number; counted: number; difference: number; onHandNow: number; costPriceMinor: number | null }[] }>(open ? `store/pos/counts/${open}` : null);
-  const apply = useAction(async () => { await api(`store/pos/counts/${open}/apply`, { body: {} }); await detail.reload(); await list.reload(); });
-  const cancel = useAction(async () => { await api(`store/pos/counts/${open}/cancel`, { body: {} }); setOpen(null); await list.reload(); });
-  if (!list.data) return list.error ? <ErrorText error={list.error} /> : <Loading />;
+  const apply = useAction(async () => { await api(`store/pos/counts/${open}/apply`, { body: {} }); toast(t("ph.applyCount")); setConfirmApply(false); await detail.reload(); await list.reload(); });
+  const cancel = useAction(async () => { await api(`store/pos/counts/${open}/cancel`, { body: {} }); toast(t("ph.cancelCount")); setOpen(null); await list.reload(); });
+  if (!list.data) return list.error ? <ErrorText error={list.error} /> : <Loading variant="cards" />;
   const value = detail.data ? detail.data.lines.reduce((n, l) => n + (l.costPriceMinor ?? 0) * l.difference, 0) : 0;
   return (
-    <div className="min-w-0 space-y-3">
+    <div className="min-w-0 space-y-4">
       <Alert tone="blue">{t("ph.countsHint")}</Alert>
-      {!list.data.length ? <Empty>{t("ph.noCounts")}</Empty> : (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      {!list.data.length ? <Empty icon="inventory" title={t("ph.noCounts")} /> : (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {list.data.map((c) => (
-            <button key={c.id} type="button" onClick={() => setOpen(c.id)} className="min-w-0 space-y-2 rounded-2xl bg-white p-4 text-start shadow-card hover:ring-2 hover:ring-brand/30">
-              <div className="flex min-w-0 items-center justify-between gap-2"><b className="min-w-0 truncate">{c.name}</b><Badge tone={c.status === "APPLIED" ? "green" : c.status === "CANCELLED" ? "slate" : "amber"}>{t(`ph.cs.${c.status}`)}</Badge></div>
+            <button key={c.id} type="button" onClick={() => setOpen(c.id)} className="min-w-0 space-y-3 rounded-[18px] bg-surface p-4 text-start ring-1 ring-line transition hover:ring-line-strong hover:shadow-[var(--shadow-float)]">
+              <div className="flex min-w-0 items-center justify-between gap-2"><b className="min-w-0 truncate text-ink">{c.name}</b><Badge tone={c.status === "APPLIED" ? "green" : c.status === "CANCELLED" ? "slate" : "amber"}>{t(`ph.cs.${c.status}`)}</Badge></div>
               <Pairs cols="grid-cols-1 sm:grid-cols-2" items={[[t("ph.branch"), c.branchName], [t("ph.by"), c.createdByName], [t("term.lines"), c.lines], [t("term.differences"), c.differences], [t("term.date"), when(c.createdAt, locale)]]} />
             </button>
           ))}
@@ -337,13 +355,13 @@ function Counts({ m }: { m: M }) {
       <Modal open={!!open} onClose={() => setOpen(null)} title={t("ph.countTitle")} wide>
         {!detail.data ? <Loading /> : (
           <div className="space-y-3">
-            <ul className="divide-y rounded-xl border">
+            <ul className="divide-y divide-line overflow-hidden rounded-[14px] ring-1 ring-line">
               {detail.data.lines.map((l) => (
                 <li key={l.variantId} className="flex min-w-0 items-center justify-between gap-3 p-3 text-sm">
-                  <div className="min-w-0"><b className="block truncate">{l.name}</b><span className="block truncate text-xs text-slate-500" dir="ltr">{l.sku}</span></div>
+                  <div className="min-w-0"><b className="block truncate text-ink">{l.name}</b><span className="block truncate text-xs text-muted" dir="ltr">{l.sku}</span></div>
                   <div className="shrink-0 text-end">
-                    <span className={`block font-bold ${l.difference === 0 ? "text-slate-500" : l.difference > 0 ? "text-sky-700" : "text-red-600"}`}>{l.difference > 0 ? `+${l.difference}` : l.difference}</span>
-                    <span className="block text-xs text-slate-500">{l.counted} / {l.expectedAtCount} · {t("ph.onHandNow")} {l.onHandNow}</span>
+                    <span className={`block font-bold tnum ${l.difference === 0 ? "text-muted" : l.difference > 0 ? "text-sky-700" : "text-red-600"}`}>{l.difference > 0 ? `+${l.difference}` : l.difference}</span>
+                    <span className="block text-xs text-muted tnum">{l.counted} / {l.expectedAtCount} · {t("ph.onHandNow")} {l.onHandNow}</span>
                   </div>
                 </li>
               ))}
@@ -352,32 +370,36 @@ function Counts({ m }: { m: M }) {
             {["COUNTING", "REVIEW"].includes(detail.data.status) && (
               <div className="flex flex-wrap gap-2">
                 <Button variant="secondary" loading={cancel.loading} onClick={() => void cancel.run()}>{t("ph.cancelCount")}</Button>
-                {can("inventory.adjust") && <Button className="flex-1" loading={apply.loading} onClick={() => { if (confirm(t("ph.applyConfirm"))) void apply.run(); }}>{t("ph.applyCount")}</Button>}
+                {can("inventory.adjust") && <Button variant="ink" className="flex-1" loading={apply.loading} onClick={() => setConfirmApply(true)}>{t("ph.applyCount")}</Button>}
               </div>
             )}
-            <p className="text-xs text-slate-500">{t("ph.applyHint")}</p>
+            <p className="text-xs text-muted">{t("ph.applyHint")}</p>
             <ErrorText error={apply.error ?? cancel.error} />
           </div>
         )}
       </Modal>
+      <ConfirmDialog open={confirmApply} onClose={() => setConfirmApply(false)} title={t("ph.applyCount")} body={t("ph.applyConfirm")} confirmLabel={t("ph.applyCount")} cancelLabel={t("common.cancel")} loading={apply.loading} onConfirm={() => void apply.run()} />
     </div>
   );
 }
 
 function Settings() {
   const { t } = useI18n();
+  const toast = useToast();
   const s = useApi<{ receiptSize: string; receiptFooter: string; posMaxDiscountPct: number }>("store/pos/settings");
   const [form, setForm] = useState<{ receiptSize: string; receiptFooter: string; posMaxDiscountPct: string } | null>(null);
   const f = form ?? (s.data ? { receiptSize: s.data.receiptSize, receiptFooter: s.data.receiptFooter, posMaxDiscountPct: String(s.data.posMaxDiscountPct) } : null);
-  const save = useAction(async () => { if (!f) return; await api("store/pos/settings", { method: "PUT", body: { receiptSize: f.receiptSize, receiptFooter: f.receiptFooter, posMaxDiscountPct: Number(f.posMaxDiscountPct) } }); setForm(null); await s.reload(); });
-  if (!f) return s.error ? <ErrorText error={s.error} /> : <Loading />;
+  const save = useAction(async () => { if (!f) return; await api("store/pos/settings", { method: "PUT", body: { receiptSize: f.receiptSize, receiptFooter: f.receiptFooter, posMaxDiscountPct: Number(f.posMaxDiscountPct) } }); setForm(null); toast(t("common.saved")); await s.reload(); });
+  if (!f) return s.error ? <ErrorText error={s.error} /> : <Loading variant="detail" />;
   return (
-    <Card className="max-w-xl space-y-4">
-      <Field label={t("term.receiptSize")} hint={t("ph.sizeHint")}><Select value={f.receiptSize} onChange={(e) => setForm({ ...f, receiptSize: e.target.value })}><option value="58">58mm</option><option value="80">80mm</option><option value="A4">A4</option></Select></Field>
-      <Field label={t("ph.footer")} hint={t("ph.footerHint")}><Input value={f.receiptFooter} onChange={(e) => setForm({ ...f, receiptFooter: e.target.value })} maxLength={300} /></Field>
-      <Field label={t("ph.maxDiscount")} hint={t("ph.maxDiscountHint")}><Input dir="ltr" inputMode="numeric" value={f.posMaxDiscountPct} onChange={(e) => setForm({ ...f, posMaxDiscountPct: e.target.value.replace(/\D/g, "") })} /></Field>
-      <ErrorText error={save.error} />
-      <Button loading={save.loading} onClick={() => void save.run()}>{t("common.save")}</Button>
-    </Card>
+    <Block title={t("ph.settings")} icon="settings" className="max-w-xl">
+      <div className="space-y-4">
+        <Field label={t("term.receiptSize")} hint={t("ph.sizeHint")}><Select value={f.receiptSize} onChange={(e) => setForm({ ...f, receiptSize: e.target.value })}><option value="58">58mm</option><option value="80">80mm</option><option value="A4">A4</option></Select></Field>
+        <Field label={t("ph.footer")} hint={t("ph.footerHint")}><Input value={f.receiptFooter} onChange={(e) => setForm({ ...f, receiptFooter: e.target.value })} maxLength={300} /></Field>
+        <Field label={t("ph.maxDiscount")} hint={t("ph.maxDiscountHint")}><Input dir="ltr" inputMode="numeric" value={f.posMaxDiscountPct} onChange={(e) => setForm({ ...f, posMaxDiscountPct: e.target.value.replace(/\D/g, "") })} /></Field>
+        <ErrorText error={save.error} />
+        <Button variant="ink" loading={save.loading} disabled={!form} onClick={() => void save.run()}>{t("common.save")}</Button>
+      </div>
+    </Block>
   );
 }
