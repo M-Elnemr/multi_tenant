@@ -10,18 +10,24 @@ import { useFieldErrors } from "@/lib/use-field-errors";
 import { useAction, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Icon } from "@/components/icons";
+import { ConfirmDialog, Menu } from "@/components/overlay";
+import { useToast } from "@/components/toast";
 import { uploadFile } from "@/components/uploader";
 import { CaseModal } from "@/components/lawyer/case-form";
 import { StepFields } from "@/components/lawyer/step-fields";
-import { Badge, Button, ErrorText, Field, Input, Loading, Modal, PageHeader, Select, Tabs, Textarea } from "@/components/ui";
+import { BRASS, BRASS_LIGHT, ContactButtons, DateTile, DotsButton, Eyebrow, Fact, IVORY, NAVY, PaidBar, Rise, useIntl } from "@/components/lawyer/kit";
+import { Avatar, Badge, Button, Empty, ErrorText, Field, Input, Loading, Modal, PageHeader, Select, Tabs, Textarea, cx } from "@/components/ui";
 
 type Tab = "overview" | "timeline" | "actions" | "payments" | "documents";
+type Del = { kind: "step" | "action" | "payment" | "document" | "case"; id: string; label?: string } | null;
 const pad = (n: number) => String(n).padStart(2, "0");
 const localNow = () => { const d = new Date(Date.now() + 86400000); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T10:00`; };
 
 export default function CasePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { t, locale, currency } = useI18n();
+  const intl = useIntl();
+  const toast = useToast();
   const router = useRouter();
   const { canWrite, can } = useMe();
   const { data, loading, error, reload } = useApi<CaseDetail>(`lawyer/cases/${id}`);
@@ -30,10 +36,11 @@ export default function CasePage({ params }: { params: Promise<{ id: string }> }
   const [stepEdit, setStepEdit] = useState<Step | "new" | null>(null);
   const [actionEdit, setActionEdit] = useState<Action | "new" | null>(null);
   const [paying, setPaying] = useState(false);
-  const [confirmDel, setConfirmDel] = useState(false);
+  const [del, setDel] = useState<Del>(null);
   const write = canWrite("cases");
+  const fin = can("legal.finance.manage");
   const fmt = (m: number) => money(m, currency, locale);
-  const status = useAction(async (body: { status?: string; outcome?: string }) => { await api(`lawyer/cases/${id}/status`, { method: "PUT", body }); await reload(); });
+  const status = useAction(async (body: { status?: string; outcome?: string }) => { await api(`lawyer/cases/${id}/status`, { method: "PUT", body }); await reload(); toast(t("lw.toast.caseUpdated")); });
   const delStep = useAction(async (sid: string) => { await api(`lawyer/cases/${id}/steps/${sid}`, { method: "DELETE" }); await reload(); });
   const toggleStep = useAction(async (s: Step) => { await api(`lawyer/cases/${id}/steps/${s.id}`, { method: "PUT", body: { ...s, done: !s.done } }); await reload(); });
   const delAction = useAction(async (aid: string) => { await api(`lawyer/cases/${id}/actions/${aid}`, { method: "DELETE" }); await reload(); });
@@ -42,9 +49,17 @@ export default function CasePage({ params }: { params: Promise<{ id: string }> }
   const delCase = useAction(async () => { await api(`lawyer/cases/${id}`, { method: "DELETE" }); router.replace("/dashboard/cases"); });
   const [now] = useState(() => Date.now());
   const fileRef = useRef<HTMLInputElement>(null);
-  const upload = useAction(async (f: File) => { const fileId = await uploadFile(f, "LEGAL_DOCUMENT", "TENANT_INTERNAL"); await api(`lawyer/cases/${id}/documents`, { body: { fileId, name: f.name } }); await reload(); });
+  const upload = useAction(async (f: File) => { const fileId = await uploadFile(f, "LEGAL_DOCUMENT", "TENANT_INTERNAL"); await api(`lawyer/cases/${id}/documents`, { body: { fileId, name: f.name } }); await reload(); toast(t("lw.toast.docAdded")); });
+  const confirmDelete = async () => {
+    if (!del) return;
+    if (del.kind === "case") { await delCase.run(); return; }
+    const run = { step: delStep, action: delAction, payment: delPay, document: delDoc }[del.kind];
+    await run.run(del.id);
+    setDel(null);
+    toast(t("lw.toast.deleted"));
+  };
 
-  if (loading && !data) return <Loading />;
+  if (loading && !data) return <Loading variant="detail" />;
   if (!data) return <ErrorText error={error} />;
   const k = data;
   const nextStep = k.steps.find((s) => !s.done && new Date(s.startsAt).getTime() > now);
@@ -54,90 +69,117 @@ export default function CasePage({ params }: { params: Promise<{ id: string }> }
     [t("lw.case.clientRole"), k.clientRole ? t(`lw.role.${k.clientRole}`) : ""], [t("lw.case.opponent"), k.opponent], [t("lw.case.opponentLawyer"), k.opponentLawyer],
     [t("lw.case.openedOn"), dateOnly(k.openedOn, locale)], [t("lw.case.closedOn"), k.closedOn ? dateOnly(k.closedOn, locale) : ""],
   ];
+  const err = status.error ?? delStep.error ?? toggleStep.error ?? delAction.error ?? delPay.error ?? delDoc.error ?? upload.error ?? delCase.error;
+  const delBusy = delStep.loading || delAction.loading || delPay.loading || delDoc.loading || delCase.loading;
+  const ledger = [
+    ...k.actions.filter((a) => a.feeMinor > 0).map((a) => ({ key: "a" + a.id, date: a.actionDate, label: a.title, amount: a.feeMinor, charge: true as const })),
+    ...k.payments.map((p) => ({ key: "p" + p.id, date: p.paidOn, label: `${t(`lw.pm.${p.method}`)}${p.clientName ? ` · ${p.clientName}` : ""}${p.note ? ` · ${p.note}` : ""}`, amount: p.amountMinor, charge: false as const, id: p.id })),
+  ].sort((a, b) => b.date.localeCompare(a.date));
+  const caseMenu = write ? [
+    { label: t("lw.case.edit"), icon: "edit", onSelect: () => setEditing(true) },
+    "divider" as const,
+    { label: t("lw.case.delete"), icon: "close", danger: true, onSelect: () => setDel({ kind: "case", id }) },
+  ] : [];
   return (
-    <>
-      <div className="mb-3"><Link href="/dashboard/cases" className="text-sm font-semibold text-slate-500 hover:text-brand">← {t("lw.nav.cases")}</Link></div>
-      <PageHeader title={k.title} subtitle={`#${k.number}${k.courtCaseNo ? ` · ${k.courtCaseNo}` : ""}`}
+    <div className="space-y-5">
+      <Link href="/dashboard/cases" className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-muted transition hover:text-ink"><Icon name="arrow" className="h-3.5 w-3.5 rotate-180 flip-rtl" />{t("lw.nav.cases")}</Link>
+      <PageHeader eyebrow={<Eyebrow>{`#${k.number}${k.courtCaseNo ? ` · ${k.courtCaseNo}` : ""}`}</Eyebrow>} title={k.title} subtitle={`${t(`lw.type.${k.caseType}`)}${k.court ? ` · ${k.court}` : ""}`}
         badge={<><Badge tone={statusTone[k.status]}>{t(`lw.status.${k.status}`)}</Badge>{k.outcome !== "NONE" && <Badge tone={statusTone[k.outcome]}>{t(`lw.outcome.${k.outcome}`)}</Badge>}</>}
-        actions={write && <><Button variant="secondary" onClick={() => setEditing(true)}><Icon name="edit" className="h-4 w-4" />{t("lw.case.edit")}</Button><Button onClick={() => { setTab("timeline"); setStepEdit("new"); }}><Icon name="calendar" className="h-4 w-4" />{t("lw.step.add")}</Button></>} />
+        actions={write && <>
+          <Button onClick={() => { setTab("timeline"); setStepEdit("new"); }}><Icon name="calendar" className="h-4 w-4" />{t("lw.step.add")}</Button>
+          <Menu items={caseMenu} label={t("common.more")} trigger={({ toggle, open }) => <Button variant="secondary" onClick={toggle} aria-expanded={open}><Icon name="edit" className="h-4 w-4" />{t("common.more")}</Button>} />
+        </>} />
 
-      <div className="mb-5 grid gap-3 sm:grid-cols-3">
-        <div className="rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 p-4 text-white shadow-lg">
-          <p className="text-xs font-semibold opacity-80">{t("lw.case.nextStep")}</p>
-          {nextStep ? <><p className="mt-1 text-lg font-extrabold">{dateTime(nextStep.startsAt, locale)}</p><p className="truncate text-sm opacity-90">{t(`lw.cal.${nextStep.kind}`)} · {nextStep.description}</p></> : <p className="mt-1 text-sm opacity-90">{t("lw.case.noNext")}</p>}
+      {/* Case file summary: next date in the diary, fees and balance */}
+      <div className="grid gap-3 md:grid-cols-3">
+        <div className="relative overflow-hidden rounded-[18px] p-5" style={{ background: NAVY, color: IVORY }}>
+          <span className="pointer-events-none absolute inset-x-0 bottom-0 h-px" style={{ background: `linear-gradient(90deg, transparent, ${BRASS}, transparent)` }} aria-hidden />
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: BRASS_LIGHT }}>{t("lw.case.nextStep")}</p>
+          {nextStep ? <><p className="mt-2 font-display text-[1.25rem] font-semibold leading-tight">{dateTime(nextStep.startsAt, locale)}</p><p className="mt-1 truncate text-[13px] opacity-80">{t(`lw.cal.${nextStep.kind}`)} · {nextStep.description}</p></> : <p className="mt-2 text-sm opacity-80">{t("lw.case.noNext")}</p>}
         </div>
-        <div className="rounded-2xl bg-white p-4 shadow-card">
-          <p className="text-xs font-semibold text-slate-500">{t("lw.fin.billed")}</p><p className="mt-1 text-xl font-extrabold text-ink">{fmt(k.billedMinor)}</p>
-          <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${paidPct}%` }} /></div>
-          <p className="mt-1 text-xs text-slate-500">{t("lw.fin.paidOf", { p: paidPct, a: fmt(k.paidMinor) })}</p>
+        <div className="rounded-[18px] bg-surface p-5 shadow-card">
+          <p className="text-[12.5px] font-medium text-muted">{t("lw.fin.billed")}</p>
+          <p className="mt-2 font-display text-[1.45rem] font-semibold leading-none text-ink tnum">{fmt(k.billedMinor)}</p>
+          <PaidBar pct={paidPct} className="mt-3" />
+          <p className="mt-1.5 text-xs text-muted tnum">{t("lw.fin.paidOf", { p: paidPct, a: fmt(k.paidMinor) })}</p>
         </div>
-        <div className={`rounded-2xl p-4 shadow-card ${k.balanceMinor > 0 ? "bg-red-50" : "bg-emerald-50"}`}>
-          <p className="text-xs font-semibold text-slate-500">{t("lw.fin.balance")}</p><p className={`mt-1 text-xl font-extrabold ${k.balanceMinor > 0 ? "text-red-600" : "text-emerald-700"}`}>{fmt(k.balanceMinor)}</p>
-          {can("legal.finance.manage") && <button type="button" onClick={() => setPaying(true)} className="mt-2 text-sm font-semibold text-brand">+ {t("lw.pay.add")}</button>}
+        <div className={cx("rounded-[18px] p-5 shadow-card", k.balanceMinor > 0 ? "bg-rose-50 dark:bg-rose-500/10" : "bg-emerald-50 dark:bg-emerald-500/10")}>
+          <p className="text-[12.5px] font-medium text-muted">{t("lw.fin.balance")}</p>
+          <p className={cx("mt-2 font-display text-[1.45rem] font-semibold leading-none tnum", k.balanceMinor > 0 ? "text-rose-700" : "text-emerald-700")}>{fmt(k.balanceMinor)}</p>
+          {fin && <button type="button" onClick={() => setPaying(true)} className="mt-3 inline-flex items-center gap-1 text-[13px] font-semibold text-ink-2 hover:text-ink"><Icon name="plus" className="h-3.5 w-3.5" />{t("lw.pay.add")}</button>}
         </div>
       </div>
 
-      <div className="mb-4 overflow-x-auto"><Tabs value={tab} onChange={setTab} tabs={[
+      <div className="overflow-x-auto"><Tabs value={tab} onChange={setTab} tabs={[
         { key: "overview", label: t("lw.tab.overview") }, { key: "timeline", label: t("lw.tab.timeline"), count: k.steps.length }, { key: "actions", label: t("lw.tab.actions"), count: k.actions.length },
         { key: "payments", label: t("lw.tab.payments"), count: k.payments.length }, { key: "documents", label: t("lw.tab.documents"), count: k.documents.length },
       ]} /></div>
-      <ErrorText error={status.error ?? delStep.error ?? toggleStep.error ?? delAction.error ?? delPay.error ?? delDoc.error ?? upload.error} />
+      <ErrorText error={err} />
 
       {tab === "overview" && (
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+        <Rise className="grid gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
           <div className="space-y-5">
-            <div className="rounded-2xl bg-white p-5 shadow-card">
-              <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">{info.filter(([, v]) => v).map(([l, v]) => <div key={l}><dt className="text-xs font-semibold text-slate-500">{l}</dt><dd className="font-semibold text-slate-800">{v}</dd></div>)}</dl>
-              {k.description && <p className="mt-4 whitespace-pre-line border-t border-slate-100 pt-4 text-sm leading-relaxed text-slate-700">{k.description}</p>}
-            </div>
+            <section className="rounded-[18px] bg-surface p-5 shadow-card">
+              <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2">{info.filter(([, v]) => v).map(([l, v]) => <Fact key={l} label={l}>{v}</Fact>)}</dl>
+              {k.description && <p className="mt-5 whitespace-pre-line border-t border-line pt-4 text-sm leading-relaxed text-ink-2">{k.description}</p>}
+            </section>
             {write && (
-              <div className="rounded-2xl bg-white p-5 shadow-card">
-                <p className="mb-3 text-sm font-bold text-slate-700">{t("lw.case.changeStatus")}</p>
+              <section className="rounded-[18px] bg-surface p-5 shadow-card">
+                <p className="mb-3 text-[14.5px] font-semibold text-ink">{t("lw.case.changeStatus")}</p>
                 <div className="flex flex-wrap gap-2">
-                  {(["UNDER_STUDY", "OPEN"] as const).map((s) => <button key={s} type="button" disabled={k.status === s} onClick={() => status.run({ status: s, outcome: "NONE" })} className={`chip ${k.status === s ? "chip-on" : ""}`}>{t(`lw.status.${s}`)}</button>)}
-                  <button type="button" onClick={() => status.run({ status: "CLOSED", outcome: "WON" })} className={`chip ${k.outcome === "WON" ? "chip-on" : ""}`}>🏆 {t("lw.quick.won")}</button>
-                  <button type="button" onClick={() => status.run({ status: "CLOSED", outcome: "LOST" })} className={`chip ${k.outcome === "LOST" ? "chip-on" : ""}`}>{t("lw.quick.lost")}</button>
-                  <button type="button" onClick={() => status.run({ status: "CLOSED", outcome: "SETTLED" })} className={`chip ${k.outcome === "SETTLED" ? "chip-on" : ""}`}>🤝 {t("lw.outcome.SETTLED")}</button>
-                  <button type="button" onClick={() => status.run({ status: "CLOSED", outcome: "NONE" })} className={`chip ${k.status === "CLOSED" && k.outcome === "NONE" ? "chip-on" : ""}`}>{t("lw.status.CLOSED")}</button>
+                  {(["UNDER_STUDY", "OPEN"] as const).map((s) => <button key={s} type="button" disabled={k.status === s} onClick={() => status.run({ status: s, outcome: "NONE" })} className={cx("chip", k.status === s && "chip-on")}>{t(`lw.status.${s}`)}</button>)}
+                  <button type="button" onClick={() => status.run({ status: "CLOSED", outcome: "WON" })} className={cx("chip", k.outcome === "WON" && "chip-on")}>{t("lw.quick.won")}</button>
+                  <button type="button" onClick={() => status.run({ status: "CLOSED", outcome: "LOST" })} className={cx("chip", k.outcome === "LOST" && "chip-on")}>{t("lw.quick.lost")}</button>
+                  <button type="button" onClick={() => status.run({ status: "CLOSED", outcome: "SETTLED" })} className={cx("chip", k.outcome === "SETTLED" && "chip-on")}>{t("lw.outcome.SETTLED")}</button>
+                  <button type="button" onClick={() => status.run({ status: "CLOSED", outcome: "NONE" })} className={cx("chip", k.status === "CLOSED" && k.outcome === "NONE" && "chip-on")}>{t("lw.status.CLOSED")}</button>
                 </div>
-              </div>
+              </section>
             )}
           </div>
           <div className="space-y-5">
-            <div className="rounded-2xl bg-white p-5 shadow-card">
-              <p className="mb-3 text-sm font-bold text-slate-700">{t("lw.case.clients")}</p>
-              {k.clients.length === 0 ? <p className="text-sm text-slate-500">{t("lw.case.noClients")}</p> : (
+            <section className="rounded-[18px] bg-surface p-5 shadow-card">
+              <p className="mb-3 text-[14.5px] font-semibold text-ink">{t("lw.case.clients")}</p>
+              {k.clients.length === 0 ? <p className="text-sm text-muted">{t("lw.case.noClients")}</p> : (
                 <ul className="space-y-2">{k.clients.map((c) => (
-                  <li key={c.id} className="flex items-center justify-between gap-2 rounded-xl bg-slate-50 p-3">
-                    <Link href={`/dashboard/clients/${c.id}`} className="min-w-0"><p className="truncate font-semibold text-slate-800">{c.kind === "COMPANY" ? "🏢 " : "👤 "}{c.name}</p><p dir="ltr" className="text-xs text-slate-500">{c.phone}</p></Link>
-                    {c.phone && <div className="flex gap-1"><a href={`tel:${c.phone}`} className="grid h-9 w-9 place-items-center rounded-full bg-white text-slate-600 shadow-sm"><Icon name="phone" className="h-4 w-4" /></a>
-                      <a href={`https://wa.me/${c.phone.replace(/[^0-9]/g, "")}`} target="_blank" rel="noopener noreferrer" className="grid h-9 w-9 place-items-center rounded-full bg-emerald-500 text-white shadow-sm"><Icon name="chat" className="h-4 w-4" /></a></div>}
+                  <li key={c.id} className="flex items-center gap-3 rounded-[12px] bg-surface-2 p-3">
+                    <Avatar name={c.name} className="h-9 w-9 text-xs" />
+                    <Link href={`/dashboard/clients/${c.id}`} className="min-w-0 flex-1"><p className="truncate text-[13.5px] font-semibold text-ink">{c.name}</p><p dir="ltr" className="text-start text-xs text-muted tnum">{c.phone}</p></Link>
+                    <ContactButtons phone={c.phone} size="sm" />
                   </li>
                 ))}</ul>
               )}
-            </div>
-            {k.notes.length > 0 && <div className="rounded-2xl bg-white p-5 shadow-card"><p className="mb-3 text-sm font-bold text-slate-700">{t("lw.case.notes")}</p>
-              <ul className="space-y-2">{k.notes.map((n) => <li key={n.id} className="rounded-xl bg-amber-50 p-3"><p className="text-xs font-semibold text-amber-800">{dateTime(n.startsAt, locale)}</p><p className="font-semibold text-slate-800">{n.title}</p>{n.body && <p className="text-sm text-slate-600">{n.body}</p>}</li>)}</ul></div>}
-            {write && <button type="button" onClick={() => setConfirmDel(true)} className="text-sm font-semibold text-red-600">{t("lw.case.delete")}</button>}
+            </section>
+            {k.notes.length > 0 && <section className="rounded-[18px] bg-surface p-5 shadow-card"><p className="mb-3 text-[14.5px] font-semibold text-ink">{t("lw.case.notes")}</p>
+              <ul className="space-y-2">{k.notes.map((n) => <li key={n.id} className="rounded-[12px] border-s-[3px] bg-surface-2 p-3" style={{ borderColor: BRASS }}><p className="text-xs font-semibold text-muted tnum">{dateTime(n.startsAt, locale)}</p><p className="mt-0.5 text-[13.5px] font-semibold text-ink">{n.title}</p>{n.body && <p className="text-sm text-ink-2">{n.body}</p>}</li>)}</ul></section>}
           </div>
-        </div>
+        </Rise>
       )}
 
       {tab === "timeline" && (
-        <div className="space-y-3">
+        <Rise className="space-y-4">
           {write && <Button onClick={() => setStepEdit("new")}><Icon name="plus" className="h-4 w-4" />{t("lw.step.add")}</Button>}
-          {k.steps.length === 0 ? <p className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-8 text-center text-sm text-slate-500">{t("lw.step.none")}</p> : (
-            <ol className="relative space-y-4 border-s-2 border-indigo-100 ps-6">
+          {k.steps.length === 0 ? <Empty icon="calendar" title={t("lw.step.none")} /> : (
+            <ol className="relative ms-3 space-y-4 border-s-2 ps-7" style={{ borderColor: "color-mix(in srgb, #b08d57 35%, transparent)" }}>
               {k.steps.map((s) => {
                 const past = new Date(s.startsAt).getTime() < now;
+                const late = past && !s.done;
+                const menu = write ? [{ label: t("offer.edit"), icon: "edit", onSelect: () => setStepEdit(s) }, { label: t("offer.delete"), icon: "close", danger: true, onSelect: () => setDel({ kind: "step", id: s.id, label: s.description }) }] : [];
                 return (
                   <li key={s.id} className="relative">
-                    <button type="button" disabled={!write} onClick={() => toggleStep.run(s)} className={`absolute -start-[35px] top-3 grid h-6 w-6 place-items-center rounded-full ring-4 ring-white ${s.done ? "bg-emerald-500 text-white" : past ? "bg-red-400 text-white" : "bg-indigo-500 text-white"}`} aria-label={t("lw.step.toggle")}>{s.done ? <Icon name="check" className="h-3.5 w-3.5" /> : null}</button>
-                    <div className={`rounded-2xl bg-white p-4 shadow-card ${s.done ? "opacity-70" : ""}`}>
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div><p className="text-xs font-bold text-indigo-600">{t(`lw.cal.${s.kind}`)} · {dateTime(s.startsAt, locale)}</p><p className={`mt-0.5 font-semibold text-slate-800 ${s.done ? "line-through" : ""}`}>{s.description}</p>
-                          {s.location && <p className="text-xs text-slate-500">📍 {s.location}</p>}{s.result && <p className="mt-1 rounded-lg bg-slate-50 px-2 py-1 text-sm text-slate-700">{t("lw.step.result")}: {s.result}</p>}</div>
-                        {write && <div className="flex gap-1"><Button size="sm" variant="ghost" onClick={() => setStepEdit(s)}><Icon name="edit" className="h-3.5 w-3.5" /></Button><Button size="sm" variant="ghost" className="!text-red-600" onClick={() => delStep.run(s.id)}><Icon name="close" className="h-3.5 w-3.5" /></Button></div>}
+                    <button type="button" disabled={!write} onClick={() => toggleStep.run(s)} aria-label={t("lw.step.toggle")} aria-pressed={s.done}
+                      className={cx("absolute -start-[41px] top-4 grid h-6 w-6 place-items-center rounded-full ring-4 ring-[var(--page-bg,var(--surface))] transition", s.done ? "bg-emerald-500 text-white" : late ? "bg-rose-500 text-white" : "text-[#14213d]")} style={!s.done && !late ? { background: BRASS_LIGHT } : undefined}>
+                      {s.done && <Icon name="check" className="h-3.5 w-3.5" />}
+                    </button>
+                    <div className={cx("rounded-[16px] bg-surface p-4 shadow-card", s.done && "opacity-75")}>
+                      <div className="flex items-start gap-3">
+                        <DateTile date={new Date(s.startsAt)} tone={s.done ? "slate" : late ? "amber" : "navy"} size="sm" />
+                        <div className="min-w-0 flex-1">
+                          <p className="flex flex-wrap items-center gap-x-2 text-[11.5px] font-semibold text-muted"><span style={{ color: "var(--rail-accent-ink)" }}>{t(`lw.cal.${s.kind}`)}</span><span className="tnum">{new Date(s.startsAt).toLocaleTimeString(intl, { hour: "numeric", minute: "2-digit" })}</span>{late && <Badge tone="red">{t("lw.step.overdue")}</Badge>}</p>
+                          <p className={cx("mt-0.5 text-[14px] font-semibold text-ink", s.done && "line-through")}>{s.description}</p>
+                          {s.location && <p className="mt-0.5 flex items-center gap-1 text-xs text-muted"><Icon name="pin" className="h-3.5 w-3.5" />{s.location}</p>}
+                          {s.result && <p className="mt-2 rounded-[10px] bg-surface-2 px-3 py-2 text-[13px] text-ink-2"><b className="font-semibold">{t("lw.step.result")}:</b> {s.result}</p>}
+                        </div>
+                        {menu.length > 0 && <Menu items={menu} label={t("common.more")} trigger={({ toggle, open }) => <DotsButton onClick={toggle} open={open} label={t("common.more")} />} />}
                       </div>
                     </div>
                   </li>
@@ -145,68 +187,95 @@ export default function CasePage({ params }: { params: Promise<{ id: string }> }
               })}
             </ol>
           )}
-        </div>
+        </Rise>
       )}
 
       {tab === "actions" && (
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+        <Rise className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             {write && <Button onClick={() => setActionEdit("new")}><Icon name="plus" className="h-4 w-4" />{t("lw.action.add")}</Button>}
-            <p className="text-sm text-slate-600">{t("lw.action.total", { a: fmt(k.actionFeesMinor), f: fmt(k.agreedFeeMinor) })}</p>
+            <p className="text-[13px] text-muted tnum">{t("lw.action.total", { a: fmt(k.actionFeesMinor), f: fmt(k.agreedFeeMinor) })}</p>
           </div>
-          {k.actions.length === 0 ? <p className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-8 text-center text-sm text-slate-500">{t("lw.action.none")}</p> : (
-            <ul className="space-y-2">{k.actions.map((a) => (
-              <li key={a.id} className="flex items-start gap-3 rounded-2xl bg-white p-4 shadow-card">
-                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-slate-100 text-center text-[11px] font-bold leading-tight text-slate-600">{new Date(a.actionDate).toLocaleDateString(locale === "ar" ? "ar-EG" : "en-GB", { day: "numeric", month: "short" })}</span>
-                <div className="min-w-0 flex-1"><p className="font-semibold text-slate-800">{a.title}</p>{a.notes && <p className="mt-0.5 whitespace-pre-line text-sm text-slate-600">{a.notes}</p>}</div>
-                <div className="text-end">{a.feeMinor > 0 && <p className="font-bold text-ink">{fmt(a.feeMinor)}</p>}
-                  {write && <div className="mt-1 flex gap-1"><Button size="sm" variant="ghost" onClick={() => setActionEdit(a)}><Icon name="edit" className="h-3.5 w-3.5" /></Button><Button size="sm" variant="ghost" className="!text-red-600" onClick={() => delAction.run(a.id)}><Icon name="close" className="h-3.5 w-3.5" /></Button></div>}</div>
-              </li>
-            ))}</ul>
+          {k.actions.length === 0 ? <Empty icon="file" title={t("lw.action.none")} /> : (
+            <ul className="space-y-2.5">{k.actions.map((a) => {
+              const menu = write ? [{ label: t("offer.edit"), icon: "edit", onSelect: () => setActionEdit(a) }, { label: t("offer.delete"), icon: "close", danger: true, onSelect: () => setDel({ kind: "action", id: a.id, label: a.title }) }] : [];
+              return (
+                <li key={a.id} className="flex items-start gap-3 rounded-[16px] bg-surface p-4 shadow-card">
+                  <DateTile date={new Date(a.actionDate)} tone="slate" size="sm" />
+                  <div className="min-w-0 flex-1"><p className="text-[14px] font-semibold text-ink">{a.title}</p>{a.notes && <p className="mt-0.5 whitespace-pre-line text-[13px] leading-relaxed text-muted">{a.notes}</p>}</div>
+                  {a.feeMinor > 0 && <p className="shrink-0 text-[14px] font-semibold text-ink tnum">{fmt(a.feeMinor)}</p>}
+                  {menu.length > 0 && <Menu items={menu} label={t("common.more")} trigger={({ toggle, open }) => <DotsButton onClick={toggle} open={open} label={t("common.more")} />} />}
+                </li>
+              );
+            })}</ul>
           )}
-        </div>
+        </Rise>
       )}
 
       {tab === "payments" && (
-        <div className="space-y-3">
-          {can("legal.finance.manage") && <Button onClick={() => setPaying(true)}><Icon name="plus" className="h-4 w-4" />{t("lw.pay.add")}</Button>}
-          {k.payments.length === 0 ? <p className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-8 text-center text-sm text-slate-500">{t("lw.pay.none")}</p> : (
-            <ul className="space-y-2">{k.payments.map((p) => (
-              <li key={p.id} className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-card">
-                <span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-50 text-emerald-600"><Icon name="wallet" className="h-5 w-5" /></span>
-                <div className="min-w-0 flex-1"><p className="font-bold text-emerald-700">{fmt(p.amountMinor)}</p><p className="text-xs text-slate-500">{dateOnly(p.paidOn, locale)} · {t(`lw.pm.${p.method}`)}{p.clientName ? ` · ${p.clientName}` : ""}{p.note ? ` · ${p.note}` : ""}</p></div>
-                {can("legal.finance.manage") && <Button size="sm" variant="ghost" className="!text-red-600" onClick={() => delPay.run(p.id)}><Icon name="close" className="h-3.5 w-3.5" /></Button>}
-              </li>
-            ))}</ul>
-          )}
-        </div>
+        <Rise className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {fin ? <Button onClick={() => setPaying(true)}><Icon name="plus" className="h-4 w-4" />{t("lw.pay.add")}</Button> : <span />}
+          </div>
+          {/* fees ledger */}
+          <section className="overflow-hidden rounded-[18px] bg-surface shadow-card">
+            <div className="grid grid-cols-3 text-center" style={{ background: NAVY, color: IVORY }}>
+              {[[t("lw.fin.billed"), k.billedMinor], [t("lw.fin.collected"), k.paidMinor], [t("lw.fin.balance"), k.balanceMinor]].map(([l, v], i) => (
+                <div key={i} className="px-2 py-3.5 [&:not(:first-child)]:border-s [&:not(:first-child)]:border-white/10">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: BRASS_LIGHT }}>{l}</p>
+                  <p className="mt-1 font-display text-[15px] font-semibold tnum sm:text-[18px]">{fmt(v as number)}</p>
+                </div>
+              ))}
+            </div>
+            <ul className="divide-y divide-line">
+              {k.agreedFeeMinor > 0 && (
+                <li className="flex items-center gap-3 px-4 py-3">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-surface-2 text-muted"><Icon name="receipt" className="h-4 w-4" /></span>
+                  <span className="min-w-0 flex-1 text-[13.5px] font-semibold text-ink">{t("lw.case.feeAgreed")}</span>
+                  <span className="text-[14px] font-semibold text-ink tnum">{fmt(k.agreedFeeMinor)}</span>
+                  <span className="w-9 shrink-0" />
+                </li>
+              )}
+              {ledger.map((r) => (
+                <li key={r.key} className="flex items-center gap-3 px-4 py-3">
+                  <span className={cx("grid h-9 w-9 shrink-0 place-items-center rounded-[10px]", r.charge ? "bg-surface-2 text-muted" : "bg-emerald-50 text-emerald-700")}><Icon name={r.charge ? "receipt" : "wallet"} className="h-4 w-4" /></span>
+                  <span className="min-w-0 flex-1"><span className="block truncate text-[13.5px] font-semibold text-ink">{r.charge ? r.label : t("lw.pay.received")}</span><span className="block truncate text-xs text-muted">{dateOnly(r.date, locale)}{r.charge ? "" : ` · ${r.label}`}</span></span>
+                  <span className={cx("text-[14px] font-semibold tnum", r.charge ? "text-ink" : "text-emerald-700")}>{r.charge ? "" : "−"}{fmt(r.amount)}</span>
+                  {!r.charge && fin ? <Menu items={[{ label: t("offer.delete"), icon: "close", danger: true, onSelect: () => setDel({ kind: "payment", id: r.id!, label: fmt(r.amount) }) }]} label={t("common.more")} trigger={({ toggle, open }) => <DotsButton onClick={toggle} open={open} label={t("common.more")} />} /> : <span className="w-9 shrink-0" />}
+                </li>
+              ))}
+            </ul>
+            {ledger.length === 0 && k.agreedFeeMinor === 0 && <div className="p-4"><Empty compact icon="wallet" title={t("lw.pay.none")} /></div>}
+          </section>
+        </Rise>
       )}
 
       {tab === "documents" && (
-        <div className="space-y-3">
-          {write && <><input ref={fileRef} type="file" accept="image/jpeg,image/png,application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload.run(f); e.target.value = ""; }} />
-            <Button loading={upload.loading} onClick={() => fileRef.current?.click()}><Icon name="plus" className="h-4 w-4" />{t("lw.doc.upload")}</Button><p className="text-xs text-slate-500">{t("lw.doc.hint")}</p></>}
-          {k.documents.length === 0 ? <p className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-8 text-center text-sm text-slate-500">{t("lw.doc.none")}</p> : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{k.documents.map((d) => (
-              <div key={d.id} className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-card">
-                <span className={`grid h-11 w-11 place-items-center rounded-xl text-lg ${d.contentType.includes("pdf") ? "bg-red-50" : "bg-sky-50"}`}>{d.contentType.includes("pdf") ? "📄" : "🖼️"}</span>
-                <a href={`/api/bff${d.url.replace("/api/v1", "")}`} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1"><p className="truncate font-semibold text-slate-800 hover:text-brand">{d.name}</p><p className="text-xs text-slate-500">{dateOnly(d.createdAt, locale)}</p></a>
-                {write && <Button size="sm" variant="ghost" className="!text-red-600" onClick={() => delDoc.run(d.id)}><Icon name="close" className="h-3.5 w-3.5" /></Button>}
-              </div>
-            ))}</div>
+        <Rise className="space-y-4">
+          {write && <div className="flex flex-wrap items-center gap-3"><input ref={fileRef} type="file" accept="image/jpeg,image/png,application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload.run(f); e.target.value = ""; }} />
+            <Button loading={upload.loading} onClick={() => fileRef.current?.click()}><Icon name="plus" className="h-4 w-4" />{t("lw.doc.upload")}</Button><p className="text-xs text-muted">{t("lw.doc.hint")}</p></div>}
+          {k.documents.length === 0 ? <Empty icon="folder" title={t("lw.doc.none")} /> : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{k.documents.map((d) => {
+              const pdf = d.contentType.includes("pdf");
+              return (
+                <div key={d.id} className="flex items-center gap-3 rounded-[16px] bg-surface p-4 shadow-card">
+                  <span className={cx("grid h-11 w-11 shrink-0 place-items-center rounded-[12px]", pdf ? "bg-rose-50 text-rose-700" : "bg-sky-50 text-sky-700")}><Icon name={pdf ? "file" : "camera"} className="h-5 w-5" /></span>
+                  <a href={`/api/bff${d.url.replace("/api/v1", "")}`} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1"><p className="truncate text-[13.5px] font-semibold text-ink hover:text-brand">{d.name}</p><p className="text-xs text-muted tnum">{dateOnly(d.createdAt, locale)}</p></a>
+                  {write && <Menu items={[{ label: t("offer.delete"), icon: "close", danger: true, onSelect: () => setDel({ kind: "document", id: d.id, label: d.name }) }]} label={t("common.more")} trigger={({ toggle, open }) => <DotsButton onClick={toggle} open={open} label={t("common.more")} />} />}
+                </div>
+              );
+            })}</div>
           )}
-        </div>
+        </Rise>
       )}
 
-      {editing && <CaseModal open initial={k} onClose={() => setEditing(false)} onSaved={async () => { setEditing(false); await reload(); }} />}
-      {stepEdit && <StepModal caseId={id} step={stepEdit === "new" ? null : stepEdit} onClose={() => setStepEdit(null)} onSaved={async () => { setStepEdit(null); await reload(); }} />}
-      {actionEdit && <ActionModal caseId={id} action={actionEdit === "new" ? null : actionEdit} onClose={() => setActionEdit(null)} onSaved={async () => { setActionEdit(null); await reload(); }} />}
-      {paying && <PaymentModal k={k} onClose={() => setPaying(false)} onSaved={async () => { setPaying(false); await reload(); }} />}
-      <Modal open={confirmDel} onClose={() => setConfirmDel(false)} title={t("lw.case.deleteTitle")}>
-        <p className="text-sm text-slate-600">{t("lw.case.deleteBody")}</p>
-        <div className="mt-5 flex gap-2"><Button variant="danger" loading={delCase.loading} onClick={() => delCase.run()}>{t("lw.case.delete")}</Button><Button variant="secondary" onClick={() => setConfirmDel(false)}>{t("common.cancel")}</Button></div>
-      </Modal>
-    </>
+      {editing && <CaseModal open initial={k} onClose={() => setEditing(false)} onSaved={async () => { setEditing(false); toast(t("common.saved")); await reload(); }} />}
+      {stepEdit && <StepModal caseId={id} step={stepEdit === "new" ? null : stepEdit} onClose={() => setStepEdit(null)} onSaved={async () => { setStepEdit(null); toast(t("common.saved")); await reload(); }} />}
+      {actionEdit && <ActionModal caseId={id} action={actionEdit === "new" ? null : actionEdit} onClose={() => setActionEdit(null)} onSaved={async () => { setActionEdit(null); toast(t("common.saved")); await reload(); }} />}
+      {paying && <PaymentModal k={k} onClose={() => setPaying(false)} onSaved={async () => { setPaying(false); toast(t("lw.toast.paymentAdded")); await reload(); }} />}
+      <ConfirmDialog open={!!del} onClose={() => setDel(null)} onConfirm={() => void confirmDelete()} loading={delBusy} danger
+        title={del?.kind === "case" ? t("lw.case.deleteTitle") : t("lw.confirm.deleteTitle")} body={del?.kind === "case" ? t("lw.case.deleteBody") : del?.label} confirmLabel={del?.kind === "case" ? t("lw.case.delete") : t("offer.delete")} cancelLabel={t("common.cancel")} />
+    </div>
   );
 }
 
@@ -228,7 +297,7 @@ function StepModal({ caseId, step, onClose, onSaved }: { caseId: string; step: S
         <StepFields f={f} set={(x) => { setF((o) => ({ ...o, ...x })); for (const k of Object.keys(x)) fe.clear(k); }} err={fe.err} />
         {step && <><Field label={t("lw.step.result")}><Textarea rows={2} value={f.result} onChange={(e) => setF({ ...f, result: e.target.value })} placeholder={t("lw.step.resultPh")} /></Field>
           <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={f.done} onChange={(e) => setF({ ...f, done: e.target.checked })} className="h-5 w-5 accent-[var(--brand)]" />{t("lw.step.done")}</label></>}
-        <p className="rounded-xl bg-indigo-50 px-3 py-2 text-xs font-medium text-indigo-700">🔔 {t("lw.step.remindNote")}</p>
+        <p className="rounded-[12px] bg-surface-2 px-3 py-2 text-xs font-medium text-ink-2 ring-1 ring-line">{t("lw.step.remindNote")}</p>
         {!fe.any && <ErrorText error={save.error} />}
         <Button type="submit" className="w-full" loading={save.loading}>{t("common.save")}</Button>
       </form>

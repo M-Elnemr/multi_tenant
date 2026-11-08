@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import { useState, type ReactNode } from "react";
@@ -9,7 +10,9 @@ import { useI18n } from "@/components/i18n-provider";
 import { Icon } from "@/components/icons";
 import { ImageUploader } from "@/components/uploader";
 import BrandingCard from "@/components/dashboard/branding";
-import { Alert, Button, ErrorText, Field, Input, Loading, PageHeader, Section, Select, Textarea } from "@/components/ui";
+import { useToast } from "@/components/toast";
+import { Eyebrow, LinkButton } from "@/components/lawyer/kit";
+import { Button, ErrorText, Field, Input, Loading, PageHeader, Section, Select, Textarea } from "@/components/ui";
 
 type Area = { key: string; title: string; description: string; icon: string };
 type Profile = {
@@ -32,11 +35,11 @@ function ListEditor<T extends Record<string, unknown>>({ items, onChange, blank,
   return (
     <div className="space-y-2">
       {items.map((it, i) => (
-        <div key={i} className="flex items-start gap-2 rounded-xl bg-slate-50 p-3">
+        <div key={i} className="flex items-start gap-2 rounded-[14px] bg-surface-2 p-3 ring-1 ring-line">
           <div className="min-w-0 flex-1">{render(it, (p) => onChange(items.map((x, k) => (k === i ? { ...x, ...p } : x))), i)}</div>
           <div className="flex flex-col gap-1">
-            {i > 0 && <button type="button" className="grid h-8 w-8 place-items-center rounded-full text-slate-400 hover:bg-white hover:text-slate-700" onClick={() => { const n = [...items]; [n[i - 1], n[i]] = [n[i], n[i - 1]]; onChange(n); }}>↑</button>}
-            <button type="button" className="grid h-8 w-8 place-items-center rounded-full text-slate-400 hover:bg-white hover:text-red-500" onClick={() => onChange(items.filter((_, k) => k !== i))}><Icon name="close" className="h-4 w-4" /></button>
+            {i > 0 && <button type="button" aria-label="Up" className="grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-surface hover:text-ink pointer-coarse:h-11 pointer-coarse:w-11" onClick={() => { const n = [...items]; [n[i - 1], n[i]] = [n[i], n[i - 1]]; onChange(n); }}>↑</button>}
+            <button type="button" aria-label="Remove" className="grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-surface hover:text-red-600 pointer-coarse:h-11 pointer-coarse:w-11" onClick={() => onChange(items.filter((_, k) => k !== i))}><Icon name="close" className="h-4 w-4" /></button>
           </div>
         </div>
       ))}
@@ -47,6 +50,7 @@ function ListEditor<T extends Record<string, unknown>>({ items, onChange, blank,
 
 export default function Website() {
   const { t, locale } = useI18n();
+  const toast = useToast();
   const { canWrite } = useMe();
   const { data, loading, error, reload } = useApi<Profile>("lawyer/profile");
   const meta = useApi<Meta>("lawyer/meta");
@@ -65,36 +69,36 @@ export default function Website() {
         practiceAreas: p.practiceAreas, languages: p.languages, education: p.education, achievements: p.achievements, testimonials: p.testimonials, faq: p.faq, social: p.social,
       } });
     } catch (e) { if (!fe.fromError(e)) throw e; return; }
-    setDraft(null); setSaved(true); await reload();
+    setDraft(null); setSaved(true); await reload(); toast(t("lw.web.saved"));
   });
   if (loading && !data) return <Loading />;
   if (!p) return <ErrorText error={error} />;
   const write = canWrite("settings");
   return (
     <>
-      <PageHeader title={t("lw.nav.website")} subtitle={t("lw.web.subtitle")} actions={<a href="/" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700"><Icon name="globe" className="h-4 w-4" />{t("lw.web.view")}</a>} />
-      <fieldset disabled={!write} className="space-y-5">
-        <Section title={t("lw.web.design")}>
+      <PageHeader eyebrow={<Eyebrow>{t("lw.eb.setup")}</Eyebrow>} title={t("lw.nav.website")} subtitle={t("lw.web.subtitle")} actions={<LinkButton href="/" icon="globe" external>{t("lw.web.view")}</LinkButton>} />
+      <fieldset disabled={!write} className="min-w-0 space-y-5">
+        <Section title={t("lw.web.design")} icon="palette">
           <div className="grid gap-3 sm:grid-cols-3">
             {TEMPLATES.map((tp) => (
-              <button key={tp.id} type="button" onClick={() => set({ template: tp.id })} className={`overflow-hidden rounded-2xl text-start ring-2 transition ${p.template === tp.id ? "ring-brand" : "ring-transparent hover:ring-slate-200"}`}>
+              <button key={tp.id} type="button" onClick={() => set({ template: tp.id })} className={`overflow-hidden rounded-2xl text-start ring-2 transition ${p.template === tp.id ? "ring-[var(--rail-accent)]" : "ring-line hover:ring-line-strong"}`}>
                 <div className="relative h-28 p-4" style={{ background: tp.bg }}>
                   <div className="h-2 w-16 rounded-full" style={{ background: tp.accent }} /><div className="mt-3 h-3 w-32 rounded-full bg-white/70" /><div className="mt-2 h-2 w-24 rounded-full bg-white/40" />
                   <div className="absolute bottom-3 end-3 h-7 w-16 rounded-lg" style={{ background: tp.accent }} />
-                  {p.template === tp.id && <span className="absolute start-3 top-3 grid h-6 w-6 place-items-center rounded-full bg-white text-brand shadow"><Icon name="check" className="h-4 w-4" /></span>}
+                  {p.template === tp.id && <span className="absolute start-3 top-3 grid h-6 w-6 place-items-center rounded-full bg-white text-[#14213d] shadow"><Icon name="check" className="h-4 w-4" /></span>}
                 </div>
-                <div className="bg-white p-3"><p className="font-bold text-ink">{t(`lw.tpl.${tp.id}`)}</p><p className="text-xs text-slate-500">{t(`lw.tpl.${tp.id}.d`)}</p></div>
+                <div className="bg-surface p-3"><p className="font-semibold text-ink">{t(`lw.tpl.${tp.id}`)}</p><p className="text-xs text-muted">{t(`lw.tpl.${tp.id}.d`)}</p></div>
               </button>
             ))}
           </div>
         </Section>
 
-        <Section title={t("lw.web.identity")}>
+        <Section title={t("lw.web.identity")} icon="doctor">
           <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
             <div className="space-y-3">
-              <div className="aspect-[4/5] overflow-hidden rounded-2xl bg-slate-100">{p.photoUrl ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={p.photoUrl} alt="" className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center text-6xl text-slate-300">👨‍⚖️</div>}</div>
+              <div className="aspect-[4/5] overflow-hidden rounded-[16px] bg-surface-2 ring-1 ring-line">{p.photoUrl ? <img src={p.photoUrl} alt="" className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center text-faint"><Icon name="gavel" className="h-14 w-14" /></div>}</div>
               {write && <ImageUploader category="LOGO" aspect={4 / 5} label={t("lw.web.photo")} onUploaded={(id) => set({ photoUrl: fileUrl(id, "medium") })} />}
-              {p.photoUrl && write && <button type="button" className="text-xs text-red-600" onClick={() => set({ photoUrl: null })}>{t("offer.delete")}</button>}
+              {p.photoUrl && write && <button type="button" className="text-xs font-semibold text-red-600" onClick={() => set({ photoUrl: null })}>{t("offer.delete")}</button>}
             </div>
             <div className="space-y-3">
               <div className="grid gap-3 sm:grid-cols-[1fr_2fr]">
@@ -114,12 +118,12 @@ export default function Website() {
 
         <Section title={t("lw.web.cover")}>
           <div className="space-y-3">
-            <div className="h-40 overflow-hidden rounded-2xl bg-slate-100">{p.coverUrl ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={p.coverUrl} alt="" className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center text-sm text-slate-400">{t("lw.web.coverHint")}</div>}</div>
+            <div className="h-40 overflow-hidden rounded-[16px] bg-surface-2 ring-1 ring-line">{p.coverUrl ? <img src={p.coverUrl} alt="" className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center text-sm text-faint">{t("lw.web.coverHint")}</div>}</div>
             {write && <div className="flex gap-2"><ImageUploader category="LOGO" aspect={16 / 7} label={t("lw.web.coverUpload")} onUploaded={(id) => set({ coverUrl: fileUrl(id, "original") })} />{p.coverUrl && <Button type="button" size="sm" variant="ghost" onClick={() => set({ coverUrl: null })}>{t("offer.delete")}</Button>}</div>}
           </div>
         </Section>
 
-        <Section title={t("lw.web.areas")}>
+        <Section title={t("lw.web.areas")} icon="scale">
           <div className="mb-3 flex flex-wrap gap-1.5">{meta.data?.practiceAreas.filter((a) => !p.practiceAreas.some((x) => x.key === a.key)).map((a) => (
             <button key={a.key} type="button" className="chip" onClick={() => set({ practiceAreas: [...p.practiceAreas, { key: a.key, title: locale === "ar" ? a.nameAr : a.nameEn, description: "", icon: a.icon }] })}>+ {locale === "ar" ? a.nameAr : a.nameEn}</button>
           ))}</div>
@@ -153,7 +157,7 @@ export default function Website() {
             render={(a, s) => <div className="space-y-2"><Input value={a.q} onChange={(e) => s({ q: e.target.value })} placeholder={t("lw.web.q")} /><Textarea rows={2} value={a.a} onChange={(e) => s({ a: e.target.value })} placeholder={t("lw.web.a")} /></div>} />
         </Section>
 
-        <Section title={t("lw.web.contact")}>
+        <Section title={t("lw.web.contact")} icon="phone">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <Field name="phone" error={fe.err("phone")} label={t("lw.client.phone")}><Input dir="ltr" value={p.phone} onChange={(e) => set({ phone: e.target.value })} /></Field>
             <Field name="whatsapp" error={fe.err("whatsapp")} label="WhatsApp"><Input dir="ltr" value={p.whatsapp} onChange={(e) => set({ whatsapp: e.target.value })} /></Field>
@@ -168,8 +172,8 @@ export default function Website() {
         </Section>
       </fieldset>
       <div className="mt-5"><BrandingCard /></div>
-      {saved && <div className="mt-4"><Alert tone="green">{t("lw.web.saved")}</Alert></div>}
-      <div className="sticky bottom-3 z-10 mt-5 flex items-center gap-3 rounded-2xl bg-white/90 p-2 shadow-lift backdrop-blur">
+      <div className="sticky bottom-3 z-10 mt-5 flex items-center gap-3 rounded-[16px] bg-surface/90 p-2 shadow-card backdrop-blur">
+        {saved && !draft && <span className="ps-2 inline-flex items-center gap-1 text-[13px] font-semibold text-emerald-700"><Icon name="check" className="h-4 w-4" />{t("lw.web.saved")}</span>}
         {fe.any ? <p className="text-sm font-medium text-red-700">{t("form.fixMarked")}</p> : <ErrorText error={save.error} />}
         {write && <Button className="ms-auto" loading={save.loading} disabled={!draft} onClick={() => save.run()}>{t("lw.web.publish")}</Button>}
       </div>

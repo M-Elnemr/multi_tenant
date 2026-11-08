@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/client";
 import { useAction, useApi } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
+import { ConfirmDialog, Switch } from "@/components/overlay";
 import { Alert, Badge, Button, ErrorText } from "@/components/ui";
 
 type Info = { available: boolean; enabled: boolean; status: "DISCONNECTED" | "CONNECTING" | "CONNECTED"; phone?: string | null; waReport: boolean };
@@ -14,6 +15,7 @@ export function WhatsAppReportCard({ write }: { write: boolean }) {
   const { t } = useI18n();
   const info = useApi<Info>("lawyer/whatsapp");
   const [qr, setQr] = useState<Qr | null>(null);
+  const [offAsk, setOffAsk] = useState(false);
   const [sent, setSent] = useState<boolean | null>(null);
   const enable = useAction(async () => { setQr(await api<Qr>("lawyer/whatsapp/enable", { body: { acceptedRisk: true } })); await info.reload(); });
   const disable = useAction(async () => { await api("lawyer/whatsapp/disable", { body: {} }); setQr(null); await info.reload(); });
@@ -36,8 +38,9 @@ export function WhatsAppReportCard({ write }: { write: boolean }) {
   const connected = d.enabled && d.status === "CONNECTED";
   return (
     <div className="space-y-4">
+      <ConfirmDialog open={offAsk} onClose={() => setOffAsk(false)} onConfirm={async () => { await disable.run(); setOffAsk(false); }} loading={disable.loading} danger title={t("lw.wa.unlink")} body={t("lw.wa.confirmOff")} confirmLabel={t("lw.wa.unlink")} cancelLabel={t("common.cancel")} />
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-slate-600">{t("lw.wa.what")}</p>
+        <p className="text-sm text-ink-2">{t("lw.wa.what")}</p>
         {d.enabled && <Badge tone={connected ? "green" : "amber"}>{connected ? t("evo.connected") : t("evo.waiting")}</Badge>}
       </div>
       {!d.available && <Alert tone="blue">{t("evo.unavailable")}</Alert>}
@@ -51,15 +54,15 @@ export function WhatsAppReportCard({ write }: { write: boolean }) {
         <div className="space-y-3">
           <ol className="list-decimal space-y-1 ps-5 text-sm"><li>{t("evo.s1")}</li><li>{t("evo.s2")}</li><li>{t("evo.s3")}</li></ol>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          {qr?.qr ? <img src={qr.qr} alt="QR" className="h-56 w-56 rounded-xl border bg-white p-2" /> : <p className="text-sm text-slate-500">{t("evo.qrLoading")}</p>}
+          {qr?.qr ? <img src={qr.qr} alt="QR" className="h-56 w-56 rounded-xl border bg-white p-2" /> : <p className="text-sm text-muted">{t("evo.qrLoading")}</p>}
           {qr?.pairingCode && <p className="text-sm">{t("evo.pairing")}: <b dir="ltr" className="font-mono">{qr.pairingCode}</b></p>}
         </div>
       )}
       {connected && (
         <div className="space-y-3">
           <Alert tone="green">{t("lw.wa.linked")}{d.phone ? <> <b dir="ltr">+{d.phone}</b></> : null}</Alert>
-          <label className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-4"><span><b className="block text-slate-800">{t("lw.wa.daily")}</b><span className="text-sm text-slate-500">{t("lw.wa.dailyHint")}</span></span>
-            <input type="checkbox" disabled={!write || toggle.loading} className="h-6 w-6 accent-[var(--brand)]" checked={d.waReport} onChange={(e) => void toggle.run(e.target.checked)} /></label>
+          <label className="flex items-center justify-between gap-3 rounded-[14px] ring-1 ring-line bg-surface-2 p-4"><span><b className="block text-ink">{t("lw.wa.daily")}</b><span className="text-sm text-muted">{t("lw.wa.dailyHint")}</span></span>
+            <Switch disabled={!write || toggle.loading} label={t("lw.wa.daily")} checked={d.waReport} onChange={(on) => void toggle.run(on)} /></label>
           {write && <Button variant="secondary" loading={now.loading} onClick={() => { setSent(null); void now.run(); }}>{t("lw.wa.sendNow")}</Button>}
           <ErrorText error={now.error ?? toggle.error} />
           {sent === true && <Alert tone="green">{t("lw.wa.sent")}</Alert>}
@@ -68,7 +71,7 @@ export function WhatsAppReportCard({ write }: { write: boolean }) {
       )}
       {d.enabled && write && (
         <div className="border-t pt-3"><ErrorText error={disable.error} />
-          <Button variant="danger" loading={disable.loading} onClick={() => { if (window.confirm(t("lw.wa.confirmOff"))) void disable.run(); }}>{t("lw.wa.unlink")}</Button></div>
+          <Button variant="danger" loading={disable.loading} onClick={() => setOffAsk(true)}>{t("lw.wa.unlink")}</Button></div>
       )}
     </div>
   );

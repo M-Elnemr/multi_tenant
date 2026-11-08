@@ -8,35 +8,51 @@ import { useFieldErrors } from "@/lib/use-field-errors";
 import { useAction, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Icon } from "@/components/icons";
-import { Badge, Button, ErrorText, Field, Input, Loading, Modal, PageHeader, Select, Textarea } from "@/components/ui";
+import { ConfirmDialog, Menu, Switch } from "@/components/overlay";
+import { useToast } from "@/components/toast";
+import { BRASS_LIGHT, DotsButton, Eyebrow, NAVY, Rise } from "@/components/lawyer/kit";
+import { Badge, Button, Empty, ErrorText, Field, Input, Loading, Modal, PageHeader, Select, Textarea, cx } from "@/components/ui";
 
-const MODE_ICON = { OFFICE: "🏛", ONLINE: "💻", PHONE: "📞" } as const;
+const MODE_ICON = { OFFICE: "building", ONLINE: "video", PHONE: "phone" } as const;
 
 export default function Services() {
   const { t, locale, currency } = useI18n();
+  const toast = useToast();
   const { canWrite } = useMe();
+  const write = canWrite("settings");
   const { data, loading, error, reload } = useApi<Service[]>("lawyer/services");
   const [edit, setEdit] = useState<Service | "new" | null>(null);
-  const del = useAction(async (id: string) => { await api(`lawyer/services/${id}`, { method: "DELETE" }); await reload(); });
+  const [confirm, setConfirm] = useState<Service | null>(null);
+  const del = useAction(async (id: string) => { await api(`lawyer/services/${id}`, { method: "DELETE" }); await reload(); setConfirm(null); toast(t("lw.toast.deleted")); });
   return (
-    <>
-      <PageHeader title={t("nav.services")} subtitle={t("lw.svc.subtitle")} actions={canWrite("settings") && <Button onClick={() => setEdit("new")}><Icon name="plus" className="h-4 w-4" />{t("lw.svc.new")}</Button>} />
+    <div className="space-y-4">
+      <PageHeader eyebrow={<Eyebrow>{t("lw.eb.setup")}</Eyebrow>} title={t("nav.services")} subtitle={t("lw.svc.subtitle")} actions={write && <Button onClick={() => setEdit("new")}><Icon name="plus" className="h-4 w-4" />{t("lw.svc.new")}</Button>} />
       <ErrorText error={error ?? del.error} />
-      {loading && !data ? <Loading /> : (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      {loading && !data ? <Loading variant="cards" /> : data && data.length === 0 ? (
+        <Empty icon="services" title={t("lw.svc.emptyTitle")} action={write ? <Button onClick={() => setEdit("new")}><Icon name="plus" className="h-4 w-4" />{t("lw.svc.new")}</Button> : undefined}>{t("lw.svc.subtitle")}</Empty>
+      ) : (
+        <Rise className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {data?.map((s) => (
-            <div key={s.id} className={`rounded-2xl bg-white p-5 shadow-card ${s.isActive ? "" : "opacity-60"}`}>
-              <div className="flex items-start justify-between gap-2"><span className="text-3xl">{MODE_ICON[s.mode]}</span>{!s.isActive && <Badge>{t("lw.svc.hidden")}</Badge>}</div>
-              <p className="mt-2 text-lg font-bold text-ink">{s.name}</p>
-              {s.description && <p className="mt-1 text-sm text-slate-500">{s.description}</p>}
-              <p className="mt-3 flex flex-wrap gap-2 text-sm"><span className="rounded-full bg-slate-100 px-2.5 py-0.5 font-semibold">⏱ {t("lw.minutes", { n: s.durationMinutes })}</span><span className="rounded-full bg-emerald-50 px-2.5 py-0.5 font-semibold text-emerald-700">{s.priceMinor == null ? t("lw.svc.noPrice") : s.priceMinor === 0 ? t("lw.svc.free") : money(s.priceMinor, currency, locale)}</span></p>
-              {canWrite("settings") && <div className="mt-4 flex gap-1"><Button size="sm" variant="secondary" onClick={() => setEdit(s)}><Icon name="edit" className="h-3.5 w-3.5" />{t("offer.edit")}</Button><Button size="sm" variant="ghost" className="!text-red-600" onClick={() => del.run(s.id)}>{t("offer.delete")}</Button></div>}
-            </div>
+            <article key={s.id} className={cx("flex flex-col rounded-[18px] bg-surface p-5 shadow-card", !s.isActive && "opacity-70")}>
+              <div className="flex items-start justify-between gap-2">
+                <span className="grid h-11 w-11 place-items-center rounded-[12px]" style={{ background: NAVY, color: BRASS_LIGHT }}><Icon name={MODE_ICON[s.mode]} className="h-5 w-5" /></span>
+                <div className="flex items-center gap-1">{!s.isActive && <Badge>{t("lw.svc.hidden")}</Badge>}
+                  {write && <Menu label={t("common.more")} items={[{ label: t("offer.edit"), icon: "edit", onSelect: () => setEdit(s) }, "divider", { label: t("offer.delete"), icon: "close", danger: true, onSelect: () => setConfirm(s) }]} trigger={({ toggle, open }) => <DotsButton onClick={toggle} open={open} label={t("common.more")} />} />}</div>
+              </div>
+              <p className="mt-3 font-display text-[17px] font-semibold text-ink">{s.name}</p>
+              {s.description && <p className="mt-1 line-clamp-3 text-[13px] leading-relaxed text-muted">{s.description}</p>}
+              <div className="mt-auto flex flex-wrap items-center gap-2 pt-4 text-[13px]">
+                <span className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1 font-semibold text-ink-2 ring-1 ring-line"><Icon name="clock" className="h-3.5 w-3.5" />{t("lw.minutes", { n: s.durationMinutes })}</span>
+                <span className="rounded-full px-2.5 py-1 font-semibold text-ink tnum" style={{ background: "color-mix(in srgb, #b08d57 16%, transparent)" }}>{s.priceMinor == null ? t("lw.svc.noPrice") : s.priceMinor === 0 ? t("lw.svc.free") : money(s.priceMinor, currency, locale)}</span>
+                <span className="text-xs text-muted">{t(`lw.mode.${s.mode}`)}</span>
+              </div>
+            </article>
           ))}
-        </div>
+        </Rise>
       )}
-      {edit && <ServiceModal s={edit === "new" ? null : edit} onClose={() => setEdit(null)} onSaved={async () => { setEdit(null); await reload(); }} />}
-    </>
+      {edit && <ServiceModal s={edit === "new" ? null : edit} onClose={() => setEdit(null)} onSaved={async () => { setEdit(null); toast(t("common.saved")); await reload(); }} />}
+      <ConfirmDialog open={!!confirm} onClose={() => setConfirm(null)} onConfirm={() => confirm && void del.run(confirm.id)} loading={del.loading} danger title={t("lw.confirm.deleteTitle")} body={confirm?.name} confirmLabel={t("offer.delete")} cancelLabel={t("common.cancel")} />
+    </div>
   );
 }
 
@@ -58,9 +74,9 @@ function ServiceModal({ s, onClose, onSaved }: { s: Service | null; onClose: () 
         <div className="grid gap-3 sm:grid-cols-3">
           <Field name="durationMinutes" error={fe.err("durationMinutes")} label={t("lw.step.duration")}><Select value={f.durationMinutes} onChange={(e) => setF({ ...f, durationMinutes: e.target.value })}>{["15", "30", "45", "60", "90", "120"].map((m) => <option key={m} value={m}>{t("lw.minutes", { n: m })}</option>)}</Select></Field>
           <Field name="priceMinor" error={fe.err("priceMinor")} label={t("lw.svc.price", { c: currency })} hint={t("lw.svc.priceHint")}><Input dir="ltr" inputMode="decimal" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} /></Field>
-          <Field label={t("lw.svc.mode")}><Select value={f.mode} onChange={(e) => setF({ ...f, mode: e.target.value as Service["mode"] })}>{(["OFFICE", "ONLINE", "PHONE"] as const).map((m) => <option key={m} value={m}>{MODE_ICON[m]} {t(`lw.mode.${m}`)}</option>)}</Select></Field>
+          <Field label={t("lw.svc.mode")}><Select value={f.mode} onChange={(e) => setF({ ...f, mode: e.target.value as Service["mode"] })}>{(["OFFICE", "ONLINE", "PHONE"] as const).map((m) => <option key={m} value={m}>{t(`lw.mode.${m}`)}</option>)}</Select></Field>
         </div>
-        <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" className="h-5 w-5 accent-[var(--brand)]" checked={f.active} onChange={(e) => setF({ ...f, active: e.target.checked })} />{t("lw.svc.showOnSite")}</label>
+        <div className="flex items-center gap-3 rounded-[12px] bg-surface-2 px-3.5 py-3 text-[13px] font-semibold text-ink-2 ring-1 ring-line"><Switch checked={f.active} onChange={(v) => setF({ ...f, active: v })} label={t("lw.svc.showOnSite")} />{t("lw.svc.showOnSite")}</div>
         {!fe.any && <ErrorText error={save.error} />}
         <Button type="submit" className="w-full" loading={save.loading}>{t("common.save")}</Button>
       </form>
