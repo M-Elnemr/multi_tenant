@@ -8,5 +8,5 @@ import { useNavTitle } from "@/components/dashboard/section";
 export default function PurchasingPage() {
   const { t } = useI18n();
   const title = useNavTitle(t("po.title"));
-  return (<><PageHeader title={title} subtitle={t("po.subtitle")} /><Purchasing /></>);
+  return (<><PageHeader eyebrow={t("cat.eyebrow")} title={title} subtitle={t("po.subtitle")} /><Purchasing /></>);
 }
