@@ -88,7 +88,7 @@ export default function PatientPage({ params }: { params: Promise<{ id: string }
   if (can("patient.update")) more.push({ label: t("patients.edit"), icon: "edit", onSelect: openEdit });
   if (can("appointment.manage")) more.push({ label: t("queue.walkIn"), icon: "queue", onSelect: openQueue });
   if (portal && can("patient.update") && d.hasPortal) more.push({ label: t("patients.setPassword"), icon: "lock", onSelect: () => { setPwDone(false); setNewPw(""); setPwOpen(true); } });
-  if (can("patient.export") && clinical) more.push({ label: t("record.exportStaff"), icon: "file", onSelect: () => { window.location.href = `/api/bff/clinic/patients/${id}/export`; } });
+  if (can("patient.export") && clinical) more.push({ label: t("record.exportStaff"), icon: "file", onSelect: () => { window.open(`/api/bff/clinic/patients/${id}/export`, "_self"); } });
 
   return (
     <>

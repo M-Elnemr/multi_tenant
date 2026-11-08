@@ -95,7 +95,10 @@ export default function Appointments() {
     if (a.status === "PENDING_CONFIRMATION") { primary.push({ label: t("appt.confirm"), onClick: () => void run(a, "confirm", t("appt.confirm")) }); more.push(item("appt.reject", "reject", "xcircle", true)); }
     if (a.status === "CONFIRMED") { primary.push({ label: t("appt.checkIn"), onClick: () => void run(a, "check-in", t("appt.checkIn")) }); more.push(item("appt.noShow", "no-show", "clock", true), item("orders.cancel", "cancel", "xcircle", true)); }
     if (["CHECKED_IN", "IN_PROGRESS"].includes(a.status) && can("medical_note.create")) primary.push({ label: t("appt.startVisit"), onClick: () => void startVisit.run(a), loading: startVisit.loading });
-    if (a.status === "IN_PROGRESS") (primary.length ? more.unshift(item("appt.complete", "complete", "check")) : primary.push({ label: t("appt.complete"), onClick: () => void run(a, "complete", t("appt.complete")) }));
+    if (a.status === "IN_PROGRESS") {
+      if (primary.length) more.unshift(item("appt.complete", "complete", "check"));
+      else primary.push({ label: t("appt.complete"), onClick: () => void run(a, "complete", t("appt.complete")) });
+    }
     if (a.paymentMethod === "CASH_AT_CLINIC" && a.paymentStatus !== "PAID" && ["CONFIRMED", "CHECKED_IN", "IN_PROGRESS", "COMPLETED"].includes(a.status)) more.unshift(item("appt.markPaid", "mark-paid", "wallet"));
     return { primary, more };
   };
@@ -182,7 +185,7 @@ export default function Appointments() {
                             {a.queueNumber ? <Pill>#{num(a.queueNumber, locale)}</Pill> : null}
                             <CalmStatus status={a.status} />
                             {a.paymentStatus === "PAID" && <CalmStatus status="PAID" />}
-                            {primary.map((p) => <Button key={p.label} size="sm" loading={p.loading || (act.loading && ask === null && false)} onClick={p.onClick}>{p.label}</Button>)}
+                            {primary.map((p) => <Button key={p.label} size="sm" loading={p.loading} onClick={p.onClick}>{p.label}</Button>)}
                             {more.length > 0 && <Menu label={t("cld.moreActions")} items={more} trigger={({ toggle }) => <MoreTrigger toggle={toggle} label={t("cld.moreActions")} />} />}
                           </div>
                         </motion.li>
