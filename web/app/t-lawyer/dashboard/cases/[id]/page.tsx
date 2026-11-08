@@ -15,7 +15,7 @@ import { useToast } from "@/components/toast";
 import { uploadFile } from "@/components/uploader";
 import { CaseModal } from "@/components/lawyer/case-form";
 import { StepFields } from "@/components/lawyer/step-fields";
-import { BRASS, BRASS_LIGHT, ContactButtons, DateTile, DotsButton, Eyebrow, Fact, IVORY, NAVY, PaidBar, Rise, caseAccent, useIntl } from "@/components/lawyer/kit";
+import { BRASS, BRASS_LIGHT, ContactButtons, DateTile, DotsButton, Eyebrow, Fact, IVORY, NAVY, PaidBar, Rise, useIntl } from "@/components/lawyer/kit";
 import { Avatar, Badge, Button, Empty, ErrorText, Field, Input, Loading, Modal, PageHeader, Select, Tabs, Textarea, cx } from "@/components/ui";
 
 type Tab = "overview" | "timeline" | "actions" | "payments" | "documents";

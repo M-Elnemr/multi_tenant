@@ -1,0 +1,23 @@
+{
+  "lw.eb.office": ["Law office", "المكتب"],
+  "lw.eb.cases": ["Cases and clients", "القضايا والعملاء"],
+  "lw.eb.setup": ["Office setup", "إعدادات المكتب"],
+  "lw.home.hearingsN": ["{n} hearings today", "{n} جلسة اليوم"],
+  "lw.sch.moved": ["Moved", "تم النقل"],
+  "lw.sch.nothing": ["Nothing scheduled", "لا يوجد شيء مجدول"],
+  "lw.sch.delNoteTitle": ["Delete this note?", "حذف هذه الملاحظة؟"],
+  "lw.toast.deleted": ["Deleted", "تم الحذف"],
+  "lw.toast.caseCreated": ["Case created", "تم إنشاء القضية"],
+  "lw.toast.caseUpdated": ["Case updated", "تم تحديث القضية"],
+  "lw.toast.docAdded": ["Document added", "تمت إضافة المستند"],
+  "lw.toast.paymentAdded": ["Payment recorded", "تم تسجيل الدفعة"],
+  "lw.toast.clientAdded": ["Client added", "تمت إضافة العميل"],
+  "lw.bkToast.APPROVED": ["Session approved", "تمت الموافقة على الجلسة"],
+  "lw.bkToast.DENIED": ["Request declined", "تم رفض الطلب"],
+  "lw.bkToast.DONE": ["Marked as done", "تم وضعها كمنتهية"],
+  "lw.bkToast.NO_SHOW": ["Marked as no-show", "تم تسجيل عدم الحضور"],
+  "lw.bkToast.moved": ["Session moved", "تم نقل الجلسة"],
+  "lw.step.overdue": ["Overdue", "متأخر"],
+  "lw.confirm.deleteTitle": ["Delete this item?", "حذف هذا العنصر؟"],
+  "lw.svc.emptyTitle": ["No services yet", "لا توجد خدمات بعد"]
+}

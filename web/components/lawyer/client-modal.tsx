@@ -23,7 +23,7 @@ export function ClientModal({ initial, onClose, onSaved }: { initial?: Client; o
   return (
     <Modal open onClose={onClose} title={initial ? t("lw.client.edit") : t("lw.client.new")} wide>
       <form onSubmit={(e) => { e.preventDefault(); void save.run(); }} className="space-y-3">
-        <div className="flex gap-2">{(["PERSON", "COMPANY"] as const).map((k) => <button key={k} type="button" onClick={() => set({ kind: k })} className={`chip ${f.kind === k ? "chip-on" : ""}`}>{k === "PERSON" ? "👤" : "🏢"} {t(`lw.client.kind.${k}`)}</button>)}</div>
+        <div className="flex gap-2">{(["PERSON", "COMPANY"] as const).map((k) => <button key={k} type="button" onClick={() => set({ kind: k })} className={`chip ${f.kind === k ? "chip-on" : ""}`}>{t(`lw.client.kind.${k}`)}</button>)}</div>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field name="name" error={fe.err("name")} label={t("lw.client.name")}><Input value={f.name} onChange={(e) => set({ name: e.target.value })} /></Field>
           <Field name="phone" error={fe.err("phone")} label={t("lw.client.phone")}><Input dir="ltr" inputMode="tel" value={f.phone} onChange={(e) => set({ phone: e.target.value })} /></Field>
@@ -34,7 +34,7 @@ export function ClientModal({ initial, onClose, onSaved }: { initial?: Client; o
         </div>
         <Field label={t("lw.client.address")}><Input value={f.address} onChange={(e) => set({ address: e.target.value })} /></Field>
         <Field label={t("lw.client.notes")}><Textarea rows={3} value={f.notes} onChange={(e) => set({ notes: e.target.value })} /></Field>
-        {fe.any ? <p className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{t("form.fixMarked")}</p> : <ErrorText error={save.error} />}
+        {fe.any ? <p className="rounded-[12px] bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{t("form.fixMarked")}</p> : <ErrorText error={save.error} />}
         <Button type="submit" className="w-full" loading={save.loading}>{t("common.save")}</Button>
       </form>
     </Modal>
