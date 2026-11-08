@@ -6,6 +6,8 @@ import { Page, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Icon, type IconName } from "@/components/icons";
 import { AnimatedNumber, AreaChart, AttentionRow, Avatar, BarChart, Delta, DonutChart, Empty, ErrorText, KpiStrip, Loading, Section, SectionLink, ShareBars, Sparkline, StatusBadge, Segmented, STATUS_TONE, TONE_HEX } from "@/components/ui";
+import { AiSellerCard, InboxPreview } from "@/components/dashboard/home-ai";
+import { PageHeader } from "@/components/ui";
 import { dateTime, money, num } from "@/lib/format";
 import { governorateName } from "@/lib/governorates";
 
@@ -59,6 +61,7 @@ export default function StoreOverview() {
     return (
       <div className="space-y-6">
         <Greeting name={me?.firstName} />
+        {aiOn && <InboxPreview />}
         {recent.data ? <RecentOrders orders={recent.data.data} /> : <Empty icon="dashboard" title={t("dash.limitedTitle")}>{t("dash.limitedHint")}</Empty>}
       </div>
     );
@@ -66,15 +69,23 @@ export default function StoreOverview() {
 
   return (
     <div className="space-y-5">
+      <PageHeader eyebrow={t("dash.controlPanel")} title={`${t("dash.hello")}, ${me?.firstName ?? ""}`} subtitle={t("home.subtitle")}
+        badge={<span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[11.5px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-600/15"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500 live-dot" />{t("dash.siteLive")}</span>}
+        actions={<a href="/" target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-1.5 rounded-[11px] bg-surface px-3.5 text-[13px] font-semibold text-ink-2 ring-1 ring-line-strong transition hover:text-ink"><Icon name="external" className="h-4 w-4" />{t("dash.viewSite")}</a>} />
       <ErrorText error={summary.error} />
+      {aiOn && (
+        <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
+          <AiSellerCard />
+          <InboxPreview />
+        </div>
+      )}
       {s && (
         <div className="grid gap-5 xl:grid-cols-[1.55fr_1fr]">
           {/* Command hero: today in display type, the 14-day pulse underneath */}
           <section className="hero-card flex animate-fade-up flex-col p-6 sm:p-7">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <p className="text-[13px] font-medium text-white/60">{t("dash.hello")}, {me?.firstName}</p>
-                <p className="mt-4 flex items-center gap-2 text-[13px] font-medium text-white/70"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400 live-dot" />{t("dash.salesToday")}</p>
+                <p className="flex items-center gap-2 text-[13px] font-medium text-white/70"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400 live-dot" />{t("dash.salesToday")}</p>
                 <p className="mt-1 font-display text-[2.6rem] font-semibold leading-none tracking-tight tnum sm:text-[3.4rem]"><AnimatedNumber value={s.salesTodayMinor} format={fmt} /></p>
                 <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-white/60">
                   {vsYesterday != null && <Delta value={vsYesterday} className="!bg-white/10 !text-white" />}

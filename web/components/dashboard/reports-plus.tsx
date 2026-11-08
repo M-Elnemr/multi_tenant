@@ -7,7 +7,8 @@ import { governorateName } from "@/lib/governorates";
 import { useApi } from "../hooks";
 import { DateRangePicker, rangeQuery, type DateRange } from "../date-range";
 import { useI18n } from "../i18n-provider";
-import { Alert, Badge, Card, Loading, Stat, Table, Td } from "../ui";
+import { Alert, Badge, Button, Empty, KpiStrip, Loading, Section, Segmented, Stat, Table, Td } from "../ui";
+import { Icon } from "../icons";
 import { Bars, downloadCsv, TrendChart } from "./report-charts";
 
 type Split = { key: string; orders: number; revenueMinor: number };
@@ -41,6 +42,7 @@ export default function ReportsPlus() {
   const mon = (n: number) => money(n, currency, locale);
   const pct = (n: number, d: number) => (d === 0 ? "-" : `${Math.round((n * 100) / d)}%`);
   const trendOf = (cur: number, prev: number) => (prev === 0 ? (cur === 0 ? undefined : { text: t("rp2.new"), up: true }) : { text: `${cur >= prev ? "+" : ""}${Math.round(((cur - prev) / prev) * 100)}%`, up: cur >= prev });
+  const deltaOf = (cur: number, prev: number) => (prev === 0 ? null : ((cur - prev) / prev) * 100);
   const channelLabel = (k: string) => (k === "-" ? "—" : t(`channel.${k}`));
   const payLabel = (k: string) => (k === "-" ? "—" : t(`pay.${k}`));
   const d = o.data;
@@ -50,61 +52,61 @@ export default function ReportsPlus() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-end gap-3 print:hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
+        <Segmented size="sm" value={range.from || range.to ? ("" as never) : (String(days) as "7" | "30" | "90")} onChange={(k) => { setDays(Number(k)); setRange({}); }} tabs={[7, 30, 90].map((n) => ({ key: String(n) as "7" | "30" | "90", label: t("rp2.lastDays", { n }) }))} />
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-xl border bg-white p-0.5">{[7, 30, 90].map((n) => <button key={n} type="button" onClick={() => { setDays(n); setRange({}); }} className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${days === n && !range.from ? "bg-brand text-white" : "text-slate-600 hover:bg-slate-50"}`}>{t("rp2.lastDays", { n })}</button>)}</div>
           <DateRangePicker value={range} onChange={setRange} label={t("range.custom")} />
-          <button type="button" onClick={() => window.print()} className="rounded-xl border bg-white px-3 py-1.5 text-sm font-semibold hover:bg-slate-50">🖨️ {t("pos.print")}</button>
+          <Button variant="secondary" size="sm" onClick={() => window.print()}><Icon name="print" className="h-4 w-4" />{t("pos.print")}</Button>
         </div>
       </div>
-      <p className="hidden text-sm text-slate-500 print:block">{t("rp2.lastDays", { n: days })}</p>
+      <p className="hidden text-sm text-muted print:block">{t("rp2.lastDays", { n: days })}</p>
 
       {!d ? <Loading /> : (
         <>
           {tab === "overview" && (
             <>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <Stat label={t("rp.revenue")} value={mon(d.current.revenueMinor)} icon="billing" tone="green" trend={trendOf(d.current.revenueMinor, d.previous.revenueMinor)} hint={t("rp2.vsPrev")} />
-                <Stat label={t("rp2.orders")} value={d.current.orders} icon="box" trend={trendOf(d.current.orders, d.previous.orders)} hint={t("rp2.vsPrev")} />
-                <Stat label={t("rp2.aov")} value={mon(d.current.aovMinor)} icon="trending" trend={trendOf(d.current.aovMinor, d.previous.aovMinor)} hint={t("rp2.vsPrev")} />
-                <Stat label={t("rp2.customers")} value={d.current.customers} icon="users" trend={trendOf(d.current.customers, d.previous.customers)} hint={t("rp2.vsPrev")} />
-              </div>
-              <Card className="space-y-2"><h2 className="font-medium">{t("rp2.revenueTrend")}</h2>
-                <TrendChart points={d.trend.map((x) => x.revenueMinor)} labels={d.trend.map((x) => dateOnly(x.day, locale))} format={(n) => mon(n)} /></Card>
+              <KpiStrip items={[
+                { label: t("rp.revenue"), value: mon(d.current.revenueMinor), icon: "billing", tone: "green", delta: deltaOf(d.current.revenueMinor, d.previous.revenueMinor), hint: t("rp2.vsPrev") },
+                { label: t("rp2.orders"), value: d.current.orders, icon: "box", tone: "brand", delta: deltaOf(d.current.orders, d.previous.orders), hint: t("rp2.vsPrev") },
+                { label: t("rp2.aov"), value: mon(d.current.aovMinor), icon: "trending", tone: "violet", delta: deltaOf(d.current.aovMinor, d.previous.aovMinor), hint: t("rp2.vsPrev") },
+                { label: t("rp2.customers"), value: d.current.customers, icon: "users", tone: "amber", delta: deltaOf(d.current.customers, d.previous.customers), hint: t("rp2.vsPrev") },
+              ]} />
+              <Section className="" title={t("rp2.revenueTrend")}>
+                <TrendChart points={d.trend.map((x) => x.revenueMinor)} labels={d.trend.map((x) => dateOnly(x.day, locale))} format={(n) => mon(n)} /></Section>
               <div className="grid gap-5 lg:grid-cols-2">
-                <Card className="space-y-3"><h2 className="font-medium">{t("rp2.topProducts")}</h2>
+                <Section className="" title={t("rp2.topProducts")}>
                   <Bars rows={d.topProducts.map((p) => ({ key: p.name, label: p.name, value: p.revenueMinor, text: mon(p.revenueMinor), sub: `${p.units} ${t("rp.units")}` }))} />
-                  {d.topProducts.length === 0 && <p className="text-sm text-slate-500">{t("rp2.empty")}</p>}</Card>
-                <Card className="space-y-3"><h2 className="font-medium">{t("rp2.byChannel")}</h2>
-                  <Bars rows={splitBars(d.byChannel, channelLabel)} />{d.byChannel.length === 0 && <p className="text-sm text-slate-500">{t("rp2.empty")}</p>}</Card>
+                  {d.topProducts.length === 0 && <Empty compact icon="chart">{t("rp2.empty")}</Empty>}</Section>
+                <Section className="" title={t("rp2.byChannel")}>
+                  <Bars rows={splitBars(d.byChannel, channelLabel)} />{d.byChannel.length === 0 && <Empty compact icon="chart">{t("rp2.empty")}</Empty>}</Section>
               </div>
             </>
           )}
 
           {tab === "sales" && (
             <div className="grid gap-5 lg:grid-cols-2">
-              <Card className="space-y-3"><div className="flex items-center justify-between"><h2 className="font-medium">{t("rp2.byChannel")}</h2><button type="button" className="text-xs font-semibold text-brand print:hidden" onClick={splitCsv("sales-by-channel.csv", d.byChannel, channelLabel)}>CSV</button></div><Bars rows={splitBars(d.byChannel, channelLabel)} /></Card>
-              <Card className="space-y-3"><div className="flex items-center justify-between"><h2 className="font-medium">{t("rp2.byPayment")}</h2><button type="button" className="text-xs font-semibold text-brand print:hidden" onClick={splitCsv("sales-by-payment.csv", d.byPayment, payLabel)}>CSV</button></div><Bars rows={splitBars(d.byPayment, payLabel)} /></Card>
-              <Card className="space-y-3 lg:col-span-2"><div className="flex items-center justify-between"><h2 className="font-medium">{t("rp2.byArea")}</h2><button type="button" className="text-xs font-semibold text-brand print:hidden" onClick={splitCsv("sales-by-governorate.csv", d.byGovernorate, (k) => (k === "-" ? "—" : governorateName(k, locale) || k))}>CSV</button></div>
-                <Bars rows={splitBars(d.byGovernorate, (k) => (k === "-" ? "—" : governorateName(k, locale) || k))} /></Card>
-              <Card className="space-y-2 lg:col-span-2"><h2 className="font-medium">{t("rp2.ordersTrend")}</h2>
-                <TrendChart points={d.trend.map((x) => x.orders)} labels={d.trend.map((x) => dateOnly(x.day, locale))} format={(n) => String(n)} /></Card>
+              <Section className="" title={t("rp2.byChannel")} action={<Button size="sm" variant="ghost" onClick={splitCsv("sales-by-channel.csv", d.byChannel, channelLabel)}><Icon name="file" className="h-3.5 w-3.5" />CSV</Button>}><Bars rows={splitBars(d.byChannel, channelLabel)} /></Section>
+              <Section className="" title={t("rp2.byPayment")} action={<Button size="sm" variant="ghost" onClick={splitCsv("sales-by-payment.csv", d.byPayment, payLabel)}><Icon name="file" className="h-3.5 w-3.5" />CSV</Button>}><Bars rows={splitBars(d.byPayment, payLabel)} /></Section>
+              <Section className="lg:col-span-2" title={t("rp2.byArea")} action={<Button size="sm" variant="ghost" onClick={splitCsv("sales-by-governorate.csv", d.byGovernorate, (k) => (k === "-" ? "—" : governorateName(k, locale) || k))}><Icon name="file" className="h-3.5 w-3.5" />CSV</Button>}>
+                <Bars rows={splitBars(d.byGovernorate, (k) => (k === "-" ? "—" : governorateName(k, locale) || k))} /></Section>
+              <Section className="lg:col-span-2" title={t("rp2.ordersTrend")}>
+                <TrendChart points={d.trend.map((x) => x.orders)} labels={d.trend.map((x) => dateOnly(x.day, locale))} format={(n) => String(n)} /></Section>
             </div>
           )}
 
           {tab === "products" && (
             <>
               <div className="grid gap-5 lg:grid-cols-2">
-                <Card className="space-y-3"><h2 className="font-medium">{t("rp2.topProducts")}</h2>
-                  <Bars rows={d.topProducts.map((p) => ({ key: p.name, label: p.name, value: p.revenueMinor, text: mon(p.revenueMinor), sub: `${p.units} ${t("rp.units")}` }))} /></Card>
-                <Card className="space-y-3"><h2 className="font-medium">{t("rp2.lowStock")}</h2>
-                  {d.lowStock.length === 0 ? <p className="text-sm text-slate-500">{t("rp2.stockOk")}</p> : (
-                    <ul className="divide-y text-sm">{d.lowStock.map((x) => <li key={x.sku} className="flex items-center justify-between py-1.5"><span className="min-w-0 truncate">{x.name} <span dir="ltr" className="text-xs text-slate-500">{x.sku}</span></span><Badge tone={x.available <= 0 ? "red" : "amber"}>{x.available}</Badge></li>)}</ul>
-                  )}</Card>
+                <Section className="" title={t("rp2.topProducts")}>
+                  <Bars rows={d.topProducts.map((p) => ({ key: p.name, label: p.name, value: p.revenueMinor, text: mon(p.revenueMinor), sub: `${p.units} ${t("rp.units")}` }))} /></Section>
+                <Section className="" title={t("rp2.lowStock")}>
+                  {d.lowStock.length === 0 ? <Empty compact icon="check">{t("rp2.stockOk")}</Empty> : (
+                    <ul className="divide-y divide-line text-sm">{d.lowStock.map((x) => <li key={x.sku} className="flex items-center justify-between py-1.5"><span className="min-w-0 truncate">{x.name} <span dir="ltr" className="text-xs text-muted">{x.sku}</span></span><Badge tone={x.available <= 0 ? "red" : "amber"}>{x.available}</Badge></li>)}</ul>
+                  )}</Section>
               </div>
               {m.data && (
                 <>
-                  <div className="flex items-center justify-between"><h2 className="font-medium">{t("rp.margin")}</h2><button type="button" className="text-xs font-semibold text-brand print:hidden" onClick={() => downloadCsv("margin.csv", [t("products.name"), t("rp.units"), t("rp.revenue"), t("rp.margin"), "%"], m.data!.products.map((p) => [p.name, p.units, (p.revenueMinor / 100).toFixed(2), p.marginMinor == null ? "" : (p.marginMinor / 100).toFixed(2), p.marginPercent ?? ""]))}>CSV</button></div>
+                  <div className="flex items-center justify-between"><h2 className="font-display text-[15px] font-semibold text-ink">{t("rp.margin")}</h2><button type="button" className="text-xs font-semibold text-brand print:hidden" onClick={() => downloadCsv("margin.csv", [t("products.name"), t("rp.units"), t("rp.revenue"), t("rp.margin"), "%"], m.data!.products.map((p) => [p.name, p.units, (p.revenueMinor / 100).toFixed(2), p.marginMinor == null ? "" : (p.marginMinor / 100).toFixed(2), p.marginPercent ?? ""]))}>CSV</button></div>
                   <div className="grid gap-3 sm:grid-cols-3"><Stat label={t("rp.revenue")} value={mon(m.data.totalRevenueMinor)} icon="billing" /><Stat label={t("rp.margin")} value={mon(m.data.totalMarginMinor)} icon="trending" tone="green" /><Stat label={t("rp.marginPct")} value={`${m.data.marginPercent}%`} icon="sparkles" /></div>
                   <Alert tone="blue">{t("rp.costNote")}</Alert>
                   <Table head={[t("products.name"), t("rp.units"), t("rp.revenue"), t("rp.margin"), "%"]}>
@@ -122,13 +124,13 @@ export default function ReportsPlus() {
                 <Stat label={t("rp.newCustomers")} value={d.customerMix.newCustomers} icon="sparkles" tone="green" />
                 <Stat label={t("rp2.returning")} value={d.customerMix.returningCustomers} icon="users" hint={pct(d.customerMix.returningCustomers, d.customerMix.newCustomers + d.customerMix.returningCustomers)} />
               </div>
-              <div className="flex items-center justify-between"><h2 className="font-medium">{t("rp.cohorts")}</h2>{c.data && <button type="button" className="text-xs font-semibold text-brand print:hidden" onClick={() => downloadCsv("cohorts.csv", [t("rp.month"), t("rp.newCustomers"), t("rp.back1"), t("rp.back2"), t("rp.back3")], c.data!.map((r) => [r.month, r.customers, r.back1, r.back2, r.back3]))}>CSV</button>}</div>
-              <p className="text-sm text-slate-500">{t("rp.cohortsHint")}</p>
+              <div className="flex items-center justify-between"><h2 className="font-display text-[15px] font-semibold text-ink">{t("rp.cohorts")}</h2>{c.data && <button type="button" className="text-xs font-semibold text-brand print:hidden" onClick={() => downloadCsv("cohorts.csv", [t("rp.month"), t("rp.newCustomers"), t("rp.back1"), t("rp.back2"), t("rp.back3")], c.data!.map((r) => [r.month, r.customers, r.back1, r.back2, r.back3]))}>CSV</button>}</div>
+              <p className="text-sm text-muted">{t("rp.cohortsHint")}</p>
               <Table head={[t("rp.month"), t("rp.newCustomers"), t("rp.back1"), t("rp.back2"), t("rp.back3")]}>
                 {(c.data ?? []).map((r) => <tr key={r.month}><Td>{dateOnly(r.month, locale)}</Td><Td>{r.customers}</Td><Td>{r.back1} ({pct(r.back1, r.customers)})</Td><Td>{r.back2} ({pct(r.back2, r.customers)})</Td><Td>{r.back3} ({pct(r.back3, r.customers)})</Td></tr>)}
               </Table>
-              <Card className="flex flex-wrap items-center gap-3 print:hidden"><span className="text-sm font-medium">{t("rp.export")}</span>
-                <a href="/api/bff/store/export/customers.csv" className="rounded-xl border px-3 py-1.5 text-sm font-semibold hover:bg-slate-50">{t("rp.exportCustomers")}</a></Card>
+              <Section title={t("rp.export")} icon="file" className="print:hidden"><div className="flex flex-wrap gap-2">
+                <a href="/api/bff/store/export/customers.csv" className="inline-flex h-9 items-center gap-2 rounded-[10px] bg-surface px-3.5 text-[13px] font-semibold text-ink ring-1 ring-line-strong hover:bg-surface-2">{t("rp.exportCustomers")}</a></div></Section>
             </>
           )}
 
@@ -141,18 +143,17 @@ export default function ReportsPlus() {
                 <Stat label={t("rp2.cod")} value={d.operations.cod} icon="billing" hint={pct(d.operations.cod, d.operations.allOrders)} />
               </div>
               {attr.data && (
-                <Card className="space-y-3">
-                  <h2 className="font-medium">{t("rp.attribution")}</h2>
+                <Section title={t("rp.attribution")} icon="sparkles">
                   <div className="grid gap-3 sm:grid-cols-4">
                     <Stat label={t("rp.aiRevenue")} value={mon(attr.data.aiSellerRevenueMinor)} icon="sparkles" tone="green" hint={t("rp.aiChats", { n: attr.data.aiConversations })} />
                     <Stat label={t("rp.recoveredCarts")} value={mon(attr.data.recoveredCartsMinor)} icon="box" hint={String(attr.data.recoveredCarts)} />
                     <Stat label={t("rp.codSaved")} value={mon(attr.data.codSavedMinor)} icon="billing" hint={t("rp.riskyLost", { n: attr.data.riskyOrdersLost })} />
                     <Stat label={t("rp.loyaltyOrders")} value={attr.data.loyaltyOrders} icon="users" />
                   </div>
-                </Card>
+                </Section>
               )}
-              <Card className="flex flex-wrap items-center gap-3 print:hidden"><span className="text-sm font-medium">{t("rp.export")}</span>
-                <a href="/api/bff/store/export/orders.csv" className="rounded-xl border px-3 py-1.5 text-sm font-semibold hover:bg-slate-50">{t("rp.exportOrders")}</a></Card>
+              <Section title={t("rp.export")} icon="file" className="print:hidden"><div className="flex flex-wrap gap-2">
+                <a href="/api/bff/store/export/orders.csv" className="inline-flex h-9 items-center gap-2 rounded-[10px] bg-surface px-3.5 text-[13px] font-semibold text-ink ring-1 ring-line-strong hover:bg-surface-2">{t("rp.exportOrders")}</a></div></Section>
             </>
           )}
         </>
