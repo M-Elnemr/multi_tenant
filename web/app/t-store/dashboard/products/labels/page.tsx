@@ -6,7 +6,12 @@ import { barcodeSvg } from "@/lib/barcode";
 import { money } from "@/lib/format";
 import { useApi } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
-import { Button, ErrorText, Input, Loading, PageHeader, Select } from "@/components/ui";
+import Link from "next/link";
+import { Icon } from "@/components/icons";
+import { Checkbox, Switch } from "@/components/overlay";
+import { SearchBox } from "@/components/dashboard/filters";
+import { BackLink, SideCard } from "@/components/dashboard/product-editor-bits";
+import { Button, Empty, ErrorText, Field, Input, Loading, PageHeader, Select } from "@/components/ui";
 
 type Label = { sku: string; barcode: string | null; name: string; variantLabel?: string | null; priceMinor: number; currency: string; qr: string };
 type Size = "38x25" | "50x30" | "A4";
@@ -68,35 +73,47 @@ export default function Labels() {
   return (
     <>
       <div className="print:hidden">
-        <PageHeader title={t("labels.title")} subtitle={t("labels.subtitle2")} actions={<Button onClick={() => window.print()} disabled={chosen.length === 0}>{t("pos.print")} ({chosen.length * copies})</Button>} />
-        <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="block text-sm font-semibold">{t("labels.size")}
-            <Select value={prefs.size} onChange={(e) => save({ ...prefs, size: e.target.value as Size })} className="mt-1"><option value="38x25">{t("labels.s38")}</option><option value="50x30">{t("labels.s50")}</option><option value="A4">{t("labels.sA4")}</option></Select>
-          </label>
-          <label className="block text-sm font-semibold">{t("labels.kind")}
-            <Select value={prefs.kind} onChange={(e) => save({ ...prefs, kind: e.target.value as Kind })} className="mt-1"><option value="barcode">{t("labels.kBarcode")}</option><option value="qr">{t("labels.kQr")}</option><option value="both">{t("labels.kBoth")}</option></Select>
-          </label>
-          <label className="block text-sm font-semibold">{t("labels.copies")}<Input type="number" min={1} max={50} value={copies} onChange={(e) => setCopies(Math.max(1, Math.min(50, Number(e.target.value) || 1)))} className="mt-1" /></label>
-          <label className="flex items-end gap-2 pb-2 text-sm"><input type="checkbox" checked={prefs.price} onChange={(e) => save({ ...prefs, price: e.target.checked })} />{t("labels.showPrice")}</label>
-        </div>
-        <div className="mb-4 flex flex-wrap items-center gap-3">
-          <div className="w-full max-w-sm"><Input placeholder={t("common.search")} value={q} onChange={(e) => setQ(e.target.value)} /></div>
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={all} onChange={(e) => setPicked(Object.fromEntries((data ?? []).map((l) => [l.sku, e.target.checked])))} />{t("labels.all")}</label>
-        </div>
-        <p className="mb-3 text-xs text-slate-500">{prefs.size === "A4" ? t("labels.hintA4") : t("labels.hintRoll")}</p>
-        <ErrorText error={error} />
-        {loading && !data ? <Loading /> : (
-          <ul className="mb-6 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{(data ?? []).map((l) => (
-            <li key={l.sku} className="min-w-0"><label className="flex min-w-0 cursor-pointer items-center gap-3 rounded-xl border bg-white p-3 text-sm"><input type="checkbox" checked={!!picked[l.sku]} onChange={(e) => setPicked({ ...picked, [l.sku]: e.target.checked })} />
-              <span className="min-w-0"><span className="block truncate font-medium">{l.name}</span><span className="block truncate text-xs text-slate-500">{l.variantLabel ? `${l.variantLabel} · ` : ""}<span dir="ltr">{code(l)}</span></span></span></label></li>
-          ))}</ul>
-        )}
-        {chosen.length > 0 && (
-          <div className="mb-6">
-            <p className="mb-2 text-sm font-semibold">{t("labels.preview")}</p>
-            <div className="inline-block rounded-lg bg-white shadow-card ring-1 ring-slate-200">{label(chosen[0], "preview")}</div>
+        <PageHeader eyebrow={<BackLink href="/dashboard/products" label={t("nav.products")} />} title={t("labels.title")} subtitle={t("labels.subtitle2")}
+          actions={<Button variant="ink" onClick={() => window.print()} disabled={chosen.length === 0}><Icon name="print" className="h-4 w-4" />{t("pos.print")} ({chosen.length * copies})</Button>} />
+        <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="min-w-0 space-y-3">
+            <div className="flex flex-wrap items-center gap-2.5 rounded-[14px] bg-surface p-2.5 shadow-card">
+              <SearchBox value={q} onChange={setQ} placeholder={t("common.search")} />
+              <label className="inline-flex min-h-11 items-center gap-2 rounded-[11px] px-3 text-[13px] font-semibold text-ink-2 ring-1 ring-line-strong"><Checkbox checked={all} onChange={(v) => setPicked(Object.fromEntries((data ?? []).map((l) => [l.sku, v])))} label={t("labels.all")} />{t("labels.all")}</label>
+              <span className="ms-auto text-[12.5px] font-medium text-muted tnum">{t("cat.selectedN", { n: chosen.length })}</span>
+            </div>
+            <ErrorText error={error} />
+            {loading && !data ? <Loading variant="list" /> : (data ?? []).length === 0 ? (
+              <Empty icon="qr" title={t("cat.labelsEmptyTitle")} action={<Link href="/dashboard/products/new"><Button variant="ink">{t("products.add")}</Button></Link>}>{t("cat.labelsEmptyBody")}</Empty>
+            ) : (
+              <ul className="grid gap-2 sm:grid-cols-2">{(data ?? []).map((l) => (
+                <li key={l.sku} className="min-w-0">
+                  <label className={`flex min-w-0 cursor-pointer items-center gap-3 rounded-[14px] p-3 text-sm ring-1 transition ${picked[l.sku] ? "bg-brand-soft ring-brand/40" : "bg-surface ring-line hover:ring-line-strong"}`}>
+                    <Checkbox checked={!!picked[l.sku]} onChange={(v) => setPicked({ ...picked, [l.sku]: v })} label={l.name} />
+                    <span className="min-w-0 flex-1"><span className="block truncate font-semibold text-ink">{l.name}</span><span className="block truncate text-xs text-muted">{l.variantLabel ? `${l.variantLabel} · ` : ""}<span dir="ltr">{code(l)}</span></span></span>
+                    <span className="shrink-0 text-[12.5px] font-semibold text-ink-2 tnum">{money(l.priceMinor, l.currency, locale)}</span>
+                  </label>
+                </li>
+              ))}</ul>
+            )}
           </div>
-        )}
+          <aside className="min-w-0 space-y-4 lg:sticky lg:top-20">
+            <SideCard title={t("cat.labelSettings")}>
+              <div className="space-y-3">
+                <Field label={t("labels.size")}><Select value={prefs.size} onChange={(e) => save({ ...prefs, size: e.target.value as Size })}><option value="38x25">{t("labels.s38")}</option><option value="50x30">{t("labels.s50")}</option><option value="A4">{t("labels.sA4")}</option></Select></Field>
+                <Field label={t("labels.kind")}><Select value={prefs.kind} onChange={(e) => save({ ...prefs, kind: e.target.value as Kind })}><option value="barcode">{t("labels.kBarcode")}</option><option value="qr">{t("labels.kQr")}</option><option value="both">{t("labels.kBoth")}</option></Select></Field>
+                <Field label={t("labels.copies")}><Input type="number" min={1} max={50} value={copies} onChange={(e) => setCopies(Math.max(1, Math.min(50, Number(e.target.value) || 1)))} /></Field>
+                <div className="flex items-center justify-between gap-3 rounded-[12px] bg-surface-2 px-3.5 py-2.5"><span className="text-[13px] font-semibold text-ink">{t("labels.showPrice")}</span><Switch checked={prefs.price} onChange={(v) => save({ ...prefs, price: v })} label={t("labels.showPrice")} /></div>
+                <p className="text-[12px] leading-relaxed text-muted">{prefs.size === "A4" ? t("labels.hintA4") : t("labels.hintRoll")}</p>
+              </div>
+            </SideCard>
+            <SideCard title={t("labels.preview")}>
+              {chosen.length > 0
+                ? <div className="grid place-items-center overflow-x-auto rounded-[12px] bg-surface-2 p-4"><div className="inline-block bg-white shadow-card ring-1 ring-line">{label(chosen[0], "preview")}</div></div>
+                : <p className="rounded-[12px] border border-dashed border-line-strong p-4 text-center text-[12.5px] text-muted">{t("cat.previewEmpty")}</p>}
+            </SideCard>
+          </aside>
+        </div>
       </div>
       {/* what goes on paper: one label per page on a roll, a grid on A4 */}
       <style>{sticker
