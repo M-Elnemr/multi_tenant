@@ -45,7 +45,8 @@ export function PlanView({ canWrite }: { canWrite: boolean }) {
           <AnimatePresence initial={false}>
             {items.map((i) => (
               <motion.li key={i.id} layout={!reduce} initial={reduce ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98 }} className="flex flex-col overflow-hidden rounded-[18px] bg-surface ring-1 ring-line">
-                {i.imageUrl && /* eslint-disable-next-line @next/next/no-img-element */ <img src={i.imageUrl} alt="" className="h-40 w-full object-cover" />}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                {i.imageUrl && <img src={i.imageUrl} alt="" className="h-40 w-full object-cover" />}
                 <div className="flex flex-1 flex-col gap-3 p-4 sm:p-5">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="flex items-center gap-2 text-[13px] font-semibold text-ink"><Icon name="calendar" className="h-4 w-4 text-muted" />{day(i.day)}</span>

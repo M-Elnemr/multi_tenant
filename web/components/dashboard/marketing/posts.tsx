@@ -14,7 +14,7 @@ import { Alert, Badge, Button, Empty, ErrorText, Field, Input, Pager, Select, Te
 import { SearchBox } from "@/components/dashboard/filters";
 import { dateTime } from "@/lib/format";
 import { fileUrl } from "@/lib/media";
-import { AI_GRADIENT, AI_SOFT, CardSkeletons, PillTabs, SwitchRow, errText } from "./kit";
+import { AI_GRADIENT, AI_SOFT, CardSkeletons, PillTabs, SwitchRow } from "./kit";
 
 export type Overview = { channels: { id: string; platform: string; externalId: string; name?: string; status: string }[]; adAccounts: { id: string; label: string; externalId: string; country: string; status: string; lastError?: string }[]; imagesAvailable: boolean };
 type Result = { channel: string; name?: string; ok: boolean; id?: string; error?: string };
