@@ -8,7 +8,7 @@ import { Alert, Button, Empty, ErrorText, Field, Input, Skeleton, StatusBadge } 
 import { Switch } from "@/components/overlay";
 import { useToast } from "@/components/toast";
 import { CheckItem, SaveBar, SettingsCard, ToggleRow } from "./kit";
-import { dateTime, money } from "@/lib/format";
+import { money } from "@/lib/format";
 import { SendModePicker, useOwnNumber, type SendMode } from "./send-mode";
 import { PointsWallet } from "./points-wallet";
 import { WabaDialog } from "./waba-dialog";

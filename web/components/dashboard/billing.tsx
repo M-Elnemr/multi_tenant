@@ -5,7 +5,7 @@ import { useState } from "react";
 import { api } from "@/lib/client";
 import { useAction, useApi } from "../hooks";
 import { useI18n } from "../i18n-provider";
-import { Alert, Badge, Button, Empty, ErrorText, Loading, PageHeader, StatusBadge, Table, Td } from "../ui";
+import { Alert, Badge, Empty, ErrorText, Loading, PageHeader, StatusBadge, Table, Td } from "../ui";
 import { ConfirmDialog } from "../overlay";
 import { useToast } from "../toast";
 import { SettingsCard } from "./kit";
