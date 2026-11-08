@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:platform_core/platform_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'theme/templates.dart';
+
 /// What every control-panel screen needs: the business's API, its currency and the user's permissions.
 class Ctx {
   const Ctx({required this.api, required this.currency, required this.perms, required this.host, required this.type, this.screens = const {}});
@@ -151,9 +153,10 @@ class StatusPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = toneFor(status);
     final label = statusLabel(status);
+    final t = AppTemplate.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(color: c.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
+      decoration: BoxDecoration(color: c.withValues(alpha: t.isClinic ? 0.14 : 0.12), borderRadius: BorderRadius.circular(t.isLawyer ? 6 : 20), border: t.isLawyer ? Border.all(color: c.withValues(alpha: 0.5)) : null),
       child: Text(label, style: TextStyle(color: c, fontWeight: FontWeight.w800, fontSize: 12)),
     );
   }
@@ -169,14 +172,17 @@ String comboLabel(Object? key) {
   return k.split('|').map((p) => p.contains('=') ? p.substring(p.indexOf('=') + 1) : p).join(' / ');
 }
 
-Widget emptyState(String text, {IconData icon = Icons.inbox_outlined}) => Padding(padding: const EdgeInsets.all(40), child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 44, color: const Color(0xFF9AA9BA)), const SizedBox(height: 10), Text(text, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF6B7C8D)))])));
+Widget emptyState(String text, {IconData icon = Icons.inbox_outlined}) => Builder(builder: (context) => templateEmpty(context, text, icon: icon));
 
-Widget errorState(Object e, VoidCallback retry) => Center(child: Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [
-      const Icon(Icons.cloud_off_rounded, size: 46, color: Color(0xFF9AA9BA)),
-      const SizedBox(height: 10),
-      Text(errorText(e), textAlign: TextAlign.center),
-      TextButton.icon(onPressed: retry, icon: const Icon(Icons.refresh_rounded), label: Text(S(AppLocale.isAr ? 'ar' : 'en').retry)),
-    ])));
+Widget errorState(Object e, VoidCallback retry) => Builder(builder: (context) {
+      final t = AppTemplate.of(context);
+      return Center(child: Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.cloud_off_rounded, size: 46, color: t.muted),
+        const SizedBox(height: 10),
+        Text(errorText(e), textAlign: TextAlign.center),
+        TextButton.icon(onPressed: retry, icon: const Icon(Icons.refresh_rounded), label: Text(S(AppLocale.isAr ? 'ar' : 'en').retry)),
+      ])));
+    });
 
 String fmtDate(String? iso, {bool time = true}) {
   if (iso == null || iso.isEmpty) return '';
@@ -245,7 +251,8 @@ class DateRangeChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final ar = AppLocale.isAr;
     final on = value != null;
-    final color = Theme.of(context).colorScheme.primary;
+    final tt = AppTemplate.of(context);
+    final color = tt.isShop ? tt.accent : tt.ink;
     return InputChip(
       avatar: Icon(Icons.calendar_month_rounded, size: 18, color: on ? Colors.white : color),
       label: Text(text(value, ar, empty: label), style: TextStyle(fontWeight: FontWeight.w800, color: on ? Colors.white : null)),
@@ -402,13 +409,13 @@ class PagedListState extends State<PagedList> {
 }
 
 /// A "key: value" row for detail screens.
-Widget kv(String k, String v, {bool ltr = false}) => Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
+Widget kv(String k, String v, {bool ltr = false}) => Builder(builder: (context) => Padding(
+      padding: EdgeInsets.symmetric(vertical: AppTemplate.of(context).isClinic ? 7 : 5),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        SizedBox(width: 118, child: Text(k, style: const TextStyle(color: Color(0xFF6B7C8D)))),
+        SizedBox(width: 118, child: Text(k, style: TextStyle(color: AppTemplate.of(context).muted))),
         Expanded(child: Text(v.isEmpty ? '-' : (ltr ? localPhone(v) : v), textDirection: ltr ? TextDirection.ltr : null, style: const TextStyle(fontWeight: FontWeight.w700))),
       ]),
-    );
+    ));
 
 /// A queue entry: avatar + full-width name/details on top, the action buttons below (side by side, sharing the width) so nothing squeezes the name.
 class QueueCard extends StatelessWidget {
@@ -434,7 +441,7 @@ class QueueCard extends StatelessWidget {
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
                 const SizedBox(height: 2),
-                Text(subtitle, style: const TextStyle(color: Color(0xFF6B7C8D))),
+                Text(subtitle, style: TextStyle(color: AppTemplate.of(context).muted)),
               ])),
               if (trailing != null) trailing!,
             ]),

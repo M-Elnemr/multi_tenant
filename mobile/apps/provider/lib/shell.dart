@@ -3,7 +3,7 @@ import 'package:platform_core/platform_core.dart';
 
 import 'clinic_panel.dart';
 import 'copilot.dart';
-import 'inbox.dart';
+import 'inbox/inbox_screen.dart';
 import 'questions.dart';
 import 'dev_content.dart';
 import 'growth.dart';
@@ -21,6 +21,7 @@ import 'settings.dart';
 import 'channels.dart';
 import 'store_panel.dart';
 import 'lawyer_panel.dart';
+import 'theme/templates.dart';
 
 /// Group headings of the menu (Arabic, English), in the order they appear.
 const Map<String, List<String>> kMenuGroups = {
@@ -142,10 +143,9 @@ class _PanelShellState extends State<PanelShell> {
     return Column(children: [
       if (off != null) OfflineBanner(store: off),
       Expanded(child: AnimatedSwitcher(duration: const Duration(milliseconds: 260), switchInCurve: Curves.easeOutCubic, child: KeyedSubtree(key: ValueKey('$_tab-$_gen'), child: _page(_tab)))),
-      NavigationBar(
+      TemplateNavBar(
         selectedIndex: _tab.clamp(0, count - 1),
-        onDestinationSelected: (i) => setState(() => _tab = i),
-        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+        onSelected: (i) => setState(() => _tab = i),
         destinations: [
           for (final sec in _bottom) NavigationDestination(icon: Icon(sec.icon), label: sec.title(isAr)),
           if (hasMore) NavigationDestination(icon: const Icon(Icons.apps_rounded), label: isAr ? 'المزيد' : 'More'),
@@ -163,19 +163,29 @@ class _MoreList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isAr = S.of(context).ar;
+    final t = AppTemplate.of(context);
     final tiles = <Widget>[];
     String? lastGroup;
     for (var i = 0; i < sections.length; i++) {
       final g = sections[i].group;
       if (g.isNotEmpty && g != lastGroup && kMenuGroups[g] != null) {
-        tiles.add(Padding(padding: EdgeInsets.fromLTRB(4, tiles.isEmpty ? 0 : 14, 4, 6), child: Text(kMenuGroups[g]![isAr ? 0 : 1], style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Colors.grey.shade600))));
+        tiles.add(Padding(padding: EdgeInsets.fromLTRB(4, tiles.isEmpty ? 0 : 16, 4, 6), child: Text(kMenuGroups[g]![isAr ? 0 : 1], style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: t.isLawyer ? t.accent : t.muted, letterSpacing: t.isLawyer ? 0.6 : 0))));
       }
       lastGroup = g;
+      final tint = t.isShop ? t.accent : t.ink;
       tiles.add(
         FadeSlideIn(index: i, child: Card(child: ListTile(
-          leading: Container(padding: const EdgeInsets.all(9), decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)), child: Icon(sections[i].icon, color: Theme.of(context).colorScheme.primary)),
+          leading: Container(
+            padding: const EdgeInsets.all(9),
+            decoration: BoxDecoration(
+              color: t.isClinic ? t.accent.withValues(alpha: 0.55) : tint.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(t.isLawyer ? 6 : 12),
+              border: t.isLawyer ? Border.all(color: t.accent) : null,
+            ),
+            child: Icon(sections[i].icon, color: tint),
+          ),
           title: Text(sections[i].title(isAr), style: const TextStyle(fontWeight: FontWeight.w800)),
-          trailing: const Icon(Icons.chevron_right_rounded),
+          trailing: Icon(isAr ? Icons.chevron_left_rounded : Icons.chevron_right_rounded, color: t.muted),
           onTap: () {
             final sec = sections[i];
             Navigator.of(context).push(MaterialPageRoute(builder: (_) => Scaffold(appBar: AppBar(title: Text(sec.title(isAr))), body: sec.build(ctx))));
