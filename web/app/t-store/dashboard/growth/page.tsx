@@ -10,7 +10,7 @@ export default function GrowthPage() {
   const title = useNavTitle(t("gr.title"));
   return (
     <>
-      <PageHeader title={title} subtitle={t("gr.subtitle")} />
+      <PageHeader eyebrow={t("navgrp.marketing")} title={title} subtitle={t("gr.subtitle")} />
       <GrowthView />
     </>
   );
