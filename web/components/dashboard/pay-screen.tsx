@@ -8,7 +8,7 @@ import { useAction, useApi, useMe } from "../hooks";
 import { useI18n } from "../i18n-provider";
 import { PhoneInput } from "../inputs";
 import { Icon } from "../icons";
-import { Alert, Button, Card, ErrorText, Field, Loading, PageHeader, StatusBadge } from "../ui";
+import { Alert, Button, ErrorText, Field, Loading, PageHeader, StatusBadge } from "../ui";
 import type { BillingStatus } from "./subscription-bar";
 import { AppBenefits } from "../app-benefits";
 import { type Cycle, CycleToggle } from "../cycle-toggle";
@@ -58,52 +58,52 @@ function Inner() {
   if ((status.loading && !status.data) || (plans.loading && !plans.data)) return <Loading />;
   return (
     <div className="mx-auto max-w-3xl">
-      <PageHeader title={t("pay.title")} />
+      <PageHeader eyebrow={t("billing.title")} title={t("pay.title")} />
       {s?.state === "DISABLED" && <div className="mb-4"><Alert tone="red"><b>{t("sub.disabledTitle")}</b><br />{t("sub.disabledBody")}</Alert></div>}
       {s && s.state !== "DISABLED" && (
-        <Card className="mb-4">
-          <p className="text-sm text-slate-500">{t("pay.current")}</p>
-          <p className="text-lg font-semibold">{planLabel(t, s.planCode)}</p>
-          {s.periodEnd && <p className="mt-1 text-sm text-slate-500">{t("admin.endsOn")}: {dateOnly(s.periodEnd, locale)}</p>}
-        </Card>
+        <div className="mb-4 rounded-[18px] bg-ink p-5 text-surface">
+          <p className="text-[12.5px] opacity-65">{t("pay.current")}</p>
+          <p className="mt-1 font-display text-xl font-semibold">{planLabel(t, s.planCode)}</p>
+          {s.periodEnd && <p className="mt-1 text-[13px] opacity-65">{t("admin.endsOn")}: {dateOnly(s.periodEnd, locale)}</p>}
+        </div>
       )}
       <div className="mb-4"><Alert tone="blue">{t("pay.notice")}</Alert></div>
       {s?.tenantType && <div className="mb-4"><AppBenefits kind={s.tenantType as "STORE" | "CLINIC" | "LAWYER"} compact /></div>}
 
       {open && !editing ? (
-        <Card className="space-y-3 text-center">
+        <div className="space-y-3 rounded-[18px] bg-surface p-6 text-center ring-1 ring-line">
           <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"><Icon name="check" className="h-6 w-6" /></span>
-          <h2 className="text-lg font-bold">{t("pay.receivedTitle")}</h2>
-          <p className="text-sm text-slate-600">{t("pay.receivedBody", { phone: open.phone })}</p>
-          {open.timing === "NEXT_PERIOD" && <p className="text-sm text-slate-500">{t("pay.upgradeNext")}</p>}
+          <h2 className="font-display text-lg font-semibold text-ink">{t("pay.receivedTitle")}</h2>
+          <p className="text-sm text-muted">{t("pay.receivedBody", { phone: open.phone })}</p>
+          {open.timing === "NEXT_PERIOD" && <p className="text-sm text-muted">{t("pay.upgradeNext")}</p>}
           <p className="flex items-center justify-center gap-2 text-sm">{planLabel(t, open.planCode)} · {money(open.amountMinor, open.currency, locale)} <StatusBadge status={open.status} /></p>
           <Button variant="secondary" onClick={() => { setPicked(open.planCode); setPhone(open.phone); setEditing(true); }}>{t("pay.update")}</Button>
-        </Card>
+        </div>
       ) : (
         <form onSubmit={(e) => { e.preventDefault(); void send.run(choice, phoneValue); }} className="space-y-4">
-          <h2 className="font-semibold">{t("pay.choose")}</h2>
+          <h2 className="font-display text-[15px] font-semibold text-ink">{t("pay.choose")}</h2>
           <CycleToggle value={cycle} onChange={(c) => { setCycleSet(c); setPicked(null); }} />
           <div className="grid gap-3 sm:grid-cols-2">
             {payable.map((p) => {
               const on = p.code === choice;
               const domain = p.features.custom_domain !== false && "custom_domain" in p.features;
               return (
-                <button type="button" key={p.code} onClick={() => setPicked(p.code)} aria-pressed={on} className={`rounded-2xl border-2 bg-white p-5 text-start transition ${on ? "border-brand shadow-brand" : "border-slate-200 hover:border-brand/50"}`}>
-                  <p className="font-bold">{planLabel(t, p.code)}</p>
-                  <p className="my-1 text-2xl font-extrabold text-brand">{money(p.priceMinor, p.currency, locale)}<span className="text-sm font-normal text-slate-500"> / {p.interval === "YEAR" ? t("billing.perYear") : t("pricing.month")}</span></p>
+                <button type="button" key={p.code} onClick={() => setPicked(p.code)} aria-pressed={on} className={`rounded-[18px] bg-surface p-5 text-start ring-1 transition ${on ? "ring-2 ring-brand" : "ring-line hover:ring-line-strong"}`}>
+                  <p className="font-semibold text-ink">{planLabel(t, p.code)}</p>
+                  <p className="my-1 font-display text-2xl font-semibold text-ink tnum">{money(p.priceMinor, p.currency, locale)}<span className="text-sm font-normal text-muted"> / {p.interval === "YEAR" ? t("billing.perYear") : t("pricing.month")}</span></p>
                   {p.interval === "YEAR" && <p className="text-xs font-semibold text-emerald-700">{t("billing.twoFree")} · {t("billing.orMonthly", { amount: money(Math.round(p.priceMinor / 12), p.currency, locale) })}</p>}
-                  <p className={`text-sm ${domain ? "text-emerald-700" : "text-slate-500"}`}>{domain ? "✓ " + t("pay.withDomain") : "✕ " + t("pay.noDomain")}</p>
+                  <p className={`text-sm ${domain ? "text-emerald-700" : "text-muted"}`}><Icon name={domain ? "check" : "close"} className="me-1 inline h-3.5 w-3.5" />{domain ? t("pay.withDomain") : t("pay.noDomain")}</p>
                 </button>
               );
             })}
           </div>
           {uq && (
             <div className="space-y-2">
-              <h2 className="font-semibold">{t("pay.when")}</h2>
+              <h2 className="font-display text-[15px] font-semibold text-ink">{t("pay.when")}</h2>
               {(["NOW", "NEXT_PERIOD"] as const).map((v) => (
-                <button type="button" key={v} onClick={() => setTiming(v)} aria-pressed={timing === v} className={`block w-full rounded-2xl border-2 bg-white p-4 text-start transition ${timing === v ? "border-brand shadow-brand" : "border-slate-200 hover:border-brand/50"}`}>
-                  <p className="font-bold">{v === "NOW" ? t("pay.upgradeNow") : t("pay.upgradeNext")}</p>
-                  <p className="text-sm text-slate-600">{v === "NOW"
+                <button type="button" key={v} onClick={() => setTiming(v)} aria-pressed={timing === v} className={`block w-full rounded-[16px] bg-surface p-4 text-start ring-1 transition ${timing === v ? "ring-2 ring-brand" : "ring-line hover:ring-line-strong"}`}>
+                  <p className="font-semibold text-ink">{v === "NOW" ? t("pay.upgradeNow") : t("pay.upgradeNext")}</p>
+                  <p className="text-sm text-muted">{v === "NOW"
                     ? t("pay.upgradeNowBody", { days: String(uq.remainingDays ?? 0), credit: money(uq.creditMinor, uq.currency, locale), due: money(uq.dueNowMinor, uq.currency, locale) })
                     : t("pay.upgradeNextBody", { date: dateOnly(uq.periodEnd, locale), price: money(uq.fullMinor, uq.currency, locale) })}</p>
                 </button>
