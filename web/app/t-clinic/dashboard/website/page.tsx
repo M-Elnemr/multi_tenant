@@ -12,7 +12,7 @@ export default function ClinicWebsiteDesign() {
   const title = useNavTitle(t("nav.websiteDesign"));
   return (
     <div>
-      <PageHeader title={title} subtitle={t("gal.clinicHint")} />
+      <PageHeader eyebrow={t("navgrp.setup")} title={title} subtitle={t("gal.clinicHint")} />
       <TemplateGallery ids={CLINIC_TEMPLATE_IDS} looks={CLINIC_LOOKS} profilePath="clinic/profile" prefix="ctpl" fallback="clear" categoryKey="galcat" />
     </div>
   );
