@@ -7,13 +7,16 @@ import type { Client } from "@/lib/lawyer";
 import { Page, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Icon } from "@/components/icons";
+import { useToast } from "@/components/toast";
 import { SearchBox } from "@/components/dashboard/filters";
 import { DateRangePicker, rangeQuery, type DateRange } from "@/components/date-range";
 import { ClientModal } from "@/components/lawyer/client-modal";
-import { Avatar, Button, ErrorText, Loading, PageHeader, Pager } from "@/components/ui";
+import { ContactButtons, Eyebrow } from "@/components/lawyer/kit";
+import { Avatar, Badge, Button, Empty, ErrorText, Loading, PageHeader, Pager, Table, Td } from "@/components/ui";
 
 export default function Clients() {
   const { t, locale, currency } = useI18n();
+  const toast = useToast();
   const { canWrite } = useMe();
   const [q, setQ] = useState("");
   const [range, setRange] = useState<DateRange>({});
@@ -23,36 +26,37 @@ export default function Clients() {
   if (q.trim()) qs.set("q", q.trim());
   const { data, loading, error, reload } = useApi<Page<Client>>(`lawyer/clients?${qs}`);
   return (
-    <>
-      <PageHeader title={t("lw.nav.clients")} subtitle={data ? t("lw.clients.count", { n: data.meta.total }) : undefined} actions={canWrite("clients") && <Button onClick={() => setAdding(true)}><Icon name="plus" className="h-4 w-4" />{t("lw.client.new")}</Button>} />
-      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl bg-white p-3 shadow-card">
+    <div className="space-y-4">
+      <PageHeader eyebrow={<Eyebrow>{t("lw.eb.cases")}</Eyebrow>} title={t("lw.nav.clients")} subtitle={data ? t("lw.clients.count", { n: data.meta.total }) : undefined}
+        actions={canWrite("clients") && <Button onClick={() => setAdding(true)}><Icon name="plus" className="h-4 w-4" />{t("lw.client.new")}</Button>} />
+      <div className="flex flex-wrap items-center gap-2.5 rounded-[18px] bg-surface p-2.5 shadow-card">
         <SearchBox value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder={t("lw.client.searchFull")} />
         <DateRangePicker value={range} onChange={(r) => { setRange(r); setPage(1); }} label={t("customers.joined")} />
       </div>
       <ErrorText error={error} />
-      {loading && !data ? <Loading /> : data && data.data.length === 0 ? (
-        <div className="rounded-3xl border border-dashed border-slate-300 bg-white/70 p-10 text-center"><p className="text-5xl">👥</p><p className="mt-3 font-bold text-ink">{t("lw.clients.empty")}</p></div>
+      {loading && !data ? <Loading variant="table" /> : data && data.data.length === 0 ? (
+        <Empty icon="users" title={t("lw.clients.empty")} action={canWrite("clients") ? <Button onClick={() => setAdding(true)}><Icon name="plus" className="h-4 w-4" />{t("lw.client.new")}</Button> : undefined} />
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <Table head={[t("lw.client.name"), t("lw.client.phone"), t("lw.nav.cases"), t("lw.fin.balance"), ""]}>
           {data?.data.map((c) => (
-            <Link key={c.id} href={`/dashboard/clients/${c.id}`} className="flex animate-fade-up items-center gap-3 rounded-2xl bg-white p-4 shadow-card ring-1 ring-slate-100 transition hover:-translate-y-0.5 hover:shadow-lift">
-              <Avatar name={c.name} className="h-12 w-12 text-base" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-bold text-ink">{c.kind === "COMPANY" ? "🏢 " : ""}{c.name}</p>
-                <p dir="ltr" className="text-end text-xs text-slate-500 rtl:text-start">{c.phone || "—"}</p>
-                <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] font-semibold">
-                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">{t("lw.clients.cases", { n: c.caseCount ?? 0 })}</span>
-                  {(c.openCases ?? 0) > 0 && <span className="rounded-full bg-blue-50 px-2 py-0.5 text-blue-700">{t("lw.clients.open", { n: c.openCases! })}</span>}
-                  {(c.balanceMinor ?? 0) > 0 && <span className="rounded-full bg-red-50 px-2 py-0.5 text-red-600">{t("lw.due")} {money(c.balanceMinor!, currency, locale)}</span>}
-                  {c.tags.map((tg) => <span key={tg} className="rounded-full bg-violet-50 px-2 py-0.5 text-violet-700">#{tg}</span>)}
-                </div>
-              </div>
-            </Link>
+            <tr key={c.id}>
+              <Td>
+                <Link href={`/dashboard/clients/${c.id}`} className="group flex min-w-0 items-center gap-3">
+                  <Avatar name={c.name} className="h-10 w-10 text-sm" />
+                  <span className="min-w-0"><span className="flex items-center gap-1.5 truncate text-[14px] font-semibold text-ink group-hover:text-brand">{c.name}{c.kind === "COMPANY" && <Icon name="building" className="h-3.5 w-3.5 shrink-0 text-muted" />}</span>
+                    {c.tags.length > 0 && <span className="mt-0.5 flex flex-wrap gap-1">{c.tags.slice(0, 3).map((tg) => <span key={tg} className="rounded-full bg-surface-2 px-1.5 text-[11px] font-medium text-muted ring-1 ring-line">#{tg}</span>)}</span>}</span>
+                </Link>
+              </Td>
+              <Td><span dir="ltr" className="text-[13px] text-ink-2 tnum">{c.phone || "—"}</span></Td>
+              <Td><span className="flex items-center gap-1.5 text-[13px] text-ink-2 tnum">{t("lw.clients.cases", { n: c.caseCount ?? 0 })}{(c.openCases ?? 0) > 0 && <Badge tone="blue">{t("lw.clients.open", { n: c.openCases! })}</Badge>}</span></Td>
+              <Td>{(c.balanceMinor ?? 0) > 0 ? <span className="text-[13px] font-semibold text-rose-700 tnum">{money(c.balanceMinor!, currency, locale)}</span> : <span className="text-faint">—</span>}</Td>
+              <Td className="w-28 text-end"><ContactButtons phone={c.phone} size="sm" /></Td>
+            </tr>
           ))}
-        </div>
+        </Table>
       )}
       <Pager meta={data?.meta} onPage={setPage} />
-      {adding && <ClientModal onClose={() => setAdding(false)} onSaved={async () => { setAdding(false); await reload(); }} />}
-    </>
+      {adding && <ClientModal onClose={() => setAdding(false)} onSaved={async () => { setAdding(false); toast(t("lw.toast.clientAdded")); await reload(); }} />}
+    </div>
   );
 }

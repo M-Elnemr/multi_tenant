@@ -12,7 +12,10 @@ import { Icon } from "@/components/icons";
 import { CaseModal } from "@/components/lawyer/case-form";
 import { ClientModal } from "@/components/lawyer/client-modal";
 import { ClientAppCard } from "@/components/lawyer/client-app-card";
-import { Avatar, Badge, Button, ErrorText, Loading, Modal, Stat } from "@/components/ui";
+import { ConfirmDialog } from "@/components/overlay";
+import { useToast } from "@/components/toast";
+import { BRASS, BRASS_LIGHT, ContactButtons, IVORY, NAVY, caseAccent } from "@/components/lawyer/kit";
+import { Avatar, Badge, Button, Empty, ErrorText, KpiStrip, Loading, Modal } from "@/components/ui";
 
 type Detail = Client & { cases: { id: string; number: string; title: string; caseType: string; status: string; outcome: string; openedOn: string; court: string; billedMinor: number; paidMinor: number; nextStepAt?: string | null }[];
   bookings: { id: string; code: string; startsAt: string; status: string; topic: string }[]; billedMinor: number; paidMinor: number; balanceMinor: number };
@@ -22,6 +25,7 @@ export default function ClientPage({ params }: { params: Promise<{ id: string }>
   const { id } = use(params);
   const { t, locale, currency, siteName } = useI18n();
   const router = useRouter();
+  const toast = useToast();
   const { canWrite, can } = useMe();
   const { data, loading, error, reload } = useApi<Detail>(`lawyer/clients/${id}`);
   const [editing, setEditing] = useState(false);
@@ -35,53 +39,57 @@ export default function ClientPage({ params }: { params: Promise<{ id: string }>
   if (!data) return <ErrorText error={error} />;
   const c = data;
   return (
-    <>
-      <div className="mb-3 print:hidden"><Link href="/dashboard/clients" className="text-sm font-semibold text-slate-500 hover:text-brand">← {t("lw.nav.clients")}</Link></div>
-      <div className="mb-6 flex flex-wrap items-center gap-4 rounded-3xl bg-white p-5 shadow-card print:hidden">
-        <Avatar name={c.name} className="h-16 w-16 text-xl" />
-        <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-extrabold text-ink">{c.kind === "COMPANY" ? "🏢 " : ""}{c.name}</h1>
-          <p className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-500">{c.phone && <span dir="ltr">📞 {c.phone}</span>}{c.email && <span>✉️ {c.email}</span>}{c.nationalId && <span>🪪 {c.nationalId}</span>}</p>
-          {c.tags.length > 0 && <div className="mt-2 flex flex-wrap gap-1">{c.tags.map((tg) => <span key={tg} className="rounded-full bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-700">#{tg}</span>)}</div>}
+    <div className="space-y-5">
+      <Link href="/dashboard/clients" className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-muted transition hover:text-ink print:hidden"><Icon name="arrow" className="h-3.5 w-3.5 rotate-180 flip-rtl" />{t("lw.nav.clients")}</Link>
+      <section className="relative overflow-hidden rounded-[18px] p-5 print:hidden sm:p-6" style={{ background: NAVY, color: IVORY }}>
+        <span className="pointer-events-none absolute inset-x-0 bottom-0 h-px" style={{ background: `linear-gradient(90deg, transparent, ${BRASS}, transparent)` }} aria-hidden />
+        <div className="flex flex-wrap items-center gap-4">
+          <Avatar name={c.name} className="h-16 w-16 text-xl" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: BRASS_LIGHT }}>{t(`lw.client.kind.${c.kind}`)}</p>
+            <h1 className="mt-0.5 break-words font-display text-[1.6rem] font-semibold leading-tight">{c.name}</h1>
+            <p className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[13px] opacity-80">{c.phone && <span dir="ltr" className="tnum">{c.phone}</span>}{c.email && <span dir="ltr">{c.email}</span>}{c.nationalId && <span dir="ltr" className="tnum">{c.nationalId}</span>}</p>
+            {c.tags.length > 0 && <div className="mt-2 flex flex-wrap gap-1">{c.tags.map((tg) => <span key={tg} className="rounded-full px-2 py-0.5 text-[11.5px] font-semibold" style={{ background: "rgb(217 185 127 / .16)", color: BRASS_LIGHT }}>#{tg}</span>)}</div>}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <ContactButtons phone={c.phone} />
+            {canWrite("clients") && <Button size="sm" variant="secondary" onClick={() => setEditing(true)}><Icon name="edit" className="h-3.5 w-3.5" />{t("lw.client.edit")}</Button>}
+            {can("legal.finance.read") && <Button size="sm" variant="secondary" onClick={() => setStmt(true)}><Icon name="print" className="h-3.5 w-3.5" />{t("lw.client.statement")}</Button>}
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {c.phone && <><a href={`tel:${c.phone}`} className="chip">📞 {t("lw.client.call")}</a><a href={`https://wa.me/${c.phone.replace(/[^0-9]/g, "")}`} target="_blank" rel="noopener noreferrer" className="chip">WhatsApp</a></>}
-          {canWrite("clients") && <Button size="sm" variant="secondary" onClick={() => setEditing(true)}><Icon name="edit" className="h-3.5 w-3.5" />{t("lw.client.edit")}</Button>}
-          {can("legal.finance.read") && <Button size="sm" variant="secondary" onClick={() => setStmt(true)}><Icon name="print" className="h-3.5 w-3.5" />{t("lw.client.statement")}</Button>}
-        </div>
-      </div>
-      <div className="mb-6 grid gap-3 sm:grid-cols-3 print:hidden">
-        <Stat label={t("lw.fin.billed")} value={fmt(c.billedMinor)} icon="receipt" />
-        <Stat label={t("lw.fin.collected")} value={fmt(c.paidMinor)} icon="wallet" tone="green" />
-        <Stat label={t("lw.fin.balance")} value={fmt(c.balanceMinor)} icon="alert" tone={c.balanceMinor > 0 ? "red" : "green"} />
-      </div>
+      </section>
+      <div className="print:hidden"><KpiStrip items={[
+        { label: t("lw.fin.billed"), value: fmt(c.billedMinor), icon: "receipt", tone: "slate" },
+        { label: t("lw.fin.collected"), value: fmt(c.paidMinor), icon: "wallet", tone: "green" },
+        { label: t("lw.fin.balance"), value: fmt(c.balanceMinor), icon: "alert", tone: c.balanceMinor > 0 ? "red" : "green" },
+      ]} /></div>
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] print:hidden">
         <section>
-          <div className="mb-3 flex items-center justify-between"><h2 className="font-bold text-ink">{t("lw.nav.cases")} ({c.cases.length})</h2>{canWrite("cases") && <Button size="sm" onClick={() => setNewCase(true)}><Icon name="plus" className="h-3.5 w-3.5" />{t("lw.case.new")}</Button>}</div>
-          {c.cases.length === 0 ? <p className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-6 text-center text-sm text-slate-500">{t("lw.client.noCases")}</p> : (
-            <ul className="space-y-2">{c.cases.map((k) => (
-              <li key={k.id}><Link href={`/dashboard/cases/${k.id}`} className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-card transition hover:shadow-lift">
-                <div className="min-w-0 flex-1"><p className="font-mono text-xs text-slate-400">#{k.number}</p><p className="truncate font-bold text-ink">{k.title}</p><p className="text-xs text-slate-500">{t(`lw.type.${k.caseType}`)}{k.court ? ` · ${k.court}` : ""}{k.nextStepAt ? ` · 📅 ${dateTime(k.nextStepAt, locale)}` : ""}</p></div>
+          <div className="mb-3 flex items-center justify-between gap-2"><h2 className="font-display text-[16px] font-semibold text-ink">{t("lw.nav.cases")} <span className="text-muted tnum">({c.cases.length})</span></h2>{canWrite("cases") && <Button size="sm" onClick={() => setNewCase(true)}><Icon name="plus" className="h-3.5 w-3.5" />{t("lw.case.new")}</Button>}</div>
+          {c.cases.length === 0 ? <Empty compact icon="briefcase" title={t("lw.client.noCases")} /> : (
+            <ul className="space-y-2.5">{c.cases.map((k) => (
+              <li key={k.id}><Link href={`/dashboard/cases/${k.id}`} className="relative flex items-center gap-3 overflow-hidden rounded-[16px] bg-surface p-4 shadow-card transition hover:shadow-[0_0_0_1px_var(--line-strong)]">
+                <span className="absolute inset-y-0 start-0 w-1" style={{ background: caseAccent(k.status, k.outcome) }} aria-hidden />
+                <div className="min-w-0 flex-1"><p className="font-mono text-[11.5px] text-muted">#{k.number}</p><p className="truncate text-[14px] font-semibold text-ink">{k.title}</p><p className="truncate text-xs text-muted">{t(`lw.type.${k.caseType}`)}{k.court ? ` · ${k.court}` : ""}{k.nextStepAt ? ` · ${dateTime(k.nextStepAt, locale)}` : ""}</p></div>
                 <div className="flex flex-col items-end gap-1"><Badge tone={statusTone[k.status]}>{t(`lw.status.${k.status}`)}</Badge>{k.outcome !== "NONE" && <Badge tone={statusTone[k.outcome]}>{t(`lw.outcome.${k.outcome}`)}</Badge>}
-                  {k.billedMinor - k.paidMinor > 0 && <span className="text-xs font-bold text-red-600">{fmt(k.billedMinor - k.paidMinor)}</span>}</div>
+                  {k.billedMinor - k.paidMinor > 0 && <span className="text-xs font-semibold text-rose-700 tnum">{fmt(k.billedMinor - k.paidMinor)}</span>}</div>
               </Link></li>
             ))}</ul>
           )}
         </section>
         <section className="space-y-5">
           <ClientAppCard clientId={c.id} phone={c.phone} enabled={!!c.portalEnabled} lastLogin={c.portalLastLoginAt} write={canWrite("clients")} onChanged={() => void reload()} />
-          {c.notes && <div className="rounded-2xl bg-white p-5 shadow-card"><p className="mb-2 text-sm font-bold text-slate-700">{t("lw.client.notes")}</p><p className="whitespace-pre-line text-sm text-slate-700">{c.notes}</p></div>}
-          <div className="rounded-2xl bg-white p-5 shadow-card">
-            <p className="mb-2 text-sm font-bold text-slate-700">{t("lw.client.bookings")}</p>
-            {c.bookings.length === 0 ? <p className="text-sm text-slate-500">—</p> : <ul className="space-y-2">{c.bookings.map((b) => <li key={b.id} className="flex items-center justify-between gap-2 text-sm"><span>{dateTime(b.startsAt, locale)}</span><Badge tone={statusTone[b.status]}>{t(`lw.bks.${b.status}`)}</Badge></li>)}</ul>}
+          {c.notes && <div className="rounded-[18px] bg-surface p-5 shadow-card"><p className="mb-2 text-[14.5px] font-semibold text-ink">{t("lw.client.notes")}</p><p className="whitespace-pre-line text-sm leading-relaxed text-ink-2">{c.notes}</p></div>}
+          <div className="rounded-[18px] bg-surface p-5 shadow-card">
+            <p className="mb-3 text-[14.5px] font-semibold text-ink">{t("lw.client.bookings")}</p>
+            {c.bookings.length === 0 ? <p className="text-sm text-muted">—</p> : <ul className="space-y-2">{c.bookings.map((b) => <li key={b.id} className="flex items-center justify-between gap-2 text-sm text-ink-2"><span className="tnum">{dateTime(b.startsAt, locale)}</span><Badge tone={statusTone[b.status]}>{t(`lw.bks.${b.status}`)}</Badge></li>)}</ul>}
           </div>
-          {canWrite("clients") && <button type="button" onClick={() => setDel(true)} className="text-sm font-semibold text-red-600">{t("lw.client.delete")}</button>}
+          {canWrite("clients") && <Button variant="ghost" size="sm" className="!text-red-600" onClick={() => setDel(true)}>{t("lw.client.delete")}</Button>}
         </section>
       </div>
-      {editing && <ClientModal initial={c} onClose={() => setEditing(false)} onSaved={async () => { setEditing(false); await reload(); }} />}
+      {editing && <ClientModal initial={c} onClose={() => setEditing(false)} onSaved={async () => { setEditing(false); toast(t("common.saved")); await reload(); }} />}
       {newCase && <NewCaseFor client={c} onClose={() => setNewCase(false)} onSaved={(k) => router.push(`/dashboard/cases/${k.id}`)} />}
-      <Modal open={del} onClose={() => setDel(false)} title={t("lw.client.deleteTitle")}><p className="text-sm text-slate-600">{t("lw.client.deleteBody")}</p><ErrorText error={remove.error} />
-        <div className="mt-5 flex gap-2"><Button variant="danger" loading={remove.loading} onClick={() => remove.run()}>{t("offer.delete")}</Button><Button variant="secondary" onClick={() => setDel(false)}>{t("common.cancel")}</Button></div></Modal>
+      <ConfirmDialog open={del} onClose={() => setDel(false)} onConfirm={() => void remove.run()} loading={remove.loading} danger title={t("lw.client.deleteTitle")} body={<>{t("lw.client.deleteBody")}<ErrorText error={remove.error} /></>} confirmLabel={t("offer.delete")} cancelLabel={t("common.cancel")} />
       {stmt && (
         <Modal open onClose={() => setStmt(false)} title={t("lw.client.statement")} wide>
           {!statement.data ? <Loading /> : (
@@ -106,7 +114,7 @@ export default function ClientPage({ params }: { params: Promise<{ id: string }>
           )}
         </Modal>
       )}
-    </>
+    </div>
   );
 }
 
