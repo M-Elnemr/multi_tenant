@@ -24,7 +24,7 @@ export function PointsWallet({ write }: { write: boolean }) {
     <section className="space-y-3 rounded-xl border bg-white p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="flex items-center gap-2 font-semibold"><Icon name="wallet" className="h-5 w-5 text-brand" />{t("pts.title")}</h3>
-        <p className={`text-2xl font-extrabold tnum ${low ? "text-rose-600" : "text-brand"}`}>{t("pts.balance", { n: points.toLocaleString(locale === "ar" ? "ar-EG" : "en-US", { maximumFractionDigits: 1 }) })}</p>
+        <p className={`text-2xl font-extrabold tnum ${low ? "text-rose-600" : "text-brand"}`}>{t("pts.balance", { n: points.toLocaleString(locale === "ar" ? "ar-EG" : "en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })}</p>
       </div>
       {low && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{t("pts.empty")}</p>}
       <ul className="grid gap-2 text-sm sm:grid-cols-2">

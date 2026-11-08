@@ -11,7 +11,7 @@ import { Icon } from "@/components/icons";
 
 type Product = { name: string; slug: string; priceMinor: number; currency: string; imageUrl?: string; imageMediaBase?: string; imageMediaExt?: string };
 type Order = { orderNumber: string; totalMinor: number; currency: string; trackPath?: string; paymentPath?: string; whatsappUrl?: string; whatsappConfirmed?: boolean; test?: boolean };
-type Msg = { role: "user" | "assistant"; content: string; products?: Product[]; order?: Order | null };
+type Msg = { role: "user" | "assistant"; content: string; mediaUrl?: string | null; products?: Product[]; order?: Order | null };
 type Reply = { conversationId: string; reply: string; order?: Order | null; products?: Product[] };
 
 const KEY = "chatConv";
@@ -26,7 +26,7 @@ function conversationId(): string {
 
 /** The conversation, shared by the storefront button and the owner's test screen (same look, different endpoint). */
 export function ChatPanel({ send, load, onReset, onTeach, greeting, live = false, className = "" }: {
-  send: (text: string) => Promise<Reply>; load: () => Promise<{ role: "user" | "assistant"; content: string }[]>; onReset?: () => Promise<void>; onTeach?: (question: string, answer: string) => void; greeting: string;
+  send: (text: string) => Promise<Reply>; load: () => Promise<{ role: "user" | "assistant"; content: string; mediaUrl?: string | null }[]>; onReset?: () => Promise<void>; onTeach?: (question: string, answer: string) => void; greeting: string;
   live?: boolean; className?: string;
 }) {
   const { t, locale } = useI18n();
@@ -97,7 +97,12 @@ export function ChatPanel({ send, load, onReset, onTeach, greeting, live = false
         )}
         {msgs.map((m, i) => (
           <div key={i} className="space-y-2">
-            <Bubble role={m.role}>{m.content}</Bubble>
+            <Bubble role={m.role}>
+              {/* a picture the shop sent from its inbox */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              {m.mediaUrl && <img src={m.mediaUrl} alt="" className="mb-1.5 max-h-56 rounded-xl object-cover" />}
+              {m.content}
+            </Bubble>
             {onTeach && m.role === "assistant" && i > 0 && (
               <button type="button" onClick={() => onTeach(msgs[i - 1]?.role === "user" ? msgs[i - 1].content : "", m.content)} className="text-xs font-semibold text-brand underline">🎓 {t("ai.teachThis")}</button>
             )}
@@ -164,7 +169,7 @@ export function LiveChat() {
     api<{ enabled: boolean; greeting: string }>("shop/chat/config").then((c) => { if (live) setCfg(c); }).catch(() => undefined);
     return () => { live = false; };
   }, []);
-  const loadFn = useCallback(() => api<{ role: "user" | "assistant"; content: string }[]>(`shop/chat/history?conversationId=${conv}`), [conv]);
+  const loadFn = useCallback(() => api<{ role: "user" | "assistant"; content: string; mediaUrl?: string | null }[]>(`shop/chat/history?conversationId=${conv}`), [conv]);
 
   if (!cfg?.enabled) return null;
   return (

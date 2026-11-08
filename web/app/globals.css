@@ -81,9 +81,19 @@
   --buybar-h: 4.5rem;
   color-scheme: light;
 }
+/* Workspace identity: the icon rail and the menu panel per business type (shop: ink with the AI violet/cyan; clinic: deep teal and sage; lawyer: navy and brass). */
+[data-role] {
+  --rail-bg: #0b0d12; --rail-fg: rgb(255 255 255 / .52); --rail-fg-hover: #fff;
+  --rail-on: linear-gradient(135deg, #7c5cff, #22d3ee); --rail-on-ink: #fff;
+  --rail-accent: #7c5cff; --rail-accent-ink: #6d4dff;
+  --panel-bg: var(--surface-2); --panel-active: var(--surface);
+}
 /* The clinic (doctor) workspace is calmer: paper surfaces, softer lines. */
-[data-role="clinic"] { --page-bg: #f4f6f4; --surface-2: #f8faf8; }
-[data-role="lawyer"] { --page-bg: #f6f5f1; }
+[data-role="clinic"] { --page-bg: #f4f6f4; --surface-2: #f8faf8;
+  --rail-bg: #0f3d3a; --rail-fg: rgb(243 239 230 / .55); --rail-fg-hover: #f3efe6; --rail-on: #c4e0cf; --rail-on-ink: #0f3d3a; --rail-accent: #2d7d6f; --rail-accent-ink: #2d7d6f; }
+[data-role="lawyer"] { --page-bg: #f6f5f1;
+  --rail-bg: #14213d; --rail-fg: rgb(244 236 220 / .55); --rail-fg-hover: #f4ecdc; --rail-on: linear-gradient(135deg, #e6c993, #b08d57); --rail-on-ink: #14213d; --rail-accent: #b08d57; --rail-accent-ink: #8a6a3a; }
+html[data-theme="dark"] [data-role] { --panel-bg: #12141a; --panel-active: #1b1e26; }
 
 html[data-theme="dark"] {
   color-scheme: dark;

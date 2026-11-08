@@ -5,7 +5,7 @@
  *   answers from the catalog, recommends, offers a discount only up to the owner's limit, takes the order (cash on delivery) and asks the owner what it does not know;
  *   AI shop builder (from a description or from the owner's Facebook/Instagram posts); Copilot; marketing plan / autopilot, broadcasts, abandoned-cart reminders;
  *   orders, stock, shipping zones, offline POS with barcodes, reports, 10 shop designs, mobile app.
- *   Pricing: no subscription for shops; points (1 point = 1 EGP): 1 point per AI conversation (up to 20 messages), 0.5 point per WhatsApp confirmation / offer
+ *   Pricing (shown in EGP; the backend keeps a prepaid credit): no subscription for shops; 1 EGP: 1 point per AI conversation (up to 20 messages), 0.5 point per WhatsApp confirmation / offer
  *   message on the official WhatsApp (offers from the owner's own linked number are free, paced); 100 free points once. Keep in sync with V80__points_pricing.sql.
  */
 export type ShopCopy = typeof en;
@@ -24,7 +24,7 @@ const en = {
     sub: "It answers every customer on WhatsApp, Instagram and Messenger, knows your products and prices, suggests the right item and writes the order for you. You just pack and ship.",
     cta: "Start free",
     cta2: "Watch it sell",
-    trust: ["Free forever", "100 free points", "No card needed"],
+    trust: ["Free forever", "EGP 100 free credit", "No card needed"],
     floatOrder: "New order",
     floatReply: "Replied in 3s",
     floatNight: "2:14 AM, still selling",
@@ -194,22 +194,22 @@ const en = {
   pricing: {
     eyebrow: "Pricing",
     title: "Your shop is free. Forever.",
-    sub: "No subscription, no monthly fee. You only pay for what the AI and WhatsApp actually do, with points: 1 point = 1 EGP.",
+    sub: "No subscription, no monthly fee. You only pay for what the AI and WhatsApp actually do, from a prepaid credit.",
     freeTitle: "Your shop",
     freePrice: "Free",
     freeNote: "forever, no card",
     freeItems: ["Your online shop with 10 designs and your own domain", "Unlimited products, orders and customers", "Stock, shipping, offline POS and reports", "Owner app on your phone"],
     payTitle: "Pay only for what you use",
     rates: [
-      { value: "1", unit: "point", title: "AI conversation", body: "Up to 20 messages between your customer and the AI (about 10 AI replies). A longer chat counts as 2." },
-      { value: "0.5", unit: "point", title: "WhatsApp confirmation message", body: "Order confirmation and updates sent to the customer on WhatsApp." },
-      { value: "0.5", unit: "point", title: "WhatsApp advertising message", body: "Each offer sent on WhatsApp to an existing customer who agreed to hear from you." },
+      { value: "1", unit: "EGP", title: "AI conversation", body: "Up to 20 messages between your customer and the AI (about 10 AI replies). A longer chat counts as 2." },
+      { value: "0.5", unit: "EGP", title: "WhatsApp confirmation message", body: "Order confirmation and updates sent to the customer on WhatsApp." },
+      { value: "0.5", unit: "EGP", title: "WhatsApp advertising message", body: "Each offer sent on WhatsApp to an existing customer who agreed to hear from you." },
     ],
-    giftTitle: "100 free points to start",
+    giftTitle: "EGP 100 free credit to start",
     giftBody: "Enough for about 100 AI conversations, so you can try everything before paying anything.",
     howTitle: "You stay in control",
-    how: ["Top up any amount from 10 EGP", "Pick where the AI replies: WhatsApp, Messenger, Instagram, your website", "If points run out the AI pauses and chats go to your inbox; it's back the moment you top up"],
-    cta: "Start free with 100 points",
+    how: ["Top up any amount from 10 EGP", "Pick where the AI replies: WhatsApp, Messenger, Instagram, your website", "If your credit runs out the AI pauses and chats go to your inbox; it's back the moment you top up"],
+    cta: "Start free with EGP 100 credit",
     headline: "Your online sales assistant. No monthly fees.",
     calcTitle: "See how it works",
     calcSub: "Move the sliders: you pay only for what you use.",
@@ -228,11 +228,11 @@ const en = {
       { q: "What if a customer asks something it doesn't know?", a: "It tells the customer it will check, sends the question to you, and uses your answer for next time." },
       { q: "Do I need my own website or developer?", a: "No. Your shop site is created with your account, with ten designs to choose from. You can also use your own domain." },
       { q: "Which WhatsApp can I connect?", a: "Your existing number by scanning a QR code, or the official WhatsApp Business API if you have one." },
-      { q: "Is there a contract or monthly fee?", a: "No. Your shop is free with no subscription. You get 100 free points, then top up points only if you want the AI and WhatsApp messages: 1 point per AI conversation, 0.5 point per WhatsApp message." },
-      { q: "What happens when my points run out?", a: "Your shop keeps working normally. Only the AI auto-reply pauses and new chats wait for you in your inbox. Top up and it replies again right away." },
+      { q: "Is there a contract or monthly fee?", a: "No. Your shop is free with no subscription. You get EGP 100 free credit, then top up only if you want the AI and WhatsApp messages: EGP 1 per AI conversation, EGP 0.5 per WhatsApp message." },
+      { q: "What happens when my credit runs out?", a: "Your shop keeps working normally. Only the AI auto-reply pauses and new chats wait for you in your inbox. Top up and it replies again right away." },
     ],
   },
-  final: { title: "Hire your AI seller today", sub: "Set up in minutes. Your shop is free forever, with 100 points on us.", cta: "Start free", cta2: "See pricing" },
+  final: { title: "Hire your AI seller today", sub: "Set up in minutes. Your shop is free forever, with EGP 100 credit on us.", cta: "Start free", cta2: "See pricing" },
   footer: { tag: "AI-powered shops for Egypt and the Arab world.", product: "Product", company: "Platform", privacy: "Privacy", deleteAccount: "Delete account", clinics: "Elmanassa for clinics", lawyers: "Elmanassa for lawyers" },
 };
 
@@ -250,7 +250,7 @@ const ar: ShopCopy = {
     sub: "يرد على كل عميل في واتساب وإنستجرام وماسنجر، يعرف منتجاتك وأسعارك، يرشّح المنتج المناسب ويكتب الطلب بدالك. أنت بس تجهّز وتشحن.",
     cta: "ابدأ مجانًا",
     cta2: "شوفه وهو بيبيع",
-    trust: ["مجاني للأبد", "١٠٠ نقطة هدية", "بدون بطاقة"],
+    trust: ["مجاني للأبد", "رصيد ١٠٠ جنيه هدية", "بدون بطاقة"],
     floatOrder: "طلب جديد",
     floatReply: "رد في ٣ ثوانٍ",
     floatNight: "٢:١٤ صباحًا، ولسه بيبيع",
@@ -420,22 +420,22 @@ const ar: ShopCopy = {
   pricing: {
     eyebrow: "الأسعار",
     title: "متجرك مجاني. للأبد.",
-    sub: "مفيش اشتراك ولا رسوم شهرية. بتدفع بس على اللي الذكاء الاصطناعي وواتساب بيعملوه فعلًا، بالنقاط: النقطة = ١ جنيه.",
+    sub: "مفيش اشتراك ولا رسوم شهرية. بتدفع بس على اللي الذكاء الاصطناعي وواتساب بيعملوه فعلًا، من رصيد بتشحنه.",
     freeTitle: "متجرك",
     freePrice: "مجانًا",
     freeNote: "للأبد، بدون بطاقة",
     freeItems: ["متجرك أونلاين بعشرة تصميمات ودومين خاص بيك", "منتجات وطلبات وعملاء بلا حدود", "مخزون وشحن وكاشير يشتغل أوفلاين وتقارير", "تطبيق لصاحب المتجر على موبايلك"],
     payTitle: "ادفع على قد استخدامك",
     rates: [
-      { value: "١", unit: "نقطة", title: "محادثة بالذكاء الاصطناعي", body: "لحد ٢٠ رسالة بين عميلك والذكاء الاصطناعي (حوالي ١٠ ردود). المحادثة الأطول تتحسب ٢." },
-      { value: "٠٫٥", unit: "نقطة", title: "رسالة تأكيد على واتساب", body: "تأكيد الطلب وتحديثاته اللي بتوصل للعميل على واتساب." },
-      { value: "٠٫٥", unit: "نقطة", title: "رسالة إعلان على واتساب", body: "كل عرض بيتبعت على واتساب لعميل قديم وافق يستقبل رسايلك." },
+      { value: "١", unit: "جنيه", title: "محادثة بالذكاء الاصطناعي", body: "لحد ٢٠ رسالة بين عميلك والذكاء الاصطناعي (حوالي ١٠ ردود). المحادثة الأطول تتحسب ٢." },
+      { value: "٠٫٥", unit: "جنيه", title: "رسالة تأكيد على واتساب", body: "تأكيد الطلب وتحديثاته اللي بتوصل للعميل على واتساب." },
+      { value: "٠٫٥", unit: "جنيه", title: "رسالة إعلان على واتساب", body: "كل عرض بيتبعت على واتساب لعميل قديم وافق يستقبل رسايلك." },
     ],
-    giftTitle: "١٠٠ نقطة هدية للبداية",
+    giftTitle: "رصيد ١٠٠ جنيه هدية للبداية",
     giftBody: "تكفي حوالي ١٠٠ محادثة بالذكاء الاصطناعي، عشان تجرّب كل حاجة قبل ما تدفع أي حاجة.",
     howTitle: "أنت المتحكم",
     how: ["اشحن أي مبلغ من ١٠ جنيه", "اختار الذكاء الاصطناعي يرد فين: واتساب، ماسنجر، إنستجرام، موقعك", "لو النقاط خلصت الرد الآلي بيقف والمحادثات بتروح لصندوقك، وبيرجع أول ما تشحن"],
-    cta: "ابدأ مجانًا بـ ١٠٠ نقطة",
+    cta: "ابدأ مجانًا برصيد ١٠٠ جنيه",
     headline: "مساعد مبيعاتك أونلاين. من غير رسوم شهرية.",
     calcTitle: "شوف بنفسك",
     calcSub: "حرّك المؤشرات: بتدفع على قد استخدامك بس.",
@@ -454,11 +454,11 @@ const ar: ShopCopy = {
       { q: "لو العميل سأل حاجة هو مش عارفها؟", a: "يقول للعميل إنه هيتأكد، يبعتلك السؤال، ويستخدم إجابتك المرات الجاية." },
       { q: "محتاج موقع أو مبرمج؟", a: "لا. موقع متجرك يتعمل مع حسابك، وفيه عشرة تصميمات تختار منها. وتقدر تستخدم دومين خاص بيك." },
       { q: "أي واتساب أقدر أربطه؟", a: "رقمك الحالي بمسح كود QR، أو واجهة واتساب للأعمال الرسمية لو عندك." },
-      { q: "فيه عقد أو اشتراك شهري؟", a: "لا. متجرك مجاني من غير اشتراك. بتاخد ١٠٠ نقطة هدية، وبعدها تشحن نقاط بس لو عايز الذكاء الاصطناعي ورسايل واتساب: نقطة للمحادثة، ونص نقطة لرسالة واتساب." },
+      { q: "فيه عقد أو اشتراك شهري؟", a: "لا. متجرك مجاني من غير اشتراك. بتاخد رصيد ١٠٠ جنيه هدية، وبعدها تشحن بس لو عايز الذكاء الاصطناعي ورسايل واتساب: ١ جنيه للمحادثة، ونص جنيه لرسالة واتساب." },
       { q: "إيه اللي يحصل لو النقاط خلصت؟", a: "متجرك يفضل شغال عادي. الرد الآلي بس هو اللي بيقف، والمحادثات الجديدة بتستناك في صندوق المحادثات. اشحن ويرجع يرد على طول." },
     ],
   },
-  final: { title: "عيّن بائعك الذكي النهاردة", sub: "تجهيز في دقائق. متجرك مجاني للأبد، و١٠٠ نقطة هدية علينا.", cta: "ابدأ مجانًا", cta2: "شاهد الأسعار" },
+  final: { title: "عيّن بائعك الذكي النهاردة", sub: "تجهيز في دقائق. متجرك مجاني للأبد، ورصيد ١٠٠ جنيه هدية علينا.", cta: "ابدأ مجانًا", cta2: "شاهد الأسعار" },
   footer: { tag: "متاجر بالذكاء الاصطناعي لمصر والعالم العربي.", product: "المنتج", company: "المنصة", privacy: "الخصوصية", deleteAccount: "حذف الحساب", clinics: "المنصة للعيادات", lawyers: "المنصة للمحامين" },
 };
 
