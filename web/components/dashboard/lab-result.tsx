@@ -5,6 +5,7 @@ import { api } from "@/lib/client";
 import { dateTime } from "@/lib/format";
 import { useAction } from "../hooks";
 import { useI18n } from "../i18n-provider";
+import { Icon } from "../icons";
 import { Badge, Button, ErrorText } from "../ui";
 
 export type LabResult = { id: string; fileId?: string | null; resultText?: string | null; uploadedByPatient?: boolean; uploadedAt?: string; reviewedAt?: string | null; patientVisible?: boolean };
@@ -18,7 +19,7 @@ export function LabResults({ lab, canReview, onChanged }: { lab: LabOrder; canRe
   const results = lab.results ?? [];
   if (results.length === 0) return <p className="ps-7 text-xs text-slate-500">{t("labs.none")}</p>;
   return (
-    <div className="ms-7 space-y-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
+    <div className="ms-7 space-y-3 rounded-[14px] bg-surface-2 p-3 ring-1 ring-inset ring-line">
       {results.map((r) => (
         <div key={r.id} className="space-y-2">
           <p className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
@@ -28,7 +29,7 @@ export function LabResults({ lab, canReview, onChanged }: { lab: LabOrder; canRe
           {r.resultText && <p className="text-sm">{r.resultText}</p>}
           {r.fileId && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={`/api/bff/files/${r.fileId}/content`} alt={lab.testName} onClick={() => setZoom(r.fileId ?? null)} className="max-h-56 cursor-zoom-in rounded-xl border bg-white object-contain" />
+            <img src={`/api/bff/files/${r.fileId}/content`} alt={lab.testName} onClick={() => setZoom(r.fileId ?? null)} className="max-h-56 cursor-zoom-in rounded-[12px] bg-surface object-contain ring-1 ring-line" />
           )}
         </div>
       ))}
@@ -38,7 +39,7 @@ export function LabResults({ lab, canReview, onChanged }: { lab: LabOrder; canRe
           <Button size="sm" variant="secondary" disabled={review.loading} onClick={() => review.run(false)}>{t("labs.reviewOnly")}</Button>
         </div>
       )}
-      {lab.status === "REVIEWED" && <p className="text-sm font-semibold text-emerald-700">✓ {t("labs.reviewed")}</p>}
+      {lab.status === "REVIEWED" && <p className="flex items-center gap-1.5 text-sm font-semibold text-emerald-700"><Icon name="check" className="h-4 w-4" />{t("labs.reviewed")}</p>}
       <ErrorText error={review.error} />
       {zoom && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={() => setZoom(null)} role="dialog">
