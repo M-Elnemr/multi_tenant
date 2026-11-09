@@ -11,7 +11,7 @@ import { AI_SOFT, SwitchRow } from "../marketing/kit";
 export type Draft = { msg: string; image: string | null; versions: string[]; push: boolean; pushTitle: string };
 
 /** Step 2: the message, optional wording variants (AI can suggest them) and the optional phone notification. */
-export default function ComposerStep({ draft, onDraft }: { draft: Draft; onDraft: (d: Draft) => void }) {
+export default function ComposerStep({ draft, onDraft, noPush }: { draft: Draft; onDraft: (d: Draft) => void; noPush?: boolean }) {
   const { t } = useI18n();
   const set = (p: Partial<Draft>) => onDraft({ ...draft, ...p });
   const suggest = useAction(async () => {
@@ -38,8 +38,8 @@ export default function ComposerStep({ draft, onDraft }: { draft: Draft; onDraft
         ))}
         <ErrorText error={suggest.error} />
       </div>
-      <SwitchRow title={<span className="inline-flex items-center gap-1.5"><Icon name="mobile" className="h-4 w-4" />{t("gr.alsoPush")}</span>} checked={draft.push} onChange={(v) => set({ push: v })} />
-      {draft.push && <Field label={t("gr.pushTitle")} hint={t("gr.pushTitleHint")}><Input maxLength={80} value={draft.pushTitle} onChange={(e) => set({ pushTitle: e.target.value })} /></Field>}
+      {!noPush && <SwitchRow title={<span className="inline-flex items-center gap-1.5"><Icon name="mobile" className="h-4 w-4" />{t("gr.alsoPush")}</span>} checked={draft.push} onChange={(v) => set({ push: v })} />}
+      {!noPush && draft.push && <Field label={t("gr.pushTitle")} hint={t("gr.pushTitleHint")}><Input maxLength={80} value={draft.pushTitle} onChange={(e) => set({ pushTitle: e.target.value })} /></Field>}
     </div>
   );
 }

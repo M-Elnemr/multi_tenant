@@ -26,7 +26,7 @@ function Reach({ c }: { c: ClientRow }) {
   return (
     <span className="flex flex-wrap items-center gap-1.5">
       <Badge tone="amber">{t("gx.unreachable")}</Badge>
-      {reason && <span className="text-[11.5px] text-muted">{["OUTSIDE_WINDOW", "NO_OWN_NUMBER", "OPTED_OUT", "NO_PHONE"].includes(reason) ? t(`gx.reason.${reason}`) : reason}</span>}
+      {reason && <span className="text-[11.5px] text-muted">{["OUTSIDE_WINDOW", "NO_OWN_NUMBER", "OPTED_OUT", "NO_PHONE", "CONNECT_ACCOUNT"].includes(reason) ? t(`gx.reason.${reason}`) : reason}</span>}
       {reason === "NO_OWN_NUMBER" && <Link href={WA_OWN_LINK} className="text-[11.5px] font-semibold text-brand hover:underline">{t("gx.connectNumber")}</Link>}
     </span>
   );

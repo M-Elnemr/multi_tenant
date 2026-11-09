@@ -9,9 +9,10 @@ import { useI18n } from "../i18n-provider";
 import { Icon } from "../icons";
 import { ConfirmDialog } from "../overlay";
 import { useToast } from "../toast";
+import ProspectsTab from "./growth/prospects-screen";
 import SegmentsTab from "./growth/segments-screen";
 import { Alert, Avatar, Badge, Button, Empty, ErrorText, Field, Input, Select, Textarea } from "../ui";
-import { Bar, CardSkeletons, CopyField, Panel, PanelHead, Rise, SwitchRow } from "./marketing/kit";
+import { Bar, CardSkeletons, CopyField, Panel, PanelHead, PillTabs, Rise, SwitchRow } from "./marketing/kit";
 
 // ---- loyalty -----------------------------------------------------------------------------------------------------------------
 
@@ -216,10 +217,13 @@ export function BuilderTab() {
 }
 
 export default function GrowthView() {
-  const [tab] = useSection(["segments", "loyalty", "feeds", "exp", "builder"] as const, "segments");
+  const { t } = useI18n();
+  const [tab, go] = useSection(["segments", "prospects", "loyalty", "feeds", "exp", "builder"] as const, "segments");
+  const targeting = tab === "segments" || tab === "prospects";
   return (
     <div className="space-y-5">
-      {tab === "segments" ? <SegmentsTab /> : tab === "loyalty" ? <LoyaltyTab /> : tab === "feeds" ? <FeedsTab /> : tab === "exp" ? <ExperimentsTab /> : <BuilderTab />}
+      {targeting && <PillTabs id="targeting" value={tab} onChange={(k) => go(k)} tabs={[{ key: "segments", label: t("gx.switchExisting"), icon: "users" }, { key: "prospects", label: t("gx.switchNew"), icon: "sparkles" }]} />}
+      {tab === "segments" ? <SegmentsTab /> : tab === "prospects" ? <ProspectsTab /> : tab === "loyalty" ? <LoyaltyTab /> : tab === "feeds" ? <FeedsTab /> : tab === "exp" ? <ExperimentsTab /> : <BuilderTab />}
     </div>
   );
 }
