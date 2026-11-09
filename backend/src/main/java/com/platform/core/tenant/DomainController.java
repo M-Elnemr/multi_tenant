@@ -78,6 +78,8 @@ public class DomainController {
         m.put("sslStatus", d.getSslStatus());
         m.put("alias", service.aliasOf(d));
         m.put("dnsInstructions", service.instructions(d));
+        m.put("source", d.getSource());
+        m.put("domainOrderId", d.getDomainOrderId());
         return m;
     }
 }
