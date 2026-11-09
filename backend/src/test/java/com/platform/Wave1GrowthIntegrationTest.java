@@ -18,9 +18,10 @@ import org.springframework.test.web.servlet.ResultActions;
 class Wave1GrowthIntegrationTest extends IntegrationTestBase {
     @Autowired JdbcClient jdbc;
     @Autowired CartRecoveryService carts;
+    @Autowired com.platform.billing.WalletService wallet;
 
     @BeforeEach
-    void clean() { FakeMetaGraph.reset(); }
+    void clean() { FakeMetaGraph.reset(); FakeEvolutionApi.reset(); }
 
     String ok(ResultActions r) throws Exception { return r.andReturn().getResponse().getContentAsString(); }
 
@@ -111,28 +112,28 @@ class Wave1GrowthIntegrationTest extends IntegrationTestBase {
         assertThat((String) JsonPath.read(list, "$.carts[0].whatsappUrl")).startsWith("https://wa.me/2" + phone).contains("text=");
         assertThat((String) JsonPath.read(list, "$.carts[0].items[0].name")).startsWith("Tee ");
 
-        // no WhatsApp channel: the reminder says so; nothing is charged
+        // no own number linked: the reminder says so; nothing is sent or charged
         String cartId = JsonPath.read(list, "$.carts[0].id");
-        onHost(h, owner, "POST", "/api/v1/store/carts/" + cartId + "/remind", "{}").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SEND_FAILED"));
+        wallet.credit(s.id(), 1000, "TOPUP", null, "test", null);
+        long before = wallet.balance(s.id());
+        onHost(h, owner, "POST", "/api/v1/store/carts/" + cartId + "/remind", "{}").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("NO_OWN_NUMBER"));
+        assertThat(wallet.balance(s.id())).isEqualTo(before);
+        // paid messages no longer exist: allowPaid stays off whatever is asked
+        onHost(h, owner, "PUT", "/api/v1/store/carts/settings", "{\"recoveryEnabled\":true,\"allowPaid\":true}").andExpect(status().isOk()).andExpect(jsonPath("$.allowPaid").value(false));
 
-        // with WhatsApp connected but no message from the customer in 24 h, a free message is impossible and paid ones are off
-        connectWhatsApp(s);
-        onHost(h, owner, "POST", "/api/v1/store/carts/" + cartId + "/remind", "{}").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("WINDOW_CLOSED"));
-        // paid allowed but the template is not approved: still nothing is sent or charged
-        onHost(h, owner, "PUT", "/api/v1/store/carts/settings", "{\"recoveryEnabled\":true,\"allowPaid\":true}").andExpect(status().isOk()).andExpect(jsonPath("$.allowPaid").value(true));
-        long before = jdbc.sql("SELECT coalesce(balance_minor, 0) FROM billing.wallets WHERE tenant_id = :t").param("t", s.id()).query(Long.class).optional().orElse(0L);
-        onHost(h, owner, "POST", "/api/v1/store/carts/" + cartId + "/remind", "{}").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("TEMPLATE_NOT_APPROVED"));
-        assertThat(jdbc.sql("SELECT coalesce(balance_minor, 0) FROM billing.wallets WHERE tenant_id = :t").param("t", s.id()).query(Long.class).optional().orElse(0L)).isEqualTo(before);
-        assertThat(FakeMetaGraph.SENT.stream().filter(x -> "text".equals(x.body().get("type")) || "template".equals(x.body().get("type"))).count()).isZero();
-        onHost(h, owner, "PUT", "/api/v1/store/carts/settings", "{\"allowPaid\":false}").andExpect(jsonPath("$.allowPaid").value(false));
-
-        // the customer wrote to the shop recently: now the reminder is a normal free message, and the scheduler does the same once
-        jdbc.sql("INSERT INTO chat.wa_windows (tenant_id, number, last_inbound_at) VALUES (:t, :n, now()) ON CONFLICT (tenant_id, number) DO UPDATE SET last_inbound_at = now()").param("t", s.id()).param("n", "2" + phone).update();
+        // the own number is linked: the scheduler sends one reminder from it, costs 0.1 EGP and never uses the official WhatsApp
+        onHost(h, owner, "POST", "/api/v1/store/ai/evolution/enable", "{\"acceptedRisk\":true}").andExpect(status().isOk());
+        FakeEvolutionApi.STATE = "open";
+        onHost(h, owner, "GET", "/api/v1/store/ai/evolution", null).andExpect(jsonPath("$.status").value("CONNECTED"));
+        int calls = FakeEvolutionApi.CALLS.size();
         carts.runDue(Instant.now());
-        assertThat(jdbc.sql("SELECT reminder_status FROM commerce.abandoned_carts WHERE id = :i").param("i", UUID.fromString(cartId)).query(String.class).single()).isEqualTo("SENT_FREE");
+        assertThat(jdbc.sql("SELECT reminder_status FROM commerce.abandoned_carts WHERE id = :i").param("i", UUID.fromString(cartId)).query(String.class).single()).isEqualTo("SENT");
         carts.runDue(Instant.now());
-        assertThat(FakeMetaGraph.SENT.stream().filter(x -> ("2" + phone).equals(x.body().get("to"))).count()).isEqualTo(1);   // one reminder per cart, ever
-        assertThat(FakeMetaGraph.SENT.stream().anyMatch(x -> "text".equals(x.body().get("type")) && String.valueOf(x.body()).contains("/cart"))).isTrue();
+        var sentTexts = FakeEvolutionApi.CALLS.subList(calls, FakeEvolutionApi.CALLS.size()).stream().filter(c -> c.path().startsWith("/message/sendText/")).toList();
+        assertThat(sentTexts).hasSize(1);   // one reminder per cart, ever
+        assertThat(sentTexts.get(0).body().get("text").toString()).contains("/cart");
+        assertThat(wallet.balance(s.id())).isEqualTo(before - 10);
+        assertThat(FakeMetaGraph.SENT).isEmpty();
 
         // the customer orders: the cart is recovered and counted
         place(s, phone, "Nada Ali", "5 Tahrir Street, Dokki, floor 2", 3);

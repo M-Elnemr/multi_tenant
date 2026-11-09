@@ -12,6 +12,7 @@ import com.platform.chat.AiProvider.Turn;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,6 +22,9 @@ import org.springframework.test.web.servlet.ResultActions;
 
 /** Facebook / Instagram / WhatsApp: connecting a shop, the signed webhook, the AI answering through the channel. Meta and the model are faked. */
 class MetaChannelsIntegrationTest extends IntegrationTestBase {
+    @org.springframework.beans.factory.annotation.Autowired org.springframework.jdbc.core.simple.JdbcClient jdbc;
+    @org.springframework.beans.factory.annotation.Autowired com.platform.billing.WalletService wallet;
+
     @BeforeEach
     void clean() { FakeAiProvider.reset(); FakeMetaGraph.reset(); FakeMediaReader.reset(); }
 
@@ -317,5 +321,41 @@ class MetaChannelsIntegrationTest extends IntegrationTestBase {
         String raw2 = pageMessage(page, "user-slow", "mid-" + uniq(), "hello I need a dress");
         webhook(raw2, sign(raw2)).andExpect(status().isOk());
         assertThat(FakeMetaGraph.SENT).hasSize(1);
+    }
+    @Test
+    void aStopWordOptsTheChatOutOfOffersWithAPoliteAnswerAndNoCharge() throws Exception {
+        Tenant t = onboard("STORE");
+        UUID tenant = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", t.slug()).query(UUID.class).single();
+        String page = pageId();
+        connect(t, "INSTAGRAM", page);
+        long before = wallet.balance(tenant);
+        FakeMetaGraph.SENT.clear();
+        String raw = pageMessage(page, "ig-user-7", "mid-" + uniq(), " إيقاف! ").replace("\"object\":\"page\"", "\"object\":\"instagram\"");
+        webhook(raw, sign(raw)).andExpect(status().isOk());
+        assertThat(jdbc.sql("SELECT broadcast_opt_out_at IS NOT NULL FROM chat.conversations WHERE tenant_id = :t AND channel = 'INSTAGRAM' AND external_id = 'ig-user-7'").param("t", tenant).query(Boolean.class).single()).isTrue();
+        assertThat(FakeMetaGraph.SENT.get(FakeMetaGraph.SENT.size() - 1).body().toString()).contains("ig-user-7").contains("Done, you will not receive offers");
+        assertThat(wallet.balance(tenant)).isEqualTo(before);   // no AI call, no charge
+        // a sentence that merely contains the word is a normal message
+        assertThat(com.platform.chat.MetaChannelService.isStopWord("please stop the delivery")).isFalse();
+        assertThat(com.platform.chat.MetaChannelService.isStopWord("Unsubscribe")).isTrue();
+        assertThat(com.platform.chat.MetaChannelService.isStopWord("الغاء الاشتراك")).isTrue();
+    }
+
+    @Test
+    void anAdReferralOpensAServenDayWindowAndAnOrdinaryMessageDoesNot() throws Exception {
+        Tenant t = onboard("STORE");
+        UUID tenant = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", t.slug()).query(UUID.class).single();
+        String page = pageId();
+        connect(t, "FACEBOOK", page);
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("Hi!"));
+        String plain = pageMessage(page, "u-plain", "mid-" + uniq(), "hello");
+        webhook(plain, sign(plain)).andExpect(status().isOk());
+        assertThat(jdbc.sql("SELECT window_until IS NULL FROM chat.conversations WHERE tenant_id = :t AND external_id = 'u-plain'").param("t", tenant).query(Boolean.class).single()).isTrue();
+
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("Hi from the ad!"));
+        String ad = pageMessage(page, "u-ad", "mid-" + uniq(), "hello").replace("\"message\":{", "\"message\":{\"referral\":{\"source\":\"ADS\",\"type\":\"OPEN_THREAD\",\"ad_id\":\"123\"},");
+        webhook(ad, sign(ad)).andExpect(status().isOk());
+        long days = jdbc.sql("SELECT extract(epoch FROM window_until - now())::bigint / 3600 FROM chat.conversations WHERE tenant_id = :t AND external_id = 'u-ad'").param("t", tenant).query(Long.class).single();
+        assertThat(days).isBetween(166L, 168L);   // about 7 days, in hours
     }
 }

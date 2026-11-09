@@ -14,7 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.ResultActions;
 
-/** Broadcasts to every customer or one chip: free (own number), paid (official, 3 EGP each) and app notification; and free or paid for order confirmations and cart reminders. */
+/** Broadcasts through the own number and app notifications; order confirmations and cart reminders go only from the own number (0.1 EGP each). */
 class SendModesIntegrationTest extends IntegrationTestBase {
     @Autowired JdbcClient jdbc;
     @Autowired WalletService wallet;
@@ -56,43 +56,6 @@ class SendModesIntegrationTest extends IntegrationTestBase {
         onHost(s.t().host(), s.t().access(), "POST", "/api/v1/store/ai/evolution/enable", "{\"acceptedRisk\":true}").andExpect(status().isOk());
         FakeEvolutionApi.STATE = "open";
         onHost(s.t().host(), s.t().access(), "GET", "/api/v1/store/ai/evolution", null).andExpect(jsonPath("$.status").value("CONNECTED"));
-    }
-
-    @Test
-    void paidBroadcastChargesThreeEgpPerCustomerEvenInsideTheWindowAndNeedsCredit() throws Exception {
-        Shop s = shop();
-        String h = s.t().host(), owner = s.t().access();
-        String a = phone(), b = phone();
-        order(s, a); order(s, b);
-        for (String p : new String[]{a, b}) jdbc.sql("UPDATE commerce.orders SET whatsapp_number = :w, whatsapp_opt_in_at = now() WHERE tenant_id = :t AND customer_phone_snapshot = :p").param("w", "+2" + p).param("t", s.id()).param("p", "+2" + p).update();
-        onHost(h, owner, "POST", "/api/v1/store/ai/channels", "{\"platform\":\"WHATSAPP\",\"externalId\":\"%s\",\"accessToken\":\"EAAG-secret-token-0123456789\"}".formatted("7" + System.nanoTime())).andExpect(status().isCreated());
-        for (String p : new String[]{a, b}) jdbc.sql("INSERT INTO chat.wa_windows (tenant_id, number, last_inbound_at) VALUES (:t, :n, now())").param("t", s.id()).param("n", "2" + p).update();
-        String body = "{\"segment\":\"ALL\",\"mode\":\"PAID\",\"message\":\"Hi {name}, new arrivals at {shop}\"}";
-
-        onHost(h, owner, "GET", "/api/v1/store/segments", null).andExpect(jsonPath("$.segments.ALL").value(2)).andExpect(jsonPath("$.messagePriceMinor").value(300));
-        onHost(h, owner, "POST", "/api/v1/store/broadcasts", body).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("NO_CREDIT"));   // nothing is queued without credit
-        wallet.credit(s.id(), 1000, "TOPUP", null, "test", null);
-        FakeMetaGraph.SENT.clear();
-        onHost(h, owner, "POST", "/api/v1/store/broadcasts", body).andExpect(status().isOk()).andExpect(jsonPath("$.queued").value(2)).andExpect(jsonPath("$.costMinor").value(600));
-        assertThat(segments.runDue()).isEqualTo(2);
-        assertThat(wallet.balance(s.id())).isEqualTo(400);   // 3 EGP for each of the two, although both were inside the window
-        var texts = FakeMetaGraph.SENT.stream().filter(x -> "text".equals(x.body().get("type"))).toList();
-        assertThat(texts).hasSize(2);
-        assertThat(texts.get(0).body().toString()).contains("Hi Mona").doesNotContain("{name}").doesNotContain("{shop}");
-        assertThat(FakeMetaGraph.SENT.stream().noneMatch(x -> "template".equals(x.body().get("type")))).isTrue();
-        onHost(h, owner, "GET", "/api/v1/store/broadcasts", null).andExpect(jsonPath("$[0].status").value("DONE")).andExpect(jsonPath("$[0].sentCount").value(2)).andExpect(jsonPath("$[0].chargedMinor").value(600));
-
-        // a failed delivery to Meta is refunded; a picture goes as an image message with the text as caption
-        String file = jdbc.sql("INSERT INTO core.files (tenant_id, owner_user_id, object_key, original_filename, content_type, declared_size, category, visibility, status) SELECT :t, id, :k, 'a.png', 'image/png', 10, 'PRODUCT_IMAGE', 'PUBLIC', 'READY' FROM core.users LIMIT 1 RETURNING id::text")
-                .param("t", s.id()).param("k", "bc-" + uniq()).query(String.class).single();
-        wallet.credit(s.id(), 200, "TOPUP", null, "test", null);
-        FakeMetaGraph.SENT.clear();
-        onHost(h, owner, "POST", "/api/v1/store/broadcasts", "{\"segment\":\"ALL\",\"mode\":\"PAID\",\"message\":\"Look at this\",\"imageFileId\":\"%s\"}".formatted(file)).andExpect(status().isOk());
-        assertThat(segments.runDue()).isEqualTo(2);
-        assertThat(FakeMetaGraph.SENT.stream().filter(x -> "image".equals(x.body().get("type"))).count()).isEqualTo(2);
-        assertThat(wallet.balance(s.id())).isEqualTo(0L).isLessThan(1);
-        onHost(h, owner, "POST", "/api/v1/store/broadcasts", "{\"segment\":\"ALL\",\"message\":\"x\",\"mode\":\"NONE\"}").andExpect(status().isBadRequest());   // nothing chosen
-        onHost(h, owner, "POST", "/api/v1/store/broadcasts", "{\"segment\":\"NOPE\",\"message\":\"hello there\",\"mode\":\"PAID\"}").andExpect(status().isBadRequest());
     }
 
     @Test
@@ -152,20 +115,27 @@ class SendModesIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void confirmationsAndCartRemindersChooseFreeOrPaidAndFreeNeedsTheLinkedNumber() throws Exception {
+    void confirmationsAndCartRemindersGoOnlyFromTheOwnNumberAndCostPointOneEgp() throws Exception {
         Shop s = shop();
         String h = s.t().host(), owner = s.t().access();
-        onHost(h, owner, "PUT", "/api/v1/store/ai/whatsapp", "{\"sendMode\":\"FREE\"}").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("EVOLUTION_OFF"));
-        onHost(h, owner, "PUT", "/api/v1/store/carts/settings", "{\"sendMode\":\"FREE\"}").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("EVOLUTION_OFF"));
-        onHost(h, owner, "GET", "/api/v1/store/ai/whatsapp", null).andExpect(jsonPath("$.settings.sendMode").value("PAID"));
-        linkOwnNumber(s);
-        onHost(h, owner, "PUT", "/api/v1/store/ai/whatsapp", "{\"sendMode\":\"FREE\"}").andExpect(status().isOk()).andExpect(jsonPath("$.sendMode").value("FREE"));
-        onHost(h, owner, "PUT", "/api/v1/store/carts/settings", "{\"recoveryEnabled\":true,\"sendMode\":\"FREE\"}").andExpect(status().isOk()).andExpect(jsonPath("$.sendMode").value("FREE"));
+        onHost(h, owner, "GET", "/api/v1/store/ai/whatsapp", null).andExpect(jsonPath("$.settings.sendMode").value("FREE"));
+        // the old paid mode is ignored: it is always FREE (the own number) and the paid switch of carts is always off
+        onHost(h, owner, "PUT", "/api/v1/store/ai/whatsapp", "{\"sendMode\":\"PAID\"}").andExpect(status().isOk()).andExpect(jsonPath("$.sendMode").value("FREE"));
+        onHost(h, owner, "PUT", "/api/v1/store/carts/settings", "{\"recoveryEnabled\":true,\"allowPaid\":true,\"sendMode\":\"PAID\"}").andExpect(status().isOk())
+                .andExpect(jsonPath("$.sendMode").value("FREE")).andExpect(jsonPath("$.allowPaid").value(false)).andExpect(jsonPath("$.messagePriceMinor").value(10));
+        wallet.credit(s.id(), 1000, "TOPUP", null, "test", null);
 
-        // a cart reminder now goes from the shop's own number, with no official message and no charge
         String phone = phone();
         onHost(h, null, "POST", "/api/v1/shop/carts/snapshot", "{\"clientKey\":\"k%s\",\"name\":\"Nada Ali\",\"phone\":\"%s\",\"items\":[{\"variantId\":\"%s\",\"quantity\":1}]}".formatted(uniq(), phone, s.variant())).andExpect(status().isNoContent());
         String cartId = JsonPath.read(ok(onHost(h, owner, "GET", "/api/v1/store/carts?view=all", null)), "$.carts[0].id");
+
+        // no own number: nothing is sent and nothing is charged, and the cart says why
+        onHost(h, owner, "POST", "/api/v1/store/carts/" + cartId + "/remind", "{}").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("NO_OWN_NUMBER"));
+        assertThat(FakeMetaGraph.SENT).isEmpty();
+        assertThat(wallet.balance(s.id())).isEqualTo(1000L);
+        assertThat(jdbc.sql("SELECT reminder_status FROM commerce.abandoned_carts WHERE id = CAST(:i AS uuid)").param("i", cartId).query(String.class).single()).isEqualTo("NO_OWN_NUMBER");
+
+        linkOwnNumber(s);
         FakeMetaGraph.SENT.clear();
         int before = FakeEvolutionApi.CALLS.size();
         onHost(h, owner, "POST", "/api/v1/store/carts/" + cartId + "/remind", "{}").andExpect(status().isOk());
@@ -173,16 +143,24 @@ class SendModesIntegrationTest extends IntegrationTestBase {
         assertThat(sent).hasSize(1);
         assertThat(sent.get(0).body().get("text").toString()).contains("Nada").contains("/cart");
         assertThat(FakeMetaGraph.SENT).isEmpty();
-        assertThat(wallet.balance(s.id())).isEqualTo(0L);
+        assertThat(wallet.balance(s.id())).isEqualTo(990L);   // 0.1 EGP, charged once
+        // the reminder is in the customer's chat as a CART message
+        assertThat(jdbc.sql("SELECT count(*) FROM chat.messages m JOIN chat.conversations c ON c.id = m.conversation_id WHERE c.tenant_id = :t AND c.channel = 'WHATSAPP' AND m.kind = 'CART'").param("t", s.id()).query(Long.class).single()).isEqualTo(1L);
 
-        // when the phone is unlinked again, a FREE shop is never silently moved to the paid route
-        FakeEvolutionApi.STATE = "close";
-        onHost(h, owner, "GET", "/api/v1/store/ai/evolution", null).andExpect(jsonPath("$.status").value("DISCONNECTED"));
+        // a send that fails gives the 0.1 EGP back
         String p2 = phone();
         onHost(h, null, "POST", "/api/v1/shop/carts/snapshot", "{\"clientKey\":\"k%s\",\"name\":\"Hana\",\"phone\":\"%s\",\"items\":[{\"variantId\":\"%s\",\"quantity\":1}]}".formatted(uniq(), p2, s.variant())).andExpect(status().isNoContent());
         String cart2 = ((java.util.List<?>) JsonPath.read(ok(onHost(h, owner, "GET", "/api/v1/store/carts?view=all", null)), "$.carts[?(@.phone=='+2" + p2 + "')].id")).get(0).toString();
-        onHost(h, owner, "POST", "/api/v1/store/carts/" + cart2 + "/remind", "{}").andExpect(status().isConflict());
+        FakeEvolutionApi.FAIL_SEND = true;
+        onHost(h, owner, "POST", "/api/v1/store/carts/" + cart2 + "/remind", "{}").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SEND_FAILED"));
+        assertThat(wallet.balance(s.id())).isEqualTo(990L);
+        FakeEvolutionApi.FAIL_SEND = false;
+
+        // no credit: nothing is sent
+        jdbc.sql("UPDATE billing.wallets SET balance_minor = 5 WHERE tenant_id = :t").param("t", s.id()).update();
+        onHost(h, owner, "POST", "/api/v1/store/carts/" + cart2 + "/remind", "{}").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("NO_CREDIT"));
         assertThat(FakeMetaGraph.SENT).isEmpty();
+        onHost(h, owner, "POST", "/api/v1/store/carts/template", null).andExpect(status().isNotFound());   // the template endpoint is gone
     }
 
     // ---- the safety rules of free broadcasts ----------------------------------------------------------------------------------------

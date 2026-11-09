@@ -56,10 +56,6 @@ public class CartController {
     @PreAuthorize("hasAuthority('cart.manage')")
     public Map<String, Object> dismiss(@PathVariable UUID id) { return carts.dismiss(StoreContext.tenantId(), id); }
 
-    @PostMapping("/api/v1/store/carts/template")
-    @PreAuthorize("hasAuthority('cart.manage')")
-    public Map<String, Object> template() { return carts.registerTemplate(StoreContext.tenantId()); }
-
     // ---- COD guard ----------------------------------------------------------------------------------------------------
 
     @GetMapping("/api/v1/store/cod-guard")

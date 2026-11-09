@@ -29,4 +29,15 @@ public class OutboundBilling {
 
     /** Gives the price of one message back (the send failed). */
     public void refund(UUID tenantId, String ref, String note) { wallet.credit(tenantId, priceMinor, "REFUND", ref, note, null); }
+
+    private final java.util.concurrent.ConcurrentHashMap<String, Long> toldNoCredit = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Tells the shop's owner that messages were not sent for lack of credit: at most twice a day per shop and kind of message. Never throws. */
+    public void notifyNoCredit(UUID tenantId, String kind, String title, String body) {
+        long now = System.currentTimeMillis();
+        Long last = toldNoCredit.get(tenantId + "|" + kind);
+        if (last != null && now - last <= 12 * 3_600_000L) return;
+        toldNoCredit.put(tenantId + "|" + kind, now);
+        try { wallet.notifyOwner(tenantId, title, body, "WALLET_LOW"); } catch (RuntimeException ignored) { /* best effort */ }
+    }
 }

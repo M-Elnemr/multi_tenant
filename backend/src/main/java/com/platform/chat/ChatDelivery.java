@@ -6,7 +6,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Component;
 
 /**
- * Sends a message the shop wrote (or the assistant worded for the shop) to a customer outside a live reply: on WhatsApp (the shop's linked number, else the Cloud API), Messenger or
+ * Sends a message the shop wrote (or the assistant worded for the shop) to a customer outside a live reply: on WhatsApp (the shop's own linked number only; the official Cloud API is no longer used for sending), Messenger or
  * Instagram, or leaves it in the website chat for when the customer looks again. Used for the owner's answers to flagged questions and for the owner's own replies in the inbox.
  */
 @Component
@@ -31,17 +31,19 @@ public class ChatDelivery {
         if (channel == null || externalId == null) return new Result("SAVED", null);
         boolean image = imageUrl != null && !imageUrl.isBlank();
         if ("WHATSAPP".equals(channel)) {
+            if (!evolution.connected(tenantId))
+                return new Result("FAILED", "Your own WhatsApp number is not connected, so the message could not be sent. Link your number in the WhatsApp settings, or copy the message and send it from your phone.");
             boolean ok;
-            if (evolution.connected(tenantId)) {
+            {
                 ok = true;
                 if (image) ok = evolution.deliver(tenantId, externalId, text, imageUrl) != EvolutionService.Delivery.FAILED;
                 else for (String part : MetaChannelService.chunks(text, 3000)) ok &= evolution.sendFree(tenantId, externalId, part);
                 if (ok) for (var card : share.pick(tenantId, text, products == null ? List.of() : products)) {   // the pictures of the products the message mentions, like in any reply
                     if (evolution.deliver(tenantId, externalId, card.caption(), card.imageUrl()) == EvolutionService.Delivery.FAILED && card.imageUrl() != null) evolution.deliver(tenantId, externalId, card.caption(), null);
                 }
-            } else ok = meta.deliver(tenantId, "WHATSAPP", externalId, text, image ? imageUrl : null);
+            }
             return ok ? new Result("SENT", null)
-                      : new Result("FAILED", "The message could not be sent on WhatsApp (the number is not linked, or the 24-hour window with this customer is closed). Copy the message and send it from your phone.");
+                      : new Result("FAILED", "The message could not be sent on WhatsApp. Copy the message and send it from your phone.");
         }
         if ("FACEBOOK".equals(channel) || "INSTAGRAM".equals(channel)) {
             boolean ok = meta.deliver(tenantId, channel, externalId, text, image ? imageUrl : null);

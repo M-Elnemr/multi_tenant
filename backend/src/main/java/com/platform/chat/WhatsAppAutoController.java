@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/** The shop owner's automatic WhatsApp confirmation: settings, readiness, prepaid credit; and the admin's side of the credit. */
+/** The shop owner's automatic WhatsApp confirmation (own number only, 0.1 EGP per message): settings, readiness, prepaid credit; and the admin's side of the credit. */
 @RestController
 @RequestMapping("/api/v1")
 public class WhatsAppAutoController {
@@ -56,14 +56,6 @@ public class WhatsAppAutoController {
     public Map<String, Object> save(@RequestBody SettingsRequest r, Authentication a) {
         return auto.saveSettings(StoreContext.tenantId(), (UUID) a.getPrincipal(), r.enabled(), r.confirmAfterHours(), r.reminderEnabled(), r.reminderAfterHours(), r.brandName(), r.sendMode());
     }
-
-    @PostMapping("/store/ai/whatsapp/templates")
-    @PreAuthorize("hasAuthority('ai.manage')")
-    public List<Map<String, Object>> registerTemplates() { return auto.registerTemplates(StoreContext.tenantId()); }
-
-    @PostMapping("/store/ai/whatsapp/templates/refresh")
-    @PreAuthorize("hasAuthority('ai.manage')")
-    public List<Map<String, Object>> refreshTemplates() { return auto.refreshTemplates(StoreContext.tenantId()); }
 
     @GetMapping("/store/ai/whatsapp/messages")
     @PreAuthorize("hasAuthority('ai.read') or hasAuthority('ai.manage')")

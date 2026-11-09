@@ -139,8 +139,8 @@ class InboxIntegrationTest extends IntegrationTestBase {
         // WhatsApp Business inside the window: can send, with a countdown and the wa.me link
         onHost(t.host(), t.access(), "GET", "/api/v1/store/chat/conversations/" + waConv, null).andExpect(jsonPath("$.window.canSend").value(true)).andExpect(jsonPath("$.window.mode").value("CLOUD"))
                 .andExpect(jsonPath("$.window.endsAt").isNotEmpty()).andExpect(jsonPath("$.window.openUrl").value("https://wa.me/" + wa));
-        onHost(t.host(), t.access(), "POST", "/api/v1/store/chat/conversations/" + waConv + "/reply", "{\"message\":\"أهلاً {name} من {shop}\"}").andExpect(status().isOk()).andExpect(jsonPath("$.delivery").value("SENT"));
-        assertThat(FakeMetaGraph.SENT.get(FakeMetaGraph.SENT.size() - 1).body().toString()).contains("أهلاً Karim من").doesNotContain("{name}");
+        onHost(t.host(), t.access(), "POST", "/api/v1/store/chat/conversations/" + waConv + "/reply", "{\"message\":\"أهلاً {name} من {shop}\"}").andExpect(status().isOk()).andExpect(jsonPath("$.delivery").value("FAILED"));   // the official WhatsApp is no longer used for sending: no own number, no send
+        assertThat(FakeMetaGraph.SENT).isEmpty();
 
         // 24 hours later the WhatsApp Business window is closed: the composer is closed and a send is refused; the website chat is not affected
         jdbc.sql("UPDATE chat.conversations SET last_customer_at = now() - interval '24 hours' WHERE tenant_id = :t").param("t", tenant).update();

@@ -17,9 +17,9 @@ import org.springframework.stereotype.Service;
 /**
  * Comments on the shop's Facebook and Instagram posts and ads, in one list with the platform tag; the team answers publicly or privately, and the shop can let the AI do it:
  * <ul>
- * <li>Public reply: OFF, a fixed STAMP text (free), or a short AI answer (1 EGP from the credit, like an AI conversation) that answers a question from the real catalog.</li>
+ * <li>Public reply: OFF, a fixed STAMP text (free), or a short AI answer (0.1 EGP from the credit) that answers a question from the real catalog.</li>
  * <li>Private message: Meta "private replies" (once per comment, within 7 days): the AI opens a chat about the product of the post and answers the question; the customer's
- * answers then come in as normal Messenger / Instagram messages and the AI seller carries on the sale (1 EGP for the opening, then the usual conversation billing).</li>
+ * answers then come in as normal Messenger / Instagram messages and the AI seller carries on the sale (0.1 EGP for the opening, then the usual conversation billing: 1 EGP per 10 AI replies).</li>
  * </ul>
  * Needs the comment permissions (pages_read_user_content, pages_manage_engagement, instagram_manage_comments) from Meta App Review; until then it works for the app's testers.
  * People who only reacted (likes) cannot be messaged: Meta does not allow it.
@@ -28,7 +28,6 @@ import org.springframework.stereotype.Service;
 public class CommentService {
     private static final Logger log = LoggerFactory.getLogger(CommentService.class);
     private static final Pattern QUESTION = Pattern.compile("[؟?]|(?<![\\p{L}])(?:بكام|كام|سعر|السعر|متاح|متوفر|موجود|فين|ازاي|إزاي|امتى|إمتى|مقاس|مقاسات|الوان|ألوان|لون|شحن|توصيل|عنوان|how much|price|available|size|sizes|color|colour|delivery|shipping|where)(?![\\p{L}])", Pattern.CASE_INSENSITIVE);
-    static final long AI_PRICE_MINOR = 100;
 
     private final JdbcClient jdbc;
     private final MetaGraph graph;
@@ -36,16 +35,18 @@ public class CommentService {
     private final ChatService chat;
     private final AiProvider ai;
     private final AiUsageService aiUsage;
-    private final com.platform.billing.WalletService wallet;
+    private final com.platform.billing.OutboundBilling billing;
+    private final OutboundThread thread;
 
-    public CommentService(JdbcClient jdbc, MetaGraph graph, TokenCrypto crypto, @Lazy ChatService chat, AiProvider ai, AiUsageService aiUsage, @Lazy com.platform.billing.WalletService wallet) {
+    public CommentService(JdbcClient jdbc, MetaGraph graph, TokenCrypto crypto, @Lazy ChatService chat, AiProvider ai, AiUsageService aiUsage, com.platform.billing.OutboundBilling billing, OutboundThread thread) {
         this.jdbc = jdbc;
         this.graph = graph;
         this.crypto = crypto;
         this.chat = chat;
         this.ai = ai;
         this.aiUsage = aiUsage;
-        this.wallet = wallet;
+        this.billing = billing;
+        this.thread = thread;
     }
 
     // ---- webhook ----------------------------------------------------------------------------------------------------------
@@ -110,15 +111,37 @@ public class CommentService {
         boolean question = Boolean.TRUE.equals(c.get("question"));
         String mode = (String) s.get("publicReply");
         if ("STAMP".equals(mode) && s.get("stampText") != null) publicReply(tenantId, c, token, (String) s.get("stampText"), "STAMP");
-        else if ("AI".equals(mode) && chat.enabled(tenantId) && wallet.tryDebit(tenantId, AI_PRICE_MINOR, "AI", "comment-" + id, "AI comment reply")) {
-            String text = write(tenantId, c, false, Boolean.TRUE.equals(s.get("dmEnabled")));
-            if (text != null) publicReply(tenantId, c, token, text, "AI");
+        else if ("AI".equals(mode) && chat.enabled(tenantId)) {
+            String ref = "comment-" + id;
+            if (!billing.charge(tenantId, ref, "AI comment reply")) noCredit(tenantId);
+            else {
+                String text = null;
+                boolean sent = false;
+                try {
+                    text = write(tenantId, c, false, Boolean.TRUE.equals(s.get("dmEnabled")));
+                    if (text != null) { publicReply(tenantId, c, token, text, "AI"); sent = true; }
+                } finally {
+                    if (!sent) billing.refund(tenantId, ref, "Comment reply not sent");
+                }
+            }
         }
-        if (Boolean.TRUE.equals(s.get("dmEnabled")) && (question || !Boolean.TRUE.equals(s.get("dmOnlyQuestions"))) && chat.enabled(tenantId, (String) c.get("platform"))
-                && wallet.tryDebit(tenantId, AI_PRICE_MINOR, "AI", "comment-dm-" + id, "AI private reply to a comment")) {
-            String text = write(tenantId, c, true, false);
-            if (text != null) privateReply(tenantId, c, token, text);
+        if (Boolean.TRUE.equals(s.get("dmEnabled")) && (question || !Boolean.TRUE.equals(s.get("dmOnlyQuestions"))) && chat.enabled(tenantId, (String) c.get("platform"))) {
+            String ref = "comment-dm-" + id;
+            if (!billing.charge(tenantId, ref, "AI private reply to a comment")) noCredit(tenantId);
+            else {
+                boolean sent = false;
+                try {
+                    String text = write(tenantId, c, true, false);
+                    if (text != null) { privateReply(tenantId, c, token, text); sent = true; }
+                } finally {
+                    if (!sent) billing.refund(tenantId, ref, "Private message not sent");
+                }
+            }
         }
+    }
+
+    private void noCredit(UUID tenantId) {
+        billing.notifyNoCredit(tenantId, "comment", "رصيدك غير كافٍ للرد على التعليقات", "لم نرد على تعليق عملائك لأن الرصيد غير كافٍ. اشحن الرصيد ليرجع الرد الآلي.");
     }
 
     /** What the AI writes: a short public answer under the comment, or the first private message to the commenter about the post's product. */
@@ -169,6 +192,7 @@ public class CommentService {
             graph.post("me/messages", token, Map.of("recipient", Map.of("comment_id", String.valueOf(c.get("comment_id"))), "message", Map.of("text", text)));
             jdbc.sql("UPDATE chat.social_comments SET dm_status = 'SENT', dm_text = :x, dm_at = now(), error = NULL, status = CASE WHEN status = 'UNREPLIED' THEN 'REPLIED' ELSE status END, replied_by = coalesce(replied_by, 'AI'), replied_at = coalesce(replied_at, now()) WHERE id = :i")
                     .param("x", text).param("i", c.get("id")).update();
+            thread.record(tenantId, (String) c.get("platform"), (String) c.get("author_id"), "COMMENT_DM", text);   // the chat shows it, and the commenter's answer is tagged as coming from a comment
         } catch (MetaGraph.MetaException e) {
             jdbc.sql("UPDATE chat.social_comments SET dm_status = 'FAILED', error = :e WHERE id = :i").param("e", clip("Private message failed: " + e.getMessage(), 300)).param("i", c.get("id")).update();
             throw BusinessException.conflict("META_REJECTED", "Meta did not accept the private message: " + e.getMessage());
@@ -205,15 +229,24 @@ public class CommentService {
         return Rows.camel(row(tenantId, id));
     }
 
-    /** A private message to the commenter; empty text: the AI writes it (1 EGP). */
+    /** A private message to the commenter; empty text: the AI writes it (0.1 EGP). */
     public Map<String, Object> dm(UUID tenantId, UUID id, String text) {
         var c = row(tenantId, id);
         String t = text == null ? "" : text.trim();
         if (t.length() > 1900) throw BusinessException.badRequest("VALIDATION_ERROR", "The message is too long");
         if (t.isEmpty()) {
-            if (!wallet.tryDebit(tenantId, AI_PRICE_MINOR, "AI", "comment-dm-" + id, "AI private reply to a comment")) throw BusinessException.conflict("NO_CREDIT", "Not enough credit for the AI");
-            t = write(tenantId, c, true, false);
-            if (t == null) throw BusinessException.conflict("AI_NOT_AVAILABLE", "The assistant is not available right now");
+            String ref = "comment-dm-" + id;
+            if (!billing.charge(tenantId, ref, "AI private reply to a comment")) throw BusinessException.conflict("NO_CREDIT", "Not enough credit for the AI");
+            boolean sent = false;
+            try {
+                t = write(tenantId, c, true, false);
+                if (t == null) throw BusinessException.conflict("AI_NOT_AVAILABLE", "The assistant is not available right now");
+                privateReply(tenantId, c, token(tenantId, (String) c.get("platform")), t);
+                sent = true;
+            } finally {
+                if (!sent) billing.refund(tenantId, ref, "Private message not sent");
+            }
+            return Rows.camel(row(tenantId, id));
         }
         privateReply(tenantId, c, token(tenantId, (String) c.get("platform")), t);
         return Rows.camel(row(tenantId, id));
@@ -240,7 +273,17 @@ public class CommentService {
         m.put("stampText", r.map(x -> x.get("stamp_text")).orElse(null));
         m.put("dmEnabled", r.map(x -> x.get("dm_enabled")).orElse(false));
         m.put("dmOnlyQuestions", r.map(x -> x.get("dm_only_questions")).orElse(false));
-        m.put("aiPriceMinor", AI_PRICE_MINOR);
+        m.put("aiPriceMinor", billing.priceMinor());
+        m.put("messagePriceMinor", billing.priceMinor());
+        var today = jdbc.sql("""
+                SELECT count(*) FILTER (WHERE kind = 'MESSAGE' AND ref LIKE 'comment-dm-%') - count(*) FILTER (WHERE kind = 'REFUND' AND ref LIKE 'comment-dm-%') AS dms,
+                       count(*) FILTER (WHERE kind = 'MESSAGE' AND ref LIKE 'comment-%' AND ref NOT LIKE 'comment-dm-%') - count(*) FILTER (WHERE kind = 'REFUND' AND ref LIKE 'comment-%' AND ref NOT LIKE 'comment-dm-%') AS replies,
+                       coalesce(-sum(amount_minor) FILTER (WHERE kind IN ('MESSAGE', 'REFUND') AND ref LIKE 'comment-%'), 0) AS cost
+                FROM billing.wallet_entries WHERE tenant_id = :t AND created_at >= date_trunc('day', now())
+                """).param("t", tenantId).query().singleRow();
+        m.put("todayReplies", ((Number) today.get("replies")).longValue());
+        m.put("todayDms", ((Number) today.get("dms")).longValue());
+        m.put("todayCostMinor", ((Number) today.get("cost")).longValue());
         m.put("connected", jdbc.sql("SELECT array_to_string(array_agg(DISTINCT platform), ',') FROM chat.channels WHERE tenant_id = :t AND platform IN ('FACEBOOK','INSTAGRAM') AND status = 'ACTIVE'").param("t", tenantId).query(String.class).optional().orElse(""));
         return m;
     }

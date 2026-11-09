@@ -205,7 +205,8 @@ public class ChatService {
         m.put("channels", r.map(x -> x.get("channels") == null || ((String) x.get("channels")).isBlank() ? List.<String>of() : List.of(((String) x.get("channels")).split(","))).orElse(AI_CHANNELS));
         m.put("pointsMinor", wallet.balance(tenantId));
         m.put("conversationPriceMinor", aiConversationPrice);
-        m.put("conversationMessages", CONVERSATION_MESSAGES);
+        m.put("conversationReplies", conversationReplies);
+        m.put("conversationMessages", conversationReplies * 2);   // kept for older screens: about 2 messages per AI reply
         return m;
     }
 
@@ -255,22 +256,23 @@ public class ChatService {
 
     // ---- AI conversation metering ----------------------------------------------------------------------------
 
-    /** One AI conversation = up to 20 messages (customer + AI, about 10 replies); a longer chat counts as 2, 3... conversations. */
-    static final int CONVERSATION_MESSAGES = 20;
+    /** One AI conversation = a block of {@code app.ai.conversation-replies} (10) AI replies; a longer chat counts as 2, 3... conversations. */
+    @org.springframework.beans.factory.annotation.Value("${app.ai.conversation-replies:10}")
+    private int conversationReplies = 10;
     private final java.util.concurrent.ConcurrentHashMap<UUID, Long> toldNoPoints = new java.util.concurrent.ConcurrentHashMap<>();
 
     /**
-     * Counts this turn (the customer's message + the reply) and, when it opens a new 20-message block, takes 1 point from the wallet.
+     * Counts this AI reply and, when it opens a new block of 10 replies, takes 1 point from the wallet.
      * False when the wallet cannot pay for it: nothing is counted and the AI does not answer.
      */
     private boolean chargeTurn(UUID tenantId, UUID conv) {
-        var row = jdbc.sql("UPDATE chat.conversations SET ai_msgs = ai_msgs + 2 WHERE id = :c RETURNING ai_msgs, ai_units").param("c", conv).query().listOfRows().get(0);
+        var row = jdbc.sql("UPDATE chat.conversations SET ai_msgs = ai_msgs + 1 WHERE id = :c RETURNING ai_msgs, ai_units").param("c", conv).query().listOfRows().get(0);
         int msgs = ((Number) row.get("ai_msgs")).intValue(), units = ((Number) row.get("ai_units")).intValue();
-        int need = (msgs + CONVERSATION_MESSAGES - 1) / CONVERSATION_MESSAGES;
+        int need = (msgs + conversationReplies - 1) / conversationReplies;
         if (need <= units) return true;
         if (jdbc.sql("UPDATE chat.conversations SET ai_units = :n WHERE id = :c AND ai_units < :n").param("n", need).param("c", conv).update() == 0) return true;   // a parallel reply already paid for this block
         if (wallet.tryDebit(tenantId, (long) (need - units) * aiConversationPrice, "AI", conv.toString(), "AI conversation")) return true;
-        jdbc.sql("UPDATE chat.conversations SET ai_units = :u, ai_msgs = greatest(ai_msgs - 2, 0) WHERE id = :c").param("u", units).param("c", conv).update();
+        jdbc.sql("UPDATE chat.conversations SET ai_units = :u, ai_msgs = greatest(ai_msgs - 1, 0) WHERE id = :c").param("u", units).param("c", conv).update();
         long now = System.currentTimeMillis();
         Long last = toldNoPoints.get(tenantId);
         if (last == null || now - last > 12 * 3_600_000L) {   // the owner hears it at most twice a day
@@ -423,7 +425,7 @@ public class ChatService {
         }
         // the shop team took this chat over: the assistant stays quiet until they hand it back (or two hours pass without them writing)
         if (!"TEST".equals(channel) && paused(conv)) return pausedReply(conv, text);
-        // the AI answers only while the shop has points: 1 point per conversation (each block of 20 messages)
+        // the AI answers only while the shop has points: 1 EGP per conversation (each block of 10 AI replies)
         if (!"TEST".equals(channel) && !chargeTurn(tenantId, conv)) {
             flagForHuman(tenantId, conv, channel, "NO_POINTS", text, null);
             return pausedReply(conv, text);
