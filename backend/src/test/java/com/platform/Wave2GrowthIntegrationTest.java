@@ -109,7 +109,7 @@ class Wave2GrowthIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void segmentsAreComputedFromOrdersAndCountConsentAndOpenWindows() throws Exception {
+    void segmentsAreComputedFromOrdersAndListTheirCustomersPerPlatform() throws Exception {
         Shop s = shop();
         String h = s.t().host(), owner = s.t().access();
         String vip = phone(), fresh = phone(), silent = phone();
@@ -117,20 +117,18 @@ class Wave2GrowthIntegrationTest extends IntegrationTestBase {
         order(s, fresh, null, s.variantA(), "1");
         order(s, silent, null, s.variantA(), "1");
         String seg = ok(onHost(h, owner, "GET", "/api/v1/store/segments", null).andExpect(status().isOk()));
-        assertThat(((Number) JsonPath.read(seg, "$.segments.VIP")).intValue()).isEqualTo(1);
-        assertThat(((Number) JsonPath.read(seg, "$.segments.NEW")).intValue()).isEqualTo(2);
-        onHost(h, owner, "GET", "/api/v1/store/segments/VIP", null).andExpect(jsonPath("$.customers[0].orders").value(3));
-        onHost(h, owner, "GET", "/api/v1/store/segments/NOPE", null).andExpect(status().isBadRequest());
-
-        // consent: only 'fresh' agreed to WhatsApp; the window is open only for 'fresh' too, so exactly one free message goes out
-        jdbc.sql("UPDATE commerce.orders SET whatsapp_number = :w, whatsapp_opt_in_at = now() WHERE tenant_id = :t AND customer_phone_snapshot = :p").param("w", "+2" + fresh).param("t", s.id()).param("p", "+2" + fresh).update();
-        jdbc.sql("UPDATE commerce.orders SET whatsapp_number = :w, whatsapp_opt_in_at = now() WHERE tenant_id = :t AND customer_phone_snapshot = :p").param("w", "+2" + silent).param("t", s.id()).param("p", "+2" + silent).update();
-        onHost(h, owner, "POST", "/api/v1/store/ai/channels", "{\"platform\":\"WHATSAPP\",\"externalId\":\"%s\",\"accessToken\":\"EAAG-secret-token-0123456789\"}".formatted("7" + System.nanoTime())).andExpect(status().isCreated());
-        jdbc.sql("INSERT INTO chat.wa_windows (tenant_id, number, last_inbound_at) VALUES (:t, :n, now())").param("t", s.id()).param("n", "2" + fresh).update();
-        onHost(h, owner, "GET", "/api/v1/store/segments/NEW", null).andExpect(jsonPath("$.preview.audience").value(2)).andExpect(jsonPath("$.preview.withConsent").value(2)).andExpect(jsonPath("$.preview.reachableNow").value(1));
-        // the broadcast rules (free / paid / app notification) have their own test in SendModesIntegrationTest
+        assertThat(((Number) ((java.util.List<?>) JsonPath.read(seg, "$.segments[?(@.key=='VIP')].count")).get(0)).intValue()).isEqualTo(1);
+        assertThat(((Number) ((java.util.List<?>) JsonPath.read(seg, "$.segments[?(@.key=='NEW')].count")).get(0)).intValue()).isEqualTo(2);
+        assertThat(((Number) ((java.util.List<?>) JsonPath.read(seg, "$.segments[?(@.key=='ALL')].count")).get(0)).intValue()).isEqualTo(3);
+        assertThat(((Number) JsonPath.read(seg, "$.total")).intValue()).isEqualTo(3);
+        assertThat((Boolean) JsonPath.read(seg, "$.ownNumberLinked")).isFalse();
+        onHost(h, owner, "GET", "/api/v1/store/segments?platforms=INSTAGRAM", null).andExpect(jsonPath("$.total").value(0));
+        onHost(h, owner, "GET", "/api/v1/store/segments/customers?segments=VIP&platforms=WHATSAPP", null).andExpect(jsonPath("$.data[0].orders").value(3)).andExpect(jsonPath("$.total").value(1));
+        // no own number linked: nobody on WhatsApp can be reached, and it says why
+        onHost(h, owner, "GET", "/api/v1/store/segments/customers?segments=NEW", null).andExpect(jsonPath("$.total").value(2)).andExpect(jsonPath("$.reachable").value(0)).andExpect(jsonPath("$.data[0].reason").value("NO_OWN_NUMBER"));
+        onHost(h, owner, "GET", "/api/v1/store/segments/customers?segments=NOPE", null).andExpect(status().isBadRequest());
         Shop other = shop();
-        onHost(other.t().host(), other.t().access(), "GET", "/api/v1/store/segments", null).andExpect(jsonPath("$.segments.VIP").value(0));
+        onHost(other.t().host(), other.t().access(), "GET", "/api/v1/store/segments", null).andExpect(jsonPath("$.total").value(0));
         onHost(h, null, "GET", "/api/v1/store/segments", null).andExpect(status().isUnauthorized());
     }
 
