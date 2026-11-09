@@ -1,0 +1,18 @@
+{
+ "error.VARIANTS_REQUIRED": [
+  "To message more than 3 people this way, write at least 3 different wordings of the message (use the AI wordings button).",
+  "عشان تبعت لأكتر من ٣ ناس بالطريقة دي، اكتب ٣ صيغ مختلفة للرسالة على الأقل (استخدم زر صيغ الذكاء الاصطناعي)."
+ ],
+ "error.CONTENT_REJECTED": [
+  "This message can't be sent as written. Shorten it, keep at most one link, and avoid repeated or spammy wording.",
+  "الرسالة دي مينفعش تتبعت بالشكل ده. اختصرها، ولينك واحد بس، وتجنب الكلام المتكرر أو الإعلاني الزايد."
+ ],
+ "error.MANUAL_DAILY_LIMIT": [
+  "You already sent a large campaign on this platform in the last 24 hours. Try again tomorrow, or send to 3 people or fewer.",
+  "بعتّ حملة كبيرة على المنصة دي في آخر ٢٤ ساعة. جرّب بكرة، أو ابعت لـ ٣ ناس أو أقل."
+ ],
+ "error.NOBODY_TO_SEND": [
+  "There is nobody to send this to right now. Connect the account or pick a different audience.",
+  "مفيش حد تبعتله دلوقتي. اربط الحساب أو اختار جمهور تاني."
+ ]
+}
