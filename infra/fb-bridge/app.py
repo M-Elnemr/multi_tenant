@@ -378,7 +378,10 @@ def send(body: SendIn):
             if mapped == "SESSION_EXPIRED":
                 _data.pop(tenant, None)
             if mapped in ("BLOCKED", "FAILED"):
-                log.warning("send not accepted: %s code=%s", mapped, ((result or {}).get("payload") or {}).get("error-code"))
+                pl = (result or {}).get("payload") or {}
+                import re as _re
+                why = _re.sub(r"\d{5,}", "#", str(pl.get("error-summary") or ""))[:80] + " | " + _re.sub(r"\d{5,}", "#", str(pl.get("error-description") or ""))[:160]
+                log.warning("send not accepted: %s code=%s why=%s", mapped, pl.get("error-code"), why)
             return {"result": mapped, "detail": "facebook refused"}
         except SessionExpired:
             _data.pop(tenant, None)
