@@ -167,7 +167,7 @@ def login(body: LoginIn):
         except (EXC["ChallengeRequired"], EXC["TwoFactorRequired"], EXC["ChallengeUnknownStep"], EXC["SelectContactPointRecoveryForm"], EXC["RecaptchaChallengeForm"]) as e:
             log.warning("login needs a challenge: %s", type(e).__name__)
             return {"ok": False, "error": "CHALLENGE"}
-        except (EXC["BadPassword"], EXC["InvalidUser"]) as e:
+        except (EXC["BadPassword"], EXC["InvalidUser"], EXC["UserNotFound"]) as e:   # instagrapi 3.x dropped InvalidUser (kept as a dead stand-in); UserNotFound covers "no such account" at login
             log.warning("login refused: %s", type(e).__name__)
             return {"ok": False, "error": "BAD_CREDENTIALS"}
         except Exception as e:  # noqa: BLE001 - class name only: the message could echo what was sent

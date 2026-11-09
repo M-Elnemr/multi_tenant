@@ -1,5 +1,6 @@
-instagrapi==2.1.2
-Pillow==11.1.0
+instagrapi==3.2.8
+Pillow==13.0.0
+curl_cffi==0.17.0
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 pydantic>=2.7,<3
