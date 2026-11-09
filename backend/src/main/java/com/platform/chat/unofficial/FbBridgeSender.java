@@ -112,6 +112,7 @@ public class FbBridgeSender implements OutOfWindowSender {
         if (n == null) return LoginResult.error("UNREACHABLE");
         if (n.path("ok").asBoolean(false)) return LoginResult.ok(n.path("account").asText(pageId));
         String err = n.path("error").asText("FAILED");
+        if ("PAGE_IDENTITY_NOT_APPLIED".equals(n.path("detail").asText(""))) return LoginResult.error("PAGE_IDENTITY");
         if ("CHECKPOINT".equals(err)) err = "CHALLENGE";
         return LoginResult.error(List.of("CHALLENGE", "BAD_CREDENTIALS").contains(err) ? err : "FAILED");
     }

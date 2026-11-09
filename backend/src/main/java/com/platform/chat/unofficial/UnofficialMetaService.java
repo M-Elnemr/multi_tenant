@@ -222,6 +222,7 @@ public class UnofficialMetaService {
         String code = res.error() == null ? "FAILED" : res.error();
         throw switch (code) {
             case "CHALLENGE" -> BusinessException.conflict("CHALLENGE_REQUIRED", "The account asked for an extra check (code or approval). Approve the login on your phone or add the two-factor secret, then try again");
+            case "PAGE_IDENTITY" -> BusinessException.conflict("PAGE_IDENTITY_NOT_APPLIED", "Facebook answered as your personal profile, not as the Page. In Facebook switch into the Page profile in this browser, then try again");
             case "BAD_CREDENTIALS" -> BusinessException.badRequest("BAD_CREDENTIALS", "The account details were not accepted");
             case "UNREACHABLE" -> BusinessException.conflict("BRIDGE_UNREACHABLE", "The sending service is not reachable right now");
             case "UNSUPPORTED" -> BusinessException.conflict("UNSUPPORTED_PLATFORM", "Not available for this platform yet");

@@ -84,12 +84,12 @@
   "الصق نص الكوكيز بتاع جلسة فيسبوك المسجلة."
  ],
  "cx.pageId": [
-  "Page id (optional)",
-  "رقم الصفحة (اختياري)"
+  "Page id",
+  "رقم الصفحة"
  ],
  "cx.pageIdHint": [
-  "Leave empty to use the connected Facebook Page.",
-  "سيبه فاضي لاستخدام صفحة فيسبوك المربوطة."
+  "The number of your Facebook Page. You can leave it empty only if this shop already has its Facebook Page connected.",
+  "رقم صفحتك على فيسبوك. تقدر تسيبه فاضي بس لو المتجر عنده صفحة فيسبوك مربوطة بالفعل."
  ],
  "cx.reconnect": [
   "Reconnect",
@@ -222,5 +222,9 @@
  "cx.notLoggedIn": [
   "Log in to Facebook in this browser with the Page admin account, then press the button again.",
   "سجّل دخول فيسبوك على المتصفح ده بحساب مدير الصفحة، وبعدين دوس الزر تاني."
+ ],
+ "error.PAGE_IDENTITY_NOT_APPLIED": [
+  "Facebook answered as your personal profile, not as the Page. In Facebook, open the profile menu, switch into the Page profile, then press the button again.",
+  "فيسبوك رد بحسابك الشخصي مش بصفحة. في فيسبوك افتح قائمة البروفايل وبدّل للصفحة، وبعدين دوس الزر تاني."
  ]
 }
