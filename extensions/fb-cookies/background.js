@@ -1,14 +1,14 @@
 // One-click connect: the Elmanassa dashboard asks for the Facebook session of this browser.
 // Only pages of the dashboard (path /dashboard/...) on the allowed origins (see manifest) are answered.
 const NEEDED = ["c_user", "xs"];
-const WANTED = ["c_user", "xs", "datr", "fr", "sb", "wd"];
+const WANTED = ["c_user", "xs", "datr", "fr", "sb", "wd", "i_user"];
 
 async function facebookCookies() {
   const all = await chrome.cookies.getAll({ domain: "facebook.com" });
   const byName = new Map();
   for (const c of all) if (!byName.has(c.name)) byName.set(c.name, c.value);
   if (NEEDED.some((n) => !byName.get(n))) return { ok: false, error: "NOT_LOGGED_IN" };
-  // i_user is added by the server from the Page id, so it is not included.
+  // i_user (set by Facebook when you are switched into a Page) is the id the server acts as.
   const cookies = WANTED.filter((n) => byName.get(n)).map((n) => `${n}=${byName.get(n)}`).join("; ") + ";";
   return { ok: true, cookies, account: byName.get("c_user") };
 }

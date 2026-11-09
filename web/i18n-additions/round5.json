@@ -88,8 +88,8 @@
   "رقم الصفحة"
  ],
  "cx.pageIdHint": [
-  "The number of your Facebook Page. You can leave it empty only if this shop already has its Facebook Page connected.",
-  "رقم صفحتك على فيسبوك. تقدر تسيبه فاضي بس لو المتجر عنده صفحة فيسبوك مربوطة بالفعل."
+  "Leave it empty if you switched into the Page profile in Facebook (the helper reads it). Otherwise enter the Page profile id.",
+  "سيبه فاضي لو بدّلت لبروفايل الصفحة في فيسبوك (الإضافة بتقراه). غير كده اكتب رقم بروفايل الصفحة."
  ],
  "cx.reconnect": [
   "Reconnect",

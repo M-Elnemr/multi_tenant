@@ -200,6 +200,8 @@ public class UnofficialMetaService {
         String c = cookies == null ? "" : cookies.trim();
         if (c.length() < 20 || c.length() > 8000) throw BusinessException.badRequest("VALIDATION_ERROR", "Paste the account cookies");
         String pg = pageId == null ? "" : pageId.trim();
+        var iu = java.util.regex.Pattern.compile("(?:^|;\\s*)i_user=(\\d{5,30})").matcher(c);
+        if (iu.find()) pg = iu.group(1);   // the browser is switched into the Page: this is the id Facebook acts as (not the Page asset id)
         if (pg.isEmpty()) pg = jdbc.sql("SELECT external_id FROM chat.channels WHERE tenant_id = :t AND platform = :p ORDER BY (status = 'ACTIVE') DESC, created_at LIMIT 1").param("t", tenantId).param("p", platform).query(String.class).optional().orElse("");
         if (!pg.matches("\\d{5,30}")) throw BusinessException.badRequest("VALIDATION_ERROR", "Enter the Page id");
         var res = s.loginWithCookies(tenantId, platform, c, pg);

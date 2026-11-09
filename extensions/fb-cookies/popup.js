@@ -1,7 +1,7 @@
 // Reads the Facebook session cookies of this browser and copies them as one line.
 // Nothing leaves the browser: the result goes to the clipboard only.
 const NEEDED = ["c_user", "xs"];
-const WANTED = ["c_user", "xs", "datr", "fr", "sb", "wd"];
+const WANTED = ["c_user", "xs", "datr", "fr", "sb", "wd", "i_user"];
 
 const msg = document.getElementById("msg");
 const btn = document.getElementById("go");
@@ -22,7 +22,7 @@ btn.addEventListener("click", async () => {
       show("مش مسجّل دخول في فيسبوك على المتصفح ده. / Not logged in to Facebook in this browser.", false);
       return;
     }
-    // i_user is added by the server from the Page id, so it is not copied here.
+    // i_user (set by Facebook when you are switched into a Page) is the id the server acts as.
     const line = WANTED.filter((n) => byName.get(n)).map((n) => `${n}=${byName.get(n)}`).join("; ") + ";";
     await navigator.clipboard.writeText(line);
     show(`اتنسخت ✓ (حساب ${byName.get("c_user")}). الصقها في كارت ماسنجر. / Copied. Paste it into the Messenger card.`, true);
