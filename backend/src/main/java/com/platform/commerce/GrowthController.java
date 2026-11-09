@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.*;
 public class GrowthController {
     public record LoyaltySettingsReq(Boolean enabled, Integer earnPercent, Integer minRedeem) {}
     public record RedeemReq(Integer points) {}
-    public record BroadcastReq(String segment, String message, java.util.UUID imageFileId, String mode, Boolean push, String pushTitle, Boolean onlyConsented, java.util.List<String> variants) {}
+    public record BroadcastReq(java.util.List<String> segments, java.util.List<String> platforms, String message, java.util.UUID imageFileId, Boolean push, String pushTitle, java.util.List<String> variants) {}
     public record CapiReq(Boolean enabled, String token) {}
 
     private static final String MANAGE = "hasAuthority('growth.manage')";
@@ -61,15 +61,28 @@ public class GrowthController {
 
     @GetMapping("/api/v1/store/segments")
     @PreAuthorize(MANAGE)
-    public Map<String, Object> segments() { return segments.overview(StoreContext.tenantId()); }
+    public Map<String, Object> segments(@RequestParam(required = false) String platforms) {
+        return segments.overview(StoreContext.tenantId(), SegmentService.parseSet(platforms, SegmentService.PLATFORMS, "platform"));
+    }
 
-    @GetMapping("/api/v1/store/segments/{key}")
+    @GetMapping("/api/v1/store/segments/customers")
     @PreAuthorize(MANAGE)
-    public Map<String, Object> segment(@PathVariable String key) { return Map.of("customers", segments.customers(StoreContext.tenantId(), key), "preview", segments.preview(StoreContext.tenantId(), key)); }
+    public Map<String, Object> segmentCustomers(@RequestParam(required = false) String segments, @RequestParam(required = false) String platforms, @RequestParam(required = false) String q,
+                                                @RequestParam(defaultValue = "50") int limit, @RequestParam(defaultValue = "0") int offset) {
+        return this.segments.customers(StoreContext.tenantId(), SegmentService.parseSet(segments, SegmentService.SEGMENT_ORDER, "segment"), SegmentService.parseSet(platforms, SegmentService.PLATFORMS, "platform"), q, limit, offset);
+    }
 
     @PostMapping("/api/v1/store/broadcasts")
     @PreAuthorize(MANAGE)
-    public Map<String, Object> broadcast(@RequestBody BroadcastReq r, Authentication a) { return segments.broadcast(StoreContext.tenantId(), user(a), new SegmentService.Req(r.segment(), r.message(), r.imageFileId(), r.mode() == null ? "PAID" : r.mode(), r.push(), r.pushTitle(), r.onlyConsented(), r.variants())); }
+    public Map<String, Object> broadcast(@RequestBody BroadcastReq r, Authentication a) {
+        return segments.broadcast(StoreContext.tenantId(), user(a), new SegmentService.Req(r.segments(), r.platforms(), r.message(), r.imageFileId(), r.push(), r.pushTitle(), r.variants()));
+    }
+
+    @GetMapping("/api/v1/store/broadcasts/{id}/recipients")
+    @PreAuthorize(MANAGE)
+    public Map<String, Object> broadcastRecipients(@PathVariable java.util.UUID id, @RequestParam(required = false) String status, @RequestParam(defaultValue = "100") int limit, @RequestParam(defaultValue = "0") int offset) {
+        return segments.recipients(StoreContext.tenantId(), id, status, limit, offset);
+    }
 
     public record VariantsReq(String message, Integer count) {}
 

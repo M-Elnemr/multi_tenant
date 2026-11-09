@@ -84,7 +84,7 @@ class ShopStopsAndSharingIntegrationTest extends IntegrationTestBase {
         String h = s.t().host(), owner = s.t().access();
         for (int i = 0; i < 2; i++) order(s, phone());
         linkOwnNumber(s);
-        onHost(h, owner, "POST", "/api/v1/store/broadcasts", "{\"segment\":\"ALL\",\"mode\":\"FREE\",\"message\":\"Hello {name}\"}").andExpect(status().isOk());
+        onHost(h, owner, "POST", "/api/v1/store/broadcasts", "{\"segments\":[\"ALL\"],\"platforms\":[\"WHATSAPP\"],\"message\":\"Hello {name}\"}").andExpect(status().isOk());
         onHost(h, owner, "PUT", "/api/v1/store/carts/settings", "{\"recoveryEnabled\":true,\"sendMode\":\"FREE\"}").andExpect(status().isOk());
         onHost(h, owner, "PUT", "/api/v1/store/ai/evolution/report", "{\"mode\":\"FREE\",\"enabled\":true,\"sendAfter\":\"18:00\"}").andExpect(status().isOk());
         String p = phone();

@@ -113,7 +113,7 @@ class GenderAndReportIntegrationTest extends IntegrationTestBase {
         order(s, "Omar Nabil", phone());
         jdbc.sql("UPDATE commerce.customers SET gender = 'MALE', gender_source = 'OWNER' WHERE tenant_id = :t AND name = 'Omar Nabil'").param("t", s.id()).update();
         linkOwnNumber(s);
-        onHost(h, owner, "POST", "/api/v1/store/broadcasts", "{\"segment\":\"ALL\",\"mode\":\"FREE\",\"message\":\"أهلاً {بيك|بيكي} يا {name}\"}").andExpect(status().isOk());
+        onHost(h, owner, "POST", "/api/v1/store/broadcasts", "{\"segments\":[\"ALL\"],\"platforms\":[\"WHATSAPP\"],\"message\":\"أهلاً {بيك|بيكي} يا {name}\"}").andExpect(status().isOk());
         while (segments.runDue() > 0) { /* send them all */ }
         var texts = FakeEvolutionApi.CALLS.stream().filter(c -> c.path().startsWith("/message/sendText/")).map(c -> c.body().get("text").toString()).toList();
         assertThat(texts).hasSize(2);
