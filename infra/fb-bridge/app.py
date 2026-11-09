@@ -57,6 +57,13 @@ class RateLimited(Exception):
     """Facebook throttled or limited the account."""
 
 
+def _log_shape(label: str, status: int, text: str) -> None:
+    """Log what a Facebook answer looked like when it could not be read: status, length and a masked prefix (numbers and long strings blanked, so no names or ids reach the log)."""
+    import re as _re
+    head = _re.sub(r'"[^"]{12,}"', '"..."', _re.sub(r"\d{5,}", "#", (text or "")[:300]))[:160]
+    log.warning("%s unreadable answer: status=%s len=%s head=%r", label, status, len(text or ""), head)
+
+
 class Transport:
     """What the bridge needs from Facebook. The default one uses fbchat-v2; tests replace it with a fake that never touches the network."""
 
@@ -130,7 +137,11 @@ class FbchatTransport(Transport):
             if code == 429:
                 raise RateLimited() from None
             raise RuntimeError(f"http {code}") from None
-        parsed = _parse_graphqlbatch_response(response.text)
+        try:
+            parsed = _parse_graphqlbatch_response(response.text)
+        except ValueError:
+            _log_shape("threads", response.status_code, response.text)
+            raise
         o0 = parsed.get("o0") or {}
         if o0.get("errors"):
             raise RuntimeError("graphql errors")

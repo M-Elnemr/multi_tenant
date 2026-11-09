@@ -91,14 +91,9 @@ public class ManualStyleRunner {
             if (!unofficial.globallyEnabled()) { pause(id, "MANUAL_STYLE_OFF"); continue; }
             String st = unofficial.status(tenantId, channel);
             if (!"ACTIVE".equals(st)) { pause(id, "NEEDS_LOGIN".equals(st) ? "SESSION_EXPIRED" : "BLOCKED".equals(st) ? "ACCOUNT_BLOCK_SIGNAL" : "MANUAL_STYLE_OFF"); continue; }
-            // 3) active hours in the shop's time
-            if (!pol.inActiveWindow(segments.localNow(tenantId))) { segments.setReason(id, "MS_ACTIVE_HOURS"); continue; }
             // 4) the random gap / break after the last message
             if (b.get("manual_next_at") != null && ((Timestamp) b.get("manual_next_at")).toInstant().isAfter(Instant.now())) continue;
-            // 5) caps: per hour, and per day on the warm-up ramp
-            if (!pol.hourlyAllows(manualSent(tenantId, channel, "1 hour"))) { segments.setReason(id, "MS_HOURLY_CAP"); continue; }
-            if (!pol.dailyAllows(unofficial.warmupDay(tenantId, channel), unofficial.sentToday(tenantId, channel))) { segments.setReason(id, "MS_DAILY_CAP"); continue; }
-            segments.clearReason(id, "MS_ACTIVE_HOURS", "MS_HOURLY_CAP", "MS_DAILY_CAP");
+            segments.clearReason(id, "MS_ACTIVE_HOURS", "MS_HOURLY_CAP", "MS_DAILY_CAP");   // no hours window and no caps any more
             // 6) the sidecar must answer before every send; when it does not, wait for the owner
             var sender = unofficial.transport(channel);
             if (sender == null || !sender.healthy()) { pause(id, "BRIDGE_UNREACHABLE"); continue; }
@@ -118,7 +113,6 @@ public class ManualStyleRunner {
                 int seq = (int) num(b.get("manual_seq"));
                 String body = SegmentService.personalize(HumanPolicy.rotate(versions.get(0), versions.subList(1, versions.size()), seq), name, shop, Gender.of((String) rcp.get("gender")), parseVars(rcp.get("vars")), rid.getMostSignificantBits());
                 body = pol.vary(HumanPolicy.stripRepeatedLinks(body), rnd, (String) b.get("manual_last_hash")) + SegmentService.OPT_OUT_LINE;
-                if (pol.contentProblem(body) != null) { segments.finish(id, rid, "SKIPPED", "CONTENT_GUARD", 0, false); continue; }
                 String ref = "bc-" + id + "-" + rid;
                 if (!billing.charge(tenantId, ref, "Broadcast message")) {
                     segments.requeue(rid);

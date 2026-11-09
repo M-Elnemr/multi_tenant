@@ -81,14 +81,6 @@ class WhatsAppHumanPolicyIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void aMessageWithTwoLinksIsRejectedAtCreation() throws Exception {
-        Shop s = shop();
-        order(s);
-        onHost(s.t().host(), s.t().access(), "POST", "/api/v1/store/broadcasts", "{\"segments\":[\"ALL\"],\"platforms\":[\"WHATSAPP\"],\"message\":\"see http://a.example and http://b.example\"}")
-                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("CONTENT_REJECTED"));
-    }
-
-    @Test
     void aDisconnectedNumberPausesTheBroadcastAtOnce_andAnActiveOwnerChatIsSkipped() throws Exception {
         Shop s = shop();
         String busyPhone = order(s);

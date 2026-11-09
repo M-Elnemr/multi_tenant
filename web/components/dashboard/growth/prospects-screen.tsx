@@ -138,7 +138,7 @@ export default function ProspectsScreen() {
 
   return (
     <div className="space-y-5">
-      <ConnectStrip conns={conns.data} onChanged={() => { void conns.reload(); void loadSync(); }} />
+      <ConnectStrip conns={conns.data} showImport={false} onChanged={() => { void conns.reload(); void loadSync(); }} />
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] lg:items-start">
         <Panel className="space-y-6 p-4 sm:p-6">
           <div className="flex items-center gap-3">

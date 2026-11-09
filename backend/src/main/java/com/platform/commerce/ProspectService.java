@@ -406,22 +406,6 @@ public class ProspectService {
         if (picks.isEmpty()) throw BusinessException.conflict("NOBODY_TO_SEND", "No one to send to right now");
         if (jdbc.sql("SELECT count(*) FROM commerce.broadcasts WHERE tenant_id = :t AND status = 'SENDING'").param("t", tenantId).query(Long.class).single() > 0)
             throw BusinessException.conflict("BROADCAST_RUNNING", "A broadcast is still being sent. Wait until it finishes to protect your accounts");
-        if (jdbc.sql("SELECT count(*) FROM commerce.broadcasts WHERE tenant_id = :t AND created_at > now() - interval '24 hours'").param("t", tenantId).query(Long.class).single() >= 3)
-            throw BusinessException.conflict("BROADCAST_LIMIT", "Three broadcasts a day at most, to protect your accounts from being reported as spam");
-        List<String> raw = new ArrayList<>(variants);
-        raw.add(0, text);
-        for (String v : raw) {
-            String why = cold.contentProblem(HumanPolicy.stripRepeatedLinks(v) + SegmentService.OPT_OUT_LINE);
-            if (why != null) throw BusinessException.badRequest("CONTENT_REJECTED", "This message cannot be sent: " + why);
-        }
-        if (!cold.enoughVariants(text, variants)) throw BusinessException.badRequest("VARIANTS_REQUIRED", "Sending to new people needs at least " + cold.profile().minVariants() + " different wordings of the message");
-        for (String p : used) {   // one cold broadcast a day per platform
-            if (jdbc.sql("""
-                    SELECT count(*) FROM commerce.broadcasts b WHERE b.tenant_id = :t AND b.kind = 'PROSPECTS' AND b.created_at > now() - interval '24 hours'
-                       AND EXISTS (SELECT 1 FROM commerce.broadcast_recipients br WHERE br.broadcast_id = b.id AND br.channel = :p AND (br.status = 'SENT' OR b.status IN ('SENDING', 'PAUSED', 'DONE')))
-                    """).param("t", tenantId).param("p", p).query(Long.class).single() > 0)
-                throw BusinessException.conflict("MANUAL_DAILY_LIMIT", "One broadcast a day to new people on each platform, to protect your account");
-        }
         long cost = picks.size() * billing.priceMinor();
         if (!billing.affordable(tenantId, picks.size())) throw BusinessException.conflict("NO_CREDIT", "Not enough credit: this needs " + cost / 100.0 + " EGP");
 

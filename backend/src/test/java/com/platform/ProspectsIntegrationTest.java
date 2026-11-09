@@ -168,7 +168,6 @@ class ProspectsIntegrationTest extends IntegrationTestBase {
         assertThat(((Number) JsonPath.read(quote, "$.balanceMinor")).intValue()).isEqualTo(1000);
 
         // rules: three wordings, a chosen audience, a picture that exists
-        onHost(h, owner, "POST", "/api/v1/store/prospects/broadcasts", "{\"platforms\":[\"INSTAGRAM\"],\"all\":true,\"message\":\"Hi {name}, new offer today\"}").andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VARIANTS_REQUIRED"));
         onHost(h, owner, "POST", "/api/v1/store/prospects/broadcasts", "{\"platforms\":[\"INSTAGRAM\"],\"message\":\"Hi\"}").andExpect(status().isBadRequest());
         onHost(h, owner, "POST", "/api/v1/store/prospects/broadcasts", "{\"platforms\":[\"INSTAGRAM\"],\"message\":\"Hi {name} there\"}").andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));   // neither all nor ids
 
@@ -190,26 +189,26 @@ class ProspectsIntegrationTest extends IntegrationTestBase {
         onHost(h, owner, "POST", "/api/v1/store/prospects/broadcasts", BODY).andExpect(status().isConflict());   // one running broadcast at a time
         assertThat(wallet.balance(s.id())).isEqualTo(1000L);   // nothing before a send
 
-        // the cold policy's day-one cap is 5 (not the old contacts' 10): four already went out today, so exactly one more
-        jdbc.sql("UPDATE chat.unofficial_sessions SET sent_today = 4, sent_today_date = (now() AT TIME ZONE 'Africa/Cairo')::date WHERE tenant_id = :t").param("t", s.id()).update();
-        assertThat(drain()).isEqualTo(1);
-        assertThat(jdbc.sql("SELECT status || ':' || coalesce(pause_reason, '') FROM commerce.broadcasts WHERE id = :i").param("i", UUID.fromString(id)).query(String.class).single()).isEqualTo("SENDING:MS_DAILY_CAP");
-        assertThat(wallet.balance(s.id())).isEqualTo(990L);   // 0.1 EGP, charged once
+        // no cap and no wording rule any more: all five go out, paced only by the random gap
+        assertThat(drain()).isEqualTo(5);
+        assertThat(wallet.balance(s.id())).isEqualTo(950L);   // 0.1 EGP per message, five messages
         var sent = FakeOutOfWindowSender.SENT.get(0);
         assertThat(sent.ref()).matches("\\d{4}");   // addressed by the id (pk), not a username
         assertThat(sent.text()).contains("STOP");
-        assertThat(jdbc.sql("SELECT count(*) FROM commerce.prospects WHERE tenant_id = :t AND status = 'CONTACTED' AND contacted_at IS NOT NULL").param("t", s.id()).query(Long.class).single()).isEqualTo(1L);
+        assertThat(jdbc.sql("SELECT count(*) FROM commerce.prospects WHERE tenant_id = :t AND status = 'CONTACTED' AND contacted_at IS NOT NULL").param("t", s.id()).query(Long.class).single()).isEqualTo(5L);
 
-        // the next day: a person not found is marked, and refunded
-        jdbc.sql("UPDATE chat.unofficial_sessions SET sent_today = 0 WHERE tenant_id = :t").param("t", s.id()).update();
+        // a person not found is marked, and refunded (everything is queued again for this part)
+        jdbc.sql("UPDATE commerce.broadcast_recipients SET status = 'PENDING', sent_at = NULL, error = NULL WHERE broadcast_id = :b").param("b", UUID.fromString(id)).update();
+        jdbc.sql("UPDATE commerce.broadcasts SET status = 'SENDING', pause_reason = NULL, consecutive_failures = 0 WHERE id = :i").param("i", UUID.fromString(id)).update();
+        jdbc.sql("UPDATE commerce.prospects SET status = 'NEW', contacted_at = NULL WHERE tenant_id = :t").param("t", s.id()).update();
         FakeOutOfWindowSender.NEXT = OutOfWindowSender.Kind.NOT_FOUND;
         assertThat(drain()).isZero();
-        assertThat(wallet.balance(s.id())).isEqualTo(990L);   // refunded
+        assertThat(wallet.balance(s.id())).isEqualTo(950L);   // refunded
         assertThat(jdbc.sql("SELECT count(*) FROM commerce.prospects WHERE tenant_id = :t AND status = 'NOT_FOUND'").param("t", s.id()).query(Long.class).single()).isGreaterThanOrEqualTo(1L);
         // a failure is refunded too, and five failures in a row pause the broadcast
         FakeOutOfWindowSender.NEXT = OutOfWindowSender.Kind.FAILED;
         drain();
-        assertThat(wallet.balance(s.id())).isEqualTo(990L);
+        assertThat(wallet.balance(s.id())).isEqualTo(950L);
 
         // someone who messaged the page in the meantime is left to the inbox
         jdbc.sql("UPDATE commerce.broadcasts SET status = 'SENDING', pause_reason = NULL, consecutive_failures = 0 WHERE id = :i").param("i", UUID.fromString(id)).update();
@@ -363,16 +362,14 @@ class ProspectsIntegrationTest extends IntegrationTestBase {
         String id = JsonPath.read(ok(onHost(h, owner, "POST", "/api/v1/store/prospects/broadcasts", body).andExpect(status().isOk())), "$.id");
         assertThat(jdbc.sql("SELECT count(*) FROM commerce.broadcast_recipients WHERE broadcast_id = :b AND route = 'MANUAL_STYLE' AND channel = 'FACEBOOK'").param("b", UUID.fromString(id)).query(Long.class).single()).isEqualTo(4L);
         assertThat(jdbc.sql("SELECT kind FROM commerce.broadcasts WHERE id = :i").param("i", UUID.fromString(id)).query(String.class).single()).isEqualTo("PROSPECTS");
-        // the cold profile's day-one cap is 5 (not the old contacts' 10): four already went out today, so exactly one more
-        jdbc.sql("UPDATE chat.unofficial_sessions SET sent_today = 4, sent_today_date = (now() AT TIME ZONE 'Africa/Cairo')::date WHERE tenant_id = :t AND platform = 'FACEBOOK'").param("t", s.id()).update();
-        assertThat(drain()).isEqualTo(1);
-        assertThat(jdbc.sql("SELECT status || ':' || coalesce(pause_reason, '') FROM commerce.broadcasts WHERE id = :i").param("i", UUID.fromString(id)).query(String.class).single()).isEqualTo("SENDING:MS_DAILY_CAP");
-        assertThat(wallet.balance(s.id())).isEqualTo(990L);   // 0.1 EGP, charged once
+        // no cap and no wording rule any more: all four followers go out (paced by the random gap only)
+        assertThat(drain()).isEqualTo(4);
+        assertThat(wallet.balance(s.id())).isEqualTo(960L);   // 0.1 EGP per message, four messages
         var sent = FakeOutOfWindowSender.SENT.get(0);
         assertThat(sent.platform()).isEqualTo("FACEBOOK");
         assertThat(sent.ref()).matches("666000\\d");   // the numeric Facebook user id of the follower
         assertThat(sent.text()).contains("STOP");
-        assertThat(jdbc.sql("SELECT count(*) FROM commerce.prospects WHERE tenant_id = :t AND platform = 'FACEBOOK' AND status = 'CONTACTED'").param("t", s.id()).query(Long.class).single()).isEqualTo(1L);
+        assertThat(jdbc.sql("SELECT count(*) FROM commerce.prospects WHERE tenant_id = :t AND platform = 'FACEBOOK' AND status = 'CONTACTED'").param("t", s.id()).query(Long.class).single()).isEqualTo(4L);
     }
 
     @Test

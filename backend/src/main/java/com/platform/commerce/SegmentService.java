@@ -344,24 +344,7 @@ public class SegmentService {
         long outside = all.stream().filter(a -> "OUTSIDE_WINDOW".equals(a.reason()) || "CONNECT_ACCOUNT".equals(a.reason())).count();
         long skipped = all.size() - queue.size() - outside;
         long cost = queue.size() * billing.priceMinor();
-        // content rules for every wording that will go out (one link, length, spam patterns), by the policy of the route it travels
-        boolean anyWa = queue.stream().anyMatch(a -> "WHATSAPP".equals(a.platform())), anyManual = queue.stream().anyMatch(a -> "MANUAL_STYLE".equals(a.route()));
-        List<String> raw = new ArrayList<>(variants);
-        raw.add(0, text);
-        for (String v : raw) {
-            if (anyWa) { String why = policies.whatsapp().contentProblem(HumanPolicy.stripRepeatedLinks(v)); if (why != null) throw BusinessException.badRequest("CONTENT_REJECTED", "This message cannot be sent: " + why); }
-            if (anyManual) { String why = policies.manual().contentProblem(HumanPolicy.stripRepeatedLinks(v) + OPT_OUT_LINE); if (why != null) throw BusinessException.badRequest("CONTENT_REJECTED", "This message cannot be sent by hand-style sending: " + why); }
-        }
-        long manualRecipients = queue.stream().filter(a -> "MANUAL_STYLE".equals(a.route())).count();   // the wording and daily rules protect the account from bulk sends; a handful of people (a test, a few old clients) is exempt
-        if (anyManual && manualRecipients > smallSendMax && !policies.manual().enoughVariants(text, variants)) throw BusinessException.badRequest("VARIANTS_REQUIRED", "Hand-style sending needs at least " + policies.manual().profile().minVariants() + " different wordings of the message");
-        for (String p : manualAsked) {   // one hand-style broadcast a day per platform
-            if (queue.stream().filter(a -> "MANUAL_STYLE".equals(a.route()) && a.platform().equals(p)).count() <= smallSendMax) continue;
-            if (jdbc.sql("""
-                    SELECT count(*) FROM commerce.broadcasts b WHERE b.tenant_id = :t AND b.created_at > now() - interval '24 hours'
-                       AND EXISTS (SELECT 1 FROM commerce.broadcast_recipients br WHERE br.broadcast_id = b.id AND br.route = 'MANUAL_STYLE' AND br.channel = :p AND (br.status = 'SENT' OR b.status IN ('SENDING', 'PAUSED', 'DONE')))
-                    """).param("t", tenantId).param("p", p).query(Long.class).single() > 0)
-                throw BusinessException.conflict("MANUAL_DAILY_LIMIT", "One hand-style broadcast a day on each platform, to protect your account");
-        }
+        boolean anyWa = queue.stream().anyMatch(a -> "WHATSAPP".equals(a.platform())), anyManual = queue.stream().anyMatch(a -> "MANUAL_STYLE".equals(a.route()));   // no content, wording-count or daily rules: nothing blocks a send except credit and an unreachable audience
         if (queue.isEmpty() && !push) throw BusinessException.conflict("NOBODY_TO_SEND", "No one to send to right now");
         if (!queue.isEmpty() && !billing.affordable(tenantId, queue.size())) throw BusinessException.conflict("NO_CREDIT", "Not enough credit: this needs " + cost / 100.0 + " EGP");
 
@@ -544,8 +527,6 @@ public class SegmentService {
                 if (isWa) {
                     body = wa.vary(HumanPolicy.stripRepeatedLinks(body), rnd, (String) b.get("wa_last_hash"));   // never the same text twice in a row when we can help it
                     bodyHash = HumanPolicy.hash(body);
-                    String why = wa.contentProblem(body);
-                    if (why != null) { finish(id, rid, "SKIPPED", "CONTENT_GUARD", 0, false); continue; }   // not charged: nothing was sent
                 }
                 String ref = "bc-" + id + "-" + rid;
                 if (!billing.charge(tenantId, ref, "Broadcast message")) {   // out of credit: back to the queue and pause until the shop tops up
@@ -616,10 +597,7 @@ public class SegmentService {
 
     /** The WhatsApp profile's optional active-hours window and hourly / daily caps (all off by default). Returns the pause reason or null. */
     private String waHold(UUID tenantId, HumanPolicy wa) {
-        if (!wa.inActiveWindow(localNow(tenantId))) return "WA_ACTIVE_HOURS";
-        if (wa.profile().hourlyCap() > 0 && !wa.hourlyAllows(sentSince(tenantId, "WHATSAPP", "1 hour"))) return "WA_HOURLY_CAP";
-        if (wa.profile().maxDaily() > 0 && !wa.dailyAllows(1, sentSince(tenantId, "WHATSAPP", "24 hours"))) return "WA_DAILY_CAP";
-        return null;
+        return null;   // no active-hours window and no hourly / daily caps: only the random gap between messages
     }
 
     long sentSince(UUID tenantId, String channel, String interval) {

@@ -138,14 +138,7 @@ class ManualStyleBroadcastIntegrationTest extends IntegrationTestBase {
         onHost(h, owner, "GET", "/api/v1/store/segments/customers?segments=ALL&platforms=INSTAGRAM", null)
                 .andExpect(jsonPath("$.reachable").value(2)).andExpect(jsonPath("$.manualStyle").value(2)).andExpect(jsonPath("$.data[0].route").value("MANUAL_STYLE"));
 
-        // at least three wordings are required (the rule is off for a handful of people, so this check lowers the small-send limit)
-        ReflectionTestUtils.setField(segments, "smallSendMax", 0);
-        onHost(h, owner, "POST", "/api/v1/store/broadcasts", "{\"segments\":[\"ALL\"],\"platforms\":[\"INSTAGRAM\"],\"manualPlatforms\":[\"INSTAGRAM\"],\"message\":\"Hi {name}, new offer today\"}").andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VARIANTS_REQUIRED"));
-        // content rules apply at creation
-        onHost(h, owner, "POST", "/api/v1/store/broadcasts", "{\"segments\":[\"ALL\"],\"platforms\":[\"INSTAGRAM\"],\"manualPlatforms\":[\"INSTAGRAM\"],\"message\":\"see http://a.com and http://b.com now\",\"variants\":[\"look at http://a.com or http://b.com\",\"visit http://a.com then http://b.com\"]}")
-                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("CONTENT_REJECTED"));
-
-        ReflectionTestUtils.setField(segments, "smallSendMax", 3);
+        // no wording-count, content or daily rules: only credit and an unreachable audience stop a send
         String create = ok(onHost(h, owner, "POST", "/api/v1/store/broadcasts", BODY).andExpect(status().isOk()));
         String id = JsonPath.read(create, "$.id");
         assertThat(((Number) JsonPath.read(create, "$.reachable")).intValue()).isEqualTo(2);
@@ -225,24 +218,6 @@ class ManualStyleBroadcastIntegrationTest extends IntegrationTestBase {
         assertThat(jdbc.sql("SELECT status FROM chat.unofficial_sessions WHERE tenant_id = :t").param("t", s.id()).query(String.class).single()).isEqualTo("NEEDS_LOGIN");
         assertThat(wallet.balance(s.id())).isEqualTo(1000L);
         assertThat(jdbc.sql("SELECT count(*) FROM commerce.broadcast_recipients WHERE broadcast_id = :b AND status = 'PENDING'").param("b", UUID.fromString(id)).query(Long.class).single()).isEqualTo(1L);
-    }
-
-    @Test
-    void theWarmUpCapIsEnforced_dayOneAllowsTen() throws Exception {
-        Shop s = shop(1000);
-        channel(s, "INSTAGRAM");
-        for (int i = 0; i < 3; i++) contact(s, "C" + i, 30 + i);
-        connect(s);
-        String id = JsonPath.read(ok(onHost(s.t().host(), s.t().access(), "POST", "/api/v1/store/broadcasts", BODY).andExpect(status().isOk())), "$.id");
-        jdbc.sql("UPDATE chat.unofficial_sessions SET sent_today = 9, sent_today_date = (now() AT TIME ZONE 'Africa/Cairo')::date WHERE tenant_id = :t").param("t", s.id()).update();
-        assertThat(drain()).isEqualTo(1);   // the 10th of day one is the last one
-        assertThat(state(id)).isEqualTo("SENDING:MS_DAILY_CAP");
-        assertThat(FakeOutOfWindowSender.SENT).hasSize(1);
-        onHost(s.t().host(), s.t().access(), "GET", "/api/v1/store/unofficial-meta", null).andExpect(jsonPath("$.platforms.INSTAGRAM.sentToday").value(10)).andExpect(jsonPath("$.platforms.INSTAGRAM.warmupDay").value(1));
-        // day 2 allows 15
-        jdbc.sql("UPDATE chat.unofficial_sessions SET warmup_started_at = now() - interval '1 day' WHERE tenant_id = :t").param("t", s.id()).update();
-        assertThat(drain() >= 1).isTrue();
-        assertThat(FakeOutOfWindowSender.SENT.size()).isGreaterThanOrEqualTo(2);
     }
 
     @Test

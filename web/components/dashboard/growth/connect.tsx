@@ -84,7 +84,7 @@ function ImportContacts({ onDone }: { onDone: () => void }) {
   );
 }
 
-function PlatformCard({ plat, conn, onChanged }: { plat: Plat; conn?: Connection; onChanged: () => void }) {
+function PlatformCard({ plat, conn, onChanged, showImport }: { plat: Plat; conn?: Connection; onChanged: () => void; showImport: boolean }) {
   const { t, locale } = useI18n();
   const [open, setOpen] = useState(false);       // the form, when already connected (reconnect)
   const [confirm, setConfirm] = useState(false);
@@ -135,7 +135,7 @@ function PlatformCard({ plat, conn, onChanged }: { plat: Plat; conn?: Connection
       </div>
       {conn && !conn.supported && <Alert tone="blue">{t("mx.unavailable")}</Alert>}
       {conn?.status === "BLOCKED" && conn.blockedUntil && <Alert tone="amber">{t("mx.blockedUntil", { when: dateTime(conn.blockedUntil, locale) })}</Alert>}
-      {on && !ig && conn?.status === "ACTIVE" && <ImportContacts onDone={onChanged} />}
+      {showImport && on && !ig && conn?.status === "ACTIVE" && <ImportContacts onDone={onChanged} />}
       {conn?.status === "NEEDS_LOGIN" && <Alert tone="amber">{t("error.NEEDS_LOGIN")}</Alert>}
       {showForm && (
         <form className="space-y-3" autoComplete="off" onSubmit={(e) => { e.preventDefault(); void connect.run(); }}>
@@ -175,15 +175,16 @@ function PlatformCard({ plat, conn, onChanged }: { plat: Plat; conn?: Connection
 }
 
 /** Top of both targeting tabs: connect the Instagram and Messenger accounts used to reach old contacts and new prospects. */
-export default function ConnectStrip({ conns, onChanged }: { conns: Connections | null; onChanged: () => void }) {
+/** `showImport`: the existing-customers tab brings the Page chats in; the new-customers tab (followers, commenters) has its own Sync button and hides it. */
+export default function ConnectStrip({ conns, onChanged, showImport = true }: { conns: Connections | null; onChanged: () => void; showImport?: boolean }) {
   const { t } = useI18n();
   return (
     <section id="connect-accounts" className="scroll-mt-20 space-y-2.5">
       <PanelHead icon="link" title={t("cx.title")} hint={t("cx.hint")} />
       {!conns ? <div className="skeleton h-28 rounded-[18px]" /> : (
         <div className="grid gap-3 lg:grid-cols-2 lg:items-start">
-          <PlatformCard plat="INSTAGRAM" conn={conns.INSTAGRAM} onChanged={onChanged} />
-          <PlatformCard plat="FACEBOOK" conn={conns.FACEBOOK} onChanged={onChanged} />
+          <PlatformCard plat="INSTAGRAM" conn={conns.INSTAGRAM} onChanged={onChanged} showImport={showImport} />
+          <PlatformCard plat="FACEBOOK" conn={conns.FACEBOOK} onChanged={onChanged} showImport={showImport} />
         </div>
       )}
     </section>
