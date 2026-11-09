@@ -23,6 +23,10 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      ig-bridge:
+        condition: service_started
+      fb-bridge:
+        condition: service_started
       redis:
         condition: service_healthy
       minio-init:
@@ -59,6 +63,12 @@ services:
       APP_INTEGRATIONS_AMAZON_APPLICATION_ID: ${AMAZON_APPLICATION_ID:-}
       FCM_CREDENTIALS_FILE: ${FCM_CREDENTIALS_FILE:-}
       BOOKING_ENABLED: ${BOOKING_ENABLED:-false}
+      # unofficial Instagram / Messenger senders (sidecars below); on by default
+      META_UNOFFICIAL_ENABLED: ${META_UNOFFICIAL_ENABLED:-true}
+      IG_BRIDGE_URL: ${IG_BRIDGE_URL:-http://ig-bridge:8090}
+      IG_BRIDGE_SECRET: ${IG_BRIDGE_SECRET:?set IG_BRIDGE_SECRET in .env}
+      FB_BRIDGE_URL: ${FB_BRIDGE_URL:-http://fb-bridge:8091}
+      FB_BRIDGE_SECRET: ${FB_BRIDGE_SECRET:?set FB_BRIDGE_SECRET in .env}
       STORAGE_TYPE: s3
       S3_ENDPOINT: http://minio:9000
       S3_ACCESS_KEY: ${S3_ACCESS_KEY}
@@ -79,6 +89,33 @@ services:
       timeout: 5s
       retries: 10
       start_period: 40s
+
+  # Sidecars for the unofficial Instagram / Messenger senders (infra/ig-bridge, infra/fb-bridge). No published port: only the backend reaches them on the compose network.
+  # They keep per-shop sessions in /data (0600 files). Generate the secrets with: openssl rand -hex 32
+  ig-bridge:
+    image: ghcr.io/m-elnemr/multi_tenant-ig-bridge:${IG_BRIDGE_IMAGE_TAG:-latest}
+    build: ./infra/ig-bridge
+    restart: unless-stopped
+    environment:
+      IG_BRIDGE_SECRET: ${IG_BRIDGE_SECRET:?set IG_BRIDGE_SECRET in .env}
+      IG_BRIDGE_DATA: /data
+      IG_BRIDGE_PROXIES: ${IG_BRIDGE_PROXIES:-{}}   # optional per-shop proxy map {"<tenant uuid>": "http://user:pass@host:port"}
+    volumes:
+      - ig_bridge_data:/data
+    expose:
+      - "8090"
+
+  fb-bridge:
+    image: ghcr.io/m-elnemr/multi_tenant-fb-bridge:${FB_BRIDGE_IMAGE_TAG:-latest}
+    build: ./infra/fb-bridge
+    restart: unless-stopped
+    environment:
+      FB_BRIDGE_SECRET: ${FB_BRIDGE_SECRET:?set FB_BRIDGE_SECRET in .env}
+      FB_BRIDGE_DATA: /data
+    volumes:
+      - fb_bridge_data:/data
+    expose:
+      - "8091"
 
   web:
     image: ghcr.io/m-elnemr/multi_tenant-web:${WEB_IMAGE_TAG:-latest}
@@ -160,6 +197,8 @@ services:
       - caddy_config:/config
 
 volumes:
+  ig_bridge_data:
+  fb_bridge_data:
   db_data:
   minio_data:
   caddy_data:

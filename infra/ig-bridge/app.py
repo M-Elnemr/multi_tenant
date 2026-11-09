@@ -13,13 +13,14 @@ import hmac
 import json
 import logging
 import os
+import random
 import re
 import threading
 import time
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel
 
 try:  # the library is only absent in the unit tests, which replace make_client
@@ -35,6 +36,10 @@ logging.basicConfig(level=os.environ.get("IG_BRIDGE_LOG", "INFO"))
 DATA_DIR = Path(os.environ.get("IG_BRIDGE_DATA", "/data"))
 SECRET = os.environ.get("IG_BRIDGE_SECRET", "")
 MAX_TYPING_MS = 40_000
+PAGE_SIZE = 50
+MAX_FOLLOWERS = 1000
+# random pause between two pages of a listing (seconds); tests set it to 0
+PAGE_SLEEP = (float(os.environ.get("IG_BRIDGE_PAGE_SLEEP_MIN", "2")), float(os.environ.get("IG_BRIDGE_PAGE_SLEEP_MAX", "6")))
 TENANT_RE = re.compile(r"^[0-9a-fA-F-]{32,36}$")
 
 
@@ -239,3 +244,90 @@ def send(body: SendIn):
         except Exception as e:  # noqa: BLE001
             log.warning("send failed: %s", type(e).__name__)
             return {"result": "FAILED", "detail": type(e).__name__}
+
+
+# ---- read-only listings (followers, recent posts, comments) used to find new customers ----
+
+def _short(u) -> dict:
+    return {"pk": str(getattr(u, "pk", "")), "username": getattr(u, "username", None), "full_name": getattr(u, "full_name", None) or "",
+            "is_private": bool(getattr(u, "is_private", False))}
+
+
+def _read_error(e: Exception) -> dict:
+    """Map an instagrapi failure of a read call to the contract's error codes."""
+    if isinstance(e, EXPIRED):
+        return {"ok": False, "error": "SESSION_EXPIRED"}
+    if isinstance(e, (EXC["ChallengeRequired"], EXC["ChallengeUnknownStep"], EXC["SelectContactPointRecoveryForm"], EXC["RecaptchaChallengeForm"])):
+        return {"ok": False, "error": "CHALLENGE"}
+    if isinstance(e, BLOCK):
+        return {"ok": False, "error": "RATE_LIMITED"}
+    log.warning("read call failed: %s", type(e).__name__)
+    return {"ok": False, "error": "FAILED"}
+
+
+def _pause() -> None:
+    lo, hi = PAGE_SLEEP
+    if hi > 0:
+        time.sleep(random.uniform(lo, max(lo, hi)))
+
+
+def _logged_in_client(tenant: str):
+    cl = client_for(tenant)
+    return cl if cl is not None and getattr(cl, "user_id", None) else None
+
+
+@app.get("/instagram/{tenant}/followers", dependencies=[Depends(require_secret)])
+def followers(tenant: str, amount: int = Query(200, ge=1), cursor: Optional[str] = None):
+    """One call returns up to `amount` followers of the connected account, fetched page by page with random pauses; pass next_cursor back to continue."""
+    tenant = tenant_key(tenant)
+    amount = min(amount, MAX_FOLLOWERS)
+    with lock_for(tenant):
+        cl = _logged_in_client(tenant)
+        if cl is None:
+            return {"ok": False, "error": "SESSION_EXPIRED"}
+        users, next_cursor, first = [], cursor or "", True
+        try:
+            while len(users) < amount:
+                if not first:
+                    _pause()
+                first = False
+                page, next_cursor = cl.user_followers_v1_chunk(str(cl.user_id), max_amount=min(PAGE_SIZE, amount - len(users)), max_id=next_cursor or "")
+                users.extend(_short(u) for u in page)
+                if not next_cursor or not page:
+                    next_cursor = None
+                    break
+            save_settings(cl, tenant)
+            return {"ok": True, "users": users[:amount], "next_cursor": next_cursor or None}
+        except Exception as e:  # noqa: BLE001
+            return _read_error(e)
+
+
+@app.get("/instagram/{tenant}/media/recent", dependencies=[Depends(require_secret)])
+def media_recent(tenant: str, amount: int = Query(12, ge=1, le=50)):
+    tenant = tenant_key(tenant)
+    with lock_for(tenant):
+        cl = _logged_in_client(tenant)
+        if cl is None:
+            return {"ok": False, "error": "SESSION_EXPIRED"}
+        try:
+            medias = cl.user_medias(str(cl.user_id), amount)
+            return {"ok": True, "media": [{"id": str(m.pk), "code": getattr(m, "code", None), "caption": getattr(m, "caption_text", "") or "",
+                                           "comment_count": int(getattr(m, "comment_count", 0) or 0)} for m in medias[:amount]]}
+        except Exception as e:  # noqa: BLE001
+            return _read_error(e)
+
+
+@app.get("/instagram/{tenant}/media/{media_id}/comments", dependencies=[Depends(require_secret)])
+def media_comments(tenant: str, media_id: str, amount: int = Query(100, ge=1, le=500)):
+    tenant = tenant_key(tenant)
+    if not re.fullmatch(r"\d+(_\d+)?", media_id):
+        raise HTTPException(status_code=400, detail="bad media id")
+    with lock_for(tenant):
+        cl = _logged_in_client(tenant)
+        if cl is None:
+            return {"ok": False, "error": "SESSION_EXPIRED"}
+        try:
+            comments = cl.media_comments(media_id, amount)
+            return {"ok": True, "comments": [{"pk": str(c.pk), "text": c.text or "", "user": _short(c.user)} for c in comments[:amount]]}
+        except Exception as e:  # noqa: BLE001
+            return _read_error(e)

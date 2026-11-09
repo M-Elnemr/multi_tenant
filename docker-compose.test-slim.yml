@@ -13,6 +13,10 @@ services:
     depends_on: !override
       db:
         condition: service_healthy
+      ig-bridge:
+        condition: service_started
+      fb-bridge:
+        condition: service_started
     environment:
       STORAGE_TYPE: local
       APP_FILES_DIR: /app/uploads
@@ -66,6 +70,17 @@ services:
     mem_limit: 560m
     oom_score_adj: 900
     cpus: 0.5
+
+  # Small Python sidecars (unofficial Instagram / Messenger senders); definitions are in docker-compose.yml, only the limits live here.
+  ig-bridge:
+    mem_limit: 160m
+    oom_score_adj: 900
+    cpus: 0.2
+
+  fb-bridge:
+    mem_limit: 128m
+    oom_score_adj: 900
+    cpus: 0.2
 
   web:
     environment:

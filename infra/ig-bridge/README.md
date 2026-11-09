@@ -27,6 +27,17 @@ this service only logs in, keeps the session, sends, and maps errors.
 (Instagram-scoped ids) are NOT the same as the private API's user ids, so the backend sends the contact's username when its display name looks like one; otherwise a
 lookup may answer `NOT_FOUND`. This is an open limitation.
 
+### Read-only listings (new customers)
+
+| Call | Answer |
+| --- | --- |
+| `GET /instagram/{tenant}/followers?amount=200&cursor=` | `{ok, users:[{pk, username, full_name, is_private}], next_cursor\|null}`; fetched in pages of 50 with random 2-6 s pauses (`IG_BRIDGE_PAGE_SLEEP_MIN/MAX`), at most 1000 per call, pass `next_cursor` back to continue |
+| `GET /instagram/{tenant}/media/recent?amount=12` | `{ok, media:[{id, code, caption, comment_count}]}` |
+| `GET /instagram/{tenant}/media/{id}/comments?amount=100` | `{ok, comments:[{pk, text, user:{pk, username, full_name, is_private}}]}` |
+
+Errors: `{ok:false, error: SESSION_EXPIRED\|CHALLENGE\|RATE_LIMITED\|FAILED}`. One request at a time per shop (same lock as sending). `/messages/send` accepts a numeric pk or a username in `username_or_thread`.
+Mocked-client tests only, like everything else here.
+
 Error mapping: `FeedbackRequired`, `ChallengeRequired`, `PleaseWaitFewMinutes`, `RateLimitError` (and the other challenge / throttle classes) -> `BLOCKED`
 (the backend stops everything and blocks the account for 48 h); `LoginRequired` -> `SESSION_EXPIRED`; `UserNotFound` -> `NOT_FOUND`; anything else -> `FAILED`.
 
@@ -38,12 +49,8 @@ Passwords and 2FA secrets are never written to disk or to the log here (the back
 
 ## Run
 
-```bash
-# with the platform stack (opt-in override, not part of the main compose files)
-IG_BRIDGE_SECRET=$(openssl rand -hex 32) docker compose -f docker-compose.yml -f docker-compose.ig-bridge.yml up -d ig-bridge
-# backend settings
-META_UNOFFICIAL_ENABLED=true  IG_BRIDGE_URL=http://ig-bridge:8090  IG_BRIDGE_SECRET=<the same secret>
-```
+The service is part of the main compose files (`docker-compose.yml`, `docker-compose.test-slim.yml`); no extra override file. Put `IG_BRIDGE_SECRET=$(openssl rand -hex 32)` in `.env`
+(the backend gets the same value, plus `META_UNOFFICIAL_ENABLED` default `true` and `IG_BRIDGE_URL=http://ig-bridge:8090`). CI builds and pushes `ghcr.io/m-elnemr/multi_tenant-ig-bridge`.
 
 The service has no published port: only containers on the compose network reach it. Do not expose it to the internet.
 

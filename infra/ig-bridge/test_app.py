@@ -15,7 +15,23 @@ H = {"X-Bridge-Secret": "test-secret"}
 PASSWORD = "Sup3r-Secret-Pw!9"
 
 
+class U:
+    def __init__(self, pk, username):
+        self.pk, self.username, self.full_name, self.is_private = pk, username, "Name " + username, False
+
+
+class M:
+    def __init__(self, pk, code, caption_text, comment_count):
+        self.pk, self.code, self.caption_text, self.comment_count = pk, code, caption_text, comment_count
+
+
+class Cm:
+    def __init__(self, pk, text, user):
+        self.pk, self.text, self.user = pk, text, user
+
+
 class FakeClient:
+    calls = []
     next_error = None
     sent = []
     login_error = None
@@ -54,13 +70,34 @@ class FakeClient:
     def logout(self):
         pass
 
+    read_error = None
+
+    def user_followers_v1_chunk(self, user_id, max_amount=0, max_id=""):
+        if FakeClient.read_error:
+            raise FakeClient.read_error
+        FakeClient.calls = FakeClient.calls + [(user_id, max_amount, max_id)]
+        i = int(max_id or 0)
+        batch = [U(100 + n, f"u{n}") for n in range(i, min(i + max_amount, 5))]
+        return batch, (str(i + len(batch)) if i + len(batch) < 5 else "")
+
+    def user_medias(self, user_id, amount=0):
+        if FakeClient.read_error:
+            raise FakeClient.read_error
+        return [M(111, "ABC", "hello", 3)]
+
+    def media_comments(self, media_id, amount=20):
+        if FakeClient.read_error:
+            raise FakeClient.read_error
+        return [Cm(5, "price?", U(200, "buyer"))]
+
     def totp_generate_code(self, secret):
         return "123456"
 
 
 @pytest.fixture(autouse=True)
 def fake(monkeypatch):
-    FakeClient.next_error, FakeClient.login_error, FakeClient.sent = None, None, []
+    FakeClient.next_error, FakeClient.login_error, FakeClient.sent, FakeClient.read_error, FakeClient.calls = None, None, [], None, []
+    monkeypatch.setattr(bridge, "PAGE_SLEEP", (0, 0))
     bridge._clients.clear()
     monkeypatch.setattr(bridge, "make_client", lambda tenant: FakeClient())
     bridge.SECRET = "test-secret"
@@ -127,3 +164,49 @@ def test_login_errors_and_no_password_in_the_log(caplog):
 
 def test_bad_tenant_is_rejected():
     assert c.get("/sessions/not-a-uuid/status", headers=H).status_code == 400
+
+
+def test_followers_pages_and_cursor():
+    login()
+    r = c.get(f"/instagram/{TENANT}/followers?amount=3", headers=H).json()
+    assert r["ok"] and [u["username"] for u in r["users"]] == ["u0", "u1", "u2"] and r["next_cursor"] == "3"
+    assert r["users"][0] == {"pk": "100", "username": "u0", "full_name": "Name u0", "is_private": False}
+    r2 = c.get(f"/instagram/{TENANT}/followers?amount=10&cursor=3", headers=H).json()
+    assert [u["username"] for u in r2["users"]] == ["u3", "u4"] and r2["next_cursor"] is None
+
+
+def test_followers_are_fetched_in_small_pages():
+    login()
+    bridge.PAGE_SIZE = 2
+    try:
+        r = c.get(f"/instagram/{TENANT}/followers?amount=5", headers=H).json()
+    finally:
+        bridge.PAGE_SIZE = 50
+    assert len(r["users"]) == 5 and len(FakeClient.calls) == 3
+
+
+def test_media_recent_and_comments():
+    login()
+    m = c.get(f"/instagram/{TENANT}/media/recent?amount=12", headers=H).json()
+    assert m == {"ok": True, "media": [{"id": "111", "code": "ABC", "caption": "hello", "comment_count": 3}]}
+    cm = c.get(f"/instagram/{TENANT}/media/111/comments?amount=100", headers=H).json()
+    assert cm == {"ok": True, "comments": [{"pk": "5", "text": "price?", "user": {"pk": "200", "username": "buyer", "full_name": "Name buyer", "is_private": False}}]}
+    assert c.get(f"/instagram/{TENANT}/media/abc/comments", headers=H).status_code == 400
+
+
+def test_listings_need_secret_and_session():
+    assert c.get(f"/instagram/{TENANT}/followers").status_code == 401
+    assert c.get(f"/instagram/{TENANT}/followers", headers=H).json() == {"ok": False, "error": "SESSION_EXPIRED"}
+    assert c.get(f"/instagram/{TENANT}/media/recent", headers=H).json() == {"ok": False, "error": "SESSION_EXPIRED"}
+
+
+@pytest.mark.parametrize("name,expected", [
+    ("LoginRequired", "SESSION_EXPIRED"), ("ChallengeRequired", "CHALLENGE"), ("RateLimitError", "RATE_LIMITED"),
+    ("PleaseWaitFewMinutes", "RATE_LIMITED"), ("FeedbackRequired", "RATE_LIMITED")])
+def test_listing_errors_are_mapped(name, expected):
+    login()
+    FakeClient.read_error = bridge.EXC[name]()
+    for path in ("followers", "media/recent", "media/111/comments"):
+        assert c.get(f"/instagram/{TENANT}/{path}", headers=H).json() == {"ok": False, "error": expected}
+    FakeClient.read_error = RuntimeError("boom")
+    assert c.get(f"/instagram/{TENANT}/followers", headers=H).json() == {"ok": False, "error": "FAILED"}
