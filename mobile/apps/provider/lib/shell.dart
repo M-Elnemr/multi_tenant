@@ -8,6 +8,7 @@ import 'questions.dart';
 import 'dev_content.dart';
 import 'growth.dart';
 import 'segments.dart';
+import 'prospects.dart';
 import 'retail.dart';
 import 'admin.dart';
 import 'ai_assistant.dart';
@@ -73,7 +74,8 @@ List<PanelSection> storeSections() => [
       PanelSection('العروض والكوبونات', 'Offers & coupons', Icons.local_offer_rounded, screen: 'coupons', group: 'catalog', build: (c) => OffersScreen(ctx: c)),
       PanelSection('التقييمات', 'Reviews', Icons.star_rounded, screen: 'reviews', group: 'catalog', build: (c) => ReviewsScreen(ctx: c)),
       PanelSection('العملاء', 'Customers', Icons.people_alt_rounded, screen: 'customers', group: 'growth', build: (c) => CustomersScreen(ctx: c)),
-      PanelSection('الشرائح والرسائل الجماعية', 'Segments & broadcasts', Icons.groups_2_rounded, perm: 'growth.manage', group: 'growth', build: (c) => SegmentsScreen(ctx: c)),
+      PanelSection('استهداف العملاء الحاليين', 'Existing customers targeting', Icons.groups_2_rounded, perm: 'growth.manage', group: 'growth', build: (c) => SegmentsScreen(ctx: c)),
+      PanelSection('استهداف العملاء الجدد', 'New customers targeting', Icons.person_search_rounded, perm: 'growth.manage', group: 'growth', build: (c) => ProspectsScreen(ctx: c)),
       PanelSection('نمو العملاء', 'Customers growth', Icons.trending_up_rounded, perm: 'growth.manage', group: 'growth', build: (c) => GrowthScreen(ctx: c)),
       PanelSection('التسويق', 'Marketing', Icons.campaign_rounded, screen: 'marketing', group: 'growth', build: (c) => MarketingScreen(ctx: c)),
       PanelSection('التقارير', 'Reports', Icons.bar_chart_rounded, perm: 'report.read', group: 'insights', build: (c) => ReportsScreen(ctx: c)),

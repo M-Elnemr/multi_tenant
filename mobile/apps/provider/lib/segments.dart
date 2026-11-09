@@ -9,7 +9,7 @@ import 'forms.dart';
 import 'settings.dart';
 import 'theme/templates.dart';
 
-// Customer segments and broadcasts of the shop: pick segments and platforms, see who can be reached, write one message and watch the live queue.
+// Existing customers targeting (segments and broadcasts of the shop): pick segments and platforms, see who can be reached, write one message and watch the live queue.
 // Every outgoing message is charged (messagePriceMinor from the API, 0.1 EGP by default). The shop's own WhatsApp number is the only WhatsApp route.
 
 List<Map<String, dynamic>> _maps(Object? v) => ((v as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
@@ -18,18 +18,18 @@ List<Map<String, dynamic>> _maps(Object? v) => ((v as List?) ?? const []).map((e
 const _forms = [('أهلاً بيك/بيكي', 'أهلاً {بيك|بيكي}'), ('ليك/ليكي', '{ليك|ليكي}'), ('تحب/تحبي', '{تحب|تحبي}'), ('اتفضل/اتفضلي', '{اتفضل|اتفضلي}'), ('تعالى/تعالي', '{تعالى|تعالي}'), ('شوف/شوفي', '{شوف|شوفي}'), ('كمّل/كمّلي', '{كمّل|كمّلي}'), ('معاك/معاكي', '{معاك|معاكي}')];
 
 /// {{a|b|c}}: each customer gets one of the wordings, so the messages are not all identical. (label on the chip, text inserted)
-const _spins = [('هلا|أهلاً|مرحباً', '{{هلا|أهلاً|مرحباً}}'), ('عندنا|متاح عندنا|وصلنا', '{{عندنا|متاح عندنا|وصلنا}}'), ('شكراً|ميرسي|تسلم', '{{شكراً|ميرسي|تسلم}}'), ('قريب|دلوقتي|النهارده', '{{قريب|دلوقتي|النهارده}}')];
+const broadcastSpins = [('هلا|أهلاً|مرحباً', '{{هلا|أهلاً|مرحباً}}'), ('عندنا|متاح عندنا|وصلنا', '{{عندنا|متاح عندنا|وصلنا}}'), ('شكراً|ميرسي|تسلم', '{{شكراً|ميرسي|تسلم}}'), ('قريب|دلوقتي|النهارده', '{{قريب|دلوقتي|النهارده}}')];
 
-const _emoji = ['😀', '😍', '🥰', '😎', '🤩', '🙏', '👍', '👏', '🔥', '✨', '🎉', '🎁', '💥', '💯', '❤️', '🛍️', '🛒', '🏷️', '💸', '💰', '⭐', '🌟', '⏰', '📣', '📦', '🚚', '✅', '👇', '👉', '🌸', '☀️', '🌙', '🎊', '🥳', '😉', '🤝', '💐', '🧡', '💙', '🆕'];
+const broadcastEmoji = ['😀', '😍', '🥰', '😎', '🤩', '🙏', '👍', '👏', '🔥', '✨', '🎉', '🎁', '💥', '💯', '❤️', '🛍️', '🛒', '🏷️', '💸', '💰', '⭐', '🌟', '⏰', '📣', '📦', '🚚', '✅', '👇', '👉', '🌸', '☀️', '🌙', '🎊', '🥳', '😉', '🤝', '💐', '🧡', '💙', '🆕'];
 
 const _segmentKeys = ['ALL', 'NEW', 'REPEAT', 'VIP', 'AT_RISK', 'LAPSED'];
 const _segmentNames = {'ALL': ('كل العملاء', 'All customers'), 'NEW': ('جدد', 'New'), 'REPEAT': ('متكررين', 'Repeat'), 'VIP': ('VIP', 'VIP'), 'AT_RISK': ('معرضين للفقد', 'At risk'), 'LAPSED': ('غايبين', 'Lapsed')};
 const _platformKeys = ['WHATSAPP', 'FACEBOOK', 'INSTAGRAM'];
 const _platformNames = {'WHATSAPP': ('واتساب', 'WhatsApp'), 'FACEBOOK': ('ماسنجر', 'Messenger'), 'INSTAGRAM': ('إنستجرام', 'Instagram')};
 
-Color _platformColor(String p) => switch (p) { 'WHATSAPP' => const Color(0xFF1E9E5A), 'FACEBOOK' => const Color(0xFF1877F2), 'INSTAGRAM' => const Color(0xFFC13584), _ => const Color(0xFF6B7C8D) };
-IconData _platformIcon(String p) => switch (p) { 'WHATSAPP' => Icons.chat_rounded, 'FACEBOOK' => Icons.messenger_rounded, 'INSTAGRAM' => Icons.camera_alt_rounded, _ => Icons.forum_rounded };
-String _platformLabel(String p, bool ar) { final n = _platformNames[p]; return n == null ? p : (ar ? n.$1 : n.$2); }
+Color platformColor(String p) => switch (p) { 'WHATSAPP' => const Color(0xFF1E9E5A), 'FACEBOOK' => const Color(0xFF1877F2), 'INSTAGRAM' => const Color(0xFFC13584), _ => const Color(0xFF6B7C8D) };
+IconData platformIcon(String p) => switch (p) { 'WHATSAPP' => Icons.chat_rounded, 'FACEBOOK' => Icons.messenger_rounded, 'INSTAGRAM' => Icons.camera_alt_rounded, _ => Icons.forum_rounded };
+String platformLabel(String p, bool ar) { final n = _platformNames[p]; return n == null ? p : (ar ? n.$1 : n.$2); }
 
 /// Small coloured platform tag next to a customer or a recipient.
 class PlatformTag extends StatelessWidget {
@@ -37,11 +37,11 @@ class PlatformTag extends StatelessWidget {
   final String platform;
   @override
   Widget build(BuildContext context) {
-    final c = _platformColor(platform);
+    final c = platformColor(platform);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
       decoration: BoxDecoration(color: c.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(_platformIcon(platform), size: 12, color: c), const SizedBox(width: 3), Text(_platformLabel(platform, AppLocale.isAr), style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: c))]),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(platformIcon(platform), size: 12, color: c), const SizedBox(width: 3), Text(platformLabel(platform, AppLocale.isAr), style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: c))]),
     );
   }
 }
@@ -73,6 +73,131 @@ class _LoadingDotsState extends State<LoadingDots> with SingleTickerProviderStat
             ),
         ]),
       );
+}
+
+
+String queueMinutes(Object? m) {
+  final ar = AppLocale.isAr;
+  final n = (m as num?)?.toInt() ?? 0;
+  if (n <= 0) return '-';
+  if (n < 60) return ar ? '$n دقيقة' : '$n min';
+  return ar ? '${n ~/ 60} ساعة${n % 60 > 0 ? ' و${n % 60} د' : ''}' : '${n ~/ 60}h${n % 60 > 0 ? ' ${n % 60}m' : ''}';
+}
+
+
+String queuePauseText(String r, bool ar) => switch (r) {
+      'QUIET_HOURS' => ar ? 'استراحة الليل' : 'night break',
+      'DAILY_CAP' => ar ? 'وصل الحد اليومي' : 'daily limit reached',
+      'FAILURES' => ar ? 'اتوقف: الإرسال بيفشل' : 'stopped: sends keep failing',
+      'OPT_OUTS' => ar ? 'اتوقف: عملاء طلبوا الإيقاف' : 'stopped: customers asked to stop',
+      _ => r,
+    };
+
+
+/// Live sending queue of one broadcast (yellow sending with loading dots, green sent, red failed). Shared by the existing-customers and new-customers screens.
+class BroadcastQueueCard extends StatelessWidget {
+  const BroadcastQueueCard({super.key, required this.b, required this.counts, required this.recipients, required this.recTotal, required this.recFilter, required this.write, required this.currency, required this.onControl, required this.onFilter, required this.onMore, this.onHide});
+  final Map<String, dynamic> b;
+  final Map<String, dynamic> counts;
+  final List<Map<String, dynamic>> recipients;
+  final int recTotal;
+  final String recFilter;
+  final bool write;
+  final String currency;
+  final void Function(String id, String action) onControl;
+  final void Function(String filter) onFilter;
+  final VoidCallback onMore;
+  final VoidCallback? onHide;
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    final ar = s.ar;
+    final t = AppTemplate.of(context);
+    final cur = currency;
+    final status = '${b['status']}';
+    final sent = (b['sentCount'] as num?)?.toInt() ?? 0, failed = (b['failedCount'] as num?)?.toInt() ?? 0, pending = (b['pendingCount'] as num?)?.toInt() ?? 0;
+    final total = sent + failed + pending;
+    final progress = total == 0 ? 0.0 : (sent + failed) / total;
+    final color = switch (status) { 'SENDING' => const Color(0xFFD98200), 'PAUSED' => const Color(0xFF6B7C8D), 'DONE' => const Color(0xFF1E9E5A), _ => const Color(0xFFD14343) };
+    final label = switch (status) { 'SENDING' => ar ? 'بيتبعت الآن' : 'Sending now', 'PAUSED' => ar ? 'متوقف' : 'Paused', 'DONE' => ar ? 'اكتمل' : 'Done', _ => ar ? 'ملغي' : 'Canceled' };
+    final id = '${b['id']}';
+    final filters = <(String, String, Object?)>[('', ar ? 'الكل' : 'All', total), ('SENDING', ar ? 'بيتبعت' : 'Sending', counts['SENDING']), ('PENDING', ar ? 'منتظر' : 'Pending', counts['PENDING'] ?? pending), ('SENT', ar ? 'اتبعت' : 'Sent', counts['SENT'] ?? sent), ('FAILED', ar ? 'فشل' : 'Failed', counts['FAILED'] ?? failed)];
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(14),
+      decoration: t.cardDecoration().copyWith(border: Border.all(color: color.withValues(alpha: 0.6), width: 1.5)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          if (status == 'SENDING') const Padding(padding: EdgeInsetsDirectional.only(end: 8), child: LoadingDots()),
+          Expanded(child: Text(ar ? 'طابور الإرسال المباشر' : 'Live sending queue', style: t.heading(15.5))),
+          Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)), child: Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 12))),
+        ]),
+        const SizedBox(height: 6),
+        Text('${b['message']}', maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: t.muted, fontSize: 12.5)),
+        if (b['pauseReason'] != null) Padding(padding: const EdgeInsets.only(top: 4), child: Text(queuePauseText('${b['pauseReason']}', ar), style: const TextStyle(color: Color(0xFFB45309), fontWeight: FontWeight.w700, fontSize: 12.5))),
+        const SizedBox(height: 10),
+        ClipRRect(borderRadius: BorderRadius.circular(8), child: LinearProgressIndicator(value: progress, minHeight: 8, color: const Color(0xFF1E9E5A), backgroundColor: const Color(0xFFE5EAF0))),
+        const SizedBox(height: 6),
+        Wrap(spacing: 14, runSpacing: 2, children: [
+          Text(ar ? '${sent + failed} من $total' : '${sent + failed} of $total', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5)),
+          Text('✓ $sent', style: const TextStyle(color: Color(0xFF1E9E5A), fontWeight: FontWeight.w800, fontSize: 12.5)),
+          if (failed > 0) Text('✗ $failed', style: const TextStyle(color: Color(0xFFD14343), fontWeight: FontWeight.w800, fontSize: 12.5)),
+          Text(ar ? 'فاضل $pending' : '$pending left', style: TextStyle(color: t.muted, fontSize: 12.5)),
+          if (status == 'SENDING') Text(ar ? 'الوقت المتبقي ${queueMinutes(b['etaMinutes'])}' : 'ETA ${queueMinutes(b['etaMinutes'])}', style: TextStyle(color: t.muted, fontSize: 12.5)),
+          Text(ar ? 'التكلفة لحد الآن ${s.money(b['chargedMinor'] as num? ?? 0, cur)}' : 'Cost so far ${s.money(b['chargedMinor'] as num? ?? 0, cur)}', style: TextStyle(color: t.muted, fontSize: 12.5)),
+        ]),
+        if (write && (status == 'SENDING' || status == 'PAUSED')) Padding(padding: const EdgeInsets.only(top: 8), child: Row(children: [
+          if (status == 'PAUSED') Expanded(child: FilledButton.icon(onPressed: () => onControl(id, 'resume'), icon: const Icon(Icons.play_arrow_rounded), label: Text(ar ? 'كمّل' : 'Resume'))),
+          if (status == 'PAUSED') const SizedBox(width: 8),
+          Expanded(child: OutlinedButton.icon(onPressed: () => onControl(id, 'cancel'), style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFB91C1C)), icon: const Icon(Icons.stop_rounded), label: Text(ar ? 'ألغِ الإرسال' : 'Cancel'))),
+        ])),
+        const SizedBox(height: 8),
+        SizedBox(height: 40, child: ListView(scrollDirection: Axis.horizontal, children: [
+          for (final f in filters) Padding(padding: const EdgeInsetsDirectional.only(end: 6), child: ChoiceChip(visualDensity: VisualDensity.compact, label: Text('${f.$2} ${f.$3 ?? 0}', style: const TextStyle(fontSize: 12)), selected: recFilter == f.$1, showCheckmark: false, onSelected: (_) => onFilter(f.$1))),
+        ])),
+        if (recipients.isEmpty) Padding(padding: const EdgeInsets.all(12), child: Center(child: Text(ar ? 'مفيش مستلمين في العرض ده.' : 'No recipients in this view.', style: TextStyle(color: t.muted)))),
+        for (final r in recipients) BroadcastRecipientRow(r),
+        if (recipients.length < recTotal) TextButton(onPressed: onMore, child: Text(ar ? 'اعرض المزيد' : 'Show more')),
+        if (onHide != null) TextButton(onPressed: onHide, child: Text(ar ? 'إخفاء' : 'Hide')),
+      ]),
+    );
+  }
+
+}
+
+class BroadcastRecipientRow extends StatelessWidget {
+  const BroadcastRecipientRow(this.r, {super.key});
+  final Map<String, dynamic> r;
+  @override
+  Widget build(BuildContext context) {
+    final ar = S.of(context).ar;
+    final st = '${r['status']}';
+    final (Color fg, Color bg, Widget icon) = switch (st) {
+      'SENDING' => (const Color(0xFF92400E), const Color(0xFFFEF3C7), const LoadingDots(color: Color(0xFFB45309))),
+      'SENT' => (const Color(0xFF166534), const Color(0xFFDCFCE7), const Icon(Icons.check_circle_rounded, size: 18, color: Color(0xFF1E9E5A))),
+      'FAILED' => (const Color(0xFF991B1B), const Color(0xFFFEE2E2), const Icon(Icons.error_rounded, size: 18, color: Color(0xFFD14343))),
+      'SKIPPED' || 'STOPPED' => (const Color(0xFF6B7C8D), const Color(0xFFF1F5F9), const Icon(Icons.remove_circle_outline_rounded, size: 18, color: Color(0xFF9AA9BA))),
+      _ => (const Color(0xFF475569), const Color(0xFFF1F5F9), const Icon(Icons.schedule_rounded, size: 18, color: Color(0xFF9AA9BA))),
+    };
+    final stText = switch (st) { 'SENDING' => ar ? 'بيتبعت' : 'Sending', 'SENT' => ar ? 'اتبعت' : 'Sent', 'FAILED' => ar ? 'فشل' : 'Failed', 'STOPPED' => ar ? 'اتوقف' : 'Stopped', 'SKIPPED' => ar ? 'اتخطّى' : 'Skipped', _ => ar ? 'منتظر' : 'Pending' };
+    final ch = '${r['channel'] ?? ''}';
+    return Container(
+      margin: const EdgeInsets.only(top: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12), border: st == 'SENDING' ? Border.all(color: const Color(0xFFD98200), width: 1.2) : null),
+      child: Row(children: [
+        SizedBox(width: 24, child: Center(child: icon)),
+        const SizedBox(width: 8),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [Flexible(child: Text('${r['name'] ?? r['phone'] ?? '-'}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w800, color: fg, fontSize: 13.5))), const SizedBox(width: 6), if (ch.isNotEmpty) PlatformTag(ch)]),
+          if (st == 'FAILED' && r['error'] != null) Text('${r['error']}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, color: Color(0xFFB91C1C))),
+          if (st == 'SENT' && r['sentAt'] != null) Text(fmtDate('${r['sentAt']}'), style: TextStyle(fontSize: 11, color: fg.withValues(alpha: 0.8))),
+        ])),
+        Text(stText, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: fg)),
+      ]),
+    );
+  }
+
 }
 
 class SegmentsScreen extends StatefulWidget {
@@ -188,7 +313,7 @@ class _SegmentsScreenState extends State<SegmentsScreen> with WidgetsBindingObse
 
   Future<void> _loadHistory() async {
     final r = await widget.ctx.api.get('store/broadcasts');
-    if (mounted) setState(() => _history = _maps(r is Map ? r['data'] : r));
+    if (mounted) setState(() => _history = _maps(r is Map ? r['data'] : r).where((h) => h['kind'] != 'PROSPECTS').toList());
   }
 
   Future<void> _loadRecipients({bool more = false}) async {
@@ -281,7 +406,7 @@ class _SegmentsScreenState extends State<SegmentsScreen> with WidgetsBindingObse
     }
   }
 
-  Future<void> _emojiSheet() => showModalBottomSheet<void>(context: context, builder: (c) => Padding(padding: const EdgeInsets.all(12), child: GridView.count(crossAxisCount: 8, shrinkWrap: true, children: [for (final e in _emoji) InkWell(onTap: () { Navigator.pop(c); _insert(e); }, child: Center(child: Text(e, style: const TextStyle(fontSize: 26))))])));
+  Future<void> _emojiSheet() => showModalBottomSheet<void>(context: context, builder: (c) => Padding(padding: const EdgeInsets.all(12), child: GridView.count(crossAxisCount: 8, shrinkWrap: true, children: [for (final e in broadcastEmoji) InkWell(onTap: () { Navigator.pop(c); _insert(e); }, child: Center(child: Text(e, style: const TextStyle(fontSize: 26))))])));
 
   Future<void> _pickImage() async {
     final id = await pickAndUpload(context, widget.ctx.api, 'PRODUCT_IMAGE', aspect: 4 / 3);
@@ -311,6 +436,13 @@ class _SegmentsScreenState extends State<SegmentsScreen> with WidgetsBindingObse
     return 0;
   }
 
+  Map<String, dynamic> _platInfo(String p) {
+    final v = (_top?['byPlatform'] as Map?)?[p];
+    return v is Map ? Map<String, dynamic>.from(v) : const {};
+  }
+
+  List<String> get _needsConnect => [for (final p in _plats) if (p != 'WHATSAPP' && _platInfo(p)['needsConnect'] == true) p];
+
   int _platformTotal(String p) {
     final v = (_top?['byPlatform'] as Map?)?[p];
     return v is Map ? ((v['total'] as num?)?.toInt() ?? 0) : 0;
@@ -330,28 +462,13 @@ class _SegmentsScreenState extends State<SegmentsScreen> with WidgetsBindingObse
     return ar ? 'حوالي $h ساعة${m > 0 ? ' و$m دقيقة' : ''}' : 'about ${h}h${m > 0 ? ' ${m}m' : ''}';
   }
 
-  String _minutes(Object? m) {
-    final ar = AppLocale.isAr;
-    final n = (m as num?)?.toInt() ?? 0;
-    if (n <= 0) return '-';
-    if (n < 60) return ar ? '$n دقيقة' : '$n min';
-    return ar ? '${n ~/ 60} ساعة${n % 60 > 0 ? ' و${n % 60} د' : ''}' : '${n ~/ 60}h${n % 60 > 0 ? ' ${n % 60}m' : ''}';
-  }
-
   static String reasonText(Object? r, bool ar) => switch ('$r') {
         'OUTSIDE_WINDOW' => ar ? 'خارج نافذة الرد (٢٤ ساعة)' : 'Outside the reply window (24 h)',
         'NO_OWN_NUMBER' => ar ? 'رقم المتجر مش مربوط' : 'Shop number not linked',
         'OPTED_OUT' => ar ? 'طلب إيقاف الرسائل' : 'Asked to stop messages',
+        'CONNECT_ACCOUNT' => ar ? 'اربط الحساب من لوحة التحكم' : 'Connect the account from the dashboard',
         'NO_PHONE' => ar ? 'مفيش رقم' : 'No phone number',
         _ => '$r',
-      };
-
-  String _pauseText(String r, bool ar) => switch (r) {
-        'QUIET_HOURS' => ar ? 'استراحة الليل' : 'night break',
-        'DAILY_CAP' => ar ? 'وصل الحد اليومي' : 'daily limit reached',
-        'FAILURES' => ar ? 'اتوقف: الإرسال بيفشل' : 'stopped: sends keep failing',
-        'OPT_OUTS' => ar ? 'اتوقف: عملاء طلبوا الإيقاف' : 'stopped: customers asked to stop',
-        _ => r,
       };
 
   // ---- actions ----
@@ -420,7 +537,9 @@ class _SegmentsScreenState extends State<SegmentsScreen> with WidgetsBindingObse
     return RefreshIndicator(
       onRefresh: _loadAll,
       child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 40), children: [
-        if (live != null) ...[_liveCard(live, ar, s, t)],
+        if (live != null) BroadcastQueueCard(b: live, counts: _counts, recipients: _recipients, recTotal: _recTotal, recFilter: _recFilter, write: _write, currency: widget.ctx.currency,
+            onControl: _control, onFilter: (f) { setState(() => _recFilter = f); _loadRecipients(); }, onMore: () => _loadRecipients(more: true),
+            onHide: _watchId == null ? null : () { setState(() { _watchId = null; _recipients = []; }); _loadRecipients(); }),
         TemplateSectionTitle(ar ? 'اختر الجمهور' : 'Choose the audience'),
         _audienceCard(ar, t),
         TemplateSectionTitle(ar ? 'العملاء المختارين' : 'Selected customers'),
@@ -454,8 +573,8 @@ class _SegmentsScreenState extends State<SegmentsScreen> with WidgetsBindingObse
         const SizedBox(height: 8),
         Wrap(spacing: 8, runSpacing: 4, children: [
           for (final p in _platformKeys) FilterChip(
-            avatar: Icon(_platformIcon(p), size: 16, color: _plats.contains(p) ? _platformColor(p) : null),
-            label: Text('${_platformLabel(p, ar)}  ${_platformTotal(p)}'),
+            avatar: Icon(platformIcon(p), size: 16, color: _plats.contains(p) ? platformColor(p) : null),
+            label: Text('${platformLabel(p, ar)}  ${_platformTotal(p)}'),
             selected: _plats.contains(p), onSelected: (_) => _togglePlatform(p)),
         ]),
       ]));
@@ -517,7 +636,7 @@ class _SegmentsScreenState extends State<SegmentsScreen> with WidgetsBindingObse
       const SizedBox(height: 6),
       Text(ar ? 'كلمات متنوعة (كل عميل يستلم واحدة):' : 'Different wording (each customer gets one):', style: mute),
       Wrap(spacing: 6, runSpacing: 4, children: [
-        for (final f in _spins) ActionChip(backgroundColor: const Color(0xFFE0F2FE), label: Text(f.$1, style: const TextStyle(fontSize: 12.5)), onPressed: () => _insert(f.$2)),
+        for (final f in broadcastSpins) ActionChip(backgroundColor: const Color(0xFFE0F2FE), label: Text(f.$1, style: const TextStyle(fontSize: 12.5)), onPressed: () => _insert(f.$2)),
         ActionChip(avatar: const Icon(Icons.add, size: 14), label: Text(ar ? 'من عندك' : 'Your own', style: const TextStyle(fontSize: 12.5)), onPressed: _customSpin),
       ]),
       const SizedBox(height: 4),
@@ -559,8 +678,10 @@ class _SegmentsScreenState extends State<SegmentsScreen> with WidgetsBindingObse
     return _card(t, Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Text(ar ? 'ملخص الإرسال' : 'Send summary', style: t.heading(15)),
       const SizedBox(height: 8),
-      Wrap(spacing: 8, runSpacing: 6, children: [for (final p in _plats) Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: _platformColor(p).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)), child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(_platformIcon(p), size: 15, color: _platformColor(p)), const SizedBox(width: 5), Text('${_platformLabel(p, ar)}: ${_reachableOf(p)}', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: _platformColor(p)))]))]),
+      Wrap(spacing: 8, runSpacing: 6, children: [for (final p in _plats) Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: platformColor(p).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)), child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(platformIcon(p), size: 15, color: platformColor(p)), const SizedBox(width: 5), Text('${platformLabel(p, ar)}: ${_reachableOf(p)}', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: platformColor(p)))]))]),
       const SizedBox(height: 10),
+      for (final p in _plats) if (p != 'WHATSAPP' && (_platInfo(p)['reachableNow'] != null || _platInfo(p)['reachableOld'] != null))
+        Padding(padding: const EdgeInsets.only(bottom: 2), child: Text(ar ? '${platformLabel(p, ar)}: ${_platInfo(p)['reachableNow'] ?? 0} دلوقتي · ${_platInfo(p)['reachableOld'] ?? 0} عملاء قدام' : '${platformLabel(p, ar)}: ${_platInfo(p)['reachableNow'] ?? 0} now · ${_platInfo(p)['reachableOld'] ?? 0} older contacts', style: TextStyle(fontSize: 12, color: t.muted))),
       kv(ar ? 'ينفع يوصلهم' : 'Reachable', '$_reachable'),
       kv(ar ? 'سعر الرسالة' : 'Per message', s.money(_price, cur)),
       kv(ar ? 'التكلفة' : 'Cost', s.money(_cost, cur)),
@@ -570,6 +691,7 @@ class _SegmentsScreenState extends State<SegmentsScreen> with WidgetsBindingObse
         Expanded(child: Text(ar ? 'اربط رقم واتساب المتجر عشان نوصل لعملاء واتساب.' : "Link the shop's WhatsApp number to reach WhatsApp customers.", style: const TextStyle(color: Color(0xFFB45309), fontWeight: FontWeight.w700, fontSize: 12.5))),
         TextButton(onPressed: _openOwnNumber, child: Text(ar ? 'اربط' : 'Link')),
       ])),
+      if (_needsConnect.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 6), child: Text(ar ? 'اربط حساب ${_needsConnect.map((p) => platformLabel(p, ar)).join(' و')} من لوحة التحكم على الموقع عشان نوصل للعملاء القدام.' : 'Connect the ${_needsConnect.map((p) => platformLabel(p, ar)).join(' and ')} account from the dashboard to reach older contacts.', style: const TextStyle(color: Color(0xFFB45309), fontWeight: FontWeight.w700, fontSize: 12.5))),
       if (low) Padding(padding: const EdgeInsets.only(top: 6), child: Text(ar ? 'الرصيد مش كفاية: المطلوب ${s.money(_cost, cur)} ورصيدك ${s.money(_balance, cur)}.' : 'Not enough credit: needs ${s.money(_cost, cur)}, you have ${s.money(_balance, cur)}.', style: const TextStyle(color: Color(0xFFB91C1C), fontWeight: FontWeight.w700))),
       const SizedBox(height: 10),
       FilledButton.icon(onPressed: canSend ? _send : null, icon: _busy ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.send_rounded), label: Text(ar ? 'ابعت لـ $_reachable عميل' : 'Send to $_reachable customers')),
@@ -577,85 +699,6 @@ class _SegmentsScreenState extends State<SegmentsScreen> with WidgetsBindingObse
   }
 
   // ---- live queue ----
-
-  Widget _liveCard(Map<String, dynamic> b, bool ar, S s, AppTemplate t) {
-    final cur = widget.ctx.currency;
-    final status = '${b['status']}';
-    final sent = (b['sentCount'] as num?)?.toInt() ?? 0, failed = (b['failedCount'] as num?)?.toInt() ?? 0, pending = (b['pendingCount'] as num?)?.toInt() ?? 0;
-    final total = sent + failed + pending;
-    final progress = total == 0 ? 0.0 : (sent + failed) / total;
-    final color = switch (status) { 'SENDING' => const Color(0xFFD98200), 'PAUSED' => const Color(0xFF6B7C8D), 'DONE' => const Color(0xFF1E9E5A), _ => const Color(0xFFD14343) };
-    final label = switch (status) { 'SENDING' => ar ? 'بيتبعت الآن' : 'Sending now', 'PAUSED' => ar ? 'متوقف' : 'Paused', 'DONE' => ar ? 'اكتمل' : 'Done', _ => ar ? 'ملغي' : 'Canceled' };
-    final id = '${b['id']}';
-    final filters = <(String, String, Object?)>[('', ar ? 'الكل' : 'All', total), ('SENDING', ar ? 'بيتبعت' : 'Sending', _counts['SENDING']), ('PENDING', ar ? 'منتظر' : 'Pending', _counts['PENDING'] ?? pending), ('SENT', ar ? 'اتبعت' : 'Sent', _counts['SENT'] ?? sent), ('FAILED', ar ? 'فشل' : 'Failed', _counts['FAILED'] ?? failed)];
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(14),
-      decoration: t.cardDecoration().copyWith(border: Border.all(color: color.withValues(alpha: 0.6), width: 1.5)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Row(children: [
-          if (status == 'SENDING') const Padding(padding: EdgeInsetsDirectional.only(end: 8), child: LoadingDots()),
-          Expanded(child: Text(ar ? 'طابور الإرسال المباشر' : 'Live sending queue', style: t.heading(15.5))),
-          Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)), child: Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 12))),
-        ]),
-        const SizedBox(height: 6),
-        Text('${b['message']}', maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: t.muted, fontSize: 12.5)),
-        if (b['pauseReason'] != null) Padding(padding: const EdgeInsets.only(top: 4), child: Text(_pauseText('${b['pauseReason']}', ar), style: const TextStyle(color: Color(0xFFB45309), fontWeight: FontWeight.w700, fontSize: 12.5))),
-        const SizedBox(height: 10),
-        ClipRRect(borderRadius: BorderRadius.circular(8), child: LinearProgressIndicator(value: progress, minHeight: 8, color: const Color(0xFF1E9E5A), backgroundColor: const Color(0xFFE5EAF0))),
-        const SizedBox(height: 6),
-        Wrap(spacing: 14, runSpacing: 2, children: [
-          Text(ar ? '${sent + failed} من $total' : '${sent + failed} of $total', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5)),
-          Text('✓ $sent', style: const TextStyle(color: Color(0xFF1E9E5A), fontWeight: FontWeight.w800, fontSize: 12.5)),
-          if (failed > 0) Text('✗ $failed', style: const TextStyle(color: Color(0xFFD14343), fontWeight: FontWeight.w800, fontSize: 12.5)),
-          Text(ar ? 'فاضل $pending' : '$pending left', style: TextStyle(color: t.muted, fontSize: 12.5)),
-          if (status == 'SENDING') Text(ar ? 'الوقت المتبقي ${_minutes(b['etaMinutes'])}' : 'ETA ${_minutes(b['etaMinutes'])}', style: TextStyle(color: t.muted, fontSize: 12.5)),
-          Text(ar ? 'التكلفة لحد الآن ${s.money(b['chargedMinor'] as num? ?? 0, cur)}' : 'Cost so far ${s.money(b['chargedMinor'] as num? ?? 0, cur)}', style: TextStyle(color: t.muted, fontSize: 12.5)),
-        ]),
-        if (_write && (status == 'SENDING' || status == 'PAUSED')) Padding(padding: const EdgeInsets.only(top: 8), child: Row(children: [
-          if (status == 'PAUSED') Expanded(child: FilledButton.icon(onPressed: () => _control(id, 'resume'), icon: const Icon(Icons.play_arrow_rounded), label: Text(ar ? 'كمّل' : 'Resume'))),
-          if (status == 'PAUSED') const SizedBox(width: 8),
-          Expanded(child: OutlinedButton.icon(onPressed: () => _control(id, 'cancel'), style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFB91C1C)), icon: const Icon(Icons.stop_rounded), label: Text(ar ? 'ألغِ الإرسال' : 'Cancel'))),
-        ])),
-        const SizedBox(height: 8),
-        SizedBox(height: 40, child: ListView(scrollDirection: Axis.horizontal, children: [
-          for (final f in filters) Padding(padding: const EdgeInsetsDirectional.only(end: 6), child: ChoiceChip(visualDensity: VisualDensity.compact, label: Text('${f.$2} ${f.$3 ?? 0}', style: const TextStyle(fontSize: 12)), selected: _recFilter == f.$1, showCheckmark: false, onSelected: (_) { setState(() => _recFilter = f.$1); _loadRecipients(); })),
-        ])),
-        if (_recipients.isEmpty) Padding(padding: const EdgeInsets.all(12), child: Center(child: Text(ar ? 'مفيش مستلمين في العرض ده.' : 'No recipients in this view.', style: TextStyle(color: t.muted)))),
-        for (final r in _recipients) _recipientRow(r, ar, s, t),
-        if (_recipients.length < _recTotal) TextButton(onPressed: () => _loadRecipients(more: true), child: Text(ar ? 'اعرض المزيد' : 'Show more')),
-        if (_watchId != null) TextButton(onPressed: () { setState(() { _watchId = null; _recipients = []; }); _loadRecipients(); }, child: Text(ar ? 'إخفاء' : 'Hide')),
-      ]),
-    );
-  }
-
-  Widget _recipientRow(Map<String, dynamic> r, bool ar, S s, AppTemplate t) {
-    final st = '${r['status']}';
-    final (Color fg, Color bg, Widget icon) = switch (st) {
-      'SENDING' => (const Color(0xFF92400E), const Color(0xFFFEF3C7), const LoadingDots(color: Color(0xFFB45309))),
-      'SENT' => (const Color(0xFF166534), const Color(0xFFDCFCE7), const Icon(Icons.check_circle_rounded, size: 18, color: Color(0xFF1E9E5A))),
-      'FAILED' => (const Color(0xFF991B1B), const Color(0xFFFEE2E2), const Icon(Icons.error_rounded, size: 18, color: Color(0xFFD14343))),
-      'SKIPPED' || 'STOPPED' => (const Color(0xFF6B7C8D), const Color(0xFFF1F5F9), const Icon(Icons.remove_circle_outline_rounded, size: 18, color: Color(0xFF9AA9BA))),
-      _ => (const Color(0xFF475569), const Color(0xFFF1F5F9), const Icon(Icons.schedule_rounded, size: 18, color: Color(0xFF9AA9BA))),
-    };
-    final stText = switch (st) { 'SENDING' => ar ? 'بيتبعت' : 'Sending', 'SENT' => ar ? 'اتبعت' : 'Sent', 'FAILED' => ar ? 'فشل' : 'Failed', 'STOPPED' => ar ? 'اتوقف' : 'Stopped', 'SKIPPED' => ar ? 'اتخطّى' : 'Skipped', _ => ar ? 'منتظر' : 'Pending' };
-    final ch = '${r['channel'] ?? ''}';
-    return Container(
-      margin: const EdgeInsets.only(top: 5),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12), border: st == 'SENDING' ? Border.all(color: const Color(0xFFD98200), width: 1.2) : null),
-      child: Row(children: [
-        SizedBox(width: 24, child: Center(child: icon)),
-        const SizedBox(width: 8),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [Flexible(child: Text('${r['name'] ?? r['phone'] ?? '-'}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w800, color: fg, fontSize: 13.5))), const SizedBox(width: 6), if (ch.isNotEmpty) PlatformTag(ch)]),
-          if (st == 'FAILED' && r['error'] != null) Text('${r['error']}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, color: Color(0xFFB91C1C))),
-          if (st == 'SENT' && r['sentAt'] != null) Text(fmtDate('${r['sentAt']}'), style: TextStyle(fontSize: 11, color: fg.withValues(alpha: 0.8))),
-        ])),
-        Text(stText, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: fg)),
-      ]),
-    );
-  }
 
   Widget _historyTile(Map<String, dynamic> h, bool ar, AppTemplate t) {
     final status = '${h['status']}';
