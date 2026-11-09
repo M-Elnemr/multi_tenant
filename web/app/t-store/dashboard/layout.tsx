@@ -41,6 +41,7 @@ const NAV: NavItem[] = [
 
   // Marketing
   { href: "/dashboard/marketing?tab=posts", label: "nav.posts", group: "navgrp.marketing", screen: "marketing", icon: "trending", rail: "marketing" },
+  { href: "/dashboard/growth?tab=segments", label: "nav.segments", group: "navgrp.marketing", perm: "growth.manage", icon: "users", rail: "marketing" },
   { href: "/dashboard/carts", label: "nav.carts", group: "navgrp.marketing", perm: ["cart.read", "cart.manage"], icon: "bag", rail: "marketing" },
 
   // Reports
@@ -71,7 +72,6 @@ const NAV: NavItem[] = [
   { href: "/dashboard/marketing?tab=plan", label: "nav.contentPlan", group: "navgrp.advMarketing", screen: "marketing", icon: "calendar", advanced: true, rail: "marketing" },
   { href: "/dashboard/marketing?tab=ads", label: "nav.ads", group: "navgrp.advMarketing", screen: "marketing", icon: "trending", advanced: true, rail: "marketing" },
   { href: "/dashboard/marketing?tab=auto", label: "nav.autopilot", group: "navgrp.advMarketing", screen: "marketing", icon: "sparkles", advanced: true, rail: "marketing" },
-  { href: "/dashboard/growth?tab=segments", label: "nav.segments", group: "navgrp.advMarketing", perm: "growth.manage", icon: "users", advanced: true, rail: "marketing" },
   { href: "/dashboard/growth?tab=loyalty", label: "nav.loyalty", group: "navgrp.advMarketing", perm: "growth.manage", icon: "award", advanced: true, rail: "marketing" },
   { href: "/dashboard/growth?tab=feeds", label: "nav.feeds", group: "navgrp.advMarketing", perm: "growth.manage", icon: "link", advanced: true, rail: "marketing" },
   { href: "/dashboard/growth?tab=exp", label: "nav.experiments", group: "navgrp.advMarketing", perm: "growth.manage", icon: "chart", advanced: true, rail: "marketing" },
