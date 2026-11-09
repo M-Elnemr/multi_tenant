@@ -27,7 +27,7 @@ export function GuestOrder({ shop, number, compact = false }: { shop: string; nu
     } catch (e) { setError(e instanceof ApiError && e.status === 404 ? t("open.order.wrongPhone") : errMsg(t, e)); } finally { setBusy(false); }
   };
   const saved = mounted ? known.find((k) => k.shop === shop && k.number === number)?.phone : undefined;
-  useEffect(() => { if (saved && !order) { const id = setTimeout(() => void load(saved), 0); return () => clearTimeout(id); } /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [saved]);
+  useEffect(() => { if (saved && !order) { const id = setTimeout(() => void load(saved), 0); return () => clearTimeout(id); }   }, [saved]);
 
   if (order) return <OrderView order={order} compact={compact} />;
   if (!mounted || (saved && !error)) return <div className="o-skel h-56" style={{ borderRadius: 24 }} />;

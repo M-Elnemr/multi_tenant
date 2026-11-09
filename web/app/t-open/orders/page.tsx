@@ -27,7 +27,7 @@ export default async function OrdersPage() {
                   <div className="flex items-center justify-between gap-3"><p className="min-w-0 truncate font-extrabold">{o.shopName}</p><span className="shrink-0 rounded-full bg-[var(--o-soft)] px-2.5 py-0.5 text-xs font-extrabold">{t(`open.status.${o.status}`)}</span></div>
                   <p className="o-mute mt-0.5 text-xs" dir="ltr">{o.orderNumber} · {dateTime(o.createdAt, locale)}</p>
                   <div className="mt-2.5 flex items-center justify-between gap-3">
-                    <span className="flex -space-x-2 rtl:space-x-reverse">{o.items.slice(0, 4).map((i, n) => /* eslint-disable-next-line @next/next/no-img-element */ i.image ? <img key={n} src={i.image} alt="" width={36} height={36} className="h-9 w-9 rounded-lg border-2 border-white object-cover" loading="lazy" /> : <span key={n} className="grid h-9 w-9 place-items-center rounded-lg border-2 border-white bg-[var(--o-soft)]">🛍️</span>)}</span>
+                    <span className="flex -space-x-2 rtl:space-x-reverse">{o.items.slice(0, 4).map((i, n) =>   i.image ? <img key={n} src={i.image} alt="" width={36} height={36} className="h-9 w-9 rounded-lg border-2 border-white object-cover" loading="lazy" /> : <span key={n} className="grid h-9 w-9 place-items-center rounded-lg border-2 border-white bg-[var(--o-soft)]">🛍️</span>)}</span>
                     <b>{money(o.totalMinor, o.currency, locale)}</b>
                   </div>
                 </Link>

@@ -89,7 +89,7 @@ export default function Checkout() {
       void api("shop/carts/snapshot", { body: { clientKey, name: addr.recipientName || undefined, phone: addr.phone, items } }).catch(() => null);
     }, 1500);
     return () => clearTimeout(h);
-  }, [addr.phone, addr.recipientName, items]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [addr.phone, addr.recipientName, items]);  
 
   const place = useAction(async () => {
     const r = await api<Placed>("shop/checkout", { body, idempotencyKey: key });

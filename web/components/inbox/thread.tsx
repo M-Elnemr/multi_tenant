@@ -154,7 +154,7 @@ function Bubble({ m, prev, reduce, locale, t }: { m: Msg; prev?: Item; reduce: b
           </span>
         )}
         <div className={`rounded-[18px] px-3.5 py-2.5 text-[14px] leading-relaxed shadow-[0_1px_1px_rgb(16_18_24/.04)] ${cls}`}>
-          {m.mediaUrl && /* eslint-disable-next-line @next/next/no-img-element */ <img src={m.mediaUrl} alt="" className="mb-1.5 max-h-60 rounded-[12px] object-cover" />}
+          {m.mediaUrl &&   <img src={m.mediaUrl} alt="" className="mb-1.5 max-h-60 rounded-[12px] object-cover" />}
           {m.content && <p className="whitespace-pre-wrap break-words" dir="auto">{m.content}</p>}
           <span className={`mt-1 flex items-center justify-end gap-1 text-[10.5px] tnum ${who === "team" ? "text-surface/60" : "text-faint"}`}>
             {time}{mine && <Icon name="check" className="h-3 w-3" />}

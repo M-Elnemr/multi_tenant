@@ -86,7 +86,7 @@ export default function MessageComposer({ text, onText, imageId, onImage, max = 
           <div className="mb-1 flex items-center justify-between text-xs font-medium text-slate-500"><span>{t("msg.preview")}</span>
             <span className="inline-flex gap-1">{(["MALE", "FEMALE"] as const).map((g) => <button key={g} type="button" onClick={() => setSample(g)} className={`rounded-full px-2 py-0.5 ${sample === g ? "bg-brand text-white" : "bg-slate-100"}`}>{t(`gender.${g}`)}</button>)}</span></div>
           <div className="max-w-sm rounded-2xl rounded-ss-sm bg-[#dcf8c6] p-2 text-sm text-slate-900 shadow-sm" dir="auto">
-            {imageId && /* eslint-disable-next-line @next/next/no-img-element */ <img src={`/api/bff/files/${imageId}/content?variant=medium`} alt="" className="mb-1 max-h-48 w-full rounded-xl object-cover" />}
+            {imageId &&   <img src={`/api/bff/files/${imageId}/content?variant=medium`} alt="" className="mb-1 max-h-48 w-full rounded-xl object-cover" />}
             {html.length === 1 && html[0] === "" ? <span className="text-slate-400">{t("msg.previewEmpty")}</span> : html.map((l, i) => <div key={i} className="whitespace-pre-wrap break-words">{l || " "}</div>)}
           </div>
         </div>
