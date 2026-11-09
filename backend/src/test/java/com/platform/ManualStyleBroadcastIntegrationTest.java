@@ -73,7 +73,7 @@ class ManualStyleBroadcastIntegrationTest extends IntegrationTestBase {
 
     void connect(Shop s) throws Exception {
         onHost(s.t().host(), s.t().access(), "POST", "/api/v1/store/unofficial-meta/instagram/connect",
-                "{\"username\":\"shop_account\",\"password\":\"" + PASSWORD + "\",\"totpSecret\":\"" + TOTP + "\",\"acceptedRisk\":true}").andExpect(status().isOk());
+                "{\"username\":\"shop_account\",\"password\":\"" + PASSWORD + "\",\"totpSecret\":\"" + TOTP + "\"}").andExpect(status().isOk());   // no approval step any more
     }
 
     static final String BODY = "{\"segments\":[\"ALL\"],\"platforms\":[\"INSTAGRAM\"],\"manualPlatforms\":[\"INSTAGRAM\"],\"message\":\"Hi {name}, new offer today at {shop}\","
@@ -99,42 +99,43 @@ class ManualStyleBroadcastIntegrationTest extends IntegrationTestBase {
         UUID late = contact(s, "Layla Late", 30);
         contact(s, "layla.ig", 40);
 
-        // no session yet: outside the window and nothing manual to offer
+        // no session yet: outside the window, so the contacts are skipped with CONNECT_ACCOUNT (a call to action), whatever manual flag an old client sends
         onHost(h, owner, "GET", "/api/v1/store/segments/customers?segments=ALL&platforms=INSTAGRAM&manual=INSTAGRAM", null)
-                .andExpect(jsonPath("$.reachable").value(0)).andExpect(jsonPath("$.outsideWindow").value(2)).andExpect(jsonPath("$.data[0].reason").value("OUTSIDE_WINDOW"))
-                .andExpect(jsonPath("$.byPlatform.INSTAGRAM.manualStyleReachable").value(0));
-        onHost(h, owner, "POST", "/api/v1/store/broadcasts", BODY).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("MANUAL_STYLE_UNAVAILABLE"));
+                .andExpect(jsonPath("$.reachable").value(0)).andExpect(jsonPath("$.outsideWindow").value(2)).andExpect(jsonPath("$.connectAccount").value(2)).andExpect(jsonPath("$.data[0].reason").value("CONNECT_ACCOUNT"))
+                .andExpect(jsonPath("$.byPlatform.INSTAGRAM.manualStyleReachable").value(0)).andExpect(jsonPath("$.byPlatform.INSTAGRAM.reachableOld").value(0))
+                .andExpect(jsonPath("$.byPlatform.INSTAGRAM.reachableNow").value(0)).andExpect(jsonPath("$.byPlatform.INSTAGRAM.needsConnect").value(true));
+        onHost(h, owner, "POST", "/api/v1/store/broadcasts", BODY).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("NOBODY_TO_SEND"));
         onHost(h, owner, "GET", "/api/v1/store/unofficial-meta", null).andExpect(status().isOk())
-                .andExpect(jsonPath("$.platforms.INSTAGRAM.supported").value(true)).andExpect(jsonPath("$.platforms.INSTAGRAM.connected").value(false))
-                .andExpect(jsonPath("$.platforms.FACEBOOK.supported").value(false)).andExpect(jsonPath("$.platforms.INSTAGRAM.dailyCap").value(10));
+                .andExpect(jsonPath("$.platforms.INSTAGRAM.supported").value(true)).andExpect(jsonPath("$.platforms.INSTAGRAM.connected").value(false)).andExpect(jsonPath("$.platforms.INSTAGRAM.platform").value("INSTAGRAM"))
+                .andExpect(jsonPath("$.platforms.FACEBOOK.supported").value(true)).andExpect(jsonPath("$.platforms.INSTAGRAM.dailyCap").value(10)).andExpect(jsonPath("$.platforms.INSTAGRAM.status").value("NONE"));
 
-        // connecting needs the risk acceptance, the feature on, and a supported platform
-        onHost(h, owner, "POST", "/api/v1/store/unofficial-meta/instagram/connect", "{\"username\":\"shop_account\",\"password\":\"" + PASSWORD + "\",\"acceptedRisk\":false}").andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("RISK_NOT_ACCEPTED"));
-        onHost(h, owner, "POST", "/api/v1/store/unofficial-meta/facebook/connect", "{\"username\":\"x\",\"password\":\"" + PASSWORD + "\",\"acceptedRisk\":true}").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("UNSUPPORTED_PLATFORM"));
+        // connecting needs no approval; a sidecar that is not reachable, a challenge and the kill switch each answer with a stable code
+        onHost(h, owner, "POST", "/api/v1/store/unofficial-meta/facebook/connect", "{\"cookies\":\"c_user=1; xs=abcdefghijklmnop\",\"pageId\":\"123456789\"}").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("BRIDGE_UNREACHABLE"));
+        onHost(h, owner, "POST", "/api/v1/store/unofficial-meta/facebook/connect", "{\"cookies\":\"c_user=1; xs=abcdefghijklmnop\"}").andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));   // no Page connected and none given
         FakeOutOfWindowSender.LOGIN_ERROR = "CHALLENGE";
         onHost(h, owner, "POST", "/api/v1/store/unofficial-meta/instagram/connect", "{\"username\":\"shop_account\",\"password\":\"" + PASSWORD + "\",\"acceptedRisk\":true}").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CHALLENGE_REQUIRED"));
         assertThat(jdbc.sql("SELECT count(*) FROM chat.unofficial_sessions WHERE tenant_id = :t").param("t", s.id()).query(Long.class).single()).isZero();   // a failed login stores nothing
         FakeOutOfWindowSender.LOGIN_ERROR = null;
         ReflectionTestUtils.setField(unofficial, "enabled", false);
-        onHost(h, owner, "POST", "/api/v1/store/unofficial-meta/instagram/connect", "{\"username\":\"shop_account\",\"password\":\"" + PASSWORD + "\",\"acceptedRisk\":true}").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("UNOFFICIAL_META_OFF"));
+        onHost(h, owner, "POST", "/api/v1/store/unofficial-meta/instagram/connect", "{\"username\":\"shop_account\",\"password\":\"" + PASSWORD + "\"}").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("UNOFFICIAL_META_OFF"));
         ReflectionTestUtils.setField(unofficial, "enabled", true);
 
         String connected = ok(onHost(h, owner, "POST", "/api/v1/store/unofficial-meta/instagram/connect",
-                "{\"username\":\"shop_account\",\"password\":\"" + PASSWORD + "\",\"totpSecret\":\"" + TOTP + "\",\"acceptedRisk\":true}").andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ACTIVE")).andExpect(jsonPath("$.accountName").value("shop_account")));
+                "{\"username\":\"shop_account\",\"password\":\"" + PASSWORD + "\",\"totpSecret\":\"" + TOTP + "\"}").andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ACTIVE")).andExpect(jsonPath("$.account").value("shop_account")).andExpect(jsonPath("$.accountName").value("shop_account")));
         String overview = ok(onHost(h, owner, "GET", "/api/v1/store/unofficial-meta", null));
         String stored = jdbc.sql("SELECT credentials_enc FROM chat.unofficial_sessions WHERE tenant_id = :t").param("t", s.id()).query(String.class).single();
         for (String text : List.of(connected, overview, stored)) assertThat(text).doesNotContain(PASSWORD).doesNotContain(TOTP);
         assertThat(crypto.decrypt(stored)).contains(PASSWORD);   // it is stored, but only encrypted
 
-        // the flag off: the same session is no longer usable
+        // the operator kill switch off: the same session is no longer usable, the old contacts are skipped again
         ReflectionTestUtils.setField(unofficial, "enabled", false);
-        onHost(h, owner, "POST", "/api/v1/store/broadcasts", BODY).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("MANUAL_STYLE_UNAVAILABLE"));
+        onHost(h, owner, "POST", "/api/v1/store/broadcasts", BODY).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("NOBODY_TO_SEND"));
         ReflectionTestUtils.setField(unofficial, "enabled", true);
 
-        // now it is reachable, with the manual route chosen; without it the contacts stay outside the window
-        onHost(h, owner, "GET", "/api/v1/store/segments?platforms=INSTAGRAM", null).andExpect(jsonPath("$.byPlatform.INSTAGRAM.manualStyleReachable").value(2)).andExpect(jsonPath("$.manualStyle.INSTAGRAM.available").value(true));
-        onHost(h, owner, "GET", "/api/v1/store/segments/customers?segments=ALL&platforms=INSTAGRAM", null).andExpect(jsonPath("$.reachable").value(0)).andExpect(jsonPath("$.outsideWindow").value(2));
-        onHost(h, owner, "GET", "/api/v1/store/segments/customers?segments=ALL&platforms=INSTAGRAM&manual=INSTAGRAM", null)
+        // now it is reachable and the old contacts travel by the manual route on their own, with no flag to tick
+        onHost(h, owner, "GET", "/api/v1/store/segments?platforms=INSTAGRAM", null).andExpect(jsonPath("$.byPlatform.INSTAGRAM.manualStyleReachable").value(2)).andExpect(jsonPath("$.byPlatform.INSTAGRAM.reachableOld").value(2))
+                .andExpect(jsonPath("$.byPlatform.INSTAGRAM.reachableNow").value(0)).andExpect(jsonPath("$.byPlatform.INSTAGRAM.needsConnect").value(false)).andExpect(jsonPath("$.manualStyle.INSTAGRAM.available").value(true));
+        onHost(h, owner, "GET", "/api/v1/store/segments/customers?segments=ALL&platforms=INSTAGRAM", null)
                 .andExpect(jsonPath("$.reachable").value(2)).andExpect(jsonPath("$.manualStyle").value(2)).andExpect(jsonPath("$.data[0].route").value("MANUAL_STYLE"));
 
         // at least three wordings are required
@@ -247,20 +248,22 @@ class ManualStyleBroadcastIntegrationTest extends IntegrationTestBase {
         Shop s = shop(1000);
         channel(s, "INSTAGRAM");
         UUID busy = contact(s, "Busy", 30);
-        contact(s, "Ancient", 24 * 200);                   // last wrote 200 days ago
+        contact(s, "Ancient", 24 * 400);                   // last wrote more than a year ago: still reachable now
         UUID shy = jdbc.sql("INSERT INTO chat.conversations (tenant_id, channel, external_id, display_name) VALUES (:t, 'INSTAGRAM', :e, 'Shy') RETURNING id").param("t", s.id()).param("e", "ig" + uniq()).query(UUID.class).single();
         jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'user', 'hi')").param("c", shy).update();   // only one message ever
         jdbc.sql("UPDATE chat.conversations SET last_customer_at = now() - interval '30 hours' WHERE id = :c").param("c", shy).update();
+        UUID never = jdbc.sql("INSERT INTO chat.conversations (tenant_id, channel, external_id, display_name) VALUES (:t, 'INSTAGRAM', :e, 'Never') RETURNING id").param("t", s.id()).param("e", "ig" + uniq()).query(UUID.class).single();
+        jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', 'welcome')").param("c", never).update();   // the page wrote, they never did
+        jdbc.sql("UPDATE chat.conversations SET last_customer_at = now() - interval '30 hours' WHERE id = :c").param("c", never).update();
         connect(s);
         String res = ok(onHost(s.t().host(), s.t().access(), "GET", "/api/v1/store/segments/customers?segments=ALL&platforms=INSTAGRAM&manual=INSTAGRAM", null));
-        assertThat(((Number) JsonPath.read(res, "$.reachable")).intValue()).isEqualTo(1);
-        assertThat((List<String>) JsonPath.read(res, "$.data[?(@.name=='Ancient')].reason")).containsExactly("MANUAL_TOO_OLD");
-        assertThat((List<String>) JsonPath.read(res, "$.data[?(@.name=='Shy')].reason")).containsExactly("MANUAL_FEW_MESSAGES");
+        assertThat(((Number) JsonPath.read(res, "$.reachable")).intValue()).isEqualTo(3);   // anyone who ever messaged the page: a year-old client and a one-message contact included
+        assertThat((List<String>) JsonPath.read(res, "$.data[?(@.name=='Never')].reason")).containsExactly("MANUAL_FEW_MESSAGES");
         String id = JsonPath.read(ok(onHost(s.t().host(), s.t().access(), "POST", "/api/v1/store/broadcasts", BODY).andExpect(status().isOk())), "$.id");
         // between creating and sending the owner takes the chat over
         jdbc.sql("UPDATE chat.conversations SET takeover = TRUE WHERE id = :c").param("c", busy).update();
-        assertThat(drain()).isZero();
-        assertThat(wallet.balance(s.id())).isEqualTo(1000L);
+        assertThat(drain()).isEqualTo(2);
+        assertThat(wallet.balance(s.id())).isEqualTo(980L);   // only the two that went out were charged
         onHost(s.t().host(), s.t().access(), "GET", "/api/v1/store/broadcasts/" + id + "/recipients?status=SKIPPED", null).andExpect(jsonPath("$.data[0].error").value("OWNER_ACTIVE"));
     }
 

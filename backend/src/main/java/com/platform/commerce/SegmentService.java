@@ -121,17 +121,21 @@ public class SegmentService {
      * linked to a customer by the phone they gave or their account, otherwise NEW (REPEAT when the chat is older than 7 days with more than 2 customer messages).
      * The only protection kept silently: someone who asked to stop is never reachable.
      */
-    List<Aud> audience(UUID tenantId, Set<String> segs) { return audience(tenantId, segs, Set.of()); }
+    List<Aud> audience(UUID tenantId, Set<String> segs) {
+        Set<String> manual = new LinkedHashSet<>();
+        for (String p : List.of("FACEBOOK", "INSTAGRAM")) if (unofficial.reachable(tenantId, p)) manual.add(p);
+        return audience(tenantId, segs, manual);
+    }
 
     /** Why a contact whose window is closed must not get a manual-style message (null = fine). Same limits at creation and again at the moment of sending. */
     static String manualGuard(HumanPolicy.Profile pr, Instant lastCustomer, long totalMsgs, long customerMsgs, boolean recentlyContacted, Instant now) {
-        if (pr.maxContactAgeDays() > 0 && (lastCustomer == null || lastCustomer.isBefore(now.minus(Duration.ofDays(pr.maxContactAgeDays()))))) return "MANUAL_TOO_OLD";
-        if (pr.minMessages() > 0 && (customerMsgs < 1 || totalMsgs < pr.minMessages())) return "MANUAL_FEW_MESSAGES";
+        // round 5: any contact who ever wrote to the page may be reached (a year-old client included); only "never wrote" and "messaged this way recently" stay out
+        if (customerMsgs < 1) return "MANUAL_FEW_MESSAGES";
         if (recentlyContacted) return "MANUAL_RECENT";
         return null;
     }
 
-    /** {@code manualPlats}: platforms where the owner chose the manual-style route for contacts whose window is closed (and where that route is really available). */
+    /** {@code manualPlats}: platforms whose unofficial session is connected and ACTIVE: contacts whose window is closed travel by the manual-style route there, and are skipped with CONNECT_ACCOUNT elsewhere. */
     List<Aud> audience(UUID tenantId, Set<String> segs, Set<String> manualPlats) {
         List<Aud> out = new ArrayList<>();
         boolean own = evolution.connected(tenantId);
@@ -168,13 +172,13 @@ public class SegmentService {
             boolean open = (lastCustomer != null && lastCustomer.isAfter(now.minus(Duration.ofHours(23)))) || (until != null && until.isAfter(now));
             boolean stopped = Boolean.TRUE.equals(r.get("stopped")) || Boolean.TRUE.equals(r.get("opted_out"));
             String platform = (String) r.get("channel");
-            String reason = stopped ? "OPTED_OUT" : !open ? "OUTSIDE_WINDOW" : null;
+            String reason = stopped ? "OPTED_OUT" : !open ? "CONNECT_ACCOUNT" : null;
             String route = "OFFICIAL";
             boolean manualOk = false;
             if (!stopped && !open) {   // closed window: only the manual-style route (unofficial, owner's choice) can still reach this person, and only inside its audience limits
                 String g = manualGuard(pr, lastCustomer, num(r.get("all_msgs")), num(r.get("cust_msgs")), Boolean.TRUE.equals(r.get("recent_manual")), now);
                 manualOk = g == null;
-                if (manualPlats.contains(platform)) { route = "MANUAL_STYLE"; reason = g; }
+                if (manualPlats.contains(platform)) { route = "MANUAL_STYLE"; reason = g; }   // otherwise the reason stays CONNECT_ACCOUNT: a call to action, not an error
             }
             String name = r.get("o_name") != null ? (String) r.get("o_name") : (String) r.get("display_name");
             String phone = r.get("contact_phone") != null ? (String) r.get("contact_phone") : (String) r.get("o_phone");
@@ -190,8 +194,13 @@ public class SegmentService {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("total", all.stream().filter(a -> a.platform().equals(p)).count());
             m.put("reachable", all.stream().filter(a -> a.platform().equals(p) && a.reachable()).count());
-            // people outside the 24 h window the manual-style route could reach (only counted when the shop has an ACTIVE session and the feature is on)
-            m.put("manualStyleReachable", "WHATSAPP".equals(p) || !unofficial.reachable(tenantId, p) ? 0L : all.stream().filter(a -> a.platform().equals(p) && a.manualOk()).count());
+            // people outside the 24 h window the manual-style route could reach (only counted when the shop has an ACTIVE session)
+            boolean connected = "WHATSAPP".equals(p) || unofficial.reachable(tenantId, p);
+            long old = "WHATSAPP".equals(p) || !connected ? 0L : all.stream().filter(a -> a.platform().equals(p) && a.manualOk()).count();
+            m.put("manualStyleReachable", old);
+            m.put("reachableNow", all.stream().filter(a -> a.platform().equals(p) && a.reachable() && "OFFICIAL".equals(a.route())).count());
+            m.put("reachableOld", old);
+            m.put("needsConnect", !connected);
             out.put(p, m);
         }
         return out;
@@ -228,7 +237,7 @@ public class SegmentService {
 
     /** The people behind the numbers. Totals ({@code reachable}, {@code outsideWindow}, {@code byPlatform}) cover the whole chosen audience; {@code total} and {@code data} follow the search too. */
     public Map<String, Object> customers(UUID tenantId, Set<String> segs, Set<String> platforms, String q, int limit, int offset, Set<String> manual) {
-        List<Aud> all = audience(tenantId, segs, usable(tenantId, manual));
+        List<Aud> all = audience(tenantId, segs);
         List<Aud> sel = all.stream().filter(a -> platforms.isEmpty() || platforms.contains(a.platform())).toList();
         String needle = q == null ? "" : q.trim().toLowerCase();
         List<Aud> shown = needle.isEmpty() ? sel : sel.stream().filter(a -> (a.name() != null && a.name().toLowerCase().contains(needle)) || (a.phone() != null && digits(a.phone()).contains(digits(needle)) && !digits(needle).isEmpty())
@@ -254,16 +263,10 @@ public class SegmentService {
         out.put("data", data);
         out.put("total", shown.size());
         out.put("reachable", sel.stream().filter(Aud::reachable).count());
-        out.put("outsideWindow", sel.stream().filter(a -> "OUTSIDE_WINDOW".equals(a.reason())).count());
+        out.put("outsideWindow", sel.stream().filter(a -> "OUTSIDE_WINDOW".equals(a.reason()) || "CONNECT_ACCOUNT".equals(a.reason())).count());
+        out.put("connectAccount", sel.stream().filter(a -> "CONNECT_ACCOUNT".equals(a.reason())).count());
         out.put("manualStyle", sel.stream().filter(a -> "MANUAL_STYLE".equals(a.route()) && a.reachable()).count());
         out.put("byPlatform", byPlatform(tenantId, all));
-        return out;
-    }
-
-    /** The platforms (of those asked for) where the manual-style route is really available: feature on, real transport, ACTIVE session. */
-    private Set<String> usable(UUID tenantId, Set<String> asked) {
-        Set<String> out = new LinkedHashSet<>();
-        for (String p : asked) if (!"WHATSAPP".equals(p) && unofficial.reachable(tenantId, p)) out.add(p);
         return out;
     }
 
@@ -330,13 +333,12 @@ public class SegmentService {
         if (jdbc.sql("SELECT count(*) FROM commerce.broadcasts WHERE tenant_id = :t AND created_at > now() - interval '24 hours'").param("t", tenantId).query(Long.class).single() >= 3)
             throw BusinessException.conflict("BROADCAST_LIMIT", "Three broadcasts a day at most, to protect your accounts from being reported as spam");
 
-        // the manual-style route (unofficial, owner's explicit choice per platform) for people whose window is closed
-        Set<String> manualAsked = checkSet(r.manualPlatforms(), List.of("FACEBOOK", "INSTAGRAM"), "platform");
-        manualAsked.retainAll(plats);
-        for (String p : manualAsked) if (!unofficial.reachable(tenantId, p)) throw BusinessException.conflict("MANUAL_STYLE_UNAVAILABLE", "Manual-style sending is not available on this platform right now");
-        List<Aud> all = audience(tenantId, segs, manualAsked).stream().filter(a -> plats.contains(a.platform())).toList();
+        // people whose window is closed travel by the manual-style route automatically when the platform's session is ACTIVE (else they are skipped: CONNECT_ACCOUNT). manualPlatforms is accepted and ignored.
+        List<Aud> all = audience(tenantId, segs).stream().filter(a -> plats.contains(a.platform())).toList();
         List<Aud> queue = all.stream().filter(Aud::reachable).toList();
-        long outside = all.stream().filter(a -> "OUTSIDE_WINDOW".equals(a.reason())).count();
+        Set<String> manualAsked = new LinkedHashSet<>();
+        for (Aud a : queue) if ("MANUAL_STYLE".equals(a.route())) manualAsked.add(a.platform());
+        long outside = all.stream().filter(a -> "OUTSIDE_WINDOW".equals(a.reason()) || "CONNECT_ACCOUNT".equals(a.reason())).count();
         long skipped = all.size() - queue.size() - outside;
         long cost = queue.size() * billing.priceMinor();
         // content rules for every wording that will go out (one link, length, spam patterns), by the policy of the route it travels
@@ -393,6 +395,7 @@ public class SegmentService {
         out.put("reachable", queue.size());
         out.put("skipped", skipped);
         out.put("outsideWindow", outside);
+        out.put("connectAccount", all.stream().filter(x -> "CONNECT_ACCOUNT".equals(x.reason())).count());
         long manualCount = queue.stream().filter(a -> "MANUAL_STYLE".equals(a.route())).count();
         out.put("etaMinutes", eta(queue.size() - manualCount));
         out.put("manualStyle", manualCount);
@@ -717,7 +720,7 @@ public class SegmentService {
         List<Map<String, Object>> out = new ArrayList<>();
         for (var r : jdbc.sql("""
                 SELECT id, created_at, array_to_string(segments, ',') AS segs, array_to_string(platforms, ',') AS plats, message, status, pause_reason, audience, sent_count, failed_count, pending_count,
-                       skipped_window, next_send_at, charged_minor, mode, push, push_sent
+                       skipped_window, next_send_at, charged_minor, mode, push, push_sent, kind
                 FROM commerce.broadcasts WHERE tenant_id = :t ORDER BY created_at DESC LIMIT 30
                 """).param("t", tenantId).query().listOfRows()) {
             Map<String, Object> m = new LinkedHashMap<>();
@@ -739,6 +742,7 @@ public class SegmentService {
             m.put("mode", r.get("mode"));
             m.put("push", r.get("push"));
             m.put("pushSent", r.get("push_sent"));
+            m.put("kind", r.get("kind"));
             out.add(m);
         }
         return out;

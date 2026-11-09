@@ -19,8 +19,8 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 
 /**
- * The shop's unofficial Messenger / Instagram sessions: connect (with an explicit risk acceptance), wipe, disable / enable, and the counters the manual-style pacing needs.
- * Globally OFF unless {@code app.meta.unofficial.enabled}. The login details are stored encrypted with the same {@link TokenCrypto} as the channel tokens, never logged and never
+ * The shop's unofficial Messenger / Instagram sessions: connect (no approval step any more), wipe, disable / enable, and the counters the manual-style pacing needs.
+ * On by default ({@code app.meta.unofficial.enabled} stays as an operator kill switch). The login details are stored encrypted with the same {@link TokenCrypto} as the channel tokens, never logged and never
  * returned by any API: only the account name and the status are ever shown.
  *
  * Honest limit: verified only against a fake {@link OutOfWindowSender}; no real Instagram account was ever used.
@@ -40,7 +40,7 @@ public class UnofficialMetaService {
     private final int blockHours;
 
     public UnofficialMetaService(JdbcClient jdbc, TokenCrypto crypto, AuditService audit, List<OutOfWindowSender> senders, HumanPolicies policies,
-                                 @Value("${app.meta.unofficial.enabled:false}") boolean enabled, @Value("${app.meta.unofficial.block-hours:48}") int blockHours) {
+                                 @Value("${app.meta.unofficial.enabled:true}") boolean enabled, @Value("${app.meta.unofficial.block-hours:48}") int blockHours) {
         this.jdbc = jdbc;
         this.crypto = crypto;
         this.audit = audit;
@@ -53,6 +53,9 @@ public class UnofficialMetaService {
     public boolean globallyEnabled() { return enabled; }
 
     public HumanPolicy policy() { return policies.manual(); }
+
+    /** The stricter profile for cold outreach (prospects). */
+    public HumanPolicy coldPolicy() { return policies.cold(); }
 
     public int blockHours() { return blockHours; }
 
@@ -138,10 +141,12 @@ public class UnofficialMetaService {
         for (String p : PLATFORMS) {
             var r = row(tenantId, p);
             Map<String, Object> m = new LinkedHashMap<>();
+            m.put("platform", p);
             m.put("supported", supported(p));
             m.put("enabled", enabled);
             m.put("connected", r != null);
             m.put("accountName", r == null ? null : r.get("account_name"));
+            m.put("account", r == null ? null : r.get("account_name"));
             m.put("status", r == null ? "NONE" : r.get("status"));
             int day = warmupDay(tenantId, p);
             m.put("warmupDay", r == null ? null : day);
@@ -174,33 +179,63 @@ public class UnofficialMetaService {
         return out;
     }
 
+    /** Instagram login. {@code acceptedRisk} is accepted from old clients and ignored: there is no approval step any more. */
     public Map<String, Object> connect(UUID tenantId, UUID actor, String platformIn, String username, String password, String totpSecret, boolean acceptedRisk) {
         String platform = norm(platformIn);
-        if (!acceptedRisk) throw BusinessException.badRequest("RISK_NOT_ACCEPTED", "You must accept the warning first");
-        if (!enabled) throw BusinessException.conflict("UNOFFICIAL_META_OFF", "This feature is not available on this server");
-        var s = sender(platform);
-        if (s == null || !s.supported()) throw BusinessException.conflict("UNSUPPORTED_PLATFORM", "Not available for this platform yet");
+        var s = usable(platform);
         String u = username == null ? "" : username.trim().replaceFirst("^@", "");
         if (u.length() < 2 || u.length() > 60 || password == null || password.length() < 4 || password.length() > 200) throw BusinessException.badRequest("VALIDATION_ERROR", "Enter the account name and password");
         var res = s.login(tenantId, platform, u, password, totpSecret == null || totpSecret.isBlank() ? null : totpSecret.trim());
-        if (!res.ok()) {
-            String code = res.error() == null ? "FAILED" : res.error();
-            throw switch (code) {
-                case "CHALLENGE" -> BusinessException.conflict("CHALLENGE_REQUIRED", "Instagram asked for an extra check (code or approval). Approve the login on your phone or add the two-factor secret, then try again");
-                case "BAD_CREDENTIALS" -> BusinessException.badRequest("BAD_CREDENTIALS", "The account name or password was not accepted");
-                case "UNREACHABLE" -> BusinessException.conflict("BRIDGE_UNREACHABLE", "The sending service is not reachable right now");
-                default -> BusinessException.conflict("LOGIN_FAILED", "Could not log in");
-            };
-        }
+        failIfNot(res);
         String blob;
         try { blob = crypto.encrypt(JSON.writeValueAsString(Map.of("u", u, "p", password, "t", totpSecret == null ? "" : totpSecret.trim()))); }
         catch (Exception e) { throw new IllegalStateException("Could not store the login", e); }
+        return store(tenantId, actor, platform, res.accountName() == null ? u : res.accountName(), blob);
+    }
+
+    /** Messenger login: the pasted cookie string and the Page id (default: the Page connected in the channels). Stored encrypted as {@code {c, pg}} in the same column. */
+    public Map<String, Object> connectCookies(UUID tenantId, UUID actor, String platformIn, String cookies, String pageId) {
+        String platform = norm(platformIn);
+        var s = usable(platform);
+        String c = cookies == null ? "" : cookies.trim();
+        if (c.length() < 20 || c.length() > 8000) throw BusinessException.badRequest("VALIDATION_ERROR", "Paste the account cookies");
+        String pg = pageId == null ? "" : pageId.trim();
+        if (pg.isEmpty()) pg = jdbc.sql("SELECT external_id FROM chat.channels WHERE tenant_id = :t AND platform = :p ORDER BY (status = 'ACTIVE') DESC, created_at LIMIT 1").param("t", tenantId).param("p", platform).query(String.class).optional().orElse("");
+        if (!pg.matches("\\d{5,30}")) throw BusinessException.badRequest("VALIDATION_ERROR", "Enter the Page id");
+        var res = s.loginWithCookies(tenantId, platform, c, pg);
+        failIfNot(res);
+        String blob;
+        try { blob = crypto.encrypt(JSON.writeValueAsString(Map.of("c", c, "pg", pg))); }
+        catch (Exception e) { throw new IllegalStateException("Could not store the login", e); }
+        return store(tenantId, actor, platform, res.accountName() == null ? pg : res.accountName(), blob);
+    }
+
+    private OutOfWindowSender usable(String platform) {
+        if (!enabled) throw BusinessException.conflict("UNOFFICIAL_META_OFF", "This feature is not available on this server");
+        var s = sender(platform);
+        if (s == null || !s.supported()) throw BusinessException.conflict("UNSUPPORTED_PLATFORM", "Not available for this platform yet");
+        return s;
+    }
+
+    private static void failIfNot(OutOfWindowSender.LoginResult res) {
+        if (res.ok()) return;
+        String code = res.error() == null ? "FAILED" : res.error();
+        throw switch (code) {
+            case "CHALLENGE" -> BusinessException.conflict("CHALLENGE_REQUIRED", "The account asked for an extra check (code or approval). Approve the login on your phone or add the two-factor secret, then try again");
+            case "BAD_CREDENTIALS" -> BusinessException.badRequest("BAD_CREDENTIALS", "The account details were not accepted");
+            case "UNREACHABLE" -> BusinessException.conflict("BRIDGE_UNREACHABLE", "The sending service is not reachable right now");
+            case "UNSUPPORTED" -> BusinessException.conflict("UNSUPPORTED_PLATFORM", "Not available for this platform yet");
+            default -> BusinessException.conflict("LOGIN_FAILED", "Could not log in");
+        };
+    }
+
+    private Map<String, Object> store(UUID tenantId, UUID actor, String platform, String account, String blob) {
         jdbc.sql("""
-                INSERT INTO chat.unofficial_sessions (tenant_id, platform, account_name, credentials_enc, status, risk_accepted_at, risk_accepted_by, warmup_started_at, blocked_until, last_error)
-                VALUES (:t, :p, :a, :c, 'ACTIVE', now(), :u, now(), NULL, NULL)
-                ON CONFLICT (tenant_id, platform) DO UPDATE SET account_name = :a, credentials_enc = :c, status = 'ACTIVE', risk_accepted_at = now(), risk_accepted_by = :u,
+                INSERT INTO chat.unofficial_sessions (tenant_id, platform, account_name, credentials_enc, status, warmup_started_at, blocked_until, last_error)
+                VALUES (:t, :p, :a, :c, 'ACTIVE', now(), NULL, NULL)
+                ON CONFLICT (tenant_id, platform) DO UPDATE SET account_name = :a, credentials_enc = :c, status = 'ACTIVE',
                     blocked_until = NULL, last_error = NULL, updated_at = now()
-                """).param("t", tenantId).param("p", platform).param("a", res.accountName() == null ? u : res.accountName()).param("c", blob).param("u", actor).update();
+                """).param("t", tenantId).param("p", platform).param("a", account).param("c", blob).update();
         audit.record(actor, tenantId, "UNOFFICIAL_META_CONNECTED", "unofficial_session", tenantId, "{\"platform\":\"" + platform + "\"}");
         return one(tenantId, platform);
     }

@@ -5,7 +5,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
- * Messenger has no safe unofficial transport (no maintained tool for Page inboxes; scraping cookies of a personal account is not something we build), so every call says UNSUPPORTED.
+ * Fallback for Messenger when no real transport serves it ({@link FbBridgeSender} is preferred, order 50): every call says UNSUPPORTED.
  * The policy and plumbing exist, so a real transport can replace this class later.
  */
 @Component

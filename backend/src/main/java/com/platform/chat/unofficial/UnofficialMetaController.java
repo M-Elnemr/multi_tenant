@@ -7,15 +7,15 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
-/** The shop's unofficial Messenger / Instagram sender: status, connect (with risk acceptance), wipe, disable / enable. Never returns a credential. */
+/** The shop's unofficial Messenger / Instagram sender: status, connect (Instagram: username + password; Messenger: cookies + Page id; no approval step), wipe, disable / enable. Never returns a credential. */
 @RestController
 @RequestMapping("/api/v1/store/unofficial-meta")
 public class UnofficialMetaController {
     private static final String MANAGE = "hasAuthority('growth.manage')";
 
     /** The password is masked in toString so a stray log line can never print it. */
-    public record ConnectReq(String username, String password, String totpSecret, Boolean acceptedRisk) {
-        @Override public String toString() { return "ConnectReq[username=" + username + ", password=***, totpSecret=***]"; }
+    public record ConnectReq(String username, String password, String totpSecret, Boolean acceptedRisk, String cookies, String pageId) {
+        @Override public String toString() { return "ConnectReq[username=" + username + ", password=***, totpSecret=***, cookies=***, pageId=" + pageId + "]"; }
     }
 
     private final UnofficialMetaService service;
@@ -31,6 +31,7 @@ public class UnofficialMetaController {
     @PostMapping("/{platform}/connect")
     @PreAuthorize(MANAGE)
     public Map<String, Object> connect(@PathVariable String platform, @RequestBody ConnectReq r, Authentication a) {
+        if ("FACEBOOK".equals(UnofficialMetaService.platformOf(platform))) return service.connectCookies(StoreContext.tenantId(), user(a), platform, r.cookies(), r.pageId());
         return service.connect(StoreContext.tenantId(), user(a), platform, r.username(), r.password(), r.totpSecret(), Boolean.TRUE.equals(r.acceptedRisk()));
     }
 
