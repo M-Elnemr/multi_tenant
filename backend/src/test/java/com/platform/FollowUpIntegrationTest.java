@@ -25,7 +25,7 @@ class FollowUpIntegrationTest extends IntegrationTestBase {
     @Autowired WalletService wallet;
 
     @BeforeEach
-    void clean() { FakeAiProvider.reset(); FakeMetaGraph.reset(); FakeEvolutionApi.reset(); }
+    void clean() { jdbc.sql("UPDATE commerce.broadcasts SET status = 'CANCELED' WHERE status IN ('SENDING', 'PAUSED')").update(); FakeAiProvider.reset(); FakeMetaGraph.reset(); FakeEvolutionApi.reset(); }   // a broadcast another test left running would send through the same fake
 
     /** Texts the shop's own number sent (follow-ups only go from the own number). */
     java.util.List<String> ownTexts() { return FakeEvolutionApi.CALLS.stream().filter(c -> c.path().startsWith("/message/sendText/")).map(c -> c.body().get("text").toString()).toList(); }
