@@ -204,11 +204,23 @@
   "تبعت الرسالة دي لـ{n} شخص؟"
  ],
  "cx.helper": [
-  "One click: install the Chrome helper, log in to Facebook with the Page admin account, press its button, then paste here.",
-  "بضغطة واحدة: ركّب إضافة كروم، سجّل دخول فيسبوك بحساب مدير الصفحة، دوس الزر فيها، وبعدين الصق هنا."
+  "Install the Chrome helper once (Developer mode, Load unpacked), then connect with one click. You can still paste the cookies by hand below.",
+  "ركّب إضافة كروم مرة واحدة (وضع المطور ثم Load unpacked)، وبعدها اربط بضغطة واحدة. وتقدر تلصق الكوكيز بإيدك من تحت."
  ],
  "cx.helperDownload": [
   "Download the helper",
   "نزّل الإضافة"
+ ],
+ "cx.oneClick": [
+  "Connect Messenger with one click",
+  "اربط ماسنجر بضغطة واحدة"
+ ],
+ "cx.helperMissing": [
+  "The helper is not installed in this browser. Download it below, install it (Developer mode, Load unpacked), then press the button again.",
+  "الإضافة مش متركّبة على المتصفح ده. نزّلها من تحت وركّبها (وضع المطور ثم Load unpacked)، وبعدين دوس الزر تاني."
+ ],
+ "cx.notLoggedIn": [
+  "Log in to Facebook in this browser with the Page admin account, then press the button again.",
+  "سجّل دخول فيسبوك على المتصفح ده بحساب مدير الصفحة، وبعدين دوس الزر تاني."
  ]
 }

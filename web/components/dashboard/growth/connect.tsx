@@ -14,6 +14,22 @@ import type { Connection, Connections } from "./types";
 
 type Plat = "INSTAGRAM" | "FACEBOOK";
 
+/** The Chrome helper extension (extensions/fb-cookies); its id is fixed by the key in its manifest. */
+const HELPER_ID = "cklfomaklgpbophhhfngopphmomanmpa";
+type HelperReply = { ok: boolean; cookies?: string; error?: string };
+type ChromeRuntime = { sendMessage?: (id: string, msg: unknown, cb: (r?: HelperReply) => void) => void; lastError?: unknown };
+
+/** Asks the helper extension for the Facebook cookies of this browser; resolves NO_HELPER when it is not installed. */
+function askHelper(): Promise<HelperReply> {
+  return new Promise((resolve) => {
+    const rt = (window as unknown as { chrome?: { runtime?: ChromeRuntime } }).chrome?.runtime;
+    if (!rt?.sendMessage) { resolve({ ok: false, error: "NO_HELPER" }); return; }
+    try {
+      rt.sendMessage(HELPER_ID, { type: "getFbCookies" }, (r) => resolve(rt.lastError || !r ? { ok: false, error: "NO_HELPER" } : r));
+    } catch { resolve({ ok: false, error: "NO_HELPER" }); }
+  });
+}
+
 /** GET store/unofficial-meta, whichever shape the server sends it in (a map under `platforms`, a list, or a bare map). */
 export function useConnections() {
   const q = useApi<unknown>("store/unofficial-meta");
@@ -47,6 +63,15 @@ function PlatformCard({ plat, conn, onChanged }: { plat: Plat; conn?: Connection
     setPassword(""); setTotp(""); setCookies("");   // never kept after the request leaves
     await api(`store/unofficial-meta/${plat}/connect`, { body });
     setUsername(""); setPageId(""); setOpen(false);
+    onChanged();
+  });
+  const [helperErr, setHelperErr] = useState<"NO_HELPER" | "NOT_LOGGED_IN" | null>(null);
+  const oneClick = useAction(async () => {
+    setHelperErr(null);
+    const r = await askHelper();
+    if (!r.ok || !r.cookies) { setHelperErr(r.error === "NOT_LOGGED_IN" ? "NOT_LOGGED_IN" : "NO_HELPER"); return; }
+    await api(`store/unofficial-meta/${plat}/connect`, { body: { cookies: r.cookies, pageId: pageId.trim() || undefined } });
+    setPageId(""); setOpen(false);
     onChanged();
   });
   const wipe = useAction(async () => { await api(`store/unofficial-meta/${plat}`, { method: "DELETE" }); setConfirm(false); onChanged(); });
@@ -85,10 +110,16 @@ function PlatformCard({ plat, conn, onChanged }: { plat: Plat; conn?: Connection
             </>
           ) : (
             <>
-              <p className="rounded-[12px] bg-surface-2 px-3 py-2 text-[12.5px] leading-relaxed text-ink-2">
-                {t("cx.helper")}{" "}
-                <a href="/downloads/elmanassa-fb-cookies.zip" download className="font-semibold text-brand hover:underline">{t("cx.helperDownload")}</a>
-              </p>
+              <div className="space-y-2 rounded-[12px] bg-surface-2 p-3">
+                <Button type="button" variant="ink" loading={oneClick.loading} onClick={() => void oneClick.run()}><Icon name="link" className="h-4 w-4" />{t("cx.oneClick")}</Button>
+                <p className="text-[12.5px] leading-relaxed text-ink-2">
+                  {t("cx.helper")}{" "}
+                  <a href="/downloads/elmanassa-fb-cookies.zip" download className="font-semibold text-brand hover:underline">{t("cx.helperDownload")}</a>
+                </p>
+                {helperErr === "NO_HELPER" && <Alert tone="blue">{t("cx.helperMissing")}</Alert>}
+                {helperErr === "NOT_LOGGED_IN" && <Alert tone="amber">{t("cx.notLoggedIn")}</Alert>}
+                <ErrorText error={oneClick.error} />
+              </div>
               <Field label={t("cx.cookies")} hint={t("cx.cookiesHint")}><Textarea rows={3} value={cookies} onChange={(e) => setCookies(e.target.value)} autoComplete="off" spellCheck={false} dir="ltr" /></Field>
               <Field label={t("cx.pageId")} hint={t("cx.pageIdHint")}><Input value={pageId} onChange={(e) => setPageId(e.target.value)} autoComplete="off" inputMode="numeric" dir="ltr" /></Field>
             </>

@@ -1,9 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Elmanassa - Facebook connect helper",
-  "version": "1.0.0",
-  "description": "Copies the Facebook session cookies of the account you are logged in with, so you can paste them into the Messenger card of your Elmanassa dashboard.",
+  "version": "1.1.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0qyi1toIeLFVl4IKcSRE/SmJOA9Y7I12ww3YjYYAkcHNHj6JW0rDExQ6Cu7DHuhArzsnr4QjD+D3JL0coCE36GqQHl/xOs4qgifMQft01Q/NIzli3OLXXWVr7724GYwTP6/5qFmzBrJIiRSJF/FFJC4iof1FKVKqmAYoUHM3yml+Qh4pVUJfer4utcBr/OD3YXPukf+oI+gyEygcYMeI9SGLyrhBKT60n5Y8h/FlBTMUapifX2MFyrklQ1AgfVmRda4HGpcvUoYA+gASYcTQOOpGfZeQh6dxG552e8g4iqxZ5KJYLxOijW7wxiu38qrj+h5IMvUoGyfI3EGV9L/ujQIDAQAB",
+  "description": "One-click Facebook connect for your Elmanassa dashboard: gives your dashboard the Facebook session of this browser when you press Connect.",
   "permissions": ["cookies", "clipboardWrite"],
   "host_permissions": ["https://*.facebook.com/*"],
+  "background": { "service_worker": "background.js" },
+  "externally_connectable": {
+    "matches": ["https://*.elmanassa.shop/*", "https://elmanassa.shop/*", "http://*.localhost/*", "http://localhost/*"]
+  },
   "action": { "default_title": "Copy Facebook cookies", "default_popup": "popup.html" }
 }
