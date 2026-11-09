@@ -76,6 +76,21 @@ public class DomainService {
     @Transactional
     public TenantDomain addCustomDomain(UUID tenantId, UUID actor, String rawHost) {
         entitlements.requireFeature(tenantId, "custom_domain");
+        return insertCustomDomain(tenantId, actor, rawHost, TenantDomain.Source.CONNECTED, null);
+    }
+
+    /**
+     * Same validation and insert as {@link #addCustomDomain}, used by {@code DomainOrderRunner} once a purchased
+     * domain is actually registered at the provider. Deliberately skips {@code entitlements.requireFeature}: the
+     * merchant already paid the registrar cost (through the wallet) for this specific domain, independently of
+     * whether their subscription plan still includes the "custom_domain" feature.
+     */
+    @Transactional
+    public TenantDomain addPurchasedDomain(UUID tenantId, UUID actor, String rawHost, UUID domainOrderId) {
+        return insertCustomDomain(tenantId, actor, rawHost, TenantDomain.Source.PURCHASED, domainOrderId);
+    }
+
+    private TenantDomain insertCustomDomain(UUID tenantId, UUID actor, String rawHost, TenantDomain.Source source, UUID domainOrderId) {
         String host = normalizeHost(rawHost);
         if (!HOST.matcher(host).matches()) throw BusinessException.badRequest("INVALID_DOMAIN", "Invalid domain name");
         if (host.equals(props.rootDomain()) || host.endsWith("." + props.rootDomain()) || props.isPlatformHost(host)) {
@@ -90,11 +105,16 @@ public class DomainService {
         d.setKind(TenantDomain.Kind.CUSTOM);
         d.setVerificationToken(HexFormat.of().formatHex(randomBytes(20)));
         d.setSslStatus("PENDING");
+        d.setSource(source);
+        d.setDomainOrderId(domainOrderId);
         d = domains.save(d);
         directory.invalidateAll();
-        audit.record(actor, tenantId, "DOMAIN_ADDED", "tenant_domain", d.getId(), "{\"host\":\"" + host + "\"}");
+        audit.record(actor, tenantId, "DOMAIN_ADDED", "tenant_domain", d.getId(), "{\"host\":\"" + host + "\",\"source\":\"" + source + "\"}");
         return d;
     }
+
+    /** Looked up by {@code DomainOrderRunner} once it has created the tenant_domains row, to drive DNS + verification. */
+    public java.util.Optional<TenantDomain> get(UUID tenantId, UUID domainId) { return domains.findByIdAndTenantId(domainId, tenantId); }
 
     /** Tells the tenant which DNS records to create: one TXT to prove the domain, and the address records for both spellings (root domain and www). */
     public List<DnsInstruction> instructions(TenantDomain d) {
@@ -217,6 +237,12 @@ public class DomainService {
         boolean changed = false;
         for (TenantDomain d : domains.findByKindAndPrimaryTrue(TenantDomain.Kind.CUSTOM)) {
             if (!isStopped(d)) continue;
+            // a purchased domain was paid for on its own (through the wallet), separately from the subscription plan: losing the
+            // "custom_domain" entitlement alone must not take it down. Only a really closed business (cancelled/archived) does.
+            if (d.getSource() == TenantDomain.Source.PURCHASED) {
+                TenantStatus st = tenants.findById(d.getTenantId()).map(Tenant::getStatus).orElse(null);
+                if (st != TenantStatus.CANCELLED && st != TenantStatus.ARCHIVED) continue;
+            }
             var sub = domains.findByTenantIdOrderByCreatedAtAsc(d.getTenantId()).stream()
                     .filter(o -> o.getKind() == TenantDomain.Kind.SUBDOMAIN && o.isVerified()).findFirst();
             if (sub.isEmpty()) continue;

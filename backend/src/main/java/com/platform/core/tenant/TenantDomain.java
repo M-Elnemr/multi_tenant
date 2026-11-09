@@ -12,6 +12,9 @@ import lombok.Setter;
 public class TenantDomain {
     public enum Kind { SUBDOMAIN, CUSTOM }
 
+    /** CONNECTED: the tenant pasted a domain it already owns elsewhere (the original flow). PURCHASED: bought through the platform (commerce.domain_orders). */
+    public enum Source { CONNECTED, PURCHASED }
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
@@ -27,4 +30,7 @@ public class TenantDomain {
     private Instant verifiedAt;
     private String sslStatus;
     private Instant createdAt = Instant.now();
+    @Enumerated(EnumType.STRING)
+    private Source source = Source.CONNECTED;
+    private UUID domainOrderId;
 }
