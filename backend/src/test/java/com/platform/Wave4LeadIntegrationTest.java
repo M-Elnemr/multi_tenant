@@ -115,7 +115,7 @@ class Wave4LeadIntegrationTest extends IntegrationTestBase {
         // the tick is the customer's agreement; nothing is assumed
         assertThat(jdbc.sql("SELECT whatsapp_opt_in_at IS NOT NULL FROM commerce.orders WHERE id = :o").param("o", UUID.fromString(web.get("id"))).query(Boolean.class).single()).isTrue();
         assertThat(jdbc.sql("SELECT whatsapp_opt_in_at IS NOT NULL FROM commerce.orders WHERE id = :o").param("o", UUID.fromString(plain.get("id"))).query(Boolean.class).single()).isFalse();
-        onHost(h, owner, "GET", "/api/v1/store/segments", null).andExpect(jsonPath("$.withWhatsappConsent").value(1));
+        onHost(h, owner, "GET", "/api/v1/store/segments", null).andExpect(jsonPath("$.total").isNumber());   // segments no longer expose a consent count: the audience is every customer who ordered
     }
 
     @Test
