@@ -113,7 +113,7 @@ export function Composer({ chat, canWrite, onSent, onNote, onTakeover, saved, on
   if (!canWrite) return <div className="border-t border-line bg-surface px-5 py-4 text-center text-[13px] text-muted">{t("inbox.readOnly")}</div>;
 
   return (
-    <div className="border-t border-line bg-surface px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2.5 sm:px-5">
+    <div className="shrink-0 border-t border-line bg-surface px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2.5 sm:px-5">
       {/* who answers now */}
       <div className={`mb-2 flex items-center gap-2 rounded-[11px] px-3 py-2 text-[12.5px] ${ai ? "bg-[linear-gradient(135deg,rgb(124_92_255/.08),rgb(34_211_238/.08))] text-violet-800" : chat.takeover ? "bg-violet-600/10 text-violet-800" : "bg-slate-100 text-slate-700"}`}>
         <Icon name={ai ? "sparkles" : "users"} className="h-4 w-4 shrink-0" />

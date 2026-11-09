@@ -204,7 +204,7 @@ function Comments() {
   );
 
   return (
-    <div className="flex h-[calc(100dvh-3.6rem-var(--tabbar-h))] min-h-0 lg:h-full">
+    <div className="flex min-h-0 flex-1">
       {(wide || !sel) && <div className={`${wide ? "w-[23rem] shrink-0 border-e border-line" : "w-full"} min-h-0`}>{list}</div>}
       {(wide || sel) && <div className="min-h-0 min-w-0 flex-1">{detail}</div>}
       <Sheet open={settingsOpen} onClose={() => setSettingsOpen(false)} title={t("cm.automation")}>

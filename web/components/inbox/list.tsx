@@ -65,7 +65,7 @@ export function ConversationList(props: {
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface">
       {/* header */}
-      <div className="space-y-3 px-4 pb-3 pt-4">
+      <div className="shrink-0 space-y-3 px-4 pb-3 pt-4">
         <div className="flex items-center justify-between gap-2">
           <div className="flex rounded-[11px] bg-canvas p-0.5 ring-1 ring-line">
             <span className="rounded-[9px] bg-surface px-3 py-1.5 text-[13px] font-semibold text-ink shadow-sm">{t("inbox.conversations")}</span>

@@ -183,7 +183,7 @@ function Inbox() {
   );
 
   return (
-    <div className="flex h-[calc(100dvh-3.6rem-var(--tabbar-h))] min-h-0 lg:h-full">
+    <div className="flex min-h-0 flex-1">
       {showList && <div className={`${wide ? "w-[22rem] shrink-0 border-e border-line xl:w-[23.5rem]" : "w-full"} min-h-0`}>{listEl}</div>}
       {showThread && <div className="min-h-0 min-w-0 flex-1">{threadEl}</div>}
       <AnimatePresence initial={false}>

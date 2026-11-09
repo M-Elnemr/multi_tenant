@@ -235,7 +235,7 @@ function Shell({ nav, rails, fullBleed = [], children }: { nav: NavItem[]; rails
   };
 
   return (
-    <div data-role={role} className="min-h-dvh bg-canvas lg:flex print:block">
+    <div data-role={role} className={`bg-canvas print:block ${bleed ? "flex h-dvh flex-col overflow-hidden lg:flex-row" : "min-h-dvh lg:flex"}`}>
       <CommandPalette open={cmd} onClose={() => setCmd(false)} items={commandItems} />
 
       {/* ---------- desktop: icon rail + section panel ---------- */}
@@ -292,7 +292,7 @@ function Shell({ nav, rails, fullBleed = [], children }: { nav: NavItem[]; rails
         </span>
       </header>
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className={`flex min-w-0 flex-1 flex-col ${bleed ? "min-h-0 overflow-hidden" : ""}`}>
         {can("billing.manage") && <SubscriptionBar status={billing.data} />}
         {/* ---------- desktop header ---------- */}
         {!bleed && (
@@ -311,9 +311,9 @@ function Shell({ nav, rails, fullBleed = [], children }: { nav: NavItem[]; rails
           </header>
         )}
         <motion.main key={bleed ? "bleed" : path} initial={reduce || bleed ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.26, ease: [0.2, 0.8, 0.2, 1] }}
-          className={bleed ? "relative min-h-0 w-full min-w-0 flex-1 overflow-hidden pb-[var(--tabbar-h)] lg:h-dvh lg:pb-0" : "mx-auto w-full min-w-0 max-w-[90rem] flex-1 overflow-x-clip p-4 pb-24 sm:p-6 lg:px-10 lg:py-8 print:p-0"}>
+          className={bleed ? "relative flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden pb-[var(--tabbar-h)] lg:pb-0" : "mx-auto w-full min-w-0 max-w-[90rem] flex-1 overflow-x-clip p-4 pb-24 sm:p-6 lg:px-10 lg:py-8 print:p-0"}>
           <SwRegister />
-          {!online && <div className="mb-4 flex items-center gap-2 rounded-[12px] bg-amber-50 px-4 py-2.5 text-sm text-amber-900 ring-1 ring-inset ring-amber-600/20 print:hidden"><Icon name="alert" className="h-4 w-4" />{t("offline.dashboard")}</div>}
+          {!online && <div className="mb-4 flex shrink-0 items-center gap-2 rounded-[12px] bg-amber-50 px-4 py-2.5 text-sm text-amber-900 ring-1 ring-inset ring-amber-600/20 print:hidden"><Icon name="alert" className="h-4 w-4" />{t("offline.dashboard")}</div>}
           {disabled && !canPay
             ? <div className="mx-auto mt-10 max-w-md rounded-[16px] bg-surface p-8 text-center shadow-card"><span className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-[14px] bg-red-50 text-red-600"><Icon name="alert" /></span><h1 className="font-display text-lg font-semibold text-ink">{t("sub.disabledTitle")}</h1><p className="mt-2 text-sm text-muted">{t("sub.ownerOnly")}</p></div>
             : blocked
