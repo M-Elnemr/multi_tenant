@@ -3,6 +3,7 @@ import 'package:platform_core/platform_core.dart';
 
 import 'channels.dart';
 import 'common.dart';
+import 'theme/templates.dart';
 import 'retail.dart';
 import 'forms.dart';
 import 'products.dart';
@@ -104,16 +105,22 @@ class _OrdersScreenState extends State<OrdersScreen> {
         if (_unconfirmed > 0) Container(margin: const EdgeInsets.fromLTRB(16, 4, 16, 4), padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFFFF4DD), borderRadius: BorderRadius.circular(14)), child: Row(children: [const Icon(Icons.phone_in_talk_rounded, color: Color(0xFFD98200)), const SizedBox(width: 8), Expanded(child: Text(ar ? '$_unconfirmed طلب لم يتم تأكيده بالاتصال بالعميل' : '$_unconfirmed order(s) not yet confirmed by phone', style: const TextStyle(fontWeight: FontWeight.w700)))])),
       ]),
       emptyText: ar ? 'لا توجد طلبات' : 'No orders',
-      itemBuilder: (c, o, reload) => Card(child: ListTile(
-        contentPadding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
-        title: Row(children: [Expanded(child: Text('${o['orderNumber']}', textDirection: TextDirection.ltr, textAlign: TextAlign.start, style: const TextStyle(fontWeight: FontWeight.w900))), StatusPill('${o['status']}'), riskChip(o, ar)]),
-        subtitle: Padding(padding: const EdgeInsets.only(top: 4), child: Text('${(kChannels[o['channel']] ?? kChannels['OTHER']!)[ar ? 0 : 1]} · ${o['customerNameSnapshot']} · ${fmtDate(o['createdAt'] as String?)}\n${s.money(o['totalMinor'] as num, (o['currency'] as String?) ?? ctx.currency)}${o['confirmedAt'] == null && o['status'] == 'REQUESTED' ? (ar ? '  ·  غير مؤكد' : '  ·  unconfirmed') : ''}')),
-        isThreeLine: true,
-        onTap: () async {
-          await Navigator.of(c).push(MaterialPageRoute(builder: (_) => OrderDetail(ctx: ctx, id: o['id'] as String)));
-          await reload();
-        },
-      )),
+      itemBuilder: (c, o, reload) {
+        final unconfirmed = o['confirmedAt'] == null && o['status'] == 'REQUESTED';
+        final risk = riskChip(o, ar);
+        return TemplateListCard(
+          edge: toneFor('${o['status']}'),
+          title: '${o['orderNumber']}',
+          titleLtr: true,
+          subtitle: '${(kChannels[o['channel']] ?? kChannels['OTHER']!)[ar ? 0 : 1]} · ${o['customerNameSnapshot']} · ${fmtDate(o['createdAt'] as String?)}${unconfirmed ? (ar ? '  ·  غير مؤكد' : '  ·  unconfirmed') : ''}',
+          trailing: TemplateListFigure(s.money(o['totalMinor'] as num, (o['currency'] as String?) ?? ctx.currency), pill: StatusPill('${o['status']}')),
+          footer: risk is SizedBox ? null : Align(alignment: AlignmentDirectional.centerStart, child: risk),
+          onTap: () async {
+            await Navigator.of(c).push(MaterialPageRoute(builder: (_) => OrderDetail(ctx: ctx, id: o['id'] as String)));
+            await reload();
+          },
+        );
+      },
     );
   }
 
@@ -142,8 +149,12 @@ class OrderDetail extends StatelessWidget {
           final phone = o['customerPhoneSnapshot'] as String?;
           final addr = [o['area'], o['landmark'], (o['shippingAddress'] as Map?)?['addressLine1'], (o['shippingAddress'] as Map?)?['city']].where((e) => e != null && '$e'.isNotEmpty).join('، ');
           return ListView(padding: const EdgeInsets.all(16), children: [
-            Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [Expanded(child: Text('${o['orderNumber']}', textDirection: TextDirection.ltr, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900))), StatusPill('${o['status']}')]),
+            Container(
+              decoration: AppTemplate.of(context).cardDecoration().copyWith(border: Border(top: BorderSide(color: toneFor('${o['status']}'), width: 4))),
+              padding: const EdgeInsets.all(16),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [Expanded(child: Text('${o['orderNumber']}', textDirection: TextDirection.ltr, textAlign: TextAlign.start, style: AppTemplate.of(context).heading(20))), StatusPill('${o['status']}')]),
+              if (o['totalMinor'] is num) Padding(padding: const EdgeInsets.only(top: 6, bottom: 2), child: Text(s.money(o['totalMinor'] as num, (o['currency'] as String?) ?? ctx.currency), style: AppTemplate.of(context).heading(24, color: AppTemplate.of(context).isShop ? AppTemplate.of(context).accent : AppTemplate.of(context).ink))),
               Align(alignment: AlignmentDirectional.centerStart, child: channelChip(o, ar)),
               const SizedBox(height: 4),
               kv(ar ? 'العميل' : 'Customer', '${o['customerNameSnapshot']}'),
@@ -152,7 +163,8 @@ class OrderDetail extends StatelessWidget {
               kv(ar ? 'الدفع' : 'Payment', '${o['paymentMethod']} · ${o['paymentStatus']}'),
               kv(ar ? 'التاريخ' : 'Date', fmtDate(o['createdAt'] as String?)),
               if ((o['notes'] as String?)?.isNotEmpty == true) kv(ar ? 'ملاحظات' : 'Notes', '${o['notes']}'),
-            ]))),
+            ]),
+            ),
             riskBanner(o, ar),
             Row(children: [
               Expanded(child: OutlinedButton.icon(onPressed: () => dial(phone), icon: const Icon(Icons.call_rounded), label: Text(ar ? 'اتصال' : 'Call'))),
@@ -317,13 +329,19 @@ class ProductsScreen extends StatelessWidget {
         path: 'store/products',
         searchHint: ar ? 'ابحث عن منتج' : 'Search products',
         emptyText: ar ? 'لا توجد منتجات' : 'No products',
-        itemBuilder: (c, p, reload) => Card(child: ListTile(
-          leading: CircleAvatar(backgroundColor: Theme.of(c).colorScheme.primary.withValues(alpha: 0.12), child: Icon(Icons.shopping_bag_rounded, color: Theme.of(c).colorScheme.primary)),
-          title: Text('${p['name']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800)),
-          subtitle: Text('${s.money(p['minPriceMinor'] as num?, (p['currency'] as String?) ?? ctx.currency)} · ${ar ? 'متاح' : 'in stock'}: ${p['available']}'),
-          trailing: StatusPill('${p['status']}'),
-          onTap: () async { await Navigator.of(c).push(MaterialPageRoute(builder: (_) => ProductFormPage(ctx: ctx, id: '${p['id']}'))); reload(); },
-        )),
+        itemBuilder: (c, p, reload) {
+          final t = AppTemplate.of(c);
+          final available = (p['available'] as num?) ?? 0;
+          return TemplateListCard(
+            edge: toneFor('${p['status']}'),
+            leading: Container(width: 42, height: 42, decoration: BoxDecoration(color: t.accent.withValues(alpha: t.isClinic ? 0.45 : 0.14), borderRadius: BorderRadius.circular(t.isLawyer ? 8 : 14)), child: Icon(Icons.shopping_bag_rounded, color: t.isShop ? t.accent : t.ink)),
+            title: '${p['name']}',
+            subtitle: '${ar ? 'متاح' : 'in stock'}: $available',
+            trailing: TemplateListFigure(s.money(p['minPriceMinor'] as num?, (p['currency'] as String?) ?? ctx.currency), pill: StatusPill('${p['status']}')),
+            footer: available <= 0 ? Text(ar ? 'نفد من المخزون' : 'Out of stock', style: const TextStyle(color: Color(0xFFD14343), fontWeight: FontWeight.w800, fontSize: 12)) : null,
+            onTap: () async { await Navigator.of(c).push(MaterialPageRoute(builder: (_) => ProductFormPage(ctx: ctx, id: '${p['id']}'))); reload(); },
+          );
+        },
       )),
       if (ctx.can('product.create')) Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 8), child: FilledButton.icon(onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProductFormPage(ctx: ctx))), icon: const Icon(Icons.add_photo_alternate_rounded), label: Text(ar ? 'إضافة منتج جديد' : 'Add a new product'))),
     ]);

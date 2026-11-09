@@ -8,7 +8,7 @@ class SingleBusiness {
   static String appTitle = 'Elmanassa Business';
   static String nameAr = 'Elmanassa Business', nameEn = 'Elmanassa Business';
   static String taglineAr = 'أدر متجرك أو عيادتك أو مكتب المحاماة من هاتفك', taglineEn = 'Run your shop, clinic or law office from your phone';
-  static String version = '1.3.40';   // shown in settings; keep in step with pubspec.yaml
+  static String version = '1.3.41';   // shown in settings; keep in step with pubspec.yaml
   static bool get on => slug != null;
   /// The office's own address (its clients sign in there).
   static String get officeBase => baseForHost('$slug.${const String.fromEnvironment('ROOT_DOMAIN', defaultValue: 'elmanassa.shop')}');

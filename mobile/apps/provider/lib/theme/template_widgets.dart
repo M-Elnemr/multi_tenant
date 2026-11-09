@@ -299,3 +299,77 @@ Widget templateEmpty(BuildContext context, String text, {IconData icon = Icons.i
     ])),
   );
 }
+
+/// One row of a list screen (orders, products, patients, clients...) in the template's style: a card with a status-coloured edge
+/// (shop: rounded with glow, clinic: soft and roomy, lawyer: square card ruled in brass), the title with a trailing pill, a subtitle and an optional footer.
+class TemplateListCard extends StatelessWidget {
+  const TemplateListCard({super.key, required this.title, this.subtitle, this.leading, this.trailing, this.footer, this.edge, this.onTap, this.titleLtr = false});
+  final String title;
+  final String? subtitle;
+  final Widget? leading;
+  final Widget? trailing;
+  final Widget? footer;
+  /// Colour of the edge strip (usually the status tone). Null = no strip.
+  final Color? edge;
+  final VoidCallback? onTap;
+  final bool titleLtr;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = AppTemplate.of(context);
+    final r = BorderRadius.circular(t.cardRadius);
+    final body = Padding(
+      padding: EdgeInsetsDirectional.fromSTEB(t.isClinic ? 16 : 14, t.isClinic ? 14 : 12, 12, t.isClinic ? 14 : 12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          if (leading != null) ...[leading!, const SizedBox(width: 12)],
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, textDirection: titleLtr ? TextDirection.ltr : null, textAlign: TextAlign.start, style: t.heading(15.5)),
+            if (subtitle != null && subtitle!.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 3), child: Text(subtitle!, maxLines: 3, overflow: TextOverflow.ellipsis, style: TextStyle(color: t.muted, fontSize: 12.8, height: 1.35))),
+          ])),
+          if (trailing != null) ...[const SizedBox(width: 8), trailing!],
+        ]),
+        if (footer != null) Padding(padding: const EdgeInsets.only(top: 8), child: footer!),
+      ]),
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: DecoratedBox(
+        decoration: t.cardDecoration(),
+        child: ClipRRect(
+          borderRadius: r,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onTap,
+              child: IntrinsicHeight(
+                child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  if (edge != null) Container(width: t.isLawyer ? 3 : 4, color: edge),
+                  Expanded(child: body),
+                ]),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A bold value (an amount, a count) with an optional pill above and caption below: the trailing part of a [TemplateListCard].
+class TemplateListFigure extends StatelessWidget {
+  const TemplateListFigure(this.value, {super.key, this.caption, this.pill});
+  final String value;
+  final String? caption;
+  final Widget? pill;
+  @override
+  Widget build(BuildContext context) {
+    final t = AppTemplate.of(context);
+    return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.end, children: [
+      if (pill != null) pill!,
+      if (pill != null) const SizedBox(height: 4),
+      Text(value, style: t.heading(14.5, color: t.isShop ? t.accent : t.ink)),
+      if (caption != null) Text(caption!, style: TextStyle(color: t.muted, fontSize: 11)),
+    ]);
+  }
+}

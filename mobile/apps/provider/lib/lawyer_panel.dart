@@ -503,27 +503,18 @@ class _LawyerCasesState extends State<LawyerCases> {
       itemBuilder: (c, k, reload) {
         final due = ((k['billedMinor'] as num?) ?? 0) - ((k['paidMinor'] as num?) ?? 0);
         final next = k['nextStepAt'] == null ? null : DateTime.parse('${k['nextStepAt']}').toLocal();
-        return Card(clipBehavior: Clip.antiAlias, child: InkWell(
+        return TemplateListCard(
+          edge: k['outcome'] != 'NONE' ? legalTone(k['outcome']) : legalTone(k['status']),
+          title: '${k['title']}',
+          subtitle: dotted(['${_no(k['number'])}${'${k['courtCaseNo'] ?? ''}'.isNotEmpty ? ' · ${k['courtCaseNo']}' : ''}', caseType(k['caseType']), k['court'], if ('${k['clientNames'] ?? ''}'.isNotEmpty) '👤 ${k['clientNames']}']),
+          trailing: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.end, children: [legalPill(k['status']), if (k['outcome'] != 'NONE') Padding(padding: const EdgeInsets.only(top: 4), child: legalPill(k['outcome']))]),
+          footer: next == null && due <= 0 ? null : Row(children: [
+            if (next != null) Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2), decoration: BoxDecoration(color: const Color(0x226366F1), borderRadius: BorderRadius.circular(8)), child: Text('📅 ${_dayLabel(next)} ${_hm(next)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF4338CA)))),
+            const Spacer(),
+            if (due > 0) Text('${_l('مستحق', 'Due')} ${s.money(due, ctx.currency)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFFD14343))),
+          ]),
           onTap: () => Navigator.of(c).push(MaterialPageRoute(builder: (_) => CaseDetailPage(ctx: ctx, id: '${k['id']}'))).then((_) => reload()),
-          child: IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Container(width: 5, color: k['outcome'] != 'NONE' ? legalTone(k['outcome']) : legalTone(k['status'])),
-            Expanded(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
-                Expanded(child: Text('${_no(k['number'])}${'${k['courtCaseNo'] ?? ''}'.isNotEmpty ? ' · ${k['courtCaseNo']}' : ''}', style: const TextStyle(fontSize: 11, color: Color(0xFF6B7C8D), fontWeight: FontWeight.w700))),
-                legalPill(k['status']), if (k['outcome'] != 'NONE') ...[const SizedBox(width: 4), legalPill(k['outcome'])],
-              ]),
-              const SizedBox(height: 2),
-              Text('${k['title']}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15)),
-              Text(dotted([caseType(k['caseType']), k['court'], if ('${k['clientNames'] ?? ''}'.isNotEmpty) '👤 ${k['clientNames']}']), style: const TextStyle(fontSize: 12, color: Color(0xFF6B7C8D))),
-              const SizedBox(height: 4),
-              Row(children: [
-                if (next != null) Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2), decoration: BoxDecoration(color: const Color(0x226366F1), borderRadius: BorderRadius.circular(8)), child: Text('📅 ${_dayLabel(next)} ${_hm(next)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF4338CA)))),
-                const Spacer(),
-                if (due > 0) Text('${_l('مستحق', 'Due')} ${s.money(due, ctx.currency)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFFD14343))),
-              ]),
-            ]))),
-          ])),
-        ));
+        );
       },
     );
   }
@@ -873,13 +864,18 @@ class _LawyerClientsState extends State<LawyerClients> {
       dateRange: true, dateLabel: _l('تاريخ الإضافة', 'Added'),
       fab: ctx.canWrite('clients') ? FloatingActionButton.extended(onPressed: () async { if (await Navigator.of(context).push(MaterialPageRoute(builder: (_) => ClientFormPage(ctx: ctx))) != null) setState(() => _n++); }, icon: const Icon(Icons.person_add_alt_1_rounded), label: Text(_l('موكل جديد', 'New client'))) : null,
       emptyText: _l('لا يوجد موكلون بعد', 'No clients yet'),
-      itemBuilder: (c, x, reload) => Card(child: ListTile(
-        leading: CircleAvatar(child: Text('${x['name']}'.characters.first)),
-        title: Text('${x['kind'] == 'COMPANY' ? '🏢 ' : ''}${x['name']}', style: const TextStyle(fontWeight: FontWeight.w900)),
-        subtitle: Text(dotted([localPhone(x['phone']), _l('${x['caseCount'] ?? 0} قضية', '${x['caseCount'] ?? 0} cases'), if ((x['balanceMinor'] as num? ?? 0) > 0) '${_l('مستحق', 'Due')} ${s.money(x['balanceMinor'] as num, ctx.currency)}'])),
-        trailing: const Icon(Icons.chevron_right_rounded),
-        onTap: () => Navigator.of(c).push(MaterialPageRoute(builder: (_) => ClientDetailPage(ctx: ctx, id: '${x['id']}'))).then((_) => reload()),
-      )),
+      itemBuilder: (c, x, reload) {
+        final t = AppTemplate.of(c);
+        final due = (x['balanceMinor'] as num? ?? 0);
+        return TemplateListCard(
+          edge: due > 0 ? const Color(0xFFD98200) : null,
+          leading: CircleAvatar(backgroundColor: t.accent.withValues(alpha: 0.2), child: Text('${x['name']}'.characters.first, style: TextStyle(color: t.ink, fontWeight: FontWeight.w900))),
+          title: '${x['kind'] == 'COMPANY' ? '🏢 ' : ''}${x['name']}',
+          subtitle: dotted([localPhone(x['phone']), _l('${x['caseCount'] ?? 0} قضية', '${x['caseCount'] ?? 0} cases')]),
+          trailing: due > 0 ? TemplateListFigure(s.money(due, ctx.currency), caption: _l('مستحق', 'Due')) : Icon(Directionality.of(c) == TextDirection.rtl ? Icons.chevron_left_rounded : Icons.chevron_right_rounded, color: t.muted),
+          onTap: () => Navigator.of(c).push(MaterialPageRoute(builder: (_) => ClientDetailPage(ctx: ctx, id: '${x['id']}'))).then((_) => reload()),
+        );
+      },
     );
   }
 }

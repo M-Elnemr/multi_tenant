@@ -27,6 +27,10 @@ class _ChatScreenState extends State<ChatScreen> {
   Object? _error;
   bool _busy = false, _loading = false, _full = false;
   Timer? _timer;
+  final _scroll = ScrollController();
+  // older pages (the 8 second refresh only brings the newest page, so what was loaded by scrolling up is kept here)
+  final List<Map<String, dynamic>> _olderMsgs = [], _olderEvents = [];
+  bool _olderLoaded = false, _hasOlder = false, _loadingOlder = false;
 
   String get _base => 'store/chat/conversations/${widget.id}';
   bool get _write => widget.ctx.can('ai.manage');
@@ -35,23 +39,67 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _c = widget.initial == null ? null : {...widget.initial!, 'messages': const [], 'events': const [], 'notes': const [], 'window': const {'canSend': false}};
+    _scroll.addListener(() { if (_scroll.hasClients && _scroll.position.pixels > _scroll.position.maxScrollExtent - 240) _loadOlder(); });
     _load(first: true);
     _timer = Timer.periodic(const Duration(seconds: 8), (_) => _load());
   }
 
   @override
-  void dispose() { _timer?.cancel(); super.dispose(); }
+  void dispose() { _timer?.cancel(); _scroll.dispose(); super.dispose(); }
 
   Future<void> _load({bool first = false}) async {
     if (_loading) return;
     _loading = true;
     try {
       final c = Map<String, dynamic>.from(await widget.ctx.api.get(_base, query: first ? null : {'read': 'false'}) as Map);
-      if (mounted) setState(() { _c = c; _error = null; _full = true; });
+      if (mounted) setState(() { _c = c; _error = null; _full = true; if (!_olderLoaded) _hasOlder = c['hasOlder'] == true; });
     } catch (e) {
       if (mounted && (_c == null || _c!['messages'] == null || first)) setState(() => _error = e);
     }
     _loading = false;
+  }
+
+  /// Scrolling to the top loads the 60 messages before the oldest one on screen (`before` = that message's id).
+  Future<void> _loadOlder() async {
+    if (_loadingOlder || !_hasOlder || _c == null) return;
+    final all = [..._olderMsgs, ...maps(_c!['messages'])];
+    final ids = [for (final m in all) if (m['id'] is num) (m['id'] as num).toInt()];
+    if (ids.isEmpty) return;
+    final before = ids.reduce((a, b) => a < b ? a : b);
+    setState(() => _loadingOlder = true);
+    try {
+      final r = Map<String, dynamic>.from(await widget.ctx.api.get(_base, query: {'before': '$before', 'read': 'false'}) as Map);
+      if (!mounted) return;
+      final seenM = {for (final m in all) m['id']};
+      final seenE = {for (final e in [..._olderEvents, ...maps(_c!['events'])]) e['id']};
+      setState(() {
+        _olderMsgs.addAll(maps(r['messages']).where((m) => !seenM.contains(m['id'])));
+        _olderEvents.addAll(maps(r['events']).where((e) => !seenE.contains(e['id'])));
+        _olderLoaded = true;
+        _hasOlder = r['hasOlder'] == true;
+      });
+    } catch (e) {
+      if (mounted) toast(context, errorText(e), isError: true);
+    }
+    if (mounted) setState(() => _loadingOlder = false);
+  }
+
+  Future<void> _deleteNote(Map<String, dynamic> n) async {
+    final sure = await showDialog<bool>(context: context, builder: (d) => AlertDialog(
+      content: Text(L('تمسح الملاحظة دي؟', 'Delete this note?')),
+      actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: Text(L('لا', 'No'))), FilledButton(onPressed: () => Navigator.pop(d, true), child: Text(L('امسح', 'Delete')))]));
+    if (sure != true || !mounted) return;
+    if (await run(context, () async { await widget.ctx.api.delete('$_base/notes/${n['id']}'); }) && mounted) {
+      toast(context, L('الملاحظة اتمسحت', 'Note deleted'));
+      await _load();
+    }
+  }
+
+  Future<void> _markUnread() async {
+    if (await run(context, () async { await widget.ctx.api.post('$_base/unread', {}); }) && mounted) {
+      toast(context, L('اتعلّمت غير مقروءة', 'Marked as unread'));
+      Navigator.of(context).pop();
+    }
   }
 
   Future<Map<String, dynamic>?> _post(String path, [Map<String, dynamic> body = const {}, String? done]) async {
@@ -108,8 +156,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
   List<_Item> _items(Map<String, dynamic> c) {
     final out = <_Item>[
-      for (final m in maps(c['messages'])) _Item('msg', DateTime.tryParse('${m['createdAt']}') ?? DateTime(2000), m),
-      for (final e in maps(c['events'])) _Item('event', DateTime.tryParse('${e['createdAt']}') ?? DateTime(2000), e),
+      for (final m in [..._olderMsgs, ...maps(c['messages'])]) _Item('msg', DateTime.tryParse('${m['createdAt']}') ?? DateTime(2000), m),
+      for (final e in [..._olderEvents, ...maps(c['events'])]) _Item('event', DateTime.tryParse('${e['createdAt']}') ?? DateTime(2000), e),
       for (final n in maps(c['notes'])) _Item('note', DateTime.tryParse('${n['createdAt']}') ?? DateTime(2000), n),
     ];
     out.sort((a, b) => a.at.compareTo(b.at));
@@ -152,6 +200,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 case 'summary':
                   final r = await _assist('SUMMARY', '');
                   if (r != null && r.trim().isNotEmpty && mounted) _showSummary(r);
+                case 'unread': await _markUnread();
                 case 'close': await _post('close', {}, L('المحادثة اتقفلت', 'Chat closed'));
                 case 'reopen': await _post('reopen', {}, L('المحادثة اتفتحت تاني', 'Chat reopened'));
                 case 'unhappy': await _post('unhappy', {'on': c['unhappy'] != true}, c['unhappy'] == true ? L('اتعلّمت تمام', 'Marked fine') : L('اتعلّمت متضايق', 'Marked unhappy'));
@@ -162,6 +211,7 @@ class _ChatScreenState extends State<ChatScreen> {
             },
             itemBuilder: (_) => [
               PopupMenuItem(value: 'summary', child: _menu(Icons.summarize_rounded, L('تلخيص المحادثة', 'Summarize chat'))),
+              PopupMenuItem(value: 'unread', child: _menu(Icons.mark_chat_unread_outlined, L('علّم كغير مقروءة', 'Mark as unread'))),
               if (_write) PopupMenuItem(value: closed ? 'reopen' : 'close', child: _menu(closed ? Icons.lock_open_rounded : Icons.check_circle_outline_rounded, closed ? L('إعادة فتح', 'Reopen') : L('قفل المحادثة', 'Close chat'))),
               if (_write) PopupMenuItem(value: 'unhappy', child: _menu(Icons.mood_bad_rounded, c['unhappy'] == true ? L('العميل تمام', 'Customer is fine') : L('علّم إن العميل متضايق', 'Mark unhappy'))),
               if ('${c['customerPhone'] ?? ''}'.isNotEmpty) PopupMenuItem(value: 'copyPhone', child: _menu(Icons.copy_rounded, L('نسخ الرقم', 'Copy number'))),
@@ -178,15 +228,19 @@ class _ChatScreenState extends State<ChatScreen> {
               ? (loaded ? templateEmpty(context, L('لسه مفيش رسائل.', 'No messages yet.'), icon: Icons.chat_bubble_outline_rounded) : const Center(child: CircularProgressIndicator()))
               : ListView.builder(
                   reverse: true,
+                  controller: _scroll,
                   padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                  itemCount: items.length,
+                  itemCount: items.length + (_hasOlder ? 1 : 0),
                   itemBuilder: (context, i) {
+                    if (i == items.length) {
+                      return Padding(padding: const EdgeInsets.all(10), child: Center(child: _loadingOlder ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2)) : TextButton(onPressed: _loadOlder, child: Text(L('رسائل أقدم', 'Older messages')))));
+                    }
                     final it = items[i];
                     final older = i + 1 < items.length ? items[i + 1] : null;
                     final dayBreak = older == null || !_sameDay(older.at, it.at);
                     return Column(children: [
                       if (dayBreak) _DayChip(it.at),
-                      switch (it.kind) { 'msg' => _Bubble(m: it.data, grouped: older != null && older.kind == 'msg' && older.data['role'] == it.data['role'] && older.data['byOwner'] == it.data['byOwner'] && it.at.difference(older.at).inMinutes < 5), 'event' => _EventPill(e: it.data), _ => _NoteCard(n: it.data) },
+                      switch (it.kind) { 'msg' => _Bubble(m: it.data, grouped: older != null && older.kind == 'msg' && older.data['role'] == it.data['role'] && older.data['byOwner'] == it.data['byOwner'] && it.at.difference(older.at).inMinutes < 5), 'event' => _EventPill(e: it.data), _ => _NoteCard(n: it.data, onDelete: _write ? () => _deleteNote(it.data) : null) },
                     ]);
                   },
                 ),
@@ -412,8 +466,9 @@ class _EventPill extends StatelessWidget {
 }
 
 class _NoteCard extends StatelessWidget {
-  const _NoteCard({required this.n});
+  const _NoteCard({required this.n, this.onDelete});
   final Map<String, dynamic> n;
+  final VoidCallback? onDelete;
   @override
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
@@ -426,6 +481,7 @@ class _NoteCard extends StatelessWidget {
               const Icon(Icons.lock_outline_rounded, size: 13, color: Color(0xFFA06A00)),
               const SizedBox(width: 5),
               Expanded(child: Text(dotted([L('ملاحظة داخلية', 'Internal note'), n['author'], clock('${n['createdAt']}')]), style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFFA06A00)))),
+              if (onDelete != null) InkWell(onTap: onDelete, borderRadius: BorderRadius.circular(12), child: const Padding(padding: EdgeInsets.all(2), child: Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFFA06A00)))),
             ]),
             const SizedBox(height: 4),
             SelectableText('${n['body'] ?? ''}', style: const TextStyle(color: Color(0xFF4A3300), height: 1.4)),

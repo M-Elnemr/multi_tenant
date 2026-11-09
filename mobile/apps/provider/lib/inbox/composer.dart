@@ -128,7 +128,7 @@ class _SavedReplies extends StatelessWidget {
                 if (snap.connectionState != ConnectionState.done) return const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()));
                 if (snap.hasError) return errorState(snap.error!, () {});
                 final list = maps(snap.data is Map ? (snap.data as Map)['data'] : snap.data);
-                if (list.isEmpty) return templateEmpty(c, L('لسه مفيش ردود جاهزة. ضيفها من الموقع.', 'No saved replies yet. Add them on the website.'), icon: Icons.bolt_outlined);
+                if (list.isEmpty) return templateEmpty(c, L('لسه مفيش ردود جاهزة. ضيفها من أيقونة البرق في الصندوق.', 'No saved replies yet. Add them from the bolt icon in the inbox.'), icon: Icons.bolt_outlined);
                 return ListView(shrinkWrap: true, padding: const EdgeInsets.fromLTRB(16, 0, 16, 12), children: [
                   for (final r in list)
                     Card(child: ListTile(

@@ -32,6 +32,10 @@ class _ChatListTabState extends State<ChatListTab> {
   bool _loading = true, _more = false;
   Object? _error;
   int _gen = 0;
+  final Set<String> _sel = {};
+  bool _acting = false;
+
+  bool get _write => widget.ctx.can('ai.manage');
 
   @override
   void initState() {
@@ -109,6 +113,50 @@ class _ChatListTabState extends State<ChatListTab> {
     _reload();
   }
 
+  void _toggleSel(String id) => setState(() { if (!_sel.remove(id)) { if (_sel.length < 200) _sel.add(id); } });
+
+  /// Bulk actions on the selected chats: read | unread | close | takeover | resume (the server accepts up to 200).
+  Future<void> _bulk(String action) async {
+    if (_sel.isEmpty) return;
+    setState(() => _acting = true);
+    Map? r;
+    final ok = await run(context, () async { r = await widget.ctx.api.post('store/chat/conversations/bulk', {'ids': _sel.toList(), 'action': action}) as Map?; });
+    if (!mounted) return;
+    setState(() => _acting = false);
+    if (ok) {
+      toast(context, L('اتنفّذ على ${r?['changed'] ?? _sel.length} محادثة', 'Done on ${r?['changed'] ?? _sel.length} chats'));
+      setState(_sel.clear);
+      widget.onChanged();
+      _reload();
+    }
+  }
+
+  Widget _selectionBar(AppTemplate t) => Padding(
+        padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
+        child: Container(
+          padding: const EdgeInsetsDirectional.fromSTEB(4, 2, 4, 2),
+          decoration: BoxDecoration(color: accentOf(t).withValues(alpha: 0.10), borderRadius: BorderRadius.circular(14)),
+          child: Row(children: [
+            IconButton(tooltip: L('إلغاء التحديد', 'Cancel selection'), onPressed: () => setState(_sel.clear), icon: const Icon(Icons.close_rounded)),
+            Expanded(child: Text(L('${_sel.length} محدد', '${_sel.length} selected'), style: const TextStyle(fontWeight: FontWeight.w900))),
+            if (_acting) const Padding(padding: EdgeInsets.all(10), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)))
+            else ...[
+              IconButton(tooltip: L('تحديد الكل', 'Select all'), onPressed: () => setState(() { for (final e in _items) { if (_sel.length < 200) _sel.add('${e['id']}'); } }), icon: const Icon(Icons.select_all_rounded)),
+              IconButton(tooltip: L('علّم كمقروءة', 'Mark read'), onPressed: () => _bulk('read'), icon: const Icon(Icons.mark_chat_read_outlined)),
+              IconButton(tooltip: L('قفل', 'Close'), onPressed: () => _bulk('close'), icon: const Icon(Icons.check_circle_outline_rounded)),
+              PopupMenuButton<String>(
+                onSelected: _bulk,
+                itemBuilder: (_) => [
+                  PopupMenuItem(value: 'unread', child: Text(L('علّم كغير مقروءة', 'Mark unread'))),
+                  PopupMenuItem(value: 'takeover', child: Text(L('استلم المحادثات', 'Take over'))),
+                  PopupMenuItem(value: 'resume', child: Text(L('رجّع الذكاء الاصطناعي', 'Resume AI'))),
+                ],
+              ),
+            ],
+          ]),
+        ),
+      );
+
   Future<void> _open(Map<String, dynamic> row) async {
     await Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatScreen(ctx: widget.ctx, id: '${row['id']}', initial: row)));
     if (!mounted) return;
@@ -134,6 +182,7 @@ class _ChatListTabState extends State<ChatListTab> {
       if (_f.sort != 'newest') _removable(sortText(_f.sort), () { setState(() => _f.sort = 'newest'); _reload(); }),
     ];
     return Column(children: [
+      if (_sel.isNotEmpty) _selectionBar(t) else
       Padding(
         padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
         child: Row(children: [
@@ -193,7 +242,7 @@ class _ChatListTabState extends State<ChatListTab> {
                               if (i == _items.length) {
                                 return Padding(padding: const EdgeInsets.all(14), child: Center(child: _more ? const CircularProgressIndicator() : Text(L('${_items.length} من $_total', '${_items.length} of $_total'), style: TextStyle(color: t.muted, fontSize: 12))));
                               }
-                              return FadeSlideIn(index: i < 8 ? i : 0, dy: 10, child: _ChatRow(row: _items[i], onTap: () => _open(_items[i])));
+                              return FadeSlideIn(index: i < 8 ? i : 0, dy: 10, child: _ChatRow(row: _items[i], selected: _sel.contains('${_items[i]['id']}'), selecting: _sel.isNotEmpty, onTap: () => _sel.isNotEmpty ? _toggleSel('${_items[i]['id']}') : _open(_items[i]), onLongPress: _write ? () => _toggleSel('${_items[i]['id']}') : null));
                             },
                           ),
                   ),
@@ -208,9 +257,11 @@ class _ChatListTabState extends State<ChatListTab> {
 }
 
 class _ChatRow extends StatelessWidget {
-  const _ChatRow({required this.row, required this.onTap});
+  const _ChatRow({required this.row, required this.onTap, this.onLongPress, this.selected = false, this.selecting = false});
   final Map<String, dynamic> row;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+  final bool selected, selecting;
 
   @override
   Widget build(BuildContext context) {
@@ -222,13 +273,15 @@ class _ChatRow extends StatelessWidget {
     final last = '${row['lastMessage'] ?? ''}';
     final prefix = row['lastFromCustomer'] == true ? '' : row['lastByOwner'] == true ? L('إنت: ', 'You: ') : row['lastKind'] == 'FOLLOWUP' ? L('متابعة: ', 'Follow-up: ') : L('الذكاء: ', 'AI: ');
     return Card(
-      color: unread ? Color.lerp(t.card, t.isShop ? t.accent : t.accent, 0.06) : null,
+      color: selected ? Color.lerp(t.card, accentOf(t), 0.16) : unread ? Color.lerp(t.card, t.isShop ? t.accent : t.accent, 0.06) : null,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         child: Padding(
           padding: EdgeInsets.all(t.isClinic ? 14 : 11),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            if (selecting) Padding(padding: const EdgeInsetsDirectional.only(end: 8, top: 10), child: Icon(selected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded, color: selected ? accentOf(t) : t.muted)),
             ChatAvatar(name: name, channel: row['channel']),
             const SizedBox(width: 12),
             Expanded(
