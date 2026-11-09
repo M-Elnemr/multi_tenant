@@ -47,7 +47,7 @@ function RecipientRow({ r }: { r: Recipient }) {
       {r.status === "SENT" && <span className="inline-flex shrink-0 items-center gap-1 text-[12px] tnum"><Icon name="check" className="h-3.5 w-3.5 text-emerald-600" />{r.sentAt ? timeOnly(r.sentAt, locale) : t("gx.rs.SENT")}</span>}
       {r.status === "FAILED" && <span className="inline-flex min-w-0 shrink-0 items-center gap-1 text-[12px]"><Icon name="xcircle" className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{r.error || t("gx.rs.FAILED")}</span></span>}
       {(r.status === "PENDING" || r.status === "STOPPED") && <span className="shrink-0 text-[12px]">{t(`gx.rs.${r.status}`)}</span>}
-      {r.status === "SKIPPED" && <span className="shrink-0 text-[12px]">{r.error ? (["OUTSIDE_WINDOW", "NO_OWN_NUMBER", "OPTED_OUT", "NO_PHONE"].includes(r.error) ? t(`gx.reason.${r.error}`) : r.error) : t("gx.rs.SKIPPED")}</span>}
+      {r.status === "SKIPPED" && <span className="shrink-0 text-[12px]">{r.error ? (["OUTSIDE_WINDOW", "NO_OWN_NUMBER", "OPTED_OUT", "NO_PHONE", "CONNECT_ACCOUNT"].includes(r.error) ? t(`gx.reason.${r.error}`) : r.error) : t("gx.rs.SKIPPED")}</span>}
     </li>
   );
 }
@@ -66,7 +66,7 @@ function BroadcastCard({ b, balanceMinor, open, onOpen, onResume, onCancel, busy
           {b.status === "DONE" && <Badge tone="green">{t("gx.bs.DONE")}</Badge>}
           {b.status === "PAUSED" && <Badge tone="red">{t("gr.state.PAUSED")}</Badge>}
           {b.status === "CANCELED" && <Badge tone="slate">{t("gr.state.CANCELED")}</Badge>}
-          {b.segments.map((s) => <Badge key={s} tone="blue">{t(`gr.seg.${s}`)}</Badge>)}
+          {(b.segments ?? []).map((s) => <Badge key={s} tone="blue">{t(`gr.seg.${s}`)}</Badge>)}
           {b.platforms.map((p) => <span key={p} className="inline-flex" title={t(`gx.plat.${p}`)}><ChannelIcon channel={p} className="h-4 w-4" /></span>)}
         </span>
         <span className="text-[12px] text-muted tnum">{dateTime(b.createdAt, locale)}</span>

@@ -42,6 +42,7 @@ const NAV: NavItem[] = [
   // Marketing
   { href: "/dashboard/marketing?tab=posts", label: "nav.posts", group: "navgrp.marketing", screen: "marketing", icon: "trending", rail: "marketing" },
   { href: "/dashboard/growth?tab=segments", label: "nav.segments", group: "navgrp.marketing", perm: "growth.manage", icon: "users", rail: "marketing" },
+  { href: "/dashboard/growth?tab=prospects", label: "nav.prospects", group: "navgrp.marketing", perm: "growth.manage", icon: "sparkles", rail: "marketing" },
   { href: "/dashboard/carts", label: "nav.carts", group: "navgrp.marketing", perm: ["cart.read", "cart.manage"], icon: "bag", rail: "marketing" },
 
   // Reports

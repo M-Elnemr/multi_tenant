@@ -1,45 +1,106 @@
 {
- "mx.third": ["Send by hand style", "إرسال بشكل يدوي"],
- "mx.thirdHint": ["Also reaches older contacts outside the 24-hour window, slowly, like a person typing by hand.", "بيوصل كمان لعملاء قدام برا الـ٢٤ ساعة، ببطء زي ما بتكتب بإيدك."],
- "mx.thirdCount": ["{n} older contacts", "{n} عميل قديم"],
- "mx.unavailable": ["Not available right now", "غير متاح حاليًا"],
- "mx.messenger": ["Messenger: not available right now", "ماسنجر: غير متاح حاليًا"],
- "mx.cardTitle": ["Connect an Instagram account for hand-style sending", "ربط حساب إنستجرام للإرسال اليدوي"],
- "mx.cardHint": ["Lets you send offers to old Instagram contacts outside Meta's 24-hour window, slowly and one by one. It uses the account's own login, not the official Meta tool.", "بيسمحلك تبعت عروض لعملاء إنستجرام قدام برا الـ٢٤ ساعة بتاعة ميتا، ببطء وواحد واحد. بيشتغل بتسجيل دخول الحساب نفسه مش بأداة ميتا الرسمية."],
- "mx.username": ["Instagram username", "اسم المستخدم على إنستجرام"],
- "mx.password": ["Password", "كلمة المرور"],
- "mx.totp": ["Two-factor secret (optional)", "مفتاح التحقق بخطوتين (اختياري)"],
- "mx.totpHint": ["The secret key shown when you set up an authenticator app, if the account uses two-factor.", "المفتاح السري اللي بيظهر وقت تفعيل تطبيق المصادقة، لو الحساب مفعّل عليه التحقق بخطوتين."],
- "mx.risk": ["I understand that Meta forbids automation, that my Instagram account can be restricted or permanently banned, that the platform is not responsible for that, and that I use this at my own risk.", "فاهم إن ميتا بتمنع الأتمتة، وإن حساب إنستجرام بتاعي ممكن يتقيّد أو يتحظر نهائيًا، وإن المنصة مش مسؤولة عن ده، وإني بستخدمها على مسؤوليتي."],
- "mx.connect": ["Connect account", "ربط الحساب"],
- "mx.connected": ["Connected as {name}", "مربوط بحساب {name}"],
- "mx.wipe": ["Remove account and login", "مسح الحساب وبيانات الدخول"],
- "mx.wipeTitle": ["Remove the account?", "مسح الحساب؟"],
- "mx.wipeBody": ["The saved login is deleted and the session is dropped. Warm-up starts again if you connect later.", "بيتمسح تسجيل الدخول المحفوظ وبتتقفل الجلسة. لو ربطته بعدين التسخين بيبدأ من الأول."],
- "mx.disable": ["Pause", "إيقاف مؤقت"],
- "mx.enable": ["Turn back on", "تشغيل تاني"],
- "mx.status.ACTIVE": ["Active", "شغال"],
- "mx.status.NEEDS_LOGIN": ["Needs a new login", "محتاج تسجيل دخول جديد"],
- "mx.status.BLOCKED": ["Paused for protection", "متوقف للحماية"],
- "mx.status.DISABLED": ["Paused by you", "موقوف منك"],
- "mx.blockedUntil": ["Instagram showed a warning. The account stays paused until {when}.", "إنستجرام ظهّر تحذير. الحساب هيفضل متوقف لحد {when}."],
- "mx.capLine": ["Today: {sent} of {cap} messages (warm-up day {day})", "النهارده: {sent} من {cap} رسالة (يوم التسخين {day})"],
- "mx.explainTitle": ["How hand-style sending works", "إزاي الإرسال اليدوي بيشتغل"],
- "mx.explain": ["It is slower on purpose, to protect your account: one message every 40 to 120 seconds, a longer break after every 8 to 15 messages, only between 09:00 and 21:00 in your time, and a daily limit that grows during the first week. It stops at the first sign that Instagram is limiting the account, and you get a notification.", "بطيء عن قصد عشان نحمي حسابك: رسالة كل ٤٠ لـ١٢٠ ثانية، واستراحة أطول بعد كل ٨ لـ١٥ رسالة، وبس من ٩ الصبح لـ٩ بالليل بتوقيتك، وحد يومي بيزيد خلال أول أسبوع. بيتوقف عند أول إشارة إن إنستجرام بيقيّد الحساب وبيجيلك إشعار."],
- "mx.estimateToday": ["Done today, in about {n} minutes", "هيخلص النهارده في حوالي {n} دقيقة"],
- "mx.estimateDays": ["About {n} days at the current daily limit ({cap} messages today)", "حوالي {n} يوم بالحد اليومي الحالي ({cap} رسالة النهارده)"],
- "mx.needVariants": ["Hand-style sending needs at least {n} different wordings of the message. Add them or let the assistant suggest them in step 2.", "الإرسال اليدوي محتاج {n} صيغ مختلفة للرسالة على الأقل. ضيفها أو خلي المساعد يقترحها في الخطوة ٢."],
- "mx.riskReminder": ["Unofficial route: the Instagram account can be restricted or banned.", "طريقة غير رسمية: حساب إنستجرام ممكن يتقيّد أو يتحظر."],
- "mx.sumManual": ["By hand style (older contacts)", "بشكل يدوي (عملاء قدام)"],
- "gr.pause.ACCOUNT_BLOCK_SIGNAL": ["Stopped: the account showed a block signal", "اتوقف: الحساب ظهرله إشارة حظر"],
- "gr.pause.SESSION_EXPIRED": ["Stopped: log the account in again", "اتوقف: سجّل دخول الحساب تاني"],
- "gr.pause.BRIDGE_UNREACHABLE": ["Stopped: the sending service is not reachable", "اتوقف: خدمة الإرسال مش متاحة"],
- "gr.pause.MANUAL_STYLE_OFF": ["Stopped: hand-style sending is off", "اتوقف: الإرسال اليدوي مقفول"],
- "gr.pause.MS_ACTIVE_HOURS": ["Waiting for 09:00 to 21:00", "مستني من ٩ الصبح لـ٩ بالليل"],
- "gr.pause.MS_HOURLY_CAP": ["Hourly limit reached, waiting", "وصل للحد في الساعة، مستني"],
- "gr.pause.MS_DAILY_CAP": ["Daily limit reached, continues tomorrow", "وصل للحد اليومي، بيكمل بكرة"],
- "gr.pause.WHATSAPP_DISCONNECTED": ["Stopped: your WhatsApp number is no longer linked", "اتوقف: رقم الواتساب لم يعد مربوط"],
- "gr.pause.WA_ACTIVE_HOURS": ["Waiting for the sending hours", "مستني مواعيد الإرسال"],
- "gr.pause.WA_HOURLY_CAP": ["Hourly limit reached, waiting", "وصل للحد في الساعة، مستني"],
- "gr.pause.WA_DAILY_CAP": ["Daily limit reached, continues tomorrow", "وصل للحد اليومي، بيكمل بكرة"]
+ "mx.unavailable": [
+  "Not available right now",
+  "غير متاح حاليًا"
+ ],
+ "mx.username": [
+  "Instagram username",
+  "اسم المستخدم على إنستجرام"
+ ],
+ "mx.password": [
+  "Password",
+  "كلمة المرور"
+ ],
+ "mx.totp": [
+  "Two-factor secret (optional)",
+  "مفتاح التحقق بخطوتين (اختياري)"
+ ],
+ "mx.totpHint": [
+  "The secret key shown when you set up an authenticator app, if the account uses two-factor.",
+  "المفتاح السري اللي بيظهر وقت تفعيل تطبيق المصادقة، لو الحساب مفعّل عليه التحقق بخطوتين."
+ ],
+ "mx.connect": [
+  "Connect account",
+  "ربط الحساب"
+ ],
+ "mx.connected": [
+  "Connected as {name}",
+  "مربوط بحساب {name}"
+ ],
+ "mx.wipe": [
+  "Remove account and login",
+  "مسح الحساب وبيانات الدخول"
+ ],
+ "mx.wipeTitle": [
+  "Remove the account?",
+  "مسح الحساب؟"
+ ],
+ "mx.wipeBody": [
+  "The saved login is deleted and the session is dropped. Warm-up starts again if you connect later.",
+  "بيتمسح تسجيل الدخول المحفوظ وبتتقفل الجلسة. لو ربطته بعدين التسخين بيبدأ من الأول."
+ ],
+ "mx.status.ACTIVE": [
+  "Active",
+  "شغال"
+ ],
+ "mx.status.NEEDS_LOGIN": [
+  "Needs a new login",
+  "محتاج تسجيل دخول جديد"
+ ],
+ "mx.status.BLOCKED": [
+  "Paused for protection",
+  "متوقف للحماية"
+ ],
+ "mx.status.DISABLED": [
+  "Paused by you",
+  "موقوف منك"
+ ],
+ "mx.blockedUntil": [
+  "Instagram showed a warning. The account stays paused until {when}.",
+  "إنستجرام ظهّر تحذير. الحساب هيفضل متوقف لحد {when}."
+ ],
+ "gr.pause.ACCOUNT_BLOCK_SIGNAL": [
+  "Stopped: the account showed a block signal",
+  "اتوقف: الحساب ظهرله إشارة حظر"
+ ],
+ "gr.pause.SESSION_EXPIRED": [
+  "Stopped: log the account in again",
+  "اتوقف: سجّل دخول الحساب تاني"
+ ],
+ "gr.pause.BRIDGE_UNREACHABLE": [
+  "Stopped: the sending service is not reachable",
+  "اتوقف: خدمة الإرسال مش متاحة"
+ ],
+ "gr.pause.MANUAL_STYLE_OFF": [
+  "Stopped: hand-style sending is off",
+  "اتوقف: الإرسال اليدوي مقفول"
+ ],
+ "gr.pause.MS_ACTIVE_HOURS": [
+  "Waiting for 09:00 to 21:00",
+  "مستني من ٩ الصبح لـ٩ بالليل"
+ ],
+ "gr.pause.MS_HOURLY_CAP": [
+  "Hourly limit reached, waiting",
+  "وصل للحد في الساعة، مستني"
+ ],
+ "gr.pause.MS_DAILY_CAP": [
+  "Daily limit reached, continues tomorrow",
+  "وصل للحد اليومي، بيكمل بكرة"
+ ],
+ "gr.pause.WHATSAPP_DISCONNECTED": [
+  "Stopped: your WhatsApp number is no longer linked",
+  "اتوقف: رقم الواتساب لم يعد مربوط"
+ ],
+ "gr.pause.WA_ACTIVE_HOURS": [
+  "Waiting for the sending hours",
+  "مستني مواعيد الإرسال"
+ ],
+ "gr.pause.WA_HOURLY_CAP": [
+  "Hourly limit reached, waiting",
+  "وصل للحد في الساعة، مستني"
+ ],
+ "gr.pause.WA_DAILY_CAP": [
+  "Daily limit reached, continues tomorrow",
+  "وصل للحد اليومي، بيكمل بكرة"
+ ]
 }
