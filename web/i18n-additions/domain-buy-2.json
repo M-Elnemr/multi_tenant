@@ -1,0 +1,12 @@
+{
+  "domainBuy.confirming": ["We're confirming this with the registrar — this can take a few minutes.", "بنتأكد من الحالة مع شركة تسجيل النطاقات - ده ممكن ياخد كذا دقيقة."],
+  "domainBuy.registrantHint": ["Exactly what's on file with the registrar for this domain.", "البيانات المسجلة بالضبط عند شركة تسجيل النطاقات لهذا النطاق."],
+  "domainBuy.transferTitle": ["Transfer this domain out", "نقل النطاق لمكان تاني"],
+  "domainBuy.transferBody": ["This is your domain. If you ever want to leave Elmanassa, get your transfer code here and move it to any other registrar.", "ده نطاقك انت. لو حبيت في أي وقت تسيب المنصة، تقدر تاخد من هنا كود النقل وتنقل النطاق لأي شركة تسجيل تانية."],
+  "domainBuy.transferCodeGet": ["Get transfer code", "جيب كود النقل"],
+  "domainBuy.transferCodeLabel": ["Transfer (EPP/auth) code", "كود النقل (EPP)"],
+  "domainBuy.autoRenewTitle": ["Auto-renew", "تجديد تلقائي"],
+  "domainBuy.autoRenewHint": ["Off by default. When on, we'll renew this domain automatically from your wallet before it expires, at about {price}/year.", "متوقف بشكل تلقائي. لو شغّلته، هنجدد النطاق تلقائيًا من محفظتك قبل ما ينتهي، بحوالي {price} في السنة."],
+  "domainBuy.autoRenewConfirmTitle": ["Turn on auto-renew?", "تفعيل التجديد التلقائي؟"],
+  "domainBuy.autoRenewConfirmBody": ["We'll charge about {price} from your wallet automatically each year to keep this domain, starting near its next expiry. You can turn this off anytime.", "هنخصم حوالي {price} من محفظتك تلقائيًا كل سنة للحفاظ على النطاق، قرب تاريخ الانتهاء الجاي. تقدر توقفه في أي وقت."]
+}
