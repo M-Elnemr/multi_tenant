@@ -5472,6 +5472,21 @@ const en: Record<string, string> = {
   "mkx.campaignPaused": "Campaign paused",
   "mkx.optimized": "Optimizer ran",
   "mkx.undone": "Change undone",
+  "pts.rateComment": "EGP 0.1 = one AI comment reply (stamp replies are free)",
+  "pts.rateDm": "EGP 0.1 = one AI private message to a commenter; once they reply it is a conversation",
+  "cm.card.title": "Auto reply to comments",
+  "cm.card.on": "On",
+  "cm.card.off": "Off",
+  "cm.card.public": "Public reply",
+  "cm.card.dm": "Private message",
+  "cm.card.dmOn": "AI messages commenters",
+  "cm.card.dmOff": "Not sent",
+  "cm.card.today": "Today: {replies} replies · {dms} private messages · {cost}",
+  "cm.card.costLine": "AI reply {price}, AI private message {price}, and once the customer replies it becomes a conversation at EGP 1 per 10 replies.",
+  "cm.card.edit": "Edit",
+  "cm.card.setupTitle": "Reply to every comment automatically",
+  "cm.card.setupHint": "Turn on the auto reply so no comment goes unanswered: a free fixed reply or a smart AI reply, plus an optional private message.",
+  "cm.card.setupCta": "Set up auto reply",
 };
 
 const ar: Record<string, string> = {
@@ -10930,6 +10945,21 @@ const ar: Record<string, string> = {
   "mkx.campaignPaused": "تم إيقاف الحملة مؤقتا",
   "mkx.optimized": "اشتغل المحسّن",
   "mkx.undone": "تم التراجع عن التغيير",
+  "pts.rateComment": "١٠ قروش = رد بالذكاء على تعليق (ردود الختم مجانية)",
+  "pts.rateDm": "١٠ قروش = رسالة خاصة بالذكاء لصاحب تعليق، ولما يرد تبقى محادثة",
+  "cm.card.title": "الرد التلقائي على التعليقات",
+  "cm.card.on": "شغال",
+  "cm.card.off": "متوقف",
+  "cm.card.public": "الرد العلني",
+  "cm.card.dm": "الرسالة الخاصة",
+  "cm.card.dmOn": "الذكاء بيبعت لأصحاب التعليقات",
+  "cm.card.dmOff": "مش بتتبعت",
+  "cm.card.today": "النهارده: {replies} رد · {dms} رسالة خاصة · {cost}",
+  "cm.card.costLine": "رد الذكاء {price}، رسالة خاصة بالذكاء {price}، وبعد ما العميل يرد تبقى محادثة بـ ١ جنيه لكل ١٠ ردود.",
+  "cm.card.edit": "تعديل",
+  "cm.card.setupTitle": "ردّ على كل تعليق أوتوماتيك",
+  "cm.card.setupHint": "شغّل الرد التلقائي عشان مفيش تعليق يفضل من غير رد: رد ثابت مجاني أو رد ذكي بالذكاء الاصطناعي، ومعاه رسالة خاصة لو حابب.",
+  "cm.card.setupCta": "جهّز الرد التلقائي",
 };
 
 export const dictionaries: Record<Locale, Record<string, string>> = { en, ar };
