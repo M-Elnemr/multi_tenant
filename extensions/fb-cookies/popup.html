@@ -1,0 +1,23 @@
+<!doctype html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="utf-8">
+<style>
+  body { width: 320px; margin: 0; padding: 16px; font: 14px/1.5 system-ui, sans-serif; color: #111; }
+  h1 { font-size: 15px; margin: 0 0 6px; }
+  p { margin: 0 0 10px; color: #444; font-size: 12.5px; }
+  button { width: 100%; padding: 10px; border: 0; border-radius: 10px; background: #111; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  #msg { margin-top: 10px; font-size: 12.5px; }
+  .ok { color: #047857; } .bad { color: #b91c1c; }
+</style>
+</head>
+<body>
+  <h1>ربط فيسبوك بمنصة المنصة</h1>
+  <p>سجّل دخول فيسبوك في المتصفح بحساب مدير الصفحة، وبعدين دوس الزر. الكوكيز بتتنسخ على الحافظة بس، ومفيش حاجة بتتبعت لأي مكان.</p>
+  <p dir="ltr" style="text-align:left">Log in to facebook.com with the Page admin account, then press the button. The cookies are only copied to your clipboard; nothing is sent anywhere.</p>
+  <button id="go">نسخ الكوكيز / Copy cookies</button>
+  <div id="msg"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "manifest_version": 3,
+  "name": "Elmanassa - Facebook connect helper",
+  "version": "1.0.0",
+  "description": "Copies the Facebook session cookies of the account you are logged in with, so you can paste them into the Messenger card of your Elmanassa dashboard.",
+  "permissions": ["cookies", "clipboardWrite"],
+  "host_permissions": ["https://*.facebook.com/*"],
+  "action": { "default_title": "Copy Facebook cookies", "default_popup": "popup.html" }
+}

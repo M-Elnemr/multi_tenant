@@ -85,6 +85,10 @@ function PlatformCard({ plat, conn, onChanged }: { plat: Plat; conn?: Connection
             </>
           ) : (
             <>
+              <p className="rounded-[12px] bg-surface-2 px-3 py-2 text-[12.5px] leading-relaxed text-ink-2">
+                {t("cx.helper")}{" "}
+                <a href="/downloads/elmanassa-fb-cookies.zip" download className="font-semibold text-brand hover:underline">{t("cx.helperDownload")}</a>
+              </p>
               <Field label={t("cx.cookies")} hint={t("cx.cookiesHint")}><Textarea rows={3} value={cookies} onChange={(e) => setCookies(e.target.value)} autoComplete="off" spellCheck={false} dir="ltr" /></Field>
               <Field label={t("cx.pageId")} hint={t("cx.pageIdHint")}><Input value={pageId} onChange={(e) => setPageId(e.target.value)} autoComplete="off" inputMode="numeric" dir="ltr" /></Field>
             </>
