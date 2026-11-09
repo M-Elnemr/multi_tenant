@@ -12,16 +12,26 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class HumanPolicies {
-    private final HumanPolicy manual, whatsapp;
+    private final HumanPolicy manual, whatsapp, cold;
     private final boolean whatsappTypingSleep;
 
     public HumanPolicies(Environment env) {
         this.manual = new HumanPolicy(load(env, "app.meta.unofficial.", HumanPolicy.manualDefaults()));
+        this.cold = new HumanPolicy(load(env, "app.meta.unofficial.cold.", coldDefaults()));
         this.whatsapp = new HumanPolicy(load(env, "app.broadcast.whatsapp.", HumanPolicy.whatsappDefaults()));
         this.whatsappTypingSleep = Boolean.parseBoolean(env.getProperty("app.broadcast.whatsapp.typing-sleep", "true"));
     }
 
     public HumanPolicy manual() { return manual; }
+
+    /** Cold outreach to prospects (followers / commenters who never wrote): {@code app.meta.unofficial.cold.*}, stricter than {@link #manual()}. */
+    public HumanPolicy cold() { return cold; }
+
+    static Profile coldDefaults() {
+        var m = HumanPolicy.manualDefaults();
+        return new Profile("cold", true, 90, 240, 20, 5, 9, 7 * 60, 20 * 60, 12, 40, new int[] {5, 8, 12, 18, 25, 30}, 10, 20,
+                m.maxChars(), m.maxLinks(), m.maxEmojiRepeat(), m.minVariants(), m.typingMsPerChar(), m.typingBaseMinMs(), m.typingBaseMaxMs(), m.typingCapMs(), m.ownerReplyMinutes(), 0, 60, 0);
+    }
 
     public HumanPolicy whatsapp() { return whatsapp; }
 

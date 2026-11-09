@@ -24,10 +24,18 @@ public class FakeOutOfWindowSender implements OutOfWindowSender {
     public static volatile boolean HEALTHY = true;
     public static volatile String LOGIN_ERROR = null;
     public static volatile String STATE = "ACTIVE";
+    /** When true this fake also stands in for the Messenger sidecar (otherwise the real FbBridgeSender, which is unconfigured in tests, serves FACEBOOK). */
+    public static volatile boolean HANDLE_FB = false;
 
-    public static void reset() { SENT.clear(); LOGOUTS.clear(); LOGINS.clear(); NEXT = Kind.SENT; HEALTHY = true; LOGIN_ERROR = null; STATE = "ACTIVE"; }
+    public static void reset() { SENT.clear(); LOGOUTS.clear(); LOGINS.clear(); NEXT = Kind.SENT; HEALTHY = true; LOGIN_ERROR = null; STATE = "ACTIVE"; HANDLE_FB = false; }
 
-    @Override public boolean handles(String platform) { return "INSTAGRAM".equals(platform); }
+    @Override public boolean handles(String platform) { return "INSTAGRAM".equals(platform) || (HANDLE_FB && "FACEBOOK".equals(platform)); }
+
+    @Override
+    public LoginResult loginWithCookies(UUID tenant, String platform, String cookies, String pageId) {
+        LOGINS.add("cookies:" + pageId);
+        return LOGIN_ERROR == null ? LoginResult.ok("page_" + pageId) : LoginResult.error(LOGIN_ERROR);
+    }
     @Override public boolean healthy() { return HEALTHY; }
 
     @Override

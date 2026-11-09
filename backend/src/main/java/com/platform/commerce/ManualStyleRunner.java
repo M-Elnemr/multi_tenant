@@ -46,10 +46,11 @@ public class ManualStyleRunner {
     private final HumanPolicies policies;
     private final OutboundBilling billing;
     private final NotificationService notifications;
+    private final ProspectService prospects;
     private final boolean scheduler;
     private final Random rnd = new Random();
 
-    public ManualStyleRunner(JdbcClient jdbc, SegmentService segments, UnofficialMetaService unofficial, HumanPolicies policies, OutboundBilling billing, NotificationService notifications,
+    public ManualStyleRunner(JdbcClient jdbc, SegmentService segments, UnofficialMetaService unofficial, HumanPolicies policies, OutboundBilling billing, NotificationService notifications, ProspectService prospects,
                              @Value("${app.integrations.scheduler.enabled:true}") boolean scheduler) {
         this.jdbc = jdbc;
         this.segments = segments;
@@ -57,6 +58,7 @@ public class ManualStyleRunner {
         this.policies = policies;
         this.billing = billing;
         this.notifications = notifications;
+        this.prospects = prospects;
         this.scheduler = scheduler;
     }
 
@@ -71,12 +73,13 @@ public class ManualStyleRunner {
     /** One pass: at most one message per running broadcast. Returns how many went out. Public for tests. */
     public synchronized int runDue() {
         int sent = 0;
-        HumanPolicy pol = policies.manual();
         for (var b : jdbc.sql("""
-                SELECT id, tenant_id, created_by, message, variants::text AS variants, manual_next_at, manual_seq, manual_since_break, manual_break_after, manual_last_hash
+                SELECT id, tenant_id, created_by, kind, message, variants::text AS variants, manual_next_at, manual_seq, manual_since_break, manual_break_after, manual_last_hash
                 FROM commerce.broadcasts WHERE status = 'SENDING' AND """ + " " + com.platform.shared.TenantState.running("tenant_id")
                 + " AND EXISTS (SELECT 1 FROM commerce.broadcast_recipients r WHERE r.broadcast_id = broadcasts.id AND r.route = 'MANUAL_STYLE' AND r.status IN ('PENDING', 'SENDING')) ORDER BY created_at LIMIT 20").query().listOfRows()) {
             UUID id = (UUID) b.get("id"), tenantId = (UUID) b.get("tenant_id");
+            boolean cold = "PROSPECTS".equals(b.get("kind"));
+            HumanPolicy pol = cold ? policies.cold() : policies.manual();   // cold outreach to prospects runs on the stricter profile
             var next = nextPending(id);
             if (next == null) { done(id); continue; }
             String channel = (String) next.get("channel");
@@ -109,7 +112,7 @@ public class ManualStyleRunner {
                 UUID rid = (UUID) rcp.get("id");
                 if (jdbc.sql("UPDATE commerce.broadcast_recipients SET status = 'SENDING', sent_at = now(), error = NULL WHERE id = :i AND status = 'PENDING'").param("i", rid).update() == 0) continue;
                 String ext = (String) rcp.get("external_id"), name = (String) rcp.get("name");
-                String skip = skipReason(tenantId, channel, ext, pol);
+                String skip = cold ? prospects.skipReason(tenantId, channel, ext, pol) : skipReason(tenantId, channel, ext, pol);
                 if (skip != null) { segments.finish(id, rid, "SKIPPED", skip, 0, false); continue; }
                 // the wording: rotate the versions in turn, first name, tiny safe variations, one link at most; the opt-out line goes last
                 int seq = (int) num(b.get("manual_seq"));
@@ -126,9 +129,10 @@ public class ManualStyleRunner {
                 jdbc.sql("UPDATE commerce.broadcast_recipients SET cost_minor = :c WHERE id = :i").param("c", price).param("i", rid).update();
                 // (e) the bridge marks the thread seen and "types" for about this long (40 ms per character plus 2-6 s) before it sends
                 int typingMs = pol.typingMillis(body.length(), rnd, 0);
-                String target = name != null && USERNAME.matcher(name.trim()).matches() ? name.trim() : ext;
+                String target = !cold && name != null && USERNAME.matcher(name.trim()).matches() ? name.trim() : ext;   // a prospect is addressed by its id (pk): exact, no username guessing
                 OutOfWindowSender.Result res = sender.send(tenantId, channel, target, body, typingMs);
                 boolean ok = res.ok();
+                if (cold) prospects.markResult(tenantId, channel, ext, res.kind());
                 if (!ok) billing.refund(tenantId, ref, "Broadcast message not delivered");   // never charge for a message that was not sent
                 switch (res.kind()) {
                     case SENT -> { segments.finish(id, rid, "SENT", null, price, false); sent++; unofficial.recordSent(tenantId, channel); }

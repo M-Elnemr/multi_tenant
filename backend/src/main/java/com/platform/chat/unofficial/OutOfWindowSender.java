@@ -4,7 +4,7 @@ import java.util.UUID;
 
 /**
  * Sends a Messenger / Instagram message to a contact OUTSIDE Meta's 24 h window, the way a person would by hand, through an UNOFFICIAL route (Meta's official API forbids this).
- * Off unless {@code app.meta.unofficial.enabled}. One implementation per platform; {@link UnofficialMetaService} picks the first sender that {@link #handles} the platform
+ * On by default ({@code app.meta.unofficial.enabled}, an operator kill switch). One implementation per platform; {@link UnofficialMetaService} picks the first sender that {@link #handles} the platform
  * (so a Messenger transport can be plugged in later without touching the policy layer).
  *
  * Implementations never throw: every outcome is a typed {@link Result}. They never log or return credentials.
@@ -50,6 +50,9 @@ public interface OutOfWindowSender {
     SessionStatus status(UUID tenant, String platform);
 
     LoginResult login(UUID tenant, String platform, String username, String password, String totp);
+
+    /** Cookie-based login (Messenger): the pasted cookie string plus the Page id the session acts as. Transports that log in with a password say UNSUPPORTED. */
+    default LoginResult loginWithCookies(UUID tenant, String platform, String cookies, String pageId) { return LoginResult.error("UNSUPPORTED"); }
 
     /** Drops the session on the transport side (idempotent). */
     void logout(UUID tenant, String platform);

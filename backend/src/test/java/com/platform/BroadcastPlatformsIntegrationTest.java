@@ -112,7 +112,7 @@ class BroadcastPlatformsIntegrationTest extends IntegrationTestBase {
         assertThat(((Number) JsonPath.read(res, "$.outsideWindow")).intValue()).isEqualTo(1);
         assertThat(((Number) JsonPath.read(res, "$.byPlatform.INSTAGRAM.total")).intValue()).isEqualTo(4);
         assertThat(((Number) JsonPath.read(res, "$.byPlatform.INSTAGRAM.reachable")).intValue()).isEqualTo(2);
-        assertThat(((List<?>) JsonPath.read(res, "$.data[?(@.reason=='OUTSIDE_WINDOW')]")).size()).isEqualTo(1);
+        assertThat(((List<?>) JsonPath.read(res, "$.data[?(@.reason=='CONNECT_ACCOUNT')]")).size()).isEqualTo(1);
         assertThat(((List<?>) JsonPath.read(res, "$.data[?(@.reason=='OPTED_OUT')]")).size()).isEqualTo(1);
         onHost(h, owner, "GET", "/api/v1/store/segments/customers?segments=VIP&platforms=WHATSAPP,FACEBOOK,INSTAGRAM", null).andExpect(jsonPath("$.total").value(0));   // nobody is a VIP
         onHost(h, owner, "GET", "/api/v1/store/segments/customers?segments=NEW&platforms=FACEBOOK&q=mona", null).andExpect(jsonPath("$.total").value(1)).andExpect(jsonPath("$.data[0].platform").value("FACEBOOK"));
