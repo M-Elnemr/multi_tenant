@@ -138,12 +138,14 @@ class ManualStyleBroadcastIntegrationTest extends IntegrationTestBase {
         onHost(h, owner, "GET", "/api/v1/store/segments/customers?segments=ALL&platforms=INSTAGRAM", null)
                 .andExpect(jsonPath("$.reachable").value(2)).andExpect(jsonPath("$.manualStyle").value(2)).andExpect(jsonPath("$.data[0].route").value("MANUAL_STYLE"));
 
-        // at least three wordings are required
+        // at least three wordings are required (the rule is off for a handful of people, so this check lowers the small-send limit)
+        ReflectionTestUtils.setField(segments, "smallSendMax", 0);
         onHost(h, owner, "POST", "/api/v1/store/broadcasts", "{\"segments\":[\"ALL\"],\"platforms\":[\"INSTAGRAM\"],\"manualPlatforms\":[\"INSTAGRAM\"],\"message\":\"Hi {name}, new offer today\"}").andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VARIANTS_REQUIRED"));
         // content rules apply at creation
         onHost(h, owner, "POST", "/api/v1/store/broadcasts", "{\"segments\":[\"ALL\"],\"platforms\":[\"INSTAGRAM\"],\"manualPlatforms\":[\"INSTAGRAM\"],\"message\":\"see http://a.com and http://b.com now\",\"variants\":[\"look at http://a.com or http://b.com\",\"visit http://a.com then http://b.com\"]}")
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("CONTENT_REJECTED"));
 
+        ReflectionTestUtils.setField(segments, "smallSendMax", 3);
         String create = ok(onHost(h, owner, "POST", "/api/v1/store/broadcasts", BODY).andExpect(status().isOk()));
         String id = JsonPath.read(create, "$.id");
         assertThat(((Number) JsonPath.read(create, "$.reachable")).intValue()).isEqualTo(2);

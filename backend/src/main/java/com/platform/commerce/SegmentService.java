@@ -37,6 +37,9 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class SegmentService {
+    /** Up to this many hand-style recipients the wording and daily rules do not apply (a test, a few old clients). */
+    @org.springframework.beans.factory.annotation.Value("${app.meta.unofficial.small-send-max:3}") private int smallSendMax = 3;
+
     private static final Logger log = LoggerFactory.getLogger(SegmentService.class);
     public static final List<String> SEGMENT_ORDER = List.of("ALL", "NEW", "REPEAT", "VIP", "AT_RISK", "LAPSED");
     public static final Set<String> KEYS = Set.copyOf(SEGMENT_ORDER);
@@ -349,10 +352,10 @@ public class SegmentService {
             if (anyWa) { String why = policies.whatsapp().contentProblem(HumanPolicy.stripRepeatedLinks(v)); if (why != null) throw BusinessException.badRequest("CONTENT_REJECTED", "This message cannot be sent: " + why); }
             if (anyManual) { String why = policies.manual().contentProblem(HumanPolicy.stripRepeatedLinks(v) + OPT_OUT_LINE); if (why != null) throw BusinessException.badRequest("CONTENT_REJECTED", "This message cannot be sent by hand-style sending: " + why); }
         }
-        long manualCount = queue.stream().filter(a -> "MANUAL_STYLE".equals(a.route())).count();   // the wording and daily rules protect the account from bulk sends; a handful of people (a test, a few old clients) is exempt
-        if (anyManual && manualCount > 3 && !policies.manual().enoughVariants(text, variants)) throw BusinessException.badRequest("VARIANTS_REQUIRED", "Hand-style sending needs at least " + policies.manual().profile().minVariants() + " different wordings of the message");
+        long manualRecipients = queue.stream().filter(a -> "MANUAL_STYLE".equals(a.route())).count();   // the wording and daily rules protect the account from bulk sends; a handful of people (a test, a few old clients) is exempt
+        if (anyManual && manualRecipients > smallSendMax && !policies.manual().enoughVariants(text, variants)) throw BusinessException.badRequest("VARIANTS_REQUIRED", "Hand-style sending needs at least " + policies.manual().profile().minVariants() + " different wordings of the message");
         for (String p : manualAsked) {   // one hand-style broadcast a day per platform
-            if (queue.stream().filter(a -> "MANUAL_STYLE".equals(a.route()) && a.platform().equals(p)).count() <= 3) continue;
+            if (queue.stream().filter(a -> "MANUAL_STYLE".equals(a.route()) && a.platform().equals(p)).count() <= smallSendMax) continue;
             if (jdbc.sql("""
                     SELECT count(*) FROM commerce.broadcasts b WHERE b.tenant_id = :t AND b.created_at > now() - interval '24 hours'
                        AND EXISTS (SELECT 1 FROM commerce.broadcast_recipients br WHERE br.broadcast_id = b.id AND br.route = 'MANUAL_STYLE' AND br.channel = :p AND (br.status = 'SENT' OR b.status IN ('SENDING', 'PAUSED', 'DONE')))
