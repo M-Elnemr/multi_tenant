@@ -26,6 +26,13 @@ Same layout and conventions as `infra/ig-bridge`.
 
 `typing_ms` is slept before sending (capped at 40 s). Facebook error codes are mapped on a best-effort basis (`EXPIRED_CODES`, `BLOCK_CODES`, `NOT_FOUND_CODES` in `app.py`); unknown ones are `FAILED`.
 
+### Page followers: `GET /facebook/{tenant}/followers?cursor=&collection=&limit=100`
+
+Answer `{ok:true, users:[{id,name,subtitle,vanity}], next_cursor|null, collection}` or `{ok:false, error: SESSION_EXPIRED|RATE_LIMITED|DOCID_STALE|PARSE_EMPTY|FAILED}`.
+No cursor: loads `facebook.com/<page id>/followers` (first ~8-10 followers, first cursor, collection id), then pages `POST /api/graphql/` (`ProfileCometAppCollectionListRendererPaginationQuery`, 8 per page, 2-5 s sleep between pages) until `limit` (max 200) is reached or the list ends. Pass the returned `cursor` and `collection` to continue.
+`FB_DOCID_FOLLOWERS` (default `28822068060820720`) is the persisted-query id: Facebook rotates it, so when `DOCID_STALE` appears, copy the new `doc_id` of that request from the browser's network tab into the env var and restart.
+The graphql answer shape was never captured; the parser is tolerant and only assumes: a follower is any object with a numeric `id` of >= 8 digits, a name (`name` or `title`/`title.text`) and `__typename: "User"` (or a facebook.com profile url); paging is any `page_info`/`pageInfo` object with `end_cursor`/`has_next_page`; the collection id is a string starting `YXBwX2NvbGxlY3Rpb24` (base64 of `app_collection:`). `PARSE_EMPTY` = nothing readable, `DOCID_STALE` = graphql errors or a non-JSON answer. Fixtures in the tests are invented.
+
 ## What is stored
 
 Per shop one file `/data/<tenant>.json`, mode 0600: the cookie string (with `i_user`) and the Page id. Cookies are never logged. The `fb_dtsg` token set is kept in memory and rebuilt from the cookies after a restart.

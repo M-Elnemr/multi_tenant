@@ -35,6 +35,9 @@ MAX_TYPING_MS = 40_000
 TENANT_RE = re.compile(r"^[0-9a-fA-F-]{32,36}$")
 PAGE_ID_RE = re.compile(r"^\d{5,25}$")
 RECIPIENT_RE = re.compile(r"^\d{5,25}$")
+FOLLOWERS_FRIENDLY_NAME = "ProfileCometAppCollectionListRendererPaginationQuery"
+# Facebook changes persisted-query ids from time to time: when followers stop loading, set FB_DOCID_FOLLOWERS to the new one (see the README).
+DOCID_FOLLOWERS = os.environ.get("FB_DOCID_FOLLOWERS", "28822068060820720")
 
 # Facebook error codes seen on the web send endpoint; best effort, anything else is FAILED.
 EXPIRED_CODES = {1357001, 1357004, 1357031}
@@ -67,6 +70,14 @@ class Transport:
 
     def threads(self, data: dict, before: Optional[int], limit: int) -> list:
         """One page of inbox thread nodes (raw graphql dicts), newest first; `before` = updated_time_precise (ms) of the oldest thread of the previous page."""
+        raise NotImplementedError
+
+    def followers_html(self, data: dict, page_id: str) -> str:
+        """The HTML of the Page's followers tab (facebook.com/<page_id>/followers), fetched with the Page session."""
+        raise NotImplementedError
+
+    def followers_graphql(self, data: dict, doc_id: str, variables: dict, lsd: Optional[str]) -> str:
+        """The raw text of one POST /api/graphql/ answer (ProfileCometAppCollectionListRendererPaginationQuery)."""
         raise NotImplementedError
 
 
@@ -124,6 +135,61 @@ class FbchatTransport(Transport):
         if o0.get("errors"):
             raise RuntimeError("graphql errors")
         return ((((o0.get("data") or {}).get("viewer") or {}).get("message_threads") or {}).get("nodes")) or []
+
+    def followers_html(self, data: dict, page_id: str) -> str:
+        import contextlib
+        import io
+
+        import httpx
+        from fbchat_v2._core._utils import Headers, parse_cookie_string
+        headers = Headers(None, "www.facebook.com")
+        headers.update({"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", "Sec-Fetch-Dest": "document", "Sec-Fetch-Mode": "navigate",
+                        "Sec-Fetch-Site": "same-origin", "Upgrade-Insecure-Requests": "1", "Referer": "https://www.facebook.com/"})
+        headers.pop("Origin", None)
+        headers.pop("Host", None)
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), httpx.Client(timeout=60.0, follow_redirects=True, headers=headers, cookies=parse_cookie_string(data["cookieFacebook"])) as client:
+                response = client.get(f"https://www.facebook.com/{page_id}/followers")
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            _raise_for_status(e.response.status_code)
+        final = str(response.url)
+        if "/login" in final:
+            raise SessionExpired()
+        if "/checkpoint" in final:
+            raise Checkpoint()
+        return response.text
+
+    def followers_graphql(self, data: dict, doc_id: str, variables: dict, lsd: Optional[str]) -> str:
+        import contextlib
+        import io
+
+        import httpx
+        from fbchat_v2._core._utils import formAll, mainRequests, send_request
+        form = formAll(data, FOLLOWERS_FRIENDLY_NAME, doc_id)
+        if lsd:
+            form["lsd"] = lsd
+        form["variables"] = json.dumps(variables, separators=(",", ":"))
+        args = mainRequests("https://www.facebook.com/api/graphql/", form, data["cookieFacebook"])
+        args["headers"]["X-FB-Friendly-Name"] = FOLLOWERS_FRIENDLY_NAME
+        if lsd:
+            args["headers"]["X-FB-LSD"] = lsd
+        args["timeout"] = 60.0
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                response = send_request(args)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            _raise_for_status(e.response.status_code)
+        return response.text
+
+
+def _raise_for_status(code: int):
+    if code in (401, 403):
+        raise SessionExpired() from None
+    if code == 429:
+        raise RateLimited() from None
+    raise RuntimeError(f"http {code}") from None
 
 
 transport: Transport = FbchatTransport()
@@ -390,4 +456,230 @@ def threads(tenant: str, limit: int = 50, before: Optional[str] = None):
             return {"ok": False, "error": "RATE_LIMITED"}
         except Exception as e:  # noqa: BLE001
             log.warning("threads failed: %s", type(e).__name__)
+            return {"ok": False, "error": "FAILED"}
+
+
+# ---- the Page's followers ---------------------------------------------------------------------------------------------------------------
+# The followers tab renders the first ~8-10 followers into its HTML (embedded JSON blobs) with the first end cursor and the id of the app collection; more load through
+# POST /api/graphql/ (ProfileCometAppCollectionListRendererPaginationQuery). The shape of the graphql answer was never captured, so the parser below is TOLERANT. Its only assumptions:
+#   * a follower is any object with a numeric `id` of at least 8 digits, a name (`name`, or `title`/`title.text` as text) and `__typename` == "User" or a facebook.com profile url
+#   * pagination is any object under the key `page_info` / `pageInfo` carrying `end_cursor` and/or `has_next_page`
+#   * the collection id is a string that is base64 of "app_collection:..." (starts with YXBwX2NvbGxlY3Rpb24)
+MAX_FOLLOWERS_PER_CALL = 200
+FOLLOWERS_PAGE_SIZE = 8
+ID_RE = re.compile(r"^\d{8,25}$")
+COLLECTION_RE = re.compile(r"YXBwX2NvbGxlY3Rpb24[A-Za-z0-9+/=_-]{4,200}")
+LSD_RES = [re.compile(r'"LSD",\[\],\{"token":"([^"]+)"'), re.compile(r'name="lsd" value="([^"]+)"'), re.compile(r'"lsd":"([^"]+)"')]
+SCRIPT_JSON_RE = re.compile(r"<script[^>]*type=\"application/json\"[^>]*>(.*?)</script>", re.S)
+CURSOR_RE = re.compile(r'"end_cursor":"([^"]+)"')
+NON_VANITY = {"profile.php", "people", "pages", "groups", "watch", "marketplace", "events", "help", "policies", "login", "privacy", "photo", "photo.php", "permalink.php", "story.php"}
+
+
+def _text(v) -> Optional[str]:
+    if isinstance(v, str):
+        return v.strip() or None
+    if isinstance(v, dict):
+        return _text(v.get("text"))
+    return None
+
+
+def _vanity(url: Optional[str]) -> Optional[str]:
+    m = re.match(r"^https?://(?:www\.|m\.|web\.)?facebook\.com/([^/?#]+)/?(?:[?#].*)?$", url or "")
+    if not m:
+        return None
+    v = m.group(1)
+    return None if v.lower() in NON_VANITY or v.isdigit() else v
+
+
+def _user(o: dict) -> Optional[dict]:
+    uid = o.get("id")
+    uid = str(uid) if isinstance(uid, (str, int)) and not isinstance(uid, bool) else ""
+    if not ID_RE.match(uid):
+        return None
+    name = _text(o.get("name")) or _text(o.get("title"))
+    if not name:
+        return None
+    url = o.get("url") or o.get("profile_url") or o.get("profileUrl")
+    url = url if isinstance(url, str) else None
+    if o.get("__typename") != "User" and not (url and "facebook.com" in url):
+        return None
+    sub = None
+    for k in ("subtitle_text", "subtitle", "subtitle_1", "subtitle_2", "bio_text"):
+        sub = _text(o.get(k))
+        if sub:
+            break
+    return {"id": uid, "name": name, "subtitle": sub, "vanity": _vanity(url)}
+
+
+class Found:
+    def __init__(self):
+        self.users: dict = {}
+        self.cursor: Optional[str] = None
+        self.has_next: Optional[bool] = None
+        self.collection: Optional[str] = None
+        self.page_info_seen = False
+        self.errors = False
+
+
+def _walk(o, found: Found, collection: Optional[str] = None):
+    if isinstance(o, list):
+        for i in o:
+            _walk(i, found, collection)
+        return
+    if not isinstance(o, dict):
+        return
+    cid = o.get("id")
+    if isinstance(cid, str) and COLLECTION_RE.fullmatch(cid):
+        collection = cid
+    pi = o.get("page_info") if isinstance(o.get("page_info"), dict) else o.get("pageInfo")
+    if isinstance(pi, dict) and ("end_cursor" in pi or "has_next_page" in pi):
+        found.page_info_seen = True
+        ec = pi.get("end_cursor")
+        if isinstance(ec, str) and ec:
+            found.cursor = ec
+            if collection:
+                found.collection = collection
+        if isinstance(pi.get("has_next_page"), bool):
+            found.has_next = pi["has_next_page"]
+    if o.get("errors"):
+        found.errors = True
+    u = _user(o)
+    if u and u["id"] not in found.users:
+        found.users[u["id"]] = u
+    for v in o.values():
+        if isinstance(v, (dict, list)):
+            _walk(v, found, collection)
+
+
+def _json_objects(text: str) -> list:
+    """Every JSON document in a graphql answer: plain JSON, a `for (;;);` guarded one, or several newline separated chunks (streamed answers)."""
+    text = (text or "").strip()
+    if text.startswith("for (;;);"):
+        text = text[len("for (;;);"):].strip()
+    try:
+        return [json.loads(text)]
+    except ValueError:
+        pass
+    out = []
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("for (;;);"):
+            line = line[len("for (;;);"):]
+        if line.startswith("{") or line.startswith("["):
+            try:
+                out.append(json.loads(line))
+            except ValueError:
+                continue
+    return out
+
+
+def parse_followers(docs: list, exclude: set) -> Found:
+    found = Found()
+    for d in docs:
+        _walk(d, found)
+    for x in exclude:
+        found.users.pop(x, None)
+    return found
+
+
+def parse_followers_html(html: str, exclude: set) -> Found:
+    docs = []
+    for blob in SCRIPT_JSON_RE.findall(html or ""):
+        try:
+            docs.append(json.loads(blob))
+        except ValueError:
+            continue
+    found = parse_followers(docs, exclude)
+    if found.cursor is None:   # the data may sit in a script that is not plain JSON: take the cursor by pattern
+        m = CURSOR_RE.search(html or "")
+        if m:
+            found.cursor = m.group(1)
+    if found.collection is None:
+        m = COLLECTION_RE.search(html or "")
+        if m:
+            found.collection = m.group(0)
+    return found
+
+
+def lsd_from_html(html: str) -> Optional[str]:
+    for rx in LSD_RES:
+        m = rx.search(html or "")
+        if m:
+            return m.group(1)
+    return None
+
+
+def _followers_error(code: str, detail: Optional[str] = None):
+    log.warning("followers: %s %s", code, detail or "")
+    out = {"ok": False, "error": code}
+    if detail:
+        out["detail"] = detail
+    return out
+
+
+def _rows(users: dict) -> list:
+    return [{"id": u["id"], "name": u["name"], "subtitle": u["subtitle"], "vanity": u["vanity"]} for u in users.values()]
+
+
+@app.get("/facebook/{tenant}/followers", dependencies=[Depends(require_secret)])
+def followers(tenant: str, cursor: Optional[str] = None, collection: Optional[str] = None, limit: int = 100):
+    """One run of followers: no cursor = load the followers page (first batch, cursor, collection id), then page through graphql until `limit` is reached or the list ends.
+    Returns every user it read (a page may overshoot `limit` by a few) so that `next_cursor` never skips anyone."""
+    tenant = tenant_key(tenant)
+    limit = max(1, min(int(limit), MAX_FOLLOWERS_PER_CALL))
+    cursor = cursor or None
+    collection = collection or None
+    if collection and not COLLECTION_RE.fullmatch(collection):
+        return {"ok": False, "error": "FAILED", "detail": "bad collection"}
+    if cursor and not collection:
+        return {"ok": False, "error": "FAILED", "detail": "collection required with cursor"}
+    with lock_for(tenant):
+        saved = read_session(tenant)
+        if saved is None:
+            return {"ok": False, "error": "SESSION_EXPIRED"}
+        try:
+            data = _data.get(tenant)
+            if data is None:
+                data = transport.home(saved["cookies"])
+                if not data or str(data.get("FacebookID") or "") != saved["page_id"]:
+                    return {"ok": False, "error": "SESSION_EXPIRED"}
+                _data[tenant] = data
+            exclude = {saved["page_id"], str(data.get("FacebookID") or "")}
+            users: dict = {}
+            lsd = None
+            nxt = cursor
+            if not cursor:
+                html = transport.followers_html(data, saved["page_id"])
+                lsd = lsd_from_html(html)
+                first = parse_followers_html(html, exclude)
+                if not first.users and not first.cursor:
+                    return _followers_error("PARSE_EMPTY")
+                users.update(first.users)
+                nxt = first.cursor if first.has_next is not False else None
+                collection = first.collection or collection
+                if nxt and not collection:
+                    return _followers_error("PARSE_EMPTY", "no collection id")
+            while nxt and len(users) < limit:
+                time.sleep(random.uniform(2.0, 5.0))
+                variables = {"count": FOLLOWERS_PAGE_SIZE, "cursor": nxt, "scale": 2, "search": None, "id": collection,
+                             "__relay_internal__pv__FBProfile_enable_perf_improv_gkrelayprovider": True}
+                text = transport.followers_graphql(data, DOCID_FOLLOWERS, variables, lsd)
+                docs = _json_objects(text)
+                page = parse_followers(docs, exclude)
+                if not page.users and not page.page_info_seen:
+                    if users:   # keep the real pages; the next run retries from the same cursor
+                        return {"ok": True, "users": _rows(users), "next_cursor": nxt, "collection": collection}
+                    return _followers_error("DOCID_STALE" if (page.errors or not docs) else "PARSE_EMPTY")
+                new = {k: v for k, v in page.users.items() if k not in users}
+                users.update(new)
+                following = page.cursor if page.has_next is not False else None
+                nxt = following if following and following != nxt and new else None   # no news or the same cursor again: the list ended
+            return {"ok": True, "users": _rows(users), "next_cursor": nxt, "collection": collection}
+        except SessionExpired:
+            _data.pop(tenant, None)
+            return {"ok": False, "error": "SESSION_EXPIRED"}
+        except (RateLimited, Checkpoint):
+            return {"ok": False, "error": "RATE_LIMITED"}
+        except Exception as e:  # noqa: BLE001
+            log.warning("followers failed: %s", type(e).__name__)
             return {"ok": False, "error": "FAILED"}

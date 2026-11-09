@@ -30,7 +30,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * "New customers": people who follow or commented on the shop's Instagram / Facebook page but never wrote to it. They are collected (Instagram followers and commenters through the
- * ig-bridge, Facebook commenters from the comments we already receive; Facebook followers cannot be listed by any tool), shown, and messaged hand-style (route MANUAL_STYLE) on the
+ * ig-bridge, Facebook commenters from the comments we already receive plus the Page's followers read through the connected Page session of the fb-bridge), shown, and messaged hand-style (route MANUAL_STYLE) on the
  * stricter cold profile of {@link HumanPolicies}. Anyone who already has a conversation with the page is never a prospect (they belong to the existing-customers tab).
  *
  * One sync at a time per shop, paced with random sleeps, once a day on a schedule plus "sync now". Verified only against a fake bridge.
@@ -109,6 +109,7 @@ public class ProspectService {
         Map<String, Object> igCounts = new LinkedHashMap<>(), fbCounts = new LinkedHashMap<>();
         igCounts.put("FOLLOWER", 0L);
         igCounts.put("COMMENTER", 0L);
+        fbCounts.put("FOLLOWER", 0L);
         fbCounts.put("COMMENTER", 0L);
         counts.put("INSTAGRAM", igCounts);
         counts.put("FACEBOOK", fbCounts);
@@ -202,10 +203,12 @@ public class ProspectService {
 
     private static String syncCode(String bridgeError) {
         return switch (bridgeError == null ? "" : bridgeError) {
-            case "SESSION_EXPIRED" -> "NEEDS_LOGIN";
+            case "SESSION_EXPIRED", "NEEDS_LOGIN" -> "NEEDS_LOGIN";
             case "CHALLENGE" -> "CHALLENGE_REQUIRED";
-            case "UNREACHABLE" -> "BRIDGE_UNREACHABLE";
+            case "UNREACHABLE", "BRIDGE_UNREACHABLE" -> "BRIDGE_UNREACHABLE";
             case "RATE_LIMITED" -> "RATE_LIMITED";
+            case "DOCID_STALE" -> "DOCID_STALE";
+            case "PARSE_EMPTY" -> "PARSE_EMPTY";
             default -> "FAILED";
         };
     }
@@ -249,7 +252,7 @@ public class ProspectService {
         }
     }
 
-    /** Facebook cannot list followers; the commenters are the authors of the comments the page already received. */
+    /** Facebook: the authors of the comments the page already received, plus (when the Page session is connected) the Page's followers read through the fb-bridge. */
     private void syncFacebook(UUID syncId, UUID tenantId) {
         Set<String> own = new LinkedHashSet<>(jdbc.sql("SELECT external_id FROM chat.channels WHERE tenant_id = :t AND platform = 'FACEBOOK'").param("t", tenantId).query(String.class).list());
         int n = 0;
@@ -263,6 +266,30 @@ public class ProspectService {
             n++;
         }
         progress(syncId, n, n);
+        if (!"ACTIVE".equals(unofficial.status(tenantId, "FACEBOOK"))) return;   // no Page session: the comment authors are all there is
+        OutOfWindowSender sender = unofficial.transport("FACEBOOK");
+        if (sender == null || !sender.supported()) return;
+        // a run that stopped half way (rate limit, stale query id) continues where it stopped, for up to 12 hours
+        var resume = jdbc.sql("""
+                SELECT resume_cursor, resume_collection FROM commerce.prospect_syncs WHERE tenant_id = :t AND platform = 'FACEBOOK' AND id <> :i AND status = 'FAILED' AND resume_cursor IS NOT NULL
+                  AND finished_at > now() - interval '12 hours' ORDER BY started_at DESC LIMIT 1
+                """).param("t", tenantId).param("i", syncId).query().listOfRows().stream().findFirst().orElse(null);
+        String cursor = resume == null ? null : (String) resume.get("resume_cursor"), collection = resume == null ? null : (String) resume.get("resume_collection");
+        int followers = 0;
+        while (followers < maxFollowers) {
+            var page = sender.listFollowers(tenantId, "FACEBOOK", Math.min(pageSize, maxFollowers - followers), cursor, collection);
+            if (!page.ok()) {
+                if (cursor != null) jdbc.sql("UPDATE commerce.prospect_syncs SET resume_cursor = :c, resume_collection = :k WHERE id = :i").param("c", cursor).param("k", collection).param("i", syncId).update();
+                throw new SyncError(syncCode(page.error()));
+            }
+            for (var u : page.users()) if (!own.contains(u.id())) upsert(tenantId, "FACEBOOK", u.id(), u.vanity(), u.name(), "FOLLOWER", null, null, false);
+            followers += page.users().size();
+            cursor = page.nextCursor();
+            collection = page.collection() != null ? page.collection() : collection;
+            progress(syncId, n + followers, cursor == null ? n + followers : Math.min(n + maxFollowers, n + followers + pageSize));
+            if (cursor == null || page.users().isEmpty()) return;
+            pause();
+        }
     }
 
     void upsert(UUID tenantId, String platform, String ref, String username, String displayName, String source, String postRef, String lastComment, boolean isPrivate) {
@@ -295,7 +322,7 @@ public class ProspectService {
         for (String p : PLATFORMS) {
             String sql = "INSTAGRAM".equals(p)
                     ? "SELECT tenant_id FROM chat.unofficial_sessions WHERE platform = 'INSTAGRAM' AND status = 'ACTIVE'"
-                    : "SELECT DISTINCT tenant_id FROM chat.social_comments WHERE platform = 'FACEBOOK' AND author_id IS NOT NULL";
+                    : "SELECT DISTINCT tenant_id FROM chat.social_comments WHERE platform = 'FACEBOOK' AND author_id IS NOT NULL UNION SELECT tenant_id FROM chat.unofficial_sessions WHERE platform = 'FACEBOOK' AND status = 'ACTIVE'";
             for (UUID t : jdbc.sql(sql).query(UUID.class).list()) {
                 boolean fresh = jdbc.sql("SELECT EXISTS (SELECT 1 FROM commerce.prospect_syncs WHERE tenant_id = :t AND platform = :p AND started_at > now() - interval '23 hours')").param("t", t).param("p", p).query(Boolean.class).single();
                 if (fresh) continue;

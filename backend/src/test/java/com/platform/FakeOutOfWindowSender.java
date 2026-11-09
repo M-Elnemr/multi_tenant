@@ -31,7 +31,19 @@ public class FakeOutOfWindowSender implements OutOfWindowSender {
     public static final List<ThreadPage> THREAD_PAGES = new CopyOnWriteArrayList<>();
     public static volatile String THREADS_ERROR = null;
 
-    public static void reset() { THREAD_PAGES.clear(); THREADS_ERROR = null; SENT.clear(); LOGOUTS.clear(); LOGINS.clear(); NEXT = Kind.SENT; HEALTHY = true; LOGIN_ERROR = null; STATE = "ACTIVE"; HANDLE_FB = false; }
+    /** Pages the next listFollowers calls return, in order; FOLLOWERS_ERROR makes every call fail with that code. FOLLOWER_CALLS records (cursor, collection) of each call. */
+    public static final List<FollowerPage> FOLLOWER_PAGES = new CopyOnWriteArrayList<>();
+    public static final List<String> FOLLOWER_CALLS = new CopyOnWriteArrayList<>();
+    public static volatile String FOLLOWERS_ERROR = null;
+
+    @Override
+    public FollowerPage listFollowers(UUID tenant, String platform, int limit, String cursor, String collection) {
+        FOLLOWER_CALLS.add(cursor + "|" + collection);
+        if (FOLLOWERS_ERROR != null) return FollowerPage.error(FOLLOWERS_ERROR);
+        return FOLLOWER_PAGES.isEmpty() ? FollowerPage.of(List.of(), null, collection) : FOLLOWER_PAGES.remove(0);
+    }
+
+    public static void reset() { FOLLOWER_PAGES.clear(); FOLLOWER_CALLS.clear(); FOLLOWERS_ERROR = null; THREAD_PAGES.clear(); THREADS_ERROR = null; SENT.clear(); LOGOUTS.clear(); LOGINS.clear(); NEXT = Kind.SENT; HEALTHY = true; LOGIN_ERROR = null; STATE = "ACTIVE"; HANDLE_FB = false; }
 
     @Override public boolean handles(String platform) { return "INSTAGRAM".equals(platform) || (HANDLE_FB && "FACEBOOK".equals(platform)); }
 
