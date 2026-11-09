@@ -5,6 +5,9 @@ import com.platform.billing.OutboundBilling;
 import com.platform.billing.WalletService;
 import com.platform.chat.EvolutionService;
 import com.platform.chat.MetaBroadcastSender;
+import com.platform.chat.unofficial.HumanPolicies;
+import com.platform.chat.unofficial.HumanPolicy;
+import com.platform.chat.unofficial.UnofficialMetaService;
 import com.platform.notifications.NotificationService;
 import com.platform.open.OpenUrls;
 import com.platform.shared.BusinessException;
@@ -39,11 +42,11 @@ public class SegmentService {
     public static final Set<String> KEYS = Set.copyOf(SEGMENT_ORDER);
     public static final List<String> PLATFORMS = List.of("WHATSAPP", "FACEBOOK", "INSTAGRAM");
 
-    public record Req(List<String> segments, List<String> platforms, String message, UUID imageFileId, Boolean push, String pushTitle, List<String> variants) {}
+    public record Req(List<String> segments, List<String> platforms, String message, UUID imageFileId, Boolean push, String pushTitle, List<String> variants, List<String> manualPlatforms) {}
 
     /** One person on one platform. {@code key} is the phone digits (WhatsApp) or the conversation id (Messenger, Instagram). */
     record Aud(String key, String name, String phone, String platform, String segment, long orders, long spentMinor, Instant lastOrderAt, String externalId, boolean reachable, String reason,
-               String gender, String orderPhone, Integer orderCount) {}
+               String gender, String orderPhone, Integer orderCount, String route, boolean manualOk) {}
 
     private final JdbcClient jdbc;
     private final MetaBroadcastSender meta;
@@ -57,13 +60,21 @@ public class SegmentService {
     private final OpenUrls urls;
     private final boolean scheduler;
     private final int gapMin, gapMax, quietFrom, quietTo;
+    private final UnofficialMetaService unofficial;
+    private final HumanPolicies policies;
+    private final com.platform.chat.EvolutionApi evolutionApi;
+    private final java.util.Random rnd = new java.util.Random();
 
     private final com.platform.chat.AiUsageService aiUsage;
 
     public SegmentService(JdbcClient jdbc, MetaBroadcastSender meta, AuditService audit, EvolutionService evolution, WalletService wallet, OutboundBilling billing, NotificationService notifications, OpenUrls urls, com.platform.chat.AiProvider ai, com.platform.core.auth.LoginThrottle throttle, com.platform.chat.AiUsageService aiUsage,
+                          UnofficialMetaService unofficial, HumanPolicies policies, com.platform.chat.EvolutionApi evolutionApi,
                           @Value("${app.integrations.scheduler.enabled:true}") boolean scheduler, @Value("${app.broadcast.free-gap-min-seconds:5}") int gapMin, @Value("${app.broadcast.free-gap-max-seconds:15}") int gapMax,
                           @Value("${app.broadcast.quiet-from-hour:22}") int quietFrom, @Value("${app.broadcast.quiet-to-hour:8}") int quietTo) {
         this.aiUsage = aiUsage;
+        this.unofficial = unofficial;
+        this.policies = policies;
+        this.evolutionApi = evolutionApi;
         this.gapMin = Math.max(0, gapMin);
         this.gapMax = Math.max(this.gapMin, gapMax);
         this.quietFrom = quietFrom;
@@ -99,7 +110,7 @@ public class SegmentService {
 
     private static boolean segmentWanted(Set<String> segs, String segment) { return segs.isEmpty() || segs.contains("ALL") || segs.contains(segment); }
 
-    private static String digits(String s) { return s == null ? "" : s.replaceAll("\\D", ""); }
+    static String digits(String s) { return s == null ? "" : s.replaceAll("\\D", ""); }
 
     private static Instant instant(Object ts) { return ts instanceof Timestamp t ? t.toInstant() : null; }
 
@@ -110,7 +121,18 @@ public class SegmentService {
      * linked to a customer by the phone they gave or their account, otherwise NEW (REPEAT when the chat is older than 7 days with more than 2 customer messages).
      * The only protection kept silently: someone who asked to stop is never reachable.
      */
-    List<Aud> audience(UUID tenantId, Set<String> segs) {
+    List<Aud> audience(UUID tenantId, Set<String> segs) { return audience(tenantId, segs, Set.of()); }
+
+    /** Why a contact whose window is closed must not get a manual-style message (null = fine). Same limits at creation and again at the moment of sending. */
+    static String manualGuard(HumanPolicy.Profile pr, Instant lastCustomer, long totalMsgs, long customerMsgs, boolean recentlyContacted, Instant now) {
+        if (pr.maxContactAgeDays() > 0 && (lastCustomer == null || lastCustomer.isBefore(now.minus(Duration.ofDays(pr.maxContactAgeDays()))))) return "MANUAL_TOO_OLD";
+        if (pr.minMessages() > 0 && (customerMsgs < 1 || totalMsgs < pr.minMessages())) return "MANUAL_FEW_MESSAGES";
+        if (recentlyContacted) return "MANUAL_RECENT";
+        return null;
+    }
+
+    /** {@code manualPlats}: platforms where the owner chose the manual-style route for contacts whose window is closed (and where that route is really available). */
+    List<Aud> audience(UUID tenantId, Set<String> segs, Set<String> manualPlats) {
         List<Aud> out = new ArrayList<>();
         boolean own = evolution.connected(tenantId);
         for (var r : jdbc.sql(SegmentSql.BASE + "SELECT phone, name, orders, spent, last_order, segment, gender, opted_out FROM s ORDER BY spent DESC LIMIT 20000").param("t", tenantId).query().listOfRows()) {
@@ -118,12 +140,18 @@ public class SegmentService {
             if (!segmentWanted(segs, seg)) continue;
             String phone = (String) r.get("phone"), d = digits(phone);
             String reason = d.length() < 8 || d.length() > 15 ? "NO_PHONE" : Boolean.TRUE.equals(r.get("opted_out")) ? "OPTED_OUT" : !own ? "NO_OWN_NUMBER" : null;
-            out.add(new Aud(d, (String) r.get("name"), phone, "WHATSAPP", seg, num(r.get("orders")), num(r.get("spent")), instant(r.get("last_order")), null, reason == null, reason, (String) r.get("gender"), phone, null));
+            out.add(new Aud(d, (String) r.get("name"), phone, "WHATSAPP", seg, num(r.get("orders")), num(r.get("spent")), instant(r.get("last_order")), null, reason == null, reason, (String) r.get("gender"), phone, null, "OFFICIAL", false));
         }
         Instant now = Instant.now();
+        var pr = policies.manual().profile();
+        int sameDays = Math.max(1, pr.sameContactDays());
         for (var r : jdbc.sql(SegmentSql.BASE + """
                 SELECT cv.id AS conv_id, cv.channel, cv.external_id, cv.display_name, cv.contact_phone, cv.created_at, cv.last_customer_at, cv.window_until, cv.broadcast_opt_out_at IS NOT NULL AS stopped,
                        (SELECT count(*) FROM (SELECT 1 FROM chat.messages m WHERE m.conversation_id = cv.id AND m.role = 'user' LIMIT 3) x) AS cust_msgs,
+                       (SELECT count(*) FROM (SELECT 1 FROM chat.messages m WHERE m.conversation_id = cv.id LIMIT 3) x) AS all_msgs,
+                       EXISTS (SELECT 1 FROM commerce.broadcast_recipients br JOIN commerce.broadcasts bb ON bb.id = br.broadcast_id
+                                WHERE bb.tenant_id = :t AND br.route = 'MANUAL_STYLE' AND br.channel = cv.channel AND br.external_id = cv.external_id AND br.status = 'SENT'
+                                  AND br.sent_at > now() - make_interval(days => :sameDays)) AS recent_manual,
                        l.phone AS o_phone, l.name AS o_name, l.orders, l.spent, l.last_order, l.segment, l.opted_out, l.gender
                 FROM chat.conversations cv
                 LEFT JOIN LATERAL (SELECT s.* FROM s WHERE (length(regexp_replace(coalesce(cv.contact_phone, ''), '[^0-9]', '', 'g')) >= 8
@@ -131,7 +159,7 @@ public class SegmentService {
                                                          OR (cv.client_id IS NOT NULL AND s.uid = cv.client_id) LIMIT 1) l ON TRUE
                 WHERE cv.tenant_id = :t AND cv.channel IN ('FACEBOOK', 'INSTAGRAM')
                 ORDER BY coalesce(cv.last_customer_at, cv.created_at) DESC LIMIT 20000
-                """).param("t", tenantId).query().listOfRows()) {
+                """).param("t", tenantId).param("sameDays", sameDays).query().listOfRows()) {
             String linked = (String) r.get("segment");
             Instant created = instant(r.get("created_at"));
             String seg = linked != null ? linked : (created != null && created.isBefore(now.minus(Duration.ofDays(7))) && num(r.get("cust_msgs")) > 2 ? "REPEAT" : "NEW");
@@ -139,18 +167,45 @@ public class SegmentService {
             Instant lastCustomer = instant(r.get("last_customer_at")), until = instant(r.get("window_until"));
             boolean open = (lastCustomer != null && lastCustomer.isAfter(now.minus(Duration.ofHours(23)))) || (until != null && until.isAfter(now));
             boolean stopped = Boolean.TRUE.equals(r.get("stopped")) || Boolean.TRUE.equals(r.get("opted_out"));
+            String platform = (String) r.get("channel");
             String reason = stopped ? "OPTED_OUT" : !open ? "OUTSIDE_WINDOW" : null;
+            String route = "OFFICIAL";
+            boolean manualOk = false;
+            if (!stopped && !open) {   // closed window: only the manual-style route (unofficial, owner's choice) can still reach this person, and only inside its audience limits
+                String g = manualGuard(pr, lastCustomer, num(r.get("all_msgs")), num(r.get("cust_msgs")), Boolean.TRUE.equals(r.get("recent_manual")), now);
+                manualOk = g == null;
+                if (manualPlats.contains(platform)) { route = "MANUAL_STYLE"; reason = g; }
+            }
             String name = r.get("o_name") != null ? (String) r.get("o_name") : (String) r.get("display_name");
             String phone = r.get("contact_phone") != null ? (String) r.get("contact_phone") : (String) r.get("o_phone");
-            out.add(new Aud(String.valueOf(r.get("conv_id")), name, phone, (String) r.get("channel"), seg, num(r.get("orders")), num(r.get("spent")), instant(r.get("last_order")), (String) r.get("external_id"), reason == null, reason,
-                    (String) r.get("gender"), (String) r.get("o_phone"), null));
+            out.add(new Aud(String.valueOf(r.get("conv_id")), name, phone, platform, seg, num(r.get("orders")), num(r.get("spent")), instant(r.get("last_order")), (String) r.get("external_id"), reason == null, reason,
+                    (String) r.get("gender"), (String) r.get("o_phone"), null, route, manualOk));
         }
         return out;
     }
 
-    private static Map<String, Object> byPlatform(List<Aud> all) {
+    private Map<String, Object> byPlatform(UUID tenantId, List<Aud> all) {
         Map<String, Object> out = new LinkedHashMap<>();
-        for (String p : PLATFORMS) out.put(p, Map.of("total", all.stream().filter(a -> a.platform().equals(p)).count(), "reachable", all.stream().filter(a -> a.platform().equals(p) && a.reachable()).count()));
+        for (String p : PLATFORMS) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("total", all.stream().filter(a -> a.platform().equals(p)).count());
+            m.put("reachable", all.stream().filter(a -> a.platform().equals(p) && a.reachable()).count());
+            // people outside the 24 h window the manual-style route could reach (only counted when the shop has an ACTIVE session and the feature is on)
+            m.put("manualStyleReachable", "WHATSAPP".equals(p) || !unofficial.reachable(tenantId, p) ? 0L : all.stream().filter(a -> a.platform().equals(p) && a.manualOk()).count());
+            out.put(p, m);
+        }
+        return out;
+    }
+
+    /** What the manual-style route looks like per platform: available now, the account, the warm-up day and today's cap. */
+    private Map<String, Object> manualInfo(UUID tenantId) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        @SuppressWarnings("unchecked") Map<String, Object> pl = (Map<String, Object>) unofficial.overview(tenantId).get("platforms");
+        for (String p : List.of("FACEBOOK", "INSTAGRAM")) {
+            @SuppressWarnings("unchecked") Map<String, Object> m = new LinkedHashMap<>((Map<String, Object>) pl.get(p));
+            m.put("available", unofficial.reachable(tenantId, p));
+            out.put(p, m);
+        }
         return out;
     }
 
@@ -163,7 +218,8 @@ public class SegmentService {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("segments", segs);
         out.put("total", sel.size());
-        out.put("byPlatform", byPlatform(all));
+        out.put("byPlatform", byPlatform(tenantId, all));
+        out.put("manualStyle", manualInfo(tenantId));
         out.put("ownNumberLinked", evolution.connected(tenantId));
         out.put("balanceMinor", wallet.balance(tenantId));
         out.put("messagePriceMinor", billing.priceMinor());
@@ -171,8 +227,8 @@ public class SegmentService {
     }
 
     /** The people behind the numbers. Totals ({@code reachable}, {@code outsideWindow}, {@code byPlatform}) cover the whole chosen audience; {@code total} and {@code data} follow the search too. */
-    public Map<String, Object> customers(UUID tenantId, Set<String> segs, Set<String> platforms, String q, int limit, int offset) {
-        List<Aud> all = audience(tenantId, segs);
+    public Map<String, Object> customers(UUID tenantId, Set<String> segs, Set<String> platforms, String q, int limit, int offset, Set<String> manual) {
+        List<Aud> all = audience(tenantId, segs, usable(tenantId, manual));
         List<Aud> sel = all.stream().filter(a -> platforms.isEmpty() || platforms.contains(a.platform())).toList();
         String needle = q == null ? "" : q.trim().toLowerCase();
         List<Aud> shown = needle.isEmpty() ? sel : sel.stream().filter(a -> (a.name() != null && a.name().toLowerCase().contains(needle)) || (a.phone() != null && digits(a.phone()).contains(digits(needle)) && !digits(needle).isEmpty())
@@ -191,6 +247,7 @@ public class SegmentService {
             m.put("lastOrderAt", a.lastOrderAt());
             m.put("reachable", a.reachable());
             m.put("reason", a.reason());
+            m.put("route", a.route());
             data.add(m);
         }
         Map<String, Object> out = new LinkedHashMap<>();
@@ -198,7 +255,15 @@ public class SegmentService {
         out.put("total", shown.size());
         out.put("reachable", sel.stream().filter(Aud::reachable).count());
         out.put("outsideWindow", sel.stream().filter(a -> "OUTSIDE_WINDOW".equals(a.reason())).count());
-        out.put("byPlatform", byPlatform(all));
+        out.put("manualStyle", sel.stream().filter(a -> "MANUAL_STYLE".equals(a.route()) && a.reachable()).count());
+        out.put("byPlatform", byPlatform(tenantId, all));
+        return out;
+    }
+
+    /** The platforms (of those asked for) where the manual-style route is really available: feature on, real transport, ACTIVE session. */
+    private Set<String> usable(UUID tenantId, Set<String> asked) {
+        Set<String> out = new LinkedHashSet<>();
+        for (String p : asked) if (!"WHATSAPP".equals(p) && unofficial.reachable(tenantId, p)) out.add(p);
         return out;
     }
 
@@ -265,11 +330,32 @@ public class SegmentService {
         if (jdbc.sql("SELECT count(*) FROM commerce.broadcasts WHERE tenant_id = :t AND created_at > now() - interval '24 hours'").param("t", tenantId).query(Long.class).single() >= 3)
             throw BusinessException.conflict("BROADCAST_LIMIT", "Three broadcasts a day at most, to protect your accounts from being reported as spam");
 
-        List<Aud> all = audience(tenantId, segs).stream().filter(a -> plats.contains(a.platform())).toList();
+        // the manual-style route (unofficial, owner's explicit choice per platform) for people whose window is closed
+        Set<String> manualAsked = checkSet(r.manualPlatforms(), List.of("FACEBOOK", "INSTAGRAM"), "platform");
+        manualAsked.retainAll(plats);
+        for (String p : manualAsked) if (!unofficial.reachable(tenantId, p)) throw BusinessException.conflict("MANUAL_STYLE_UNAVAILABLE", "Manual-style sending is not available on this platform right now");
+        List<Aud> all = audience(tenantId, segs, manualAsked).stream().filter(a -> plats.contains(a.platform())).toList();
         List<Aud> queue = all.stream().filter(Aud::reachable).toList();
         long outside = all.stream().filter(a -> "OUTSIDE_WINDOW".equals(a.reason())).count();
         long skipped = all.size() - queue.size() - outside;
         long cost = queue.size() * billing.priceMinor();
+        // content rules for every wording that will go out (one link, length, spam patterns), by the policy of the route it travels
+        boolean anyWa = queue.stream().anyMatch(a -> "WHATSAPP".equals(a.platform())), anyManual = queue.stream().anyMatch(a -> "MANUAL_STYLE".equals(a.route()));
+        List<String> raw = new ArrayList<>(variants);
+        raw.add(0, text);
+        for (String v : raw) {
+            if (anyWa) { String why = policies.whatsapp().contentProblem(HumanPolicy.stripRepeatedLinks(v)); if (why != null) throw BusinessException.badRequest("CONTENT_REJECTED", "This message cannot be sent: " + why); }
+            if (anyManual) { String why = policies.manual().contentProblem(HumanPolicy.stripRepeatedLinks(v) + OPT_OUT_LINE); if (why != null) throw BusinessException.badRequest("CONTENT_REJECTED", "This message cannot be sent by hand-style sending: " + why); }
+        }
+        if (anyManual && !policies.manual().enoughVariants(text, variants)) throw BusinessException.badRequest("VARIANTS_REQUIRED", "Hand-style sending needs at least " + policies.manual().profile().minVariants() + " different wordings of the message");
+        for (String p : manualAsked) {   // one hand-style broadcast a day per platform
+            if (queue.stream().noneMatch(a -> "MANUAL_STYLE".equals(a.route()) && a.platform().equals(p))) continue;
+            if (jdbc.sql("""
+                    SELECT count(*) FROM commerce.broadcasts b WHERE b.tenant_id = :t AND b.created_at > now() - interval '24 hours'
+                       AND EXISTS (SELECT 1 FROM commerce.broadcast_recipients br WHERE br.broadcast_id = b.id AND br.route = 'MANUAL_STYLE' AND br.channel = :p AND (br.status = 'SENT' OR b.status IN ('SENDING', 'PAUSED', 'DONE')))
+                    """).param("t", tenantId).param("p", p).query(Long.class).single() > 0)
+                throw BusinessException.conflict("MANUAL_DAILY_LIMIT", "One hand-style broadcast a day on each platform, to protect your account");
+        }
         if (queue.isEmpty() && !push) throw BusinessException.conflict("NOBODY_TO_SEND", "No one to send to right now");
         if (!queue.isEmpty() && !billing.affordable(tenantId, queue.size())) throw BusinessException.conflict("NO_CREDIT", "Not enough credit: this needs " + cost / 100.0 + " EGP");
 
@@ -282,8 +368,8 @@ public class SegmentService {
         for (Aud q : queue) {
             Map<String, Object> vars = new LinkedHashMap<>(prev.getOrDefault(q.orderPhone() == null ? "" : q.orderPhone(), Map.of()));
             if (q.orders() > 0) vars.put("orders", String.valueOf(q.orders()));
-            jdbc.sql("INSERT INTO commerce.broadcast_recipients (broadcast_id, channel, external_id, phone, name, gender, vars) VALUES (:b, :c, :e, :p, :n, :g, CAST(:v AS jsonb))")
-                    .param("b", id).param("c", q.platform()).param("e", q.externalId()).param("p", "WHATSAPP".equals(q.platform()) ? q.key() : null).param("n", q.name() == null ? "" : q.name()).param("g", genderOf(q)).param("v", toJson(vars)).update();
+            jdbc.sql("INSERT INTO commerce.broadcast_recipients (broadcast_id, channel, external_id, phone, name, gender, vars, route) VALUES (:b, :c, :e, :p, :n, :g, CAST(:v AS jsonb), :route)")
+                    .param("route", q.route()).param("b", id).param("c", q.platform()).param("e", q.externalId()).param("p", "WHATSAPP".equals(q.platform()) ? q.key() : null).param("n", q.name() == null ? "" : q.name()).param("g", genderOf(q)).param("v", toJson(vars)).update();
         }
 
         int pushed = 0;
@@ -307,7 +393,11 @@ public class SegmentService {
         out.put("reachable", queue.size());
         out.put("skipped", skipped);
         out.put("outsideWindow", outside);
-        out.put("etaMinutes", eta(queue.size()));
+        long manualCount = queue.stream().filter(a -> "MANUAL_STYLE".equals(a.route())).count();
+        out.put("etaMinutes", eta(queue.size() - manualCount));
+        out.put("manualStyle", manualCount);
+        out.put("manualEtaDays", manualCount == 0 || manualAsked.isEmpty() ? 0.0
+                : policies.manual().estimateDays(manualCount, unofficial.warmupDay(tenantId, manualAsked.iterator().next()), unofficial.sentToday(tenantId, manualAsked.iterator().next())));
         out.put("costMinor", cost);
         out.put("pushSent", pushed);
         return out;
@@ -317,7 +407,7 @@ public class SegmentService {
 
     private static String pgArray(Set<String> values) { return "{" + String.join(",", values) + "}"; }
 
-    private String shopName(UUID tenantId) { return jdbc.sql("SELECT coalesce(nullif(sp.store_name, ''), t.name) FROM core.tenants t LEFT JOIN commerce.store_profiles sp ON sp.tenant_id = t.id WHERE t.id = :t").param("t", tenantId).query(String.class).single(); }
+    String shopName(UUID tenantId) { return jdbc.sql("SELECT coalesce(nullif(sp.store_name, ''), t.name) FROM core.tenants t LEFT JOIN commerce.store_profiles sp ON sp.tenant_id = t.id WHERE t.id = :t").param("t", tenantId).query(String.class).single(); }
 
     private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper();
 
@@ -403,7 +493,8 @@ public class SegmentService {
     public synchronized int runDue() {
         resetStale();
         int sent = 0;
-        for (var b : jdbc.sql("SELECT id, tenant_id, message, image_file_id, next_send_at, variants::text AS variants FROM commerce.broadcasts WHERE status = 'SENDING' AND " + com.platform.shared.TenantState.running("tenant_id") + " ORDER BY created_at LIMIT 20").query().listOfRows()) {
+        for (var b : jdbc.sql("SELECT id, tenant_id, message, image_file_id, next_send_at, variants::text AS variants, wa_seq, wa_since_break, wa_break_after, wa_last_hash FROM commerce.broadcasts WHERE status = 'SENDING' AND " + com.platform.shared.TenantState.running("tenant_id")
+                + " AND EXISTS (SELECT 1 FROM commerce.broadcast_recipients r WHERE r.broadcast_id = broadcasts.id AND r.route = 'OFFICIAL' AND r.status IN ('PENDING', 'SENDING')) ORDER BY created_at LIMIT 20").query().listOfRows()) {
             UUID id = (UUID) b.get("id"), tenantId = (UUID) b.get("tenant_id");
             String text = (String) b.get("message");
             List<String> versions = new ArrayList<>();
@@ -416,30 +507,51 @@ public class SegmentService {
             if (quiet(tenantId)) { setReason(id, "QUIET_HOURS"); continue; }
             // 3) a random gap after every message, however long the list is: a fixed rhythm looks like a bot, and bursts get numbers banned
             if (b.get("next_send_at") != null && ((Timestamp) b.get("next_send_at")).toInstant().isAfter(Instant.now())) continue;
-            setReason(id, null);
+            clearReason(id, "QUIET_HOURS", "WA_ACTIVE_HOURS", "WA_HOURLY_CAP", "WA_DAILY_CAP");
             String shop = shopName(tenantId);
+            var wa = policies.whatsapp();
             String imageUrl = b.get("image_file_id") == null ? null : urls.baseUrl(urls.hosts(List.of(tenantId)).get(tenantId)) + "/api/bff/files/" + b.get("image_file_id") + "/content?variant=medium";
             for (int look = 0; look < 100; look++) {   // a contact skipped at the last moment costs no gap, so look on to the next one
-                var rcp = jdbc.sql("SELECT id, channel, external_id, phone, name, gender, vars::text AS vars FROM commerce.broadcast_recipients WHERE broadcast_id = :b AND status = 'PENDING' ORDER BY id LIMIT 1").param("b", id).query().listOfRows().stream().findFirst().orElse(null);
+                var rcp = jdbc.sql("SELECT id, channel, external_id, phone, name, gender, vars::text AS vars FROM commerce.broadcast_recipients WHERE broadcast_id = :b AND status = 'PENDING' AND route = 'OFFICIAL' ORDER BY id LIMIT 1").param("b", id).query().listOfRows().stream().findFirst().orElse(null);
                 if (rcp == null) break;
                 UUID rid = (UUID) rcp.get("id");
+                if ("WHATSAPP".equals(rcp.get("channel"))) {   // the WhatsApp profile's optional windows and caps (off by default: the owner's rule is the 5-15 s gap and the credit as the only limit)
+                    String hold = waHold(tenantId, wa);
+                    if (hold != null) { setReason(id, hold); break; }
+                }
                 if (jdbc.sql("UPDATE commerce.broadcast_recipients SET status = 'SENDING', sent_at = now(), error = NULL WHERE id = :i AND status = 'PENDING'").param("i", rid).update() == 0) continue;
                 String channel = (String) rcp.get("channel"), to = (String) rcp.get("phone"), ext = (String) rcp.get("external_id");
                 // the silent protection: someone who asked to stop, or whose platform window closed meanwhile, is not messaged
                 String skip = skipReason(tenantId, channel, to, ext);
                 if (skip != null) { finish(id, rid, "SKIPPED", skip, 0, "OUTSIDE_WINDOW".equals(skip)); continue; }
+                boolean isWa = "WHATSAPP".equals(channel);
+                if (isWa) {
+                    // (j) health check before the send: the own number must still be linked. A disconnect mid-broadcast can be a ban or a logout: stop, do not keep hammering
+                    if (!evolution.connected(tenantId)) { requeue(rid); jdbc.sql("UPDATE commerce.broadcasts SET status = 'PAUSED', pause_reason = 'WHATSAPP_DISCONNECTED' WHERE id = :i").param("i", id).update(); break; }
+                    // (k) the owner is chatting with this customer right now: a promotion in the middle of it would be rude and looks automated
+                    if (ownerActive(tenantId, "WHATSAPP", digits(to), wa.profile().ownerReplyMinutes())) { finish(id, rid, "SKIPPED", "OWNER_ACTIVE", 0, false); continue; }
+                }
+                // the wording: WhatsApp rotates the wordings in turn and gets the tiny safe variations; the platform channels keep the fixed pick per customer
+                String body = personalize(isWa ? HumanPolicy.rotate(text, versions, (int) num(b.get("wa_seq"))) : pickVersion(text, versions, rid), (String) rcp.get("name"), shop, Gender.of((String) rcp.get("gender")), parseVars(rcp.get("vars")), rid.getMostSignificantBits());
+                String bodyHash = null;
+                if (isWa) {
+                    body = wa.vary(HumanPolicy.stripRepeatedLinks(body), rnd, (String) b.get("wa_last_hash"));   // never the same text twice in a row when we can help it
+                    bodyHash = HumanPolicy.hash(body);
+                    String why = wa.contentProblem(body);
+                    if (why != null) { finish(id, rid, "SKIPPED", "CONTENT_GUARD", 0, false); continue; }   // not charged: nothing was sent
+                }
                 String ref = "bc-" + id + "-" + rid;
                 if (!billing.charge(tenantId, ref, "Broadcast message")) {   // out of credit: back to the queue and pause until the shop tops up
-                    jdbc.sql("UPDATE commerce.broadcast_recipients SET status = 'PENDING', sent_at = NULL WHERE id = :i").param("i", rid).update();
+                    requeue(rid);
                     jdbc.sql("UPDATE commerce.broadcasts SET status = 'PAUSED', pause_reason = 'NO_CREDIT' WHERE id = :i").param("i", id).update();
                     break;
                 }
                 long price = billing.priceMinor();
                 jdbc.sql("UPDATE commerce.broadcast_recipients SET cost_minor = :c WHERE id = :i").param("c", price).param("i", rid).update();
-                String body = personalize(pickVersion(text, versions, rid), (String) rcp.get("name"), shop, Gender.of((String) rcp.get("gender")), parseVars(rcp.get("vars")), rid.getMostSignificantBits());
                 boolean ok;
                 String error = null;
-                if ("WHATSAPP".equals(channel)) {
+                if (isWa) {
+                    typing(tenantId, to, gapMin > 0 ? wa.typingMillis(body.length(), rnd, gapMin * 1000L) : 0);   // "typing..." for a moment, never longer than the gap
                     var d = evolution.deliver(tenantId, to, body + OPT_OUT_LINE, imageUrl);   // every message tells the customer how to stop, so they reply instead of reporting
                     if (d == EvolutionService.Delivery.DEFERRED) {   // at the per-minute limit: the rest waits for the next pass
                         billing.refund(tenantId, ref, "Broadcast message deferred");
@@ -456,11 +568,21 @@ public class SegmentService {
                 if (!ok) billing.refund(tenantId, ref, "Broadcast message not delivered");   // never charge for a message that was not sent
                 finish(id, rid, ok ? "SENT" : "FAILED", error, ok ? price : 0, false);
                 if (ok) sent++;
-                int gap = gapMax <= gapMin ? gapMin : gapMin + java.util.concurrent.ThreadLocalRandom.current().nextInt(gapMax - gapMin + 1);
-                jdbc.sql("UPDATE commerce.broadcasts SET next_send_at = now() + make_interval(secs => :g) WHERE id = :i").param("g", gap).param("i", id).update();
+                // a random gap after every message (the owner's 5-15 s), and for WhatsApp a longer micro-break after every 40-80 messages
+                long gapMs = wa.gapMillis(rnd, gapMin, gapMax);
+                if (isWa && ok) {
+                    int since = (int) num(b.get("wa_since_break")) + 1;
+                    int after = b.get("wa_break_after") == null ? wa.nextBreakAfter(rnd) : (int) num(b.get("wa_break_after"));
+                    int nextAfter = after;
+                    if (since >= after) { gapMs = Math.max(gapMs, wa.breakMillis(rnd)); since = 0; nextAfter = wa.nextBreakAfter(rnd); }
+                    jdbc.sql("UPDATE commerce.broadcasts SET wa_seq = wa_seq + 1, wa_last_hash = :h, wa_since_break = :s, wa_break_after = :a WHERE id = :i").param("h", bodyHash).param("s", since).param("a", nextAfter).param("i", id).update();
+                }
+                jdbc.sql("UPDATE commerce.broadcasts SET next_send_at = now() + make_interval(secs => :g) WHERE id = :i").param("g", gapMs / 1000.0).param("i", id).update();
                 // five failures in a row means something is wrong with the account: stop instead of hammering it
                 int streak = jdbc.sql("UPDATE commerce.broadcasts SET consecutive_failures = CASE WHEN :ok THEN 0 ELSE consecutive_failures + 1 END WHERE id = :i RETURNING consecutive_failures").param("ok", ok).param("i", id).query(Integer.class).single();
                 if (streak >= 5) jdbc.sql("UPDATE commerce.broadcasts SET status = 'PAUSED', pause_reason = 'FAILURES' WHERE id = :i").param("i", id).update();
+                // (i) a failed send plus a number that is no longer linked is the closest thing to a ban signal we can see: stop at once
+                if (isWa && !ok && !evolution.connected(tenantId)) jdbc.sql("UPDATE commerce.broadcasts SET status = 'PAUSED', pause_reason = 'WHATSAPP_DISCONNECTED' WHERE id = :i").param("i", id).update();
                 break;
             }
             jdbc.sql("UPDATE commerce.broadcasts SET status = 'DONE' WHERE id = :i AND status = 'SENDING' AND NOT EXISTS (SELECT 1 FROM commerce.broadcast_recipients WHERE broadcast_id = :i AND status IN ('PENDING', 'SENDING'))").param("i", id).update();
@@ -469,10 +591,56 @@ public class SegmentService {
     }
 
     /** Settles one recipient: its final status, the counters of the broadcast, what was charged. */
-    private void finish(UUID broadcastId, UUID recipientId, String status, String error, long charged, boolean outsideWindow) {
+    void finish(UUID broadcastId, UUID recipientId, String status, String error, long charged, boolean outsideWindow) {
         jdbc.sql("UPDATE commerce.broadcast_recipients SET status = :s, error = :e, sent_at = now(), cost_minor = :c WHERE id = :i").param("s", status).param("e", error).param("c", charged).param("i", recipientId).update();
         jdbc.sql("UPDATE commerce.broadcasts SET sent_count = sent_count + :ok, failed_count = failed_count + :bad, skipped_window = skipped_window + :w, pending_count = greatest(pending_count - 1, 0), charged_minor = charged_minor + :c WHERE id = :i")
                 .param("ok", "SENT".equals(status) ? 1 : 0).param("bad", "FAILED".equals(status) ? 1 : 0).param("w", outsideWindow ? 1 : 0).param("c", charged).param("i", broadcastId).update();
+    }
+
+    /** A recipient that was marked SENDING but not attempted goes back to the queue. */
+    void requeue(UUID recipientId) { jdbc.sql("UPDATE commerce.broadcast_recipients SET status = 'PENDING', sent_at = NULL, cost_minor = 0 WHERE id = :i").param("i", recipientId).update(); }
+
+    /** Clears the pause reason only when it is one of the given ones: each lane clears its own, never the other lane's. */
+    void clearReason(UUID id, String... reasons) {
+        jdbc.sql("UPDATE commerce.broadcasts SET pause_reason = NULL WHERE id = :i AND pause_reason = ANY (CAST(:r AS text[]))").param("i", id).param("r", "{" + String.join(",", reasons) + "}").update();
+    }
+
+    java.time.ZonedDateTime localNow(UUID tenantId) { return java.time.ZonedDateTime.now(unofficial.zone(tenantId)); }
+
+    /** The WhatsApp profile's optional active-hours window and hourly / daily caps (all off by default). Returns the pause reason or null. */
+    private String waHold(UUID tenantId, HumanPolicy wa) {
+        if (!wa.inActiveWindow(localNow(tenantId))) return "WA_ACTIVE_HOURS";
+        if (wa.profile().hourlyCap() > 0 && !wa.hourlyAllows(sentSince(tenantId, "WHATSAPP", "1 hour"))) return "WA_HOURLY_CAP";
+        if (wa.profile().maxDaily() > 0 && !wa.dailyAllows(1, sentSince(tenantId, "WHATSAPP", "24 hours"))) return "WA_DAILY_CAP";
+        return null;
+    }
+
+    long sentSince(UUID tenantId, String channel, String interval) {
+        return jdbc.sql("SELECT count(*) FROM commerce.broadcast_recipients r JOIN commerce.broadcasts b ON b.id = r.broadcast_id WHERE b.tenant_id = :t AND r.channel = :c AND r.status = 'SENT' AND r.sent_at > now() - CAST(:i AS interval)")
+                .param("t", tenantId).param("c", channel).param("i", interval).query(Long.class).single();
+    }
+
+    /** True when the owner is dealing with this contact right now: the chat is taken over by a person, or a person (not the AI) wrote in it within the last {@code minutes}. */
+    boolean ownerActive(UUID tenantId, String channel, String idOrDigits, int minutes) {
+        String match = "WHATSAPP".equals(channel) ? "right(regexp_replace(c.external_id, '[^0-9]', '', 'g'), 9) = :e" : "c.external_id = :e";
+        String e = "WHATSAPP".equals(channel) && idOrDigits != null ? idOrDigits.substring(Math.max(0, idOrDigits.length() - 9)) : idOrDigits;
+        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM chat.conversations c WHERE c.tenant_id = :t AND c.channel = :c AND " + match
+                        + " AND (c.takeover OR EXISTS (SELECT 1 FROM chat.messages m WHERE m.conversation_id = c.id AND m.by_owner AND m.created_at > now() - make_interval(mins => :m))))")
+                .param("t", tenantId).param("c", channel).param("e", e).param("m", Math.max(1, minutes)).query(Boolean.class).single();
+    }
+
+    /** Shows "typing..." on the customer's WhatsApp for a moment before the message (Evolution presence), and waits that long. Best effort: never fails a send. */
+    private void typing(UUID tenantId, String phone, int ms) {
+        if (ms <= 0) return;
+        try {
+            String inst = jdbc.sql("SELECT instance FROM chat.evolution_settings WHERE tenant_id = :t").param("t", tenantId).query(String.class).optional().orElse(null);
+            if (inst != null) evolutionApi.call("POST", "/chat/sendPresence/" + inst, Map.of("number", digits(phone), "presence", "composing", "delay", ms));
+            if (policies.whatsappTypingSleep()) Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (RuntimeException e) {
+            log.debug("Typing presence not sent: {}", e.getMessage());
+        }
     }
 
     /** Why this contact must not get the message right now, or null. */
@@ -492,7 +660,7 @@ public class SegmentService {
 
     /** A recipient never stays SENDING after a crash: after two minutes it goes back to the queue (a canceled broadcast stops it) and what it was charged is given back. */
     private void resetStale() {
-        for (var r : jdbc.sql("SELECT r.id, r.broadcast_id, r.cost_minor, b.tenant_id, b.status FROM commerce.broadcast_recipients r JOIN commerce.broadcasts b ON b.id = r.broadcast_id WHERE r.status = 'SENDING' AND r.sent_at < now() - interval '2 minutes'").query().listOfRows()) {
+        for (var r : jdbc.sql("SELECT r.id, r.broadcast_id, r.cost_minor, r.route, b.tenant_id, b.status FROM commerce.broadcast_recipients r JOIN commerce.broadcasts b ON b.id = r.broadcast_id WHERE r.status = 'SENDING' AND r.sent_at < now() - interval '2 minutes'").query().listOfRows()) {
             long cost = num(r.get("cost_minor"));
             UUID rid = (UUID) r.get("id"), bid = (UUID) r.get("broadcast_id");
             if (cost > 0) {
@@ -500,13 +668,18 @@ public class SegmentService {
                 jdbc.sql("UPDATE commerce.broadcasts SET charged_minor = greatest(charged_minor - :c, 0) WHERE id = :b").param("c", cost).param("b", bid).update();
             }
             boolean canceled = "CANCELED".equals(r.get("status"));
+            if ("MANUAL_STYLE".equals(r.get("route")) && !canceled) {   // a hand-style message may have gone out before the stop: never send it twice to a person, mark it failed instead
+                jdbc.sql("UPDATE commerce.broadcast_recipients SET status = 'FAILED', error = 'INTERRUPTED', cost_minor = 0 WHERE id = :i AND status = 'SENDING'").param("i", rid).update();
+                jdbc.sql("UPDATE commerce.broadcasts SET failed_count = failed_count + 1, pending_count = greatest(pending_count - 1, 0) WHERE id = :b").param("b", bid).update();
+                continue;
+            }
             jdbc.sql("UPDATE commerce.broadcast_recipients SET status = :s, sent_at = NULL, cost_minor = 0 WHERE id = :i AND status = 'SENDING'").param("s", canceled ? "STOPPED" : "PENDING").param("i", rid).update();
         }
     }
 
     static final String OPT_OUT_LINE = "\n\nلإيقاف الرسائل اكتب: إيقاف · Reply STOP to unsubscribe";
 
-    private void setReason(UUID id, String reason) { jdbc.sql("UPDATE commerce.broadcasts SET pause_reason = CAST(:r AS varchar) WHERE id = :i AND pause_reason IS DISTINCT FROM CAST(:r AS varchar)").param("r", reason).param("i", id).update(); }
+    void setReason(UUID id, String reason) { jdbc.sql("UPDATE commerce.broadcasts SET pause_reason = CAST(:r AS varchar) WHERE id = :i AND pause_reason IS DISTINCT FROM CAST(:r AS varchar)").param("r", reason).param("i", id).update(); }
 
     /** True during the shop's quiet hours (22:00 to 08:00 by default, in the shop's time zone). From and to being equal switches quiet hours off. */
     private boolean quiet(UUID tenantId) {
@@ -522,6 +695,9 @@ public class SegmentService {
         var b = jdbc.sql("SELECT status, pause_reason FROM commerce.broadcasts WHERE id = :i AND tenant_id = :t").param("i", id).param("t", tenantId).query().listOfRows().stream().findFirst().orElse(null);
         if (b == null || !"PAUSED".equals(b.get("status"))) throw BusinessException.conflict("INVALID_STATUS", "This broadcast is not paused");
         if (!billing.affordable(tenantId, 1)) throw BusinessException.conflict("NO_CREDIT", "Not enough credit: top up first");
+        String manualChannel = jdbc.sql("SELECT channel FROM commerce.broadcast_recipients WHERE broadcast_id = :i AND route = 'MANUAL_STYLE' AND status = 'PENDING' LIMIT 1").param("i", id).query(String.class).optional().orElse(null);
+        if (manualChannel != null && List.of("ACCOUNT_BLOCK_SIGNAL", "SESSION_EXPIRED").contains((String) b.get("pause_reason")) && !unofficial.reachable(tenantId, manualChannel))
+            throw BusinessException.conflict("SESSION_NOT_READY", "The hand-style account is not ready: wait out the pause and enable or log in again, or cancel this broadcast");
         if (jdbc.sql("UPDATE commerce.broadcasts SET status = 'SENDING', pause_reason = NULL, consecutive_failures = 0, next_send_at = NULL WHERE id = :i AND tenant_id = :t AND status = 'PAUSED'").param("i", id).param("t", tenantId).update() == 0)
             throw BusinessException.conflict("INVALID_STATUS", "This broadcast is not paused");
         return Map.of("ok", true);
@@ -581,7 +757,7 @@ public class SegmentService {
         long total = st == null ? counts.values().stream().mapToLong(v -> (Long) v).sum() : (Long) counts.get(st);
         List<Map<String, Object>> data = new ArrayList<>();
         for (var r : jdbc.sql("""
-                SELECT id, name, channel, phone, status, error, sent_at, cost_minor FROM commerce.broadcast_recipients WHERE broadcast_id = :b AND (CAST(:s AS varchar) IS NULL OR status = CAST(:s AS varchar))
+                SELECT id, name, channel, phone, status, error, sent_at, cost_minor, route FROM commerce.broadcast_recipients WHERE broadcast_id = :b AND (CAST(:s AS varchar) IS NULL OR status = CAST(:s AS varchar))
                 ORDER BY CASE status WHEN 'SENDING' THEN 0 WHEN 'PENDING' THEN 1 ELSE 2 END, CASE WHEN status = 'PENDING' THEN id END, sent_at DESC NULLS LAST, id
                 LIMIT :l OFFSET :o
                 """).param("b", broadcastId).param("s", st).param("l", Math.max(1, Math.min(limit, 500))).param("o", Math.max(0, offset)).query().listOfRows()) {
@@ -594,6 +770,7 @@ public class SegmentService {
             m.put("error", r.get("error"));
             m.put("sentAt", instant(r.get("sent_at")));
             m.put("costMinor", r.get("cost_minor"));
+            m.put("route", r.get("route"));
             data.add(m);
         }
         Map<String, Object> out = new LinkedHashMap<>();

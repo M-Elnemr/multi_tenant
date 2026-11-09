@@ -14,8 +14,9 @@ import AudiencePicker from "./audience";
 import ClientList from "./clients";
 import ComposerStep, { type Draft } from "./composer";
 import Queue from "./queue";
+import { ManualCard } from "./manual";
 import Summary from "./summary";
-import { PLATFORMS, csv, type Broadcast, type ClientsRes, type SegmentsRes, type SendResult } from "./types";
+import { PLATFORMS, csv, type Broadcast, type ClientsRes, type SegmentsRes, type SendResult, type UnofficialRes } from "./types";
 
 function Step({ n, title, hint, children }: { n: number; title: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -40,26 +41,34 @@ export default function SegmentsScreen() {
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [confirm, setConfirm] = useState(false);
   const [done, setDone] = useState<string | null>(null);
+  const [manual, setManual] = useState<string[]>([]);
 
   const seg = useApi<SegmentsRes>(`store/segments?platforms=${csv(PLATFORMS)}`);
-  const totals = useApi<ClientsRes>(segs.length && plats.length ? `store/segments/customers?segments=${csv(segs)}&platforms=${csv(plats)}&limit=1&offset=0` : null);
+  const um = useApi<UnofficialRes>("store/unofficial-meta");
+  // hand-style (unofficial) sending is only used on platforms that are chosen, available and switched on for this broadcast
+  const manualOn = manual.filter((p) => plats.includes(p) && um.data?.platforms[p]?.status === "ACTIVE" && um.data.platforms[p].enabled);
+  const totals = useApi<ClientsRes>(segs.length && plats.length ? `store/segments/customers?segments=${csv(segs)}&platforms=${csv(plats)}&limit=1&offset=0${manualOn.length ? `&manual=${csv(manualOn)}` : ""}` : null);
   const hist = useApi<Broadcast[]>("store/broadcasts");
 
   const counts = seg.data ? Object.fromEntries(seg.data.segments.map((s) => [s.key, s.count])) : null;
   const price = seg.data?.messagePriceMinor ?? 10;
   const balance = seg.data?.balanceMinor ?? 0;
   const reachable = segs.length && plats.length ? (totals.data?.reachable ?? 0) : 0;
+  const manualCount = manualOn.length ? (totals.data?.manualStyle ?? 0) : 0;
+  const minVariants = um.data?.policy.minVariants ?? 3;
+  const wordings = new Set([draft.msg.trim(), ...draft.versions.map((v) => v.trim())].filter(Boolean)).size;
+  const needVariants = manualCount > 0 && wordings < minVariants;
   const ready = draft.msg.trim().length >= 3 && segs.length > 0 && plats.length > 0;
 
   const send = useAction(async () => {
     const r = await api<SendResult>("store/broadcasts", { body: {
       segments: segs, platforms: plats, message: draft.msg, imageFileId: draft.image ?? undefined,
-      variants: draft.versions.map((v) => v.trim()).filter((v) => v.length >= 3), push: draft.push, pushTitle: draft.pushTitle || undefined,
+      variants: draft.versions.map((v) => v.trim()).filter((v) => v.length >= 3), manualPlatforms: manualOn, push: draft.push, pushTitle: draft.pushTitle || undefined,
     } });
     const text = t("gx.sentResult", { n: r.reachable, cost: money(r.costMinor, currency, locale), eta: r.etaMinutes });
     setDone(text); toast(text);
     setDraft(EMPTY);
-    await Promise.all([hist.reload(), seg.reload(), totals.reload()]);
+    await Promise.all([hist.reload(), seg.reload(), totals.reload(), um.reload()]);
   });
   const tick = () => { void hist.reload(); void seg.reload(); };
 
@@ -73,7 +82,8 @@ export default function SegmentsScreen() {
           </div>
           <Step n={1} title={t("gx.step1")} hint={t("gx.step1Hint")}>
             <AudiencePicker counts={counts} byPlatform={seg.data?.byPlatform ?? null} ownLinked={seg.data?.ownNumberLinked ?? true}
-              segs={segs} onSegs={(v) => { setSegs(v); setDone(null); }} plats={plats} onPlats={(v) => { setPlats(v); setDone(null); }} />
+              segs={segs} onSegs={(v) => { setSegs(v); setDone(null); }} plats={plats} onPlats={(v) => { setPlats(v); setDone(null); }}
+              manualInfo={um.data ? Object.fromEntries(Object.entries(um.data.platforms).map(([k, v]) => [k, { ...v, available: v.supported && v.enabled && v.status === "ACTIVE" }])) : null} manual={manual} onManual={(v) => { setManual(v); setDone(null); }} />
           </Step>
           <Step n={2} title={t("grx.step2")} hint={t("grx.step2Hint")}>
             <ComposerStep draft={draft} onDraft={setDraft} />
@@ -82,11 +92,13 @@ export default function SegmentsScreen() {
         <div className="space-y-4 lg:sticky lg:top-4">
           <Summary msg={draft.msg} image={draft.image} plats={plats} byPlatform={seg.data?.byPlatform ?? null} reachable={reachable} outsideWindow={totals.data?.outsideWindow ?? 0}
             priceMinor={price} balanceMinor={balance} ownLinked={seg.data?.ownNumberLinked ?? true} ready={ready} sending={send.loading} error={send.error}
-            onSend={() => { setDone(null); setConfirm(true); }} />
+            onSend={() => { setDone(null); setConfirm(true); }}
+            manualCount={manualCount} manualInfo={um.data?.platforms[manualOn[0] ?? "INSTAGRAM"]} policy={um.data?.policy ?? null} needVariants={needVariants} />
           {done && <Alert tone="green">{done}</Alert>}
         </div>
       </div>
 
+      {um.data && <ManualCard res={um.data} onChanged={() => { void um.reload(); void seg.reload(); void totals.reload(); }} />}
       <ClientList segs={segs} plats={plats} />
       <Queue list={hist.data ?? []} balanceMinor={balance} onTick={tick} />
 

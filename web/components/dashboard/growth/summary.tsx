@@ -7,7 +7,8 @@ import { Icon } from "../../icons";
 import { Alert, Button, ErrorText } from "../../ui";
 import { money } from "@/lib/format";
 import { Panel, PanelHead } from "../marketing/kit";
-import { PLATFORMS, WA_OWN_LINK, type ByPlatform } from "./types";
+import { ManualSummary } from "./manual";
+import { PLATFORMS, WA_OWN_LINK, type ByPlatform, type ManualInfo, type ManualPolicy } from "./types";
 
 /** A phone-shaped preview of the message as the customer would read it. */
 function Bubble({ text, image }: { text: string; image: string | null }) {
@@ -27,9 +28,10 @@ function Line({ label, value, strong }: { label: string; value: React.ReactNode;
 }
 
 /** Sticky side card: preview, audience per platform, reachable, cost, balance, duration and the send button. */
-export default function Summary({ msg, image, plats, byPlatform, reachable, outsideWindow, priceMinor, balanceMinor, ownLinked, ready, sending, error, onSend }: {
+export default function Summary({ msg, image, plats, byPlatform, reachable, outsideWindow, priceMinor, balanceMinor, ownLinked, ready, sending, error, onSend, manualCount, manualInfo, policy, needVariants }: {
   msg: string; image: string | null; plats: string[]; byPlatform: ByPlatform | null; reachable: number; outsideWindow: number;
   priceMinor: number; balanceMinor: number; ownLinked: boolean; ready: boolean; sending: boolean; error: unknown; onSend: () => void;
+  manualCount: number; manualInfo?: ManualInfo; policy: ManualPolicy | null; needVariants: boolean;
 }) {
   const { t, locale, currency } = useI18n();
   const n = (x: number) => x.toLocaleString(locale === "ar" ? "ar-EG" : "en-US");
@@ -37,7 +39,7 @@ export default function Summary({ msg, image, plats, byPlatform, reachable, outs
   const low = cost > balanceMinor;
   const noNumber = plats.includes("WHATSAPP") && !ownLinked;
   // one message every 5 to 15 seconds: 10 seconds on average
-  const mins = Math.max(1, Math.ceil((reachable * 10) / 60));
+  const mins = Math.max(1, Math.ceil(((reachable - manualCount) * 10) / 60));
   const duration = mins >= 120 ? t("gx.hours", { n: n(Math.ceil(mins / 60)) }) : t("gx.minutes", { n: n(mins) });
   return (
     <Panel className="space-y-4 p-5">
@@ -48,17 +50,20 @@ export default function Summary({ msg, image, plats, byPlatform, reachable, outs
           <Line key={p} label={t(`gx.plat.${p}`)} value={<span className="inline-flex items-center gap-1.5"><ChannelIcon channel={p} className="h-3.5 w-3.5" />{byPlatform?.[p] ? t("gx.platCount", { reachable: n(byPlatform[p]!.reachable), total: n(byPlatform[p]!.total) }) : "-"}</span>} />
         ))}
         <Line label={t("gx.sumReachable")} value={n(reachable)} />
+        {manualCount > 0 && <Line label={t("mx.sumManual")} value={n(manualCount)} />}
         {outsideWindow > 0 && <Line label={t("gx.sumOutside")} value={n(outsideWindow)} />}
         <Line label={t("gx.sumCost")} value={money(cost, currency, locale)} strong />
         <Line label={t("gx.sumBalance")} value={money(balanceMinor, currency, locale)} />
-        <Line label={t("gx.sumDuration")} value={reachable > 0 ? duration : "-"} />
+        <Line label={t("gx.sumDuration")} value={reachable - manualCount > 0 ? duration : "-"} />
       </div>
       <p className="text-[12px] leading-relaxed text-muted">{t("gx.priceLine", { piasters: n(priceMinor), egp: (priceMinor / 100).toLocaleString(locale === "ar" ? "ar-EG" : "en-US", { minimumFractionDigits: 1, maximumFractionDigits: 2 }) })}</p>
       <p className="text-[12px] leading-relaxed text-muted">{t("gx.pacing")}</p>
+      {manualCount > 0 && policy && <ManualSummary count={manualCount} info={manualInfo} policy={policy} />}
+      {needVariants && policy && <Alert tone="amber">{t("mx.needVariants", { n: String(policy.minVariants) })}</Alert>}
       {low && reachable > 0 && <Alert tone="red">{t("gx.noCredit", { need: money(cost, currency, locale), balance: money(balanceMinor, currency, locale) })} <Link href="/dashboard/ai" className="font-semibold underline">{t("gr.topUp")}</Link></Alert>}
       {noNumber && <Alert tone="amber">{t("gx.noNumberAlert")} <Link href={WA_OWN_LINK} className="font-semibold underline">{t("gx.connectNumber")}</Link></Alert>}
       <ErrorText error={error} />
-      <Button variant="ink" size="lg" className="w-full" loading={sending} disabled={!ready || low || noNumber || reachable === 0} onClick={onSend}><Icon name="send" className="h-4 w-4 flip-rtl" />{t("gr.send")}</Button>
+      <Button variant="ink" size="lg" className="w-full" loading={sending} disabled={!ready || low || noNumber || reachable === 0 || needVariants} onClick={onSend}><Icon name="send" className="h-4 w-4 flip-rtl" />{t("gr.send")}</Button>
     </Panel>
   );
 }

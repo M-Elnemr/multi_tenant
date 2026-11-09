@@ -1,0 +1,48 @@
+package com.platform;
+
+import com.platform.chat.unofficial.OutOfWindowSender;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
+import org.springframework.stereotype.Component;
+
+/**
+ * Stands in for the Instagram sidecar in tests (Messenger keeps its real "unsupported" stub). Every send is recorded; the test chooses what comes back.
+ * Nothing here ever touched a real Instagram account: the whole manual-style route is verified against this fake only.
+ */
+@Component
+@Order(Ordered.HIGHEST_PRECEDENCE)
+public class FakeOutOfWindowSender implements OutOfWindowSender {
+    public record Sent(UUID tenant, String platform, String ref, String text, int typingMs) {}
+
+    public static final List<Sent> SENT = new CopyOnWriteArrayList<>();
+    public static final List<UUID> LOGOUTS = new CopyOnWriteArrayList<>();
+    public static final List<String> LOGINS = new CopyOnWriteArrayList<>();
+    public static volatile Kind NEXT = Kind.SENT;
+    public static volatile boolean HEALTHY = true;
+    public static volatile String LOGIN_ERROR = null;
+    public static volatile String STATE = "ACTIVE";
+
+    public static void reset() { SENT.clear(); LOGOUTS.clear(); LOGINS.clear(); NEXT = Kind.SENT; HEALTHY = true; LOGIN_ERROR = null; STATE = "ACTIVE"; }
+
+    @Override public boolean handles(String platform) { return "INSTAGRAM".equals(platform); }
+    @Override public boolean healthy() { return HEALTHY; }
+
+    @Override
+    public Result send(UUID tenant, String platform, String recipientRef, String text, int typingMs) {
+        if (NEXT == Kind.SENT) { SENT.add(new Sent(tenant, platform, recipientRef, text, typingMs)); return Result.sent(); }
+        return Result.of(NEXT, NEXT.name().toLowerCase());
+    }
+
+    @Override public SessionStatus status(UUID tenant, String platform) { return new SessionStatus(STATE, "shop_account", null); }
+
+    @Override
+    public LoginResult login(UUID tenant, String platform, String username, String password, String totp) {
+        LOGINS.add(username);
+        return LOGIN_ERROR == null ? LoginResult.ok(username) : LoginResult.error(LOGIN_ERROR);
+    }
+
+    @Override public void logout(UUID tenant, String platform) { LOGOUTS.add(tenant); }
+}

@@ -1,0 +1,26 @@
+# OPT-IN override: the Instagram sidecar for "manual style" sending to old contacts (unofficial, can get an Instagram account restricted or banned; see infra/ig-bridge/README.md).
+# Not part of the main compose files. Use it together with them, for example:
+#   IG_BRIDGE_SECRET=$(openssl rand -hex 32) docker compose -f docker-compose.yml -f docker-compose.ig-bridge.yml up -d ig-bridge backend
+# On the live test-slim stack add -f docker-compose.test-slim.yml as well (deploy with ALL the compose files you normally use, or uploads break).
+# Switching the feature on also needs, for the backend: META_UNOFFICIAL_ENABLED=true, IG_BRIDGE_URL=http://ig-bridge:8090, IG_BRIDGE_SECRET=<same secret>.
+services:
+  ig-bridge:
+    build: ./infra/ig-bridge
+    restart: unless-stopped
+    environment:
+      IG_BRIDGE_SECRET: ${IG_BRIDGE_SECRET:?set IG_BRIDGE_SECRET}
+      IG_BRIDGE_DATA: /data
+      # optional per-shop proxy map: {"<tenant uuid>": "http://user:pass@host:port"}
+      IG_BRIDGE_PROXIES: ${IG_BRIDGE_PROXIES:-{}}
+    volumes:
+      - ig-bridge-data:/data
+    # no published port: only containers on the compose network (the backend) can reach it
+    expose:
+      - "8090"
+  backend:
+    environment:
+      META_UNOFFICIAL_ENABLED: ${META_UNOFFICIAL_ENABLED:-false}
+      IG_BRIDGE_URL: ${IG_BRIDGE_URL:-http://ig-bridge:8090}
+      IG_BRIDGE_SECRET: ${IG_BRIDGE_SECRET:?set IG_BRIDGE_SECRET}
+volumes:
+  ig-bridge-data:

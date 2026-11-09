@@ -1,0 +1,56 @@
+package com.platform.chat.unofficial;
+
+import java.util.UUID;
+
+/**
+ * Sends a Messenger / Instagram message to a contact OUTSIDE Meta's 24 h window, the way a person would by hand, through an UNOFFICIAL route (Meta's official API forbids this).
+ * Off unless {@code app.meta.unofficial.enabled}. One implementation per platform; {@link UnofficialMetaService} picks the first sender that {@link #handles} the platform
+ * (so a Messenger transport can be plugged in later without touching the policy layer).
+ *
+ * Implementations never throw: every outcome is a typed {@link Result}. They never log or return credentials.
+ */
+public interface OutOfWindowSender {
+    enum Kind { SENT, BLOCKED, SESSION_EXPIRED, NOT_FOUND, FAILED }
+
+    /** BLOCKED = action block / feedback_required / challenge / checkpoint / rate limit: the caller must stop. */
+    record Result(Kind kind, String detail) {
+        public static Result sent() { return new Result(Kind.SENT, null); }
+        public static Result of(Kind k, String detail) { return new Result(k, detail == null ? null : detail.length() > 190 ? detail.substring(0, 190) : detail); }
+        public boolean ok() { return kind == Kind.SENT; }
+    }
+
+    /** What the transport says about the shop's session. {@code state}: ACTIVE, NEEDS_LOGIN, UNREACHABLE, UNSUPPORTED or NONE. */
+    record SessionStatus(String state, String accountName, String detail) {
+        public boolean active() { return "ACTIVE".equals(state); }
+    }
+
+    /** ok with the account name, or {@code error}: CHALLENGE, BAD_CREDENTIALS, UNREACHABLE, UNSUPPORTED, FAILED. */
+    record LoginResult(boolean ok, String accountName, String error) {
+        public static LoginResult ok(String account) { return new LoginResult(true, account, null); }
+        public static LoginResult error(String code) { return new LoginResult(false, null, code); }
+    }
+
+    /** True when this sender serves the platform (FACEBOOK or INSTAGRAM). */
+    boolean handles(String platform);
+
+    /** False for a transport that exists only as a stub (Messenger today): the platform is then hidden from the picker. */
+    default boolean supported() { return true; }
+
+    /** Is the transport reachable at all (the sidecar's health check, before each send). */
+    boolean healthy();
+
+    /**
+     * Sends one message. {@code typingMs}: the transport should mark the thread seen and show typing for about that long before sending.
+     * {@code recipientRef}: the contact's username when known, otherwise the id Meta gave us.
+     */
+    Result send(UUID tenant, String platform, String recipientRef, String text, int typingMs);
+
+    default Result send(UUID tenant, String platform, String recipientRef, String text) { return send(tenant, platform, recipientRef, text, 0); }
+
+    SessionStatus status(UUID tenant, String platform);
+
+    LoginResult login(UUID tenant, String platform, String username, String password, String totp);
+
+    /** Drops the session on the transport side (idempotent). */
+    void logout(UUID tenant, String platform);
+}

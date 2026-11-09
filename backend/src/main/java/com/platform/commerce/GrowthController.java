@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.*;
 public class GrowthController {
     public record LoyaltySettingsReq(Boolean enabled, Integer earnPercent, Integer minRedeem) {}
     public record RedeemReq(Integer points) {}
-    public record BroadcastReq(java.util.List<String> segments, java.util.List<String> platforms, String message, java.util.UUID imageFileId, Boolean push, String pushTitle, java.util.List<String> variants) {}
+    public record BroadcastReq(java.util.List<String> segments, java.util.List<String> platforms, String message, java.util.UUID imageFileId, Boolean push, String pushTitle, java.util.List<String> variants, java.util.List<String> manualPlatforms) {}
     public record CapiReq(Boolean enabled, String token) {}
 
     private static final String MANAGE = "hasAuthority('growth.manage')";
@@ -68,14 +68,15 @@ public class GrowthController {
     @GetMapping("/api/v1/store/segments/customers")
     @PreAuthorize(MANAGE)
     public Map<String, Object> segmentCustomers(@RequestParam(required = false) String segments, @RequestParam(required = false) String platforms, @RequestParam(required = false) String q,
-                                                @RequestParam(defaultValue = "50") int limit, @RequestParam(defaultValue = "0") int offset) {
-        return this.segments.customers(StoreContext.tenantId(), SegmentService.parseSet(segments, SegmentService.SEGMENT_ORDER, "segment"), SegmentService.parseSet(platforms, SegmentService.PLATFORMS, "platform"), q, limit, offset);
+                                                @RequestParam(defaultValue = "50") int limit, @RequestParam(defaultValue = "0") int offset, @RequestParam(required = false) String manual) {
+        return this.segments.customers(StoreContext.tenantId(), SegmentService.parseSet(segments, SegmentService.SEGMENT_ORDER, "segment"), SegmentService.parseSet(platforms, SegmentService.PLATFORMS, "platform"), q, limit, offset,
+                manual == null || manual.isBlank() ? java.util.Set.of() : SegmentService.parseSet(manual, java.util.List.of("FACEBOOK", "INSTAGRAM"), "platform"));
     }
 
     @PostMapping("/api/v1/store/broadcasts")
     @PreAuthorize(MANAGE)
     public Map<String, Object> broadcast(@RequestBody BroadcastReq r, Authentication a) {
-        return segments.broadcast(StoreContext.tenantId(), user(a), new SegmentService.Req(r.segments(), r.platforms(), r.message(), r.imageFileId(), r.push(), r.pushTitle(), r.variants()));
+        return segments.broadcast(StoreContext.tenantId(), user(a), new SegmentService.Req(r.segments(), r.platforms(), r.message(), r.imageFileId(), r.push(), r.pushTitle(), r.variants(), r.manualPlatforms()));
     }
 
     @GetMapping("/api/v1/store/broadcasts/{id}/recipients")
