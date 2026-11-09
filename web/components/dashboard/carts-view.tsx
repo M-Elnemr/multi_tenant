@@ -10,18 +10,16 @@ import { useI18n } from "../i18n-provider";
 import { Icon } from "../icons";
 import { ConfirmDialog, Sheet } from "../overlay";
 import { useToast } from "../toast";
-import { Alert, Avatar, Badge, Button, Empty, ErrorText, Field, Input, KpiStrip, Toolbar } from "../ui";
-import { SendModePicker, useOwnNumber, type SendMode } from "./send-mode";
-import { isNoWaba, WabaDialog } from "./waba-dialog";
+import { Avatar, Badge, Button, Empty, ErrorText, Field, Input, KpiStrip, Toolbar } from "../ui";
 import { CardSkeletons, PanelHead, PillTabs, SwitchRow, errText } from "./marketing/kit";
 
 type Item = { name: string; variant?: string | null; quantity: number; priceMinor: number };
 type Cart = { id: string; name?: string | null; phone: string; items: Item[]; itemCount: number; totalMinor: number; currency: string; status: string; createdAt: string; contactedAt?: string | null; reminderStatus?: string | null; whatsappUrl: string };
 type Stats = { dueCount: number; dueMinor: number; recentCount: number; recoveredCount: number; recoveredMinor: number; recoveryRatePercent: number };
-type Settings = { recoveryEnabled: boolean; allowPaid: boolean; remindAfterHours: number; couponCode: string | null; messagePriceMinor: number; sendMode?: SendMode };
+type Settings = { recoveryEnabled: boolean; remindAfterHours: number; couponCode: string | null };
 type Res = { carts: Cart[]; stats: Stats; settings: Settings };
 
-/** Carts that were not completed: shown 24 hours after they were started, with ways to reach the customer and a switch for reminders. Paid WhatsApp messages stay off unless the owner turns them on here. */
+/** Carts that were not completed: shown 24 hours after they were started, with ways to reach the customer and a switch for reminders. */
 export default function CartsView({ canWrite }: { canWrite: boolean }) {
   const { t, locale, currency } = useI18n();
   const toast = useToast();
@@ -41,17 +39,14 @@ export default function CartsView({ canWrite }: { canWrite: boolean }) {
       return r;
     } catch (e) { toast(errText(e, t("inbox.saveFailed")), { tone: "error" }); }
   });
-  const [form, setForm] = useState<{ enabled: boolean; paid: boolean; hours: string; coupon: string; mode: SendMode } | null>(null);
-  const own = useOwnNumber();
+  const [form, setForm] = useState<{ enabled: boolean; hours: string; coupon: string } | null>(null);
   const d = res.data;
-  const cur = form ?? (d ? { enabled: d.settings.recoveryEnabled, paid: d.settings.allowPaid, hours: String(d.settings.remindAfterHours), coupon: d.settings.couponCode ?? "", mode: d.settings.sendMode ?? "PAID" } : null);
+  const cur = form ?? (d ? { enabled: d.settings.recoveryEnabled, hours: String(d.settings.remindAfterHours), coupon: d.settings.couponCode ?? "" } : null);
   const save = useAction(async () => {
     if (!cur) return;
-    await api("store/carts/settings", { method: "PUT", body: { recoveryEnabled: cur.enabled, allowPaid: cur.paid, remindAfterHours: Number(cur.hours), couponCode: cur.coupon, sendMode: own.linked ? cur.mode : "PAID" } });
+    await api("store/carts/settings", { method: "PUT", body: { recoveryEnabled: cur.enabled, remindAfterHours: Number(cur.hours), couponCode: cur.coupon } });
     setForm(null); toast(t("common.saved")); await res.reload();
   });
-  const [wabaOpen, setWabaOpen] = useState(false);
-  const template = useAction(async () => { const r = await api<{ status: string }>("store/carts/template", { body: {} }); toast(`${t("cart.templateStatus")}: ${r.status}`, { tone: "info" }); });
   return (
     <div className="space-y-5">
       <ErrorText error={res.error} />
@@ -127,24 +122,19 @@ export default function CartsView({ canWrite }: { canWrite: boolean }) {
         title={t("cartx.dismissTitle")} body={t("cartx.dismissBody")} confirmLabel={t("cart.dismiss")} cancelLabel={t("common.cancel")} />
 
       <Sheet open={settingsOpen} onClose={() => setSettingsOpen(false)} title={t("cart.settings")} width="30rem"
-        footer={canWrite && cur ? <div className="flex flex-wrap gap-2"><Button variant="ink" loading={save.loading} onClick={() => void save.run()}>{t("common.save")}</Button><Button variant="secondary" loading={template.loading} onClick={() => void template.run()}>{t("cart.registerTemplate")}</Button></div> : undefined}>
+        footer={canWrite && cur ? <Button variant="ink" loading={save.loading} onClick={() => void save.run()}>{t("common.save")}</Button> : undefined}>
         {cur && (
           <div className="space-y-4">
             <PanelHead icon="bell" title={t("cart.settings")} hint={t("cart.settingsHint")} />
-            <Field label={t("sm.title")}><SendModePicker value={own.linked ? cur.mode : "PAID"} onChange={(m) => setForm({ ...cur, mode: m })} disabled={!canWrite} /></Field>
-            <SwitchRow title={t("cart.autoRemind")} checked={cur.enabled} disabled={!canWrite} onChange={(v) => setForm({ ...cur, enabled: v, paid: v ? cur.paid : false })} />
+            <SwitchRow title={t("cart.autoRemind")} checked={cur.enabled} disabled={!canWrite} onChange={(v) => setForm({ ...cur, enabled: v })} />
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label={t("cart.afterHours")}><Input dir="ltr" inputMode="numeric" disabled={!canWrite} value={cur.hours} onChange={(e) => setForm({ ...cur, hours: e.target.value })} /></Field>
               <Field label={t("cart.coupon")} hint={t("cart.couponHint")}><Input dir="ltr" disabled={!canWrite} value={cur.coupon} onChange={(e) => setForm({ ...cur, coupon: e.target.value })} /></Field>
             </div>
-            {(!own.linked || cur.mode === "PAID") && <SwitchRow title={t("cart.paid")} checked={cur.paid} disabled={!canWrite || !cur.enabled} onChange={(v) => setForm({ ...cur, paid: v })} />}
-            {own.linked && cur.mode === "FREE" ? <Alert tone="green">{t("cart.freeInfo")}</Alert> : <Alert tone="amber">{t("cart.paidWarn", { price: money(d?.settings.messagePriceMinor ?? 0, currency, locale) })}</Alert>}
-            <ErrorText error={save.error ?? template.error} />
-            {isNoWaba(template.error) && <Button variant="secondary" onClick={() => setWabaOpen(true)}>{t("waba.add")}</Button>}
+            <ErrorText error={save.error} />
           </div>
         )}
       </Sheet>
-      <WabaDialog open={wabaOpen} onClose={() => setWabaOpen(false)} onSaved={() => { template.setError(null); void template.run(); }} />
     </div>
   );
 }

@@ -96,7 +96,6 @@ export function AiChannels({ write, pendingId, metaError }: { write: boolean; pe
             </Field>
             {f.platform === "FACEBOOK" && <Alert tone="blue"><div className="font-semibold">{t("ai.fbHelpTitle")}</div><ol className="mt-1 list-decimal space-y-1 ps-5 text-sm"><li>{t("ai.fbHelp1")}</li><li>{t("ai.fbHelp2")}</li><li>{t("ai.fbHelp3")}</li></ol></Alert>}
             <Field label={idLabel}><Input dir="ltr" inputMode="numeric" value={f.externalId} onChange={(e) => setF({ ...f, externalId: e.target.value.replace(/\D/g, "") })} required /></Field>
-            {f.platform === "WHATSAPP" && <Field label={t("ai.wabaId")} hint={t("ai.wabaHint")}><Input dir="ltr" inputMode="numeric" value={f.pageId} onChange={(e) => setF({ ...f, pageId: e.target.value.replace(/\D/g, "") })} /></Field>}
             {f.platform === "INSTAGRAM" && <Field label={t("ai.pageIdFor")} hint={t("ai.pageIdHint")}><Input dir="ltr" inputMode="numeric" value={f.pageId} onChange={(e) => setF({ ...f, pageId: e.target.value.replace(/\D/g, "") })} /></Field>}
             <Field label={t("ai.accessToken")} hint={t("ai.accessTokenHint")}><Input dir="ltr" type="password" autoComplete="off" value={f.accessToken} onChange={(e) => setF({ ...f, accessToken: e.target.value })} required /></Field>
             <ErrorText error={connect.error ?? remove.error} />

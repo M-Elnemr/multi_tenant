@@ -6,9 +6,8 @@ import { dateTime } from "@/lib/format";
 import { useAction, useApi } from "../hooks";
 import { useI18n } from "../i18n-provider";
 import { Alert, Badge, Button, Card, ErrorText, Field, Input, Select } from "../ui";
-import { SendModePicker, useOwnNumber, type SendMode } from "./send-mode";
 
-type FreeRep = { mode: SendMode; enabled: boolean; sendAfter: string; language: string; linked: boolean; phone?: string | null };
+type FreeRep = { mode?: string; enabled: boolean; sendAfter: string; language: string; linked: boolean; phone?: string | null };
 
 type Status = {
   configured: boolean; platformNumber: string; linked: boolean; phone?: string; enabled?: boolean; sendAfter?: string; language?: string;
@@ -26,14 +25,14 @@ export default function WaReportCard() {
   const save = useAction(async (patch: Record<string, unknown>) => { await api("store/whatsapp-report", { method: "PATCH", body: patch }); await st.reload(); });
   const sendNow = useAction(async () => { await api("store/whatsapp-report/send-now", { body: {} }); setNotice(t("wr.sent")); await st.reload(); });
   const unlink = useAction(async () => { await api("store/whatsapp-report", { method: "DELETE" }); setCode(null); await st.reload(); });
-  const own = useOwnNumber();
-  const rep = useApi<FreeRep>("store/ai/evolution/report");
-  const setMode = useAction(async (m: SendMode) => { await api("store/ai/evolution/report", { method: "PUT", body: { mode: m, enabled: m === "FREE" ? true : undefined } }); await rep.reload(); });
-  const saveFree = useAction(async (patch: Record<string, unknown>) => { await api("store/ai/evolution/report", { method: "PUT", body: patch }); await rep.reload(); });
+  const evo = useApi<{ enabled: boolean; status: string }>("store/ai/evolution");
+  const own = { linked: !!evo.data?.enabled && evo.data.status === "CONNECTED" };
+  const rep = useApi<FreeRep>(own.linked ? "store/ai/evolution/report" : null);
+  const saveFree = useAction(async (patch: Record<string, unknown>) => { await api("store/ai/evolution/report", { method: "PUT", body: { mode: "FREE", ...patch } }); await rep.reload(); });
   const sendFree = useAction(async () => { await api("store/ai/evolution/report/send-now", { body: {} }); setNotice(t("wr.sentFree")); });
   const s = st.data;
   if (!s) return null;
-  const free = own.linked && rep.data?.mode === "FREE";
+  const free = own.linked && !!rep.data;
   const digits = s.platformNumber.replace(/\D/g, "");
   return (
     <Card className="space-y-4">
@@ -41,11 +40,8 @@ export default function WaReportCard() {
         <h2 className="font-medium">{t("wr.title")}</h2>
         <p className="mt-1 text-sm text-slate-500">{t("wr.hint")}</p>
       </div>
-      <SendModePicker value={free ? "FREE" : "PAID"} onChange={(m) => void setMode.run(m)} disabled={setMode.loading} paidHint={t("wr.paidHint")} />
-      <ErrorText error={setMode.error} />
       {free && rep.data && (
         <div className="space-y-4">
-          <Alert tone="green">{t("wr.freeInfo", { phone: rep.data.phone ?? "" })}</Alert>
           <div className="grid gap-4 sm:grid-cols-3">
             <Field label={t("wr.enabled")}><Select value={rep.data.enabled ? "1" : "0"} onChange={(e) => void saveFree.run({ enabled: e.target.value === "1" })}><option value="1">{t("wr.on")}</option><option value="0">{t("wr.off")}</option></Select></Field>
             <Field label={t("wr.time")} hint={t("wr.timeHint")}><Input type="time" dir="ltr" value={time ?? rep.data.sendAfter} min="18:00" onChange={(e) => setTime(e.target.value)} onBlur={() => { if (time && time !== rep.data?.sendAfter) void saveFree.run({ sendAfter: time }); }} /></Field>

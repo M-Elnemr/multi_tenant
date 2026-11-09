@@ -9,17 +9,16 @@ import { Alert, Badge, Button, Card, ErrorText, Field, Input } from "../ui";
 type Info = { available: boolean; enabled: boolean; status: "DISCONNECTED" | "CONNECTING" | "CONNECTED"; phone?: string | null };
 type Qr = Info & { qr?: string | null; pairingCode?: string | null };
 
-/** Optional unofficial mode: the shop's own WhatsApp number linked by QR code. Off by default; the owner must read and accept the warning first. */
+/** The shop's own WhatsApp number, linked by QR code. */
 export default function EvolutionCard({ write }: { write: boolean }) {
   const { t } = useI18n();
   const info = useApi<Info>("store/ai/evolution");
-  const [accepted, setAccepted] = useState(false);
   const [qr, setQr] = useState<Qr | null>(null);
   const [number, setNumber] = useState("");
   const [sentOk, setSentOk] = useState(false);
 
   const enable = useAction(async () => { setQr(await api<Qr>("store/ai/evolution/enable", { body: { acceptedRisk: true } })); await info.reload(); });
-  const disable = useAction(async () => { await api("store/ai/evolution/disable", { body: {} }); setQr(null); setAccepted(false); await info.reload(); });
+  const disable = useAction(async () => { await api("store/ai/evolution/disable", { body: {} }); setQr(null); await info.reload(); });
   const test = useAction(async () => { await api("store/ai/evolution/test", { body: { number } }); setSentOk(true); });
 
   // while the phone is not linked yet, keep asking for the current QR (WhatsApp rotates it every minute or so)
@@ -45,16 +44,11 @@ export default function EvolutionCard({ write }: { write: boolean }) {
         {info.data.enabled && <Badge tone={connected ? "green" : "amber"}>{connected ? t("evo.connected") : t("evo.waiting")}</Badge>}
       </div>
       <p className="text-sm text-slate-600">{t("evo.what")}</p>
-      <Alert tone="amber">
-        <div className="font-semibold">⚠️ {t("evo.warnTitle")}</div>
-        <ul className="mt-1 list-disc space-y-1 ps-5 text-sm"><li>{t("evo.w1")}</li><li>{t("evo.w2")}</li><li>{t("evo.w3")}</li><li>{t("evo.w4")}</li></ul>
-      </Alert>
 
       {!info.data.enabled && write && (
         <>
-          <label className="flex items-start gap-2 text-sm font-medium"><input type="checkbox" className="mt-1 h-5 w-5" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} />{t("evo.accept")}</label>
           <ErrorText error={enable.error} />
-          <Button loading={enable.loading} disabled={!accepted} onClick={() => void enable.run()}>{t("evo.enable")}</Button>
+          <Button loading={enable.loading} onClick={() => void enable.run()}>{t("evo.enable")}</Button>
         </>
       )}
 
