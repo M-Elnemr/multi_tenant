@@ -26,7 +26,7 @@ import org.springframework.stereotype.Component;
 public class IgBridgeClient {
     private static final Logger log = LoggerFactory.getLogger(IgBridgeClient.class);
     private static final ObjectMapper JSON = new ObjectMapper();
-    private final HttpClient http = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).connectTimeout(Duration.ofSeconds(5)).build();
+    private final HttpClient http = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).followRedirects(HttpClient.Redirect.NEVER).connectTimeout(Duration.ofSeconds(5)).build();
     private final String base, secret;
 
     public record User(String pk, String username, String fullName, boolean isPrivate) {}

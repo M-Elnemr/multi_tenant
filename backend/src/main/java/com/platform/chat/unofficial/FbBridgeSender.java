@@ -28,7 +28,7 @@ import org.springframework.stereotype.Component;
 public class FbBridgeSender implements OutOfWindowSender {
     private static final Logger log = LoggerFactory.getLogger(FbBridgeSender.class);
     private static final ObjectMapper JSON = new ObjectMapper();
-    private final HttpClient http = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).connectTimeout(Duration.ofSeconds(5)).build();
+    private final HttpClient http = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).followRedirects(HttpClient.Redirect.NEVER).connectTimeout(Duration.ofSeconds(5)).build();
     private final String base, secret;
 
     public FbBridgeSender(@Value("${app.meta.unofficial.fb-bridge-url:}") String base, @Value("${app.meta.unofficial.fb-bridge-secret:}") String secret) {
