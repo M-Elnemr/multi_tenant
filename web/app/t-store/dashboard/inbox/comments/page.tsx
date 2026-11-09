@@ -11,13 +11,15 @@ import { Sheet, Switch } from "@/components/overlay";
 import { useToast } from "@/components/toast";
 import { ChatAvatar, when } from "@/components/inbox/bits";
 import { money } from "@/lib/format";
+import { POINT_PRICES } from "@/lib/pricing";
 
 type Comment = {
   id: string; platform: "FACEBOOK" | "INSTAGRAM"; commentId: string; postId?: string; postPermalink?: string | null; postText?: string | null; postImage?: string | null; isAd: boolean;
   authorName?: string | null; text: string; question: boolean; status: "UNREPLIED" | "REPLIED" | "IGNORED"; replyText?: string | null; repliedBy?: "AI" | "STAMP" | "OWNER" | null; repliedAt?: string | null;
   dmStatus: "NONE" | "SENT" | "FAILED" | "NOT_ALLOWED"; dmText?: string | null; dmAt?: string | null; error?: string | null; createdAt: string;
 };
-type Settings = { publicReply: "OFF" | "STAMP" | "AI"; stampText?: string | null; dmEnabled: boolean; dmOnlyQuestions: boolean; aiPriceMinor: number; connected: string };
+type Settings = { publicReply: "OFF" | "STAMP" | "AI"; stampText?: string | null; dmEnabled: boolean; dmOnlyQuestions: boolean; aiPriceMinor: number; connected: string; todayReplies?: number; todayDms?: number; todayCostMinor?: number; messagePriceMinor?: number };
+const msgPrice = (s: Settings | null) => s?.messagePriceMinor ?? Math.round(POINT_PRICES.comment * 100);
 
 const mq = (q: string) => (cb: () => void) => { const m = window.matchMedia(q); m.addEventListener("change", cb); return () => m.removeEventListener("change", cb); };
 
@@ -44,6 +46,7 @@ function Comments() {
   const [busy, setBusy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [lastMode, setLastMode] = useState<"STAMP" | "AI" | null>(null);
 
   const load = useCallback(async () => {
     const p = new URLSearchParams();
@@ -78,17 +81,20 @@ function Comments() {
     catch (e) { toast(e instanceof ApiError ? e.message : t("inbox.saveFailed"), { tone: "error" }); }
   };
 
+  const toggleAuto = (on: boolean) => {
+    if (!settings) return;
+    if (!on) { if (settings.publicReply !== "OFF") setLastMode(settings.publicReply); void saveSettings({ ...settings, publicReply: "OFF" }); return; }
+    if (lastMode) void saveSettings({ ...settings, publicReply: lastMode }); else setSettingsOpen(true);
+  };
   const list = (
     <div className="flex h-full min-h-0 flex-col bg-surface">
+      {settings && <AutoReplyCard s={settings} write={write} onToggle={toggleAuto} onDm={(v) => void saveSettings({ ...settings, dmEnabled: v })} onEdit={() => setSettingsOpen(true)} />}
       <div className="space-y-3 px-4 pb-3 pt-4">
         <div className="flex items-center justify-between gap-2">
           <div className="flex rounded-[11px] bg-canvas p-0.5 ring-1 ring-line">
             <Link href="/dashboard/inbox" className="rounded-[9px] px-3 py-1.5 text-[13px] font-medium text-muted transition hover:text-ink">{t("inbox.conversations")}</Link>
             <span className="rounded-[9px] bg-surface px-3 py-1.5 text-[13px] font-semibold text-ink shadow-sm">{t("inbox.comments")}</span>
           </div>
-          <button type="button" onClick={() => setSettingsOpen(true)} aria-label={t("cm.automation")} className="inline-flex h-9 items-center gap-1.5 rounded-[10px] px-2.5 text-[12.5px] font-semibold text-violet-700 ring-1 ring-violet-200 transition hover:bg-violet-50">
-            <Icon name="sparkles" className="h-4 w-4" />{t("cm.automation")}
-          </button>
         </div>
         <label className="flex h-10 items-center gap-2 rounded-[11px] bg-canvas px-3 ring-1 ring-line focus-within:ring-2 focus-within:ring-brand/30">
           <Icon name="search" className="h-4 w-4 text-faint" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("cm.searchPh")} className="min-w-0 flex-1 bg-transparent text-[13.5px] outline-none placeholder:text-faint" />
@@ -112,6 +118,13 @@ function Comments() {
             <span className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-[18px] bg-sky-50 text-sky-600"><Icon name="edit" className="h-6 w-6" /></span>
             <p className="font-display text-[15px] font-semibold text-ink">{settings && !settings.connected ? t("cm.notConnected") : t("cm.empty")}</p>
             <p className="mx-auto mt-1 max-w-xs text-[13px] text-muted">{settings && !settings.connected ? t("cm.notConnectedHint") : t("cm.emptyHint")}</p>
+            {settings && settings.connected && settings.publicReply === "OFF" && !settings.dmEnabled && (
+              <div className="mx-auto mt-5 max-w-xs rounded-[14px] bg-[linear-gradient(135deg,rgb(124_92_255/.10),rgb(34_211_238/.10))] p-4 text-start ring-1 ring-violet-200">
+                <p className="flex items-center gap-1.5 text-[13.5px] font-semibold text-ink"><Icon name="sparkles" className="h-4 w-4 text-violet-600" />{t("cm.card.setupTitle")}</p>
+                <p className="mt-1 text-[12.5px] text-muted">{t("cm.card.setupHint")}</p>
+                <button type="button" onClick={() => setSettingsOpen(true)} className="mt-3 h-9 rounded-[10px] bg-ink px-4 text-[13px] font-semibold text-surface">{t("cm.card.setupCta")}</button>
+              </div>
+            )}
             {settings && !settings.connected && <Link href="/dashboard/ai?tab=channels" className="mt-4 inline-block rounded-[10px] bg-ink px-4 py-2 text-[13px] font-semibold text-surface">{t("inbox.connectChannels")}</Link>}
           </div>
         )}
@@ -194,7 +207,7 @@ function Comments() {
           </div>
           <div className="mt-2 flex justify-between text-[12px]">
             {c.status !== "IGNORED" ? <button type="button" onClick={() => void run("ignore")} className="font-semibold text-muted hover:text-ink">{t("cm.ignore")}</button> : <span />}
-            {mode === "private" && c.dmStatus !== "SENT" && <button type="button" onClick={() => void run("dm", {}, t("cm.toast.dm"))} disabled={busy} className="font-semibold text-violet-700 hover:underline">{t("cm.aiDm", { price: money(settings?.aiPriceMinor ?? 100, "EGP", locale) })}</button>}
+            {mode === "private" && c.dmStatus !== "SENT" && <button type="button" onClick={() => void run("dm", {}, t("cm.toast.dm"))} disabled={busy} className="font-semibold text-violet-700 hover:underline">{t("cm.aiDm", { price: money(msgPrice(settings), "EGP", locale) })}</button>}
           </div>
         </div>
       )}
@@ -214,10 +227,43 @@ function Comments() {
   );
 }
 
+/** Always-visible state of the comment automation: public reply mode, private message, today's usage and the price line; Edit opens the full settings. */
+function AutoReplyCard({ s, write, onToggle, onDm, onEdit }: { s: Settings; write: boolean; onToggle: (on: boolean) => void; onDm: (v: boolean) => void; onEdit: () => void }) {
+  const { t, locale } = useI18n();
+  const on = s.publicReply !== "OFF";
+  const nf = (n: number) => n.toLocaleString(locale === "ar" ? "ar-EG" : "en-US");
+  const price = money(msgPrice(s), "EGP", locale);
+  const hasToday = s.todayReplies != null || s.todayDms != null || s.todayCostMinor != null;
+  return (
+    <div className="shrink-0 border-b border-line p-3">
+      <div className="rounded-[16px] bg-[linear-gradient(135deg,rgb(124_92_255/.10),rgb(34_211_238/.10))] p-3.5 ring-1 ring-violet-200/70">
+        <div className="flex items-center gap-2.5">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[11px] bg-[linear-gradient(135deg,#7c5cff,#22d3ee)] text-white"><Icon name="sparkles" className="h-[18px] w-[18px]" /></span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-display text-[14px] font-semibold text-ink">{t("cm.card.title")}</p>
+            <p className={`text-[12px] font-semibold ${on ? "text-emerald-700" : "text-muted"}`}>{on ? t("cm.card.on") : t("cm.card.off")}</p>
+          </div>
+          <Switch checked={on} onChange={onToggle} disabled={!write} label={t("cm.card.title")} />
+        </div>
+        <dl className="mt-3 hidden grid-cols-2 gap-2 text-[12px] sm:grid">
+          <div className="rounded-[11px] bg-surface/80 px-2.5 py-2 ring-1 ring-line"><dt className="text-faint">{t("cm.card.public")}</dt><dd className="mt-0.5 font-semibold text-ink">{t(`cm.pr.${s.publicReply}`)}</dd></div>
+          <div className="rounded-[11px] bg-surface/80 px-2.5 py-2 ring-1 ring-line">
+            <dt className="flex items-center justify-between gap-1 text-faint">{t("cm.card.dm")}<Switch size="sm" checked={s.dmEnabled} onChange={onDm} disabled={!write} label={t("cm.card.dm")} /></dt>
+            <dd className="mt-0.5 font-semibold text-ink">{s.dmEnabled ? t("cm.card.dmOn") : t("cm.card.dmOff")}</dd>
+          </div>
+        </dl>
+        {hasToday && <p className="mt-2.5 text-[12px] font-medium text-ink-2 tnum">{t("cm.card.today", { replies: nf(s.todayReplies ?? 0), dms: nf(s.todayDms ?? 0), cost: money(s.todayCostMinor ?? 0, "EGP", locale) })}</p>}
+        <p className="mt-1.5 text-[11.5px] leading-relaxed text-muted">{t("cm.card.costLine", { price })}</p>
+        <button type="button" onClick={onEdit} className="mt-3 inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-[10px] bg-ink px-3 text-[13px] font-semibold text-surface"><Icon name="edit" className="h-4 w-4" />{t("cm.card.edit")}</button>
+      </div>
+    </div>
+  );
+}
+
 function CommentSettings({ value, onSave, canWrite }: { value: Settings; onSave: (s: Settings) => Promise<void>; canWrite: boolean }) {
   const { t, locale } = useI18n();
   const [s, setS] = useState(value);
-  const price = money(value.aiPriceMinor, "EGP", locale);
+  const price = money(msgPrice(value), "EGP", locale);
   const option = (m: Settings["publicReply"], title: string, body: string, badge?: string) => (
     <button type="button" onClick={() => setS({ ...s, publicReply: m })} disabled={!canWrite}
       className={`w-full rounded-[14px] p-3.5 text-start ring-1 transition ${s.publicReply === m ? "bg-brand-soft/60 ring-2 ring-brand" : "bg-surface ring-line hover:ring-line-strong"}`}>

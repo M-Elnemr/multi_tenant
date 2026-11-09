@@ -31,11 +31,11 @@ export function SplitWords({ text, className, delay = 0 }: { text: string; class
 }
 
 /** Counts up to `value` when it comes into view; digits follow the locale. */
-export function Counter({ value, locale, prefix = "", suffix = "", className }: { value: number; locale: string; prefix?: string; suffix?: string; className?: string }) {
+export function Counter({ value, locale, prefix = "", suffix = "", className, decimals = 0 }: { value: number; locale: string; prefix?: string; suffix?: string; className?: string; decimals?: number }) {
   const ref = useRef<HTMLSpanElement>(null);
   const seen = useInView(ref, { once: true, margin: "-10% 0px" });
   const reduce = useReducedMotion();
-  const fmt = (n: number) => `${prefix}${Math.round(n).toLocaleString(locale === "ar" ? "ar-EG" : "en-US")}${suffix}`;
+  const fmt = (n: number) => `${prefix}${n.toLocaleString(locale === "ar" ? "ar-EG" : "en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}${suffix}`;
   useEffect(() => {
     const el = ref.current;
     if (!el || !seen) return;

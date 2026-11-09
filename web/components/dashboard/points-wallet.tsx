@@ -48,6 +48,8 @@ export function PointsWallet({ write }: { write: boolean }) {
         <ul className="grid gap-2 text-[13px] sm:grid-cols-2">
           <li className="flex items-center gap-2.5 rounded-[12px] bg-surface-2 px-3.5 py-2.5 text-ink-2"><Icon name="sparkles" className="h-4 w-4 shrink-0 text-violet-600" />{t("pts.rateAi")}</li>
           <li className="flex items-center gap-2.5 rounded-[12px] bg-surface-2 px-3.5 py-2.5 text-ink-2"><Icon name="chat" className="h-4 w-4 shrink-0 text-emerald-600" />{t("pts.rateWa")}</li>
+          <li className="flex items-center gap-2.5 rounded-[12px] bg-surface-2 px-3.5 py-2.5 text-ink-2"><Icon name="edit" className="h-4 w-4 shrink-0 text-sky-600" />{t("pts.rateComment")}</li>
+          <li className="flex items-center gap-2.5 rounded-[12px] bg-surface-2 px-3.5 py-2.5 text-ink-2"><Icon name="lock" className="h-4 w-4 shrink-0 text-violet-600" />{t("pts.rateDm")}</li>
         </ul>
 
         {write && (

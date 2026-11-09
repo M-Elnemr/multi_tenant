@@ -20,7 +20,7 @@ export function ShopPricing({ p, locale, register }: { p: ShopCopy["pricing"]; l
   const nf = (n: number, d = 0) => n.toLocaleString(locale === "ar" ? "ar-EG" : "en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
   const egp = (n: number) => (locale === "ar" ? `${nf(n, n % 1 ? 1 : 0)} جنيه` : `EGP ${nf(n, n % 1 ? 1 : 0)}`);
   const aiCost = ai * POINT_PRICES.aiConversation;
-  const adsCost = ads * POINT_PRICES.whatsappMessage;
+  const adsCost = Math.round(ads * POINT_PRICES.message * 10) / 10;
   const total = aiCost + adsCost;
 
   return (
@@ -79,7 +79,7 @@ export function ShopPricing({ p, locale, register }: { p: ShopCopy["pricing"]; l
           <div className="rounded-2xl bg-[#0b0d12] p-6 text-white">
             <Row label={p.calcSub1} value={p.calcFree} strong="#a3e635" />
             <Row label={`${nf(ai)} × ${egp(POINT_PRICES.aiConversation)}`} value={egp(aiCost)} />
-            <Row label={`${nf(ads)} × ${egp(POINT_PRICES.whatsappMessage)}`} value={egp(adsCost)} />
+            <Row label={`${nf(ads)} × ${egp(POINT_PRICES.message)}`} value={egp(adsCost)} />
             <div className="mt-4 flex items-end justify-between border-t border-white/10 pt-4">
               <span className="text-sm text-white/60">{p.calcTotal}</span>
               <motion.span key={total} className="font-display text-3xl font-extrabold tnum" initial={reduce ? false : { opacity: 0.4, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>{egp(total)}</motion.span>

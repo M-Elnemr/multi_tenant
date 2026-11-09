@@ -5,8 +5,8 @@
  *   answers from the catalog, recommends, offers a discount only up to the owner's limit, takes the order (cash on delivery) and asks the owner what it does not know;
  *   AI shop builder (from a description or from the owner's Facebook/Instagram posts); Copilot; marketing plan / autopilot, broadcasts, abandoned-cart reminders;
  *   orders, stock, shipping zones, offline POS with barcodes, reports, 10 shop designs, mobile app.
- *   Pricing (shown in EGP; the backend keeps a prepaid credit): no subscription for shops; 1 EGP: 1 point per AI conversation (up to 20 messages), 0.5 point per WhatsApp confirmation / offer
- *   message on the official WhatsApp (offers from the owner's own linked number are free, paced); 100 free points once. Keep in sync with V80__points_pricing.sql.
+ *   Pricing (shown in EGP; the backend keeps a prepaid credit): no subscription for shops; 1 EGP: 1 point per block of 10 AI replies, 0.1 point per outbound message (confirmation / offer / ad / reminder)
+ *   message on WhatsApp, Messenger or Instagram; 100 free points once. Keep in sync with V80__points_pricing.sql.
  */
 export type ShopCopy = typeof en;
 
@@ -105,7 +105,7 @@ const en = {
     title: "One AI seller, every chat",
     sub: "Connect the channels you already sell on. Every conversation and order arrives in one inbox.",
     list: [
-      { key: "WHATSAPP", name: "WhatsApp", body: "Your own number by scanning a QR code, or the official WhatsApp Business API." },
+      { key: "WHATSAPP", name: "WhatsApp", body: "Your own number, linked by scanning a QR code." },
       { key: "INSTAGRAM", name: "Instagram", body: "Direct messages answered and orders taken." },
       { key: "MESSENGER", name: "Facebook Messenger", body: "Your page's messages answered automatically." },
       { key: "WEB", name: "Your website", body: "A chat on your own shop site, ready from day one." },
@@ -158,7 +158,7 @@ const en = {
     message: "Hi {name} 👋 We have a new collection! Enjoy 15% OFF this weekend 🎁",
     ai: "AI suggested 3 versions",
     photo: "Photo of the offer",
-    cost: "214 messages × 0.5 EGP = 107 EGP",
+    cost: "214 messages × 0.1 EGP = 21.4 EGP",
     send: "Send offer",
     phoneName: "Nour Boutique",
     received: "Hi Sara 👋 We have a new collection! Enjoy 15% OFF this weekend 🎁",
@@ -167,17 +167,17 @@ const en = {
     results: [
       { label: "Came back and ordered", value: 38, suffix: "" },
       { label: "Sales from one offer", value: 41200, suffix: "", money: true },
-      { label: "Cost of the offer (EGP)", value: 107, suffix: "" },
+      { label: "Cost of the offer (EGP)", value: 21.4, suffix: "" },
     ],
     sample: "Example figures",
     points: [
       { icon: "users", title: "Groups made for you", body: "New, repeat, VIP, about to stop, and haven't ordered in a while: worked out from your orders, nothing to maintain." },
       { icon: "sparkles", title: "AI writes the offer", body: "Write one line and the AI suggests versions. Add a photo; each customer's name and last order are filled in automatically." },
-      { icon: "send", title: "Straight to WhatsApp", body: "Sent on WhatsApp to the customers who agreed to hear from you. Only 0.5 EGP per advertising message." },
+      { icon: "send", title: "Straight to WhatsApp", body: "Sent on WhatsApp to the customers who agreed to hear from you. Only 0.1 EGP per advertising message." },
       { icon: "chat", title: "Replies become orders", body: "When a customer answers the offer, your AI seller takes it from there and closes the order." },
     ],
     note: "Offers go only to customers who agreed to receive messages from your shop, and anyone who asks to stop never receives one again.",
-    price: "Only 0.5 EGP",
+    price: "Only 0.1 EGP",
     priceUnit: "per advertising message",
     journeyTitle: "How an old customer comes back",
     journey: [
@@ -189,7 +189,7 @@ const en = {
     ],
     compareTitle: "Why your old customers are worth more",
     compareNew: { title: "Finding a new customer", items: ["Pay for ads to reach strangers", "They don't know your shop yet", "Many clicks before one order"] },
-    compareOld: { title: "Bringing back an old customer", items: ["They already know and trust you", "One WhatsApp message, 0.5 EGP", "Straight to the products they like"] },
+    compareOld: { title: "Bringing back an old customer", items: ["They already know and trust you", "One WhatsApp message, 0.1 EGP", "Straight to the products they like"] },
   },
   pricing: {
     eyebrow: "Pricing",
@@ -201,12 +201,13 @@ const en = {
     freeItems: ["Your online shop with 10 designs and your own domain", "Unlimited products, orders and customers", "Stock, shipping, offline POS and reports", "Owner app on your phone"],
     payTitle: "Pay only for what you use",
     rates: [
-      { value: "1", unit: "EGP", title: "AI conversation", body: "Up to 20 messages between your customer and the AI (about 10 AI replies). A longer chat counts as 2." },
-      { value: "0.5", unit: "EGP", title: "WhatsApp confirmation message", body: "Order confirmation and updates sent to the customer on WhatsApp." },
-      { value: "0.5", unit: "EGP", title: "WhatsApp advertising message", body: "Each offer sent on WhatsApp to an existing customer who agreed to hear from you." },
+      { value: "1", unit: "EGP", title: "AI conversation", body: "Each block of 10 AI replies costs 1 EGP: 1 to 10 replies = 1 EGP, 11 to 20 = 2 EGP. A customer who answers your confirmation, reminder, ad or comment message starts a conversation." },
+      { value: "0.1", unit: "EGP", title: "Outbound message", body: "Order confirmation, cart reminder or update sent to the customer on WhatsApp, Messenger or Instagram." },
+      { value: "0.1", unit: "EGP", title: "Advertising message", body: "Each offer sent on WhatsApp, Messenger or Instagram to an existing customer who agreed to hear from you." },
+      { value: "0.1", unit: "EGP", title: "AI comment reply", body: "A public AI reply to a comment, or the private message the AI sends the commenter. Stamp replies are free." },
     ],
     giftTitle: "EGP 100 free credit to start",
-    giftBody: "Enough for about 100 AI conversations, so you can try everything before paying anything.",
+    giftBody: "Enough for about 100 AI conversations or 1,000 messages, so you can try everything before paying anything.",
     howTitle: "You stay in control",
     how: ["Top up any amount from 10 EGP", "Pick where the AI replies: WhatsApp, Messenger, Instagram, your website", "If your credit runs out the AI pauses and chats go to your inbox; it's back the moment you top up"],
     cta: "Start free with EGP 100 credit",
@@ -227,8 +228,8 @@ const en = {
       { q: "Can it give away a discount I don't want?", a: "No. You set the maximum discount (or none). The AI cannot offer more, and prices always come from your catalog." },
       { q: "What if a customer asks something it doesn't know?", a: "It tells the customer it will check, sends the question to you, and uses your answer for next time." },
       { q: "Do I need my own website or developer?", a: "No. Your shop site is created with your account, with ten designs to choose from. You can also use your own domain." },
-      { q: "Which WhatsApp can I connect?", a: "Your existing number by scanning a QR code, or the official WhatsApp Business API if you have one." },
-      { q: "Is there a contract or monthly fee?", a: "No. Your shop is free with no subscription. You get EGP 100 free credit, then top up only if you want the AI and WhatsApp messages: EGP 1 per AI conversation, EGP 0.5 per WhatsApp message." },
+      { q: "Which WhatsApp number can I connect?", a: "Your existing number, by scanning a QR code." },
+      { q: "Is there a contract or monthly fee?", a: "No. Your shop is free with no subscription. You get EGP 100 free credit, then top up only if you want the AI and WhatsApp messages: EGP 1 per 10 AI replies, EGP 0.1 per message sent." },
       { q: "What happens when my credit runs out?", a: "Your shop keeps working normally. Only the AI auto-reply pauses and new chats wait for you in your inbox. Top up and it replies again right away." },
     ],
   },
@@ -331,7 +332,7 @@ const ar: ShopCopy = {
     title: "بائع ذكي واحد، في كل المحادثات",
     sub: "اربط القنوات اللي بتبيع عليها بالفعل. كل المحادثات والطلبات توصل في صندوق واحد.",
     list: [
-      { key: "WHATSAPP", name: "واتساب", body: "رقمك الحالي بمسح كود QR، أو واجهة واتساب للأعمال الرسمية." },
+      { key: "WHATSAPP", name: "واتساب", body: "رقمك الحالي بمسح كود QR." },
       { key: "INSTAGRAM", name: "إنستجرام", body: "يرد على الرسائل الخاصة ويسجّل الطلبات." },
       { key: "MESSENGER", name: "ماسنجر فيسبوك", body: "يرد على رسائل صفحتك تلقائيًا." },
       { key: "WEB", name: "موقعك", body: "محادثة على موقع متجرك، جاهزة من أول يوم." },
@@ -384,7 +385,7 @@ const ar: ShopCopy = {
     message: "أهلًا {الاسم} 👋 نزلت كوليكشن جديدة! وخصم ١٥٪ الويك إند ده بس 🎁",
     ai: "الذكاء الاصطناعي اقترح ٣ صيغ",
     photo: "صورة العرض",
-    cost: "٢١٤ رسالة × ٠٫٥ جنيه = ١٠٧ جنيه",
+    cost: "٢١٤ رسالة × ٠٫١ جنيه = ٢١٫٤ جنيه",
     send: "ابعت العرض",
     phoneName: "بوتيك نور",
     received: "أهلًا سارة 👋 نزلت كوليكشن جديدة! وخصم ١٥٪ الويك إند ده بس 🎁",
@@ -393,17 +394,17 @@ const ar: ShopCopy = {
     results: [
       { label: "رجعوا وطلبوا", value: 38, suffix: "" },
       { label: "مبيعات من عرض واحد", value: 41200, suffix: "", money: true },
-      { label: "تكلفة العرض (جنيه)", value: 107, suffix: "" },
+      { label: "تكلفة العرض (جنيه)", value: 21.4, suffix: "" },
     ],
     sample: "أرقام توضيحية",
     points: [
       { icon: "users", title: "مجموعات جاهزة", body: "جداد، بيكرروا، VIP، قرّبوا يبطّلوا، وبقالهم فترة ما طلبوش: محسوبة من طلباتك تلقائيًا، من غير أي مجهود." },
       { icon: "sparkles", title: "الذكاء الاصطناعي يكتب العرض", body: "اكتب سطر واحد وهو يقترحلك صيغ. ضيف صورة، واسم كل عميل وآخر طلب له بيتكتبوا لوحدهم." },
-      { icon: "send", title: "على واتساب مباشرة", body: "بيتبعت على واتساب للعملاء اللي وافقوا يستقبلوا رسايلك. بنص جنيه بس لرسالة الإعلان." },
+      { icon: "send", title: "على واتساب مباشرة", body: "بيتبعت على واتساب للعملاء اللي وافقوا يستقبلوا رسايلك. بـ ١٠ قروش بس لرسالة الإعلان." },
       { icon: "chat", title: "الرد يتحوّل لطلب", body: "لما العميل يرد على العرض، بائعك الذكي يكمّل معاه ويقفل الطلب." },
     ],
     note: "العروض بتروح بس للعملاء اللي وافقوا يستقبلوا رسايل من متجرك، واللي يطلب الإيقاف عمره ما يوصله عرض تاني.",
-    price: "نص جنيه بس",
+    price: "١٠ قروش بس",
     priceUnit: "لكل رسالة إعلان",
     journeyTitle: "إزاي العميل القديم بيرجع",
     journey: [
@@ -415,7 +416,7 @@ const ar: ShopCopy = {
     ],
     compareTitle: "ليه عميلك القديم يستاهل أكتر",
     compareNew: { title: "إنك تجيب عميل جديد", items: ["تدفع إعلانات عشان توصل لناس متعرفكش", "لسه ميعرفش متجرك", "ضغطات كتير قبل أول طلب"] },
-    compareOld: { title: "إنك ترجّع عميل قديم", items: ["عارفك وواثق فيك", "رسالة واتساب واحدة بنص جنيه", "على طول للمنتجات اللي بيحبها"] },
+    compareOld: { title: "إنك ترجّع عميل قديم", items: ["عارفك وواثق فيك", "رسالة واتساب واحدة بـ ١٠ قروش", "على طول للمنتجات اللي بيحبها"] },
   },
   pricing: {
     eyebrow: "الأسعار",
@@ -427,12 +428,13 @@ const ar: ShopCopy = {
     freeItems: ["متجرك أونلاين بعشرة تصميمات ودومين خاص بيك", "منتجات وطلبات وعملاء بلا حدود", "مخزون وشحن وكاشير يشتغل أوفلاين وتقارير", "تطبيق لصاحب المتجر على موبايلك"],
     payTitle: "ادفع على قد استخدامك",
     rates: [
-      { value: "١", unit: "جنيه", title: "محادثة بالذكاء الاصطناعي", body: "لحد ٢٠ رسالة بين عميلك والذكاء الاصطناعي (حوالي ١٠ ردود). المحادثة الأطول تتحسب ٢." },
-      { value: "٠٫٥", unit: "جنيه", title: "رسالة تأكيد على واتساب", body: "تأكيد الطلب وتحديثاته اللي بتوصل للعميل على واتساب." },
-      { value: "٠٫٥", unit: "جنيه", title: "رسالة إعلان على واتساب", body: "كل عرض بيتبعت على واتساب لعميل قديم وافق يستقبل رسايلك." },
+      { value: "١", unit: "جنيه", title: "محادثة بالذكاء الاصطناعي", body: "كل ١٠ ردود من الذكاء الاصطناعي بـ ١ جنيه: من ١ لـ ١٠ ردود = ١ جنيه، ومن ١١ لـ ٢٠ = ٢ جنيه. العميل اللي يرد على رسالة تأكيد أو تذكير أو إعلان أو تعليق بيبدأ محادثة." },
+      { value: "٠٫١", unit: "جنيه", title: "رسالة خارجة", body: "تأكيد الطلب أو تذكير السلة أو التحديثات اللي بتوصل للعميل على واتساب أو ماسنجر أو إنستجرام." },
+      { value: "٠٫١", unit: "جنيه", title: "رسالة إعلان", body: "كل عرض بيتبعت على واتساب أو ماسنجر أو إنستجرام لعميل قديم وافق يستقبل رسايلك." },
+      { value: "٠٫١", unit: "جنيه", title: "رد الذكاء على تعليق", body: "رد علني بالذكاء على تعليق، أو الرسالة الخاصة اللي الذكاء يبعتها لصاحب التعليق. ردود الختم مجانية." },
     ],
     giftTitle: "رصيد ١٠٠ جنيه هدية للبداية",
-    giftBody: "تكفي حوالي ١٠٠ محادثة بالذكاء الاصطناعي، عشان تجرّب كل حاجة قبل ما تدفع أي حاجة.",
+    giftBody: "تكفي حوالي ١٠٠ محادثة بالذكاء الاصطناعي أو ١٠٠٠ رسالة، عشان تجرّب كل حاجة قبل ما تدفع أي حاجة.",
     howTitle: "أنت المتحكم",
     how: ["اشحن أي مبلغ من ١٠ جنيه", "اختار الذكاء الاصطناعي يرد فين: واتساب، ماسنجر، إنستجرام، موقعك", "لو النقاط خلصت الرد الآلي بيقف والمحادثات بتروح لصندوقك، وبيرجع أول ما تشحن"],
     cta: "ابدأ مجانًا برصيد ١٠٠ جنيه",
@@ -453,8 +455,8 @@ const ar: ShopCopy = {
       { q: "ممكن يدّي خصم أنا مش عايزه؟", a: "لا. أنت تحدد أقصى خصم (أو بدون خصم). لا يقدر يعرض أكثر، والأسعار دايمًا من منتجاتك." },
       { q: "لو العميل سأل حاجة هو مش عارفها؟", a: "يقول للعميل إنه هيتأكد، يبعتلك السؤال، ويستخدم إجابتك المرات الجاية." },
       { q: "محتاج موقع أو مبرمج؟", a: "لا. موقع متجرك يتعمل مع حسابك، وفيه عشرة تصميمات تختار منها. وتقدر تستخدم دومين خاص بيك." },
-      { q: "أي واتساب أقدر أربطه؟", a: "رقمك الحالي بمسح كود QR، أو واجهة واتساب للأعمال الرسمية لو عندك." },
-      { q: "فيه عقد أو اشتراك شهري؟", a: "لا. متجرك مجاني من غير اشتراك. بتاخد رصيد ١٠٠ جنيه هدية، وبعدها تشحن بس لو عايز الذكاء الاصطناعي ورسايل واتساب: ١ جنيه للمحادثة، ونص جنيه لرسالة واتساب." },
+      { q: "أي رقم واتساب أقدر أربطه؟", a: "رقمك الحالي، بمسح كود QR." },
+      { q: "فيه عقد أو اشتراك شهري؟", a: "لا. متجرك مجاني من غير اشتراك. بتاخد رصيد ١٠٠ جنيه هدية، وبعدها تشحن بس لو عايز الذكاء الاصطناعي ورسايل واتساب: ١ جنيه لكل ١٠ ردود، و١٠ قروش لكل رسالة بتتبعت." },
       { q: "إيه اللي يحصل لو النقاط خلصت؟", a: "متجرك يفضل شغال عادي. الرد الآلي بس هو اللي بيقف، والمحادثات الجديدة بتستناك في صندوق المحادثات. اشحن ويرجع يرد على طول." },
     ],
   },

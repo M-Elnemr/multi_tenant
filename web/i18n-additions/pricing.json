@@ -1,0 +1,62 @@
+{
+ "pts.rateComment": [
+  "EGP 0.1 = one AI comment reply (stamp replies are free)",
+  "١٠ قروش = رد بالذكاء على تعليق (ردود الختم مجانية)"
+ ],
+ "pts.rateDm": [
+  "EGP 0.1 = one AI private message to a commenter; once they reply it is a conversation",
+  "١٠ قروش = رسالة خاصة بالذكاء لصاحب تعليق، ولما يرد تبقى محادثة"
+ ],
+ "cm.card.title": [
+  "Auto reply to comments",
+  "الرد التلقائي على التعليقات"
+ ],
+ "cm.card.on": [
+  "On",
+  "شغال"
+ ],
+ "cm.card.off": [
+  "Off",
+  "متوقف"
+ ],
+ "cm.card.public": [
+  "Public reply",
+  "الرد العلني"
+ ],
+ "cm.card.dm": [
+  "Private message",
+  "الرسالة الخاصة"
+ ],
+ "cm.card.dmOn": [
+  "AI messages commenters",
+  "الذكاء بيبعت لأصحاب التعليقات"
+ ],
+ "cm.card.dmOff": [
+  "Not sent",
+  "مش بتتبعت"
+ ],
+ "cm.card.today": [
+  "Today: {replies} replies · {dms} private messages · {cost}",
+  "النهارده: {replies} رد · {dms} رسالة خاصة · {cost}"
+ ],
+ "cm.card.costLine": [
+  "AI reply {price}, AI private message {price}, and once the customer replies it becomes a conversation at EGP 1 per 10 replies.",
+  "رد الذكاء {price}، رسالة خاصة بالذكاء {price}، وبعد ما العميل يرد تبقى محادثة بـ ١ جنيه لكل ١٠ ردود."
+ ],
+ "cm.card.edit": [
+  "Edit",
+  "تعديل"
+ ],
+ "cm.card.setupTitle": [
+  "Reply to every comment automatically",
+  "ردّ على كل تعليق أوتوماتيك"
+ ],
+ "cm.card.setupHint": [
+  "Turn on the auto reply so no comment goes unanswered: a free fixed reply or a smart AI reply, plus an optional private message.",
+  "شغّل الرد التلقائي عشان مفيش تعليق يفضل من غير رد: رد ثابت مجاني أو رد ذكي بالذكاء الاصطناعي، ومعاه رسالة خاصة لو حابب."
+ ],
+ "cm.card.setupCta": [
+  "Set up auto reply",
+  "جهّز الرد التلقائي"
+ ]
+}

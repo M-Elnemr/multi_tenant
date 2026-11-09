@@ -131,7 +131,7 @@ export function WinBack({ w, locale }: { w: ShopCopy["winback"]; locale: string 
             {w.results.map((r) => (
               <div key={r.label} className="px-1.5">
                 <p className="font-display text-base font-bold text-white tnum sm:text-lg">
-                  {step >= 5 ? <Counter value={r.value} locale={locale} prefix={"money" in r && r.money && locale !== "ar" ? "EGP " : ""} suffix={"money" in r && r.money && locale === "ar" ? " ج.م" : r.suffix} /> : "—"}
+                  {step >= 5 ? <Counter value={r.value} decimals={r.value % 1 ? 1 : 0} locale={locale} prefix={"money" in r && r.money && locale !== "ar" ? "EGP " : ""} suffix={"money" in r && r.money && locale === "ar" ? " ج.م" : r.suffix} /> : "—"}
                 </p>
                 <p className="mt-0.5 text-[10px] leading-tight text-white/50">{r.label}</p>
               </div>
