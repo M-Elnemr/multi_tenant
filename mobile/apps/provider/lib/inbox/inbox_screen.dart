@@ -8,6 +8,7 @@ import 'chat_list.dart';
 import 'comments_tab.dart';
 import 'followup_settings.dart';
 import 'inbox_common.dart';
+import 'saved_replies_screen.dart';
 
 /// The shop inbox (replaces the old "customer chats" list): Chats and Comments tabs with live counters, plus the follow-up settings.
 class InboxScreen extends StatefulWidget {
@@ -87,6 +88,11 @@ class _InboxScreenState extends State<InboxScreen> {
             ),
           ),
           const SizedBox(width: 6),
+          IconButton(
+            tooltip: L('ردود جاهزة', 'Saved replies'),
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => SavedRepliesScreen(ctx: widget.ctx))),
+            icon: const Icon(Icons.bolt_rounded),
+          ),
           IconButton(
             tooltip: L('رسائل المتابعة التلقائية', 'Automatic follow-ups'),
             onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => FollowUpSettingsScreen(ctx: widget.ctx))),

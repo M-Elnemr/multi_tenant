@@ -8,7 +8,6 @@ import 'package:platform_core/platform_core.dart';
 import 'channels.dart';
 import 'common.dart';
 import 'connect.dart';
-import 'send_mode.dart';
 
 /// AI assistant setup: the connected Facebook / Instagram / WhatsApp channels and what WhatsApp still needs before confirmation messages can go out.
 class AiAssistantScreen extends StatefulWidget {
@@ -21,34 +20,9 @@ class AiAssistantScreen extends StatefulWidget {
 class _AiAssistantScreenState extends State<AiAssistantScreen> {
   int _gen = 0;
 
-  Future<void> _wabaDialog() async {
-    final ar = S.of(context).ar;
-    final id = TextEditingController();
-    final saved = await showDialog<bool>(context: context, builder: (d) => StatefulBuilder(builder: (d, set) => AlertDialog(
-      title: Text(ar ? 'معرّف حساب واتساب للأعمال' : 'WhatsApp Business Account ID'),
-      content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(ar ? 'ميتا بتطلب الرقم ده عشان تسجّل قوالب رسائلك. هو مختلف عن رقم التليفون وعن Phone number ID.' : 'Meta needs this number to register your message templates. It is different from your phone number and from the Phone number ID.', style: const TextStyle(color: Color(0xFF6B7C8D))),
-        const SizedBox(height: 10),
-        for (final (i, t) in [
-          (ar ? 'افتح حسابات واتساب في إعدادات Meta Business (الزر تحت).' : 'Open your WhatsApp accounts in Meta Business settings (button below).'),
-          (ar ? 'اختار حساب رقم واتساب بتاعك.' : 'Pick the account of your WhatsApp number.'),
-          (ar ? 'انسخ الرقم المكتوب جنبه «WhatsApp Business Account ID» (حوالي ١٥ رقم).' : 'Copy the number called “WhatsApp Business Account ID” (about 15 digits).'),
-          (ar ? 'الصقه هنا واضغط حفظ. هنتأكد من ميتا إنه يملك الرقم المربوط.' : 'Paste it here and press Save. We check with Meta that it owns your connected number.'),
-        ].indexed) Padding(padding: const EdgeInsets.only(bottom: 4), child: Text('${i + 1}. $t')),
-        TextButton.icon(onPressed: () => launch('https://business.facebook.com/latest/settings/whatsapp_account'), icon: const Icon(Icons.open_in_new_rounded), label: Text(ar ? 'افتح ميتا' : 'Open Meta')),
-        TextField(controller: id, keyboardType: TextInputType.number, textDirection: TextDirection.ltr, onChanged: (_) => set(() {}), decoration: InputDecoration(labelText: ar ? 'المعرّف (أرقام فقط)' : 'ID (digits only)', hintText: '123456789012345')),
-      ])),
-      actions: [
-        TextButton(onPressed: () async {
-          if (await run(d, () async { await widget.ctx.api.post('store/ai/whatsapp/waba/detect', {}); }) && d.mounted) Navigator.pop(d, true);
-        }, child: Text(ar ? 'دوّر عليه بدالي' : 'Find it for me')),
-        FilledButton(onPressed: id.text.replaceAll(RegExp(r'\D'), '').length < 5 ? null : () async {
-          if (await run(d, () async { await widget.ctx.api.put('store/ai/whatsapp/waba', {'wabaId': id.text.replaceAll(RegExp(r'\D'), '')}); }) && d.mounted) Navigator.pop(d, true);
-        }, child: Text(ar ? 'حفظ' : 'Save')),
-      ],
-    )));
-    id.dispose();
-    if (saved == true && mounted) setState(() => _gen++);
+  String _price(Map<String, dynamic> wa) {
+    final minor = ((wa['messagePriceMinor'] as num?) ?? 10);
+    return S.of(context).money(minor, widget.ctx.currency);
   }
 
   @override
@@ -63,13 +37,6 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       builder: (context, d, reload) {
         final channels = ((d[0] as List?) ?? const []).cast<Map<String, dynamic>>();
         final wa = d[1] as Map<String, dynamic>;
-        final ready = (wa['readiness'] as Map?)?.cast<String, dynamic>() ?? const {};
-        Widget check(bool ok, String text, {Widget? action}) => Padding(padding: const EdgeInsets.symmetric(vertical: 5), child: Row(children: [
-              Icon(ok ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded, color: ok ? const Color(0xFF16A34A) : const Color(0xFF9AA9BA), size: 22),
-              const SizedBox(width: 10),
-              Expanded(child: Text(text, style: TextStyle(color: ok ? null : const Color(0xFF6B7C8D)))),
-              if (action != null) action,
-            ]));
         const names = {'FACEBOOK': ('فيسبوك', 'Facebook'), 'INSTAGRAM': ('إنستجرام', 'Instagram'), 'WHATSAPP': ('واتساب', 'WhatsApp')};
         return RefreshIndicator(onRefresh: reload, child: ListView(padding: const EdgeInsets.all(16), children: [
           ReadinessCard(ctx: ctx),
@@ -81,26 +48,18 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
           const SizedBox(height: 20),
           Text(ar ? 'تأكيد الطلبات بواتساب' : 'WhatsApp order confirmation', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
           const SizedBox(height: 6),
-          SendModePicker(ctx: ctx, value: '${(wa['settings'] as Map?)?['sendMode'] ?? 'PAID'}', enabled: write, onChanged: (m) async {
-            if (await run(context, () async { await ctx.api.put('store/ai/whatsapp', {'sendMode': m}); }) && mounted) setState(() => _gen++);
-          }),
-          if (((wa['settings'] as Map?)?['sendMode']) == 'FREE') Padding(padding: const EdgeInsets.only(top: 8), child: Text(ar ? 'التأكيدات والتذكيرات بتتبعت مجانًا من رقمك المربوط، فمفيش قوالب ولا رصيد مطلوب.' : 'Confirmations and reminders are sent free from your linked number, so no templates or credit are needed.', style: const TextStyle(color: Color(0xFF475569)))),
-          if (((wa['settings'] as Map?)?['sendMode']) != 'FREE') Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(children: [
-            check(ready['channelConnected'] == true, ar ? 'رقم واتساب مربوط' : 'WhatsApp number connected'),
-            check(ready['wabaKnown'] == true, ready['wabaKnown'] == true ? (ar ? 'معرّف حساب واتساب للأعمال محفوظ' : 'WhatsApp Business Account ID is saved') : (ar ? 'معرّف حساب واتساب للأعمال ناقص: أضفه لتسجيل القوالب' : 'WhatsApp Business Account ID is missing: add it to register templates'),
-                action: ready['channelConnected'] == true && write ? FilledButton.tonal(onPressed: _wabaDialog, child: Text(ready['wabaKnown'] == true ? (ar ? 'تغيير' : 'Change') : (ar ? 'أضف المعرّف' : 'Add the ID'))) : null),
-            check(ready['templatesApproved'] == true, ar ? 'قوالب الرسائل معتمدة من ميتا' : 'Message templates approved by Meta'),
-            check(ready['hasCredit'] == true, ar ? 'يوجد رصيد' : 'Credit available'),
-            const SizedBox(height: 6),
-            Text(ar ? 'لن يُرسل شيء ولن يُخصم شيء حتى يكتمل ما سبق.' : 'Nothing is sent and nothing is charged until everything above is ready.', style: const TextStyle(fontSize: 12, color: Color(0xFF6B7C8D))),
-          ]))),
+          Card(child: ListTile(
+            leading: const Icon(Icons.chat_rounded),
+            title: Text(ar ? 'من رقم واتساب المتجر' : "From the shop's own WhatsApp number"),
+            subtitle: Text(ar ? 'التأكيدات والتذكيرات بتتبعت من رقمك المربوط. كل رسالة بـ ${_price(wa)}.' : 'Confirmations and reminders are sent from your linked number. Each message costs ${_price(wa)}.'),
+          )),
         ]));
       },
     ));
   }
 }
 
-/// Optional unofficial mode: the shop's own WhatsApp number linked by QR code. Off by default; the owner must read and accept the warning first.
+/// The shop's own WhatsApp number linked by QR code: the only WhatsApp route.
 class EvolutionCard extends StatefulWidget {
   const EvolutionCard({super.key, required this.ctx});
   final Ctx ctx;
@@ -110,7 +69,7 @@ class EvolutionCard extends StatefulWidget {
 
 class _EvolutionCardState extends State<EvolutionCard> {
   Map<String, dynamic>? _info, _qr;
-  bool _accepted = false, _loading = true;
+  bool _loading = true;
   final _number = TextEditingController();
   Timer? _timer;
 
@@ -148,7 +107,7 @@ class _EvolutionCardState extends State<EvolutionCard> {
       content: Text(ar ? 'توقف الميزة وتفصل التليفون؟' : 'Turn it off and unlink the phone?'),
       actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: Text(ar ? 'إلغاء' : 'Cancel')), FilledButton(onPressed: () => Navigator.pop(d, true), child: Text(ar ? 'أوقف' : 'Turn off'))]));
     if (sure != true) return;
-    if (await run(context, () async { await widget.ctx.api.post('store/ai/evolution/disable', {}); }) && mounted) setState(() { _qr = null; _accepted = false; _info = {...?_info, 'enabled': false, 'status': 'DISCONNECTED', 'phone': null}; });
+    if (await run(context, () async { await widget.ctx.api.post('store/ai/evolution/disable', {}); }) && mounted) setState(() { _qr = null; _info = {...?_info, 'enabled': false, 'status': 'DISCONNECTED', 'phone': null}; });
   }
 
   Future<void> _test() async {
@@ -167,23 +126,14 @@ class _EvolutionCardState extends State<EvolutionCard> {
     final qr = _qr?['qr'] as String?;
     return Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Row(children: [
-        Expanded(child: Text(ar ? 'واتساب برقمك الخاص (غير رسمي)' : 'WhatsApp with your own number (unofficial)', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16))),
+        Expanded(child: Text(ar ? 'واتساب برقم المتجر' : 'WhatsApp with the shop number', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16))),
         if (enabled) Chip(visualDensity: VisualDensity.compact, label: Text(connected ? (ar ? 'مربوط' : 'Linked') : (ar ? 'في انتظار التليفون' : 'Waiting for the phone')), backgroundColor: connected ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7)),
       ]),
       const SizedBox(height: 8),
-      Text(ar ? 'اربط رقم واتساب بتاعك بمسح كود QR. بعدها البائع الذكي بيرد على العملاء على الرقم ده، وتأكيدات الطلبات وتذكيرات السلة بتتبعت كرسائل عادية من غير تكلفة للرسالة ومن غير نافذة الـ٢٤ ساعة.' : 'Link your own WhatsApp number by scanning a QR code. Then the AI seller answers customers on that number, and order confirmations and cart reminders go out as normal messages with no per-message charge and no 24-hour window.', style: const TextStyle(color: Color(0xFF475569))),
+      Text(ar ? 'اربط رقم واتساب بتاعك بمسح كود QR. بعدها البائع الذكي بيرد على العملاء على الرقم ده، وتأكيدات الطلبات وتذكيرات السلة بتتبعت منه. كل رسالة صادرة بـ ١٠ قروش.' : 'Link your own WhatsApp number by scanning a QR code. Then the AI seller answers customers on that number, and order confirmations and cart reminders go out from it. Every outgoing message costs 0.1 EGP.', style: const TextStyle(color: Color(0xFF475569))),
       const SizedBox(height: 10),
-      Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFFFF4DD), borderRadius: BorderRadius.circular(12)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('⚠️ ${ar ? 'اقرأ ده قبل ما تشغّلها' : 'Read this before you turn it on'}', style: const TextStyle(fontWeight: FontWeight.w900)),
-        const SizedBox(height: 4),
-        for (final w in ar
-            ? ['ده مش واجهة واتساب للأعمال الرسمية. بيشتغل زي واتساب ويب، وشروط واتساب مبتسمحش بالأتمتة بالشكل ده.', 'واتساب ممكن يقيّد الرقم أو يحظره نهائيًا. لو حصل كده هتخسر الرقم ومحادثاته وإحنا مش هنقدر نرجّعه.', 'استخدم رقم مخصص مش خط العملاء الأساسي. خلي الرسائل قليلة وشخصية ومتبعتش رسائل مزعجة.', 'تقدر توقفها في أي وقت من هنا. وهي متوقفة لكل المتاجر لحد ما صاحب المتجر يشغّلها.']
-            : ['This is NOT the official WhatsApp Business API. It works like WhatsApp Web, which WhatsApp’s terms do not allow for automation.', 'WhatsApp can restrict or permanently ban the number. If that happens you lose the number and its chats, and we cannot recover it.', 'Use a dedicated number, not your main customer line. Keep messages few and personal, and never send spam.', 'You can switch it off at any time here. It is off for every shop until its owner turns it on.'])
-          Padding(padding: const EdgeInsets.only(top: 3), child: Text('• $w', style: const TextStyle(fontSize: 13))),
-      ])),
       if (!enabled && write) ...[
-        CheckboxListTile(contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading, value: _accepted, onChanged: (v) => setState(() => _accepted = v ?? false), title: Text(ar ? 'فاهم المخاطرة، وموافق إن رقم واتساب بتاعي ممكن يتحظر.' : 'I understand the risk, and I accept that my WhatsApp number may be banned.', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14))),
-        FilledButton(onPressed: _accepted ? _enable : null, child: Text(ar ? 'شغّل واربط تليفوني' : 'Turn on and link my phone')),
+        FilledButton(onPressed: _enable, child: Text(ar ? 'شغّل واربط تليفوني' : 'Turn on and link my phone')),
       ],
       if (enabled && !connected) ...[
         const SizedBox(height: 12),

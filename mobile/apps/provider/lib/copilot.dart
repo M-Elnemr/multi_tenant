@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:platform_core/platform_core.dart';
 
 import 'common.dart';
-import 'send_mode.dart';
+import 'settings.dart';
 import 'connect.dart';
 
 // "Ask your business": the three things to do next, stock and price ideas, a chat answered from the shop's own numbers, the daily WhatsApp report, and what the AI seller could not answer.
@@ -181,90 +181,52 @@ class _WaReportTab extends StatefulWidget {
 
 class _WaReportTabState extends State<_WaReportTab> {
   int _gen = 0;
-  Map<String, dynamic>? _code;
 
-  Future<void> _patch(Map<String, dynamic> body) async {
-    if (await run(context, () async { await widget.ctx.api.patch('store/whatsapp-report', body); }) && mounted) setState(() => _gen++);
+  void _openNumberSettings() {
+    final ar = S.of(context).ar;
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => Scaffold(appBar: AppBar(title: Text(ar ? 'الإعدادات' : 'Settings')), body: StoreSettings(ctx: widget.ctx, initialTab: 'whatsapp'))));
+  }
+
+  Future<void> _put(Map<String, dynamic> body) async {
+    if (await run(context, () async { await widget.ctx.api.put('store/ai/evolution/report', body); }) && mounted) setState(() => _gen++);
   }
 
   @override
   Widget build(BuildContext context) {
     final ar = S.of(context).ar;
     final write = widget.ctx.can('copilot.use');
-    return ResumeReload(onResume: () => setState(() => _gen++), child: Async<List<dynamic>>(
+    return ResumeReload(onResume: () => setState(() => _gen++), child: Async<Map<String, dynamic>>(
       key: ValueKey('wr$_gen'),
-      load: () async => [await widget.ctx.api.get('store/whatsapp-report'), await widget.ctx.api.get('store/ai/evolution/report').catchError((_) => <String, dynamic>{})],
-      builder: (context, both, reload) {
-        final d = both[0] as Map<String, dynamic>;
-        final fr = (both[1] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{};
-        final free = fr['linked'] == true && fr['mode'] == 'FREE';
-        final linked = d['linked'] == true && !free;
-        final digits = '${d['platformNumber'] ?? ''}'.replaceAll(RegExp(r'\D'), '');
+      load: () async => (await widget.ctx.api.get('store/ai/evolution/report').catchError((_) => <String, dynamic>{}) as Map).cast<String, dynamic>(),
+      builder: (context, fr, reload) {
+        final linked = fr['linked'] == true;
+        final price = S.of(context).money(10, widget.ctx.currency);
         return RefreshIndicator(onRefresh: reload, child: ListView(padding: const EdgeInsets.all(16), children: [
-          Text(ar ? 'ابعت رسالة مرة واحدة لرقم الواتساب بتاعنا، وهيوصلك كل ليلة مبيعاتك وأكتر منتج اتباع والمخزون القليل و٣ حاجات تعملها تاني يوم، مجانًا.' : 'Message our WhatsApp number once and we send you your sales, best seller, low stock and 3 things to do tomorrow every night, free of charge.', style: const TextStyle(color: Color(0xFF475569), height: 1.45)),
+          Text(ar ? 'كل ليلة هيوصلك على واتساب مبيعاتك وأكتر منتج اتباع والمخزون القليل و٣ حاجات تعملها تاني يوم، من رقم المتجر المربوط. كل رسالة بـ $price.' : "Every night your sales, best seller, low stock and 3 things to do tomorrow arrive on WhatsApp from the shop's linked number. Each message costs $price.", style: const TextStyle(color: Color(0xFF475569), height: 1.45)),
           const SizedBox(height: 12),
-          SendModePicker(ctx: widget.ctx, value: free ? 'FREE' : 'PAID', enabled: write, onChanged: (m) async {
-            if (await run(context, () async { await widget.ctx.api.put('store/ai/evolution/report', {'mode': m, if (m == 'FREE') 'enabled': true}); }) && mounted) setState(() => _gen++);
-          }),
-          const SizedBox(height: 12),
-          if (free) Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFFDCFCE7), borderRadius: BorderRadius.circular(12)), child: Text(ar ? 'التقرير بيتبعت مجانًا من رقمك المربوط لنفس الرقم (+${fr['phone'] ?? ''})، زي رسالة لنفسك.' : 'The report is sent free from your linked number to itself (+${fr['phone'] ?? ''}), like a message to yourself.')),
-            SwitchListTile(contentPadding: EdgeInsets.zero, title: Text(ar ? 'إرسال التقارير' : 'Send reports'), value: fr['enabled'] == true, onChanged: write ? (v) async { if (await run(context, () async { await widget.ctx.api.put('store/ai/evolution/report', {'enabled': v}); }) && mounted) setState(() => _gen++); } : null),
+          if (!linked) Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Text(ar ? 'اربط رقم واتساب المتجر الأول عشان توصلك التقارير.' : "Link the shop's WhatsApp number first to receive reports."),
+            const SizedBox(height: 8),
+            FilledButton.icon(onPressed: _openNumberSettings, icon: const Icon(Icons.link_rounded), label: Text(ar ? 'اربط الرقم' : 'Link the number')),
+          ])))
+          else Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFFDCFCE7), borderRadius: BorderRadius.circular(12)), child: Text(ar ? 'التقرير بيتبعت من رقم المتجر المربوط لنفس الرقم (+${fr['phone'] ?? ''})، زي رسالة لنفسك.' : "The report is sent from the shop's linked number to itself (+${fr['phone'] ?? ''}), like a message to yourself.")),
+            SwitchListTile(contentPadding: EdgeInsets.zero, title: Text(ar ? 'إرسال التقارير' : 'Send reports'), value: fr['enabled'] == true, onChanged: write ? (v) => _put({'enabled': v}) : null),
             ListTile(contentPadding: EdgeInsets.zero, title: Text(ar ? 'ابعت بعد' : 'Send after'), subtitle: Text(ar ? 'آخر اليوم، من ٦ المغرب لحد ١١:٥٩' : 'End of day, 18:00 to 23:59'),
               trailing: Directionality(textDirection: TextDirection.ltr, child: Text('${fr['sendAfter']}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16))),
               onTap: !write ? null : () async {
                 final parts = '${fr['sendAfter']}'.split(':');
-                final t = await showTimePicker(context: context, initialTime: TimeOfDay(hour: int.tryParse(parts[0]) ?? 23, minute: int.tryParse(parts[1]) ?? 0));
+                final t = await showTimePicker(context: context, initialTime: TimeOfDay(hour: int.tryParse(parts[0]) ?? 23, minute: int.tryParse(parts.length > 1 ? parts[1] : '0') ?? 0));
                 if (t == null || !context.mounted) return;
-                if (await run(context, () async { await widget.ctx.api.put('store/ai/evolution/report', {'sendAfter': '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}'}); }) && mounted) setState(() => _gen++);
+                await _put({'sendAfter': '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}'});
               }),
-            ListTile(contentPadding: EdgeInsets.zero, title: Text(ar ? 'اللغة' : 'Language'), trailing: SegmentedButton<String>(showSelectedIcon: false, segments: const [ButtonSegment(value: 'ar', label: Text('ع')), ButtonSegment(value: 'en', label: Text('EN'))], selected: {'${fr['language'] ?? 'ar'}'}, onSelectionChanged: !write ? null : (v) async { if (await run(context, () async { await widget.ctx.api.put('store/ai/evolution/report', {'language': v.first}); }) && mounted) setState(() => _gen++); })),
+            ListTile(contentPadding: EdgeInsets.zero, title: Text(ar ? 'اللغة' : 'Language'), trailing: SegmentedButton<String>(showSelectedIcon: false, segments: const [ButtonSegment(value: 'ar', label: Text('ع')), ButtonSegment(value: 'en', label: Text('EN'))], selected: {'${fr['language'] ?? 'ar'}'}, onSelectionChanged: !write ? null : (v) => _put({'language': v.first}))),
             OutlinedButton.icon(onPressed: !write ? null : () async { if (await run(context, () async { await widget.ctx.api.post('store/ai/evolution/report/send-now', {}); }) && context.mounted) toast(context, ar ? 'التقرير اتبعت على واتساب بتاعك' : 'The report was sent to your WhatsApp'); }, icon: const Icon(Icons.send_rounded), label: Text(ar ? 'ابعت تقرير النهارده' : "Send today's report")),
-          ]))),
-          if (!free && d['configured'] != true) Card(color: const Color(0xFFFEF3C7), child: Padding(padding: const EdgeInsets.all(12), child: Text(ar ? 'رقم التقرير لسه مش متظبط على السيرفر.' : 'The report number is not set up on this server yet.'))),
-          if (!free && d['configured'] == true && !linked) ...[
-            if (_code == null) FilledButton.icon(onPressed: () async { if (await run(context, () async { _code = await widget.ctx.api.post('store/whatsapp-report/link-code', {}) as Map<String, dynamic>; }) && mounted) setState(() {}); }, icon: const Icon(Icons.vpn_key_rounded), label: Text(ar ? 'هات كود الربط' : 'Get my link code'))
-            else Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Text(ar ? 'ابعت الكود ده لرقم الواتساب بتاعنا:' : 'Send this code to our WhatsApp number:'),
-              const SizedBox(height: 8),
-              Center(child: Directionality(textDirection: TextDirection.ltr, child: SelectableText('${_code!['code']}', style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900, letterSpacing: 3)))),
-              const SizedBox(height: 8),
-              if (digits.isNotEmpty) FilledButton.icon(onPressed: () => launch('https://wa.me/$digits?text=${Uri.encodeComponent('${_code!['code']}')}'), icon: const Icon(Icons.chat_rounded), label: Text(ar ? 'افتح واتساب' : 'Open WhatsApp')),
-              TextButton(onPressed: () => setState(() => _gen++), child: Text(ar ? 'بعتّه - تأكد دلوقتي' : 'I sent it - check now')),
-              Text(ar ? 'الكود شغال ٣٠ دقيقة.' : 'The code works for 30 minutes.', style: const TextStyle(fontSize: 12, color: Color(0xFF6B7C8D))),
-            ]))),
-          ],
-          if (linked) Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Wrap(spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
-              Chip(label: Text(ar ? 'مربوط' : 'Linked'), backgroundColor: const Color(0xFFD1FAE5)),
-              Directionality(textDirection: TextDirection.ltr, child: Text('+${d['phone']}')),
-              Chip(label: Text(d['windowOpen'] == true ? (ar ? 'التقارير بتوصلك' : 'Reports can be sent') : (ar ? 'ابعتلنا أي رسالة عشان نكمّل' : 'Send us any message to continue')), backgroundColor: d['windowOpen'] == true ? const Color(0xFFD1FAE5) : const Color(0xFFFEF3C7)),
-            ]),
-            if (d['needsPing'] == true) Padding(padding: const EdgeInsets.only(top: 8), child: Text(ar ? 'تقرير إمبارح ماتبعتش لأنك ماكلمتناش من يوم. ابعت أي رسالة (أو اضغط الزر في آخر تقرير) عشان يوصلك التقرير الجاي.' : "Yesterday's report could not be sent because you did not message us for a day. Send any message (or tap the button on the last report) to receive the next one.", style: const TextStyle(color: Color(0xFFB45309)))),
-            if (d['lastDay'] != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text('${ar ? 'آخر تقرير' : 'Last report'}: ${d['lastDay']} · ${_status(d['lastStatus'], ar)}', style: const TextStyle(fontSize: 12.5, color: Color(0xFF6B7C8D)))),
-            const Divider(height: 24),
-            SwitchListTile(contentPadding: EdgeInsets.zero, title: Text(ar ? 'إرسال التقارير' : 'Send reports'), value: d['enabled'] == true, onChanged: write ? (v) => _patch({'enabled': v}) : null),
-            ListTile(contentPadding: EdgeInsets.zero, title: Text(ar ? 'ابعت بعد' : 'Send after'), subtitle: Text(ar ? 'آخر اليوم، من ٦ المغرب لحد ١١:٥٩' : 'End of day, 18:00 to 23:59'),
-              trailing: Directionality(textDirection: TextDirection.ltr, child: Text('${d['sendAfter']}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16))),
-              onTap: !write ? null : () async {
-                final parts = '${d['sendAfter']}'.split(':');
-                final t = await showTimePicker(context: context, initialTime: TimeOfDay(hour: int.tryParse(parts[0]) ?? 23, minute: int.tryParse(parts[1]) ?? 59));
-                if (t != null) _patch({'sendAfter': '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}'});
-              }),
-            ListTile(contentPadding: EdgeInsets.zero, title: Text(ar ? 'اللغة' : 'Language'), trailing: SegmentedButton<String>(showSelectedIcon: false, segments: const [ButtonSegment(value: 'ar', label: Text('عربي')), ButtonSegment(value: 'en', label: Text('EN'))], selected: {'${d['language']}'}, onSelectionChanged: write ? (v) => _patch({'language': v.first}) : null)),
-            const SizedBox(height: 4),
-            Row(children: [
-              Expanded(child: OutlinedButton.icon(onPressed: !write ? null : () async { if (await run(context, () async { await widget.ctx.api.post('store/whatsapp-report/send-now', {}); }) && context.mounted) { toast(context, ar ? 'اتبعت. شوف الواتساب.' : 'Sent. Check WhatsApp.'); setState(() => _gen++); } }, icon: const Icon(Icons.send_rounded), label: Text(ar ? 'ابعت تقرير النهارده' : "Send today's report"))),
-              const SizedBox(width: 8),
-              TextButton(onPressed: !write ? null : () async { if (await run(context, () async { await widget.ctx.api.delete('store/whatsapp-report'); }) && mounted) setState(() { _code = null; _gen++; }); }, child: Text(ar ? 'فك الربط' : 'Unlink')),
-            ]),
           ]))),
         ]));
       },
     ));
   }
-
-  String _status(Object? s, bool ar) => switch ('$s') { 'SENT' => ar ? 'اتبعت' : 'sent', 'WINDOW_CLOSED' => ar ? 'مستني رسالتك' : 'waiting for your message', _ => ar ? 'فشل' : 'failed' };
 }
 
 // ---- what the AI seller could not answer --------------------------------------------------------------------------------------

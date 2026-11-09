@@ -25,11 +25,12 @@ class _CommentsTabState extends State<CommentsTab> {
   bool _loading = true;
   Object? _error;
   final Set<String> _busy = {};
+  Map<String, dynamic>? _settings;
 
   bool get _write => widget.ctx.can('ai.manage');
 
   @override
-  void initState() { super.initState(); _load(); }
+  void initState() { super.initState(); _load(); _loadSettings(); }
 
   @override
   void dispose() { _debounce?.cancel(); _search.dispose(); super.dispose(); }
@@ -42,6 +43,112 @@ class _CommentsTabState extends State<CommentsTab> {
     } catch (e) {
       if (mounted) setState(() { if (_items.isEmpty) _error = e; _loading = false; });
     }
+  }
+
+  Future<void> _loadSettings() async {
+    try {
+      final r = Map<String, dynamic>.from(await widget.ctx.api.get('store/comments/settings') as Map);
+      if (mounted) setState(() => _settings = r);
+    } catch (_) {}
+  }
+
+  bool get _autoOn => _settings != null && ('${_settings!['publicReply'] ?? 'OFF'}' != 'OFF' || _settings!['dmEnabled'] == true);
+
+  Future<void> _saveSettings(Map<String, dynamic> next) async {
+    final cur = _settings ?? const {};
+    final body = {'publicReply': cur['publicReply'] ?? 'OFF', 'stampText': cur['stampText'], 'dmEnabled': cur['dmEnabled'] == true, 'dmOnlyQuestions': cur['dmOnlyQuestions'] == true, ...next};
+    Map<String, dynamic>? r;
+    if (await run(context, () async { r = Map<String, dynamic>.from(await widget.ctx.api.put('store/comments/settings', body) as Map); }) && mounted) setState(() => _settings = r);
+  }
+
+  Future<void> _toggleAutomation(bool on) async {
+    if (on) { await _editSettings(forceOn: true); return; }
+    await _saveSettings({'publicReply': 'OFF', 'dmEnabled': false});
+  }
+
+  Future<void> _editSettings({bool forceOn = false}) async {
+    final cur = _settings ?? const {};
+    var mode = '${cur['publicReply'] ?? 'OFF'}';
+    if (forceOn && mode == 'OFF' && cur['dmEnabled'] != true) mode = 'AI';
+    var dm = cur['dmEnabled'] == true;
+    var onlyQ = cur['dmOnlyQuestions'] == true;
+    final stamp = TextEditingController(text: '${cur['stampText'] ?? ''}');
+    final price = S.of(context).money((cur['aiPriceMinor'] as num?) ?? 10, widget.ctx.currency);
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheet) => StatefulBuilder(builder: (sheet, set) => SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(20, 0, 20, 16 + MediaQuery.of(sheet).viewInsets.bottom),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text(L('الرد التلقائي على التعليقات', 'Automatic comment replies'), style: AppTemplate.of(sheet).heading(18)),
+          const SizedBox(height: 10),
+          Text(L('الرد العلني', 'Public reply'), style: const TextStyle(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          SegmentedButton<String>(
+            showSelectedIcon: false,
+            segments: [ButtonSegment(value: 'OFF', label: Text(L('بدون', 'Off'))), ButtonSegment(value: 'STAMP', label: Text(L('نص ثابت', 'Fixed text'))), ButtonSegment(value: 'AI', label: Text(L('ذكاء اصطناعي', 'AI')))],
+            selected: {mode},
+            onSelectionChanged: (v) => set(() => mode = v.first),
+          ),
+          if (mode == 'STAMP') Padding(padding: const EdgeInsets.only(top: 8), child: TextField(controller: stamp, maxLength: 300, minLines: 2, maxLines: 4, decoration: InputDecoration(hintText: L('اكتب الرد الثابت…', 'Write the fixed reply…')))),
+          if (mode == 'AI') Padding(padding: const EdgeInsets.only(top: 4), child: Text(L('كل رد بالذكاء الاصطناعي بـ $price.', 'Each AI reply costs $price.'), style: TextStyle(color: AppTemplate.of(sheet).muted, fontSize: 12.5))),
+          const Divider(height: 24),
+          SwitchListTile(contentPadding: EdgeInsets.zero, title: Text(L('رسالة خاصة للعميل', 'Private message to the commenter')), subtitle: Text(L('الذكاء الاصطناعي يبعت أول رسالة خاصة. كل رسالة بـ $price.', 'The AI sends the first private message. Each costs $price.')), value: dm, onChanged: (v) => set(() => dm = v)),
+          if (dm) SwitchListTile(contentPadding: EdgeInsets.zero, title: Text(L('للأسئلة بس', 'Only for questions')), value: onlyQ, onChanged: (v) => set(() => onlyQ = v)),
+          const SizedBox(height: 8),
+          FilledButton(onPressed: () { if (mode == 'STAMP' && stamp.text.trim().isEmpty) return; Navigator.pop(sheet, true); }, child: Text(L('حفظ', 'Save'))),
+        ]),
+      )),
+    );
+    final text = stamp.text.trim();
+    stamp.dispose();
+    if (ok == true && mounted) await _saveSettings({'publicReply': mode, 'stampText': text.isEmpty ? null : text, 'dmEnabled': dm, 'dmOnlyQuestions': dm && onlyQ});
+  }
+
+  Widget _automationCard(AppTemplate t) {
+    final st = _settings;
+    if (st == null) return const SizedBox.shrink();
+    final on = _autoOn;
+    final mode = '${st['publicReply'] ?? 'OFF'}';
+    final dm = st['dmEnabled'] == true;
+    final money = S.of(context);
+    final price = money.money((st['aiPriceMinor'] as num?) ?? 10, widget.ctx.currency);
+    final replies = (st['todayReplies'] as num?)?.toInt(), dms = (st['todayDms'] as num?)?.toInt();
+    final cost = st['todayCostMinor'] as num?;
+    final modeText = switch (mode) { 'STAMP' => L('رد ثابت', 'Fixed reply'), 'AI' => L('رد بالذكاء الاصطناعي', 'AI reply'), _ => L('بدون رد علني', 'No public reply') };
+    final color = on ? const Color(0xFF1E9E5A) : t.muted;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: t.cardDecoration().copyWith(border: Border.all(color: on ? const Color(0xFF1E9E5A).withValues(alpha: 0.55) : t.line, width: on ? 1.5 : 1)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            Icon(on ? Icons.bolt_rounded : Icons.bolt_outlined, color: color),
+            const SizedBox(width: 8),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(L('الرد التلقائي على التعليقات', 'Automatic comment replies'), style: t.heading(15)),
+              Text(on ? L('شغّال', 'On') : L('متوقف', 'Off'), style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 12.5)),
+            ])),
+            if (_write) Switch(value: on, onChanged: _toggleAutomation),
+          ]),
+          if (on) ...[
+            const SizedBox(height: 8),
+            Wrap(spacing: 6, runSpacing: 4, children: [
+              Tag(modeText, accentOf(t), icon: mode == 'AI' ? Icons.auto_awesome_rounded : Icons.push_pin_outlined),
+              Tag(dm ? L('رسالة خاصة: شغّالة', 'Private message: on') : L('رسالة خاصة: متوقفة', 'Private message: off'), dm ? const Color(0xFF1E9E5A) : const Color(0xFF7A8294), icon: Icons.mail_outline_rounded),
+            ]),
+          ],
+          if (replies != null || dms != null || cost != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(
+            L('النهارده: ${replies ?? 0} رد · ${dms ?? 0} رسالة خاصة${cost != null ? ' · ${money.money(cost, widget.ctx.currency)}' : ''}', 'Today: ${replies ?? 0} replies · ${dms ?? 0} private messages${cost != null ? ' · ${money.money(cost, widget.ctx.currency)}' : ''}'),
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
+          const SizedBox(height: 4),
+          Text(L('رد الذكاء الاصطناعي على تعليق: $price. رسالة خاصة بالذكاء الاصطناعي: $price.', 'AI comment reply: $price. AI private message: $price.'), style: TextStyle(color: t.muted, fontSize: 12)),
+          if (_write) Align(alignment: AlignmentDirectional.centerEnd, child: TextButton.icon(onPressed: _editSettings, icon: const Icon(Icons.edit_rounded, size: 16), label: Text(L('تعديل', 'Edit')))),
+        ]),
+      ),
+    );
   }
 
   Future<String?> _ask(String title, String hint, {bool allowEmpty = false, String? note}) async {
@@ -83,6 +190,7 @@ class _CommentsTabState extends State<CommentsTab> {
   Widget build(BuildContext context) {
     final t = AppTemplate.of(context);
     return Column(children: [
+      _automationCard(t),
       Padding(
         padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
         child: TextField(

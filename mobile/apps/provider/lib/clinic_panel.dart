@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:platform_core/platform_core.dart';
 
 import 'common.dart';
+import 'theme/templates.dart';
 import 'store_panel.dart';
 import 'lab_sheet.dart';
 import 'patients.dart';
@@ -71,20 +72,22 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
           query: {'from': _key, 'to': _key},
           emptyText: s.ar ? 'لا توجد مواعيد في هذا اليوم' : 'No appointments on this day',
           fab: widget.ctx.can('appointment.manage') ? FloatingActionButton.extended(onPressed: () async { if (await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => BookingPage(ctx: widget.ctx))) == true) setState(() => _n++); }, icon: const Icon(Icons.add_rounded), label: Text(s.ar ? 'حجز جديد' : 'New booking')) : null,
-          itemBuilder: (c, a, reload) => Card(child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
-                Text(fmtDate(a['startAt'] as String?).split('  ').last, style: TextStyle(fontWeight: FontWeight.w900, color: scheme.primary, fontSize: 16)),
-                const SizedBox(width: 10),
-                Expanded(child: Text('${a['patientName']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16))),
-                StatusPill(a['status'] as String),
-              ]),
-              const SizedBox(height: 4),
-              Text(dotted([a['serviceName'], visitTypeLabel(a['visitType'], s.ar), a['doctorName'], a['queueNumber'] != null ? '#${a['queueNumber']}' : null]), style: const TextStyle(color: Color(0xFF6B7C8D))),
-              if (_buttons(a, s, reload).isNotEmpty) Padding(padding: const EdgeInsets.only(top: 10), child: Wrap(runSpacing: 6, children: _buttons(a, s, reload))),
-            ]),
-          )),
+          itemBuilder: (c, a, reload) {
+            final t = AppTemplate.of(c);
+            final buttons = _buttons(a, s, reload);
+            return TemplateListCard(
+              edge: toneFor(a['status'] as String),
+              leading: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(color: t.accent.withValues(alpha: t.isClinic ? 0.45 : 0.14), borderRadius: BorderRadius.circular(t.isLawyer ? 6 : 12)),
+                child: Text(fmtDate(a['startAt'] as String?).split('  ').last, textDirection: TextDirection.ltr, style: t.heading(15, color: t.isShop ? t.accent : t.ink)),
+              ),
+              title: '${a['patientName']}',
+              subtitle: dotted([a['serviceName'], visitTypeLabel(a['visitType'], s.ar), a['doctorName'], a['queueNumber'] != null ? '#${a['queueNumber']}' : null]),
+              trailing: StatusPill(a['status'] as String),
+              footer: buttons.isEmpty ? null : Wrap(runSpacing: 6, children: buttons),
+            );
+          },
         ),
       ),
     ]);
@@ -112,13 +115,14 @@ class _PatientsScreenState extends State<PatientsScreen> {
     Widget row(BuildContext c, Map<String, dynamic> p, {bool child = false, String? parent}) {
       final name = '${p['firstName']} ${p['lastName'] ?? ''}'.trim();
       final age = p['ageYears'] != null ? (s.ar ? '${p['ageYears']} سنة' : '${p['ageYears']} y') : '';
-      return Card(
-        margin: EdgeInsetsDirectional.only(start: child ? 22 : 0, top: 4, bottom: 4),
-        child: ListTile(
-          leading: CircleAvatar(backgroundColor: Theme.of(c).colorScheme.primary.withValues(alpha: child ? 0.08 : 0.14), child: Icon(child ? Icons.child_care_rounded : Icons.person_rounded, color: Theme.of(c).colorScheme.primary)),
-          title: Text(name, style: const TextStyle(fontWeight: FontWeight.w800)),
-          subtitle: Text([p['patientCode'], age, if (child) (s.ar ? 'تابع لـ $parent' : 'child of $parent'), if (!child && (p['phone'] as String?)?.isNotEmpty == true) '\u2066${localPhone(p['phone'])}\u2069'].where((e) => e != null && '$e'.isNotEmpty).join(' · ')),
-          trailing: const Icon(Icons.chevron_right_rounded),
+      final t = AppTemplate.of(c);
+      return Padding(
+        padding: EdgeInsetsDirectional.only(start: child ? 22 : 0),
+        child: TemplateListCard(
+          leading: CircleAvatar(backgroundColor: t.accent.withValues(alpha: child ? (t.isClinic ? 0.3 : 0.08) : (t.isClinic ? 0.5 : 0.16)), child: Icon(child ? Icons.child_care_rounded : Icons.person_rounded, color: t.isShop ? t.accent : t.ink)),
+          title: name,
+          subtitle: [p['patientCode'], age, if (child) (s.ar ? 'تابع لـ $parent' : 'child of $parent'), if (!child && (p['phone'] as String?)?.isNotEmpty == true) '\u2066${localPhone(p['phone'])}\u2069'].where((e) => e != null && '$e'.isNotEmpty).join(' · '),
+          trailing: Icon(s.ar ? Icons.chevron_left_rounded : Icons.chevron_right_rounded, color: t.muted),
           onTap: () => Navigator.of(c).push(MaterialPageRoute(builder: (_) => PatientDetail(ctx: ctx, id: p['id'] as String))),
         ),
       );
