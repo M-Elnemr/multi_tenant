@@ -173,7 +173,7 @@ public class MetaChannelService {
                     for (JsonNode m : v.path("messages")) {
                         String from = m.path("from").asText(""), name = null;
                         for (JsonNode c : v.path("contacts")) if (from.equals(c.path("wa_id").asText())) name = c.path("profile").path("name").asText(null);   // the customer's WhatsApp profile name
-                        inbound("WHATSAPP", pnid, from, m.path("id").asText(""), whatsappText(m), name, whatsappMedia(m));
+                        inbound("WHATSAPP", pnid, from, m.path("id").asText(""), whatsappText(m), name, whatsappMedia(m), false);
                     }
                 }
             } else if ("page".equals(object) || "instagram".equals(object)) {
@@ -186,10 +186,47 @@ public class MetaChannelService {
                     JsonNode msg = ev.path("message");
                     String sender = ev.path("sender").path("id").asText("");
                     if (msg.isMissingNode() || msg.path("is_echo").asBoolean(false) || sender.equals(accountId)) continue;
-                    inbound(platform, accountId, sender, msg.path("mid").asText(""), msg.hasNonNull("text") ? msg.path("text").asText("") : null, null, messengerMedia(msg));
+                    boolean ad = hasReferral(msg) || hasReferral(ev) || hasReferral(ev.path("postback"));   // Click-to-Messenger / Instagram ad: Meta lets the shop write for 7 days
+                    inbound(platform, accountId, sender, msg.path("mid").asText(""), msg.hasNonNull("text") ? msg.path("text").asText("") : null, null, messengerMedia(msg), ad);
                 }
             }
         }
+    }
+
+    /** True when the event carries an ad referral (ad_id, source ADS). */
+    static boolean hasReferral(JsonNode n) { return n != null && n.path("referral").isObject() && !n.path("referral").isEmpty(); }
+
+    /** A customer who came from a Click-to-Messenger / Instagram ad: the shop may write to them for 7 days (instead of 23 hours). */
+    private void openAdWindow(UUID tenantId, String platform, String sender) {
+        try {
+            jdbc.sql("""
+                    INSERT INTO chat.conversations (tenant_id, channel, external_id, window_until) VALUES (:t, :c, :e, now() + interval '7 days')
+                    ON CONFLICT (tenant_id, channel, external_id) DO UPDATE SET window_until = now() + interval '7 days'
+                    """).param("t", tenantId).param("c", platform).param("e", sender).update();
+        } catch (RuntimeException e) { log.debug("Ad window not saved: {}", e.getMessage()); }
+    }
+
+    private static final java.util.Set<String> STOP_WORDS = java.util.Set.of("ايقاف", "stop", "unsubscribe", "الغاء الاشتراك", "الغاء");
+    static final String STOP_REPLY = "تمام، مش هتوصلك عروض منّا تاني 🙏 / Done, you will not receive offers from us anymore.";
+
+    /** True when the whole message is a stop word (case, hamza and punctuation ignored). */
+    public static boolean isStopWord(String text) {
+        if (text == null) return false;
+        String t = text.trim().toLowerCase(java.util.Locale.ROOT).replace('إ', 'ا').replace('أ', 'ا').replaceAll("^[\\p{P}\\s]+|[\\p{P}\\s]+$", "").replaceAll("\\s+", " ");
+        return STOP_WORDS.contains(t);
+    }
+
+    /** The customer asked to stop offers: the chat (and the customer record, when the phone is known) is marked, so no broadcast reaches them. */
+    private void optOut(UUID tenantId, String platform, String sender) {
+        UUID conv = jdbc.sql("""
+                INSERT INTO chat.conversations (tenant_id, channel, external_id, broadcast_opt_out_at) VALUES (:t, :c, :e, now())
+                ON CONFLICT (tenant_id, channel, external_id) DO UPDATE SET broadcast_opt_out_at = now() RETURNING id
+                """).param("t", tenantId).param("c", platform).param("e", sender).query(UUID.class).single();
+        jdbc.sql("""
+                UPDATE commerce.customers cu SET broadcast_opt_out_at = now() FROM chat.conversations c
+                WHERE c.id = :c AND cu.tenant_id = :t AND length(regexp_replace(coalesce(c.contact_phone, ''), '\\D', '', 'g')) >= 9
+                  AND right(regexp_replace(coalesce(cu.phone, ''), '\\D', '', 'g'), 9) = right(regexp_replace(c.contact_phone, '\\D', '', 'g'), 9)
+                """).param("c", conv).param("t", tenantId).update();
     }
 
     /** A photo or voice note the customer sent, not fetched yet: on WhatsApp by its media id (the link is asked of Meta with the shop's token), on Messenger and Instagram by its link. */
@@ -272,12 +309,13 @@ public class MetaChannelService {
 
     private boolean running(UUID tenantId) { return jdbc.sql("SELECT " + com.platform.shared.TenantState.running("CAST(:t AS uuid)")).param("t", tenantId).query(Boolean.class).single(); }
 
-    private void inbound(String platform, String accountId, String sender, String mid, String text, String name, MediaRef ref) {
+    private void inbound(String platform, String accountId, String sender, String mid, String text, String name, MediaRef ref, boolean ad) {
         if (accountId.isEmpty() || sender.isEmpty() || mid.isEmpty()) return;
         var ch = jdbc.sql("SELECT tenant_id, token_enc, status FROM chat.channels WHERE platform = :p AND external_id = :e").param("p", platform).param("e", accountId).query().listOfRows().stream().findFirst();
         if (ch.isEmpty() || !"ACTIVE".equals(ch.get().get("status"))) return;
         if (jdbc.sql("INSERT INTO chat.meta_events (mid) VALUES (:m) ON CONFLICT DO NOTHING").param("m", mid).update() == 0) return;   // already handled
         var row = ch.get();
+        if (ad && !"WHATSAPP".equals(platform)) openAdWindow((UUID) row.get("tenant_id"), platform, sender);
         String key = platform + "|" + accountId + "|" + sender;
         // a photo or voice note is read into text (a few seconds); what the customer sends meanwhile waits for it, so «بكام ده؟» is answered with the photo, in order
         if ((text == null || text.isBlank()) && ref != null && media.enabled() && chat.enabled((UUID) row.get("tenant_id"), platform) && chat.hasPoints((UUID) row.get("tenant_id")) && mediaAllowed("media|" + key)) {
@@ -329,7 +367,9 @@ public class MetaChannelService {
         } else {
             try {
                 throttle.check("chat-meta|" + platform + "|" + sender, 40, Duration.ofMinutes(10));
-                var special = "WHATSAPP".equals(platform) ? waConfirm.handle(tenantId, sender, text) : java.util.Optional.<String>empty();
+                boolean stop = !"WHATSAPP".equals(platform) && isStopWord(text);
+                if (stop) optOut(tenantId, platform, sender);   // no AI call and no charge: a fixed polite answer
+                var special = stop ? java.util.Optional.of(STOP_REPLY) : "WHATSAPP".equals(platform) ? waConfirm.handle(tenantId, sender, text) : java.util.Optional.<String>empty();
                 if (special.isPresent()) {
                     answer = special.get();
                 } else if (!aiOn) {
@@ -442,7 +482,7 @@ public class MetaChannelService {
             if (ch.isEmpty()) return false;
             boolean open = "WHATSAPP".equals(platform)
                     ? jdbc.sql("SELECT EXISTS (SELECT 1 FROM chat.wa_windows WHERE tenant_id = :t AND number = :n AND last_inbound_at > now() - interval '23 hours')").param("t", tenantId).param("n", to.replaceAll("\\D", "")).query(Boolean.class).single()
-                    : jdbc.sql("SELECT EXISTS (SELECT 1 FROM chat.conversations c JOIN chat.messages m ON m.conversation_id = c.id AND m.role = 'user' WHERE c.tenant_id = :t AND c.channel = :p AND c.external_id = :e AND m.created_at > now() - interval '23 hours')").param("t", tenantId).param("p", platform).param("e", to).query(Boolean.class).single();
+                    : jdbc.sql("SELECT EXISTS (SELECT 1 FROM chat.conversations c JOIN chat.messages m ON m.conversation_id = c.id AND m.role = 'user' WHERE c.tenant_id = :t AND c.channel = :p AND c.external_id = :e AND m.created_at > now() - interval '23 hours') OR EXISTS (SELECT 1 FROM chat.conversations c WHERE c.tenant_id = :t AND c.channel = :p AND c.external_id = :e AND c.window_until > now())").param("t", tenantId).param("p", platform).param("e", to).query(Boolean.class).single();
             if (!open) return false;
             String account = (String) ch.get().get("external_id"), token = crypto.decrypt((String) ch.get().get("token_enc"));
             if (imageUrl != null && !imageUrl.isBlank()) sendCard(platform, account, to, token, new ProductShare.Card(imageUrl, text == null ? "" : text, null));

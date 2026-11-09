@@ -2,9 +2,8 @@ package com.platform.commerce;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.platform.audit.AuditService;
-import com.platform.billing.WalletService;
-import com.platform.chat.MetaChannelService;
-import com.platform.chat.MetaGraph;
+import com.platform.billing.OutboundBilling;
+import com.platform.chat.OutboundThread;
 import com.platform.open.OpenUrls;
 import com.platform.shared.BusinessException;
 import com.platform.shared.PhoneNormalizer;
@@ -28,37 +27,33 @@ import org.springframework.stereotype.Service;
 
 /**
  * Incomplete carts: the storefront sends the cart once the shopper has typed a phone number; if no order follows, the owner sees it here after 24 hours and can
- * contact the customer. A reminder is only sent by the app when the owner switched recovery on, and then only as a normal (free) message inside the customer's
- * 24 hour WhatsApp window; a paid template goes out only when the owner ALSO allowed paid messages, is approved by Meta, and is paid from the shop's own credit.
+ * contact the customer. A reminder is only sent by the app when the owner switched recovery on, and only from the shop's own linked WhatsApp number; each one costs
+ * 0.1 EGP, taken before sending and given back when the send fails. No credit: nothing is sent and the cart says NO_CREDIT. No linked number: NO_OWN_NUMBER.
+ * The official WhatsApp (Meta Cloud API) is never used for sending.
  */
 @Service
 public class CartRecoveryService {
     private static final Logger log = LoggerFactory.getLogger(CartRecoveryService.class);
     private static final ObjectMapper JSON = new ObjectMapper();
-    public static final String TEMPLATE = "cart_reminder_ar";
 
     private final GenderService genders;
     private final com.platform.chat.EvolutionService evolution;
     private final JdbcClient jdbc;
-    private final MetaChannelService channels;
-    private final MetaGraph graph;
-    private final WalletService wallet;
+    private final OutboundBilling billing;
+    private final OutboundThread thread;
     private final OpenUrls urls;
     private final AuditService audit;
-    private final long priceMinor;
     private final boolean scheduler;
 
-    public CartRecoveryService(JdbcClient jdbc, MetaChannelService channels, MetaGraph graph, WalletService wallet, OpenUrls urls, AuditService audit,
-                               @Value("${app.whatsapp.marketing-price-minor:50}") long priceMinor, @Value("${app.integrations.scheduler.enabled:true}") boolean scheduler, com.platform.chat.EvolutionService evolution, GenderService genders) {
+    public CartRecoveryService(JdbcClient jdbc, OutboundBilling billing, OutboundThread thread, OpenUrls urls, AuditService audit,
+                               @Value("${app.integrations.scheduler.enabled:true}") boolean scheduler, com.platform.chat.EvolutionService evolution, GenderService genders) {
         this.genders = genders;
         this.evolution = evolution;
         this.jdbc = jdbc;
-        this.channels = channels;
-        this.graph = graph;
-        this.wallet = wallet;
+        this.billing = billing;
+        this.thread = thread;
         this.urls = urls;
         this.audit = audit;
-        this.priceMinor = priceMinor;
         this.scheduler = scheduler;
     }
 
@@ -124,32 +119,28 @@ public class CartRecoveryService {
         var r = jdbc.sql("SELECT recovery_enabled, allow_paid, remind_after_hours, coupon_code, send_mode FROM commerce.cart_settings WHERE tenant_id = :t").param("t", tenantId).query().listOfRows().stream().findFirst().orElse(null);
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("recoveryEnabled", r != null && Boolean.TRUE.equals(r.get("recovery_enabled")));
-        m.put("allowPaid", r != null && Boolean.TRUE.equals(r.get("allow_paid")));
+        m.put("allowPaid", false);   // the official paid route is gone
         m.put("remindAfterHours", r == null ? 24 : r.get("remind_after_hours"));
         m.put("couponCode", r == null ? null : r.get("coupon_code"));
-        m.put("sendMode", r == null ? "PAID" : r.get("send_mode"));
-        m.put("messagePriceMinor", priceMinor);
+        m.put("sendMode", "FREE");
+        m.put("messagePriceMinor", billing.priceMinor());
         return m;
     }
 
     public Map<String, Object> saveSettings(UUID tenantId, UUID actor, Boolean enabled, Boolean allowPaid, Integer hours, String coupon) { return saveSettings(tenantId, actor, enabled, allowPaid, hours, coupon, null); }
 
     public Map<String, Object> saveSettings(UUID tenantId, UUID actor, Boolean enabled, Boolean allowPaid, Integer hours, String coupon, String sendMode) {
-        if (sendMode != null && !List.of("PAID", "FREE").contains(sendMode)) throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown way of sending");
-        if ("FREE".equals(sendMode) && !evolution.connected(tenantId)) throw BusinessException.conflict("EVOLUTION_OFF", "Link your own WhatsApp number first");
+        // allowPaid and sendMode are accepted for older screens and ignored: reminders only go from the shop's own number
         var cur = settings(tenantId);
-        String mode = sendMode != null ? sendMode : (String) cur.get("sendMode");
         boolean e = enabled != null ? enabled : (Boolean) cur.get("recoveryEnabled");
-        boolean p = allowPaid != null ? allowPaid : (Boolean) cur.get("allowPaid");
         int h = hours != null ? hours : ((Number) cur.get("remindAfterHours")).intValue();
         if (h < 1 || h > 168) throw BusinessException.badRequest("VALIDATION_ERROR", "Reminder delay must be between 1 and 168 hours");
         String c = coupon == null ? (String) cur.get("couponCode") : coupon.trim().isEmpty() ? null : coupon.trim().toUpperCase();
         if (c != null && !c.matches("[A-Z0-9_-]{2,40}")) throw BusinessException.badRequest("VALIDATION_ERROR", "Coupon code can only use letters, digits, - and _");
         if (c != null && jdbc.sql("SELECT count(*) FROM commerce.coupons WHERE tenant_id = :t AND upper(code) = :c AND is_active").param("t", tenantId).param("c", c).query(Long.class).single() == 0)
             throw BusinessException.badRequest("COUPON_INVALID", "That coupon does not exist or is switched off");
-        if (!e) p = false;   // paid messages make no sense without recovery
-        jdbc.sql("INSERT INTO commerce.cart_settings (tenant_id, recovery_enabled, allow_paid, remind_after_hours, coupon_code, send_mode) VALUES (:t, :e, :p, :h, :c, :sm) ON CONFLICT (tenant_id) DO UPDATE SET recovery_enabled = :e, allow_paid = :p, remind_after_hours = :h, coupon_code = :c, send_mode = :sm, updated_at = now()")
-                .param("t", tenantId).param("e", e).param("p", p).param("h", h).param("c", c).param("sm", mode).update();
+        jdbc.sql("INSERT INTO commerce.cart_settings (tenant_id, recovery_enabled, allow_paid, remind_after_hours, coupon_code, send_mode) VALUES (:t, :e, FALSE, :h, :c, 'FREE') ON CONFLICT (tenant_id) DO UPDATE SET recovery_enabled = :e, allow_paid = FALSE, remind_after_hours = :h, coupon_code = :c, send_mode = 'FREE', updated_at = now()")
+                .param("t", tenantId).param("e", e).param("h", h).param("c", c).update();
         audit.record(actor, tenantId, "SETTINGS_CHANGED", "cart_recovery", null, null);
         return settings(tenantId);
     }
@@ -227,93 +218,46 @@ public class CartRecoveryService {
 
     // ---- reminders ---------------------------------------------------------------------------------------------------------
 
-    /** Owner pressed "send reminder". Free inside the 24 hour window; paid only when the owner allowed it. */
+    /** Owner pressed "send reminder": from the shop's own number, 0.1 EGP. */
     public Map<String, Object> sendReminder(UUID tenantId, UUID actor, UUID id) {
         var c = cart(tenantId, id);
         if (!"OPEN".equals(c.get("status"))) throw BusinessException.conflict("CART_CLOSED", "This cart is no longer open");
         String result = remind(tenantId, c, Instant.now(), true);
         audit.record(actor, tenantId, "CART_REMINDER", "abandoned_cart", id, "{\"result\":\"" + result + "\"}");
-        if ("NOT_SENT_WINDOW".equals(result)) throw BusinessException.conflict("WINDOW_CLOSED", "The customer has not written to you in the last 24 hours, so a free message is not possible. Contact them yourself, or allow paid WhatsApp messages in the recovery settings.");
-        if ("NO_CREDIT".equals(result)) throw BusinessException.conflict("NO_CREDIT", "Your WhatsApp credit is not enough");
-        if ("NOT_APPROVED".equals(result)) throw BusinessException.conflict("TEMPLATE_NOT_APPROVED", "The reminder template is not approved by Meta yet");
-        if ("FAILED".equals(result) || "NO_CHANNEL".equals(result)) throw BusinessException.conflict("SEND_FAILED", "The message could not be sent. Check that WhatsApp is connected.");
+        if ("NO_CREDIT".equals(result)) throw BusinessException.conflict("NO_CREDIT", "Your credit is not enough to send this message");
+        if ("NO_OWN_NUMBER".equals(result)) throw BusinessException.conflict("NO_OWN_NUMBER", "Link your own WhatsApp number first");
+        if ("FAILED".equals(result)) throw BusinessException.conflict("SEND_FAILED", "The message could not be sent. Check that your WhatsApp number is connected.");
         return Map.of("result", result);
     }
 
     private String remind(UUID tenantId, Map<String, Object> c, Instant now, boolean manual) {
-        var ch = channels.whatsappChannel(tenantId);
         UUID cartId = (UUID) c.get("id");
         String phone = ((String) c.get("phone")).replaceAll("\\D", "");
         String name = (String) c.get("name");
+        if (!evolution.connected(tenantId)) return finish(cartId, "NO_OWN_NUMBER");   // nothing is sent and nothing is charged; the list shows why
         var settings = settings(tenantId);
-        if ("FREE".equals(settings.get("sendMode"))) {   // the shop chose its own linked number: a normal free message, no window, no template, no charge; never the paid route instead
-            if (!evolution.connected(tenantId)) return manual ? "NO_CHANNEL" : finish(cartId, "NO_CHANNEL");
-            String url = urls.baseUrl(urls.hosts(List.of(tenantId)).get(tenantId)) + "/cart";
-            String cp = (String) settings.get("couponCode");
-            String who = name == null || name.isBlank() ? "" : name.trim().split("\\s+")[0];
-            String text = "أهلاً " + who + " 👋 سلتك لسه مستنياك. {تحب|تحبي} أكمّل {معاك|معاكي} الطلب؟ " + url + (cp == null ? "" : "\n{استخدم|استخدمي} كود الخصم " + cp);
-            return finish(cartId, evolution.sendFree(tenantId, phone, genders.forPhone(tenantId, phone).apply(text)) ? "SENT_FREE" : "FAILED");
-        }
-        if (ch == null) return finish(cartId, "NO_CHANNEL");
-        boolean windowOpen = jdbc.sql("SELECT count(*) FROM chat.wa_windows WHERE tenant_id = :t AND number = :n AND last_inbound_at > :since").param("t", tenantId).param("n", phone)
-                .param("since", Timestamp.from(now.minus(Duration.ofHours(24)))).query(Long.class).single() > 0;
-        String coupon = (String) settings.get("couponCode");
-        String link = urls.baseUrl(urls.hosts(List.of(tenantId)).get(tenantId)) + "/cart";
-        String hello = name == null || name.isBlank() ? "" : name.trim().split("\\s+")[0];
-        if (windowOpen) {
-            String text = "أهلاً " + hello + " 👋 سلتك لسه مستنياك. {تحب|تحبي} أكمّل {معاك|معاكي} الطلب؟ " + link + (coupon == null ? "" : "\n{استخدم|استخدمي} كود الخصم " + coupon);
-            try {
-                graph.post(ch.phoneId() + "/messages", ch.token(), Map.of("messaging_product", "whatsapp", "to", phone, "type", "text", "text", Map.of("body", genders.forPhone(tenantId, phone).apply(text))));
-                return finish(cartId, "SENT_FREE");
-            } catch (MetaGraph.MetaException e) {
-                log.warn("Cart reminder failed: {}", e.getMessage());
-                return finish(cartId, "FAILED");
-            }
-        }
-        if (!Boolean.TRUE.equals(settings.get("allowPaid"))) return manual ? "NOT_SENT_WINDOW" : finish(cartId, "NOT_SENT_WINDOW");
-        if (!"APPROVED".equals(jdbc.sql("SELECT status FROM chat.wa_templates WHERE tenant_id = :t AND name = :n").param("t", tenantId).param("n", TEMPLATE).query(String.class).optional().orElse(null)))
-            return manual ? "NOT_APPROVED" : finish(cartId, "NOT_APPROVED");
+        String url = urls.baseUrl(urls.hosts(List.of(tenantId)).get(tenantId)) + "/cart";
+        String cp = (String) settings.get("couponCode");
+        String who = name == null || name.isBlank() ? "" : name.trim().split("\\s+")[0];
+        String text = genders.forPhone(tenantId, phone).apply("أهلاً " + who + " 👋 سلتك لسه مستنياك. {تحب|تحبي} أكمّل {معاك|معاكي} الطلب؟ " + url + (cp == null ? "" : "\n{استخدم|استخدمي} كود الخصم " + cp));
         String ref = "wa-cart-" + cartId;
-        if (!wallet.tryDebit(tenantId, priceMinor, ref, "WhatsApp cart reminder")) return manual ? "NO_CREDIT" : finish(cartId, "NO_CREDIT");
-        String shop = jdbc.sql("SELECT coalesce(nullif(sp.store_name, ''), t.name) FROM core.tenants t LEFT JOIN commerce.store_profiles sp ON sp.tenant_id = t.id WHERE t.id = :t").param("t", tenantId).query(String.class).single();
-        String third = link + (coupon == null ? "" : " (كود الخصم " + coupon + ")");
-        Map<String, Object> msg = Map.of("messaging_product", "whatsapp", "to", phone, "type", "template", "template", Map.of("name", TEMPLATE, "language", Map.of("code", "ar"),
-                "components", List.of(Map.of("type", "body", "parameters", List.of(p(hello.isEmpty() ? "-" : hello), p(shop), p(third))))));
-        try {
-            graph.post(ch.phoneId() + "/messages", ch.token(), msg);
-            return finish(cartId, "SENT_PAID");
-        } catch (MetaGraph.MetaException e) {
-            wallet.credit(tenantId, priceMinor, "REFUND", ref, "Message not delivered to Meta", null);
+        if (!billing.charge(tenantId, ref, "WhatsApp cart reminder")) {   // 0.1 EGP before sending; no credit, no message
+            billing.notifyNoCredit(tenantId, "cart", "رصيد واتساب غير كافٍ", "لم نستطع إرسال تذكير السلة لعميلك. اشحن الرصيد ليعمل التذكير التلقائي.");
+            return finish(cartId, "NO_CREDIT");
+        }
+        boolean ok;
+        try { ok = evolution.sendFree(tenantId, phone, text); } catch (RuntimeException e) { ok = false; }
+        if (!ok) {
+            billing.refund(tenantId, ref, "Reminder not sent");
             return finish(cartId, "FAILED");
         }
+        thread.record(tenantId, "WHATSAPP", phone, "CART", text);
+        return finish(cartId, "SENT");
     }
-
-    private static Map<String, Object> p(String t) { return Map.of("type", "text", "text", t.length() > 120 ? t.substring(0, 120) : t); }
 
     private String finish(UUID cartId, String status) {
-        jdbc.sql("UPDATE commerce.abandoned_carts SET reminder_status = :s, reminder_sent_at = CASE WHEN :s IN ('SENT_FREE','SENT_PAID') THEN now() ELSE reminder_sent_at END WHERE id = :i").param("s", status).param("i", cartId).update();
+        jdbc.sql("UPDATE commerce.abandoned_carts SET reminder_status = :s, reminder_sent_at = CASE WHEN :s = 'SENT' THEN now() ELSE reminder_sent_at END WHERE id = :i").param("s", status).param("i", cartId).update();
         return status;
-    }
-
-    /** Registers the paid reminder template with Meta (the owner presses a button; nothing is sent or charged by this). */
-    public Map<String, Object> registerTemplate(UUID tenantId) {
-        var ch = channels.whatsappChannel(tenantId);
-        if (ch == null) throw BusinessException.badRequest("NO_WHATSAPP", "Connect your WhatsApp number first");
-        if (ch.wabaId() == null) throw BusinessException.badRequest("NO_WABA", "Add your WhatsApp Business Account ID in the channel details first");
-        Map<String, Object> body = Map.of("name", TEMPLATE, "category", "MARKETING", "language", "ar", "components", List.of(Map.of("type", "BODY",
-                "text", "أهلاً {{1}}، سلتك في {{2}} لسه مستنياك 🛒 كمّل طلبك من هنا: {{3}}", "example", Map.of("body_text", List.of(List.of("أحمد", "متجر النور", "https://shop.example/cart"))))));
-        String status = "PENDING";
-        String reason = null;
-        try { graph.post(ch.wabaId() + "/message_templates", ch.token(), body); } catch (MetaGraph.MetaException e) {
-            if (e.getMessage() == null || !e.getMessage().toLowerCase().contains("already")) { status = "REJECTED"; reason = e.getMessage(); }
-        }
-        try {
-            Map<String, Object> res = graph.get(ch.wabaId() + "/message_templates?name=" + TEMPLATE + "&fields=name,status,rejected_reason", ch.token());
-            if (res.get("data") instanceof List<?> l && !l.isEmpty() && l.get(0) instanceof Map<?, ?> t) status = String.valueOf(t.get("status"));
-        } catch (MetaGraph.MetaException ignored) { /* the status stays as it was */ }
-        jdbc.sql("INSERT INTO chat.wa_templates (tenant_id, name, status, rejected_reason) VALUES (:t, :n, :s, :r) ON CONFLICT (tenant_id, name) DO UPDATE SET status = :s, rejected_reason = :r, updated_at = now()")
-                .param("t", tenantId).param("n", TEMPLATE).param("s", status).param("r", reason == null ? null : reason.substring(0, Math.min(300, reason.length()))).update();
-        return Map.of("status", status);
     }
 
     @Scheduled(fixedDelay = 600_000, initialDelay = 150_000)
@@ -329,7 +273,7 @@ public class CartRecoveryService {
         for (var c : jdbc.sql("""
                 SELECT a.* FROM commerce.abandoned_carts a JOIN commerce.cart_settings s ON s.tenant_id = a.tenant_id AND s.recovery_enabled
                 WHERE a.status = 'OPEN' AND a.reminder_sent_at IS NULL AND a.created_at <= CAST(:now AS timestamptz) - make_interval(hours => s.remind_after_hours) AND a.created_at > CAST(:old AS timestamptz)
-                  AND (a.reminder_status IS NULL OR a.reminder_status IN ('NOT_SENT_WINDOW','NO_CREDIT','NOT_APPROVED','NO_CHANNEL'))
+                  AND (a.reminder_status IS NULL OR a.reminder_status IN ('NO_CREDIT','NO_OWN_NUMBER'))
                   AND EXISTS (SELECT 1 FROM core.tenants tn WHERE tn.id = a.tenant_id AND tn.status NOT IN ('SUSPENDED','CANCELLED','ARCHIVED')) ORDER BY a.created_at LIMIT 200
                 """).param("now", Timestamp.from(now)).param("old", Timestamp.from(now.minus(Duration.ofDays(14)))).query().listOfRows()) {
             try {

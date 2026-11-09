@@ -25,7 +25,10 @@ class FollowUpIntegrationTest extends IntegrationTestBase {
     @Autowired WalletService wallet;
 
     @BeforeEach
-    void clean() { FakeAiProvider.reset(); FakeMetaGraph.reset(); }
+    void clean() { FakeAiProvider.reset(); FakeMetaGraph.reset(); FakeEvolutionApi.reset(); }
+
+    /** Texts the shop's own number sent (follow-ups only go from the own number). */
+    java.util.List<String> ownTexts() { return FakeEvolutionApi.CALLS.stream().filter(c -> c.path().startsWith("/message/sendText/")).map(c -> c.body().get("text").toString()).toList(); }
 
     UUID id(Tenant t) { return jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", t.slug()).query(UUID.class).single(); }
 
@@ -33,7 +36,9 @@ class FollowUpIntegrationTest extends IntegrationTestBase {
 
     Shop shop() throws Exception {
         Tenant t = onboard("STORE");
-        onHost(t.host(), t.access(), "POST", "/api/v1/store/ai/channels", "{\"platform\":\"WHATSAPP\",\"externalId\":\"%s\",\"accessToken\":\"EAAG-secret-token-0123456789\"}".formatted("7" + System.nanoTime())).andExpect(status().isCreated());
+        onHost(t.host(), t.access(), "POST", "/api/v1/store/ai/evolution/enable", "{\"acceptedRisk\":true}").andExpect(status().isOk());
+        FakeEvolutionApi.STATE = "open";
+        onHost(t.host(), t.access(), "GET", "/api/v1/store/ai/evolution", null).andExpect(jsonPath("$.status").value("CONNECTED"));
         onHost(t.host(), t.access(), "PUT", "/api/v1/store/chat/followups/settings", """
                 {"enabled":true,"steps":[{"delayMinutes":30,"message":"لسه محتاج مساعدة يا {name}؟"},{"delayMinutes":180,"message":"عندنا عرض النهارده 🎁"},{"delayMinutes":480,"message":"إحنا موجودين لو احتجت أي حاجة ❤️"}]}
                 """).andExpect(status().isOk()).andExpect(jsonPath("$.steps.length()").value(3));
@@ -74,7 +79,7 @@ class FollowUpIntegrationTest extends IntegrationTestBase {
         age(c, 31);
         assertThat(followUps.runDue()).isEqualTo(1);
         assertThat(followUps.statuses(c)).containsExactly("1:SENT", "2:SCHEDULED", "3:SCHEDULED");
-        assertThat(FakeMetaGraph.SENT.get(FakeMetaGraph.SENT.size() - 1).body().toString()).contains("لسه محتاج مساعدة يا Sara");
+        assertThat(ownTexts().get(ownTexts().size() - 1)).contains("لسه محتاج مساعدة يا Sara");
         assertThat(jdbc.sql("SELECT count(*) FROM chat.messages WHERE conversation_id = :c AND kind = 'FOLLOWUP'").param("c", c).query(Long.class).single()).isEqualTo(1);
         // running again sends nothing twice
         assertThat(followUps.runDue()).isZero();
@@ -111,22 +116,22 @@ class FollowUpIntegrationTest extends IntegrationTestBase {
         // the window closed before the step was due: ineligible, nothing sent
         UUID c = conv(s, customer(s, "do you deliver to Giza"));
         age(c, 24 * 60);
-        int sent = FakeMetaGraph.SENT.size();
+        int sent = ownTexts().size();
         assertThat(followUps.runDue()).isZero();
         assertThat(followUps.statuses(c).get(0)).isEqualTo("1:INELIGIBLE");
-        assertThat(FakeMetaGraph.SENT).hasSize(sent);
+        assertThat(ownTexts()).hasSize(sent);
 
         // a provider failure is retried once after 5 minutes, then logged as FAILED (and the later steps do not go out)
         UUID d = conv(s, customer(s, "is it cotton"));
         age(d, 31);
-        FakeMetaGraph.FAIL_TEXT_SEND = true;
+        FakeEvolutionApi.FAIL_SEND = true;
         assertThat(followUps.runDue()).isZero();
         assertThat(followUps.statuses(d).get(0)).isEqualTo("1:SCHEDULED");
         jdbc.sql("UPDATE chat.auto_followups SET due_at = now() - interval '1 minute' WHERE conversation_id = :c AND step_position = 1").param("c", d).update();
         assertThat(followUps.runDue()).isZero();
         assertThat(followUps.statuses(d).get(0)).isEqualTo("1:FAILED");
         assertThat(jdbc.sql("SELECT reason FROM chat.auto_followups WHERE conversation_id = :c AND step_position = 1").param("c", d).query(String.class).single()).isNotBlank();
-        FakeMetaGraph.FAIL_TEXT_SEND = false;
+        FakeEvolutionApi.FAIL_SEND = false;
         age(d, 160);
         followUps.runDue();
         assertThat(followUps.statuses(d).get(1)).isEqualTo("2:CANCELLED");

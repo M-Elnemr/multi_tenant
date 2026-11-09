@@ -59,7 +59,11 @@ class CommentsAndIdentityIntegrationTest extends IntegrationTestBase {
         assertThat((String) JsonPath.read(list, "$.data[0].dmStatus")).isEqualTo("SENT");
         assertThat(FakeMetaGraph.SENT.stream().anyMatch(x -> x.path().equals(c1 + "/comments") && x.body().get("message").equals("تم الرد عليك في الخاص ❤️"))).isTrue();
         assertThat(FakeMetaGraph.SENT.stream().anyMatch(x -> x.path().equals("me/messages") && x.body().toString().contains("comment_id=" + c1))).isTrue();
-        assertThat(wallet.balance(tenant)).isEqualTo(credit - 100);   // the stamp is free, the AI private message costs 1 EGP
+        assertThat(wallet.balance(tenant)).isEqualTo(credit - 10);   // the stamp is free, the AI private message costs 0.1 EGP
+        // the private message is in the commenter's chat (kind COMMENT_DM), and today's counts and cost are in the settings
+        assertThat(jdbc.sql("SELECT count(*) FROM chat.messages m JOIN chat.conversations c ON c.id = m.conversation_id WHERE c.tenant_id = :t AND c.channel = 'FACEBOOK' AND c.external_id = '5551' AND m.kind = 'COMMENT_DM'").param("t", tenant).query(Long.class).single()).isEqualTo(1L);
+        onHost(t.host(), t.access(), "GET", "/api/v1/store/comments/settings", null).andExpect(jsonPath("$.todayReplies").value(0)).andExpect(jsonPath("$.todayDms").value(1))
+                .andExpect(jsonPath("$.todayCostMinor").value(10)).andExpect(jsonPath("$.messagePriceMinor").value(10));
 
         // a plain comment (no question) gets the stamp but no private message (only questions)
         String c2 = "post_1_" + uniq();
@@ -74,6 +78,30 @@ class CommentsAndIdentityIntegrationTest extends IntegrationTestBase {
         onHost(t.host(), t.access(), "GET", "/api/v1/store/chat/conversations/counts", null).andExpect(jsonPath("$.unrepliedComments").value(0));
         Tenant other = onboard("STORE");
         onHost(other.host(), other.access(), "POST", "/api/v1/store/comments/" + id2 + "/reply", "{\"text\":\"x\"}").andExpect(status().isNotFound());
+    }
+
+    @Test
+    void anAiPublicReplyCostsPointOneEgpAndWithoutCreditNothingIsSent() throws Exception {
+        Tenant t = onboard("STORE");
+        UUID tenant = id(t);
+        String page = "9" + (100_000_000 + System.nanoTime() % 800_000_000);
+        onHost(t.host(), t.access(), "POST", "/api/v1/store/ai/channels", "{\"platform\":\"FACEBOOK\",\"externalId\":\"%s\",\"accessToken\":\"PAGE-OF-%s-token-0123456789\"}".formatted(page, page)).andExpect(status().isCreated());
+        onHost(t.host(), t.access(), "PUT", "/api/v1/store/comments/settings", "{\"publicReply\":\"AI\",\"dmEnabled\":false}").andExpect(status().isOk());
+        jdbc.sql("UPDATE billing.wallets SET balance_minor = 15 WHERE tenant_id = :t").param("t", tenant).update();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("متاح بمقاسات S لـ XL 🌸"));
+        String c1 = "post_2_" + uniq();
+        comments.onChange("FACEBOOK", page, json.readTree("{\"field\":\"feed\",\"value\":{\"item\":\"comment\",\"verb\":\"add\",\"comment_id\":\"%s\",\"post_id\":\"post_2\",\"from\":{\"id\":\"6661\",\"name\":\"Mona\"},\"message\":\"متاح مقاس M؟\"}}".formatted(c1)));
+        assertThat(wallet.balance(tenant)).isEqualTo(5L);
+        assertThat(FakeMetaGraph.SENT.stream().anyMatch(x -> x.path().equals(c1 + "/comments"))).isTrue();
+        onHost(t.host(), t.access(), "GET", "/api/v1/store/comments/settings", null).andExpect(jsonPath("$.todayReplies").value(1)).andExpect(jsonPath("$.todayDms").value(0)).andExpect(jsonPath("$.todayCostMinor").value(10));
+
+        // 5 piasters are not enough for another reply: nothing is sent
+        FakeMetaGraph.SENT.clear();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("should never be sent"));
+        String c2 = "post_2_" + uniq();
+        comments.onChange("FACEBOOK", page, json.readTree("{\"field\":\"feed\",\"value\":{\"item\":\"comment\",\"verb\":\"add\",\"comment_id\":\"%s\",\"post_id\":\"post_2\",\"from\":{\"id\":\"6662\",\"name\":\"Hany\"},\"message\":\"بكام؟\"}}".formatted(c2)));
+        assertThat(FakeMetaGraph.SENT.stream().noneMatch(x -> x.path().equals(c2 + "/comments"))).isTrue();
+        assertThat(wallet.balance(tenant)).isEqualTo(5L);
     }
 
     @Test
