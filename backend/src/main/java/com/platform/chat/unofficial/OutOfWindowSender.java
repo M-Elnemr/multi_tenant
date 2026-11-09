@@ -39,6 +39,18 @@ public interface OutOfWindowSender {
         public static ThreadPage error(String code) { return new ThreadPage(false, code, java.util.List.of(), null); }
     }
 
+    /** A follower of the Page: numeric Facebook user id, name, optional subtitle (city / work) and vanity name (null when the profile is profile.php?id=...). */
+    record Follower(String id, String name, String subtitle, String vanity) {}
+
+    /** One run of the Page's followers; {@code error}: NEEDS_LOGIN, RATE_LIMITED, DOCID_STALE, PARSE_EMPTY, BRIDGE_UNREACHABLE, UNSUPPORTED, FAILED. {@code nextCursor} null = the list ended. */
+    record FollowerPage(boolean ok, String error, java.util.List<Follower> users, String nextCursor, String collection) {
+        public static FollowerPage of(java.util.List<Follower> u, String next, String collection) { return new FollowerPage(true, null, u, next, collection); }
+        public static FollowerPage error(String code) { return new FollowerPage(false, code, java.util.List.of(), null, null); }
+    }
+
+    /** The Page's followers through the session (Messenger only); the first call has no cursor and no collection, later calls pass back what the previous one returned. */
+    default FollowerPage listFollowers(UUID tenant, String platform, int limit, String cursor, String collection) { return FollowerPage.error("UNSUPPORTED"); }
+
     /** Lists existing contacts through the session (Messenger only). */
     default ThreadPage listThreads(UUID tenant, String platform, int limit, String before) { return ThreadPage.error("UNSUPPORTED"); }
 

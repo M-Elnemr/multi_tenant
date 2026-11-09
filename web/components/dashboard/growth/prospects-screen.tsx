@@ -188,7 +188,7 @@ export default function ProspectsScreen() {
           {!list.data && !list.error && plats.length > 0 && sources.length > 0 && <div className="space-y-2">{[0, 1, 2, 3].map((i) => <div key={i} className="skeleton h-11 rounded-[10px]" />)}</div>}
           {list.data && rows.length === 0 && (
             <Empty icon="users" title={t("px.emptyTitle")} action={noneConnected || connectedPlats.length === 0 ? <a href={CONNECT_LINK} className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-brand hover:underline"><Icon name="link" className="h-4 w-4" />{t("px.emptyConnect")}</a> : undefined}>
-              {t("px.emptyBody")}
+              {t(plats.length === 1 && plats[0] === "FACEBOOK" ? "px.emptyBodyFb" : "px.emptyBody")}
             </Empty>
           )}
           {rows.length > 0 && (

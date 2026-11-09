@@ -142,6 +142,36 @@ public class FbBridgeSender implements OutOfWindowSender {
     }
 
     @Override
+    public FollowerPage listFollowers(UUID tenant, String platform, int limit, String cursor, String collection) {
+        if (!handles(platform)) return FollowerPage.error("UNSUPPORTED");
+        StringBuilder q = new StringBuilder("?limit=" + Math.max(1, Math.min(200, limit)));
+        if (cursor != null && !cursor.isBlank()) q.append("&cursor=").append(java.net.URLEncoder.encode(cursor, java.nio.charset.StandardCharsets.UTF_8));
+        if (collection != null && !collection.isBlank()) q.append("&collection=").append(java.net.URLEncoder.encode(collection, java.nio.charset.StandardCharsets.UTF_8));
+        int[] st = {0};
+        JsonNode n = call("GET", "/facebook/" + tenant + "/followers" + q, null, Duration.ofSeconds(420), st);   // up to ~25 pages with 2-5 s between them
+        if (n == null || st[0] == 401 || st[0] == 403) return FollowerPage.error("BRIDGE_UNREACHABLE");
+        if (!n.path("ok").asBoolean(false)) {
+            return FollowerPage.error(switch (n.path("error").asText("FAILED")) {
+                case "SESSION_EXPIRED" -> "NEEDS_LOGIN";
+                case "RATE_LIMITED" -> "RATE_LIMITED";
+                case "DOCID_STALE" -> "DOCID_STALE";
+                case "PARSE_EMPTY" -> "PARSE_EMPTY";
+                default -> "FAILED";
+            });
+        }
+        List<Follower> out = new java.util.ArrayList<>();
+        for (JsonNode u : n.path("users")) {
+            String id = u.path("id").asText("");
+            if (id.isBlank()) continue;
+            out.add(new Follower(id, u.path("name").isNull() ? null : u.path("name").asText(null), u.path("subtitle").isNull() ? null : u.path("subtitle").asText(null),
+                    u.path("vanity").isNull() ? null : u.path("vanity").asText(null)));
+        }
+        String next = n.path("next_cursor").isNull() ? null : n.path("next_cursor").asText(null);
+        String coll = n.path("collection").isNull() ? null : n.path("collection").asText(null);
+        return FollowerPage.of(out, next == null || next.isBlank() ? null : next, coll);
+    }
+
+    @Override
     public void logout(UUID tenant, String platform) {
         if (handles(platform)) call("POST", "/sessions/logout", Map.of("tenant", tenant.toString()), Duration.ofSeconds(10), null);
     }
