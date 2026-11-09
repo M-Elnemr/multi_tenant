@@ -25,7 +25,7 @@ public class AttributionService {
         var guard = jdbc.sql("SELECT count(*) FILTER (WHERE risk_level = 'HIGH' AND status IN ('CANCELLED','RETURNED')) AS high_lost, coalesce(sum(total_minor) FILTER (WHERE risk_level = 'HIGH' AND status = 'CANCELLED' AND shipped_at IS NULL), 0) AS saved FROM commerce.orders WHERE tenant_id = :t AND created_at > now() - make_interval(days => :d)")
                 .param("t", t).param("d", d).query().singleRow();
         long loyaltyOrders = jdbc.sql("SELECT count(*) FROM commerce.orders WHERE tenant_id = :t AND " + counted + " AND coupon_code LIKE 'LP-%' AND created_at > now() - make_interval(days => :d)").param("t", t).param("d", d).query(Long.class).single();
-        long aiConversations = jdbc.sql("SELECT count(*) FROM chat.conversations WHERE tenant_id = :t AND channel <> 'TEST' AND created_at > now() - make_interval(days => :d)").param("t", t).param("d", d).query(Long.class).single();
+        long aiConversations = jdbc.sql("SELECT count(*) FROM chat.conversations WHERE tenant_id = :t AND channel <> 'TEST' AND imported_at IS NULL AND created_at > now() - make_interval(days => :d)").param("t", t).param("d", d).query(Long.class).single();
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("days", d);
         m.put("totalRevenueMinor", totalRev);

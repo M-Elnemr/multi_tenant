@@ -1,0 +1,38 @@
+{
+ "cx.import": [
+  "Import my Messenger contacts",
+  "استورد عملاء الماسنجر بتوعي"
+ ],
+ "cx.importHint": [
+  "Bring in the people who already messaged your Page, so you can reach them from here.",
+  "هات الناس اللي كلمت صفحتك قبل كده عشان توصلهم من هنا."
+ ],
+ "cx.importRunning": [
+  "Importing... {n} contacts so far",
+  "بنستورد... وصلنا {n} عميل لحد دلوقتي"
+ ],
+ "cx.importDone": [
+  "Done: {n} new contacts added ({total} Messenger contacts in total).",
+  "خلصنا: اتضاف {n} عميل جديد (إجمالي عملاء الماسنجر {total})."
+ ],
+ "cx.importPartial": [
+  "{n} contacts were read before it stopped.",
+  "اتقرا {n} عميل قبل ما يقف."
+ ],
+ "cx.importErr.NEEDS_LOGIN": [
+  "The Messenger login expired. Connect again, then import.",
+  "تسجيل دخول الماسنجر خلص. اربط تاني وبعدين استورد."
+ ],
+ "cx.importErr.RATE_LIMITED": [
+  "Facebook asked to slow down. Try again later.",
+  "فيسبوك طلب نهدّي. جرّب تاني بعد شوية."
+ ],
+ "cx.importErr.BRIDGE_UNREACHABLE": [
+  "The sending service is not reachable right now. Try again in a moment.",
+  "خدمة الإرسال مش متاحة دلوقتي. جرّب تاني كمان شوية."
+ ],
+ "cx.importErr.FAILED": [
+  "Could not import the contacts. Try again later.",
+  "معرفناش نستورد العملاء. جرّب تاني بعدين."
+ ]
+}

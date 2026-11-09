@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/client";
 import { dateTime } from "@/lib/format";
 import { ChannelIcon } from "../../channel-icons";
@@ -45,6 +45,44 @@ export function useConnections() {
 }
 
 export const isConnected = (c?: Connection) => !!c && (c.status === "ACTIVE" || c.status === "BLOCKED");
+
+type ImportStatus = { status: "IDLE" | "RUNNING" | "DONE" | "FAILED"; fetched: number; imported: number; error?: string | null; contacts: number };
+
+/** Messenger only: brings the Page's existing chats in as existing customers (starts by itself after connecting; this button runs it again). */
+function ImportContacts({ onDone }: { onDone: () => void }) {
+  const { t, locale } = useI18n();
+  const q = useApi<ImportStatus>("store/unofficial-meta/FACEBOOK/import-contacts/status");
+  const st = q.data;
+  const running = st?.status === "RUNNING";
+  const start = useAction(async () => { await api("store/unofficial-meta/FACEBOOK/import-contacts", { method: "POST" }); await q.reload(); });
+  const prev = useRef<string | undefined>(undefined);
+  const reload = q.reload;
+  useEffect(() => {
+    if (!running) return;
+    const id = setTimeout(() => { void reload(); }, 2500);
+    return () => clearTimeout(id);
+  }, [running, st, reload]);
+  useEffect(() => {
+    if (prev.current === "RUNNING" && st && st.status !== "RUNNING") onDone();
+    prev.current = st?.status;
+  }, [st, onDone]);
+  const n = (x: number) => x.toLocaleString(locale === "ar" ? "ar-EG" : "en-US");
+  const errKey = `cx.importErr.${st?.error}`;
+  return (
+    <div className="space-y-2 rounded-[12px] bg-surface-2 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="secondary" loading={start.loading || running} onClick={() => void start.run()}><Icon name="link" className="h-4 w-4" />{t("cx.import")}</Button>
+        <p className="min-w-0 flex-1 text-[12.5px] text-ink-2 tnum">
+          {running ? t("cx.importRunning", { n: n(st?.fetched ?? 0) })
+            : st?.status === "DONE" ? t("cx.importDone", { n: n(st.imported), total: n(st.contacts) })
+            : t("cx.importHint")}
+        </p>
+      </div>
+      {st?.status === "FAILED" && <Alert tone="amber">{t(t(errKey) === errKey ? "cx.importErr.FAILED" : errKey)}{st.fetched > 0 ? ` ${t("cx.importPartial", { n: n(st.fetched) })}` : ""}</Alert>}
+      <ErrorText error={start.error} />
+    </div>
+  );
+}
 
 function PlatformCard({ plat, conn, onChanged }: { plat: Plat; conn?: Connection; onChanged: () => void }) {
   const { t, locale } = useI18n();
@@ -97,6 +135,7 @@ function PlatformCard({ plat, conn, onChanged }: { plat: Plat; conn?: Connection
       </div>
       {conn && !conn.supported && <Alert tone="blue">{t("mx.unavailable")}</Alert>}
       {conn?.status === "BLOCKED" && conn.blockedUntil && <Alert tone="amber">{t("mx.blockedUntil", { when: dateTime(conn.blockedUntil, locale) })}</Alert>}
+      {on && !ig && conn?.status === "ACTIVE" && <ImportContacts onDone={onChanged} />}
       {conn?.status === "NEEDS_LOGIN" && <Alert tone="amber">{t("error.NEEDS_LOGIN")}</Alert>}
       {showForm && (
         <form className="space-y-3" autoComplete="off" onSubmit={(e) => { e.preventDefault(); void connect.run(); }}>

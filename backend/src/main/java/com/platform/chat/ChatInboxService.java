@@ -176,7 +176,7 @@ public class ChatInboxService {
     public Map<String, Object> counts(UUID tenantId) {
         var r = jdbc.sql("SELECT count(*) FILTER (WHERE c.needs_human) AS needs_human, count(*) FILTER (WHERE " + NEEDS + ") AS needs_reply, count(*) FILTER (WHERE " + UNREAD + ") AS unread,"
                 + " count(*) FILTER (WHERE c.unhappy AND c.status = 'OPEN') AS unhappy, count(*) FILTER (WHERE " + WAITING + ") AS waiting"
-                + " FROM chat.conversations c WHERE c.tenant_id = :t AND c.channel <> 'TEST'").param("t", tenantId).query().singleRow();
+                + " FROM chat.conversations c WHERE c.tenant_id = :t AND c.channel <> 'TEST' AND (c.imported_at IS NULL OR EXISTS (SELECT 1 FROM chat.messages m WHERE m.conversation_id = c.id))").param("t", tenantId).query().singleRow();
         long comments = jdbc.sql("SELECT count(*) FROM chat.social_comments WHERE tenant_id = :t AND status = 'UNREPLIED'").param("t", tenantId).query(Long.class).single();
         Map<String, Object> m = new LinkedHashMap<>(Rows.camel(r));
         m.put("count", ((Number) r.get("needs_human")).longValue());

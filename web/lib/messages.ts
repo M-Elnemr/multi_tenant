@@ -5625,6 +5625,15 @@ const en: Record<string, string> = {
   "px.st.BLOCKED": "Blocked",
   "px.st.NOT_FOUND": "Not found",
   "px.confirmBody": "Send this message to {n} people?",
+  "cx.import": "Import my Messenger contacts",
+  "cx.importHint": "Bring in the people who already messaged your Page, so you can reach them from here.",
+  "cx.importRunning": "Importing... {n} contacts so far",
+  "cx.importDone": "Done: {n} new contacts added ({total} Messenger contacts in total).",
+  "cx.importPartial": "{n} contacts were read before it stopped.",
+  "cx.importErr.NEEDS_LOGIN": "The Messenger login expired. Connect again, then import.",
+  "cx.importErr.RATE_LIMITED": "Facebook asked to slow down. Try again later.",
+  "cx.importErr.BRIDGE_UNREACHABLE": "The sending service is not reachable right now. Try again in a moment.",
+  "cx.importErr.FAILED": "Could not import the contacts. Try again later.",
 };
 
 const ar: Record<string, string> = {
@@ -11236,6 +11245,15 @@ const ar: Record<string, string> = {
   "px.st.BLOCKED": "محظور",
   "px.st.NOT_FOUND": "مش موجود",
   "px.confirmBody": "تبعت الرسالة دي لـ{n} شخص؟",
+  "cx.import": "استورد عملاء الماسنجر بتوعي",
+  "cx.importHint": "هات الناس اللي كلمت صفحتك قبل كده عشان توصلهم من هنا.",
+  "cx.importRunning": "بنستورد... وصلنا {n} عميل لحد دلوقتي",
+  "cx.importDone": "خلصنا: اتضاف {n} عميل جديد (إجمالي عملاء الماسنجر {total}).",
+  "cx.importPartial": "اتقرا {n} عميل قبل ما يقف.",
+  "cx.importErr.NEEDS_LOGIN": "تسجيل دخول الماسنجر خلص. اربط تاني وبعدين استورد.",
+  "cx.importErr.RATE_LIMITED": "فيسبوك طلب نهدّي. جرّب تاني بعد شوية.",
+  "cx.importErr.BRIDGE_UNREACHABLE": "خدمة الإرسال مش متاحة دلوقتي. جرّب تاني كمان شوية.",
+  "cx.importErr.FAILED": "معرفناش نستورد العملاء. جرّب تاني بعدين.",
 };
 
 export const dictionaries: Record<Locale, Record<string, string>> = { en, ar };

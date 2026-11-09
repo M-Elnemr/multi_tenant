@@ -151,7 +151,7 @@ public class SegmentService {
         int sameDays = Math.max(1, pr.sameContactDays());
         for (var r : jdbc.sql(SegmentSql.BASE + """
                 SELECT cv.id AS conv_id, cv.channel, cv.external_id, cv.display_name, cv.contact_phone, cv.created_at, cv.last_customer_at, cv.window_until, cv.broadcast_opt_out_at IS NOT NULL AS stopped,
-                       (SELECT count(*) FROM (SELECT 1 FROM chat.messages m WHERE m.conversation_id = cv.id AND m.role = 'user' LIMIT 3) x) AS cust_msgs,
+                       GREATEST((SELECT count(*) FROM (SELECT 1 FROM chat.messages m WHERE m.conversation_id = cv.id AND m.role = 'user' LIMIT 3) x), (cv.imported_at IS NOT NULL)::int) AS cust_msgs,
                        (SELECT count(*) FROM (SELECT 1 FROM chat.messages m WHERE m.conversation_id = cv.id LIMIT 3) x) AS all_msgs,
                        EXISTS (SELECT 1 FROM commerce.broadcast_recipients br JOIN commerce.broadcasts bb ON bb.id = br.broadcast_id
                                 WHERE bb.tenant_id = :t AND br.route = 'MANUAL_STYLE' AND br.channel = cv.channel AND br.external_id = cv.external_id AND br.status = 'SENT'

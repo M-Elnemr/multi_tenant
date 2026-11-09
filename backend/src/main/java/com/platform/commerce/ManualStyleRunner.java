@@ -182,7 +182,7 @@ public class ManualStyleRunner {
     private String skipReason(UUID tenantId, String channel, String ext, HumanPolicy pol) {
         var c = jdbc.sql("""
                 SELECT broadcast_opt_out_at IS NOT NULL AS stopped, (last_customer_at > now() - interval '23 hours' OR window_until > now()) AS open, last_customer_at,
-                       (SELECT count(*) FROM (SELECT 1 FROM chat.messages m WHERE m.conversation_id = cv.id AND m.role = 'user' LIMIT 3) x) AS cust_msgs,
+                       GREATEST((SELECT count(*) FROM (SELECT 1 FROM chat.messages m WHERE m.conversation_id = cv.id AND m.role = 'user' LIMIT 3) x), (cv.imported_at IS NOT NULL)::int) AS cust_msgs,
                        (SELECT count(*) FROM (SELECT 1 FROM chat.messages m WHERE m.conversation_id = cv.id LIMIT 3) x) AS all_msgs,
                        EXISTS (SELECT 1 FROM commerce.broadcast_recipients br JOIN commerce.broadcasts bb ON bb.id = br.broadcast_id
                                 WHERE bb.tenant_id = :t AND br.route = 'MANUAL_STYLE' AND br.channel = cv.channel AND br.external_id = cv.external_id AND br.status = 'SENT'

@@ -27,7 +27,11 @@ public class FakeOutOfWindowSender implements OutOfWindowSender {
     /** When true this fake also stands in for the Messenger sidecar (otherwise the real FbBridgeSender, which is unconfigured in tests, serves FACEBOOK). */
     public static volatile boolean HANDLE_FB = false;
 
-    public static void reset() { SENT.clear(); LOGOUTS.clear(); LOGINS.clear(); NEXT = Kind.SENT; HEALTHY = true; LOGIN_ERROR = null; STATE = "ACTIVE"; HANDLE_FB = false; }
+    /** Pages the next listThreads calls return, in order (an empty list = no more threads); THREADS_ERROR makes every call fail with that code. */
+    public static final List<ThreadPage> THREAD_PAGES = new CopyOnWriteArrayList<>();
+    public static volatile String THREADS_ERROR = null;
+
+    public static void reset() { THREAD_PAGES.clear(); THREADS_ERROR = null; SENT.clear(); LOGOUTS.clear(); LOGINS.clear(); NEXT = Kind.SENT; HEALTHY = true; LOGIN_ERROR = null; STATE = "ACTIVE"; HANDLE_FB = false; }
 
     @Override public boolean handles(String platform) { return "INSTAGRAM".equals(platform) || (HANDLE_FB && "FACEBOOK".equals(platform)); }
 
@@ -36,6 +40,12 @@ public class FakeOutOfWindowSender implements OutOfWindowSender {
         LOGINS.add("cookies:" + pageId);
         return LOGIN_ERROR == null ? LoginResult.ok("page_" + pageId) : LoginResult.error(LOGIN_ERROR);
     }
+    @Override
+    public ThreadPage listThreads(UUID tenant, String platform, int limit, String before) {
+        if (THREADS_ERROR != null) return ThreadPage.error(THREADS_ERROR);
+        return THREAD_PAGES.isEmpty() ? ThreadPage.of(List.of(), null) : THREAD_PAGES.remove(0);
+    }
+
     @Override public boolean healthy() { return HEALTHY; }
 
     @Override

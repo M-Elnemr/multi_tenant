@@ -24,6 +24,9 @@ class FakeTransport(bridge.Transport):
         self.home_result = "ok"      # ok | none | raise | checkpoint
         self.send_result = {"success": 1, "payload": {"messageID": "m1"}}
         self.send_raise = None
+        self.pages = []              # list of node lists, one per threads() call
+        self.thread_calls = []
+        self.threads_raise = None
 
     def home(self, cookies):
         self.home_calls.append(cookies)
@@ -40,6 +43,18 @@ class FakeTransport(bridge.Transport):
             raise self.send_raise
         self.sent.append((data["FacebookID"], recipient, text))
         return self.send_result
+
+
+    def threads(self, data, before, limit):
+        self.thread_calls.append((before, limit))
+        if self.threads_raise:
+            raise self.threads_raise
+        return self.pages.pop(0) if self.pages else []
+
+
+def node(uid, ms, name="N", group=False, unread=0):
+    key = {"thread_fbid": uid} if group else {"other_user_id": uid}
+    return {"thread_key": key, "name": name, "updated_time_precise": str(ms), "unread_count": unread}
 
 
 @pytest.fixture(autouse=True)
@@ -164,3 +179,50 @@ def test_cookies_never_reach_the_log(fake, caplog):
     send()
     assert "SECRET-XS-TOKEN-9" not in caplog.text
     assert "SECRET-XS-TOKEN-9" not in repr(bridge.LoginIn(tenant=TENANT, cookies=COOKIES, page_id=PAGE))
+
+
+def threads(limit=50, before=None):
+    q = f"?limit={limit}" + (f"&before={before}" if before else "")
+    return c.get(f"/facebook/{TENANT}/threads{q}", headers=H).json()
+
+
+def test_threads_need_secret_and_session(fake):
+    assert c.get(f"/facebook/{TENANT}/threads").status_code == 401
+    assert threads() == {"ok": False, "error": "SESSION_EXPIRED"}
+
+
+def test_threads_lists_only_user_threads_and_pages(fake, monkeypatch):
+    slept = []
+    monkeypatch.setattr(bridge.time, "sleep", slept.append)
+    login()
+    full = [node(str(2000000 + i), 9000 - i) for i in range(50)]
+    full[3] = node("777777777", 8997, group=True)
+    fake.pages = [full, [node("3000001", 100, name="Ali", unread=2)]]
+    r = threads(limit=100)
+    assert r["ok"] and r["next_before"] is None
+    assert len(r["threads"]) == 50   # 49 users + 1 from page 2, group skipped
+    assert r["threads"][-1] == {"id": "3000001", "name": "Ali", "last_activity_ms": 100, "unread": 2}
+    assert "777777777" not in [t["id"] for t in r["threads"]]
+    assert fake.thread_calls[0] == (None, 50) and fake.thread_calls[1][0] == 9000 - 49
+    assert len(slept) == 1 and 1.0 <= slept[0] <= 3.0
+
+
+def test_threads_returns_next_before_when_limit_reached(fake):
+    login()
+    fake.pages = [[node(str(2000000 + i), 9000 - i) for i in range(50)]]
+    r = threads(limit=50)
+    assert r["ok"] and len(r["threads"]) == 50 and r["next_before"] == str(9000 - 49)
+
+
+def test_threads_limit_is_capped(fake):
+    login()
+    threads(limit=10**6)
+    assert fake.thread_calls[0][1] == bridge.PAGE_SIZE
+
+
+@pytest.mark.parametrize("exc,expected", [
+    (bridge.SessionExpired(), "SESSION_EXPIRED"), (bridge.RateLimited(), "RATE_LIMITED"), (bridge.Checkpoint(), "RATE_LIMITED"), (RuntimeError("x"), "FAILED")])
+def test_threads_errors_are_mapped(fake, exc, expected):
+    login()
+    fake.threads_raise = exc
+    assert threads() == {"ok": False, "error": expected}

@@ -19,8 +19,9 @@ public class UnofficialMetaController {
     }
 
     private final UnofficialMetaService service;
+    private final MessengerContactImport contacts;
 
-    public UnofficialMetaController(UnofficialMetaService service) { this.service = service; }
+    public UnofficialMetaController(UnofficialMetaService service, MessengerContactImport contacts) { this.service = service; this.contacts = contacts; }
 
     private static UUID user(Authentication a) { return (UUID) a.getPrincipal(); }
 
@@ -31,9 +32,22 @@ public class UnofficialMetaController {
     @PostMapping("/{platform}/connect")
     @PreAuthorize(MANAGE)
     public Map<String, Object> connect(@PathVariable String platform, @RequestBody ConnectReq r, Authentication a) {
-        if ("FACEBOOK".equals(UnofficialMetaService.platformOf(platform))) return service.connectCookies(StoreContext.tenantId(), user(a), platform, r.cookies(), r.pageId());
+        if ("FACEBOOK".equals(UnofficialMetaService.platformOf(platform))) {
+            var res = service.connectCookies(StoreContext.tenantId(), user(a), platform, r.cookies(), r.pageId());
+            contacts.startQuietly(StoreContext.tenantId(), "FACEBOOK");   // bring the Page's existing Messenger contacts in, in the background
+            return res;
+        }
         return service.connect(StoreContext.tenantId(), user(a), platform, r.username(), r.password(), r.totpSecret(), Boolean.TRUE.equals(r.acceptedRisk()));
     }
+
+    /** Imports the Page's existing Messenger contacts through the session (202-style: starts in the background, poll the status). */
+    @PostMapping("/{platform}/import-contacts")
+    @PreAuthorize(MANAGE)
+    public Map<String, Object> importContacts(@PathVariable String platform) { return contacts.start(StoreContext.tenantId(), platform); }
+
+    @GetMapping("/{platform}/import-contacts/status")
+    @PreAuthorize(MANAGE)
+    public Map<String, Object> importStatus(@PathVariable String platform) { return contacts.status(StoreContext.tenantId(), platform); }
 
     @DeleteMapping("/{platform}")
     @PreAuthorize(MANAGE)

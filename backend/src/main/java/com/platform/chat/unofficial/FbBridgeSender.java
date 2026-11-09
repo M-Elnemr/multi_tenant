@@ -118,6 +118,30 @@ public class FbBridgeSender implements OutOfWindowSender {
     }
 
     @Override
+    public ThreadPage listThreads(UUID tenant, String platform, int limit, String before) {
+        if (!handles(platform)) return ThreadPage.error("UNSUPPORTED");
+        String q = "?limit=" + Math.max(1, Math.min(500, limit)) + (before == null || before.isBlank() ? "" : "&before=" + java.net.URLEncoder.encode(before, java.nio.charset.StandardCharsets.UTF_8));
+        int[] st = {0};
+        JsonNode n = call("GET", "/facebook/" + tenant + "/threads" + q, null, Duration.ofSeconds(240), st);
+        if (n == null || st[0] == 401 || st[0] == 403) return ThreadPage.error("BRIDGE_UNREACHABLE");
+        if (!n.path("ok").asBoolean(false)) {
+            return ThreadPage.error(switch (n.path("error").asText("FAILED")) {
+                case "SESSION_EXPIRED" -> "NEEDS_LOGIN";
+                case "RATE_LIMITED" -> "RATE_LIMITED";
+                default -> "FAILED";
+            });
+        }
+        List<ContactThread> out = new java.util.ArrayList<>();
+        for (JsonNode t : n.path("threads")) {
+            String id = t.path("id").asText("");
+            if (id.isBlank()) continue;
+            out.add(new ContactThread(id, t.path("name").isNull() ? null : t.path("name").asText(null), t.path("last_activity_ms").asLong(0), t.path("unread").asInt(0)));
+        }
+        String next = n.path("next_before").isNull() ? null : n.path("next_before").asText(null);
+        return ThreadPage.of(out, next == null || next.isBlank() ? null : next);
+    }
+
+    @Override
     public void logout(UUID tenant, String platform) {
         if (handles(platform)) call("POST", "/sessions/logout", Map.of("tenant", tenant.toString()), Duration.ofSeconds(10), null);
     }

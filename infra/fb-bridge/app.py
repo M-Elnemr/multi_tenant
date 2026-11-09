@@ -16,6 +16,7 @@ import hmac
 import json
 import logging
 import os
+import random
 import re
 import threading
 import time
@@ -64,6 +65,10 @@ class Transport:
         """fbchat-v2's result dict: {"success": 1, ...} or {"error": 1, "payload": {"error-code":..., "error-description":...}}."""
         raise NotImplementedError
 
+    def threads(self, data: dict, before: Optional[int], limit: int) -> list:
+        """One page of inbox thread nodes (raw graphql dicts), newest first; `before` = updated_time_precise (ms) of the oldest thread of the previous page."""
+        raise NotImplementedError
+
 
 class FbchatTransport(Transport):
     def home(self, cookies: str) -> Optional[dict]:
@@ -88,6 +93,37 @@ class FbchatTransport(Transport):
             if code == 429:
                 raise RateLimited() from None
             raise RuntimeError(f"http {code}") from None
+
+
+    def threads(self, data: dict, before: Optional[int], limit: int) -> list:
+        # fbchat-v2's own list call has a fixed limit of 50 and no paging, so the same request is built here with `before`
+        import contextlib
+        import io
+
+        import httpx
+        from fbchat_v2._core._utils import formAll, mainRequests, send_request
+        from fbchat_v2._features._thread._all_thread_data import _URL, _parse_graphqlbatch_response
+        form = formAll(data, requireGraphql=False)
+        form["queries"] = json.dumps({"o0": {"doc_id": "3336396659757871", "query_params": {
+            "limit": limit, "before": before, "tags": ["INBOX"], "includeDeliveryReceipts": False, "includeSeqID": True}}}, separators=(",", ":"))
+        args = mainRequests(_URL, form, data["cookieFacebook"])
+        args["timeout"] = 60.0
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                response = send_request(args)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            code = e.response.status_code
+            if code in (401, 403):
+                raise SessionExpired() from None
+            if code == 429:
+                raise RateLimited() from None
+            raise RuntimeError(f"http {code}") from None
+        parsed = _parse_graphqlbatch_response(response.text)
+        o0 = parsed.get("o0") or {}
+        if o0.get("errors"):
+            raise RuntimeError("graphql errors")
+        return ((((o0.get("data") or {}).get("viewer") or {}).get("message_threads") or {}).get("nodes")) or []
 
 
 transport: Transport = FbchatTransport()
@@ -277,3 +313,81 @@ def send(body: SendIn):
         except Exception as e:  # noqa: BLE001
             log.warning("send failed: %s", type(e).__name__)
             return {"result": "FAILED", "detail": type(e).__name__}
+
+
+MAX_THREADS_PER_CALL = 500
+PAGE_SIZE = 50
+
+
+def _thread_row(node: dict) -> Optional[dict]:
+    """A 1:1 user thread as {id, name, last_activity_ms, unread}, or None for groups and anything without a user id."""
+    key = node.get("thread_key") or {}
+    if node.get("thread_type") == "GROUP" or key.get("thread_fbid") or node.get("is_group"):
+        return None
+    uid = str(key.get("other_user_id") or "")
+    if not RECIPIENT_RE.match(uid):
+        return None
+    try:
+        ms = int(str(node.get("updated_time_precise") or 0))
+    except ValueError:
+        ms = 0
+    try:
+        unread = int(node.get("unread_count") or 0)
+    except (TypeError, ValueError):
+        unread = 0
+    name = node.get("name")
+    if not name:
+        parts = [e.get("node", {}).get("messaging_actor", {}) for e in ((node.get("all_participants") or {}).get("edges") or [])]
+        name = next((p.get("name") for p in parts if str(p.get("id")) == uid and p.get("name")), None)
+    return {"id": uid, "name": name, "last_activity_ms": ms, "unread": unread}
+
+
+@app.get("/facebook/{tenant}/threads", dependencies=[Depends(require_secret)])
+def threads(tenant: str, limit: int = 50, before: Optional[str] = None):
+    tenant = tenant_key(tenant)
+    limit = max(1, min(int(limit), MAX_THREADS_PER_CALL))
+    cursor: Optional[int] = None
+    if before:
+        if not before.isdigit():
+            return {"ok": False, "error": "FAILED", "detail": "bad before"}
+        cursor = int(before)
+    with lock_for(tenant):
+        saved = read_session(tenant)
+        if saved is None:
+            return {"ok": False, "error": "SESSION_EXPIRED"}
+        try:
+            data = _data.get(tenant)
+            if data is None:
+                data = transport.home(saved["cookies"])
+                if not data or str(data.get("FacebookID") or "") != saved["page_id"]:
+                    return {"ok": False, "error": "SESSION_EXPIRED"}
+                _data[tenant] = data
+            rows, scanned, next_before, first = [], 0, None, True
+            while scanned < limit:
+                if not first:
+                    time.sleep(random.uniform(1.0, 3.0))
+                first = False
+                want = min(PAGE_SIZE, limit - scanned)
+                nodes = transport.threads(data, cursor, want)
+                if not nodes:
+                    next_before = None
+                    break
+                scanned += len(nodes)
+                for n in nodes:
+                    row = _thread_row(n)
+                    if row:
+                        rows.append(row)
+                oldest = min((int(str(n.get("updated_time_precise") or 0)) for n in nodes), default=0)
+                if len(nodes) < want or not oldest or oldest == cursor:
+                    next_before = None
+                    break
+                cursor = next_before = oldest
+            return {"ok": True, "threads": rows, "next_before": str(next_before) if next_before else None}
+        except SessionExpired:
+            _data.pop(tenant, None)
+            return {"ok": False, "error": "SESSION_EXPIRED"}
+        except (RateLimited, Checkpoint):
+            return {"ok": False, "error": "RATE_LIMITED"}
+        except Exception as e:  # noqa: BLE001
+            log.warning("threads failed: %s", type(e).__name__)
+            return {"ok": False, "error": "FAILED"}

@@ -30,6 +30,18 @@ public interface OutOfWindowSender {
         public static LoginResult error(String code) { return new LoginResult(false, null, code); }
     }
 
+    /** A 1:1 Messenger thread of the Page: the contact's user id, name and the time of the last activity. */
+    record ContactThread(String id, String name, long lastActivityMs, int unread) {}
+
+    /** One page of the Page's Messenger threads; {@code error}: NEEDS_LOGIN, RATE_LIMITED, BRIDGE_UNREACHABLE, UNSUPPORTED, FAILED. {@code nextBefore} null = no more. */
+    record ThreadPage(boolean ok, String error, java.util.List<ContactThread> threads, String nextBefore) {
+        public static ThreadPage of(java.util.List<ContactThread> t, String next) { return new ThreadPage(true, null, t, next); }
+        public static ThreadPage error(String code) { return new ThreadPage(false, code, java.util.List.of(), null); }
+    }
+
+    /** Lists existing contacts through the session (Messenger only). */
+    default ThreadPage listThreads(UUID tenant, String platform, int limit, String before) { return ThreadPage.error("UNSUPPORTED"); }
+
     /** True when this sender serves the platform (FACEBOOK or INSTAGRAM). */
     boolean handles(String platform);
 
