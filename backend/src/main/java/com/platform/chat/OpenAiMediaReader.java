@@ -30,16 +30,17 @@ final class OpenAiMediaReader {
 
     private final AiUsageService usage;
     private final String code, key, baseUrl, model;
-    private final boolean on;
+    private final boolean on, audio;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).followRedirects(HttpClient.Redirect.NORMAL).build();
 
-    OpenAiMediaReader(AiUsageService usage, String code, String key, String baseUrl, String model, boolean on) {
+    OpenAiMediaReader(AiUsageService usage, String code, String key, String baseUrl, String model, boolean on, boolean audio) {
         this.usage = usage;
         this.code = code;
         this.key = key == null ? "" : key.trim();
         this.baseUrl = baseUrl == null ? "" : baseUrl.trim().replaceAll("/+$", "");
         this.model = model == null ? "" : model.trim();
         this.on = on;
+        this.audio = audio;
     }
 
     boolean enabled() { return on && !key.isBlank() && !baseUrl.isBlank() && !model.isBlank(); }
@@ -48,7 +49,7 @@ final class OpenAiMediaReader {
 
     /** The chat text for the media («[صورة من العميل: …]» or «🎤 …», plus the caption), or null when this model could not read it. */
     String readText(UUID tenantId, String channel, MediaReader.Media media) {
-        if (!enabled()) return null;
+        if (!enabled() || (!audio && media.kind() == MediaReader.Kind.AUDIO)) return null;
         String caption = media.caption() == null || media.caption().isBlank() ? null : media.caption().trim();
         try {
             byte[] bytes = media.bytes().get();
@@ -65,7 +66,7 @@ final class OpenAiMediaReader {
                 String said = call(tenantId, channel, body, "image", 30, "IMAGE", null);
                 return said == null ? null : MediaReader.PHOTO + QwenMediaReader.clean(said) + "]" + (caption == null ? "" : "\n" + caption);
             }
-            if (bytes.length > QwenMediaReader.MAX_AUDIO) return null;
+            if (!audio || bytes.length > QwenMediaReader.MAX_AUDIO) return null;   // a model that takes no audio never gets a voice note
             body.put("messages", List.of(Map.of("role", "user", "content", List.of(
                     Map.of("type", "input_audio", "input_audio", Map.of("data", Base64.getEncoder().encodeToString(bytes), "format", audioFormat(mime))), Map.of("type", "text", "text", AUDIO_PROMPT)))));
             Integer secs = QwenMediaReader.oggSeconds(bytes);

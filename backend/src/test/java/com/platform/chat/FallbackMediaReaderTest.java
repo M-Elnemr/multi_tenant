@@ -52,13 +52,15 @@ class FallbackMediaReaderTest {
     private static MediaReader.Media photo(String caption) { return new MediaReader.Media(MediaReader.Kind.IMAGE, () -> new byte[]{1, 2, 3}, "image/jpeg", caption); }
 
     @Test
-    void deepSeekReadsAPhotoAndAVoiceNoteAndQwenIsNotAsked() {
+    void deepSeekReadsAPhotoAndAVoiceNoteGoesStraightToQwen() {
         String text = reader("").read(UUID.randomUUID(), "WEB", photo(null));
         assertThat(text).isEqualTo(MediaReader.PHOTO + "قميص أسود قطن]");
-        deepseekText = "عايز قميص أسود";
+        assertThat(hits).containsExactly("deepseek");
+        hits.clear();
+        // DeepSeek on Hive takes images and text only: a voice note is never sent to it (it would fail), Qwen's speech recognition reads it
         var voice = new MediaReader.Media(MediaReader.Kind.AUDIO, () -> new byte[]{1, 2, 3, 4}, "audio/webm", null);
-        assertThat(reader("").read(UUID.randomUUID(), "WEB", voice)).isEqualTo(MediaReader.VOICE + "عايز قميص أسود");
-        assertThat(hits).containsExactly("deepseek", "deepseek");
+        assertThat(reader("qwen-key").read(UUID.randomUUID(), "WEB", voice)).startsWith(MediaReader.VOICE);
+        assertThat(hits).containsExactly("qwen");
     }
 
     @Test

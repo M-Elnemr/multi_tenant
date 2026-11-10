@@ -28,7 +28,7 @@ public class FallbackMediaReader implements MediaReader {
     /** For tests: the Qwen reader is given. */
     FallbackMediaReader(AiUsageService usage, QwenMediaReader qwen, boolean on, String glmKey, String deepseekKey, String deepseekUrl, String deepseekModel) {
         this.qwen = qwen;
-        this.deepseek = new OpenAiMediaReader(usage, "deepseek", deepseekKey == null || deepseekKey.isBlank() ? glmKey : deepseekKey, deepseekUrl, deepseekModel, on);
+        this.deepseek = new OpenAiMediaReader(usage, "deepseek", deepseekKey == null || deepseekKey.isBlank() ? glmKey : deepseekKey, deepseekUrl, deepseekModel, on, false);   // DeepSeek V4.1 Flash on Hive takes images and text only: tested 2026-11-10, audio (ogg, wav, mp3) answers HTTP 500, so a voice note goes straight to Qwen
     }
 
     @Override public boolean enabled() { return deepseek.enabled() || qwen.enabled(); }
