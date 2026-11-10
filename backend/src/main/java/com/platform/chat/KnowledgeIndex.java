@@ -268,15 +268,32 @@ public class KnowledgeIndex {
      * The shop's pieces closest in meaning to the words, best first: up to {@code k}, only those near the best one and above the floor (so a question about nothing the shop has
      * returns nothing rather than the least bad match). {@code type} PRODUCT, SHOP or null for both. Empty when off or when the provider fails (the caller searches by words).
      */
-    public List<Hit> search(UUID tenantId, String query, String type, int k) {
-        if (!embedder.enabled() || query == null || query.isBlank()) return List.of();
+    public List<Hit> search(UUID tenantId, String query, String type, int k) { return searchChecked(tenantId, query, type, k).hits(); }
+
+    /** Whether search by meaning could run: UNAVAILABLE is not "nothing found" (the provider is resting, too slow or failed): the caller must not treat the empty list as the shop's answer. */
+    public enum Availability { OK, UNAVAILABLE }
+
+    public record Found(List<Hit> hits, Availability availability) {
+        public boolean unavailable() { return availability == Availability.UNAVAILABLE; }
+    }
+
+    /** True when search by meaning is set up (a key exists), even while the provider rests. */
+    public boolean configured() { return embedder.configured(); }
+
+    /** Calls, failures by kind, latency and resting of the embedding provider. */
+    public Map<String, Object> health() { return embedder.health(); }
+
+    /** {@link #search} that says whether the empty list means "nothing close" or "could not search". */
+    public Found searchChecked(UUID tenantId, String query, String type, int k) {
+        if (!embedder.configured() || query == null || query.isBlank()) return new Found(List.of(), Availability.OK);   // not in use: nothing to report
+        if (!embedder.enabled()) return new Found(List.of(), Availability.UNAVAILABLE);
         try {
             Loaded loaded = loaded(tenantId);
             List<Row> rows = loaded.rows();
-            if (rows.isEmpty()) return List.of();
+            if (rows.isEmpty()) return new Found(List.of(), Availability.OK);
             String cacheKey = tenantId + "|" + loaded.version() + "|" + type + "|" + k + "|" + FastAnswers.norm(query);
             List<Hit> cached = hitCache.get(cacheKey);
-            if (cached != null) return cached;
+            if (cached != null) return new Found(cached, Availability.OK);
             float[] q = queryVector(query);
             List<Hit> hits = new ArrayList<>();
             for (Row r : rows) {
@@ -287,7 +304,7 @@ public class KnowledgeIndex {
                 hits.add(new Hit(r.type(), r.sourceId(), r.title(), r.body(), s));
             }
             hits.sort(Comparator.comparingDouble(Hit::score).reversed());
-            if (hits.isEmpty() || hits.get(0).score() < minScore) return List.of();
+            if (hits.isEmpty() || hits.get(0).score() < minScore) return new Found(List.of(), Availability.OK);
             double floor = Math.max(minScore, hits.get(0).score() - 0.15);
             List<Hit> out = new ArrayList<>();
             Set<String> seen = new LinkedHashSet<>();
@@ -297,10 +314,10 @@ public class KnowledgeIndex {
             }
             List<Hit> result = List.copyOf(out);
             hitCache.put(cacheKey, result);
-            return result;
+            return new Found(result, Availability.OK);
         } catch (RuntimeException e) {
             log.warn("Search by meaning failed, words only: {}", e.getMessage());
-            return List.of();
+            return new Found(List.of(), Availability.UNAVAILABLE);
         }
     }
 
@@ -324,6 +341,9 @@ public class KnowledgeIndex {
     public List<String> productSlugs(UUID tenantId, String query, int k) {
         return search(tenantId, query, "PRODUCT", k).stream().map(Hit::sourceId).toList();
     }
+
+    /** The same with the availability: the products closest in meaning, or UNAVAILABLE when the search could not run. */
+    public Found productsChecked(UUID tenantId, String query, int k) { return searchChecked(tenantId, query, "PRODUCT", k); }
 
     private float[] queryVector(String query) {
         String key = FastAnswers.norm(query);

@@ -15,13 +15,16 @@ class OpenAiEmbedderTest {
     private HttpServer server;
     private volatile long delayMs = 0;
     private volatile int status = 200;
+    private volatile int failFirst = 0;   // the first N requests answer 503, then the normal status
+    private final java.util.concurrent.atomic.AtomicInteger requests = new java.util.concurrent.atomic.AtomicInteger();
 
     private OpenAiEmbedder start() throws Exception {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/v1/embeddings", ex -> {
             try { Thread.sleep(delayMs); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-            byte[] b = (status == 200 ? "{\"data\":[{\"index\":0,\"embedding\":[3,4]}]}" : "{\"error\":\"no\"}").getBytes(StandardCharsets.UTF_8);
-            ex.sendResponseHeaders(status, b.length);
+            int code = requests.incrementAndGet() <= failFirst ? 503 : status;
+            byte[] b = (code == 200 ? "{\"data\":[{\"index\":0,\"embedding\":[3,4]}]}" : "{\"error\":\"no\"}").getBytes(StandardCharsets.UTF_8);
+            ex.sendResponseHeaders(code, b.length);
             ex.getResponseBody().write(b);
             ex.close();
         });
@@ -41,13 +44,52 @@ class OpenAiEmbedderTest {
     }
 
     @Test
-    void aSlowProviderCostsOneShortWaitThenSearchesGoByWords() throws Exception {
+    void aSlowProviderCostsOneBoundedWaitAndOneFailedQueryDoesNotSwitchSearchOffForEveryone() throws Exception {
         var e = start();
         delayMs = 10_000;
         long t = System.nanoTime();
         assertThatThrownBy(() -> e.embedQuery("سماعة")).isInstanceOf(IllegalStateException.class);
-        assertThat((System.nanoTime() - t) / 1_000_000).isLessThan(OpenAiEmbedder.QUERY_TIMEOUT_MS + 1_500);
-        assertThat(e.enabled()).isFalse();   // resting: the next replies do not wait on it again
+        assertThat((System.nanoTime() - t) / 1_000_000).isLessThan(OpenAiEmbedder.QUERY_TIMEOUT_MS + 1_500);   // the retry is inside the same bounded wait
+        assertThat(e.enabled()).isTrue();   // one failed query is not an outage: the next customer is not sent to words-only search
+        assertThat(e.health()).containsEntry("failedInARow", 1).containsEntry("queriesFailed", 1L);
+    }
+
+    @Test
+    void aTransientFailureIsRetriedInsideTheSameWait() throws Exception {
+        var e = start();
+        failFirst = 1;   // the first request answers 503: the retry succeeds
+        assertThat(e.embedQuery("سماعة")).containsExactly(0.6f, 0.8f);
+        assertThat(requests.get()).isEqualTo(2);
+        assertThat(e.health()).containsEntry("recoveredByRetry", 1L).containsEntry("queriesFailed", 0L).containsEntry("failedInARow", 0);
+    }
+
+    @Test
+    void failedQueriesInARowRestSearchByMeaningAndASuccessStartsOver() throws Exception {
+        var e = start();
+        status = 503;
+        for (int i = 0; i < OpenAiEmbedder.REST_AFTER_FAILED_QUERIES - 1; i++) assertThatThrownBy(() -> e.embedQuery("سماعة")).hasMessageContaining("503");
+        assertThat(e.enabled()).isTrue();   // two in a row: still trying
+        status = 200;
+        assertThat(e.embedQuery("سماعة")).isNotNull();   // a success: the count starts over
+        assertThat(e.health()).containsEntry("failedInARow", 0);
+        status = 503;
+        for (int i = 0; i < OpenAiEmbedder.REST_AFTER_FAILED_QUERIES; i++) assertThatThrownBy(() -> e.embedQuery("سماعة")).isInstanceOf(IllegalStateException.class);
+        assertThat(e.enabled()).isFalse();   // three in a row: it rests, for everyone
+        assertThat(e.configured()).isTrue();   // but it is still set up: the seller says "unavailable" instead of hiding the tool
+        assertThat((Long) e.health().get("restingSeconds")).isGreaterThan(0L);
+        assertThat(((java.util.Map<?, ?>) e.health().get("failuresByKind")).get("http-503")).isNotNull();
+    }
+
+    @Test
+    void healthReportsLatencyAndLastError() throws Exception {
+        var e = start();
+        e.embedQuery("سماعة");
+        status = 503;
+        assertThatThrownBy(() -> e.embedQuery("سماعة")).isInstanceOf(IllegalStateException.class);
+        var h = e.health();
+        assertThat(h).containsEntry("queries", 2L).containsEntry("queriesOk", 1L).containsEntry("queriesFailed", 1L);
+        assertThat(new java.util.TreeSet<Object>(((java.util.Map<?, ?>) h.get("latencyMs")).keySet())).containsExactlyInAnyOrder("avg", "median", "p95", "max");
+        assertThat(String.valueOf(h.get("lastError"))).contains("503");
     }
 
     @Test

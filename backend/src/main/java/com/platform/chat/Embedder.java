@@ -10,6 +10,12 @@ public interface Embedder {
     /** Off when no key is configured: nothing is embedded and no search by meaning runs. */
     boolean enabled();
 
+    /** True when the service is set up (a key exists), even while it rests after failures: the seller tells the model honestly that search is unavailable instead of hiding the tool. */
+    default boolean configured() { return enabled(); }
+
+    /** What an operator needs to see: calls, failures by kind, latency, resting. */
+    default java.util.Map<String, Object> health() { return java.util.Map.of("enabled", enabled(), "configured", configured()); }
+
     /** The model's name, stored with every vector, so a change of model re-embeds everything. */
     String model();
 

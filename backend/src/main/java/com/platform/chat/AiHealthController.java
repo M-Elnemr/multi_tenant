@@ -33,11 +33,34 @@ public class AiHealthController {
         return knowledge.reindexNow(tenantId);
     }
 
+    /**
+     * Search by meaning (RAG) reliability: the embedding provider's own counters (calls, failures by kind, retries that saved a query, latency, resting) and, per day, how many replies were made
+     * while it was unavailable (the model was told, never a silent words-only search), with the shops and chats affected.
+     */
+    @GetMapping("/rag")
+    public Map<String, Object> rag(@RequestParam(defaultValue = "7") int days) {
+        int d = Math.max(1, Math.min(60, days));
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("embedder", knowledge.health());
+        out.put("byDay", com.platform.shared.Rows.camel(jdbc.sql("""
+                SELECT to_char(created_at AT TIME ZONE 'Africa/Cairo', 'YYYY-MM-DD') AS day,
+                       count(*) FILTER (WHERE kind = 'RAG_UNAVAILABLE') AS replies_without_rag, count(DISTINCT conversation_id) FILTER (WHERE kind = 'RAG_UNAVAILABLE') AS chats_affected,
+                       count(*) FILTER (WHERE kind = 'REPLY') AS replies
+                FROM chat.ai_events WHERE created_at > now() - make_interval(days => :d) GROUP BY 1 ORDER BY 1 DESC
+                """).param("d", d).query().listOfRows()));
+        out.put("recent", com.platform.shared.Rows.camel(jdbc.sql("""
+                SELECT e.created_at, t.name AS shop, e.detail, e.conversation_id FROM chat.ai_events e JOIN core.tenants t ON t.id = e.tenant_id
+                WHERE e.kind = 'RAG_UNAVAILABLE' ORDER BY e.id DESC LIMIT 20
+                """).query().listOfRows()));
+        return out;
+    }
+
     @GetMapping
     public Map<String, Object> health(@RequestParam(defaultValue = "7") int days) {
         int d = Math.max(1, Math.min(60, days));
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("days", d);
+        out.put("rag", knowledge.health());
         out.put("byDay", com.platform.shared.Rows.camel(jdbc.sql("""
                 SELECT to_char(created_at AT TIME ZONE 'Africa/Cairo', 'YYYY-MM-DD') AS day, coalesce(model, '-') AS model,
                        count(*) FILTER (WHERE kind = 'REPLY') AS replies,

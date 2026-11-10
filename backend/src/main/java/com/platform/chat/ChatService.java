@@ -120,7 +120,8 @@ public class ChatService {
     private static boolean messaging(String channel) { return "WHATSAPP".equals(channel) || "FACEBOOK".equals(channel) || "INSTAGRAM".equals(channel); }
 
     /** {@code mustSay}: a line the customer has to read whatever the model wrote (why no summary could be made, such as the minimum order). */
-    private record Ctx(UUID tenantId, UUID conversationId, String channel, String externalId, UUID clientId, long userMsgId, List<Map<String, Object>> products, Map<String, Object>[] order, String[] summary, String[] mustSay) {}
+    /** {@code ragDown[0]}: search by meaning was unavailable while this reply was made (the model was told so, an event was recorded). */
+    private record Ctx(UUID tenantId, UUID conversationId, String channel, String externalId, UUID clientId, long userMsgId, List<Map<String, Object>> products, Map<String, Object>[] order, String[] summary, String[] mustSay, boolean[] ragDown) {}
 
     private final JdbcClient jdbc;
     private final AiProvider ai;
@@ -459,7 +460,8 @@ public class ChatService {
             turns.add("user".equals(m.get("role")) ? Turn.user((String) m.get("content")) : Turn.model((String) m.get("content")));
 
         @SuppressWarnings("unchecked") Map<String, Object>[] orderBox = new Map[1];
-        Ctx ctx = new Ctx(tenantId, conv, channel, externalId, clientId, userMsgId, new ArrayList<>(), orderBox, new String[1], new String[1]);
+        boolean[] ragDown = new boolean[1];
+        Ctx ctx = new Ctx(tenantId, conv, channel, externalId, clientId, userMsgId, new ArrayList<>(), orderBox, new String[1], new String[1], ragDown);
         String system = systemPrompt(tenantId, conv, clientId, channel, externalId);
         if (!system.contains("ALL PRODUCTS (")) system += productsForMessage(tenantId, text);
         List<ToolDef> tools = tools();
@@ -519,7 +521,7 @@ public class ChatService {
             List<String> left = ctx.summary()[0] != null ? List.of() : unresolved(ctx, text, answer, turns, rounds);
             var other = left.isEmpty() || !AiBudget.hasLeft(18_000) || madeChanges(ctx, rounds) ? null : routed.secondOpinion();
             if (other != null) {
-                Ctx ctx2 = new Ctx(tenantId, conv, channel, externalId, clientId, userMsgId, new ArrayList<>(), orderBox, new String[1], new String[1]);
+                Ctx ctx2 = new Ctx(tenantId, conv, channel, externalId, clientId, userMsgId, new ArrayList<>(), orderBox, new String[1], new String[1], ragDown);
                 boolean adopted = false;
                 List<AiUsageService.Round> r2 = new ArrayList<>();
                 List<Turn> t2 = new ArrayList<>(fresh);
@@ -572,7 +574,7 @@ public class ChatService {
                 rounds.clear();
                 routed = backup;
                 turns = new ArrayList<>(fresh);
-                ctx = new Ctx(tenantId, conv, channel, externalId, clientId, userMsgId, new ArrayList<>(), orderBox, new String[1], new String[1]);
+                ctx = new Ctx(tenantId, conv, channel, externalId, clientId, userMsgId, new ArrayList<>(), orderBox, new String[1], new String[1], ragDown);
                 try {
                     answer = converse(ctx, routed, system, turns, tools, rounds, arabicChat);
                 } catch (AiProvider.AiUnavailableException e2) {
@@ -749,7 +751,8 @@ public class ChatService {
         } else turns.add(Turn.user(note));
         long lastUserMsg = jdbc.sql("SELECT coalesce(max(id), 0) FROM chat.messages WHERE conversation_id = :c AND role = 'user'").param("c", conv).query(Long.class).single();
         @SuppressWarnings("unchecked") Map<String, Object>[] orderBox = new Map[1];
-        Ctx ctx = new Ctx(tenantId, conv, channel, externalId, clientId, lastUserMsg, new ArrayList<>(), orderBox, new String[1], new String[1]);
+        boolean[] ragDown = new boolean[1];
+        Ctx ctx = new Ctx(tenantId, conv, channel, externalId, clientId, lastUserMsg, new ArrayList<>(), orderBox, new String[1], new String[1], ragDown);
         String system = systemPrompt(tenantId, conv, clientId, channel, externalId);
         List<ToolDef> tools = tools();
         List<AiUsageService.Round> rounds = new ArrayList<>();
@@ -1363,11 +1366,70 @@ public class ChatService {
         return fit.size() == 1 ? fit.get(0) : null;
     }
 
+    /**
+     * The quantity the customer stated for this product in the chat, their latest statement winning («عايز اتنين X», later «لا خليهم ٣»), or empty when they never stated one. A message
+     * counts for the product it names, or, naming none, for the one product they were last talking about; a message naming several products is left out (it cannot be told which the
+     * number is for). Read with {@link OrderQuantity}, so address and phone digits, measures and option values are never a quantity.
+     */
+    java.util.Optional<Integer> statedQuantity(List<String> customerMsgs, FactCheck.Shop view, String slug, String optionValues, String productNoun) {
+        String dual = dualOf(FastAnswers.norm(productNoun == null ? "" : productNoun));
+        String current = null;
+        java.util.Optional<Integer> stated = java.util.Optional.empty();
+        for (String m : customerMsgs) {
+            var ms = FactCheck.mentions(m, view.names());
+            Set<String> slugs = ms.stream().map(FactCheck.Mention::slug).collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+            if (slugs.size() == 1) current = slugs.iterator().next();
+            boolean applies = slugs.size() == 1 ? slugs.contains(slug) : slugs.isEmpty() && slug.equals(current);
+            if (!applies) continue;
+            var q = OrderQuantity.in(withoutNames(m, ms), optionValues, dual);
+            if (q.isPresent()) stated = q;
+        }
+        return stated;
+    }
+
+    /**
+     * The customer's messages that belong to the order being made: everything up to this message, but nothing from before the last order this chat placed (a second order must not inherit
+     * the quantity of the first).
+     */
+    private List<String> customerMsgsOfThisOrder(Ctx ctx) {
+        long boundary = jdbc.sql("SELECT coalesce(max(m.id), 0) FROM chat.messages m JOIN chat.conversations c ON c.id = m.conversation_id WHERE c.id = :c AND m.role = 'assistant' AND c.last_order IS NOT NULL AND m.content LIKE '%' || c.last_order || '%'")
+                .param("c", ctx.conversationId()).query(Long.class).single();
+        return jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u AND id > :b ORDER BY id").param("c", ctx.conversationId()).param("u", ctx.userMsgId()).param("b", boundary).query(String.class).list();
+    }
+
+    /** Every option value of a product («اللون=أسود|الطول=1 متر»), so a number in them is never read as a quantity. */
+    private String optionValuesOf(UUID tenantId, String slug) {
+        return String.join(" ", jdbc.sql("SELECT coalesce(v.combo_key, '') FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE p.tenant_id = :t AND p.slug = :s")
+                .param("t", tenantId).param("s", slug).query(String.class).list());
+    }
+
+    /**
+     * The quantity for each of several products from what the customer said about it, or null when it cannot be told: one message names several products and holds a number (which
+     * product is it for?). The model then writes that summary, with the quantity lock.
+     */
+    private Map<String, Integer> quantitiesFor(UUID tenantId, List<String> msgs, FactCheck.Shop shop, List<String> slugs) {
+        for (String m : msgs) {
+            var ms = FactCheck.mentions(m, shop.names());
+            if (ms.stream().map(FactCheck.Mention::slug).distinct().count() > 1 && OrderQuantity.in(withoutNames(m, ms), null, null).isPresent()) return null;
+        }
+        Map<String, Integer> out = new LinkedHashMap<>();
+        for (String sl : slugs) {
+            var named = shop.names().stream().filter(n -> n.slug().equals(sl)).findFirst().orElse(null);
+            out.put(sl, statedQuantity(msgs, shop, sl, optionValuesOf(tenantId, sl), named == null ? null : named.name().split(" ")[0]).orElse(1));
+        }
+        return out;
+    }
+
     private boolean orderByCode(Ctx ctx, List<String> chosen, Map<String, Object> variant, List<String> msgs, String said) {
         int quantity = 1;
         var q = PIECES.matcher(said);
         String combo = FastAnswers.norm(MoneyGuard.digits(String.valueOf(variant.get("comboKey"))));
         while (q.find()) if (!combo.contains(q.group())) { quantity = Integer.parseInt(q.group(1)); break; }   // «٦ قطع» of wings is the option, not the quantity
+        // what the customer said about THIS product in any earlier message wins over the default of one («عايز اتنين X» ... the details come messages later)
+        FactCheck.Shop view = shopView(ctx.tenantId());
+        var named = view.names().stream().filter(n -> n.slug().equals(chosen.get(0))).findFirst().orElse(null);
+        var said2 = statedQuantity(customerMsgsOfThisOrder(ctx), view, chosen.get(0), optionValuesOf(ctx.tenantId(), chosen.get(0)), named == null ? null : named.name().split(" ")[0]);
+        if (said2.isPresent()) quantity = said2.get();
         // the details: the last message that holds the mobile and the address (or «هستلم من الفرع»)
         Map<String, Object> args = detailsFrom(ctx, msgs.get(msgs.size() - 1), said);
         if (args == null) return false;
@@ -1425,18 +1487,20 @@ public class ChatService {
         return args;
     }
 
-    /** Several products named, each with every option it needs said right after its name, and the details in the last message: code makes the summary (quantity 1 each). */
+    /** Several products named, each with every option it needs said right after its name, and the details in the last message: code makes the summary (each quantity as the customer said it, 1 when they said none). */
     private boolean severalByCode(Ctx ctx, FactCheck.Shop shop, List<String> chosen) {
         List<String> msgs = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u ORDER BY id").param("c", ctx.conversationId()).param("u", ctx.userMsgId()).query(String.class).list();
         String said = FastAnswers.norm(MoneyGuard.digits(String.join(" \n ", msgs)));
         Map<String, Object> args = detailsFrom(ctx, msgs.get(msgs.size() - 1), said);
         if (args == null) return false;
         Map<String, String> own = wordsPerProduct(msgs, shop);
+        Map<String, Integer> quantities = quantitiesFor(ctx.tenantId(), customerMsgsOfThisOrder(ctx), shop, chosen);
+        if (quantities == null) return false;   // a number that may belong to either product: the model asks, then writes the summary
         List<Map<String, Object>> items = new ArrayList<>();
         for (String sl : chosen) {
             Map<String, Object> v = variantSaid(ctx.tenantId(), sl, own.getOrDefault(sl, said), null);
             if (v == null) return false;
-            items.add(obj("variantId", String.valueOf(v.get("id")), "quantity", 1));
+            items.add(obj("variantId", String.valueOf(v.get("id")), "quantity", quantities.get(sl)));
         }
         args.put("items", items);
         Map<String, Object> r;
@@ -1448,7 +1512,7 @@ public class ChatService {
 
     /**
      * The customer gave their details, was told the minimum order, and now adds a product to reach it («وضيف معاه ناجتس ٢٠ قطعة»), but no summary came: code makes it from every product
-     * they named in this chat (each with every option it needs said by them, quantity 1) and the details they gave. True when the summary was made.
+     * they named in this chat (each with every option it needs said by them, each quantity as they said it) and the details they gave. True when the summary was made.
      */
     private boolean minimumReachedByCode(Ctx ctx, String last) {
         if (!ADD_WORDS.matcher(FactCheck.light(last)).find()) return false;
@@ -1471,10 +1535,12 @@ public class ChatService {
         if (chosen.size() < 2 || chosen.size() > 5) return false;
         List<Map<String, Object>> items = new ArrayList<>();
         Map<String, String> own = wordsPerProduct(msgs, shop);
+        Map<String, Integer> quantities = quantitiesFor(ctx.tenantId(), customerMsgsOfThisOrder(ctx), shop, chosen);
+        if (quantities == null) return false;
         for (String sl : chosen) {
             Map<String, Object> v = variantSaid(ctx.tenantId(), sl, own.getOrDefault(sl, said), null);
             if (v == null) return false;   // an option still to choose: the model asks
-            items.add(obj("variantId", String.valueOf(v.get("id")), "quantity", 1));
+            items.add(obj("variantId", String.valueOf(v.get("id")), "quantity", quantities.get(sl)));
         }
         args.put("items", items);
         Map<String, Object> r;
@@ -1508,6 +1574,8 @@ public class ChatService {
 
     /** A message that may change the order just summarised: adding, removing, swapping an option or a new quantity. */
     static final Pattern ORDER_CHANGE = Pattern.compile("(?<!\\p{L})(?:و)?(?:خليها|خليه|خليهم|خلي|غير|غيرها|غيره|بدل|شيل|شيلها|شيله|امسح|الغي|زود|ضيف|ضيفي|ضيفلي|ضيفلى|كمان|معاه|معاها|نقص|قلل|عايزها|عايزه|عايزهم|اتنين|تلاته|اربعه|قطعتين|حتتين|منهم|add|remove|instead|make\\s+it)(?!\\p{L})|(?<![\\d.])\\d{1,2}(?![\\d.])");
+    /** The customer's newest message drops an item or lowers the number («بلاش التاني», «مش عايز اتنين», «شيل واحد»). */
+    static final Pattern DROP_WORDS = Pattern.compile("(?<!\\p{L})(?:بلاش|مش\\s+عايز|مش\\s+عاوز|شيل|شيلها|الغي|امسح|ماعدش|بدون)(?!\\p{L})");
     private static final Pattern REMOVE_WORDS = Pattern.compile("(?<!\\p{L})(?:و)?(?:شيل|شيلها|شيله|امسح|امسحها|الغي|مش\\s+عايز|من\\s+غير|remove)(?!\\p{L})");
     private static final Pattern KEEP_WORDS = Pattern.compile("(?<!\\p{L})(?:و)?(?:خلي|سيب|بس|keep)(?!\\p{L})");
     private static final Pattern ADD_WORDS = Pattern.compile("(?<!\\p{L})(?:و)?(?:ضيف|ضيفي|ضيفلي|ضيفلى|زود|كمان|معاه|معاها|add|also)(?!\\p{L})");
@@ -2956,8 +3024,11 @@ public class ChatService {
     private static Map<String, Object> num(String d) { return obj("type", "NUMBER", "description", d); }
 
     private List<ToolDef> tools() {
-        Map<String, Object> item = obj("type", "OBJECT", "properties", obj("variantId", str("Variant id from get_product"), "quantity", num("How many"),
-                "note", str("The customer's request on this item, in their words («بدون بصل», «حار», «مقاس واسع شوية»); omit when none")), "required", List.of("variantId", "quantity"));
+        Map<String, Object> item = obj("type", "OBJECT", "properties", obj("variantId", str("Variant id from search_products or get_product of THIS turn; leave it out when you do not have it and give slug and options instead"),
+                "slug", str("The product's slug from the product list or search_products (instead of variantId)"),
+                "options", obj("type", "OBJECT", "description", "The options the customer chose, option name to value, e.g. {\"اللون\": \"أسود\", \"المقاس\": \"L\"}; leave out for a product with one version"),
+                "quantity", num("How many"),
+                "note", str("The customer's request on this item, in their words («بدون بصل», «حار», «مقاس واسع شوية»); omit when none")), "required", List.of("quantity"));
         List<ToolDef> base = List.of(
                 new ToolDef("search_products", "Search the shop's products by words (Arabic or English). Leave query empty to see popular products. Each hit lists its variants (id, options such as size and color, price, availability).",
                         obj("type", "OBJECT", "properties", obj("query", str("What the customer wants"), "maxPrice", num("Maximum price in the shop currency, optional"),
@@ -2969,7 +3040,7 @@ public class ChatService {
                         obj("type", "OBJECT", "properties", obj("slugs", obj("type", "ARRAY", "description", "Product slugs", "items", obj("type", "STRING")), "query", str("Words to find the product when you have no slug, e.g. \"black dress\"")))),
                 new ToolDef("prepare_order", "Validate the order and get the summary to show the customer (always the COMPLETE list of everything they want in this order). Does NOT create the order. Also used to change a placed order that is still changeable (changeOrder).",
                         obj("type", "OBJECT", "properties", obj(
-                                "items", obj("type", "ARRAY", "description", "Chosen variants", "items", item),
+                                "items", obj("type", "ARRAY", "description", "Chosen items: each by variantId (this turn's tool result) or, without an id, by slug + options", "items", item),
                                 "customerName", str("Customer full name"), "phone", str("Customer mobile number"),
                                 "governorateCode", str("Governorate code from the SHOP FACTS list (omit for pickup)"),
                                 "addressLine1", str("Street, building, floor, apartment"), "area", str("City or district"), "landmark", str("Nearby landmark, optional"),
@@ -2993,7 +3064,7 @@ public class ChatService {
                                 "noReason", obj("type", "BOOLEAN", "description", "true only when the customer did not want to give a reason"))))
         );
         List<ToolDef> all = new ArrayList<>(base);
-        if (knowledge.enabled())
+        if (knowledge.configured())   // also while the provider rests: the tool then says so, instead of vanishing and leaving the model to guess
             all.add(new ToolDef("shop_knowledge", "Look up, by meaning, what this shop's own data says: product descriptions, specs, materials, compatibility, size guides, and the shop's policies, branches and announcement. "
                     + "Use it for a question about a product's details or the shop («الشاحن ده بيشحن آيفون؟», «القماش بيكش؟», «سياسة الاسترجاع ايه؟», «هدية لواحد بيحب الجري»). It returns the closest passages with their source: "
                     + "state product facts only from them (or from get_product); prices and stock always come from search_products / get_product, never from these passages.",
@@ -3028,7 +3099,7 @@ public class ChatService {
     private Map<String, Object> runTool(Ctx ctx, ToolCall c) {
         try {
             return switch (c.name()) {
-                case "search_products" -> searchProducts(ctx, c.args());
+                case "search_products" -> withRagNote(ctx, searchProducts(ctx, c.args()));
                 case "get_product" -> getProduct(ctx, c.args());
                 case "shop_knowledge" -> shopKnowledge(ctx, c.args());
                 case "show_products" -> showProducts(ctx, c.args());
@@ -3107,8 +3178,10 @@ public class ChatService {
         // search by meaning (RAG): «سماعة للجري» is the sport neckband, «حاجة شيك لخطوبة» the evening dresses, «جاكت» the «جاكيت». Merged with the word search by rank, so an exact
         // name stays on top and a product the words missed still comes, under the same filters (price, who it is for)
         boolean byMeaningOnly = false;
-        if (q != null && onSale == null && knowledge.enabled()) {
-            List<String> meant = knowledge.productSlugs(ctx.tenantId(), q, 6);
+        if (q != null && onSale == null && knowledge.configured()) {
+            var foundByMeaning = knowledge.productsChecked(ctx.tenantId(), q, 6);
+            if (foundByMeaning.unavailable()) markRagDown(ctx, "search_products");   // the model is told in the result, an event is recorded: never a silent words-only search
+            List<String> meant = foundByMeaning.hits().stream().map(h -> h.sourceId()).toList();
             if (!meant.isEmpty()) {
                 byMeaningOnly = rows.isEmpty();
                 rows = byRank(rows, meantRows(ctx.tenantId(), meant, max, aud), 6);
@@ -3420,11 +3493,42 @@ public class ChatService {
 
     @SuppressWarnings("unchecked")
     /** The passages of the shop's own data closest in meaning to the question (RAG): products with their details, and shop texts. No prices or stock in them. */
+    static final String RAG_UNAVAILABLE_NOTE = "The shop's knowledge search is temporarily unavailable, so you do NOT know what the shop's own data says about this question. Never answer product or shop facts from memory "
+            + "or guess. For prices, stock, options and a product's listed details use search_products / get_product; if that does not answer it, tell the customer kindly that you cannot confirm it right now "
+            + "and call flag_unanswered so the team answers.";
+    static final String RAG_EMPTY_NOTE = "Search by meaning is temporarily unavailable, so this empty result is NOT proof that the shop lacks the item: never tell the customer we do not have it. Say you could not "
+            + "search properly right now, ask them to describe what they want in other words, and call flag_unanswered if they need an answer now.";
+    static final String RAG_PARTIAL_NOTE = "(Search by meaning is temporarily unavailable: these are word matches only and may miss other products; do not claim that nothing else exists.)";
+
+    /** The reply made while search by meaning was down: one event for the health page, once per reply. */
+    private void markRagDown(Ctx ctx, String where) {
+        if (ctx.ragDown()[0]) return;
+        ctx.ragDown()[0] = true;
+        String err = String.valueOf(knowledge.health().get("lastError"));
+        events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), null, "RAG_UNAVAILABLE", where + ": " + (err.length() > 160 ? err.substring(0, 160) : err), null);
+    }
+
+    /** A search result from a reply in which search by meaning was down says so, and an empty one is never "we do not have it". */
+    private Map<String, Object> withRagNote(Ctx ctx, Map<String, Object> r) {
+        if (!ctx.ragDown()[0] || r == null || r.get("error") != null) return r;
+        Map<String, Object> out = new LinkedHashMap<>(r);
+        out.put("searchByMeaning", "UNAVAILABLE");
+        boolean none = r.get("products") instanceof List<?> l && l.isEmpty();
+        String base = r.get("note") == null ? "" : String.valueOf(r.get("note"));
+        out.put("note", none ? RAG_EMPTY_NOTE : (base.isBlank() ? "" : base + " ") + RAG_PARTIAL_NOTE);
+        return out;
+    }
+
     private Map<String, Object> shopKnowledge(Ctx ctx, Map<String, Object> a) {
         String q = a.get("question") == null ? "" : String.valueOf(a.get("question")).trim();
         if (q.isEmpty()) return obj("error", "Give the customer's question");
         List<Map<String, Object>> out = new ArrayList<>();
-        for (var h : knowledge.search(ctx.tenantId(), q, null, 5)) {
+        var foundByMeaning = knowledge.searchChecked(ctx.tenantId(), q, null, 5);
+        if (foundByMeaning.unavailable()) {   // not "the shop's data says nothing": the shop's data could not be searched
+            markRagDown(ctx, "shop_knowledge");
+            return obj("unavailable", true, "passages", List.of(), "note", RAG_UNAVAILABLE_NOTE);
+        }
+        for (var h : foundByMeaning.hits()) {
             Map<String, Object> m = obj("source", "PRODUCT".equals(h.type()) ? "product" : "shop", "title", h.title(), "text", clip(h.body(), 900));
             if ("PRODUCT".equals(h.type())) m.put("slug", h.sourceId());
             out.add(m);
@@ -3466,15 +3570,67 @@ public class ChatService {
         return hits.size() == 1 ? hits.get(0) : null;
     }
 
+    /**
+     * The one active variant of this shop's product (by slug) that has exactly the options given (option name to value; names and values compared the way the shop compares words), or null
+     * with {@code why[0]} saying what is wrong and what the real choices are. A product with one version needs no options. The options only NAME the variant: prepare_order still
+     * requires that the customer said each option themselves.
+     */
+    private UUID variantByOptions(UUID tenantId, String slug, Map<String, Object> given, String[] why) {
+        var rows = jdbc.sql("SELECT v.id, v.combo_key, p.name FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE p.tenant_id = :t AND p.slug = :s AND v.status = 'ACTIVE' ORDER BY v.combo_key")
+                .param("t", tenantId).param("s", slug).query().listOfRows();
+        if (rows.isEmpty()) { why[0] = "No product has the slug «" + slug + "»: copy it exactly from the product list or from search_products."; return null; }
+        String name = String.valueOf(rows.get(0).get("name"));
+        List<Map<String, String>> combos = new ArrayList<>();
+        Map<String, Set<String>> choices = new LinkedHashMap<>();   // option name -> its values
+        for (var r : rows) {
+            Map<String, String> opts = new LinkedHashMap<>();
+            for (String kv : String.valueOf(r.get("combo_key") == null ? "" : r.get("combo_key")).split("\\|"))
+                if (kv.contains("=")) { opts.put(kv.substring(0, kv.indexOf('=')), kv.substring(kv.indexOf('=') + 1)); choices.computeIfAbsent(kv.substring(0, kv.indexOf('=')), k -> new java.util.LinkedHashSet<>()).add(kv.substring(kv.indexOf('=') + 1)); }
+            combos.add(opts);
+        }
+        // the options the model named, matched to the product's own option names and values
+        Map<String, String> want = new LinkedHashMap<>();
+        for (var e : given.entrySet()) {
+            String optName = null;
+            for (String known : choices.keySet()) if (FastAnswers.norm(known).equals(FastAnswers.norm(e.getKey())) || FastAnswers.norm(known).contains(FastAnswers.norm(e.getKey())) && !FastAnswers.norm(e.getKey()).isBlank()) { optName = known; break; }
+            String val = null;
+            String wanted = FastAnswers.norm(MoneyGuard.digits(String.valueOf(e.getValue())));
+            if (optName != null) for (String v : choices.get(optName)) if (FastAnswers.norm(MoneyGuard.digits(v)).equals(wanted)) { val = v; break; }
+            if (optName == null || val == null) {
+                why[0] = "«" + name + "» has no " + (optName == null ? "option «" + e.getKey() + "»" : "«" + e.getValue() + "» for " + optName) + ". Its options: " + describeChoices(choices) + ". Use only these (what the customer chose).";
+                return null;
+            }
+            want.put(optName, val);
+        }
+        List<Integer> fit = new ArrayList<>();
+        for (int i = 0; i < combos.size(); i++) {
+            Map<String, String> c = combos.get(i);
+            if (want.entrySet().stream().allMatch(e -> e.getValue().equals(c.get(e.getKey())))) fit.add(i);
+        }
+        if (fit.size() == 1) return (UUID) rows.get(fit.get(0)).get("id");
+        Map<String, Set<String>> open = new LinkedHashMap<>();   // the options that still decide between the variants that fit
+        for (int i : fit) combos.get(i).forEach((k, v) -> { if (!want.containsKey(k)) open.computeIfAbsent(k, x -> new java.util.LinkedHashSet<>()).add(v); });
+        open.values().removeIf(v -> v.size() < 2);
+        why[0] = fit.isEmpty() ? "«" + name + "» has no version with " + want + ". Its options: " + describeChoices(choices) + "."
+                : "«" + name + "» comes in more than one version: also give " + describeChoices(open) + " (what the customer chose; ask them if they have not said).";
+        return null;
+    }
+
+    private static String describeChoices(Map<String, Set<String>> choices) {
+        return String.join("; ", choices.entrySet().stream().map(e -> e.getKey() + ": " + String.join(" / ", e.getValue())).toList());
+    }
+
     private Map<String, Object> prepareOrder(Ctx ctx, Map<String, Object> a) {
         UUID tenantId = ctx.tenantId();
         List<CheckoutService.Item> items = new ArrayList<>();
         if (!(a.get("items") instanceof List<?> l) || l.isEmpty()) return obj("error", "Choose at least one item (variantId and quantity)");
         for (Object o : l) {
             Map<String, Object> m = (Map<String, Object>) o;
-            UUID vid;
-            vid = variantRef(tenantId, m.get("variantId"));
-            if (vid == null) return obj("error", "Invalid variantId" + realVariantIds(ctx));
+            UUID vid = variantRef(tenantId, m.get("variantId"));
+            // the model has the slug and the options from the prompt, but the variant id only from a search of THIS turn (the history it gets is text): so an item may be named by slug + options
+            String[] why = new String[1];
+            if (vid == null && m.get("slug") != null) vid = variantByOptions(tenantId, String.valueOf(m.get("slug")).trim(), m.get("options") instanceof Map<?, ?> om ? (Map<String, Object>) om : Map.of(), why);
+            if (vid == null) return obj("error", why[0] != null ? why[0] : "Invalid variantId" + realVariantIds(ctx));
             int q = m.get("quantity") instanceof Number n ? n.intValue() : 1;
             if (q < 1 || q > 50) return obj("error", "Quantity must be between 1 and 50");
             items.add(new CheckoutService.Item(vid, q, m.get("note") == null ? null : String.valueOf(m.get("note"))));
@@ -3483,6 +3639,7 @@ public class ChatService {
         // Western digits first: «١٢٨ جيجا» is the option «128 جيجا»
         List<String> customerMsgs = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u ORDER BY id").param("c", ctx.conversationId()).param("u", ctx.userMsgId()).query(String.class).list();
         String saidWords = FastAnswers.norm(MoneyGuard.digits(String.join(" ", customerMsgs)));
+        List<String> orderMsgs = customerMsgsOfThisOrder(ctx);   // this order's messages only (nothing from before the chat's last placed order)
         // the product the customer named, not one whose name is inside it («زينترا بوك 14» is not «زينترا بوك 14 أوبن بوكس»), and the options they said, not others
         FactCheck.Shop view = shopView(tenantId);
         List<String> named = chosenInChat(ctx, view);
@@ -3501,6 +3658,16 @@ public class ChatService {
             List<String> changed = contradictedOptions(it.variantId(), itemWords, withoutProductNames(itemWords, view));
             if (!changed.isEmpty())
                 return obj("error", "Wrong option for " + variantNames(List.of(it.variantId())) + ": " + String.join("; ", changed) + ". Use the variant with what the customer said; if that one cannot be ordered (sold out, minimum order), tell them and ask, never pick another option for them.");
+            // the other direction: a quantity the customer stated for this product (their latest word on it) is not lowered by the model, whatever it "remembers". It may be, openly, when the
+            // customer's newest message itself changes the quantity or drops an item (quantityConfirmed=true; recorded as an event), never because the model decided so.
+            var stated = statedQuantity(orderMsgs, view, slug, optionValuesOf(tenantId, slug), String.valueOf(row.get("name")).split(" ")[0]);
+            if (stated.isPresent() && it.quantity() < stated.get()) {
+                String newest = orderMsgs.isEmpty() ? "" : orderMsgs.get(orderMsgs.size() - 1);
+                boolean customerChangesNow = DROP_WORDS.matcher(FastAnswers.norm(newest)).find();
+                if (Boolean.TRUE.equals(a.get("quantityConfirmed")) && customerChangesNow) events.record(tenantId, ctx.conversationId(), ctx.channel(), null, "QUANTITY_LOWERED", variantNames(List.of(it.variantId())) + ": " + stated.get() + " -> " + it.quantity(), null);
+                else return obj("error", "The customer asked for " + stated.get() + " of " + variantNames(List.of(it.variantId())) + " and has not changed that: use quantity " + stated.get() + ". If their newest message drops an item or lowers the number, "
+                        + "pass quantityConfirmed=true with the number they said now.");
+            }
             // a quantity is the customer's: 2 nuggets to reach the minimum order is the model's choice, not theirs
             if (it.quantity() > 1 && !quantityFromCustomer(it.quantity(), saidWords, withName(comboValues(it.variantId()), name), dualOf(name.split(" ")[0])))
                 return obj("error", "The customer never asked for " + it.quantity() + " of " + variantNames(List.of(it.variantId())) + ": use the quantity they said (1 when they said none). "
@@ -3745,14 +3912,14 @@ public class ChatService {
     /** The real variant ids of the products the customer named in this chat («: use one of these: … = id»), so a made-up id is put right in the next call instead of costing a get_product round. */
     private String realVariantIds(Ctx ctx) {
         List<String> slugs = chosenInChat(ctx, shopView(ctx.tenantId()));
-        if (slugs.isEmpty()) return ": use get_product to get it";
+        if (slugs.isEmpty()) return ": use get_product to get it, or name the item by its slug and options";
         List<String> rows = new ArrayList<>();
         for (var r : jdbc.sql("SELECT v.id, p.name, v.combo_key FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE p.tenant_id = :t AND p.slug IN (:s) AND v.status = 'ACTIVE' ORDER BY p.name, v.combo_key LIMIT 24")
                 .param("t", ctx.tenantId()).param("s", slugs).query().listOfRows()) {
             String key = r.get("combo_key") == null || "default".equals(r.get("combo_key")) ? "" : " (" + String.valueOf(r.get("combo_key")).replace("|", ", ").replace("=", ": ") + ")";
             rows.add(r.get("name") + key + " = " + r.get("id"));
         }
-        return rows.isEmpty() ? ": use get_product to get it" : ". Copy the id exactly from this list (the variant with the options the customer said): " + String.join("; ", rows);
+        return rows.isEmpty() ? ": use get_product to get it, or name the item by its slug and options" : ". Name the item by slug + options, or copy the id exactly from this list (the variant with the options the customer said): " + String.join("; ", rows);
     }
 
     /** «٦ قطع» is an option of a product here (a box of six), not six pieces: some option value of the shop starts with this number. */
@@ -3795,7 +3962,7 @@ public class ChatService {
         return out;
     }
 
-    private static final Pattern ADDRESS_NUMBER = Pattern.compile("(?<!\\p{L})(?:عماره|عمارة|شقه|شقة|شارع|ش|الدور|دور|برج|بلوك|مبني|منزل|بيت|رقم|مربع|قطعه رقم|كيلو|km)\\s*\\d+", Pattern.CASE_INSENSITIVE);
+    static final Pattern ADDRESS_NUMBER = Pattern.compile("(?<!\\p{L})(?:عماره|عمارة|شقه|شقة|شارع|ش|الدور|دور|برج|بلوك|مبني|منزل|بيت|رقم|مربع|قطعه رقم|كيلو|km)\\s*\\d+", Pattern.CASE_INSENSITIVE);
     private static final Pattern MORE_WORDS = Pattern.compile("(?<!\\p{L})(?:كمان|زود|زوود|زياده|زيادة|تاني|تانيه|كده|كدا|more|another|extra)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
 
     /**

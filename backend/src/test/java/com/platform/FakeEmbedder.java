@@ -14,8 +14,18 @@ import org.springframework.stereotype.Component;
 public class FakeEmbedder implements Embedder {
     public static volatile boolean on = false;
     public static volatile int calls = 0;
+    /** The provider is set up but resting after failures (enabled() false, configured() true), or its queries fail (slow, unreachable). */
+    public static volatile boolean resting = false, failQueries = false;
 
-    @Override public boolean enabled() { return on; }
+    @Override public boolean enabled() { return on && !resting; }
+
+    @Override public boolean configured() { return on; }
+
+    @Override
+    public float[] embedQuery(String text) {
+        if (failQueries) throw new IllegalStateException("Embeddings slow or unreachable: HTTP connect timed out");
+        return embed(List.of(text))[0];
+    }
 
     @Override public String model() { return "fake-trigram@256"; }
 

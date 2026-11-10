@@ -43,12 +43,15 @@ public class OpsWatchService {
         if (outbox > 500) problems.add("NOTIFICATIONS_BACKLOG:" + outbox);
         // the AI seller over the last 30 minutes: failures, switches to the backup model, and slow replies
         var ai = jdbc.sql("""
-                SELECT count(*) FILTER (WHERE kind = 'REPLY') AS replies, count(*) FILTER (WHERE kind IN ('ERROR', 'FALLBACK')) AS bad,
+                SELECT count(*) FILTER (WHERE kind = 'REPLY') AS replies, count(*) FILTER (WHERE kind IN ('ERROR', 'FALLBACK')) AS bad, count(*) FILTER (WHERE kind = 'RAG_UNAVAILABLE') AS rag,
                        coalesce(percentile_cont(0.9) WITHIN GROUP (ORDER BY ms) FILTER (WHERE kind = 'REPLY'), 0) AS p90
                 FROM chat.ai_events WHERE created_at > now() - interval '30 minutes'
                 """).query().singleRow();
         long replies = ((Number) ai.get("replies")).longValue(), bad = ((Number) ai.get("bad")).longValue();
         if (replies >= 10 && bad * 10 > replies) problems.add("AI_FAILING:" + bad + "/" + replies);
+        // search by meaning (RAG) down in more than one reply in ten: the seller is working without the shop's knowledge, and says so to the customer
+        long rag = ((Number) ai.get("rag")).longValue();
+        if (replies >= 10 && rag * 10 > replies) problems.add("RAG_DEGRADED:" + rag + "/" + replies);
         if (replies >= 10 && ((Number) ai.get("p90")).doubleValue() > 25_000) problems.add("AI_SLOW:p90 " + Math.round(((Number) ai.get("p90")).doubleValue() / 1000) + "s");
         // the nightly backup (infra/scripts/backup.sh records each run): none for more than a day once backups have started
         var backup = jdbc.sql("SELECT count(*) AS runs, max(created_at) FILTER (WHERE ok AND kind = 'BACKUP') > now() - interval '26 hours' AS fresh FROM ops.backup_runs").query().singleRow();
