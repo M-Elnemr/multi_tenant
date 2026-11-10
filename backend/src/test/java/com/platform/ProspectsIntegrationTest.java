@@ -367,7 +367,7 @@ class ProspectsIntegrationTest extends IntegrationTestBase {
         assertThat(wallet.balance(s.id())).isEqualTo(960L);   // 0.1 EGP per message, four messages
         var sent = FakeOutOfWindowSender.SENT.get(0);
         assertThat(sent.platform()).isEqualTo("FACEBOOK");
-        assertThat(sent.ref()).matches("666000\\d");   // the numeric Facebook user id of the follower
+        assertThat(sent.ref()).matches("(5550001|666000\\d)");   // the numeric Facebook user id of one of the four followers (the send order is not promised)
         assertThat(sent.text()).contains("STOP");
         assertThat(jdbc.sql("SELECT count(*) FROM commerce.prospects WHERE tenant_id = :t AND platform = 'FACEBOOK' AND status = 'CONTACTED'").param("t", s.id()).query(Long.class).single()).isEqualTo(4L);
     }
