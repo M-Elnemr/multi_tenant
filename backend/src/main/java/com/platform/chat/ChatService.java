@@ -289,7 +289,7 @@ public class ChatService {
     // ---- training room (platform admin) ------------------------------------------------------------------------
 
     /** The models a trainer may talk to; "default" is the channel's normal one. */
-    public static final java.util.Set<String> TRAIN_MODELS = java.util.Set.of("default", "anthropic", "glm", "qwen");
+    public static final java.util.Set<String> TRAIN_MODELS = java.util.Set.of("default", "anthropic", "glm", "qwen", "deepseek");
 
     /** Shops (stores) the admin can chat as, newest first. */
     public List<Map<String, Object>> trainShops() {
@@ -302,6 +302,18 @@ public class ChatService {
         if (!TRAIN_MODELS.contains(m)) throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown model");
         UUID conv = conversation(tenantId, "TEST", externalId, null);
         jdbc.sql("UPDATE chat.conversations SET ai_model = :m WHERE id = :c").param("m", "default".equals(m) ? null : m).param("c", conv).update();
+    }
+
+    /** The models a website visitor may pick in the chat's test dropdown (temporary: lets a visitor compare models). */
+    public static final java.util.Set<String> WEB_MODELS = TRAIN_MODELS;
+
+    /** The website visitor's pick (null, "" or "default" = the normal model); an unknown value is ignored. Stored on the conversation like a typed model command. */
+    public void setWebModel(UUID tenantId, String externalId, UUID clientId, String model) {
+        if (model == null) return;
+        String m = model.isBlank() ? "default" : model.trim().toLowerCase(java.util.Locale.ROOT);
+        if (!WEB_MODELS.contains(m)) return;
+        UUID conv = conversation(tenantId, "WEB", externalId, clientId);
+        jdbc.sql("UPDATE chat.conversations SET ai_model = :m WHERE id = :c AND ai_model IS DISTINCT FROM :m").param("m", "default".equals(m) ? null : m).param("c", conv).update();
     }
 
     public String testModel(UUID tenantId, String externalId) {
@@ -480,7 +492,7 @@ public class ChatService {
             return new Reply(conv, answer, null, ctx.products());
         }
         List<AiUsageService.Round> rounds = new ArrayList<>();
-        var routed = channelAi.forChannel(channel, nameProbe || "TEST".equals(channel) ? chosenModel(conv) : null);
+        var routed = channelAi.forChannel(channel, nameProbe || "TEST".equals(channel) || "WEB".equals(channel) ? chosenModel(conv) : null);
         boolean arabicChat = arabicConversation(conv);
         long started = System.nanoTime();
         List<Turn> fresh = new ArrayList<>(turns);   // the reply as it was before any model call, for a restart on the other model
@@ -723,7 +735,7 @@ public class ChatService {
         String system = systemPrompt(tenantId, conv, clientId, channel, externalId);
         List<ToolDef> tools = tools();
         List<AiUsageService.Round> rounds = new ArrayList<>();
-        var routed = channelAi.forChannel(channel, nameProbe || "TEST".equals(channel) ? chosenModel(conv) : null);
+        var routed = channelAi.forChannel(channel, nameProbe || "TEST".equals(channel) || "WEB".equals(channel) ? chosenModel(conv) : null);
         String answer = null;
         try {
             answer = converse(ctx, routed, system, turns, tools, rounds, question.codePoints().anyMatch(cp -> cp >= 0x0600 && cp <= 0x06FF));

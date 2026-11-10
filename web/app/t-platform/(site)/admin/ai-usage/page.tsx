@@ -7,8 +7,8 @@ import { AreaChart, Badge, Button, Card, Empty, ErrorText, Input, Loading, Modal
 
 type Sums = { requests: number; instant: number; modelCalls: number; input: number; output: number; cached: number; cacheWrite: number; costUsd: number; fallbacks: number };
 type Price = { input: number; output: number; cached: number; cacheWrite: number };
-type ModelKey = "all" | "glm" | "qwen" | "anthropic";
-const MODELS: { key: Exclude<ModelKey, "all">; label: string }[] = [{ key: "glm", label: "GLM" }, { key: "qwen", label: "Qwen" }, { key: "anthropic", label: "Claude" }];
+type ModelKey = "all" | "glm" | "qwen" | "anthropic" | "deepseek";
+const MODELS: { key: Exclude<ModelKey, "all">; label: string }[] = [{ key: "glm", label: "GLM" }, { key: "qwen", label: "Qwen" }, { key: "anthropic", label: "Claude" }, { key: "deepseek", label: "DeepSeek" }];
 type Prices = { provider: string; models: Record<string, Price> };
 type Shop = Sums & { tenantId: string | null; name: string; conversations: number; images?: number; voiceNotes?: number; voiceSeconds?: number; mediaCostUsd?: number };
 type MediaSums = { images: number; voiceNotes: number; voiceSeconds: number; imageCostUsd: number; voiceCostUsd: number; costUsd: number };

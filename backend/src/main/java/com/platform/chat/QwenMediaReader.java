@@ -14,14 +14,12 @@ import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
 
 /**
  * Reads photos with the Qwen chat model itself (Qwen 3.5+ sees images; thinking off it answers in about 3 s for about 2,500 tokens) and voice notes with Qwen's speech
  * recognition, on the same Alibaba key and workspace as the chat. Each read is logged as feature MEDIA, so its cost shows on the usage pages.
  */
-@Component
+/** Built by {@link FallbackMediaReader} (the one {@link MediaReader} bean), as its last resort. */
 public class QwenMediaReader implements MediaReader {
     private static final Logger log = LoggerFactory.getLogger(QwenMediaReader.class);
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -38,10 +36,7 @@ public class QwenMediaReader implements MediaReader {
     private final boolean on;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).followRedirects(HttpClient.Redirect.NORMAL).build();
 
-    public QwenMediaReader(AiUsageService usage, @Value("${app.ai.qwen.api-key:}") String key,
-                           @Value("${app.ai.qwen.base-url:https://dashscope-intl.aliyuncs.com/compatible-mode/v1}") String baseUrl,
-                           @Value("${app.ai.media.enabled:true}") boolean on, @Value("${app.ai.media.vision-model:qwen3.7-flash}") String visionModel,
-                           @Value("${app.ai.media.asr-model:qwen3-asr-flash}") String asrModel) {
+    public QwenMediaReader(AiUsageService usage, String key, String baseUrl, boolean on, String visionModel, String asrModel) {
         this.usage = usage;
         this.key = key == null ? "" : key.trim();
         this.baseUrl = baseUrl == null ? "" : baseUrl.trim().replaceAll("/+$", "");

@@ -19,7 +19,7 @@ public class ChannelAi {
     private static final List<String> SOCIAL = List.of("WHATSAPP", "FACEBOOK", "INSTAGRAM");
 
     private final AiProvider defaultAi;
-    private final AiProvider claude, glm, qwen;
+    private final AiProvider claude, glm, qwen, deepseek;
     private final String social, web;
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -32,9 +32,13 @@ public class ChannelAi {
                      @Value("${app.ai.qwen.api-key:}") String qwenKey, @Value("${app.ai.qwen.model:qwen3.7-flash}") String qwenModel,
                      @Value("${app.ai.qwen.base-url:https://dashscope-intl.aliyuncs.com/compatible-mode/v1}") String qwenUrl, @Value("${app.ai.qwen.thinking:off}") String qwenThinking,
                      @Value("${app.ai.glm.temperature:}") String glmTemperature, @Value("${app.ai.qwen.temperature:}") String qwenTemperature,
-                     @Value("${app.ai.glm.max-rps:5}") int glmRps, @Value("${app.ai.qwen.max-rps:0}") int qwenRps) {
+                     @Value("${app.ai.glm.max-rps:5}") int glmRps, @Value("${app.ai.qwen.max-rps:0}") int qwenRps,
+                     @Value("${app.ai.deepseek.api-key:}") String deepseekKey, @Value("${app.ai.deepseek.model:deepseek-ai/deepseek-v4.1-flash-1017}") String deepseekModel,
+                     @Value("${app.ai.deepseek.base-url:https://api-cdn.thehive.ai/api/v3}") String deepseekUrl, @Value("${app.ai.deepseek.reasoning-effort:none}") String deepseekEffort,
+                     @Value("${app.ai.deepseek.extra-body:}") String deepseekExtra, @Value("${app.ai.deepseek.max-rps:5}") int deepseekRps) {
         this(defaultAi, new AnthropicProvider(key, model, effort, baseUrl, cacheTtl, chatMaxOutput), new OpenAiProvider("glm", "GLM", glmKey, glmModel, glmEffort, glmUrl, chatMaxOutput, true, withTemperature("", glmTemperature), glmRps),
-                new OpenAiProvider("qwen", "Alibaba Qwen", qwenKey, qwenModel, "", qwenUrl, chatMaxOutput, true, withTemperature(qwenExtra(qwenThinking), qwenTemperature), qwenRps), social, web);
+                new OpenAiProvider("qwen", "Alibaba Qwen", qwenKey, qwenModel, "", qwenUrl, chatMaxOutput, true, withTemperature(qwenExtra(qwenThinking), qwenTemperature), qwenRps),
+                new OpenAiProvider("deepseek", "DeepSeek V4.1 Flash", deepseekKey == null || deepseekKey.isBlank() ? glmKey : deepseekKey, deepseekModel, deepseekEffort, deepseekUrl, chatMaxOutput, true, deepseekExtra == null ? "" : deepseekExtra, deepseekRps), social, web);
     }
 
     /** Alibaba's compatible mode reads {@code enable_thinking}: "off" (default) and "on" set it, anything else ("unset") sends nothing, for a host that rejects the field. */
@@ -62,7 +66,11 @@ public class ChannelAi {
     public ChannelAi(AiProvider defaultAi, AiProvider claude, AiProvider glm, String social, String web) { this(defaultAi, claude, glm, null, social, web); }
 
     /** The default model, Claude, GLM and Qwen (the last two picked on their own by a chat that typed their name, or by the route settings). */
-    public ChannelAi(AiProvider defaultAi, AiProvider claude, AiProvider glm, AiProvider qwen, String social, String web) {
+    public ChannelAi(AiProvider defaultAi, AiProvider claude, AiProvider glm, AiProvider qwen, String social, String web) { this(defaultAi, claude, glm, qwen, null, social, web); }
+
+    /** All four: the default model, Claude, GLM, Qwen and DeepSeek. */
+    public ChannelAi(AiProvider defaultAi, AiProvider claude, AiProvider glm, AiProvider qwen, AiProvider deepseek, String social, String web) {
+        this.deepseek = deepseek;
         this.defaultAi = defaultAi instanceof FeatureAi f ? f.backup() : defaultAi;   // chat routing: the plain default (GLM), whatever the features use
         this.claude = claude;
         this.glm = glm;
@@ -74,13 +82,15 @@ public class ChannelAi {
     /** The model for one reply on {@code channel}: the routed one, falling back to the default if it fails before any tool exchange has begun. */
     public Routed forChannel(String channel) { return forChannel(channel, null); }
 
-    /** Same, for a customer who picked a model with {@link #command}: {@code chosen} is "glm", "qwen" or "anthropic" (null = the channel's default). */
+    /** Same, for a customer who picked a model with {@link #command}: {@code chosen} is "glm", "qwen", "deepseek" or "anthropic" (null = the channel's default). */
     public Routed forChannel(String channel, String chosen) {
         String route = chosen != null ? chosen : channel != null && SOCIAL.contains(channel) ? social : web;
         // a chat that typed "glm" is testing that model: whatever is wrong with it (no key, not active, rejected) is shown as its error instead of quietly answering with another one
         if ("glm".equals(chosen) && glm != null) return new Routed(glm, null, true, backupFor(glm));
         if ("qwen".equals(chosen) && qwen != null) return new Routed(qwen, null, true, backupFor(qwen));
-        AiProvider primary = "qwen".equals(route) && qwen != null && qwen.available() ? qwen : "anthropic".equals(route) && claude.available() ? claude : "glm".equals(route) && glm != null && glm.available() ? glm : defaultAi;
+        if ("deepseek".equals(chosen) && deepseek != null) return new Routed(deepseek, null, true, backupFor(deepseek));
+        AiProvider primary = "qwen".equals(route) && qwen != null && qwen.available() ? qwen : "deepseek".equals(route) && deepseek != null && deepseek.available() ? deepseek
+                : "anthropic".equals(route) && claude.available() ? claude : "glm".equals(route) && glm != null && glm.available() ? glm : defaultAi;
         AiProvider backup = backupFor(primary);
         return new Routed(primary, backup, false, backup);
     }
@@ -95,13 +105,14 @@ public class ChannelAi {
         return defaultAi.available() ? defaultAi : null;
     }
 
-    /** "claude", "glm", "qwen" or "alibaba" (optionally after "use" / "switch to" / "model"): the model code the customer asked for, or null when the text is not such a command. */
+    /** "claude", "glm", "qwen", "deepseek" or "alibaba" (optionally after "use" / "switch to" / "model"): the model code the customer asked for, or null when the text is not such a command. */
     public static String command(String text) {
         if (text == null || text.length() > 40) return null;
         String n = FastAnswers.norm(text).replaceFirst("^(use|switch to|switch|change to|model|use model|talk to)\\s+", "");
         return switch (n) {
             case "claude", "claude haiku", "haiku" -> "anthropic";
             case "alibaba", "alibaba qwen", "alibaba cloud", "alibaba qwen flash", "qwen", "qwen flash", "qwen 3 7", "qwen3 7", "qwen 3 7 flash", "qwen3 7 flash", "qwen37", "qwen3 7flash" -> "qwen";
+            case "deepseek", "deep seek", "deepseek v4", "deepseek v4 1", "deepseek v4 1 flash", "deepseek flash" -> "deepseek";
             case "glm", "glm flash", "glm 5", "glm 5 3", "glm 5 3 flash", "glm5", "glm53", "glm5 3 flash" -> "glm";
             default -> null;
         };

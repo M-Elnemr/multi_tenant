@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.bind.annotation.RestController;
 
 /** Storefront chat (customers, guests included), the owner's test chat and teaching, and the platform admin's global lessons. */
@@ -34,15 +35,18 @@ public class ChatController {
     private final AiEvalService eval;
 
     private final AiReadinessService readiness;
+    private final MediaReader media;
 
-    public ChatController(ChatService chat, LoginThrottle throttle, AiEvalService eval, AiReadinessService readiness) {
+    public ChatController(ChatService chat, LoginThrottle throttle, AiEvalService eval, AiReadinessService readiness, MediaReader media) {
+        this.media = media;
         this.readiness = readiness;
         this.chat = chat;
         this.throttle = throttle;
         this.eval = eval;
     }
 
-    public record SendRequest(String conversationId, String message) {}
+    /** {@code model}: the visitor's pick in the chat's test dropdown (null = keep what the conversation has). */
+    public record SendRequest(String conversationId, String message, String model) {}
     public record TestRequest(String message) {}
     public record SettingsRequest(Boolean enabled, String tone, Integer maxDiscountPct, String greeting, List<String> channels, String agentName) {}
     public record LessonRequest(String instruction, String exampleQuestion, String exampleAnswer) {}
@@ -68,7 +72,13 @@ public class ChatController {
     public Map<String, Object> config() {
         UUID t = StoreContext.tenantId();
         var s = chat.getSettings(t);
-        return Map.of("enabled", chat.enabled(t, "WEB") && chat.hasPoints(t), "greeting", s.get("greeting") == null ? "" : s.get("greeting"));
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("enabled", chat.enabled(t, "WEB") && chat.hasPoints(t));
+        m.put("greeting", s.get("greeting") == null ? "" : s.get("greeting"));
+        m.put("agentName", s.get("agentName") == null ? "" : s.get("agentName"));
+        m.put("models", List.of("default", "glm", "qwen", "anthropic", "deepseek"));   // the test dropdown (temporary)
+        m.put("media", media.enabled());   // whether photos and voice notes can be read
+        return m;
     }
 
     @GetMapping("/api/v1/shop/chat/history")
@@ -86,7 +96,46 @@ public class ChatController {
         throttle.check("chat-conv10|" + r.conversationId(), 30, Duration.ofMinutes(10));
         throttle.check("chat-ip|" + ClientInfo.ip(req), 300, Duration.ofMinutes(10));
         throttle.check("chat-conv|" + r.conversationId(), 300, Duration.ofDays(1));
+        chat.setWebModel(t, r.conversationId(), clientOrNull(a), r.model());
         return view(chat.reply(t, "WEB", r.conversationId(), clientOrNull(a), r.message()));
+    }
+
+    /**
+     * A photo or voice note from the website chat: read into text by the media readers (DeepSeek, then Qwen), then answered like a typed message. The file itself is not
+     * kept; the chat keeps what it showed or said. {@code heard} is that text, so the page can show what the assistant understood.
+     */
+    @PostMapping(value = "/api/v1/shop/chat/media", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    public Map<String, Object> sendMedia(@RequestParam String conversationId, @RequestParam MultipartFile file, @RequestParam(required = false) String message,
+                                         @RequestParam(required = false) String model, Authentication a, HttpServletRequest req) throws java.io.IOException {
+        UUID t = StoreContext.openTenantId();
+        if (conversationId == null || !CONV_ID.matcher(conversationId).matches()) throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid conversation");
+        if (!chat.enabled(t, "WEB")) throw new BusinessException(HttpStatus.SERVICE_UNAVAILABLE, "CHAT_DISABLED", "Live chat is not available right now");
+        String type = file.getContentType() == null ? "" : file.getContentType().toLowerCase(java.util.Locale.ROOT);
+        MediaReader.Kind kind = type.startsWith("image/") ? MediaReader.Kind.IMAGE : type.startsWith("audio/") || type.startsWith("video/webm") || type.startsWith("video/mp4") ? MediaReader.Kind.AUDIO : null;
+        if (kind == null) throw BusinessException.badRequest("VALIDATION_ERROR", "Send a photo or a voice note");
+        if (file.getSize() > (kind == MediaReader.Kind.IMAGE ? QwenMediaReader.MAX_IMAGE : QwenMediaReader.MAX_AUDIO)) throw BusinessException.badRequest("VALIDATION_ERROR", "The file is too large");
+        if (!media.enabled() || !chat.hasPoints(t)) throw new BusinessException(HttpStatus.SERVICE_UNAVAILABLE, "MEDIA_UNAVAILABLE", "Photos and voice notes are not available right now");
+        throttle.check("chat-conv10|" + conversationId, 30, Duration.ofMinutes(10));
+        throttle.check("chat-ip|" + ClientInfo.ip(req), 300, Duration.ofMinutes(10));
+        throttle.check("chat-conv|" + conversationId, 300, Duration.ofDays(1));
+        throttle.check("chat-media|" + conversationId, 20, Duration.ofMinutes(10));   // each read is a model call
+        byte[] bytes = file.getBytes();
+        String caption = message == null || message.isBlank() ? null : message.trim();
+        String heard = media.read(t, "WEB", new MediaReader.Media(kind, () -> bytes, type, caption));
+        if (heard == null || heard.isBlank()) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("conversationId", conversationId);
+            m.put("reply", "ما قدرتش أفتح الملف ده 🙏 ممكن تكتبلي اللي محتاجه؟ / I couldn't open that file, could you type what you need?");
+            m.put("order", null);
+            m.put("products", List.of());
+            m.put("heard", "");
+            return m;
+        }
+        if (heard.length() > 1000) heard = heard.substring(0, 1000);
+        chat.setWebModel(t, conversationId, clientOrNull(a), model);
+        Map<String, Object> out = view(chat.reply(t, "WEB", conversationId, clientOrNull(a), heard));
+        out.put("heard", heard);
+        return out;
     }
 
     // ---- shop dashboard --------------------------------------------------------------------------------------

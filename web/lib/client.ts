@@ -13,16 +13,17 @@ export class ApiError extends Error {
 }
 
 /** Calls the backend through this site's own /api/bff proxy (tenant + auth are handled server-side). */
-export async function api<T = unknown>(path: string, init: { method?: string; body?: unknown; idempotencyKey?: string } = {}): Promise<T> {
+export async function api<T = unknown>(path: string, init: { method?: string; body?: unknown; form?: FormData; idempotencyKey?: string } = {}): Promise<T> {
   const headers: Record<string, string> = {};
   if (init.body !== undefined) headers["Content-Type"] = "application/json";
   if (init.idempotencyKey) headers["Idempotency-Key"] = init.idempotencyKey;
   let res: Response;
   try {
     res = await fetch(`/api/bff/${path.replace(/^\//, "")}`, {
-      method: init.method ?? (init.body !== undefined ? "POST" : "GET"),
+      method: init.method ?? (init.body !== undefined || init.form ? "POST" : "GET"),
       headers,
-      body: init.body === undefined ? undefined : JSON.stringify(init.body),
+      // a form (a photo or voice note) goes as multipart: the browser sets its own Content-Type with the boundary
+      body: init.form ?? (init.body === undefined ? undefined : JSON.stringify(init.body)),
     });
   } catch {
     throw new ApiError(0, "NETWORK", "No connection to the server");   // offline, or the server is not reachable

@@ -81,8 +81,8 @@ class ChannelAiTest {
         assertThat(routed.showsErrors()).isTrue();
         // not configured: the error of that model, not a silent answer from another one
         assertThat(new ChannelAi(def, claude, new Scripted("glm", false), "default", "default").forChannel("WHATSAPP", "glm").showsErrors()).isTrue();
-        // the removed models are no longer commands
-        for (String c : List.of("deepseek", "gemini", "gemini 2.5", "gemini 3.1")) assertThat(ChannelAi.command(c)).as(c).isNull();
+        // Gemini is gone and no longer a command (DeepSeek is back)
+        for (String c : List.of("gemini", "gemini 2.5", "gemini 3.1")) assertThat(ChannelAi.command(c)).as(c).isNull();
     }
 
     @Test
@@ -191,5 +191,20 @@ class ChannelAiTest {
         assertThat(again.restartOnFallback()).isNull();   // the backup has no backup of its own
         qwen.script.add(() -> Turn.model("answered from the start"));
         assertThat(again.next("s", ASK, List.of()).text()).isEqualTo("answered from the start");
+    }
+
+    @Test
+    void deepSeekIsPickedByItsCommandOrTheDropdownAndShowsItsErrors() {
+        Scripted def = new Scripted("glm", true), claude = new Scripted("anthropic", true), glm = new Scripted("glm", true), qwen = new Scripted("qwen", true), deepseek = new Scripted("deepseek", true);
+        for (String c : List.of("deepseek", "DeepSeek", "use deepseek", "deepseek v4.1 flash", "deep seek")) assertThat(ChannelAi.command(c)).as(c).isEqualTo("deepseek");
+        var ai = new ChannelAi(def, claude, glm, qwen, deepseek, "default", "default");
+        var picked = ai.forChannel("WEB", "deepseek");
+        assertThat(picked.code()).isEqualTo("deepseek");
+        assertThat(picked.showsErrors()).isTrue();   // no fallback: its own error is shown
+        assertThat(new ChannelAi(def, claude, glm, qwen, new Scripted("deepseek", false), "default", "default").forChannel("WEB", "deepseek").showsErrors()).isTrue();
+        // by the route setting; without a key the default answers
+        assertThat(new ChannelAi(def, claude, glm, qwen, deepseek, "default", "deepseek").forChannel("WEB").code()).isEqualTo("deepseek");
+        assertThat(new ChannelAi(def, claude, glm, qwen, new Scripted("deepseek", false), "default", "deepseek").forChannel("WEB").code()).isEqualTo("glm");
+        assertThat(ChatService.WEB_MODELS).contains("deepseek", "glm", "qwen", "anthropic", "default");
     }
 }
