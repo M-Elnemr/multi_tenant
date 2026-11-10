@@ -8,6 +8,7 @@ import { money } from "@/lib/format";
 import { mediaUrl } from "@/lib/media";
 import { useI18n } from "@/components/i18n-provider";
 import { Icon } from "@/components/icons";
+import { AgentAvatar, DEFAULT_AGENT_AVATAR, isAvatarId } from "@/components/shop/agent-avatar";
 
 type Product = { name: string; slug: string; priceMinor: number; currency: string; imageUrl?: string; imageMediaBase?: string; imageMediaExt?: string };
 type Order = { orderNumber: string; totalMinor: number; currency: string; trackPath?: string; paymentPath?: string; whatsappUrl?: string; whatsappConfirmed?: boolean; test?: boolean };
@@ -15,7 +16,7 @@ type Msg = { role: "user" | "assistant"; content: string; mediaUrl?: string | nu
 type Reply = { conversationId: string; reply: string; order?: Order | null; products?: Product[]; heard?: string };
 type History = { role: "user" | "assistant"; content: string; mediaUrl?: string | null }[];
 type Job = { text: string } | { file: File; caption: string };
-type Config = { enabled: boolean; greeting: string; agentName?: string; models?: string[]; media?: boolean };
+type Config = { enabled: boolean; greeting: string; agentName?: string; agentAvatar?: string; models?: string[]; media?: boolean };
 
 const KEY = "chatConv";
 const MODEL_KEY = "chatModel";
@@ -84,30 +85,20 @@ function pretty(content: string, photo: string, voice: string): string {
   return content;
 }
 
-/** The assistant's round avatar: the first letter of its name on the shop's brand color. */
-function Avatar({ name, className = "h-8 w-8" }: { name: string; className?: string }) {
-  return (
-    <span className={`grid shrink-0 place-items-center rounded-full font-bold text-white ${className}`} style={{ background: "var(--brand)" }} aria-hidden>
-      {(name.trim()[0] ?? "A").toUpperCase()}
-    </span>
-  );
-}
-
 /**
  * The conversation, shared by the storefront chat window and the owner's test screen (same messages, different endpoint). {@code widget} is the storefront look: round avatar, pill
  * suggestions, a pill-shaped input with emoji, photo and voice note. {@code sendMedia} switches the photo and voice buttons on.
  */
-export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, greeting, agentName = "", live = false, widget = false, className = "" }: {
+export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, greeting, agentAvatar = DEFAULT_AGENT_AVATAR, live = false, widget = false, className = "" }: {
   send: (text: string) => Promise<Reply>; sendMedia?: (file: File, caption: string) => Promise<Reply>;
   load: () => Promise<History>; onReset?: () => Promise<void>; onTeach?: (question: string, answer: string) => void; onReply?: () => void; greeting: string;
-  agentName?: string; live?: boolean; widget?: boolean; className?: string;
+  agentAvatar?: string; live?: boolean; widget?: boolean; className?: string;
 }) {
   const { t, locale } = useI18n();
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const end = useRef<HTMLDivElement>(null);
-  const [slow, setSlow] = useState(false);
   const queue = useRef<Job[]>([]);   // messages typed while the assistant is still answering are sent one after another
   const running = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -135,13 +126,7 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
     }, 6000);
     return () => clearInterval(timer);
   }, [live, load]);
-  useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [msgs, busy, slow]);
-  // A search or a long answer can take a few seconds: after three seconds say so, so the customer knows we are still on it.
-  useEffect(() => {
-    if (!busy) return;
-    const h = setTimeout(() => setSlow(true), 3000);
-    return () => { clearTimeout(h); setSlow(false); };
-  }, [busy]);
+  useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [msgs, busy]);
   // leaving the page while recording: stop the microphone and drop the clip
   useEffect(() => () => {
     cancelled.current = true;
@@ -250,7 +235,7 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
   return (
     <div className={`flex min-h-0 flex-col ${className}`}>
       <div className={`min-h-0 flex-1 overflow-y-auto text-sm ${widget ? "space-y-2.5 px-3 pb-2 pt-1" : "space-y-3 p-3"}`}>
-        <Bubble role="assistant" widget={widget} avatar={widget ? agentName : undefined}>{greeting}</Bubble>
+        <Bubble role="assistant" widget={widget} avatar={widget ? agentAvatar : undefined}>{greeting}</Bubble>
         {msgs.length === 0 && (
           <div className={widget ? "flex flex-col items-end gap-2 ps-10" : "flex flex-wrap gap-2"}>
             {quick.map((q) => (
@@ -261,7 +246,7 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
         )}
         {msgs.map((m, i) => (
           <div key={i} className="space-y-2">
-            <Bubble role={m.role} widget={widget} avatar={widget && m.role === "assistant" && msgs[i - 1]?.role !== "assistant" ? agentName : widget && m.role === "assistant" ? "" : undefined}>
+            <Bubble role={m.role} widget={widget} avatar={widget && m.role === "assistant" && msgs[i - 1]?.role !== "assistant" ? agentAvatar : widget && m.role === "assistant" ? "" : undefined}>
               {/* a picture the shop sent from its inbox, or the customer's own photo */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
               {m.mediaUrl && <img src={m.mediaUrl} alt="" className="mb-1.5 max-h-56 rounded-xl object-cover" />}
@@ -297,7 +282,6 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
             )}
           </div>
         ))}
-        {busy && slow && <Bubble role="assistant" widget={widget} avatar={widget ? "" : undefined}>{t("chat.wait")}</Bubble>}
         {busy && <Bubble role="assistant" widget={widget} avatar={widget ? "" : undefined}><span className="inline-flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:120ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:240ms]" /></span></Bubble>}
         <div ref={end} />
       </div>
@@ -376,7 +360,7 @@ function Bubble({ role, children, widget = false, avatar }: { role: "user" | "as
   // storefront widget: the assistant's first bubble in a run carries its avatar, the next ones keep the same indent
   return (
     <div className={`flex items-end gap-2 ${mine ? "justify-end" : "justify-start"}`}>
-      {!mine && (avatar ? <Avatar name={avatar} className="h-8 w-8" /> : avatar === "" ? <span className="h-8 w-8 shrink-0" /> : null)}
+      {!mine && (avatar ? <AgentAvatar id={avatar} className="h-8 w-8" /> : avatar === "" ? <span className="h-8 w-8 shrink-0" /> : null)}
       <div className={`max-w-[80%] whitespace-pre-wrap break-words rounded-3xl px-4 py-2.5 leading-relaxed shadow-sm ${mine ? "rounded-ee-md text-white" : "rounded-es-md bg-white text-slate-900"}`} style={mine ? { background: "var(--brand)" } : undefined}>{children}</div>
     </div>
   );
@@ -467,7 +451,8 @@ export function LiveChat() {
   };
 
   if (!cfg?.enabled) return null;
-  const name = cfg.agentName?.trim() || t("chat.agentDefault");
+  const name = cfg.agentName?.trim() || t("chat.agentDefault");   // the shop's own name for the assistant, else Nada
+  const avatar = isAvatarId(cfg.agentAvatar) ? cfg.agentAvatar : DEFAULT_AGENT_AVATAR;
   const models = cfg.models && cfg.models.length > 0 ? cfg.models : [];
   return (
     <>
@@ -475,7 +460,7 @@ export function LiveChat() {
         <section role="dialog" aria-label={t("chat.title")}
           className="fixed inset-x-0 top-[var(--vvt,0px)] z-50 flex h-[var(--vvh,100dvh)] flex-col overflow-hidden bg-[#f4f3ee] pt-[env(safe-area-inset-top)] sm:inset-x-auto sm:bottom-6 sm:start-4 sm:top-auto sm:h-[min(40rem,calc(100dvh-3rem))] sm:w-[24rem] sm:rounded-[28px] sm:border sm:border-[var(--s-line,#e2e8f0)] sm:pt-0 sm:shadow-2xl">
           <header className="m-3 flex items-center gap-2 rounded-3xl bg-[#101010] px-3 py-2.5 text-white">
-            <span className="relative shrink-0"><Avatar name={name} className="h-10 w-10" /><OnlineDot className="absolute -bottom-0.5 -end-0.5 border-2 border-[#101010]" /></span>
+            <span className="relative shrink-0"><AgentAvatar id={avatar} className="h-10 w-10" title={name} /><OnlineDot className="absolute -bottom-0.5 -end-0.5 border-2 border-[#101010]" /></span>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-bold leading-tight">{name}</p>
               <p className="text-xs text-emerald-400">{t("chat.online")}</p>
@@ -499,7 +484,7 @@ export function LiveChat() {
             </button>
           </header>
           {conv && (
-            <ChatPanel live widget className="flex-1" agentName={name} greeting={cfg.greeting || t("chat.greeting")} load={loadFn} send={send}
+            <ChatPanel live widget className="flex-1" agentAvatar={avatar} greeting={cfg.greeting || t("chat.greeting")} load={loadFn} send={send}
               sendMedia={cfg.media === false ? undefined : sendMedia} onReply={() => { if (sound) ping(); }} />
           )}
           {!whiteLabel && <p className="pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1 text-center text-xs text-slate-400">{t("brand.powered")} {t("brand.name")}</p>}
@@ -515,7 +500,7 @@ export function LiveChat() {
           )}
           <button type="button" onClick={openChat} aria-label={t("chat.title")}
             className="flex items-center gap-3 rounded-full bg-white p-1.5 pe-5 text-start shadow-[0_14px_34px_-10px_rgb(0_0_0/0.5)] transition hover:-translate-y-1">
-            <span className="relative"><Avatar name={name} className="h-12 w-12 text-lg" /><OnlineDot className="absolute -bottom-0.5 -end-0.5 border-2 border-white" /></span>
+            <span className="relative"><AgentAvatar id={avatar} className="h-12 w-12" title={name} /><OnlineDot className="absolute -bottom-0.5 -end-0.5 border-2 border-white" /></span>
             <span className="leading-tight text-slate-900"><b className="block text-base">{t("chat.needHelp")}</b><span className="block text-sm text-slate-500">{t("chat.isHere", { name })}</span></span>
           </button>
         </div>

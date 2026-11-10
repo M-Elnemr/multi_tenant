@@ -100,4 +100,17 @@ class WebChatModelAndMediaIntegrationTest extends IntegrationTestBase {
         assertThat((String) JsonPath.read(res, "$.reply")).contains("ما قدرتش");
         assertThat((String) JsonPath.read(res, "$.heard")).isEmpty();
     }
+
+    @Test
+    void theShopPicksTheAssistantsPictureFromTheTenBuiltInOnesAndTheStorefrontChatShowsIt() throws Exception {
+        Tenant t = onboard("STORE");
+        assertThat(JsonPath.<String>read(body(onHost(t.host(), null, "GET", "/api/v1/shop/chat/config", null)), "$.agentAvatar")).isEmpty();   // not chosen: the page shows Nada
+        onHost(t.host(), t.access(), "PUT", "/api/v1/store/ai/settings", "{\"agentAvatar\":\"r2\",\"agentName\":\"Robo\"}").andExpect(status().isOk());
+        String cfg = body(onHost(t.host(), null, "GET", "/api/v1/shop/chat/config", null));
+        assertThat((String) JsonPath.read(cfg, "$.agentAvatar")).isEqualTo("r2");
+        assertThat((String) JsonPath.read(cfg, "$.agentName")).isEqualTo("Robo");
+        onHost(t.host(), t.access(), "PUT", "/api/v1/store/ai/settings", "{\"agentAvatar\":\"hacker\"}").andExpect(status().isBadRequest());
+        onHost(t.host(), t.access(), "PUT", "/api/v1/store/ai/settings", "{\"agentAvatar\":\"\"}").andExpect(status().isOk());   // reset
+        assertThat(JsonPath.<String>read(body(onHost(t.host(), null, "GET", "/api/v1/shop/chat/config", null)), "$.agentAvatar")).isEmpty();
+    }
 }

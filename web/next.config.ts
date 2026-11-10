@@ -14,7 +14,8 @@ const nextConfig: NextConfig = {
           { key: "X-Frame-Options", value: "SAMEORIGIN" },   // only the site itself may frame it (the template gallery previews the live site)
           // the parts of a content policy that cannot break a page: only this same site can frame us or inject a <base>/<object>, and forms only post to this site
           { key: "Content-Security-Policy", value: "frame-ancestors 'self'; base-uri 'self'; object-src 'none'; form-action 'self'" },
-          { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=()" },
+          // microphone=(self): the storefront chat records voice notes (the browser still asks the visitor once; with microphone=() it was blocked for the whole site)
+          { key: "Permissions-Policy", value: "camera=(self), microphone=(self), geolocation=()" },
         ],
       },
     ];

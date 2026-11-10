@@ -48,7 +48,7 @@ public class ChatController {
     /** {@code model}: the visitor's pick in the chat's test dropdown (null = keep what the conversation has). */
     public record SendRequest(String conversationId, String message, String model) {}
     public record TestRequest(String message) {}
-    public record SettingsRequest(Boolean enabled, String tone, Integer maxDiscountPct, String greeting, List<String> channels, String agentName) {}
+    public record SettingsRequest(Boolean enabled, String tone, Integer maxDiscountPct, String greeting, List<String> channels, String agentName, String agentAvatar) {}
     public record LessonRequest(String instruction, String exampleQuestion, String exampleAnswer) {}
 
     private static UUID clientOrNull(Authentication a) {
@@ -76,6 +76,7 @@ public class ChatController {
         m.put("enabled", chat.enabled(t, "WEB") && chat.hasPoints(t));
         m.put("greeting", s.get("greeting") == null ? "" : s.get("greeting"));
         m.put("agentName", s.get("agentName") == null ? "" : s.get("agentName"));
+        m.put("agentAvatar", s.get("agentAvatar") == null ? "" : s.get("agentAvatar"));
         m.put("models", List.of("default", "glm", "qwen", "anthropic", "deepseek"));   // the test dropdown (temporary)
         m.put("media", media.enabled());   // whether photos and voice notes can be read
         return m;
@@ -147,7 +148,7 @@ public class ChatController {
     @PutMapping("/api/v1/store/ai/settings")
     @PreAuthorize("hasAuthority('ai.manage')")
     public Map<String, Object> saveSettings(@RequestBody SettingsRequest r, Authentication a) {
-        return chat.saveSettings(StoreContext.tenantId(), (UUID) a.getPrincipal(), r.enabled(), r.tone(), r.maxDiscountPct(), r.greeting(), r.channels(), r.agentName());
+        return chat.saveSettings(StoreContext.tenantId(), (UUID) a.getPrincipal(), r.enabled(), r.tone(), r.maxDiscountPct(), r.greeting(), r.channels(), r.agentName(), r.agentAvatar());
     }
 
     /** How ready the shop's data is for the assistant: a score and what to fill in. */

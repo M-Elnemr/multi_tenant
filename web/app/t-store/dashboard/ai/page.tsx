@@ -13,12 +13,13 @@ import { AiReadiness } from "@/components/dashboard/ai-readiness";
 import { useAction, useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Alert, ErrorText, Field, Input, PageHeader, Select } from "@/components/ui";
+import { AGENT_AVATARS, AgentAvatar, DEFAULT_AGENT_AVATAR, isAvatarId } from "@/components/shop/agent-avatar";
 import { Switch } from "@/components/overlay";
 import { useToast } from "@/components/toast";
 import { ChoiceTile, SaveBar, SettingsCard, ToggleRow, HeaderLink } from "@/components/dashboard/kit";
 import { useNavTitle, useSection } from "@/components/dashboard/section";
 
-type Settings = { enabled: boolean; tone: string; maxDiscountPct: number; greeting: string | null; channels: string[]; agentName?: string | null };
+type Settings = { enabled: boolean; tone: string; maxDiscountPct: number; greeting: string | null; channels: string[]; agentName?: string | null; agentAvatar?: string | null };
 const AI_CHANNELS = [["WHATSAPP", "pts.chWhatsapp"], ["FACEBOOK", "pts.chMessenger"], ["INSTAGRAM", "pts.chInstagram"], ["WEB", "pts.chWeb"]] as const;
 type Tab = "test" | "lessons" | "channels" | "whatsapp" | "settings";
 
@@ -77,7 +78,7 @@ function SettingsForm({ write }: { write: boolean }) {
   const setF = (v: Partial<Settings>) => setEdit({ ...edit, ...v });
   const save = useAction(async () => {
     if (!f) return;
-    await api("store/ai/settings", { method: "PUT", body: { enabled: f.enabled, tone: f.tone, maxDiscountPct: f.maxDiscountPct, greeting: f.greeting ?? "", channels: f.channels, agentName: (f.agentName ?? "").trim() } });
+    await api("store/ai/settings", { method: "PUT", body: { enabled: f.enabled, tone: f.tone, maxDiscountPct: f.maxDiscountPct, greeting: f.greeting ?? "", channels: f.channels, agentName: (f.agentName ?? "").trim(), agentAvatar: f.agentAvatar ?? "" } });
     await reload();
     setEdit({});
     toast(t("ai.saved"));
@@ -106,6 +107,21 @@ function SettingsForm({ write }: { write: boolean }) {
               <Field label={t("ai.tone")}>
                 <Select value={f.tone} onChange={(e) => setF({ tone: e.target.value })}>{["FRIENDLY", "FORMAL", "SHORT"].map((x) => <option key={x} value={x}>{t(`ai.tone.${x}`)}</option>)}</Select>
               </Field>
+            </div>
+            <div className="mt-4">
+              <p className="text-[13px] font-semibold text-ink">{t("ai.agentAvatar")}</p>
+              <p className="mt-0.5 text-[12.5px] text-muted">{t("ai.agentAvatarHint")}</p>
+              <div className="mt-3 grid grid-cols-5 gap-2 sm:grid-cols-10" role="radiogroup" aria-label={t("ai.agentAvatar")}>
+                {AGENT_AVATARS.map((id) => {
+                  const on = (isAvatarId(f.agentAvatar) ? f.agentAvatar : DEFAULT_AGENT_AVATAR) === id;
+                  return (
+                    <button key={id} type="button" role="radio" aria-checked={on} aria-label={t(`ai.avatar.${id}`)} title={t(`ai.avatar.${id}`)} onClick={() => setF({ agentAvatar: id })} disabled={!write}
+                      className={`rounded-full p-0.5 transition ${on ? "ring-2 ring-offset-2" : "opacity-80 hover:opacity-100"}`} style={on ? { boxShadow: "0 0 0 2px var(--brand, #1f6a99)" } : undefined}>
+                      <AgentAvatar id={id} className="h-11 w-11" />
+                    </button>
+                  );
+                })}
+              </div>
             </div>
             <div className="mt-4"><Field label={t("ai.greeting")}><Input maxLength={300} value={f.greeting ?? ""} onChange={(e) => setF({ greeting: e.target.value })} /></Field></div>
           </SettingsCard>

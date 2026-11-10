@@ -77,7 +77,7 @@ public class AiEvalService {
         runs.put(id, run);
         worker.execute(() -> {
             try {
-                for (JsonNode c : set) { results.add(play(tenantId, m, id, c)); run.put("done", results.size()); }
+                for (JsonNode c : set) { results.add(play(tenantId, m, id, c, false)); run.put("done", results.size()); }
                 run.put("summary", summary(results));
                 run.put("status", "DONE");
                 keep(id, tenantId, m, kind, run);
@@ -126,7 +126,23 @@ public class AiEvalService {
         return r;
     }
 
-    private Map<String, Object> play(UUID tenantId, String model, UUID runId, JsonNode c) {
+    /** The golden conversations of {@code ai-eval.json}. */
+    List<JsonNode> goldenSet() {
+        try {
+            List<JsonNode> all = new ArrayList<>();
+            JSON.readTree(getClass().getResourceAsStream("/ai-eval.json")).path("conversations").forEach(all::add);
+            return all;
+        } catch (Exception e) {
+            throw new IllegalStateException("The evaluation set could not be read", e);
+        }
+    }
+
+    /**
+     * Plays one conversation and grades it. {@code lean} runs it with the short list of important rules instead of the full prompt (see {@link ChatService.EvalScope}). The result also carries
+     * {@code usage}: the model calls and tokens the shop's assistant used for the whole conversation (what the usage log keeps for live chats, but not for the TEST channel), and
+     * {@code judgeTokens}: what the judge used, which is not counted in {@code usage}.
+     */
+    Map<String, Object> play(UUID tenantId, String model, UUID runId, JsonNode c, boolean lean) {
         String ext = "eval-" + runId.toString().substring(0, 8) + "-" + c.path("id").asInt();
         String name = c.hasNonNull("displayName") ? c.path("displayName").asText() : null;
         List<String> lines = new ArrayList<>();
@@ -135,17 +151,24 @@ public class AiEvalService {
         List<Map<String, String>> transcript = new ArrayList<>();
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("id", c.path("id").asInt()); out.put("category", c.path("category").asText());
+        ChatService.EvalScope scope = new ChatService.EvalScope(lean);
         try {
             chat.setTestModel(tenantId, ext, model);
             for (String t : turns) {
                 String reply;
-                try { reply = chat.reply(tenantId, "TEST", ext, null, t, name).text(); } catch (RuntimeException e) { reply = "[error: " + e.getMessage() + "]"; }
+                try { reply = chat.inEvalScope(scope, () -> chat.reply(tenantId, "TEST", ext, null, t, name).text()); } catch (RuntimeException e) { reply = "[error: " + e.getMessage() + "]"; }
                 transcript.add(Map.of("customer", t, "seller", reply == null ? "" : reply));
             }
         } finally {
             chat.reset(tenantId, "TEST", ext);
         }
         out.put("transcript", transcript);
+        long in = 0, outTok = 0, cached = 0, write = 0;
+        for (var r : scope.rounds) { in += r.usage().input(); outTok += r.usage().output(); cached += r.usage().cached(); write += r.usage().cacheWrite(); }
+        Map<String, Object> usage = new LinkedHashMap<>();
+        usage.put("customerMessages", turns.size()); usage.put("modelReplies", scope.modelReplies); usage.put("modelCalls", scope.rounds.size()); usage.put("fallbacks", scope.fallbacks);
+        usage.put("inputTokens", in); usage.put("outputTokens", outTok); usage.put("cachedTokens", cached); usage.put("cacheWriteTokens", write); usage.put("millis", scope.millis);
+        out.put("usage", usage);
         List<String> expect = new ArrayList<>();
         for (JsonNode e : c.path("expect")) expect.add(e.asText());
         out.putAll(grade(transcript, expect, name));
@@ -160,6 +183,7 @@ public class AiEvalService {
         Map<String, Object> out = new LinkedHashMap<>();
         try {
             Turn t = channelAi.forChannel("TEST", "anthropic").next(JUDGE, List.of(Turn.user(b.toString())), List.of());
+            if (t.usage() != null) out.put("judgeTokens", Map.of("input", t.usage().input(), "output", t.usage().output()));
             String raw = t.text() == null ? "" : t.text().trim().replaceAll("^```(?:json)?", "").replaceAll("```$", "").trim();
             JsonNode n = JSON.readTree(raw.substring(Math.max(0, raw.indexOf('{')), raw.lastIndexOf('}') + 1));
             List<Map<String, Object>> checks = new ArrayList<>();
