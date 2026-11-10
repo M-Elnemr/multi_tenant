@@ -36,7 +36,7 @@ class AiEvalOrderCheckIntegrationTest extends IntegrationTestBase {
     JsonNode scenario(String sku, int qty, String payment) throws Exception {
         return JSON.readTree("""
                 {"id": 990, "category": "order_flow", "customer": ["عايز كوب مج الأخضر TURNONE", "اسمي كريم سمير، 01012345678، القاهرة مدينة نصر شارع مكرم عبيد عمارة ٣ شقة ٧، كاش TURNTWO", "تمام"],
-                 "expect": ["shows the summary"], "order": {"sku": "%s", "qty": %d, "name": "كريم", "phone": "01012345678", "addressContains": ["مكرم"], "payment": "%s"}}
+                 "expect": ["shows the summary"], "order": {"sku": "%s", "qty": %d, "name": "كريم", "phone": "01012345678", "addressContains": ["مكرم"], "governorate": "CAI", "payment": "%s"}}
                 """.formatted(sku, qty, payment));
     }
 

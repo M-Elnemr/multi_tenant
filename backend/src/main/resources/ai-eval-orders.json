@@ -1,30 +1,184 @@
 {
   "version": 1,
-  "note": "Order scenarios for the model comparison (AiEvalBatch): a customer who really orders a known product of one demo shop (its sku), in a fixed script, so the result can be CHECKED BY CODE (right variant and quantity in the summary, contact details and payment as typed, placed once and only after the confirmation) and not only judged. Ids from 900. 'order' is read by AiEvalService.orderCheck.",
+  "note": "Order scenarios for the model comparison (AiEvalBatch): a customer who really orders a known product of one demo shop (its sku), in a fixed script, so the result can be CHECKED BY CODE (right variant and quantity in the summary, contact details and payment as typed, placed once and only after the confirmation) and not only judged. Ids from 900. 'order' is read by AiEvalService.orderCheck. 'governorate' is the code the order must carry (CAI, GIZ).",
   "conversations": [
-    {"id": 901, "category": "order_flow", "shop": "tech-zone", "dialect": "egyptian",
-     "customer": ["عايز شاحن فولتا 20 وات USB-C", "الأبيض واحد بس", "اسمي كريم سمير، 01012345678، القاهرة مدينة نصر شارع مكرم عبيد عمارة ٣ شقة ٧، الدفع كاش عند الاستلام", "تمام", "تمام أكد الأوردر"],
-     "expect": ["asks for any missing detail instead of guessing", "never writes a total or a summary itself", "the shown summary is the shop's, and the customer is asked to confirm", "after the confirmation gives the order number and thanks"],
-     "order": {"sku": "TZ-038-01", "qty": 1, "name": "كريم", "phone": "01012345678", "addressContains": ["مكرم", "القاهرة"], "payment": "CASH_ON_DELIVERY"}},
-    {"id": 902, "category": "order_flow", "shop": "tech-zone", "dialect": "egyptian",
-     "customer": ["عايز اتنين ماوس باد زينترا XL", "الاسود", "اسمي منى علي، 01123456789، الجيزة الدقي شارع التحرير ٥ الدور ٢، كاش", "ايوه", "ايوه أكد"],
-     "expect": ["keeps the quantity two", "never writes a total or a summary itself", "the shown summary is the shop's, and the customer is asked to confirm", "after the confirmation gives the order number and thanks"],
-     "order": {"sku": "TZ-070-01", "qty": 2, "name": "منى", "phone": "01123456789", "addressContains": ["التحرير", "الجيزة"], "payment": "CASH_ON_DELIVERY"}},
-    {"id": 911, "category": "order_flow", "shop": "nile-style", "dialect": "egyptian",
-     "customer": ["عايز شنطة كروس رجالي", "بني", "اسمي أحمد حسن، 01234567890، القاهرة المعادي شارع 9 عمارة 4 شقة 12، الدفع كاش", "تمام", "تمام أكد"],
-     "expect": ["asks for the colour when it is missing", "never writes a total or a summary itself", "the shown summary is the shop's, and the customer is asked to confirm", "after the confirmation gives the order number and thanks"],
-     "order": {"sku": "NS-131-01", "qty": 1, "name": "أحمد", "phone": "01234567890", "addressContains": ["المعادي", "القاهرة"], "payment": "CASH_ON_DELIVERY"}},
-    {"id": 912, "category": "order_flow", "shop": "nile-style", "dialect": "egyptian",
-     "customer": ["عايزة حزام نسائي رفيع اتنين", "الاسود", "اسمي سارة محمود، 01099887766، الجيزة الدقي شارع الدقي ١٠ شقة ٣، كاش", "ايوه", "ايوه أكدي"],
-     "expect": ["keeps the quantity two", "never writes a total or a summary itself", "the shown summary is the shop's, and the customer is asked to confirm", "after the confirmation gives the order number and thanks"],
-     "order": {"sku": "NS-140-01", "qty": 2, "name": "سارة", "phone": "01099887766", "addressContains": ["الدقي", "الجيزة"], "payment": "CASH_ON_DELIVERY"}},
-    {"id": 921, "category": "order_flow", "shop": "beit-elshawarma", "dialect": "egyptian",
-     "customer": ["عايز ٤ كنافة بالقشطة", "اسمي يوسف خالد، 01011223344، القاهرة مصر الجديدة شارع الحجاز عمارة ٥ شقة ٢، كاش", "تمام", "تمام أكد الطلب"],
-     "expect": ["keeps the quantity four", "never writes a total or a summary itself", "the shown summary is the shop's, and the customer is asked to confirm", "after the confirmation gives the order number and thanks"],
-     "order": {"sku": "BS-56-1", "qty": 4, "name": "يوسف", "phone": "01011223344", "addressContains": ["الحجاز", "القاهرة"], "payment": "CASH_ON_DELIVERY"}},
-    {"id": 922, "category": "order_flow", "shop": "beit-elshawarma", "dialect": "egyptian",
-     "customer": ["عايز ٣ أم علي", "اسمي هبة سعيد، 01155667788، الجيزة المهندسين شارع جامعة الدول ٨ شقة ٦، كاش", "ايوه", "ايوه أكدي"],
-     "expect": ["keeps the quantity three", "never writes a total or a summary itself", "the shown summary is the shop's, and the customer is asked to confirm", "after the confirmation gives the order number and thanks"],
-     "order": {"sku": "BS-55-1", "qty": 3, "name": "هبة", "phone": "01155667788", "addressContains": ["جامعة الدول", "الجيزة"], "payment": "CASH_ON_DELIVERY"}}
+    {
+      "id": 901,
+      "category": "order_flow",
+      "shop": "tech-zone",
+      "dialect": "egyptian",
+      "customer": [
+        "عايز شاحن فولتا 20 وات USB-C",
+        "الأبيض واحد بس",
+        "اسمي كريم سمير، 01012345678، القاهرة مدينة نصر شارع مكرم عبيد عمارة ٣ شقة ٧، الدفع كاش عند الاستلام",
+        "تمام",
+        "تمام أكد الأوردر"
+      ],
+      "expect": [
+        "asks for any missing detail instead of guessing",
+        "never writes a total or a summary itself",
+        "the shown summary is the shop's, and the customer is asked to confirm",
+        "after the confirmation gives the order number and thanks"
+      ],
+      "order": {
+        "sku": "TZ-038-01",
+        "qty": 1,
+        "name": "كريم",
+        "phone": "01012345678",
+        "addressContains": [
+          "مكرم"
+        ],
+        "payment": "CASH_ON_DELIVERY",
+        "governorate": "CAI"
+      }
+    },
+    {
+      "id": 902,
+      "category": "order_flow",
+      "shop": "tech-zone",
+      "dialect": "egyptian",
+      "customer": [
+        "عايز اتنين ماوس باد زينترا XL",
+        "الاسود",
+        "اسمي منى علي، 01123456789، الجيزة الدقي شارع التحرير ٥ الدور ٢، كاش",
+        "ايوه",
+        "ايوه أكد"
+      ],
+      "expect": [
+        "keeps the quantity two",
+        "never writes a total or a summary itself",
+        "the shown summary is the shop's, and the customer is asked to confirm",
+        "after the confirmation gives the order number and thanks"
+      ],
+      "order": {
+        "sku": "TZ-070-01",
+        "qty": 2,
+        "name": "منى",
+        "phone": "01123456789",
+        "addressContains": [
+          "التحرير"
+        ],
+        "payment": "CASH_ON_DELIVERY",
+        "governorate": "GIZ"
+      }
+    },
+    {
+      "id": 911,
+      "category": "order_flow",
+      "shop": "nile-style",
+      "dialect": "egyptian",
+      "customer": [
+        "عايز شنطة كروس رجالي",
+        "بني",
+        "اسمي أحمد حسن، 01234567890، القاهرة المعادي شارع 9 عمارة 4 شقة 12، الدفع كاش",
+        "تمام",
+        "تمام أكد"
+      ],
+      "expect": [
+        "asks for the colour when it is missing",
+        "never writes a total or a summary itself",
+        "the shown summary is the shop's, and the customer is asked to confirm",
+        "after the confirmation gives the order number and thanks"
+      ],
+      "order": {
+        "sku": "NS-131-01",
+        "qty": 1,
+        "name": "أحمد",
+        "phone": "01234567890",
+        "addressContains": [
+          "المعادي"
+        ],
+        "payment": "CASH_ON_DELIVERY",
+        "governorate": "CAI"
+      }
+    },
+    {
+      "id": 912,
+      "category": "order_flow",
+      "shop": "nile-style",
+      "dialect": "egyptian",
+      "customer": [
+        "عايزة حزام نسائي رفيع اتنين",
+        "الاسود",
+        "اسمي سارة محمود، 01099887766، الجيزة الدقي شارع الدقي ١٠ شقة ٣، كاش",
+        "ايوه",
+        "ايوه أكدي"
+      ],
+      "expect": [
+        "keeps the quantity two",
+        "never writes a total or a summary itself",
+        "the shown summary is the shop's, and the customer is asked to confirm",
+        "after the confirmation gives the order number and thanks"
+      ],
+      "order": {
+        "sku": "NS-140-01",
+        "qty": 2,
+        "name": "سارة",
+        "phone": "01099887766",
+        "addressContains": [
+          "الدقي"
+        ],
+        "payment": "CASH_ON_DELIVERY",
+        "governorate": "GIZ"
+      }
+    },
+    {
+      "id": 921,
+      "category": "order_flow",
+      "shop": "beit-elshawarma",
+      "dialect": "egyptian",
+      "customer": [
+        "عايز ٤ كنافة بالقشطة",
+        "اسمي يوسف خالد، 01011223344، القاهرة مصر الجديدة شارع الحجاز عمارة ٥ شقة ٢، كاش",
+        "تمام",
+        "تمام أكد الطلب"
+      ],
+      "expect": [
+        "keeps the quantity four",
+        "never writes a total or a summary itself",
+        "the shown summary is the shop's, and the customer is asked to confirm",
+        "after the confirmation gives the order number and thanks"
+      ],
+      "order": {
+        "sku": "BS-56-1",
+        "qty": 4,
+        "name": "يوسف",
+        "phone": "01011223344",
+        "addressContains": [
+          "الحجاز"
+        ],
+        "payment": "CASH_ON_DELIVERY",
+        "governorate": "CAI"
+      }
+    },
+    {
+      "id": 922,
+      "category": "order_flow",
+      "shop": "beit-elshawarma",
+      "dialect": "egyptian",
+      "customer": [
+        "عايز ٣ أم علي",
+        "اسمي هبة سعيد، 01155667788، الجيزة المهندسين شارع جامعة الدول ٨ شقة ٦، كاش",
+        "ايوه",
+        "ايوه أكدي"
+      ],
+      "expect": [
+        "keeps the quantity three",
+        "never writes a total or a summary itself",
+        "the shown summary is the shop's, and the customer is asked to confirm",
+        "after the confirmation gives the order number and thanks"
+      ],
+      "order": {
+        "sku": "BS-55-1",
+        "qty": 3,
+        "name": "هبة",
+        "phone": "01155667788",
+        "addressContains": [
+          "جامعة الدول"
+        ],
+        "payment": "CASH_ON_DELIVERY",
+        "governorate": "GIZ"
+      }
+    }
   ]
 }

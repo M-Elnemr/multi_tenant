@@ -243,6 +243,7 @@ public class AiEvalService {
         boolean contact = last != null && phone.endsWith(wantPhone.substring(Math.max(0, wantPhone.length() - 10))) && last.path("name").asText("").contains(want.path("name").asText("~"));
         String addr = last == null ? "" : last.path("line1").asText("") + " " + last.path("area").asText("") + " " + last.path("governorate").asText("");
         for (JsonNode tok : want.path("addressContains")) if (!addr.contains(tok.asText())) contact = false;
+        if (want.hasNonNull("governorate") && (last == null || !want.path("governorate").asText().equalsIgnoreCase(last.path("governorate").asText("")))) contact = false;   // stored as a code (CAI, GIZ), not as the name the customer typed
         ck.put("contactDetailsCorrect", contact);
         ck.put("paymentCorrect", last != null && want.path("payment").asText("").equalsIgnoreCase(last.path("paymentMethod").asText("")));
         ck.put("placedOnce", placements == 1);
@@ -251,6 +252,7 @@ public class AiEvalService {
         if (last != null && row != null) sane = last.path("totalMinor").asLong(-1) >= ((Number) row.get("price_minor")).longValue() * qty;
         ck.put("totalNotBelowGoods", sane);
         ck.put("allCorrect", ck.values().stream().allMatch(Boolean.TRUE::equals));
+        if (last != null) ck.put("pendingAtSummary", JSON.convertValue(last, Map.class));   // what the confirmed summary carried, kept in the report so the checks can be audited
         return ck;
     }
 
