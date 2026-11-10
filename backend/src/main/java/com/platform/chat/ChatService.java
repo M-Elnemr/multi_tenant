@@ -2344,11 +2344,16 @@ public class ChatService {
         public int providerCalls, callsWithReasoning, providerRetries, hedges, repliesRagToolOffered, repliesRagToolMissing, ragUnavailableReplies;
         public long reasoningTokens, reasoningContentChars;
 
+        /** Request fields set for one model (by provider code) over what it normally sends, e.g. {"deepseek": {"reasoning_effort": "low"}}: the reasoning setting under test. */
+        public final Map<String, Map<String, Object>> overrides;
+
         public EvalScope(boolean lean) { this(lean, null, null); }
 
         public EvalScope(boolean lean, Double temperature) { this(lean, temperature, null); }
 
-        public EvalScope(boolean lean, Double temperature, Integer maxOutput) { this.lean = lean; this.temperature = temperature; this.maxOutput = maxOutput; }
+        public EvalScope(boolean lean, Double temperature, Integer maxOutput) { this(lean, temperature, maxOutput, Map.of()); }
+
+        public EvalScope(boolean lean, Double temperature, Integer maxOutput, Map<String, Map<String, Object>> overrides) { this.lean = lean; this.temperature = temperature; this.maxOutput = maxOutput; this.overrides = overrides == null ? Map.of() : overrides; }
 
         synchronized void request(String code, Map<String, Object> body) {
             providerCalls++;
@@ -2413,6 +2418,9 @@ public class ChatService {
 
     /** The output cap an evaluation asks every OpenAI-style model to use (null = each model's own setting). */
     static Integer evalMaxOutput() { EvalScope e = EVAL.get(); return e == null ? null : e.maxOutput; }
+
+    /** Request fields an evaluation sets for this model, or null. */
+    static Map<String, Object> evalOverrides(String code) { EvalScope e = EVAL.get(); return e == null ? null : e.overrides.get(code); }
 
     // what the provider layer reports to a running evaluation (nothing happens outside one)
     static void evalRequest(String code, Map<String, Object> body) { EvalScope e = EVAL.get(); if (e != null) e.request(code, body); }

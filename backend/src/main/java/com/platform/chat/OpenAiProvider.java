@@ -204,6 +204,8 @@ public class OpenAiProvider implements AiProvider {
         if (!extraBody.isEmpty()) {
             try { body.putAll(JSON.readValue(extraBody, new TypeReference<Map<String, Object>>() {})); } catch (Exception e) { throw new AiUnavailableException("The extra request settings of " + code + " are not valid JSON"); }
         }
+        Map<String, Object> evalOverride = ChatService.evalOverrides(code);   // the reasoning setting an evaluation tests for this model
+        if (evalOverride != null) body.putAll(evalOverride);
         Double evalTemperature = ChatService.evalTemperature();   // an evaluation runs every compared model with the same temperature
         if (evalTemperature != null) body.put("temperature", evalTemperature);
         Integer evalMax = ChatService.evalMaxOutput();   // ... and the same output cap

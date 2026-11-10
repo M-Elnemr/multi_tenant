@@ -29,7 +29,7 @@ import org.springframework.stereotype.Component;
  * Everything runs on the TEST channel (nothing is ordered, billed or kept) against the shops named in the plan, every model on its own thread, and the raw result of every conversation
  * (transcript, judge verdict, calls, tokens, time) goes to {@code <files dir>/eval/<plan id>/report.json}, rewritten after each conversation. Only someone with access to the server's files can start it.
  *
- * <pre>{"id":"cmp1","temperature":0.3,"maxOutputTokens":2000,"models":["glm","deepseek","qwen"],"modes":["full","lean"],"stores":{"tech-zone":[1,2,3,901],"nile-style":[4,5,911]}}</pre>
+ * <pre>{"id":"cmp1","temperature":0.3,"maxOutputTokens":2000,"overrides":{"deepseek":{"reasoning_effort":"low"}},"models":["glm","deepseek","qwen"],"modes":["full","lean"],"stores":{"tech-zone":[1,2,3,901],"nile-style":[4,5,911]}}</pre>
  * {@code full} is the production prompt; {@code lean} keeps only the important rules (see {@link ChatService#LEAN_RULES}); both use the same tools, RAG and code-side checks.
  */
 @Component
@@ -88,6 +88,8 @@ public class AiEvalBatch {
             report.put("temperature", temperature);
             Integer maxOutput = plan.hasNonNull("maxOutputTokens") ? plan.path("maxOutputTokens").asInt() : null;
             report.put("maxOutputTokens", maxOutput);
+            @SuppressWarnings("unchecked") Map<String, Map<String, Object>> overrides = plan.has("overrides") ? JSON.convertValue(plan.get("overrides"), Map.class) : Map.of();
+            report.put("overrides", overrides);
             report.put("ragHealthAtStart", knowledge.health());   // the embedding provider's counters since the backend started
             Map<String, Object> settings = new LinkedHashMap<>();
             for (String model : models) settings.put(model, channelAi.forChannel("TEST", model).settings());
@@ -107,7 +109,7 @@ public class AiEvalBatch {
                                 JsonNode c = golden.stream().filter(g -> g.path("id").asInt() == idNode.asInt()).findFirst().orElse(null);
                                 if (c == null || (c.hasNonNull("shop") && !c.path("shop").asText().equals(store.getKey()))) continue;
                                 Map<String, Object> r;
-                                try { r = eval.play(tenant, model, runId, c, "lean".equals(mode), temperature, maxOutput); } catch (RuntimeException e) { r = new LinkedHashMap<>(Map.of("id", c.path("id").asInt(), "error", String.valueOf(e.getMessage()))); }
+                                try { r = eval.play(tenant, model, runId, c, "lean".equals(mode), temperature, maxOutput, overrides); } catch (RuntimeException e) { r = new LinkedHashMap<>(Map.of("id", c.path("id").asInt(), "error", String.valueOf(e.getMessage()))); }
                                 synchronized (lock) { results.add(r); flush(out, report); }
                             }
                             synchronized (lock) { cell.put("status", "DONE"); cell.put("finishedAt", Instant.now().toString()); flush(out, report); }

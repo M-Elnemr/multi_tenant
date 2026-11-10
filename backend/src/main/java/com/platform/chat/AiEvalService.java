@@ -150,7 +150,10 @@ public class AiEvalService {
     public Map<String, Object> play(UUID tenantId, String model, UUID runId, JsonNode c, boolean lean, Double temperature) { return play(tenantId, model, runId, c, lean, temperature, null); }
 
     /** Same with the output cap (max tokens) every compared model is asked to use. */
-    public Map<String, Object> play(UUID tenantId, String model, UUID runId, JsonNode c, boolean lean, Double temperature, Integer maxOutput) {
+    public Map<String, Object> play(UUID tenantId, String model, UUID runId, JsonNode c, boolean lean, Double temperature, Integer maxOutput) { return play(tenantId, model, runId, c, lean, temperature, maxOutput, Map.of()); }
+
+    /** Same with request fields set per model (the reasoning setting under test). */
+    public Map<String, Object> play(UUID tenantId, String model, UUID runId, JsonNode c, boolean lean, Double temperature, Integer maxOutput, Map<String, Map<String, Object>> overrides) {
         String ext = "eval-" + runId.toString().substring(0, 8) + "-" + c.path("id").asInt();
         String name = c.hasNonNull("displayName") ? c.path("displayName").asText() : null;
         List<String> lines = new ArrayList<>();
@@ -162,7 +165,7 @@ public class AiEvalService {
         List<Boolean> placedAt = new ArrayList<>();
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("id", c.path("id").asInt()); out.put("category", c.path("category").asText());
-        ChatService.EvalScope scope = new ChatService.EvalScope(lean, temperature, maxOutput);
+        ChatService.EvalScope scope = new ChatService.EvalScope(lean, temperature, maxOutput, overrides);
         try {
             chat.setTestModel(tenantId, ext, model);
             for (String t : turns) {
