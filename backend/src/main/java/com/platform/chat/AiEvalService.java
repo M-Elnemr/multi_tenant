@@ -147,7 +147,10 @@ public class AiEvalService {
      * code-checked facts about the order (right variant and quantity in the summary, the contact details and payment as typed, placed after the confirmation, placed once, total not below the
      * goods). {@code judgeTokens} is what the judge used, which is not counted in {@code usage}.
      */
-    public Map<String, Object> play(UUID tenantId, String model, UUID runId, JsonNode c, boolean lean, Double temperature) {
+    public Map<String, Object> play(UUID tenantId, String model, UUID runId, JsonNode c, boolean lean, Double temperature) { return play(tenantId, model, runId, c, lean, temperature, null); }
+
+    /** Same with the output cap (max tokens) every compared model is asked to use. */
+    public Map<String, Object> play(UUID tenantId, String model, UUID runId, JsonNode c, boolean lean, Double temperature, Integer maxOutput) {
         String ext = "eval-" + runId.toString().substring(0, 8) + "-" + c.path("id").asInt();
         String name = c.hasNonNull("displayName") ? c.path("displayName").asText() : null;
         List<String> lines = new ArrayList<>();
@@ -159,11 +162,11 @@ public class AiEvalService {
         List<Boolean> placedAt = new ArrayList<>();
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("id", c.path("id").asInt()); out.put("category", c.path("category").asText());
-        ChatService.EvalScope scope = new ChatService.EvalScope(lean, temperature);
+        ChatService.EvalScope scope = new ChatService.EvalScope(lean, temperature, maxOutput);
         try {
             chat.setTestModel(tenantId, ext, model);
             for (String t : turns) {
-                int r0 = scope.rounds.size(), t0 = scope.toolCalls.size(), f0 = scope.failures.size(), s0 = scope.secondOpinions.size(), m0 = scope.modelReplies, fb0 = scope.fallbacks;
+                int r0 = scope.rounds.size(), t0 = scope.toolCalls.size(), f0 = scope.failures.size(), s0 = scope.secondOpinions.size(), m0 = scope.modelReplies, fb0 = scope.fallbacks, rm0 = scope.repliesRagToolMissing, rd0 = scope.ragUnavailableReplies;
                 long started = System.nanoTime();
                 String reply;
                 boolean placed = false;
@@ -193,6 +196,8 @@ public class AiEvalService {
                 rec.put("fallbacks", scope.fallbacks - fb0); rec.put("secondOpinions", scope.secondOpinions.size() - s0);
                 rec.put("secondOpinionAdopted", scope.secondOpinions.subList(s0, scope.secondOpinions.size()).stream().anyMatch(x -> Boolean.TRUE.equals(x.get("adopted"))));
                 if (reply != null && (reply.startsWith("⚠️") || reply.startsWith("[error:"))) rec.put("errorReply", true);
+                rec.put("ragToolMissing", scope.repliesRagToolMissing > rm0);   // the knowledge tool was not in the model's list for this reply
+                rec.put("ragUnavailable", scope.ragUnavailableReplies > rd0);   // a search by meaning could not run (the model was told so)
                 turnRecords.add(rec);
             }
         } finally {
@@ -207,6 +212,11 @@ public class AiEvalService {
         usage.put("inputTokens", in); usage.put("outputTokens", outTok); usage.put("cachedTokens", cached); usage.put("cacheWriteTokens", write); usage.put("millis", scope.millis);
         usage.put("systemChars", scope.systemChars); usage.put("toolsHash", scope.toolsHash);
         out.put("usage", usage);
+        Map<String, Object> provider = new LinkedHashMap<>();
+        provider.put("request", scope.request); provider.put("calls", scope.providerCalls); provider.put("callsWithReasoning", scope.callsWithReasoning);
+        provider.put("reasoningTokens", scope.reasoningTokens); provider.put("reasoningContentChars", scope.reasoningContentChars); provider.put("finishReasons", scope.finishReasons);
+        provider.put("httpErrors", scope.httpErrors); provider.put("failedAttempts", scope.providerRetries); provider.put("hedgedTwins", scope.hedges);
+        out.put("provider", provider);
         out.put("toolCalls", scope.toolCalls);
         out.put("modelFailures", scope.failures);
         out.put("secondOpinions", scope.secondOpinions);

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "Order scenarios for the model comparison (AiEvalBatch): a customer who really orders a known product of one demo shop (its sku), in a fixed script, so the result can be CHECKED BY CODE (right variant and quantity in the summary, contact details and payment as typed, placed once and only after the confirmation) and not only judged. Ids from 900. 'order' is read by AiEvalService.orderCheck. 'governorate' is the code the order must carry (CAI, GIZ).",
+  "note": "Order scenarios for the model comparison (AiEvalBatch): a customer who really orders a known product of one demo shop (its sku), in a fixed script, so the result can be CHECKED BY CODE (right variant and quantity in the summary, contact details and payment as typed, placed once and only after the confirmation) and not only judged. Ids from 900. 'order' is read by AiEvalService.orderCheck. 'governorate' is the code the order must carry (CAI, GIZ). Ids 931-954 are the quantity regression set (2026-11-10): quantities 2, 3, 4 said before the details, once several messages before checkout, once changed before the summary, with address digits and a product whose name holds a number.",
   "conversations": [
     {
       "id": 901,
@@ -178,6 +178,365 @@
         ],
         "payment": "CASH_ON_DELIVERY",
         "governorate": "GIZ"
+      }
+    },
+    {
+      "id": 931,
+      "category": "order_flow",
+      "shop": "tech-zone",
+      "dialect": "egyptian",
+      "regression": "quantity",
+      "customer": [
+        "عايز اتنين حامل موبايل للعربية مغناطيس",
+        "الشحن بكام للقاهرة؟",
+        "ينفع الدفع كاش؟",
+        "اسمي مازن فتحي، 01055443322، القاهرة المعادي شارع 9 عمارة 4 شقة 12، كاش",
+        "تمام"
+      ],
+      "expect": [
+        "keeps the quantity the customer asked for",
+        "never writes a total or a summary itself",
+        "the shown summary is the shop's, and the customer is asked to confirm",
+        "after the confirmation gives the order number and thanks"
+      ],
+      "order": {
+        "sku": "TZ-079-01",
+        "qty": 2,
+        "name": "مازن",
+        "phone": "01055443322",
+        "addressContains": [
+          "المعادي"
+        ],
+        "governorate": "CAI",
+        "payment": "CASH_ON_DELIVERY"
+      }
+    },
+    {
+      "id": 932,
+      "category": "order_flow",
+      "shop": "tech-zone",
+      "dialect": "egyptian",
+      "regression": "quantity",
+      "customer": [
+        "عايز ٣ ماوس جيمنج زينترا RGB",
+        "اسمي رنا سعد، 01166554433، الجيزة الدقي شارع التحرير ٥ شقة ٣، كاش",
+        "تمام"
+      ],
+      "expect": [
+        "keeps the quantity the customer asked for",
+        "never writes a total or a summary itself",
+        "the shown summary is the shop's, and the customer is asked to confirm",
+        "after the confirmation gives the order number and thanks"
+      ],
+      "order": {
+        "sku": "TZ-064-01",
+        "qty": 3,
+        "name": "رنا",
+        "phone": "01166554433",
+        "addressContains": [
+          "التحرير"
+        ],
+        "governorate": "GIZ",
+        "payment": "CASH_ON_DELIVERY"
+      }
+    },
+    {
+      "id": 933,
+      "category": "order_flow",
+      "shop": "tech-zone",
+      "dialect": "egyptian",
+      "regression": "quantity",
+      "customer": [
+        "عايز اتنين شاحن فولتا 20 وات USB-C",
+        "لا خليهم ٤",
+        "اسمي طارق منصور، 01277665544، القاهرة مدينة نصر شارع الطيران عمارة ٨ شقة ٢، كاش",
+        "تمام"
+      ],
+      "expect": [
+        "keeps the quantity the customer asked for",
+        "never writes a total or a summary itself",
+        "the shown summary is the shop's, and the customer is asked to confirm",
+        "after the confirmation gives the order number and thanks"
+      ],
+      "order": {
+        "sku": "TZ-038-01",
+        "qty": 4,
+        "name": "طارق",
+        "phone": "01277665544",
+        "addressContains": [
+          "الطيران"
+        ],
+        "governorate": "CAI",
+        "payment": "CASH_ON_DELIVERY"
+      }
+    },
+    {
+      "id": 934,
+      "category": "order_flow",
+      "shop": "tech-zone",
+      "dialect": "egyptian",
+      "regression": "quantity",
+      "customer": [
+        "عايز اربعة باور بانك فولتا 30000 للاب توب",
+        "اسمي هبة نجم، 01088990011، القاهرة التجمع شارع التسعين عمارة ١٢ شقة ٣ الدور ٢، كاش",
+        "تمام"
+      ],
+      "expect": [
+        "keeps the quantity the customer asked for",
+        "never writes a total or a summary itself",
+        "the shown summary is the shop's, and the customer is asked to confirm",
+        "after the confirmation gives the order number and thanks"
+      ],
+      "order": {
+        "sku": "TZ-051-01",
+        "qty": 4,
+        "name": "هبة",
+        "phone": "01088990011",
+        "addressContains": [
+          "التسعين"
+        ],
+        "governorate": "CAI",
+        "payment": "CASH_ON_DELIVERY"
+      }
+    },
+    {
+      "id": 941,
+      "category": "order_flow",
+      "shop": "nile-style",
+      "dialect": "egyptian",
+      "regression": "quantity",
+      "customer": [
+        "عايزة اتنين حزام نسائي رفيع",
+        "ايه الألوان المتاحة؟",
+        "الاسود",
+        "اسمي ليلى حسن، 01199887766، الجيزة المهندسين شارع جامعة الدول ٨ شقة ٦، كاش",
+        "تمام"
+      ],
+      "expect": [
+        "keeps the quantity the customer asked for",
+        "never writes a total or a summary itself",
+        "the shown summary is the shop's, and the customer is asked to confirm",
+        "after the confirmation gives the order number and thanks"
+      ],
+      "order": {
+        "sku": "NS-140-01",
+        "qty": 2,
+        "name": "ليلى",
+        "phone": "01199887766",
+        "addressContains": [
+          "جامعة الدول"
+        ],
+        "governorate": "GIZ",
+        "payment": "CASH_ON_DELIVERY"
+      }
+    },
+    {
+      "id": 942,
+      "category": "order_flow",
+      "shop": "nile-style",
+      "dialect": "egyptian",
+      "regression": "quantity",
+      "customer": [
+        "عايز ٣ شنطة كروس رجالي",
+        "بني",
+        "اسمي عمرو سالم، 01222334455، القاهرة مصر الجديدة شارع الحجاز عمارة ٥ شقة ١، كاش",
+        "تمام"
+      ],
+      "expect": [
+        "keeps the quantity the customer asked for",
+        "never writes a total or a summary itself",
+        "the shown summary is the shop's, and the customer is asked to confirm",
+        "after the confirmation gives the order number and thanks"
+      ],
+      "order": {
+        "sku": "NS-131-01",
+        "qty": 3,
+        "name": "عمرو",
+        "phone": "01222334455",
+        "addressContains": [
+          "الحجاز"
+        ],
+        "governorate": "CAI",
+        "payment": "CASH_ON_DELIVERY"
+      }
+    },
+    {
+      "id": 943,
+      "category": "order_flow",
+      "shop": "nile-style",
+      "dialect": "egyptian",
+      "regression": "quantity",
+      "customer": [
+        "عايز اتنين شنطة توت قماش",
+        "بيج",
+        "لا خليهم ٤",
+        "اسمي دينا كامل، 01011009988، الجيزة الشيخ زايد شارع الجامعة عمارة ٣ شقة ٩، كاش",
+        "تمام"
+      ],
+      "expect": [
+        "keeps the quantity the customer asked for",
+        "never writes a total or a summary itself",
+        "the shown summary is the shop's, and the customer is asked to confirm",
+        "after the confirmation gives the order number and thanks"
+      ],
+      "order": {
+        "sku": "NS-126-01",
+        "qty": 4,
+        "name": "دينا",
+        "phone": "01011009988",
+        "addressContains": [
+          "الجامعة"
+        ],
+        "governorate": "GIZ",
+        "payment": "CASH_ON_DELIVERY"
+      }
+    },
+    {
+      "id": 944,
+      "category": "order_flow",
+      "shop": "nile-style",
+      "dialect": "egyptian",
+      "regression": "quantity",
+      "customer": [
+        "عايز اربعة شراب قطن ٦ أزواج",
+        "اسمي ياسر عبده، 01100998877، القاهرة حلوان شارع المحطة عمارة ٧ شقة ٥ الدور ٣، كاش",
+        "تمام"
+      ],
+      "expect": [
+        "keeps the quantity the customer asked for",
+        "never writes a total or a summary itself",
+        "the shown summary is the shop's, and the customer is asked to confirm",
+        "after the confirmation gives the order number and thanks"
+      ],
+      "order": {
+        "sku": "NS-040-01",
+        "qty": 4,
+        "name": "ياسر",
+        "phone": "01100998877",
+        "addressContains": [
+          "المحطة"
+        ],
+        "governorate": "CAI",
+        "payment": "CASH_ON_DELIVERY"
+      }
+    },
+    {
+      "id": 951,
+      "category": "order_flow",
+      "shop": "beit-elshawarma",
+      "dialect": "egyptian",
+      "regression": "quantity",
+      "customer": [
+        "عايز اتنين وجبة الأصحاب",
+        "التوصيل بياخد كام؟",
+        "ينفع كاش؟",
+        "اسمي سلمى رضا، 01233221100، القاهرة الزمالك شارع 26 يوليو عمارة ٤ شقة ٣، كاش",
+        "تمام"
+      ],
+      "expect": [
+        "keeps the quantity the customer asked for",
+        "never writes a total or a summary itself",
+        "the shown summary is the shop's, and the customer is asked to confirm",
+        "after the confirmation gives the order number and thanks"
+      ],
+      "order": {
+        "sku": "BS-37-1",
+        "qty": 2,
+        "name": "سلمى",
+        "phone": "01233221100",
+        "addressContains": [
+          "26 يوليو"
+        ],
+        "governorate": "CAI",
+        "payment": "CASH_ON_DELIVERY"
+      }
+    },
+    {
+      "id": 952,
+      "category": "order_flow",
+      "shop": "beit-elshawarma",
+      "dialect": "egyptian",
+      "regression": "quantity",
+      "customer": [
+        "عايز ٣ تشيز كيك فراولة",
+        "اسمي إسلام وجيه، 01044556677، الجيزة فيصل شارع الهرم عمارة ٢٠ شقة ٨، كاش",
+        "تمام"
+      ],
+      "expect": [
+        "keeps the quantity the customer asked for",
+        "never writes a total or a summary itself",
+        "the shown summary is the shop's, and the customer is asked to confirm",
+        "after the confirmation gives the order number and thanks"
+      ],
+      "order": {
+        "sku": "BS-59-1",
+        "qty": 3,
+        "name": "إسلام",
+        "phone": "01044556677",
+        "addressContains": [
+          "الهرم"
+        ],
+        "governorate": "GIZ",
+        "payment": "CASH_ON_DELIVERY"
+      }
+    },
+    {
+      "id": 953,
+      "category": "order_flow",
+      "shop": "beit-elshawarma",
+      "dialect": "egyptian",
+      "regression": "quantity",
+      "customer": [
+        "عايز اتنين أصابع موتزاريلا",
+        "لا خليهم ٤",
+        "اسمي نورا عادل، 01155009911، القاهرة مدينة نصر شارع عباس العقاد عمارة ١١ شقة ٦، كاش",
+        "تمام"
+      ],
+      "expect": [
+        "keeps the quantity the customer asked for",
+        "never writes a total or a summary itself",
+        "the shown summary is the shop's, and the customer is asked to confirm",
+        "after the confirmation gives the order number and thanks"
+      ],
+      "order": {
+        "sku": "BS-47-1",
+        "qty": 4,
+        "name": "نورا",
+        "phone": "01155009911",
+        "addressContains": [
+          "عباس العقاد"
+        ],
+        "governorate": "CAI",
+        "payment": "CASH_ON_DELIVERY"
+      }
+    },
+    {
+      "id": 954,
+      "category": "order_flow",
+      "shop": "beit-elshawarma",
+      "dialect": "egyptian",
+      "regression": "quantity",
+      "customer": [
+        "عايز اربعة هوت دوج",
+        "اسمي كمال جابر، 01277889900، القاهرة عين شمس شارع الخليفة المأمون عمارة ٩ شقة ١٤ الدور ٥، كاش",
+        "تمام"
+      ],
+      "expect": [
+        "keeps the quantity the customer asked for",
+        "never writes a total or a summary itself",
+        "the shown summary is the shop's, and the customer is asked to confirm",
+        "after the confirmation gives the order number and thanks"
+      ],
+      "order": {
+        "sku": "BS-26-1",
+        "qty": 4,
+        "name": "كمال",
+        "phone": "01277889900",
+        "addressContains": [
+          "الخليفة المأمون"
+        ],
+        "governorate": "CAI",
+        "payment": "CASH_ON_DELIVERY"
       }
     }
   ]

@@ -465,7 +465,7 @@ public class ChatService {
         String system = systemPrompt(tenantId, conv, clientId, channel, externalId);
         if (!system.contains("ALL PRODUCTS (")) system += productsForMessage(tenantId, text);
         List<ToolDef> tools = tools();
-        if (EVAL.get() != null) EVAL.get().setup(system.length(), Integer.toHexString(tools.toString().hashCode()) + ":" + tools.size());
+        if (EVAL.get() != null) EVAL.get().setup(system.length(), Integer.toHexString(tools.toString().hashCode()) + ":" + tools.size(), tools.stream().anyMatch(td -> "shop_knowledge".equals(td.name())));
         String answer = null;
         // A plain "yes / تمام / ok" to the summary places the order right here: the model is never trusted to remember to do it, or to say it was done.
         // ...but only when the customer is answering the summary itself: after any other message the summary may be out of date, and the model shows a new one first
@@ -2336,9 +2336,44 @@ public class ChatService {
         public String toolsHash = "";
         private final java.util.Set<Object> second = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
-        public EvalScope(boolean lean) { this(lean, null); }
+        /** The output cap an evaluation asks every OpenAI-style model to use (null = each model's own). */
+        public final Integer maxOutput;
+        /** What the provider layer saw: the settings of the outgoing request (first call of each model), responses with reasoning, finish reasons, HTTP errors, retries and hedged twins. */
+        public final Map<String, Object> request = new java.util.LinkedHashMap<>();
+        public final Map<String, Integer> finishReasons = new java.util.TreeMap<>(), httpErrors = new java.util.TreeMap<>();
+        public int providerCalls, callsWithReasoning, providerRetries, hedges, repliesRagToolOffered, repliesRagToolMissing, ragUnavailableReplies;
+        public long reasoningTokens, reasoningContentChars;
 
-        public EvalScope(boolean lean, Double temperature) { this.lean = lean; this.temperature = temperature; }
+        public EvalScope(boolean lean) { this(lean, null, null); }
+
+        public EvalScope(boolean lean, Double temperature) { this(lean, temperature, null); }
+
+        public EvalScope(boolean lean, Double temperature, Integer maxOutput) { this.lean = lean; this.temperature = temperature; this.maxOutput = maxOutput; }
+
+        synchronized void request(String code, Map<String, Object> body) {
+            providerCalls++;
+            if (request.containsKey("model")) return;
+            for (var e : body.entrySet()) if (!"messages".equals(e.getKey()) && !"tools".equals(e.getKey())) request.put(e.getKey(), e.getValue());
+            request.put("toolsInRequest", body.get("tools") instanceof List<?> l ? l.size() : 0);
+        }
+
+        synchronized void response(com.fasterxml.jackson.databind.JsonNode root) {
+            var msg = root.path("choices").path(0).path("message");
+            String rc = msg.path("reasoning_content").asText(msg.path("reasoning").asText(""));
+            var u = root.path("usage");
+            long rt = Math.max(u.path("reasoning_tokens").asLong(0), u.path("completion_tokens_details").path("reasoning_tokens").asLong(0));
+            if (rt > 0 || !rc.isEmpty()) callsWithReasoning++;
+            reasoningTokens += rt; reasoningContentChars += rc.length();
+            finishReasons.merge(root.path("choices").path(0).path("finish_reason").asText("?"), 1, Integer::sum);
+        }
+
+        synchronized void http(int status) { httpErrors.merge(String.valueOf(status), 1, Integer::sum); providerRetries++; }
+
+        synchronized void hedge() { hedges++; }
+
+        synchronized void rag(boolean offered) { if (offered) repliesRagToolOffered++; else repliesRagToolMissing++; }
+
+        synchronized void ragDown() { ragUnavailableReplies++; }
 
         synchronized void add(List<AiUsageService.Round> r, long ms, boolean fellBack, String by) {
             for (var x : r) if (!second.contains(x)) rounds.add(x);
@@ -2370,11 +2405,23 @@ public class ChatService {
             failures.add(m);
         }
 
-        synchronized void setup(int chars, String hash) { systemChars = chars; toolsHash = hash; }
+        synchronized void setup(int chars, String hash, boolean ragToolOffered) { systemChars = chars; toolsHash = hash; rag(ragToolOffered); }
     }
 
     /** The temperature an evaluation asks every OpenAI-style model to use (null = each model's own setting). */
     static Double evalTemperature() { EvalScope e = EVAL.get(); return e == null ? null : e.temperature; }
+
+    /** The output cap an evaluation asks every OpenAI-style model to use (null = each model's own setting). */
+    static Integer evalMaxOutput() { EvalScope e = EVAL.get(); return e == null ? null : e.maxOutput; }
+
+    // what the provider layer reports to a running evaluation (nothing happens outside one)
+    static void evalRequest(String code, Map<String, Object> body) { EvalScope e = EVAL.get(); if (e != null) e.request(code, body); }
+
+    static void evalResponse(com.fasterxml.jackson.databind.JsonNode root) { EvalScope e = EVAL.get(); if (e != null) e.response(root); }
+
+    static void evalHttp(int status) { EvalScope e = EVAL.get(); if (e != null) e.http(status); }
+
+    static void evalHedge() { EvalScope e = EVAL.get(); if (e != null) e.hedge(); }
 
     private static final ThreadLocal<EvalScope> EVAL = new ThreadLocal<>();
 
@@ -3504,6 +3551,7 @@ public class ChatService {
     private void markRagDown(Ctx ctx, String where) {
         if (ctx.ragDown()[0]) return;
         ctx.ragDown()[0] = true;
+        if (EVAL.get() != null) EVAL.get().ragDown();
         String err = String.valueOf(knowledge.health().get("lastError"));
         events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), null, "RAG_UNAVAILABLE", where + ": " + (err.length() > 160 ? err.substring(0, 160) : err), null);
     }

@@ -105,6 +105,7 @@ public class OpenAiProvider implements AiProvider {
                 HttpResponse<String> res = send(HttpRequest.newBuilder(URI.create(baseUrl + "/chat/completions")).timeout(Duration.ofMillis(timeout))
                         .header("Authorization", "Bearer " + key).header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body)).build(), timeout);
                 if (res.statusCode() / 100 == 2) return parse(JSON.readTree(res.body()));
+                ChatService.evalHttp(res.statusCode());
                 last = new AiUnavailableException("The AI assistant is busy, try again (HTTP " + res.statusCode() + ")");
                 if (res.statusCode() != 429 && res.statusCode() != 408 && res.statusCode() / 100 != 5) break;   // 408: Hive's "busy, try again" (seen live 2026-11-03)
                 Thread.sleep(attempt == 0 ? 1000 : 2500);
@@ -114,6 +115,7 @@ public class OpenAiProvider implements AiProvider {
             } catch (AiUnavailableException e) {
                 throw e;
             } catch (Exception e) {
+                ChatService.evalHttp(0);   // no answer at all (timeout, connection)
                 last = new AiUnavailableException("The AI assistant could not be reached", e);
             }
         }
@@ -137,6 +139,7 @@ public class OpenAiProvider implements AiProvider {
             return unwrap(() -> first.get(HEDGE_MS, java.util.concurrent.TimeUnit.MILLISECONDS));
         } catch (java.util.concurrent.TimeoutException slow) {
             log.info("{} call unanswered after {} ms: sending it a second time", code, HEDGE_MS);
+            ChatService.evalHedge();
         }
         if (throttle != null) throttle.acquire();
         var second = http.sendAsync(req, HttpResponse.BodyHandlers.ofString());
@@ -203,6 +206,9 @@ public class OpenAiProvider implements AiProvider {
         }
         Double evalTemperature = ChatService.evalTemperature();   // an evaluation runs every compared model with the same temperature
         if (evalTemperature != null) body.put("temperature", evalTemperature);
+        Integer evalMax = ChatService.evalMaxOutput();   // ... and the same output cap
+        if (evalMax != null) body.put(maxTokensField ? "max_tokens" : "max_completion_tokens", evalMax);
+        ChatService.evalRequest(code, body);
         return body;
     }
 
@@ -223,6 +229,7 @@ public class OpenAiProvider implements AiProvider {
     // ---- response --------------------------------------------------------------------------------------------------------------
 
     Turn parse(JsonNode root) {
+        ChatService.evalResponse(root);
         JsonNode msg = root.path("choices").path(0).path("message");
         if (msg.isMissingNode()) throw new AiUnavailableException("The AI assistant returned nothing");
         String text = msg.path("content").isNull() ? "" : msg.path("content").asText("");
