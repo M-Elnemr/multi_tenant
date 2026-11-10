@@ -77,6 +77,14 @@ public class OpenAiProvider implements AiProvider {
         }
     }
 
+    @Override
+    public java.util.Map<String, Object> settings() {
+        java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("code", code); m.put("label", name); m.put("modelId", model); m.put("host", java.net.URI.create(baseUrl).getHost()); m.put("reasoning", effort.isEmpty() ? "(none sent)" : effort);
+        m.put("maxOutputTokens", maxOutput); m.put("extraRequestSettings", extraBody.isEmpty() ? "(none)" : extraBody);
+        return m;
+    }
+
     @Override public String code() { return code; }
 
     @Override public String label() { return name + " (" + model + ")"; }
@@ -193,6 +201,8 @@ public class OpenAiProvider implements AiProvider {
         if (!extraBody.isEmpty()) {
             try { body.putAll(JSON.readValue(extraBody, new TypeReference<Map<String, Object>>() {})); } catch (Exception e) { throw new AiUnavailableException("The extra request settings of " + code + " are not valid JSON"); }
         }
+        Double evalTemperature = ChatService.evalTemperature();   // an evaluation runs every compared model with the same temperature
+        if (evalTemperature != null) body.put("temperature", evalTemperature);
         return body;
     }
 

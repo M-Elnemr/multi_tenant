@@ -463,6 +463,7 @@ public class ChatService {
         String system = systemPrompt(tenantId, conv, clientId, channel, externalId);
         if (!system.contains("ALL PRODUCTS (")) system += productsForMessage(tenantId, text);
         List<ToolDef> tools = tools();
+        if (EVAL.get() != null) EVAL.get().setup(system.length(), Integer.toHexString(tools.toString().hashCode()) + ":" + tools.size());
         String answer = null;
         // A plain "yes / تمام / ok" to the summary places the order right here: the model is never trusted to remember to do it, or to say it was done.
         // ...but only when the customer is answering the summary itself: after any other message the summary may be out of date, and the model shows a new one first
@@ -519,6 +520,7 @@ public class ChatService {
             var other = left.isEmpty() || !AiBudget.hasLeft(18_000) || madeChanges(ctx, rounds) ? null : routed.secondOpinion();
             if (other != null) {
                 Ctx ctx2 = new Ctx(tenantId, conv, channel, externalId, clientId, userMsgId, new ArrayList<>(), orderBox, new String[1], new String[1]);
+                boolean adopted = false;
                 List<AiUsageService.Round> r2 = new ArrayList<>();
                 List<Turn> t2 = new ArrayList<>(fresh);
                 try {
@@ -526,11 +528,13 @@ public class ChatService {
                     List<String> left2 = b == null || b.isBlank() ? left : unresolved(ctx2, text, b, t2, r2);
                     log.info("Second opinion: {} {} -> {} {} (conversation {})", routed.code(), left, other.code(), left2, conv);
                     events.record(tenantId, conv, channel, other.code(), "SECOND_OPINION", routed.code() + " " + left + " -> " + other.code() + " " + left2, null);
-                    if (left2.size() < left.size() || ctx2.summary()[0] != null || orderBox[0] != null) { answer = b; ctx = ctx2; routed = other; }
+                    if (left2.size() < left.size() || ctx2.summary()[0] != null || orderBox[0] != null) { answer = b; ctx = ctx2; routed = other; adopted = true; }
                 } catch (AiProvider.AiUnavailableException e2) {
                     log.warn("Second opinion unavailable: {}", e2.getMessage());
+                    if (EVAL.get() != null) EVAL.get().failure(other.code(), e2.getMessage());
                 }
                 rounds.addAll(r2);
+                if (EVAL.get() != null) EVAL.get().second(other.code(), r2, adopted);
             }
             // the customer sent every detail for what they chose and still no summary: code makes it (the customer confirms it as usual)
             if (ctx.summary()[0] == null && ctx.order()[0] == null && !madeChanges(ctx, rounds) && detailsGivenNoSummary(ctx, turns, rounds, text, answer, true)) {
@@ -558,6 +562,7 @@ public class ChatService {
             }
         } catch (AiProvider.AiUnavailableException e) {
             log.warn("AI unavailable: {} ({})", e.getMessage(), e.getCause() == null ? "no cause" : e.getCause().toString());
+            if (EVAL.get() != null) EVAL.get().failure(routed.code(), e.getMessage());
             var backup = AiBudget.hasLeft(12_000) ? routed.restartOnFallback() : null;
             if (backup != null) {
                 // the model failed after its tool exchange had begun: the whole reply again, on the other model (two companies, so one outage never silences the shop)
@@ -572,6 +577,7 @@ public class ChatService {
                     answer = converse(ctx, routed, system, turns, tools, rounds, arabicChat);
                 } catch (AiProvider.AiUnavailableException e2) {
                     log.warn("AI unavailable on the fallback too: {}", e2.getMessage());
+                    if (EVAL.get() != null) EVAL.get().failure(routed.code(), e2.getMessage());
                     events.record(tenantId, conv, channel, routed.code(), "ERROR", e2.getMessage(), null);
                     answer = unavailableText(arabicChat);
                 }
@@ -599,7 +605,7 @@ public class ChatService {
         log.info("Reply timing: model={} calls={} ms={} steps=[{}] conversation={}", routed.code(), rounds.size(), tookMs, steps, conv);
         events.record(tenantId, conv, channel, routed.code(), "REPLY", rounds.size() + " calls" + (steps.isEmpty() ? (ctx.summary()[0] != null ? ": summary by code" : "") : ": " + steps), tookMs);
         if (!"TEST".equals(channel)) { seller.count(tenantId); usageLog.record(tenantId, "CHAT", channel, conv, false, text, rounds, routed.code(), routed.fellBack()); }
-        else if (EVAL.get() != null) EVAL.get().add(rounds, tookMs, routed.fellBack());
+        else if (EVAL.get() != null) EVAL.get().add(rounds, tookMs, routed.fellBack(), routed.code());
         if (answer == null || answer.isBlank()) answer = arabicChat ? "معلش يا فندم، ممكن توضحلي أكتر حضرتك محتاج إيه؟ وأنا أساعدك على طول 🌸" : "Sorry, could you tell me a little more about what you need? I will help right away.";
         answer = polish(noLaughter(messaging(channel) ? forChannel(channel, answer) : forChannel("WEB", oneMessage(answer))), conv, tenantId, channel, externalId, clientId);
         var seenCards = new java.util.HashSet<Object>();
@@ -2112,6 +2118,7 @@ public class ChatService {
             List<ToolResult> results = new ArrayList<>();
             for (ToolCall c : t.calls()) {
                 Map<String, Object> r = runTool(ctx, c);
+                if (EVAL.get() != null) EVAL.get().tool(routed.code(), c, r);
                 allowed.addJson(r);
                 results.add(new ToolResult(c.name(), r));
             }
@@ -2240,18 +2247,66 @@ public class ChatService {
 
     /**
      * Evaluation hooks, bound to the thread that runs the evaluation so a live reply on another thread is never affected: {@code lean} switches the system prompt to {@link #LEAN_RULES}
-     * (no full rules, no sales playbook, no lessons), and every reply's model rounds, time and fallbacks are added to the scope (TEST replies are not in the usage log).
+     * (no full rules, no sales playbook, no lessons), {@code temperature} (when set) is sent by every OpenAI-style model so that all compared models run with the same one, and everything a
+     * TEST reply does is recorded here (TEST replies are not in the usage log): the answering model's own calls and tokens, the tools it called and what they answered, model failures,
+     * fallbacks, and the "second opinion" asked of another model, whose tokens are kept apart so they never count as the answering model's.
      */
     public static final class EvalScope {
         public final boolean lean;
+        public final Double temperature;
+        /** The answering model's own model calls (not the second opinion's). */
         public final List<AiUsageService.Round> rounds = new ArrayList<>();
-        public int replies, modelReplies, fallbacks;
+        /** {model, adopted, calls, input, output, cached}: another model asked the same message because the first reply still had a problem. */
+        public final List<Map<String, Object>> secondOpinions = new ArrayList<>();
+        /** {model, tool, args, ok, error}: every tool call a model made. */
+        public final List<Map<String, Object>> toolCalls = new ArrayList<>();
+        /** {model, message}: a model call that failed (the customer sees a model error or the fallback model answers). */
+        public final List<Map<String, Object>> failures = new ArrayList<>();
+        public final List<String> answeredBy = new ArrayList<>();
+        public int modelReplies, fallbacks, systemChars;
         public long millis;
+        public String toolsHash = "";
+        private final java.util.Set<Object> second = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
-        public EvalScope(boolean lean) { this.lean = lean; }
+        public EvalScope(boolean lean) { this(lean, null); }
 
-        synchronized void add(List<AiUsageService.Round> r, long ms, boolean fellBack) { rounds.addAll(r); replies++; modelReplies++; millis += ms; if (fellBack) fallbacks++; }
+        public EvalScope(boolean lean, Double temperature) { this.lean = lean; this.temperature = temperature; }
+
+        synchronized void add(List<AiUsageService.Round> r, long ms, boolean fellBack, String by) {
+            for (var x : r) if (!second.contains(x)) rounds.add(x);
+            modelReplies++; millis += ms; answeredBy.add(by);
+            if (fellBack) fallbacks++;
+        }
+
+        synchronized void second(String model, List<AiUsageService.Round> r2, boolean adopted) {
+            long in = 0, out = 0, cached = 0;
+            for (var x : r2) { second.add(x); in += x.usage().input(); out += x.usage().output(); cached += x.usage().cached(); }
+            Map<String, Object> m = new java.util.LinkedHashMap<>();
+            m.put("model", model); m.put("adopted", adopted); m.put("calls", r2.size()); m.put("input", in); m.put("output", out); m.put("cached", cached);
+            secondOpinions.add(m);
+        }
+
+        synchronized void tool(String model, ToolCall c, Map<String, Object> result) {
+            Map<String, Object> m = new java.util.LinkedHashMap<>();
+            String args = String.valueOf(c.args());
+            m.put("model", model); m.put("tool", c.name()); m.put("args", args.length() > 300 ? args.substring(0, 300) : args);
+            boolean ok = result == null || result.get("error") == null;
+            m.put("ok", ok);
+            if (!ok) { String e = String.valueOf(result.get("error")); m.put("error", e.length() > 300 ? e.substring(0, 300) : e); }
+            toolCalls.add(m);
+        }
+
+        synchronized void failure(String model, String message) {
+            Map<String, Object> m = new java.util.LinkedHashMap<>();
+            m.put("model", model); m.put("message", message == null ? "" : message.length() > 300 ? message.substring(0, 300) : message);
+            failures.add(m);
+        }
+
+        synchronized void setup(int chars, String hash) { systemChars = chars; toolsHash = hash; }
     }
+
+    /** The temperature an evaluation asks every OpenAI-style model to use (null = each model's own setting). */
+    static Double evalTemperature() { EvalScope e = EVAL.get(); return e == null ? null : e.temperature; }
 
     private static final ThreadLocal<EvalScope> EVAL = new ThreadLocal<>();
 

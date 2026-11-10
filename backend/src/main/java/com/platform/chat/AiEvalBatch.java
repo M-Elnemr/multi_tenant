@@ -29,7 +29,7 @@ import org.springframework.stereotype.Component;
  * Everything runs on the TEST channel (nothing is ordered, billed or kept) against the shops named in the plan, every model on its own thread, and the raw result of every conversation
  * (transcript, judge verdict, calls, tokens, time) goes to {@code <files dir>/eval/<plan id>/report.json}, rewritten after each conversation. Only someone with access to the server's files can start it.
  *
- * <pre>{"id":"cmp1","models":["glm","deepseek","qwen"],"modes":["full","lean"],"stores":{"tech-zone":[1,2,3],"nile-style":[4,5]}}</pre>
+ * <pre>{"id":"cmp1","temperature":0.3,"models":["glm","deepseek","qwen"],"modes":["full","lean"],"stores":{"tech-zone":[1,2,3,901],"nile-style":[4,5,911]}}</pre>
  * {@code full} is the production prompt; {@code lean} keeps only the important rules (see {@link ChatService#LEAN_RULES}); both use the same tools, RAG and code-side checks.
  */
 @Component
@@ -38,12 +38,14 @@ public class AiEvalBatch {
     private static final ObjectMapper JSON = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
 
     private final AiEvalService eval;
+    private final ChannelAi channelAi;
     private final JdbcClient jdbc;
     private final Path dir;
     private volatile boolean running;
 
-    public AiEvalBatch(AiEvalService eval, JdbcClient jdbc, @Value("${app.files.dir:./uploads}") String filesDir) {
+    public AiEvalBatch(AiEvalService eval, ChannelAi channelAi, JdbcClient jdbc, @Value("${app.files.dir:./uploads}") String filesDir) {
         this.eval = eval;
+        this.channelAi = channelAi;
         this.jdbc = jdbc;
         this.dir = Path.of(filesDir, "eval");
     }
@@ -79,6 +81,12 @@ public class AiEvalBatch {
             plan.path("models").forEach(n -> models.add(n.asText()));
             plan.path("modes").forEach(n -> modes.add(n.asText()));
             List<JsonNode> golden = eval.goldenSet();
+            // every compared model runs with the same temperature (the plan's), and the report shows what each one is set to
+            Double temperature = plan.hasNonNull("temperature") ? plan.path("temperature").asDouble() : null;
+            report.put("temperature", temperature);
+            Map<String, Object> settings = new LinkedHashMap<>();
+            for (String model : models) settings.put(model, channelAi.forChannel("TEST", model).settings());
+            report.put("modelSettings", settings);
             ExecutorService pool = Executors.newFixedThreadPool(Math.max(1, models.size()));
             for (String model : models) pool.submit(() -> {
                 try {
@@ -94,7 +102,7 @@ public class AiEvalBatch {
                                 JsonNode c = golden.stream().filter(g -> g.path("id").asInt() == idNode.asInt()).findFirst().orElse(null);
                                 if (c == null || (c.hasNonNull("shop") && !c.path("shop").asText().equals(store.getKey()))) continue;
                                 Map<String, Object> r;
-                                try { r = eval.play(tenant, model, runId, c, "lean".equals(mode)); } catch (RuntimeException e) { r = new LinkedHashMap<>(Map.of("id", c.path("id").asInt(), "error", String.valueOf(e.getMessage()))); }
+                                try { r = eval.play(tenant, model, runId, c, "lean".equals(mode), temperature); } catch (RuntimeException e) { r = new LinkedHashMap<>(Map.of("id", c.path("id").asInt(), "error", String.valueOf(e.getMessage()))); }
                                 synchronized (lock) { results.add(r); flush(out, report); }
                             }
                             synchronized (lock) { cell.put("status", "DONE"); cell.put("finishedAt", Instant.now().toString()); flush(out, report); }

@@ -77,7 +77,7 @@ public class AiEvalService {
         runs.put(id, run);
         worker.execute(() -> {
             try {
-                for (JsonNode c : set) { results.add(play(tenantId, m, id, c, false)); run.put("done", results.size()); }
+                for (JsonNode c : set) { results.add(play(tenantId, m, id, c, false, null)); run.put("done", results.size()); }
                 run.put("summary", summary(results));
                 run.put("status", "DONE");
                 keep(id, tenantId, m, kind, run);
@@ -126,11 +126,12 @@ public class AiEvalService {
         return r;
     }
 
-    /** The golden conversations of {@code ai-eval.json}. */
+    /** The golden conversations of {@code ai-eval.json} and the order scenarios of {@code ai-eval-orders.json} (ids from 900). */
     List<JsonNode> goldenSet() {
         try {
             List<JsonNode> all = new ArrayList<>();
             JSON.readTree(getClass().getResourceAsStream("/ai-eval.json")).path("conversations").forEach(all::add);
+            JSON.readTree(getClass().getResourceAsStream("/ai-eval-orders.json")).path("conversations").forEach(all::add);
             return all;
         } catch (Exception e) {
             throw new IllegalStateException("The evaluation set could not be read", e);
@@ -138,41 +139,119 @@ public class AiEvalService {
     }
 
     /**
-     * Plays one conversation and grades it. {@code lean} runs it with the short list of important rules instead of the full prompt (see {@link ChatService.EvalScope}). The result also carries
-     * {@code usage}: the model calls and tokens the shop's assistant used for the whole conversation (what the usage log keeps for live chats, but not for the TEST channel), and
-     * {@code judgeTokens}: what the judge used, which is not counted in {@code usage}.
+     * Plays one conversation and grades it. {@code lean} runs it with the short list of important rules instead of the full prompt, {@code temperature} (when set) is the same for every
+     * compared model (see {@link ChatService.EvalScope}). The result carries, besides the judge's verdict:
+     * {@code turns}: for each customer message the reply, its wall-clock time, whether a model answered (or code did: instant answers, summaries), the model calls and tokens, the tools it
+     * called and which of them failed, model failures, fallbacks and second opinions (another model asked the same message; its tokens are in {@code secondOpinions}, never in {@code usage});
+     * {@code usage}: the answering model's own totals; {@code toolCalls}; and, for a scenario with an {@code order} (a customer who really orders a known product), {@code orderCheck}:
+     * code-checked facts about the order (right variant and quantity in the summary, the contact details and payment as typed, placed after the confirmation, placed once, total not below the
+     * goods). {@code judgeTokens} is what the judge used, which is not counted in {@code usage}.
      */
-    Map<String, Object> play(UUID tenantId, String model, UUID runId, JsonNode c, boolean lean) {
+    public Map<String, Object> play(UUID tenantId, String model, UUID runId, JsonNode c, boolean lean, Double temperature) {
         String ext = "eval-" + runId.toString().substring(0, 8) + "-" + c.path("id").asInt();
         String name = c.hasNonNull("displayName") ? c.path("displayName").asText() : null;
         List<String> lines = new ArrayList<>();
         for (JsonNode t : c.path("customer")) lines.add(t.asText());
         List<String> turns = c.path("burst").asBoolean(false) ? List.of(String.join("\n", lines)) : lines;
         List<Map<String, String>> transcript = new ArrayList<>();
+        List<Map<String, Object>> turnRecords = new ArrayList<>();
+        List<JsonNode> snapshots = new ArrayList<>();
+        List<Boolean> placedAt = new ArrayList<>();
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("id", c.path("id").asInt()); out.put("category", c.path("category").asText());
-        ChatService.EvalScope scope = new ChatService.EvalScope(lean);
+        ChatService.EvalScope scope = new ChatService.EvalScope(lean, temperature);
         try {
             chat.setTestModel(tenantId, ext, model);
             for (String t : turns) {
+                int r0 = scope.rounds.size(), t0 = scope.toolCalls.size(), f0 = scope.failures.size(), s0 = scope.secondOpinions.size(), m0 = scope.modelReplies, fb0 = scope.fallbacks;
+                long started = System.nanoTime();
                 String reply;
-                try { reply = chat.inEvalScope(scope, () -> chat.reply(tenantId, "TEST", ext, null, t, name).text()); } catch (RuntimeException e) { reply = "[error: " + e.getMessage() + "]"; }
+                boolean placed = false;
+                try {
+                    var rep = chat.inEvalScope(scope, () -> chat.reply(tenantId, "TEST", ext, null, t, name));
+                    reply = rep.text();
+                    placed = rep.order() != null;
+                } catch (RuntimeException e) { reply = "[error: " + e.getMessage() + "]"; }
+                long ms = (System.nanoTime() - started) / 1_000_000;
                 transcript.add(Map.of("customer", t, "seller", reply == null ? "" : reply));
+                placedAt.add(placed);
+                if (c.has("order")) {
+                    try {
+                        String pending = jdbc.sql("SELECT pending::text FROM chat.conversations WHERE tenant_id = :t AND channel = 'TEST' AND external_id = :e").param("t", tenantId).param("e", ext).query(String.class).optional().orElse(null);
+                        snapshots.add(pending == null ? null : JSON.readTree(pending));
+                    } catch (Exception e) { snapshots.add(null); }
+                }
+                Map<String, Object> rec = new LinkedHashMap<>();
+                long in = 0, outTok = 0, cached = 0;
+                for (int k = r0; k < scope.rounds.size(); k++) { var u = scope.rounds.get(k).usage(); in += u.input(); outTok += u.output(); cached += u.cached(); }
+                int errs = 0;
+                for (int k = t0; k < scope.toolCalls.size(); k++) if (Boolean.FALSE.equals(scope.toolCalls.get(k).get("ok"))) errs++;
+                rec.put("ms", ms);
+                rec.put("path", scope.modelReplies == m0 ? "CODE" : scope.failures.size() > f0 ? "MODEL_FAILED" : "MODEL");
+                rec.put("modelCalls", scope.rounds.size() - r0); rec.put("inputTokens", in); rec.put("outputTokens", outTok); rec.put("cachedTokens", cached);
+                rec.put("toolCalls", scope.toolCalls.size() - t0); rec.put("toolErrors", errs); rec.put("modelFailures", scope.failures.size() - f0);
+                rec.put("fallbacks", scope.fallbacks - fb0); rec.put("secondOpinions", scope.secondOpinions.size() - s0);
+                rec.put("secondOpinionAdopted", scope.secondOpinions.subList(s0, scope.secondOpinions.size()).stream().anyMatch(x -> Boolean.TRUE.equals(x.get("adopted"))));
+                if (reply != null && (reply.startsWith("⚠️") || reply.startsWith("[error:"))) rec.put("errorReply", true);
+                turnRecords.add(rec);
             }
         } finally {
             chat.reset(tenantId, "TEST", ext);
         }
         out.put("transcript", transcript);
+        out.put("turns", turnRecords);
         long in = 0, outTok = 0, cached = 0, write = 0;
         for (var r : scope.rounds) { in += r.usage().input(); outTok += r.usage().output(); cached += r.usage().cached(); write += r.usage().cacheWrite(); }
         Map<String, Object> usage = new LinkedHashMap<>();
         usage.put("customerMessages", turns.size()); usage.put("modelReplies", scope.modelReplies); usage.put("modelCalls", scope.rounds.size()); usage.put("fallbacks", scope.fallbacks);
         usage.put("inputTokens", in); usage.put("outputTokens", outTok); usage.put("cachedTokens", cached); usage.put("cacheWriteTokens", write); usage.put("millis", scope.millis);
+        usage.put("systemChars", scope.systemChars); usage.put("toolsHash", scope.toolsHash);
         out.put("usage", usage);
+        out.put("toolCalls", scope.toolCalls);
+        out.put("modelFailures", scope.failures);
+        out.put("secondOpinions", scope.secondOpinions);
+        out.put("answeredBy", scope.answeredBy);
+        if (c.has("order")) out.put("orderCheck", orderCheck(tenantId, c.path("order"), snapshots, placedAt, transcript));
         List<String> expect = new ArrayList<>();
         for (JsonNode e : c.path("expect")) expect.add(e.asText());
         out.putAll(grade(transcript, expect, name));
         return out;
+    }
+
+    /**
+     * What really happened to an order a customer was asked to place, checked by code against the shop's data and what the customer typed, not by the judge. {@code snapshots} is the
+     * conversation's pending order after each customer message (null when none), {@code placedAt} whether that message ended with the order placed (a test order on the TEST channel).
+     */
+    private Map<String, Object> orderCheck(UUID tenantId, JsonNode want, List<JsonNode> snapshots, List<Boolean> placedAt, List<Map<String, String>> transcript) {
+        Map<String, Object> ck = new LinkedHashMap<>();
+        var row = jdbc.sql("SELECT id, price_minor FROM commerce.product_variants WHERE tenant_id = :t AND sku = :s").param("t", tenantId).param("s", want.path("sku").asText()).query().listOfRows().stream().findFirst().orElse(null);
+        int qty = want.path("qty").asInt(1);
+        JsonNode last = null;
+        int firstSummary = -1;
+        for (int i = 0; i < snapshots.size(); i++) if (snapshots.get(i) != null) { last = snapshots.get(i); if (firstSummary < 0) firstSummary = i; }
+        int placements = (int) placedAt.stream().filter(b -> b).count();
+        int placedTurn = placedAt.indexOf(true);
+        ck.put("summaryShown", last != null);
+        boolean items = false;
+        if (last != null && row != null && last.path("items").isArray() && last.path("items").size() == 1) {
+            JsonNode it = last.path("items").get(0);
+            items = it.path("variantId").asText().equals(String.valueOf(row.get("id"))) && it.path("quantity").asInt() == qty;
+        }
+        ck.put("itemAndQuantityCorrect", items);
+        String phone = last == null ? "" : last.path("phone").asText("").replaceAll("\\D", "");
+        String wantPhone = want.path("phone").asText("").replaceAll("\\D", "");
+        boolean contact = last != null && phone.endsWith(wantPhone.substring(Math.max(0, wantPhone.length() - 10))) && last.path("name").asText("").contains(want.path("name").asText("~"));
+        String addr = last == null ? "" : last.path("line1").asText("") + " " + last.path("area").asText("") + " " + last.path("governorate").asText("");
+        for (JsonNode tok : want.path("addressContains")) if (!addr.contains(tok.asText())) contact = false;
+        ck.put("contactDetailsCorrect", contact);
+        ck.put("paymentCorrect", last != null && want.path("payment").asText("").equalsIgnoreCase(last.path("paymentMethod").asText("")));
+        ck.put("placedOnce", placements == 1);
+        ck.put("placedAfterSummary", placedTurn >= 0 && firstSummary >= 0 && placedTurn > firstSummary);
+        boolean sane = false;
+        if (last != null && row != null) sane = last.path("totalMinor").asLong(-1) >= ((Number) row.get("price_minor")).longValue() * qty;
+        ck.put("totalNotBelowGoods", sane);
+        ck.put("allCorrect", ck.values().stream().allMatch(Boolean.TRUE::equals));
+        return ck;
     }
 
     private Map<String, Object> grade(List<Map<String, String>> transcript, List<String> expect, String name) {

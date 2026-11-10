@@ -42,6 +42,9 @@ public interface AiProvider {
     /** False while no API key is set: the storefront then hides the chat instead of showing a dead button. */
     default boolean available() { return true; }
 
+    /** What this model is set to (shown in an evaluation report so the compared models can be seen to run alike): its id, reasoning setting, output limit... */
+    default java.util.Map<String, Object> settings() { return java.util.Map.of("code", code(), "label", label()); }
+
     /** Next model turn for the conversation so far. Throws {@link AiUnavailableException} when the model cannot be reached or is not configured. */
     Turn next(String system, List<Turn> turns, List<ToolDef> tools);
 

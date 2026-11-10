@@ -154,6 +154,8 @@ public class ChannelAi {
 
         @Override public String code() { return active.code(); }
 
+        @Override public java.util.Map<String, Object> settings() { return active.settings(); }
+
         @Override public String label() { return active.label(); }
 
         @Override public boolean available() { return active.available() || (fallback != null && fallback.available()); }
