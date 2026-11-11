@@ -154,9 +154,9 @@ public class ChatService {
     @org.springframework.beans.factory.annotation.Value("${app.ai.conversation-price-minor:100}")
     private long aiConversationPrice = 100;
 
-    /** How many earlier messages of the chat the model reads (12 by default; AI_HISTORY=24 doubles it for about 5% more input per call). */
-    @org.springframework.beans.factory.annotation.Value("${app.ai.history-messages:12}")
-    private int historyMessages = 12;
+    /** How many earlier messages of the chat the model reads (24 by default, set with AI_HISTORY; the code keeps it between 4 and 40). */
+    @org.springframework.beans.factory.annotation.Value("${app.ai.history-messages:24}")
+    private int historyMessages = 24;
 
     public ChatService(JdbcClient jdbc, AiProvider ai, CatalogService catalog, StoreSearchService search, CheckoutService checkout, StoreSettingsService settings,
                        StoreFulfillmentService fulfilment, ShopperService shopper, PaymentPolicy policy, AuditService audit, SellerTools seller, com.platform.commerce.GenderService genders, com.platform.commerce.OrderService orders, @org.springframework.context.annotation.Lazy AccountNotice accountNotice, AiUsageService usageLog, AiEvents events, ChannelAi channelAi,
