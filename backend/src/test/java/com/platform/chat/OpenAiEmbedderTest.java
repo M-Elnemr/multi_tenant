@@ -157,4 +157,18 @@ class OpenAiEmbedderTest {
         assertThat(lastAuth).as("the warm-up request carries no key").isEqualTo("null");
         assertThat(e.health()).containsEntry("queries", 1L);   // a warm-up is not a query
     }
+
+    @Test
+    void searchByMeaningRecoversAfterTheProviderComesBackAndTheRestIsOver() throws Exception {
+        var e = start();
+        e.restBaseMs = 150;
+        status = 503;
+        for (int i = 0; i < OpenAiEmbedder.REST_AFTER_FAILED_QUERIES; i++) assertThatThrownBy(() -> e.embedQuery("سماعة")).isInstanceOf(IllegalStateException.class);
+        assertThat(e.enabled()).as("resting").isFalse();
+        status = 200;   // the provider is back
+        Thread.sleep(250);
+        assertThat(e.enabled()).as("the rest is over").isTrue();
+        assertThat(e.embedQuery("سماعة")).containsExactly(0.6f, 0.8f);
+        assertThat(e.health()).containsEntry("failedInARow", 0).containsEntry("queriesOk", 1L);
+    }
 }

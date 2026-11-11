@@ -71,4 +71,32 @@ class HiveKeyPoolTest {
         var pool = HiveKeyPool.of("secret-key-value-9876");
         assertThat(pool.view().toString()).contains("9876").doesNotContain("secret-key-value");
     }
+
+    @Test
+    void aRestingKeyComesBackIntoTheRotationWhenItsRestIsOver() throws Exception {
+        var pool = HiveKeyPool.of("key-aaaa-1111", "key-bbbb-2222");
+        pool.restSeconds = 1;
+        var a = pool.acquire(null);
+        pool.failed(a, 429);
+        for (int i = 0; i < 4; i++) assertThat(pool.acquire(null).key()).isNotEqualTo(a.key());
+        Thread.sleep(1_200);
+        var seen = new java.util.HashSet<String>();
+        for (int i = 0; i < 4; i++) seen.add(pool.acquire(null).key());
+        assertThat(seen).as("recovered: both keys are lent again").containsExactlyInAnyOrder("key-aaaa-1111", "key-bbbb-2222");
+        assertThat((Long) pool.view().stream().filter(m -> m.get("id").equals(a.id())).findFirst().orElseThrow().get("restingSeconds")).isZero();
+    }
+
+    @Test
+    void manyThreadsGetAnEvenSpreadAndOneKeyIsNeverLentToEveryone() throws Exception {
+        var pool = HiveKeyPool.of("key-aaaa-1111", "key-bbbb-2222", "key-cccc-3333", "key-dddd-4444");
+        var counts = new java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>();
+        var ex = java.util.concurrent.Executors.newFixedThreadPool(16);
+        var futures = new ArrayList<java.util.concurrent.Future<?>>();
+        for (int t = 0; t < 16; t++) futures.add(ex.submit(() -> { for (int i = 0; i < 500; i++) counts.computeIfAbsent(pool.acquire(null).key(), k -> new java.util.concurrent.atomic.AtomicInteger()).incrementAndGet(); }));
+        for (var f : futures) f.get();
+        ex.shutdown();
+        assertThat(counts.values().stream().mapToInt(java.util.concurrent.atomic.AtomicInteger::get).sum()).isEqualTo(8_000);
+        assertThat(counts).hasSize(4);
+        counts.values().forEach(c -> assertThat(c.get()).as("each key gets 2,000 of 8,000").isEqualTo(2_000));
+    }
 }

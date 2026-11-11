@@ -57,6 +57,8 @@ class OpenAiEmbedder implements Embedder {
     private volatile long lastQueryAt = 0, lastFailAt = 0;
     /** Failures only count as "in a row" when they follow each other closely: three failures spread over an hour are three separate hiccups, not an outage. */
     volatile long streakWindowMs = 60_000;
+    /** How long search by meaning rests after the first {@link #REST_AFTER_FAILED_QUERIES} failures (doubling with each further one, up to 5 minutes). */
+    volatile long restBaseMs = 20_000;
     private volatile String lastError = "";
     private volatile long lastErrorAt = 0, lastOkAt = 0;
 
@@ -163,7 +165,7 @@ class OpenAiEmbedder implements Embedder {
         if (started - lastFailAt > streakWindowMs) streak.set(0);   // the last failure was long ago: not "in a row"
         lastFailAt = System.currentTimeMillis();
         int inARow = streak.incrementAndGet();
-        if (inARow >= REST_AFTER_FAILED_QUERIES) restUntil = System.currentTimeMillis() + Math.min(300_000L, 20_000L << Math.min(inARow - REST_AFTER_FAILED_QUERIES, 4));
+        if (inARow >= REST_AFTER_FAILED_QUERIES) restUntil = System.currentTimeMillis() + Math.min(Math.max(300_000L, restBaseMs), restBaseMs << Math.min(inARow - REST_AFTER_FAILED_QUERIES, 4));
         throw new IllegalStateException(error.isEmpty() ? "Embeddings did not answer in time" : error);
     }
 

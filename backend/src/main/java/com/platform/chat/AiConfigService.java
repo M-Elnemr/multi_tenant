@@ -77,7 +77,9 @@ public class AiConfigService {
         Config c = cached;
         if (c != null && cachedVersion == version && System.currentTimeMillis() - cachedAt < TTL_MS) return c;
         long v = version;
-        c = resolve(row());
+        Map<String, Object> r = row();
+        if (r == null) return c != null ? c : defaults;   // the database could not be read: keep the last settings that were read (the defaults only when none was ever read), do not flip to the defaults for a moment
+        c = resolve(r);
         cached = c;
         cachedVersion = v;
         cachedAt = System.currentTimeMillis();
@@ -93,8 +95,11 @@ public class AiConfigService {
 
     private Map<String, Object> row() {
         try { return jdbc.sql("SELECT text_model, image_model, audio_model, prompt_mode, deepseek_effort FROM chat.platform_ai_config WHERE id = 1").query().listOfRows().stream().findFirst().orElse(Map.of()); }
-        catch (RuntimeException e) { return Map.of(); }   // no table or no database: the defaults
+        catch (RuntimeException e) { return null; }   // no table or no database
     }
+
+    /** Forget what every instance cached (a save does this; tests too). */
+    static void forgetCached() { version++; }
 
     /** Lean prompt in force for a live reply (an evaluation run decides for itself). */
     static boolean leanPrompt() { AiConfigService c = current; return c != null && "lean".equals(c.get().promptMode()); }
@@ -106,6 +111,7 @@ public class AiConfigService {
 
     public Map<String, Object> view() {
         Map<String, Object> r = row();
+        if (r == null) throw new BusinessException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, "AI_CONFIG_UNAVAILABLE", "The AI settings cannot be read right now");
         Config now = resolve(r);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("text", section(TEXT, now.textModel(), defaults.textModel()));
@@ -137,7 +143,9 @@ public class AiConfigService {
      * not one of the options is refused.
      */
     public Map<String, Object> update(Map<String, Object> body, UUID by) {
-        Map<String, Object> cur = new LinkedHashMap<>(row());
+        Map<String, Object> existing = row();
+        if (existing == null) throw new BusinessException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, "AI_CONFIG_UNAVAILABLE", "The AI settings cannot be read right now");
+        Map<String, Object> cur = new LinkedHashMap<>(existing);
         Map<String, List<Option>> fields = Map.of("textModel", TEXT, "imageModel", IMAGE, "audioModel", AUDIO, "promptMode", PROMPT, "deepseekEffort", EFFORT);
         Map<String, String> columns = Map.of("textModel", "text_model", "imageModel", "image_model", "audioModel", "audio_model", "promptMode", "prompt_mode", "deepseekEffort", "deepseek_effort");
         for (var f : fields.entrySet()) {

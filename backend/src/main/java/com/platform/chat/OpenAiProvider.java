@@ -179,7 +179,8 @@ public class OpenAiProvider implements AiProvider {
             ChatService.evalHedge();
         }
         if (!AiBudget.takeHedge()) {   // this reply has used its one twin: wait for the first call to the end of its time
-            return unwrap(() -> first.get(Math.max(1_000, timeoutMs - HEDGE_MS + 1_000), java.util.concurrent.TimeUnit.MILLISECONDS));
+            try { return unwrap(() -> first.get(Math.max(1_000, timeoutMs - HEDGE_MS + 1_000), java.util.concurrent.TimeUnit.MILLISECONDS)); }
+            catch (Exception noAnswer) { first.cancel(true); throw noAnswer; }   // gave up on it: do not leave it running behind the retry
         }
         HiveKeyPool.Lease other = pool != null ? pool.acquire(lease.id()) : lease;   // the twin goes over another key when there is one: it is not held back by the first key's limit
         Throttle throttle = throttleFor(other.key());

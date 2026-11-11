@@ -25,7 +25,12 @@ class FollowUpIntegrationTest extends IntegrationTestBase {
     @Autowired WalletService wallet;
 
     @BeforeEach
-    void clean() { jdbc.sql("UPDATE commerce.broadcasts SET status = 'CANCELED' WHERE status IN ('SENDING', 'PAUSED')").update(); FakeAiProvider.reset(); FakeMetaGraph.reset(); FakeEvolutionApi.reset(); }   // a broadcast another test left running would send through the same fake
+    void clean() {
+        // follow-ups other tests (or earlier runs on this database) left scheduled become due as time passes and runDue() sends every due row of every shop: the counts asserted here would include them
+        jdbc.sql("UPDATE chat.auto_followups SET status = 'CANCELLED', reason = 'TEST_ISOLATION' WHERE status = 'SCHEDULED'").update();
+        jdbc.sql("UPDATE commerce.broadcasts SET status = 'CANCELED' WHERE status IN ('SENDING', 'PAUSED')").update();
+        FakeAiProvider.reset(); FakeMetaGraph.reset(); FakeEvolutionApi.reset();
+    }   // a broadcast another test left running would send through the same fake
 
     /** Texts the shop's own number sent (follow-ups only go from the own number). */
     java.util.List<String> ownTexts() { return FakeEvolutionApi.CALLS.stream().filter(c -> c.path().startsWith("/message/sendText/")).map(c -> c.body().get("text").toString()).toList(); }

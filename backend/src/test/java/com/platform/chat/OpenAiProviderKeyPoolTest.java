@@ -88,4 +88,35 @@ class OpenAiProviderKeyPoolTest {
         var p = provider(HiveKeyPool.of());
         assertThat(p.available()).isFalse();
     }
+
+    @Test
+    void eachKeyIsHeldToFiveRequestsASecondEvenWhenManyThreadsCallAtOnce() throws Exception {
+        server.removeContext("/v1/chat/completions");
+        var arrivals = new java.util.concurrent.ConcurrentHashMap<String, List<Long>>();
+        server.createContext("/v1/chat/completions", ex -> {
+            arrivals.computeIfAbsent(ex.getRequestHeaders().getFirst("Authorization"), k -> new CopyOnWriteArrayList<>()).add(System.nanoTime());
+            ex.getRequestBody().readAllBytes();
+            byte[] out = "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"ok\"}}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1}}".getBytes(StandardCharsets.UTF_8);
+            ex.sendResponseHeaders(200, out.length);
+            ex.getResponseBody().write(out);
+            ex.close();
+        });
+        var p = new OpenAiProvider("glm", "GLM", HiveKeyPool.of("rps-key-AAAA", "rps-key-BBBB", "rps-key-CCCC"), "m", () -> "low", "http://127.0.0.1:" + server.getAddress().getPort() + "/v1", 500, true, "", 5);
+        var ex = java.util.concurrent.Executors.newFixedThreadPool(18);
+        var futures = new java.util.ArrayList<java.util.concurrent.Future<String>>();
+        long t0 = System.nanoTime();
+        for (int i = 0; i < 36; i++) futures.add(ex.submit(() -> p.next("s", List.of(Turn.user("hi")), List.of()).text()));
+        for (var f : futures) assertThat(f.get(30, java.util.concurrent.TimeUnit.SECONDS)).isEqualTo("ok");
+        double seconds = (System.nanoTime() - t0) / 1e9;
+        ex.shutdown();
+        assertThat(arrivals).hasSize(3);
+        for (var e : arrivals.entrySet()) {
+            List<Long> ts = new java.util.ArrayList<>(e.getValue());
+            java.util.Collections.sort(ts);
+            int worst = 0;
+            for (int i = 0; i < ts.size(); i++) { int c = 0; for (int j = i; j < ts.size() && ts.get(j) - ts.get(i) < 950_000_000L; j++) c++; worst = Math.max(worst, c); }
+            assertThat(worst).as("most requests of " + e.getKey() + " inside any 0.95 s").isLessThanOrEqualTo(5);
+        }
+        assertThat(seconds).as("36 requests over 3 keys at 5 a second each take about 2.4 s, not 7 (one key) and not 0").isBetween(1.5, 4.5);
+    }
 }
