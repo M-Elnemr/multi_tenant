@@ -78,6 +78,8 @@ public class ChatService {
      */
     private String polish(String text, UUID conv, UUID tenantId, String channel, String externalId, UUID clientId) {
         if (text == null || text.isBlank()) return text;
+        text = DsmlToolCalls.strip(text);   // a tool call the model wrote as text never reaches the customer
+        if (text == null || text.isBlank()) return text;
         String t = text.replaceAll("[\\p{IsHan}\\p{IsHiragana}\\p{IsKatakana}\\p{IsHangul}\\p{IsCyrillic}]", "")
                 .replaceAll("\\s*\\[[\\p{L}\\p{N}-]{3,}\\]", "")   // a catalog slug («[بنطلون-جينز-سليم]») is never for the customer
                 .replaceAll("(?<=\\p{IsArabic})[a-z]{3,}(?=\\s|$|\\p{IsArabic})", "")   // lowercase Latin glued to an Arabic word («أursic») is a slip; sizes after «و» («وXL») stay

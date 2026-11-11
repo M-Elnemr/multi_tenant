@@ -314,10 +314,22 @@ public class OpenAiProvider implements AiProvider {
             try { args = JSON.readValue(c.path("function").path("arguments").asText("{}"), new TypeReference<Map<String, Object>>() {}); } catch (Exception ignored) { /* a call with unreadable arguments runs with none and the tool says what is missing */ }
             calls.add(new ToolCall(c.path("function").path("name").asText(), args));
         }
+        boolean fromText = false;
+        if (DsmlToolCalls.has(text)) {   // the model wrote its tool call as text: run it as a call, and never let the markup reach the customer
+            if (calls.isEmpty()) { calls.addAll(DsmlToolCalls.read(text)); fromText = !calls.isEmpty(); }
+            text = DsmlToolCalls.strip(text);
+        }
         ObjectNode raw = JSON.createObjectNode();   // replayed as the assistant message on the next step
         raw.put("role", "assistant");
         raw.put("content", text);
-        if (!calls.isEmpty()) {
+        if (fromText) {
+            ArrayNode sent = JSON.createArrayNode();
+            for (int i = 0; i < calls.size(); i++) {
+                ObjectNode c = sent.addObject(); c.put("id", "call_" + i); c.put("type", "function");
+                ObjectNode f = c.putObject("function"); f.put("name", calls.get(i).name()); f.put("arguments", toJson(calls.get(i).args()));
+            }
+            raw.set("tool_calls", sent);
+        } else if (!calls.isEmpty()) {
             ArrayNode sent = ((ArrayNode) msg.path("tool_calls")).deepCopy();
             for (int i = 0; i < sent.size(); i++) if (sent.get(i) instanceof ObjectNode c && c.path("id").asText("").isBlank()) c.put("id", "call_" + i);   // the tool result is matched to its call by this id
             raw.set("tool_calls", sent);
