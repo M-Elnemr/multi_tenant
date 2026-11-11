@@ -75,8 +75,10 @@ public class OrderService {
     public void requestCancelByChat(UUID tenantId, UUID orderId, String reason) {
         var o = lock(tenantId, orderId);
         String r = reason.length() > 500 ? reason.substring(0, 500) : reason;
+        String line = "⚠️ طلب إلغاء من العميل — السبب: " + r;
+        if (String.valueOf(o.get("notes")).contains(line)) return;   // the same request again (a second model pass, or the customer said it twice): the shop already has it
         jdbc.sql("UPDATE commerce.orders SET notes = concat_ws(E'\\n', NULLIF(notes, ''), :n), updated_at = now() WHERE id = :o")
-                .param("n", "⚠️ طلب إلغاء من العميل — السبب: " + r).param("o", orderId).update();
+                .param("n", line).param("o", orderId).update();
         audit.record(null, tenantId, "ORDER_CANCEL_REQUESTED", "order", orderId, null);
         events.publishEvent(new OrderEvents.OrderCancelRequested(tenantId, orderId, (String) o.get("order_number"), r));
     }

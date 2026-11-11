@@ -211,6 +211,15 @@ class AiOrderChangeIntegrationTest extends IntegrationTestBase {
         assertThat(jdbc.sql("SELECT notes FROM commerce.orders WHERE tenant_id = :t AND order_number = :n").param("t", tenant).param("n", no).query(String.class).single()).contains("التوصيل اتأخر");
         assertThat(jdbc.sql("SELECT count(*) FROM notifications.notifications WHERE tenant_id = :t AND notification_type = 'ORDER_CANCEL_REQUESTED' AND body LIKE '%التوصيل اتأخر%'").param("t", tenant).query(Long.class).single()).isPositive();
 
+        // the same request again (a second pass of the model, or the customer repeating it) is not written or notified twice
+        long told = jdbc.sql("SELECT count(*) FROM notifications.notifications WHERE tenant_id = :t AND notification_type = 'ORDER_CANCEL_REQUESTED'").param("t", tenant).query(Long.class).single();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("cancel_order", Map.of("reason", "التوصيل اتأخر")));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("وصلت طلبك للمحل وهيكلموك"));
+        chat.reply(tenant, "WEB", ext, null, "قلتلك التوصيل اتأخر");
+        String notes = jdbc.sql("SELECT notes FROM commerce.orders WHERE tenant_id = :t AND order_number = :n").param("t", tenant).param("n", no).query(String.class).single();
+        assertThat(notes.split("التوصيل اتأخر", -1)).as(notes).hasSize(2);
+        assertThat(jdbc.sql("SELECT count(*) FROM notifications.notifications WHERE tenant_id = :t AND notification_type = 'ORDER_CANCEL_REQUESTED'").param("t", tenant).query(Long.class).single()).isEqualTo(told);
+
         // the customer will not say why: the order is cancelled for real
         FakeAiProvider.RESULTS.clear();
         FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("cancel_order", Map.of("noReason", true)));

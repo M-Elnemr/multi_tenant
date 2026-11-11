@@ -83,6 +83,12 @@ public class AiUsageService {
 
     // ---- writing ---------------------------------------------------------------------------------------------------------------
 
+    /** The losing twin of a hedged call (see OpenAiProvider.send) is billed by the service too: its tokens are logged under the feature HEDGE on the reply's shop. */
+    @jakarta.annotation.PostConstruct
+    void hookLostTwins() {
+        OpenAiProvider.LOST_TWIN_SINK = (tenant, model, usage) -> insert(tenant, "HEDGE", null, null, false, null, List.of(new Round(List.of(), usage)), model, false, null, null);
+    }
+
     /** Logs one request. Never lets a logging problem break the feature that called it. */
     public void record(UUID tenantId, String feature, String channel, UUID conversationId, boolean instant, String preview, List<Round> rounds) { record(tenantId, feature, channel, conversationId, instant, preview, rounds, null, false); }
 

@@ -14,7 +14,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.ResultActions;
 
-/** The website chat's test dropdown (model choice) and its photo / voice note upload. The model and the media reader are scripted. */
+/** The website chat's photo / voice note upload, and the fact that a visitor can no longer choose the model (the platform admin does). The model and the media reader are scripted. */
 class WebChatModelAndMediaIntegrationTest extends IntegrationTestBase {
     @Autowired JdbcClient jdbc;
 
@@ -23,10 +23,9 @@ class WebChatModelAndMediaIntegrationTest extends IntegrationTestBase {
 
     String body(ResultActions r) throws Exception { return r.andReturn().getResponse().getContentAsString(); }
 
-    ResultActions upload(Tenant t, String conv, MockMultipartFile file, String message, String model) throws Exception {
+    ResultActions upload(Tenant t, String conv, MockMultipartFile file, String message) throws Exception {
         var b = multipart("/api/v1/shop/chat/media").file(file).param("conversationId", conv).header("Host", t.host());
         if (message != null) b.param("message", message);
-        if (model != null) b.param("model", model);
         return mvc.perform(b);
     }
 
@@ -35,26 +34,27 @@ class WebChatModelAndMediaIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void theConfigTellsWhichModelsCanBePickedAndWhetherPhotosAndVoiceNotesWork() throws Exception {
+    void theConfigTellsWhetherPhotosAndVoiceNotesWorkAndOffersNoModelChoice() throws Exception {
         Tenant t = onboard("STORE");
         String cfg = body(onHost(t.host(), null, "GET", "/api/v1/shop/chat/config", null).andExpect(status().isOk()));
-        assertThat(JsonPath.<java.util.List<String>>read(cfg, "$.models")).contains("default", "glm", "qwen", "anthropic", "deepseek");
+        assertThat(cfg).doesNotContain("\"models\"");
         assertThat((Boolean) JsonPath.read(cfg, "$.media")).isTrue();
         FakeMediaReader.ENABLED = false;
         assertThat((Boolean) JsonPath.read(body(onHost(t.host(), null, "GET", "/api/v1/shop/chat/config", null)), "$.media")).isFalse();
     }
 
     @Test
-    void aPickedModelIsKeptOnTheConversationAndAnUnknownOneIsIgnored() throws Exception {
+    void aVisitorCannotPickTheModelAnyMoreAnOldClientsModelFieldIsIgnored() throws Exception {
         Tenant t = onboard("STORE");
         String conv = UUID.randomUUID().toString();
-        for (String pick : new String[]{"deepseek", "qwen", "default", "bogus"}) {
+        for (String pick : new String[]{"deepseek", "qwen", "anthropic", "bogus"}) {
             FakeAiProvider.SCRIPT.add(turns -> Turn.model("أهلا بيك"));
             onHost(t.host(), null, "POST", "/api/v1/shop/chat", "{\"conversationId\":\"%s\",\"message\":\"ازيك\",\"model\":\"%s\"}".formatted(conv, pick)).andExpect(status().isOk());
-            String expected = switch (pick) { case "default" -> null; case "bogus" -> null; default -> pick; };
-            // "bogus" changes nothing: the previous pick ("default" = none) stays
-            assertThat(chosen(conv)).as(pick).isEqualTo(expected);
+            assertThat(chosen(conv)).as(pick).isNull();   // an old page that still sends a model changes nothing
         }
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام"));
+        body(upload(t, conv, new MockMultipartFile("file", "voice.webm", "audio/webm", new byte[]{1, 2, 3}), null));
+        assertThat(chosen(conv)).isNull();
     }
 
     @Test
@@ -62,7 +62,7 @@ class WebChatModelAndMediaIntegrationTest extends IntegrationTestBase {
         Tenant t = onboard("STORE");
         String conv = UUID.randomUUID().toString();
         FakeAiProvider.SCRIPT.add(FakeAiProvider.only("فستان وردي قصير", turns -> Turn.model("وصلتني الصورة يا فندم، تحب أساعدك إزاي؟")));
-        String res = body(upload(t, conv, new MockMultipartFile("file", "photo.jpg", "image/jpeg", new byte[]{1, 2, 3}), "مساء الخير", null).andExpect(status().isOk()));
+        String res = body(upload(t, conv, new MockMultipartFile("file", "photo.jpg", "image/jpeg", new byte[]{1, 2, 3}), "مساء الخير").andExpect(status().isOk()));
         assertThat((String) JsonPath.read(res, "$.heard")).contains("فستان وردي قصير").contains("مساء الخير");
         assertThat((String) JsonPath.read(res, "$.reply")).contains("وصلتني الصورة");
         // the chat keeps what the assistant read, not the picture
@@ -71,24 +71,23 @@ class WebChatModelAndMediaIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void aVoiceNoteIsWrittenOutAndTheModelPickRidesWithIt() throws Exception {
+    void aVoiceNoteIsWrittenOutAndAnswered() throws Exception {
         Tenant t = onboard("STORE");
         String conv = UUID.randomUUID().toString();
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام يا فندم"));
-        String res = body(upload(t, conv, new MockMultipartFile("file", "voice.webm", "audio/webm", new byte[]{1, 2, 3}), null, "deepseek").andExpect(status().isOk()));
+        String res = body(upload(t, conv, new MockMultipartFile("file", "voice.webm", "audio/webm", new byte[]{1, 2, 3}), null).andExpect(status().isOk()));
         assertThat((String) JsonPath.read(res, "$.heard")).startsWith("🎤 ").contains("مقاس ميديم");
-        assertThat(chosen(conv)).isEqualTo("deepseek");
     }
 
     @Test
     void otherFilesBigFilesAndASwitchedOffReaderAreRefused() throws Exception {
         Tenant t = onboard("STORE");
         String conv = UUID.randomUUID().toString();
-        upload(t, conv, new MockMultipartFile("file", "a.pdf", "application/pdf", new byte[]{1}), null, null).andExpect(status().isBadRequest());
-        upload(t, conv, new MockMultipartFile("file", "big.jpg", "image/jpeg", new byte[5 * 1024 * 1024 + 1]), null, null).andExpect(status().isBadRequest());
-        upload(t, "not-a-conversation", new MockMultipartFile("file", "a.jpg", "image/jpeg", new byte[]{1}), null, null).andExpect(status().isBadRequest());
+        upload(t, conv, new MockMultipartFile("file", "a.pdf", "application/pdf", new byte[]{1}), null).andExpect(status().isBadRequest());
+        upload(t, conv, new MockMultipartFile("file", "big.jpg", "image/jpeg", new byte[5 * 1024 * 1024 + 1]), null).andExpect(status().isBadRequest());
+        upload(t, "not-a-conversation", new MockMultipartFile("file", "a.jpg", "image/jpeg", new byte[]{1}), null).andExpect(status().isBadRequest());
         FakeMediaReader.ENABLED = false;
-        upload(t, conv, new MockMultipartFile("file", "a.jpg", "image/jpeg", new byte[]{1}), null, null).andExpect(status().isServiceUnavailable());
+        upload(t, conv, new MockMultipartFile("file", "a.jpg", "image/jpeg", new byte[]{1}), null).andExpect(status().isServiceUnavailable());
     }
 
     @Test
@@ -96,7 +95,7 @@ class WebChatModelAndMediaIntegrationTest extends IntegrationTestBase {
         Tenant t = onboard("STORE");
         String conv = UUID.randomUUID().toString();
         FakeMediaReader.PHOTO_SAYS = "";   // not used: the reader answers with the caption only, and there is none
-        String res = body(upload(t, conv, new MockMultipartFile("file", "photo.jpg", "image/jpeg", new byte[0]), null, null).andExpect(status().isOk()));
+        String res = body(upload(t, conv, new MockMultipartFile("file", "photo.jpg", "image/jpeg", new byte[0]), null).andExpect(status().isOk()));
         assertThat((String) JsonPath.read(res, "$.reply")).contains("ما قدرتش");
         assertThat((String) JsonPath.read(res, "$.heard")).isEmpty();
     }

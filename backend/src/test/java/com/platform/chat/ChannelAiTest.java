@@ -205,6 +205,5 @@ class ChannelAiTest {
         // by the route setting; without a key the default answers
         assertThat(new ChannelAi(def, claude, glm, qwen, deepseek, "default", "deepseek").forChannel("WEB").code()).isEqualTo("deepseek");
         assertThat(new ChannelAi(def, claude, glm, qwen, new Scripted("deepseek", false), "default", "deepseek").forChannel("WEB").code()).isEqualTo("glm");
-        assertThat(ChatService.WEB_MODELS).contains("deepseek", "glm", "qwen", "anthropic", "default");
     }
 }

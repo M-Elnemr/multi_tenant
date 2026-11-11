@@ -17,11 +17,13 @@ class OpenAiEmbedderTest {
     private volatile int status = 200;
     private volatile int failFirst = 0;   // the first N requests answer 503, then the normal status
     private final java.util.concurrent.atomic.AtomicInteger requests = new java.util.concurrent.atomic.AtomicInteger();
+    private volatile String lastAuth = "none";
 
     private OpenAiEmbedder start() throws Exception {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/v1/embeddings", ex -> {
             try { Thread.sleep(delayMs); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            lastAuth = String.valueOf(ex.getRequestHeaders().getFirst("Authorization"));
             int code = requests.incrementAndGet() <= failFirst ? 503 : status;
             byte[] b = (code == 200 ? "{\"data\":[{\"index\":0,\"embedding\":[3,4]}]}" : "{\"error\":\"no\"}").getBytes(StandardCharsets.UTF_8);
             ex.sendResponseHeaders(code, b.length);
@@ -108,5 +110,51 @@ class OpenAiEmbedderTest {
         status = 403;
         assertThatThrownBy(() -> e.embedQuery("سماعة")).hasMessageContaining("403");
         assertThat(e.enabled()).isFalse();
+    }
+
+    @Test
+    void aRejectedTextIsNotAnOutageAndDoesNotRestSearchForEveryone() throws Exception {
+        var e = start();
+        status = 400;
+        for (int i = 0; i < OpenAiEmbedder.REST_AFTER_FAILED_QUERIES; i++) assertThatThrownBy(() -> e.embedQuery("سماعة")).hasMessageContaining("400");
+        assertThat(requests.get()).as("a 400 is not retried").isEqualTo(OpenAiEmbedder.REST_AFTER_FAILED_QUERIES);
+        assertThat(e.enabled()).as("a bad request for one text must not switch search off for all customers").isTrue();
+        assertThat(e.health()).containsEntry("failedInARow", 0);
+    }
+
+    @Test
+    void failuresFarApartAreNotInARow() throws Exception {
+        var e = start();
+        e.streakWindowMs = 50;
+        status = 503;
+        for (int i = 0; i < OpenAiEmbedder.REST_AFTER_FAILED_QUERIES; i++) {
+            assertThatThrownBy(() -> e.embedQuery("سماعة")).isInstanceOf(IllegalStateException.class);
+            Thread.sleep(120);   // longer than the window
+        }
+        assertThat(e.enabled()).as("three failures spread out are three hiccups, not an outage").isTrue();
+        assertThat(e.health()).containsEntry("failedInARow", 1);
+    }
+
+    @Test
+    void aSlowConnectIsStillAnsweredWithinTheBoundedWait() throws Exception {
+        var e = start();
+        delayMs = 1_600;   // the old 1.5 s limits would have failed here; one try fits in the wait
+        long t = System.nanoTime();
+        assertThat(e.embedQuery("سماعة")).isNotNull();
+        assertThat((System.nanoTime() - t) / 1_000_000).isLessThan(OpenAiEmbedder.QUERY_TIMEOUT_MS);
+    }
+
+    @Test
+    void theConnectionIsKeptWarmOnlyWhileCustomersAreSearchingAndNeverWithTheKey() throws Exception {
+        var e = start();
+        assertThat(e.warm()).as("no query yet: nothing to keep warm").isFalse();
+        assertThat(requests.get()).isZero();
+        e.embedQuery("سماعة");
+        int before = requests.get();
+        lastAuth = "none";
+        assertThat(e.warm()).isTrue();
+        assertThat(requests.get()).isEqualTo(before + 1);
+        assertThat(lastAuth).as("the warm-up request carries no key").isEqualTo("null");
+        assertThat(e.health()).containsEntry("queries", 1L);   // a warm-up is not a query
     }
 }

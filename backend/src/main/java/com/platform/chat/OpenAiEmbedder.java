@@ -22,8 +22,12 @@ import org.springframework.stereotype.Component;
 class OpenAiEmbedder implements Embedder {
     private static final ObjectMapper JSON = new ObjectMapper();
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build();
-    /** A customer's query waits at most {@link #QUERY_TIMEOUT_MS} in all, so connecting gets a short limit of its own (the indexing client above is patient). */
-    private final HttpClient queryHttp = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(1_500)).build();
+    /**
+     * A customer's query waits at most {@link #QUERY_TIMEOUT_MS} in all (the whole call is bounded, see {@link #embedQuery}), so connecting gets its own limit. Measured from the
+     * server on 2026-11-11: Alibaba (Singapore) needs 0.25 s to connect and 0.5 s until TLS is ready, and the first call after an idle spell also pays a ~1 s DNS lookup, so a 1.5 s
+     * limit was hit by ordinary cold connections. 3 s covers a cold start; {@link #keepWarm} keeps the connection and the address cached so most queries never pay it.
+     */
+    private final HttpClient queryHttp = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(3_000)).build();
     private final String key, baseUrl, model;
     private final int dims, batch;
 
@@ -50,6 +54,9 @@ class OpenAiEmbedder implements Embedder {
     private final java.util.concurrent.atomic.AtomicInteger streak = new java.util.concurrent.atomic.AtomicInteger();   // failed queries in a row
     private final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicLong> failuresByKind = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.concurrent.ConcurrentLinkedDeque<long[]> recent = new java.util.concurrent.ConcurrentLinkedDeque<>();   // {finished at, millis, ok(1/0)} of the last queries
+    private volatile long lastQueryAt = 0, lastFailAt = 0;
+    /** Failures only count as "in a row" when they follow each other closely: three failures spread over an hour are three separate hiccups, not an outage. */
+    volatile long streakWindowMs = 60_000;
     private volatile String lastError = "";
     private volatile long lastErrorAt = 0, lastOkAt = 0;
 
@@ -98,7 +105,7 @@ class OpenAiEmbedder implements Embedder {
     }
 
     /** The longest a customer waits for their words to be embedded; Alibaba usually answers one short text in well under a second. */
-    static final long QUERY_TIMEOUT_MS = 3_500;
+    static final long QUERY_TIMEOUT_MS = 4_000;
 
     /**
      * A customer's words while they wait: at most {@link #QUERY_TIMEOUT_MS} in all and never more than the reply has left, with one quick retry inside that time (a connect that
@@ -113,12 +120,13 @@ class OpenAiEmbedder implements Embedder {
         long deadline = started + Math.min(QUERY_TIMEOUT_MS, AiBudget.remainingMs() - 3_000);
         if (deadline - started < 700) throw new IllegalStateException("No time left in this reply for search by meaning");
         queries.incrementAndGet();
+        lastQueryAt = started;
         String kind = "error", error = "";
-        for (int attempt = 0; attempt < 2; attempt++) {
+        for (int attempt = 0; attempt < 3; attempt++) {
             long left = deadline - System.currentTimeMillis();
             if (left < 600) break;
             try {
-                HttpResponse<String> res = queryHttp.send(request(List.of(text), left), HttpResponse.BodyHandlers.ofString());
+                HttpResponse<String> res = sendWithin(request(List.of(text), left), left);
                 if (res.statusCode() / 100 == 2) {
                     float[] v = parse(JSON.readTree(res.body()), 1).get(0);
                     note(true, System.currentTimeMillis() - started, "", null);
@@ -126,30 +134,64 @@ class OpenAiEmbedder implements Embedder {
                     return v;
                 }
                 error = "Embeddings HTTP " + res.statusCode() + ": " + (res.body().length() > 200 ? res.body().substring(0, 200) : res.body());
-                if (res.statusCode() != 429 && res.statusCode() < 500) {   // refused: a retry cannot help and neither will the next replies
+                if (res.statusCode() == 401 || res.statusCode() == 403) {   // the key or the account is refused: a retry cannot help and neither will the next replies
                     restUntil = System.currentTimeMillis() + 600_000;
                     note(false, System.currentTimeMillis() - started, "refused-" + res.statusCode(), error);
+                    throw new IllegalStateException(error);
+                }
+                if (res.statusCode() != 429 && res.statusCode() < 500) {   // this text was rejected (400, 404...): not a reason to switch search off for every other customer
+                    note(false, System.currentTimeMillis() - started, "rejected-" + res.statusCode(), error);
                     throw new IllegalStateException(error);
                 }
                 kind = "http-" + res.statusCode();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new IllegalStateException("Interrupted", e);
-            } catch (java.io.IOException e) {   // timed out or unreachable
-                kind = e instanceof java.net.http.HttpConnectTimeoutException ? "connect-timeout" : e instanceof java.net.http.HttpTimeoutException ? "timeout" : "io";
+            } catch (java.io.IOException | java.util.concurrent.TimeoutException e) {   // timed out or unreachable
+                kind = e instanceof java.net.http.HttpConnectTimeoutException ? "connect-timeout" : e instanceof java.net.http.HttpTimeoutException || e instanceof java.util.concurrent.TimeoutException ? "timeout" : "io";
                 error = "Embeddings slow or unreachable: " + e.getMessage();
+            } catch (java.util.concurrent.ExecutionException e) {
+                Throwable c = e.getCause();
+                kind = c instanceof java.net.http.HttpConnectTimeoutException ? "connect-timeout" : c instanceof java.net.http.HttpTimeoutException ? "timeout" : "io";
+                error = "Embeddings slow or unreachable: " + c;
             }
-            if (attempt == 0 && deadline - System.currentTimeMillis() > 900) {
+            if (attempt < 2 && deadline - System.currentTimeMillis() > 900) {
                 try { Thread.sleep(150); } catch (InterruptedException e) { Thread.currentThread().interrupt(); break; }
             }
         }
         note(false, System.currentTimeMillis() - started, kind, error);
+        if (started - lastFailAt > streakWindowMs) streak.set(0);   // the last failure was long ago: not "in a row"
+        lastFailAt = System.currentTimeMillis();
         int inARow = streak.incrementAndGet();
         if (inARow >= REST_AFTER_FAILED_QUERIES) restUntil = System.currentTimeMillis() + Math.min(300_000L, 20_000L << Math.min(inARow - REST_AFTER_FAILED_QUERIES, 4));
         throw new IllegalStateException(error.isEmpty() ? "Embeddings did not answer in time" : error);
     }
 
-    /** Failed queries in a row (each already retried once) before search by meaning rests for everyone. */
+    /** One query, answered or given up within {@code withinMs}: the whole call is bounded here, whatever stage (DNS, connect, TLS, answer) is slow. */
+    private HttpResponse<String> sendWithin(HttpRequest req, long withinMs) throws InterruptedException, java.util.concurrent.ExecutionException, java.util.concurrent.TimeoutException {
+        var f = queryHttp.sendAsync(req, HttpResponse.BodyHandlers.ofString());
+        try { return f.get(withinMs, java.util.concurrent.TimeUnit.MILLISECONDS); }
+        catch (InterruptedException | java.util.concurrent.TimeoutException e) { f.cancel(true); throw e; }
+    }
+
+    /**
+     * Keeps the connection to the embeddings host (and its address) warm while customers are chatting, so a query does not pay the ~1.5 s of a cold DNS + TCP + TLS start. It sends
+     * nothing but an empty, key-less request (refused with 400/401, never billed) and only when a query was made in the last 10 minutes.
+     */
+    @org.springframework.scheduling.annotation.Scheduled(fixedDelay = 20_000, initialDelay = 20_000)
+    void keepWarm() { warm(); }
+
+    boolean warm() {
+        if (!configured() || System.currentTimeMillis() - lastQueryAt > 600_000) return false;
+        try {
+            HttpRequest r = HttpRequest.newBuilder(URI.create(baseUrl + "/embeddings")).timeout(Duration.ofSeconds(4)).header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString("{}")).build();
+            queryHttp.sendAsync(r, HttpResponse.BodyHandlers.discarding()).get(4, java.util.concurrent.TimeUnit.SECONDS);
+            return true;
+        } catch (InterruptedException e) { Thread.currentThread().interrupt(); return false; }
+        catch (Exception e) { return false; }   // a warm-up that fails is not an outage: only real queries count
+    }
+
+    /** Failed queries in a row (each already retried within its wait) before search by meaning rests for everyone. */
     static final int REST_AFTER_FAILED_QUERIES = 3;
 
     private HttpRequest request(List<String> part, long timeoutMs) throws java.io.IOException {

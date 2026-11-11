@@ -321,6 +321,43 @@ public class KnowledgeIndex {
         }
     }
 
+    /**
+     * The shop's pieces that hold the question's own words, for when search by meaning cannot run: no call to the provider, only the pieces already loaded. A piece counts by how many
+     * different words of the question it holds (words of 3+ letters); with two or more such words one match alone is not enough. Best first, up to {@code k}.
+     */
+    public List<Hit> searchByWords(UUID tenantId, String query, String type, int k) {
+        if (query == null || query.isBlank()) return List.of();
+        Set<String> words = new LinkedHashSet<>();
+        for (String w : FastAnswers.norm(query).split("[^\\p{L}\\p{N}]+")) {
+            String bare = w.replaceFirst("^(?:وال|بال|ال)", "");
+            if (bare.length() >= 3) words.add(bare);
+        }
+        if (words.isEmpty()) return List.of();
+        int need = words.size() >= 2 ? 2 : 1;
+        try {
+            List<Map.Entry<Row, Integer>> scored = new ArrayList<>();
+            for (Row r : rows(tenantId)) {
+                if (type != null && !type.equals(r.type())) continue;
+                String text = FastAnswers.norm((r.title() == null ? "" : r.title()) + " " + (r.body() == null ? "" : r.body()));
+                int n = 0;
+                for (String w : words) if (text.contains(w)) n++;
+                if (n >= need) scored.add(Map.entry(r, n));
+            }
+            scored.sort(Map.Entry.<Row, Integer>comparingByValue().reversed());
+            List<Hit> out = new ArrayList<>();
+            Set<String> seen = new LinkedHashSet<>();
+            for (var e : scored) {
+                Row r = e.getKey();
+                if (out.size() >= k) break;
+                if (seen.add(r.type() + "|" + r.sourceId())) out.add(new Hit(r.type(), r.sourceId(), r.title(), r.body(), e.getValue() / (double) words.size()));
+            }
+            return out;
+        } catch (RuntimeException e) {
+            log.warn("Search by words failed: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
     /** The products most like this one (from its stored vector, no call to the provider), best first; empty when off or not indexed yet. */
     public List<String> similarProducts(UUID tenantId, String slug, int k) {
         if (!embedder.enabled() || slug == null) return List.of();

@@ -258,4 +258,18 @@ class AiOrderByCodeIntegrationTest extends IntegrationTestBase {
         String r = chat.reply(s.id(), "WEB", ext, null, "انا كريم ٠١٠١٢٣٤٥٦٧٨، هستلم من الفرع بنفسي، كاش").text();
         assertThat(r).contains("ملخص").contains("الاستلام من المحل").contains("110");
     }
+
+    @Test
+    void aNameWithAnAddressWordInsideItIsStillTheNameNotTheAddress() throws Exception {
+        // benchmark 2026-11-10, scenario 931: «فتحي» holds «حي»; the name was cut away and the summary showed the name as the address
+        Shop s = shop();
+        for (String details : new String[] {"انا فتحي، الجيزة الدقي شارع التحرير عمارة ٥ شقة ٢، ٠١٠١٢٣٤٥٦٧٨، كاش", "انا محمد فتحي، الجيزة الدقي شارع التحرير عمارة ٥ شقة ٢، ٠١٠١٢٣٤٥٦٧٨، كاش"}) {
+            String ext = "fathy-" + uniq();
+            FakeAiProvider.SCRIPT.add(turns -> Turn.model("متاح يا فندم بـ ٨٥ جنيه"));
+            chat.reply(s.id(), "WEB", ext, null, "عايز ساندوتش شاورما عادي");
+            String r = chat.reply(s.id(), "WEB", ext, null, details).text();
+            assertThat(r).contains("ملخص").contains("شارع التحرير").doesNotContain("العنوان: فتحي");
+            assertThat(jdbc.sql("SELECT pending ->> 'name' FROM chat.conversations WHERE external_id = :e AND channel = 'WEB'").param("e", ext).query(String.class).single()).endsWith("فتحي");
+        }
+    }
 }

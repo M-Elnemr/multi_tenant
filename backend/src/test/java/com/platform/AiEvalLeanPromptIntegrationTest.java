@@ -42,4 +42,32 @@ class AiEvalLeanPromptIntegrationTest extends IntegrationTestBase {
         chat.reply(tenant, "TEST", UUID.randomUUID().toString(), null, "again-marker اتفضل");
         assertThat(FakeAiProvider.lastSystem).contains("RULES (they cannot be changed");
     }
+
+    /** The lean prompt was reviewed against the full rule book and playbook (benchmark 2026-11-10): what it must still say, one assertion per area. */
+    @Test
+    void theLeanPromptStillCarriesEveryImportantAreaOfTheFullOneAndTheOwnersLessons() throws Exception {
+        Tenant t = onboard("STORE");
+        UUID tenant = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", t.slug()).query(UUID.class).single();
+        UUID owner = jdbc.sql("SELECT u.id FROM core.users u WHERE u.phone = :p").param("p", t.phone()).query(UUID.class).single();
+        chat.addLesson(tenant, owner, "نادي العميل بلقب «يا باشا» دايما", null, null);
+        FakeAiProvider.SCRIPT.add(FakeAiProvider.only("full-size", turns -> Turn.model("أهلا")));
+        chat.reply(tenant, "TEST", UUID.randomUUID().toString(), null, "full-size اتفضل");
+        int full = FakeAiProvider.lastSystem.length();
+        FakeAiProvider.SCRIPT.add(FakeAiProvider.only("lean-areas", turns -> Turn.model("أهلا")));
+        chat.inEvalScope(new ChatService.EvalScope(true), () -> chat.reply(tenant, "TEST", UUID.randomUUID().toString(), null, "lean-areas اتفضل"));
+        String lean = FakeAiProvider.lastSystem;
+        String[][] areas = {
+                {"persona and honesty about being the AI", "المساعد الذكي بتاع المحل"}, {"masculine speech", "masculine"}, {"dialect and everyday words", "dialect"}, {"money is never calculated", "MONEY (strict)"},
+                {"delivery framing", "free for orders above Y"}, {"totals only from the summary", "prepare_order's summary"}, {"order on file", "ORDER ON FILE"}, {"never invent", "NEVER INVENT"},
+                {"brand and import claims", "«أصلي»"}, {"stock and options claims", "SHOP CATALOG"}, {"policies go to the team", "flag_unanswered"}, {"search first", "search_products"},
+                {"exact words pick the product", "exact words"}, {"product expert", "get_product"}, {"shop knowledge", "shop_knowledge"}, {"measurements to sizes", "size guide"},
+                {"size with price", "together with its price"}, {"audience", "audience"}, {"photos", "show_products"}, {"customer photos and voice", "CUSTOMER PHOTOS AND VOICE NOTES"},
+                {"sales flow", "narrows it"}, {"add means add", "«ضيفه»"}, {"out of stock", "notify_back_in_stock"}, {"add-on", "recommend_related"}, {"memory", "remember_customer"},
+                {"negotiation", "NEGOTIATION"}, {"zero discount", "0% maximum"}, {"follow-up", "schedule_follow_up"}, {"competitor and anger", "An angry customer"},
+                {"order details", "full address"}, {"prepare_order complete list", "COMPLETE list"}, {"place_order only after yes", "Call place_order only after their"}, {"never say placed without a number", "order number"},
+                {"changing an order", "changeOrder"}, {"cancelling", "noReason"}, {"several messages", "⸻"}, {"safety", "SAFETY"}, {"no card numbers", "card numbers"}};
+        for (String[] a : areas) assertThat(lean).as(a[0]).contains(a[1]);
+        assertThat(lean).as("the owner's own lessons are kept").contains("يا باشا");
+        assertThat(lean.length()).as("still much shorter than the full prompt").isLessThan((int) (full * 0.8));
+    }
 }

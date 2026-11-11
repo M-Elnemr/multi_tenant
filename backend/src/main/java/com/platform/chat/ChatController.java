@@ -45,8 +45,7 @@ public class ChatController {
         this.eval = eval;
     }
 
-    /** {@code model}: the visitor's pick in the chat's test dropdown (null = keep what the conversation has). */
-    public record SendRequest(String conversationId, String message, String model) {}
+    public record SendRequest(String conversationId, String message) {}
     public record TestRequest(String message) {}
     public record SettingsRequest(Boolean enabled, String tone, Integer maxDiscountPct, String greeting, List<String> channels, String agentName, String agentAvatar) {}
     public record LessonRequest(String instruction, String exampleQuestion, String exampleAnswer) {}
@@ -77,7 +76,6 @@ public class ChatController {
         m.put("greeting", s.get("greeting") == null ? "" : s.get("greeting"));
         m.put("agentName", s.get("agentName") == null ? "" : s.get("agentName"));
         m.put("agentAvatar", s.get("agentAvatar") == null ? "" : s.get("agentAvatar"));
-        m.put("models", List.of("default", "glm", "qwen", "anthropic", "deepseek"));   // the test dropdown (temporary)
         m.put("media", media.enabled());   // whether photos and voice notes can be read
         return m;
     }
@@ -97,7 +95,6 @@ public class ChatController {
         throttle.check("chat-conv10|" + r.conversationId(), 30, Duration.ofMinutes(10));
         throttle.check("chat-ip|" + ClientInfo.ip(req), 300, Duration.ofMinutes(10));
         throttle.check("chat-conv|" + r.conversationId(), 300, Duration.ofDays(1));
-        chat.setWebModel(t, r.conversationId(), clientOrNull(a), r.model());
         return view(chat.reply(t, "WEB", r.conversationId(), clientOrNull(a), r.message()));
     }
 
@@ -107,7 +104,7 @@ public class ChatController {
      */
     @PostMapping(value = "/api/v1/shop/chat/media", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
     public Map<String, Object> sendMedia(@RequestParam String conversationId, @RequestParam MultipartFile file, @RequestParam(required = false) String message,
-                                         @RequestParam(required = false) String model, Authentication a, HttpServletRequest req) throws java.io.IOException {
+                                         Authentication a, HttpServletRequest req) throws java.io.IOException {
         UUID t = StoreContext.openTenantId();
         if (conversationId == null || !CONV_ID.matcher(conversationId).matches()) throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid conversation");
         if (!chat.enabled(t, "WEB")) throw new BusinessException(HttpStatus.SERVICE_UNAVAILABLE, "CHAT_DISABLED", "Live chat is not available right now");
@@ -133,7 +130,6 @@ public class ChatController {
             return m;
         }
         if (heard.length() > 1000) heard = heard.substring(0, 1000);
-        chat.setWebModel(t, conversationId, clientOrNull(a), model);
         Map<String, Object> out = view(chat.reply(t, "WEB", conversationId, clientOrNull(a), heard));
         out.put("heard", heard);
         return out;

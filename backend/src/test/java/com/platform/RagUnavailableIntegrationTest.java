@@ -94,4 +94,28 @@ class RagUnavailableIntegrationTest extends IntegrationTestBase {
         assertThat(results.get(1)).doesNotContainKey("unavailable").containsKey("passages");
         assertThat(ragEvents(lastConv)).isZero();
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void whileSearchByMeaningIsDownTheShopsPassagesWithTheQuestionsWordsAreStillOfferedAndSaidToBeOnlyThat() throws Exception {
+        Tenant t = onboard("STORE");
+        shop(t);
+        FakeEmbedder.failQueries = true;
+        var results = chat(t, "السماعة الرياضية بطاريتها كام؟");
+        var knowledgeResult = results.get(1);
+        assertThat(knowledgeResult).containsEntry("unavailable", true).containsEntry("searchByMeaning", "UNAVAILABLE");
+        var passages = (List<Map<String, Object>>) knowledgeResult.get("passages");
+        assertThat(passages).isNotEmpty();
+        assertThat(String.valueOf(passages.get(0).get("title"))).contains("سماعة");
+        assertThat(String.valueOf(knowledgeResult.get("note"))).contains("may NOT be everything").contains("flag_unanswered");
+        // a question with none of the shop's words stays empty and unavailable: the model is told it cannot confirm, never "the shop has nothing"
+        FakeAiProvider.reset();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("shop_knowledge", Map.of("question", "هل بتشحنوا للقمر؟ " + uniq())));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("لحظة"));
+        onHost(t.host(), null, "POST", "/api/v1/shop/chat", "{\"conversationId\":\"%s\",\"message\":\"هل بتشحنوا للقمر؟\"}".formatted(UUID.randomUUID())).andExpect(status().isOk());
+        var empty = FakeAiProvider.RESULTS.get(0).result();
+        assertThat((List<?>) empty.get("passages")).isEmpty();
+        assertThat(empty).containsEntry("unavailable", true);
+        assertThat(String.valueOf(empty.get("note"))).contains("cannot confirm").doesNotContain("says nothing about this");
+    }
 }

@@ -171,4 +171,40 @@ class OrderQuantityIntegrationTest extends IntegrationTestBase {
         String number = JsonPath.read(confirmed, "$.order.orderNumber");
         assertThat(jdbc.sql("SELECT sum(oi.quantity) FROM commerce.order_items oi JOIN commerce.orders o ON o.id = oi.order_id JOIN core.tenants t ON t.id = o.tenant_id WHERE o.order_number = :n AND t.slug = :s").param("n", number).param("s", s.t().slug()).query(Long.class).single()).isEqualTo(2L);
     }
+
+    // ---- the quantity the model sends is read as a whole number, never guessed -------------------------------------------------------
+
+    Map<String, Object> prepareRaw(Shop s, Object item) {
+        return Map.of("items", List.of(item), "customerName", "كريم", "phone", "01023456789", "governorateCode", "CAI",
+                "addressLine1", "شارع مكرم عبيد عمارة ٣ شقة ٧", "area", "مدينة نصر", "paymentMethod", "CASH_ON_DELIVERY", "discountPercent", 0);
+    }
+
+    @Test
+    void aQuantityThatIsNotAWholeNumberIsRefusedAndAnItemThatIsNotAnObjectIsExplained() throws Exception {
+        Shop s = shop();
+        String conv = UUID.randomUUID().toString();
+        model(ASK_DETAILS);
+        send(s, conv, "عايز " + s.name());
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepareRaw(s, Map.of("variantId", s.variant(), "quantity", 2.5))));
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepareRaw(s, Map.of("variantId", s.variant(), "quantity", "اتنين"))));
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", Map.of("items", List.of("x"), "customerName", "كريم", "phone", "01023456789", "paymentMethod", "CASH_ON_DELIVERY")));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ده الملخص"));
+        send(s, conv, DETAILS + ". التوصيل امتى؟");
+        assertThat(String.valueOf(FakeAiProvider.RESULTS.get(0).result().get("error"))).contains("whole number");
+        assertThat(String.valueOf(FakeAiProvider.RESULTS.get(1).result().get("error"))).contains("whole number");
+        assertThat(String.valueOf(FakeAiProvider.RESULTS.get(2).result().get("error"))).contains("Each item must be an object");
+    }
+
+    @Test
+    void aQuantityWrittenAsTextDigitsIsTheNumberTheCustomerSaid() throws Exception {
+        Shop s = shop();
+        String conv = UUID.randomUUID().toString();
+        model(ASK_DETAILS);
+        send(s, conv, "عايز اتنين " + s.name());
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepareRaw(s, Map.of("variantId", s.variant(), "quantity", "٢"))));   // text, Arabic digits
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ده الملخص"));
+        send(s, conv, DETAILS + ". التوصيل امتى؟");
+        assertThat(FakeAiProvider.RESULTS.get(0).result().get("error")).isNull();
+        assertThat(pendingQty(conv)).isEqualTo(2);
+    }
 }

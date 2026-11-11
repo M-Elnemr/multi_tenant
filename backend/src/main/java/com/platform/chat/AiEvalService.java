@@ -275,30 +275,54 @@ public class AiEvalService {
         b.append("\nRUBRIC:\n");
         for (String e : expect) b.append("- ").append(e).append("\n");
         Map<String, Object> out = new LinkedHashMap<>();
-        try {
-            Turn t = channelAi.forChannel("TEST", "anthropic").next(JUDGE, List.of(Turn.user(b.toString())), List.of());
-            if (t.usage() != null) out.put("judgeTokens", Map.of("input", t.usage().input(), "output", t.usage().output()));
-            String raw = t.text() == null ? "" : t.text().trim().replaceAll("^```(?:json)?", "").replaceAll("```$", "").trim();
-            JsonNode n = JSON.readTree(raw.substring(Math.max(0, raw.indexOf('{')), raw.lastIndexOf('}') + 1));
-            List<Map<String, Object>> checks = new ArrayList<>();
-            int pass = 0;
-            for (JsonNode ch : n.path("checks")) {
-                boolean p = ch.path("pass").asBoolean(false);
-                if (p) pass++;
-                checks.add(Map.of("expect", ch.path("expect").asText(), "pass", p, "why", ch.path("why").asText("")));
+        int tokensIn = 0, tokensOut = 0;
+        String failure = "";
+        Map<String, Object> shortAnswer = null;   // the last answer that parsed but listed fewer checks than the rubric
+        for (int attempt = 0; attempt < 2; attempt++) {   // a judge answer that is cut off or incomplete is asked for again once: it says nothing about the salesperson
+            try {
+                AnthropicProvider.MAX_OUTPUT_OVERRIDE.set(JUDGE_MAX_OUTPUT);
+                Turn t = channelAi.forChannel("TEST", "anthropic").next(JUDGE, List.of(Turn.user(b.toString())), List.of());
+                if (t.usage() != null) { tokensIn += t.usage().input(); tokensOut += t.usage().output(); }
+                String raw = t.text() == null ? "" : t.text().trim().replaceAll("^```(?:json)?", "").replaceAll("```$", "").trim();
+                JsonNode n = JSON.readTree(raw.substring(Math.max(0, raw.indexOf('{')), raw.lastIndexOf('}') + 1));
+                List<Map<String, Object>> checks = new ArrayList<>();
+                int pass = 0;
+                for (JsonNode ch : n.path("checks")) {
+                    boolean p = ch.path("pass").asBoolean(false);
+                    if (p) pass++;
+                    checks.add(Map.of("expect", ch.path("expect").asText(), "pass", p, "why", ch.path("why").asText("")));
+                }
+                Map<String, Object> got = new LinkedHashMap<>();
+                got.put("checks", checks); got.put("passed", pass); got.put("of", Math.max(checks.size(), expect.size())); got.put("note", n.path("note").asText(""));
+                if (checks.size() >= expect.size()) { out.putAll(got); out.put("judgeTokens", Map.of("input", tokensIn, "output", tokensOut)); return out; }
+                shortAnswer = got;
+                failure = "the judge listed " + checks.size() + " of " + expect.size() + " rubric lines";
+            } catch (Exception e) {
+                failure = e.getMessage();
+            } finally {
+                AnthropicProvider.MAX_OUTPUT_OVERRIDE.remove();
             }
-            out.put("checks", checks); out.put("passed", pass); out.put("of", Math.max(checks.size(), expect.size())); out.put("note", n.path("note").asText(""));
-        } catch (Exception e) {
-            out.put("checks", List.of()); out.put("passed", 0); out.put("of", expect.size()); out.put("note", "The judge could not grade this one: " + e.getMessage());
         }
+        if (tokensIn + tokensOut > 0) out.put("judgeTokens", Map.of("input", tokensIn, "output", tokensOut));
+        if (shortAnswer != null) {   // still incomplete: the lines it did not list count as failed, and the record says so
+            out.putAll(shortAnswer); out.put("judgeShort", true); out.put("note", shortAnswer.get("note") + " (incomplete judge answer: " + failure + ")");
+            return out;
+        }
+        out.put("checks", List.of()); out.put("passed", 0); out.put("of", expect.size()); out.put("judgeFailed", true);   // not graded: left out of the percentages
+        out.put("note", "The judge could not grade this one: " + failure);
         return out;
     }
+
+    /** The judge's answer lists every rubric line with a reason: well above the 1000 tokens a customer's reply is limited to (answers were cut off in the 2026-11-10 runs). */
+    static final int JUDGE_MAX_OUTPUT = 3000;
 
     /** Pass rate per category and overall, in percent. */
     static Map<String, Object> summary(List<Map<String, Object>> results) {
         Map<String, int[]> by = new java.util.TreeMap<>();
         int pass = 0, of = 0;
+        int ungraded = 0;
         for (var r : results) {
+            if (Boolean.TRUE.equals(r.get("judgeFailed"))) { ungraded++; continue; }   // the judge gave no usable answer: not a score of 0
             int p = ((Number) r.get("passed")).intValue(), o = ((Number) r.get("of")).intValue();
             by.computeIfAbsent(String.valueOf(r.get("category")), k -> new int[2]);
             by.get(String.valueOf(r.get("category")))[0] += p;
@@ -307,6 +331,6 @@ public class AiEvalService {
         }
         Map<String, Object> cats = new LinkedHashMap<>();
         by.forEach((k, v) -> cats.put(k, v[1] == 0 ? 0 : Math.round(v[0] * 100.0 / v[1])));
-        return Map.of("overallPct", of == 0 ? 0 : Math.round(pass * 100.0 / of), "byCategory", cats, "checks", of);
+        return Map.of("overallPct", of == 0 ? 0 : Math.round(pass * 100.0 / of), "byCategory", cats, "checks", of, "ungraded", ungraded);
     }
 }

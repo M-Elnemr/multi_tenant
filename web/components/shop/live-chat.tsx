@@ -16,15 +16,13 @@ type Msg = { role: "user" | "assistant"; content: string; mediaUrl?: string | nu
 type Reply = { conversationId: string; reply: string; order?: Order | null; products?: Product[]; heard?: string };
 type History = { role: "user" | "assistant"; content: string; mediaUrl?: string | null }[];
 type Job = { text: string } | { file: File; caption: string };
-type Config = { enabled: boolean; greeting: string; agentName?: string; agentAvatar?: string; models?: string[]; media?: boolean };
+type Config = { enabled: boolean; greeting: string; agentName?: string; agentAvatar?: string; media?: boolean };
 
 const KEY = "chatConv";
-const MODEL_KEY = "chatModel";
 const SOUND_KEY = "chatSound";
 const HELLO_KEY = "chatHello";
 const EMOJIS = ["😀", "😂", "😍", "🙏", "👍", "👏", "🎉", "❤️", "🔥", "😊", "🤔", "😢", "😎", "🛍️", "👕", "👗", "👟", "📦", "🚚", "💳", "✅", "⭐", "🎁", "💬"];
 const MAX_VOICE_SECONDS = 120;
-const MODEL_LABEL: Record<string, string> = { glm: "GLM", qwen: "Qwen", anthropic: "Claude", deepseek: "DeepSeek" };
 
 function conversationId(): string {
   try {
@@ -399,8 +397,7 @@ export function LiveChat() {
   const [cfg, setCfg] = useState<Config | null>(null);
   const [open, setOpen] = useState(false);
   const [conv, setConv] = useState("");
-  // the remembered test model and sound setting (the widget renders nothing until the config arrives, so reading the browser's storage here cannot mismatch the server's page)
-  const [model, setModel] = useState(() => read(MODEL_KEY) ?? "default");
+  // the remembered sound setting (the widget renders nothing until the config arrives, so reading the browser's storage here cannot mismatch the server's page)
   const [sound, setSound] = useState(() => read(SOUND_KEY) !== "off");
   const [hello, setHello] = useState(false);
 
@@ -429,15 +426,14 @@ export function LiveChat() {
   useVisualViewport(open);
 
   const loadFn = useCallback(() => api<History>(`shop/chat/history?conversationId=${conv}`), [conv]);
-  const send = useCallback((text: string) => api<Reply>("shop/chat", { body: { conversationId: conv, message: text, model } }), [conv, model]);
+  const send = useCallback((text: string) => api<Reply>("shop/chat", { body: { conversationId: conv, message: text } }), [conv]);
   const sendMedia = useCallback((file: File, caption: string) => {
     const form = new FormData();
     form.set("conversationId", conv);
     form.set("file", file);
     if (caption) form.set("message", caption);
-    form.set("model", model);
     return api<Reply>("shop/chat/media", { form });
-  }, [conv, model]);
+  }, [conv]);
 
   const dismissHello = () => {
     setHello(false);
@@ -453,7 +449,6 @@ export function LiveChat() {
   if (!cfg?.enabled) return null;
   const name = cfg.agentName?.trim() || t("chat.agentDefault");   // the shop's own name for the assistant, else Nada
   const avatar = isAvatarId(cfg.agentAvatar) ? cfg.agentAvatar : DEFAULT_AGENT_AVATAR;
-  const models = cfg.models && cfg.models.length > 0 ? cfg.models : [];
   return (
     <>
       {open && (
@@ -465,13 +460,6 @@ export function LiveChat() {
               <p className="truncate text-sm font-bold leading-tight">{name}</p>
               <p className="text-xs text-emerald-400">{t("chat.online")}</p>
             </div>
-            {/* TEMPORARY test control: lets a visitor pick the AI model they talk to. Remove when the models have been compared. */}
-            {models.length > 1 && (
-              <select value={model} onChange={(e) => { setModel(e.target.value); write(MODEL_KEY, e.target.value); }} aria-label={t("chat.model")} title={t("chat.model")}
-                className="max-w-[6.5rem] shrink-0 rounded-full bg-white/15 px-2 py-2 text-xs font-semibold text-white outline-none">
-                {models.map((m) => <option key={m} value={m} className="text-black">{m === "default" ? t("chat.modelDefault") : MODEL_LABEL[m] ?? m}</option>)}
-              </select>
-            )}
             <button type="button" onClick={() => { const next = !sound; setSound(next); write(SOUND_KEY, next ? "on" : "off"); }} aria-label={t("chat.sound")} aria-pressed={sound}
               className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/10 hover:bg-white/20">
               <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden>

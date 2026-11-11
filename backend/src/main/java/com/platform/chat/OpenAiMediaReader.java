@@ -29,21 +29,29 @@ final class OpenAiMediaReader {
     private static final Pattern EXCUSE = Pattern.compile("(?is)^\\W*(unreadable|i('| a)?m sorry|sorry|i (can ?not|can't|am unable|'m unable|do not|don't)|unable to|as an ai|no (image|audio|photo)|لا أستطيع|لا استطيع|عذرا|عذراً|آسف|مش قادر)");
 
     private final AiUsageService usage;
-    private final String code, key, baseUrl, model;
+    private final String code, baseUrl, model;
+    private final java.util.function.Supplier<String> keys;
     private final boolean on, audio;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).followRedirects(HttpClient.Redirect.NORMAL).build();
 
     OpenAiMediaReader(AiUsageService usage, String code, String key, String baseUrl, String model, boolean on, boolean audio) {
+        this(usage, code, () -> key, baseUrl, model, on, audio);
+    }
+
+    /** The key is asked for at each request: the Hive pool lends the next one, so photos and voice notes share the keys' rate limits fairly. */
+    OpenAiMediaReader(AiUsageService usage, String code, java.util.function.Supplier<String> keys, String baseUrl, String model, boolean on, boolean audio) {
         this.usage = usage;
         this.code = code;
-        this.key = key == null ? "" : key.trim();
+        this.keys = keys;
         this.baseUrl = baseUrl == null ? "" : baseUrl.trim().replaceAll("/+$", "");
         this.model = model == null ? "" : model.trim();
         this.on = on;
         this.audio = audio;
     }
 
-    boolean enabled() { return on && !key.isBlank() && !baseUrl.isBlank() && !model.isBlank(); }
+    private String key() { String k = keys.get(); return k == null ? "" : k.trim(); }
+
+    boolean enabled() { return on && !key().isBlank() && !baseUrl.isBlank() && !model.isBlank(); }
 
     String code() { return code; }
 
@@ -83,7 +91,7 @@ final class OpenAiMediaReader {
     private String call(UUID tenantId, String channel, Map<String, Object> body, String what, int timeoutS, String kind, Integer seconds) {
         try {
             HttpRequest req = HttpRequest.newBuilder(URI.create(baseUrl + "/chat/completions")).timeout(Duration.ofSeconds(timeoutS))
-                    .header("Authorization", "Bearer " + key).header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer " + key()).header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(body))).build();
             HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
             if (res.statusCode() / 100 != 2) {

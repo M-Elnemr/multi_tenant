@@ -35,11 +35,16 @@ public class ChannelAi {
                      @Value("${app.ai.glm.max-rps:5}") int glmRps, @Value("${app.ai.qwen.max-rps:0}") int qwenRps,
                      @Value("${app.ai.deepseek.api-key:}") String deepseekKey, @Value("${app.ai.deepseek.model:deepseek-ai/deepseek-v4.1-flash-1017}") String deepseekModel,
                      @Value("${app.ai.deepseek.base-url:https://api-cdn.thehive.ai/api/v3}") String deepseekUrl, @Value("${app.ai.deepseek.reasoning-effort:none}") String deepseekEffort,
-                     @Value("${app.ai.deepseek.extra-body:}") String deepseekExtra, @Value("${app.ai.deepseek.max-rps:5}") int deepseekRps) {
-        this(defaultAi, new AnthropicProvider(key, model, effort, baseUrl, cacheTtl, chatMaxOutput), new OpenAiProvider("glm", "GLM", glmKey, glmModel, glmEffort, glmUrl, chatMaxOutput, true, withTemperature("", glmTemperature), glmRps),
+                     @Value("${app.ai.deepseek.extra-body:}") String deepseekExtra, @Value("${app.ai.deepseek.max-rps:5}") int deepseekRps, HiveKeyPool hive) {
+        this(defaultAi, new AnthropicProvider(key, model, effort, baseUrl, cacheTtl, chatMaxOutput), new OpenAiProvider("glm", "GLM", hive, glmModel, () -> glmEffort, glmUrl, chatMaxOutput, true, withTemperature("", glmTemperature), glmRps),
                 new OpenAiProvider("qwen", "Alibaba Qwen", qwenKey, qwenModel, "", qwenUrl, chatMaxOutput, true, withTemperature(qwenExtra(qwenThinking), qwenTemperature), qwenRps),
-                new OpenAiProvider("deepseek", "DeepSeek V4.1 Flash", deepseekKey == null || deepseekKey.isBlank() ? glmKey : deepseekKey, deepseekModel, deepseekEffort, deepseekUrl, chatMaxOutput, true, deepseekExtra == null ? "" : deepseekExtra, deepseekRps), social, web);
+                new OpenAiProvider("deepseek", "DeepSeek V4.1 Flash", hive, deepseekModel, () -> { String e = AiConfigService.deepseekEffort(); return e != null ? e : deepseekEffort; }, deepseekUrl, chatMaxOutput, true,
+                        deepseekExtra == null ? "" : deepseekExtra, deepseekRps), social, web);
     }
+
+    /** How long a model call may go unanswered, while a customer waits, before it is sent a second time (see OpenAiProvider.send). */
+    @Value("${app.ai.hedge-ms:8000}")
+    void hedgeMs(long ms) { OpenAiProvider.HEDGE_MS = ms; }
 
     /** Alibaba's compatible mode reads {@code enable_thinking}: "off" (default) and "on" set it, anything else ("unset") sends nothing, for a host that rejects the field. */
     static String qwenExtra(String thinking) {
@@ -79,12 +84,19 @@ public class ChannelAi {
         this.web = web == null ? "default" : web.trim().toLowerCase(Locale.ROOT);
     }
 
+    private volatile AiConfigService config;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void config(AiConfigService config) { this.config = config; }
+
     /** The model for one reply on {@code channel}: the routed one, falling back to the default if it fails before any tool exchange has begun. */
     public Routed forChannel(String channel) { return forChannel(channel, null); }
 
     /** Same, for a customer who picked a model with {@link #command}: {@code chosen} is "glm", "qwen", "deepseek" or "anthropic" (null = the channel's default). */
     public Routed forChannel(String channel, String chosen) {
-        String route = chosen != null ? chosen : channel != null && SOCIAL.contains(channel) ? social : web;
+        AiConfigService cfg = config;
+        // the platform admin's choice (AI configuration screen) decides which model answers; the route settings are only used where there is no such screen (unit tests)
+        String route = chosen != null ? chosen : cfg != null ? cfg.get().textModel() : channel != null && SOCIAL.contains(channel) ? social : web;
         // a chat that typed "glm" is testing that model: whatever is wrong with it (no key, not active, rejected) is shown as its error instead of quietly answering with another one
         if ("glm".equals(chosen) && glm != null) return new Routed(glm, null, true, backupFor(glm));
         if ("qwen".equals(chosen) && qwen != null) return new Routed(qwen, null, true, backupFor(qwen));

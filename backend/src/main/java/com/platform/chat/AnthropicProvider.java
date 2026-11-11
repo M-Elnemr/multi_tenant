@@ -22,6 +22,8 @@ import java.util.Map;
 public class AnthropicProvider implements AiProvider {
     private static final ObjectMapper JSON = new ObjectMapper();
     private final String key, model, effort, baseUrl, cacheTtl;
+    /** A longer answer for one call on this thread (the evaluation judge's JSON listing every rubric line), without changing what customers\' replies are limited to. */
+    static final ThreadLocal<Integer> MAX_OUTPUT_OVERRIDE = new ThreadLocal<>();
     private final int maxOutput;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build();
 
@@ -71,7 +73,8 @@ public class AnthropicProvider implements AiProvider {
     Map<String, Object> requestBody(String system, List<Turn> turns, List<ToolDef> tools) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
-        body.put("max_tokens", maxOutput);
+        Integer override = MAX_OUTPUT_OVERRIDE.get();
+        body.put("max_tokens", override != null ? override : maxOutput);
         String sys = system == null ? "" : system;
         int cut = sys.indexOf(CACHE_BREAK);
         List<Object> blocks = new ArrayList<>();
