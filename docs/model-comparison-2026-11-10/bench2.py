@@ -3,7 +3,9 @@
 import json, math, random, collections, itertools, sys
 
 random.seed(5)
-T = [json.load(open(f"trial{i}.json")) for i in (1, 2) if __import__("os").path.exists(f"trial{i}.json")]
+import os
+PFX = os.environ.get("BENCH_PREFIX", "trial")
+T = [json.load(open(f"{PFX}{i}.json")) for i in (1, 2) if os.path.exists(f"{PFX}{i}.json")]
 PREV = json.load(open("report.json"))        # previous benchmark, main run
 PREV_ORD = json.load(open("report3.json"))   # previous benchmark, order scenarios re-run with the corrected check
 MODELS = ["glm", "deepseek", "qwen"]; MODES = ["full", "lean"]; STORES = ["tech-zone", "nile-style", "beit-elshawarma"]
