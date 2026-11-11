@@ -145,6 +145,9 @@ public class ChatService {
     private final boolean nameProbe;
     private final boolean review;
     private final String reviewModel;
+    /** The longest the review of a draft may take (AI_REVIEW_TIMEOUT_MS): one try, no retry, no second request. */
+    @org.springframework.beans.factory.annotation.Value("${app.ai.review.timeout-ms:8000}")
+    private long reviewTimeoutMs = 8_000;
 
     private final KnowledgeIndex knowledge;
     private final com.platform.billing.WalletService wallet;
@@ -792,18 +795,23 @@ public class ChatService {
         try {
             // the review runs on the answering model, or on the model set in app.ai.review.model (its cost is then logged under that model)
             ChannelAi.Routed reviewer = reviewModel == null || reviewModel.equals(routed.code()) ? routed : channelAi.forChannel(ctx.channel(), reviewModel);
-            Turn t = reviewer.next(ReplyReview.SYSTEM, List.of(Turn.user(ReplyReview.request(turns, addressing(system), foundProducts(ctx) + section(system, "SHOP FACTS:", 2500) + section(system, CATALOG_HEADING, 4000), draft))), List.of());
+            String asked = ReplyReview.request(turns, addressing(system), foundProducts(ctx) + section(system, "SHOP FACTS:", 2500) + section(system, CATALOG_HEADING, 4000), draft);
+            Turn t;
+            AiBudget.capCalls(reviewTimeoutMs);   // one short try: a slow or failing review costs the customer at most this long, never the reply
+            try { t = reviewer.next(ReplyReview.SYSTEM, List.of(Turn.user(asked)), List.of()); } finally { AiBudget.uncapCalls(); }
             var round = new AiUsageService.Round(List.of("review"), t.usage());
             if (reviewer == routed) rounds.add(round);
             else if (!"TEST".equals(ctx.channel())) usageLog.record(ctx.tenantId(), "CHAT_REVIEW", ctx.channel(), ctx.conversationId(), false, "[review]", List.of(round), reviewer.code(), false);
             var v = ReplyReview.parse(t.text());
-            if (v == null) { log.info("Review: {} gave no usable verdict (conversation {})", routed.code(), ctx.conversationId()); return draft; }
+            if (v == null) { log.info("Review: {} gave no usable verdict (conversation {})", reviewer.code(), ctx.conversationId()); return draft; }
             if (v.ok()) return draft;
-            if (v.reply().length() > draft.length() * 3 + 300) { log.info("Review: {} rewrote far too much, keeping the draft (conversation {})", routed.code(), ctx.conversationId()); return draft; }
-            log.info("Review: {} corrected the reply (conversation {}) {}: «{}» -> «{}»", routed.code(), ctx.conversationId(), v.problems(), draft, v.reply());
+            if (v.reply().length() > draft.length() * 3 + 300) { log.info("Review: {} rewrote far too much, keeping the draft (conversation {})", reviewer.code(), ctx.conversationId()); return draft; }
+            if (ReplyReview.introducesNewNumbers(v.reply(), asked)) { log.info("Review: {} brought a number nobody showed it, keeping the draft (conversation {}): «{}»", reviewer.code(), ctx.conversationId(), v.reply()); return draft; }
+            if (ReviewVariantGuard.introducesUnavailableOptions(v.reply(), draft, ReplyReview.newestCustomerText(turns), foundProductData(ctx))) { log.info("Review: {} offered a colour or size that is not in stock, keeping the draft (conversation {}): «{}»", reviewer.code(), ctx.conversationId(), v.reply()); return draft; }
+            log.info("Review: {} corrected the reply (conversation {}) {}: «{}» -> «{}»", reviewer.code(), ctx.conversationId(), v.problems(), draft, v.reply());
             return v.reply();
-        } catch (AiProvider.AiUnavailableException e) {
-            log.warn("Review: failed, sending the draft: {}", e.getMessage());
+        } catch (RuntimeException e) {   // an unavailable or slow reviewer, or anything unexpected in it: the draft is sent
+            log.warn("Review: failed, sending the draft: {}", e.toString());
             return draft;
         }
     }
@@ -834,6 +842,16 @@ public class ChatService {
             return "";
         }
         return b.append("\n").toString();
+    }
+
+    /** The real variants (options and stock) of the products the tools found for this reply, for the checks on the reviewer's correction. */
+    private List<FactCheck.Product> foundProductData(Ctx ctx) {
+        List<String> slugs = ctx.products().stream().map(p -> String.valueOf(p.get("slug"))).distinct().limit(10).toList();
+        if (slugs.isEmpty()) return List.of();
+        FactCheck.Shop view = shopView(ctx.tenantId());
+        List<FactCheck.Product> out = new ArrayList<>();
+        for (String s : slugs) { FactCheck.Product p = view.product(s); if (p != null) out.add(p); }
+        return out;
     }
 
     /** A short reply with no amount, no number and no product facts (a greeting, thanks, one question): reviewing it would only cost the customer time. */

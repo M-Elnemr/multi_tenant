@@ -8,6 +8,7 @@ final class AiBudget {
     private static final ThreadLocal<Long> DEADLINE = new ThreadLocal<>();
     private static final ThreadLocal<java.util.UUID> TENANT = new ThreadLocal<>();
     private static final ThreadLocal<int[]> HEDGES = new ThreadLocal<>();
+    private static final ThreadLocal<Long> CALL_CAP = new ThreadLocal<>();
     /** A reply may send a slow call a second time once; a model that is slow all the time must not double every call of the reply. */
     static final int HEDGES_PER_REPLY = 1;
 
@@ -29,7 +30,20 @@ final class AiBudget {
         return true;
     }
 
-    static void clear() { DEADLINE.remove(); TENANT.remove(); HEDGES.remove(); }
+    /**
+     * Until {@link #uncapCalls()}: no model call on this thread waits longer than {@code ms}, is retried, or is sent twice. For a step that must never hold the customer's reply (the review):
+     * when it is slow or fails, the reply goes out without it.
+     */
+    static void capCalls(long ms) { CALL_CAP.set(ms); }
+
+    static void uncapCalls() { CALL_CAP.remove(); }
+
+    /** The longest one call may wait under {@link #capCalls}, or {@link Long#MAX_VALUE} when not capped. */
+    static long callCapMs() { Long c = CALL_CAP.get(); return c == null ? Long.MAX_VALUE : c; }
+
+    static boolean callsCapped() { return CALL_CAP.get() != null; }
+
+    static void clear() { DEADLINE.remove(); TENANT.remove(); HEDGES.remove(); CALL_CAP.remove(); }
 
     /** Milliseconds left for this reply, or {@link Long#MAX_VALUE} outside one. */
     static long remainingMs() {

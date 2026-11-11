@@ -44,14 +44,18 @@ class AiReplyReviewIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void aCorrectionStillGoesThroughTheMoneyAndClaimsChecks() {
+    void aCorrectionIsStillCheckedAndOneThatBringsANumberNobodyShowedIsDropped() {
         UUID id = shop();
+        // the reviewer invents a price: dropped before anything else, the draft goes out (no rewrite is asked for)
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("تحب مقاس إيه؟"));
-        // the reviewer invents a price and a discount tied to ordering now: both checks send it back once, then the clean rewrite goes out
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("{\"ok\":false,\"problems\":[\"x\"],\"reply\":\"السعر 999 جنيه، تحب مقاس إيه؟\"}"));
-        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ممكن أظبطلك سعر أحسن لو طلبت دلوقتي، تحب مقاس إيه؟"));
-        FakeAiProvider.SCRIPT.add(turns -> Turn.model("تحب مقاس إيه يا فندم؟"));
         String reply = chat.reply(id, "WEB", "r4-" + uniq(), null, "عايز قميص").text();
-        assertThat(reply).doesNotContain("999").doesNotContain("دلوقتي").contains("مقاس");
+        assertThat(reply).isEqualTo("تحب مقاس إيه؟");
+        // a correction with no new number that sells under time pressure still goes through the claims check, which sends it back once
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("عندنا قمصان حلوة بـ 150 جنيه، تحب مقاس إيه؟"));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("{\"ok\":false,\"problems\":[\"x\"],\"reply\":\"ممكن أظبطلك سعر أحسن لو طلبت دلوقتي، تحب مقاس إيه؟\"}"));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("تحب مقاس إيه يا فندم؟"));
+        String second = chat.reply(id, "WEB", "r5-" + uniq(), null, "عايز قميص تاني").text();
+        assertThat(second).doesNotContain("دلوقتي").contains("مقاس");
     }
 }

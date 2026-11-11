@@ -130,14 +130,14 @@ public class OpenAiProvider implements AiProvider {
         AiUnavailableException last = null;
         HiveKeyPool.Lease used = null;
         for (int attempt = 0; attempt < 3; attempt++) {   // two retries, with a growing pause, for a busy (429) or failing service, while the reply still has time for them
-            if (attempt > 0 && !AiBudget.hasLeft(8_000)) break;
+            if (attempt > 0 && (!AiBudget.hasLeft(8_000) || AiBudget.callsCapped())) break;   // a capped call (the review) is tried once
             HiveKeyPool.Lease lease = lease(used == null ? null : used.id());   // a retry goes on another key when the pool has one
             if (lease == null) throw new AiUnavailableException("The AI assistant is not configured yet");
             used = lease;
             try {
                 Throttle throttle = throttleFor(lease.key());
                 if (throttle != null) throttle.acquire();
-                long timeout = Math.max(3_000, Math.min(callTimeoutMs(), AiBudget.remainingMs() - 1_000));
+                long timeout = Math.min(Math.max(3_000, Math.min(callTimeoutMs(), AiBudget.remainingMs() - 1_000)), AiBudget.callCapMs());
                 HttpResponse<String> res = send(body, lease, timeout);
                 if (res.statusCode() / 100 == 2) { if (pool != null) pool.ok(lease); return parse(JSON.readTree(res.body())); }
                 if (pool != null) pool.failed(lease, res.statusCode());

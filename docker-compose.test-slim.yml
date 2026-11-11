@@ -52,7 +52,8 @@ services:
       AI_ROUTE_WEB: ${AI_ROUTE_WEB:-default}
       AI_NAME_PROBE: ${AI_NAME_PROBE:-false}
       AI_REVIEW: ${AI_REVIEW:-true}
-      AI_REVIEW_MODEL: ${AI_REVIEW_MODEL:-}
+      AI_REVIEW_MODEL: ${AI_REVIEW_MODEL:-glm}
+      AI_REVIEW_TIMEOUT_MS: ${AI_REVIEW_TIMEOUT_MS:-8000}
       GLM_MAX_RPS: ${GLM_MAX_RPS:-5}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-${GLM_API_KEY:-}}
       DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-ai/deepseek-v4.1-flash-1017}

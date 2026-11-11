@@ -56,4 +56,16 @@ class ReplyReviewTest {
         assertThat(ChatService.section(system, "SHOP FACTS:")).isEmpty();
         assertThat(ReplyReview.request(List.of(Turn.user("عايز جينز")), null, ChatService.section(system, "SHOP CATALOG"), "عندنا Jeans Slim بـ800")).contains("SHOP DATA (also facts):").contains("Jeans Slim [jeans-slim] (800)");
     }
+
+    @Test
+    void aCorrectionMayOnlyUseNumbersTheReviewerWasShown() {
+        String shown = "FACTS: قميص قطن price 1,250 EGP, sizes 40 42. DRAFT: القميص بـ ١٢٥٠ جنيه ومتاح";
+        assertThat(ReplyReview.introducesNewNumbers("القميص بـ 1250 جنيه، تحب مقاس 42؟", shown)).as("the same price in other digits and a shown size").isFalse();
+        assertThat(ReplyReview.introducesNewNumbers("القميص بـ ١٬٢٥٠ جنيه", shown.replace("1,250", "1250"))).as("Arabic digits and separator").isFalse();
+        assertThat(ReplyReview.introducesNewNumbers("القميص بـ 1200 جنيه", shown)).as("a different price").isTrue();
+        assertThat(ReplyReview.introducesNewNumbers("القميص بـ 999 جنيه", shown)).isTrue();
+        assertThat(ReplyReview.introducesNewNumbers("عندنا 3 ألوان وتحب مقاس 42؟", shown)).as("small counts are not checked").isFalse();
+        assertThat(ReplyReview.introducesNewNumbers("تحب مقاس إيه يا فندم؟", shown)).as("no numbers at all").isFalse();
+        assertThat(ReplyReview.introducesNewNumbers("القميص بـ 1250.00 جنيه", shown)).as("same amount with decimals").isFalse();
+    }
 }

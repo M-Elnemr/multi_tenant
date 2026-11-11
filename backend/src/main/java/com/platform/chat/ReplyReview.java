@@ -72,6 +72,35 @@ final class ReplyReview {
                 + "\nDRAFT:\n" + draft;
     }
 
+    /**
+     * True when {@code corrected} holds a number of 10 or more (a price, an amount, a size) that is not in {@code shown}, everything the reviewer was shown (the chat, the tool facts, the shop data
+     * and the draft). The reviewer is told to add nothing; this makes it so: a correction that brings a number from nowhere (or swaps in one it was not shown) is dropped and the draft goes out.
+     */
+    static boolean introducesNewNumbers(String corrected, String shown) {
+        java.util.Set<String> known = numbers(shown);
+        for (String n : numbers(corrected)) if (!known.contains(n)) return true;
+        return false;
+    }
+
+    private static java.util.Set<String> numbers(String text) {
+        java.util.Set<String> out = new java.util.HashSet<>();
+        var m = java.util.regex.Pattern.compile("\\d[\\d,]*(?:\\.\\d+)?").matcher(MoneyGuard.digits((text == null ? "" : text).replace('\u066C', ',').replace('\u066B', '.')));
+        while (m.find()) {
+            String n = m.group().replace(",", "").replaceFirst("\\.0+$", "");
+            if (n.replace(".", "").length() >= 2 && Double.parseDouble(n) >= 10) out.add(n);
+        }
+        return out;
+    }
+
+    /** The customer's newest message(s): what they wrote after the salesperson's last reply. */
+    static String newestCustomerText(List<Turn> turns) {
+        int lastModel = -1;
+        for (int i = 0; i < turns.size(); i++) if ("model".equals(turns.get(i).role()) && turns.get(i).calls().isEmpty() && turns.get(i).text() != null && !turns.get(i).text().isBlank()) lastModel = i;
+        StringBuilder b = new StringBuilder();
+        for (int i = lastModel + 1; i < turns.size(); i++) if ("user".equals(turns.get(i).role()) && turns.get(i).text() != null && !turns.get(i).text().startsWith("[SYSTEM CHECK")) b.append(turns.get(i).text()).append('\n');
+        return b.toString();
+    }
+
     /** A tool result without what the reviewer never needs (ids, picture links), so every product of a long search result fits («the jeans do not exist» came from a cut-off list). */
     static String lean(String json) {
         return json.replaceAll("\"(?:variantId|productId|id|imageUrl|imageMediaBase|imageMediaExt|url|link)\"\\s*:\\s*(?:\"[^\"]*\"|null)\\s*,?", "");
