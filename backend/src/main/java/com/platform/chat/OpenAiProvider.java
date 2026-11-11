@@ -32,6 +32,12 @@ public class OpenAiProvider implements AiProvider {
     /** One model call never waits longer than this for an answer; a reply has several calls and the gateway gives up at 60 seconds. */
     static final long CALL_TIMEOUT_MS = 20_000;
 
+    /** Time a hedged call keeps after the threshold: the first call is not cut off before the twin has had this long to answer. */
+    static final long HEDGE_ROOM_MS = 12_000;
+
+    /** How long one call may go unanswered: {@link #CALL_TIMEOUT_MS}, or the hedge threshold plus {@link #HEDGE_ROOM_MS} when that is longer (otherwise a threshold above the timeout could never fire). */
+    static long callTimeoutMs() { return Math.max(CALL_TIMEOUT_MS, HEDGE_MS + HEDGE_ROOM_MS); }
+
     /** Calls to one service (by address and key) share one limit, however many providers point at it: Hive allows GLM 5 calls a second for the whole account. */
     private static final Map<String, Throttle> THROTTLES = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -131,7 +137,7 @@ public class OpenAiProvider implements AiProvider {
             try {
                 Throttle throttle = throttleFor(lease.key());
                 if (throttle != null) throttle.acquire();
-                long timeout = Math.max(3_000, Math.min(CALL_TIMEOUT_MS, AiBudget.remainingMs() - 1_000));
+                long timeout = Math.max(3_000, Math.min(callTimeoutMs(), AiBudget.remainingMs() - 1_000));
                 HttpResponse<String> res = send(body, lease, timeout);
                 if (res.statusCode() / 100 == 2) { if (pool != null) pool.ok(lease); return parse(JSON.readTree(res.body())); }
                 if (pool != null) pool.failed(lease, res.statusCode());
@@ -161,9 +167,11 @@ public class OpenAiProvider implements AiProvider {
     /**
      * How long a call may go unanswered while a customer waits before the same request is sent a second time. Most GLM calls answer in 3-5 seconds, but now and then one hangs
      * until the 20-second timeout and is retried: measured on 2026-11-03, a reply of ONE call took 35-40 seconds that way. The twin usually answers in seconds; the first good
-     * answer wins and the other is dropped. Background work (no reply budget) is never doubled.
+     * answer wins and the other is dropped. Background work (no reply budget) is never doubled. The default is 25 seconds (AI_HEDGE_MS): the twin is sent only when the first call is
+     * still pending after that long. For that the call itself must be allowed to last longer than the threshold, see {@link #callTimeoutMs()}.
      */
-    static volatile long HEDGE_MS = 8_000;
+    static final long DEFAULT_HEDGE_MS = 25_000;
+    static volatile long HEDGE_MS = DEFAULT_HEDGE_MS;
 
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(OpenAiProvider.class);
 

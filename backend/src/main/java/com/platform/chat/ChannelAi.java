@@ -43,7 +43,7 @@ public class ChannelAi {
     }
 
     /** How long a model call may go unanswered, while a customer waits, before it is sent a second time (see OpenAiProvider.send). */
-    @Value("${app.ai.hedge-ms:8000}")
+    @Value("${app.ai.hedge-ms:25000}")
     void hedgeMs(long ms) { OpenAiProvider.HEDGE_MS = ms; }
 
     /** Alibaba's compatible mode reads {@code enable_thinking}: "off" (default) and "on" set it, anything else ("unset") sends nothing, for a host that rejects the field. */
