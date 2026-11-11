@@ -206,4 +206,25 @@ class ChannelAiTest {
         assertThat(new ChannelAi(def, claude, glm, qwen, deepseek, "default", "deepseek").forChannel("WEB").code()).isEqualTo("deepseek");
         assertThat(new ChannelAi(def, claude, glm, qwen, new Scripted("deepseek", false), "default", "deepseek").forChannel("WEB").code()).isEqualTo("glm");
     }
+
+    @Test
+    void aStepThatMustNotMoveTheReplyDoesNotFallBackWhenTheModelFailsOnIt() {
+        // the review is a single user turn, which the routed model reads as "the first round": a slow review used to switch the whole reply to the fallback model and ask it to review
+        // (for DeepSeek the fallback is the default model, GLM in production)
+        Scripted deepseek = new Scripted("deepseek", true), glm = new Scripted("glm", true), fallback = new Scripted("default", true);
+        deepseek.script.add(() -> { throw new AiProvider.AiUnavailableException("The AI assistant could not be reached"); });
+        var ai = new ChannelAi(fallback, new Scripted("anthropic", false), glm, null, deepseek, "default", "deepseek");
+        var routed = ai.forChannel("WEB");
+        assertThat(routed.code()).isEqualTo("deepseek");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> routed.nextOnActive("review", ASK, List.of())).isInstanceOf(AiProvider.AiUnavailableException.class);
+        assertThat(fallback.calls).as("the fallback model is not asked to review").isZero();
+        assertThat(glm.calls).isZero();
+        assertThat(routed.fellBack()).as("the reply stays on its model").isFalse();
+        assertThat(routed.code()).isEqualTo("deepseek");
+        // and the ordinary path is unchanged: an answer that fails does fall back
+        deepseek.script.add(() -> { throw new AiProvider.AiUnavailableException("The AI assistant could not be reached"); });
+        fallback.script.add(() -> Turn.model("answer from the fallback"));
+        assertThat(routed.next("system", ASK, List.of()).text()).isEqualTo("answer from the fallback");
+        assertThat(routed.fellBack()).isTrue();
+    }
 }

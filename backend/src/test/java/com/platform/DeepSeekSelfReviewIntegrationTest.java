@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jayway.jsonpath.JsonPath;
+import com.platform.chat.AiProvider.Turn;
 import com.platform.chat.ChatService;
 import com.sun.net.httpserver.HttpServer;
 import java.net.InetSocketAddress;
@@ -130,11 +131,14 @@ class DeepSeekSelfReviewIntegrationTest extends IntegrationTestBase {
     @Test
     void aHungReviewCostsAtMostTheReviewTimeoutIsNotRetriedAndGlmIsNeverCalled() throws Exception {
         Shop s = shop();
+        var fallbackAsked = new java.util.concurrent.atomic.AtomicBoolean();
         answersWithAPrice(s);
         deepseek(req -> { try { Thread.sleep(6_000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); } return text("{\"ok\":true}"); });
+        FakeAiProvider.SCRIPT.add(turns -> { fallbackAsked.set(true); return Turn.model("{\"ok\":true}"); });   // the fallback model in this setup: it must never be asked to review
         long t = System.nanoTime();
         String reply = ask(s, "بكام " + s.name() + "؟");
         double took = (System.nanoTime() - t) / 1e9;
+        assertThat(fallbackAsked).as("a slow review does not hand the review (or the reply) to the fallback model").isFalse();
         assertThat(reply).isEqualTo(DRAFT);
         assertThat(took).as("sent after the 1.5 s review cap, not after the hung review").isLessThan(5.0);
         assertThat(DEEPSEEK_SEEN).as("search, answer, one review try: no retry, no twin").hasSize(3);

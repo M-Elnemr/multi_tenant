@@ -814,7 +814,7 @@ public class ChatService {
             Turn t;
             AiBudget.capCalls(reviewTimeoutMs);   // one short try: a slow or failing review costs the customer at most this long, never the reply
             AiBudget.reasoning(reviewReasoning);   // the verdict is a few tokens: measured on 2026-11-11, DeepSeek without reasoning gave the same verdict as with it on 10 drafts, in 3.0 s instead of 4.4 s
-            try { t = reviewer.next(ReplyReview.SYSTEM, List.of(Turn.user(asked)), List.of()); } finally { AiBudget.uncapCalls(); AiBudget.clearReasoning(); }
+            try { t = reviewer.nextOnActive(ReplyReview.SYSTEM, List.of(Turn.user(asked)), List.of()); } finally { AiBudget.uncapCalls(); AiBudget.clearReasoning(); }
             var round = new AiUsageService.Round(List.of("review"), t.usage());
             if (reviewer == routed) rounds.add(round);
             else if (!"TEST".equals(ctx.channel())) usageLog.record(ctx.tenantId(), "CHAT_REVIEW", ctx.channel(), ctx.conversationId(), false, "[review]", List.of(round), reviewer.code(), false);

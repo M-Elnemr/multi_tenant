@@ -172,6 +172,13 @@ public class ChannelAi {
 
         @Override public boolean available() { return active.available() || (fallback != null && fallback.available()); }
 
+        /**
+         * One call on the model that is answering, with no fallback and no change of model, for a step that must never move the reply to another model: the review. {@link #next} treats a call
+         * whose last turn is a user turn as the first round of a reply and, when the model fails, answers it with the fallback model and stays on it; the review is such a call, so a review
+         * that timed out used to hand the whole reply (and the review itself) to GLM.
+         */
+        public Turn nextOnActive(String system, List<Turn> turns, List<ToolDef> tools) { return active.next(system, turns, tools); }
+
         @Override
         public Turn next(String system, List<Turn> turns, List<ToolDef> tools) {
             boolean firstRound = turns.isEmpty() || "user".equals(turns.get(turns.size() - 1).role());
