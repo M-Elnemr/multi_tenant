@@ -183,7 +183,7 @@ public class ChannelAi {
                 if (t.calls().isEmpty() && (t.text() == null || t.text().isBlank())) throw new AiUnavailableException("The routed model returned no answer");
                 return t;
             } catch (AiUnavailableException e) {
-                log.warn("{} did not answer, using {}: {}", routed.code(), fallback.code(), e.getMessage());
+                log.warn("{} did not answer, using {}: {} (cause: {})", routed.code(), fallback.code(), e.getMessage(), e.getCause() == null ? "none" : e.getCause().toString());   // the cause tells a stall (request timed out) from a refusal
                 active = fallback;
                 fellBack = true;
                 return fallback.next(system, turns, tools);

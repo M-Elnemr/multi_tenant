@@ -272,7 +272,7 @@ public class OpenAiProvider implements AiProvider {
             for (ToolDef d : tools) defs.add(Map.of("type", "function", "function", Map.of("name", d.name(), "description", d.description(), "parameters", lowerTypes(d.parameters()))));
             body.put("tools", defs);
         }
-        if (!effort().isEmpty()) body.put("reasoning_effort", effort());
+        if (!effort().isEmpty()) { String forThisCall = AiBudget.reasoningOverride(); body.put("reasoning_effort", forThisCall != null ? forThisCall : effort()); }
         body.put(maxTokensField ? "max_tokens" : "max_completion_tokens", maxOutput);
         if (!extraBody.isEmpty()) {
             try { body.putAll(JSON.readValue(extraBody, new TypeReference<Map<String, Object>>() {})); } catch (Exception e) { throw new AiUnavailableException("The extra request settings of " + code + " are not valid JSON"); }

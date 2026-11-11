@@ -9,6 +9,7 @@ final class AiBudget {
     private static final ThreadLocal<java.util.UUID> TENANT = new ThreadLocal<>();
     private static final ThreadLocal<int[]> HEDGES = new ThreadLocal<>();
     private static final ThreadLocal<Long> CALL_CAP = new ThreadLocal<>();
+    private static final ThreadLocal<String> REASONING = new ThreadLocal<>();
     /** A reply may send a slow call a second time once; a model that is slow all the time must not double every call of the reply. */
     static final int HEDGES_PER_REPLY = 1;
 
@@ -43,7 +44,14 @@ final class AiBudget {
 
     static boolean callsCapped() { return CALL_CAP.get() != null; }
 
-    static void clear() { DEADLINE.remove(); TENANT.remove(); HEDGES.remove(); CALL_CAP.remove(); }
+    /** Until {@link #clearReasoning()}: calls on this thread to a model that takes a reasoning level use {@code effort} instead of their own (the review is a short check, not a conversation). */
+    static void reasoning(String effort) { if (effort == null || effort.isBlank()) REASONING.remove(); else REASONING.set(effort.trim()); }
+
+    static void clearReasoning() { REASONING.remove(); }
+
+    static String reasoningOverride() { return REASONING.get(); }
+
+    static void clear() { DEADLINE.remove(); TENANT.remove(); HEDGES.remove(); CALL_CAP.remove(); REASONING.remove(); }
 
     /** Milliseconds left for this reply, or {@link Long#MAX_VALUE} outside one. */
     static long remainingMs() {

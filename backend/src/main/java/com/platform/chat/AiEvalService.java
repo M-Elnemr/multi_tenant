@@ -193,6 +193,7 @@ public class AiEvalService {
                 int errs = 0;
                 for (int k = t0; k < scope.toolCalls.size(); k++) if (Boolean.FALSE.equals(scope.toolCalls.get(k).get("ok"))) errs++;
                 rec.put("ms", ms);
+                rec.put("timeline", ReplyTimeline.takeLast());   // where this reply's time went: phases, model calls, tools, checks
                 rec.put("path", scope.modelReplies == m0 ? "CODE" : scope.failures.size() > f0 ? "MODEL_FAILED" : "MODEL");
                 rec.put("modelCalls", scope.rounds.size() - r0); rec.put("inputTokens", in); rec.put("outputTokens", outTok); rec.put("cachedTokens", cached);
                 rec.put("toolCalls", scope.toolCalls.size() - t0); rec.put("toolErrors", errs); rec.put("modelFailures", scope.failures.size() - f0);

@@ -148,6 +148,9 @@ public class ChatService {
     /** The longest the review of a draft may take (AI_REVIEW_TIMEOUT_MS): one try, no retry, no second request. */
     @org.springframework.beans.factory.annotation.Value("${app.ai.review.timeout-ms:8000}")
     private long reviewTimeoutMs = 8_000;
+    /** The reasoning level of the review call (AI_REVIEW_REASONING): none by default; empty = the answering model's own level. */
+    @org.springframework.beans.factory.annotation.Value("${app.ai.review.reasoning-effort:none}")
+    private String reviewReasoning = "none";
 
     private final KnowledgeIndex knowledge;
     private final com.platform.billing.WalletService wallet;
@@ -422,6 +425,12 @@ public class ChatService {
 
     /** Same, with the name the customer's chat app shows for them (WhatsApp profile name), kept on the conversation so the assistant can greet them by name. */
     public Reply reply(UUID tenantId, String channel, String externalId, UUID clientId, String message, String displayName) {
+        ReplyTimeline.begin();
+        try { return replyTimed(tenantId, channel, externalId, clientId, message, displayName); }
+        finally { ReplyTimeline.finish(channel, externalId); }
+    }
+
+    private Reply replyTimed(UUID tenantId, String channel, String externalId, UUID clientId, String message, String displayName) {
         String text = message == null ? "" : message.trim();
         if (text.isEmpty()) throw BusinessException.badRequest("VALIDATION_ERROR", "Write a message");
         if (text.length() > 1000) throw BusinessException.badRequest("VALIDATION_ERROR", "The message is too long");
@@ -453,9 +462,12 @@ public class ChatService {
         @SuppressWarnings("unchecked") Map<String, Object>[] orderBox = new Map[1];
         boolean[] ragDown = new boolean[1];
         Ctx ctx = new Ctx(tenantId, conv, channel, externalId, clientId, userMsgId, new ArrayList<>(), orderBox, new String[1], new String[1], ragDown);
+        ReplyTimeline.mark("prep");
         String system = systemPrompt(tenantId, conv, clientId, channel, externalId);
+        ReplyTimeline.mark("prompt");
         if (!system.contains("ALL PRODUCTS (")) system += productsForMessage(tenantId, text);
         List<ToolDef> tools = tools();
+        ReplyTimeline.mark("products");
         if (EVAL.get() != null) EVAL.get().setup(system.length(), Integer.toHexString(tools.toString().hashCode()) + ":" + tools.size(), tools.stream().anyMatch(td -> "shop_knowledge".equals(td.name())));
         String answer = null;
         // A plain "yes / تمام / ok" to the summary places the order right here: the model is never trusted to remember to do it, or to say it was done.
@@ -593,6 +605,7 @@ public class ChatService {
         else if (orderBox[0] != null) answer = confirmedText(arabicChat, orderBox[0], Map.of());
         else if (ctx.mustSay()[0] != null && answer != null && !answer.contains(ctx.mustSay()[0]) && !mentionsMinimum(answer, ctx.mustSay()[0]))
             answer = answer.strip() + "\n\n" + ctx.mustSay()[0];
+        ReplyTimeline.mark("flow");
         long tookMs = (System.nanoTime() - started) / 1_000_000;
         // which steps the reply took («3 calls: search_products > - > review»), so a slow reply shows where its time went
         String steps = rounds.stream().map(r -> r.tools().isEmpty() ? "-" : String.join("+", r.tools())).collect(java.util.stream.Collectors.joining(" > "));
@@ -779,8 +792,10 @@ public class ChatService {
         String answer = modelLoop(ctx, routed, system, turns, tools, rounds, allowed);
         if (answer == null || answer.isBlank() || ctx.summary()[0] != null) return answer;   // a code-written summary replaces the model's words anyway
         // a draft that stalls or only offers to show will be rewritten by the checks anyway: no review first, so the rewrite has the time
-        if (!stallsOrOffers(ctx, answer)) answer = reviewed(ctx, routed, system, turns, rounds, answer);
+        if (!stallsOrOffers(ctx, answer)) { long reviewStart = System.nanoTime(); answer = reviewed(ctx, routed, system, turns, rounds, answer); ReplyTimeline.span("review", ReplyTimeline.since(reviewStart)); }
+        long checksStart = System.nanoTime();
         answer = ruleChecks(ctx, routed, system, turns, tools, rounds, allowed, answer);
+        ReplyTimeline.span("ruleChecks", ReplyTimeline.since(checksStart));
         if (ctx.summary()[0] != null) return answer;
         answer = moneySafe(ctx, routed, system, turns, tools, rounds, allowed, arabic, answer);
         return ctx.summary()[0] != null ? answer : claimsSafe(ctx, routed, system, turns, tools, rounds, allowed, answer);
@@ -798,7 +813,8 @@ public class ChatService {
             String asked = ReplyReview.request(turns, addressing(system), foundProducts(ctx) + section(system, "SHOP FACTS:", 2500) + section(system, CATALOG_HEADING, 4000), draft);
             Turn t;
             AiBudget.capCalls(reviewTimeoutMs);   // one short try: a slow or failing review costs the customer at most this long, never the reply
-            try { t = reviewer.next(ReplyReview.SYSTEM, List.of(Turn.user(asked)), List.of()); } finally { AiBudget.uncapCalls(); }
+            AiBudget.reasoning(reviewReasoning);   // the verdict is a few tokens: measured on 2026-11-11, DeepSeek without reasoning gave the same verdict as with it on 10 drafts, in 3.0 s instead of 4.4 s
+            try { t = reviewer.next(ReplyReview.SYSTEM, List.of(Turn.user(asked)), List.of()); } finally { AiBudget.uncapCalls(); AiBudget.clearReasoning(); }
             var round = new AiUsageService.Round(List.of("review"), t.usage());
             if (reviewer == routed) rounds.add(round);
             else if (!"TEST".equals(ctx.channel())) usageLog.record(ctx.tenantId(), "CHAT_REVIEW", ctx.channel(), ctx.conversationId(), false, "[review]", List.of(round), reviewer.code(), false);
@@ -2198,14 +2214,18 @@ public class ChatService {
     private String modelLoop(Ctx ctx, ChannelAi.Routed routed, String system, List<Turn> turns, List<ToolDef> tools, List<AiUsageService.Round> rounds, MoneyGuard.Allowed allowed) {
         boolean retried = false;
         for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
+            long callStart = System.nanoTime();
             Turn t = routed.next(system, turns, tools);
+            ReplyTimeline.llm(routed.code(), ReplyTimeline.since(callStart));
             rounds.add(new AiUsageService.Round(t.calls().stream().map(ToolCall::name).toList(), t.usage()));
             if (t.calls().isEmpty() && (t.text() == null || t.text().isBlank()) && !retried) { retried = true; round--; continue; }   // an empty answer now and then: ask once more before giving up
             if (t.calls().isEmpty()) return t.text();
             turns.add(t);
             List<ToolResult> results = new ArrayList<>();
             for (ToolCall c : t.calls()) {
+                long toolStart = System.nanoTime();
                 Map<String, Object> r = runTool(ctx, c);
+                ReplyTimeline.span("tool:" + c.name(), ReplyTimeline.since(toolStart));
                 if (EVAL.get() != null) EVAL.get().tool(routed.code(), c, r);
                 allowed.addJson(r);
                 results.add(new ToolResult(c.name(), r));
@@ -2214,7 +2234,9 @@ public class ChatService {
         }
         // the tool rounds ran out without an answer: one last call with no tools, so the customer gets a reply from what was found instead of «ممكن توضحلي»
         if (AiBudget.hasLeft(8_000)) {
+            long lastStart = System.nanoTime();
             Turn last = routed.next(system, turns, List.of());
+            ReplyTimeline.llm(routed.code(), ReplyTimeline.since(lastStart));
             rounds.add(new AiUsageService.Round(List.of(), last.usage()));
             if (last.text() != null && !last.text().isBlank()) return last.text();
         }

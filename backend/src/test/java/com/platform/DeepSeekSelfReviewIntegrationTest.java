@@ -121,6 +121,9 @@ class DeepSeekSelfReviewIntegrationTest extends IntegrationTestBase {
         assertThat(DEEPSEEK_SEEN).as("search, answer, review: all on DeepSeek").hasSize(3);
         assertThat(DEEPSEEK_SEEN.get(2).path("messages").get(0).path("content").asText()).as("the third call is the reviewer's prompt").contains("senior sales manager");
         assertThat(DEEPSEEK_SEEN.get(2).has("tools")).isFalse();
+        assertThat(DEEPSEEK_SEEN.get(0).path("reasoning_effort").asText()).as("the conversation keeps its reasoning level").isEqualTo("low");
+        assertThat(DEEPSEEK_SEEN.get(1).path("reasoning_effort").asText()).isEqualTo("low");
+        assertThat(DEEPSEEK_SEEN.get(2).path("reasoning_effort").asText()).as("the review is a short check: no reasoning").isEqualTo("none");
         assertThat(GLM_SEEN).as("GLM is not a reviewer").isEmpty();
     }
 
