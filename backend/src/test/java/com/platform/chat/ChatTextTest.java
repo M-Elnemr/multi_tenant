@@ -219,6 +219,16 @@ class ChatTextTest {
     }
 
     @Test
+    void stockOfAProductWithSeveralOptionsIsListedOnlyPerExactCombination() {
+        var m = new java.util.LinkedHashMap<String, Object>();
+        ChatService.optionSummary(m, List.of(java.util.Map.of("options", "اللون: كحلي, المقاس: S", "available", 3), java.util.Map.of("options", "اللون: كحلي, المقاس: M", "available", 4),
+                java.util.Map.of("options", "اللون: أبيض, المقاس: M", "available", 0)));
+        String stock = m.get("inStockOptions").toString();
+        assertThat(stock).contains("كحلي + S (3 in stock)").contains("كحلي + M (4 in stock)").contains("EXACT COMBINATIONS IN STOCK").doesNotContain("أبيض");
+        assertThat(stock).as("no total per colour or per size").doesNotContain("كحلي (7").doesNotContain("M (4 in stock) / M");
+    }
+
+    @Test
     void searchAndTellYouLaterIsCaught() {
         assertThat(ReplyGuard.violations("أنا هبحثلك على المتاح عندنا دلوقتي وأقولك السعر والتفاصيل", "")).isNotEmpty();
         assertThat(ReplyGuard.violations("معلش يا فندم، محتاج أتأكد من بيانات الساندوتش نفسه الأول — لحظة واحدة وأقوله لك بالظبط.", "")).isNotEmpty();

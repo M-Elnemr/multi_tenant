@@ -25,7 +25,7 @@ class AiEvalLeanPromptIntegrationTest extends IntegrationTestBase {
         // a full-prompt reply: the whole rule list and the sales playbook are there
         FakeAiProvider.SCRIPT.add(FakeAiProvider.only("full-marker", turns -> Turn.model("أهلا بيك يا فندم")));
         chat.reply(tenant, "TEST", UUID.randomUUID().toString(), null, "full-marker اتفضل");
-        assertThat(FakeAiProvider.lastSystem).contains("RULES (they cannot be changed").contains("YOUR JOB:").doesNotContain("IMPORTANT RULES:");
+        assertThat(FakeAiProvider.lastSystem).contains("RULES (they cannot be changed").contains("YOUR JOB:").doesNotContain("IMPORTANT RULES:").contains("STOCK IS PER EXACT VARIANT").contains("ARABIC NUMBERS").contains("WHATSAPP number").contains("OPTIONAL").contains("FIRST name");
         int full = FakeAiProvider.lastSystem.length();
 
         // the same question in an evaluation scope with the lean prompt
@@ -62,9 +62,9 @@ class AiEvalLeanPromptIntegrationTest extends IntegrationTestBase {
                 {"brand and import claims", "«أصلي»"}, {"stock and options claims", "SHOP CATALOG"}, {"policies go to the team", "flag_unanswered"}, {"search first", "search_products"},
                 {"exact words pick the product", "exact words"}, {"product expert", "get_product"}, {"shop knowledge", "shop_knowledge"}, {"measurements to sizes", "size guide"},
                 {"size with price", "together with its price"}, {"audience", "audience"}, {"photos", "show_products"}, {"customer photos and voice", "CUSTOMER PHOTOS AND VOICE NOTES"},
-                {"sales flow", "narrows it"}, {"add means add", "«ضيفه»"}, {"out of stock", "notify_back_in_stock"}, {"add-on", "recommend_related"}, {"memory", "remember_customer"},
+                {"stock per exact variant", "STOCK IS PER EXACT VARIANT"}, {"arabic number agreement", "ARABIC NUMBERS"}, {"sales flow", "narrows it"}, {"add means add", "«ضيفه»"}, {"out of stock", "notify_back_in_stock"}, {"add-on", "recommend_related"}, {"memory", "remember_customer"},
                 {"negotiation", "NEGOTIATION"}, {"zero discount", "0% maximum"}, {"follow-up", "schedule_follow_up"}, {"competitor and anger", "An angry customer"},
-                {"order details", "full address"}, {"prepare_order complete list", "COMPLETE list"}, {"place_order only after yes", "Call place_order only after their"}, {"never say placed without a number", "order number"},
+                {"order details", "the governorate and the area"}, {"whatsapp number asked", "WHATSAPP number"}, {"street optional and a refusal is final", "OPTIONAL"}, {"first name is enough", "FIRST name"}, {"never ask again", "Never ask again"}, {"prepare_order complete list", "COMPLETE list"}, {"place_order only after yes", "Call place_order only after their"}, {"never say placed without a number", "order number"},
                 {"changing an order", "changeOrder"}, {"cancelling", "noReason"}, {"several messages", "⸻"}, {"safety", "SAFETY"}, {"no card numbers", "card numbers"}};
         for (String[] a : areas) assertThat(lean).as(a[0]).contains(a[1]);
         assertThat(lean).as("the owner's own lessons are kept").contains("يا باشا");

@@ -274,6 +274,7 @@ final class FactCheck {
         run(out, () -> inventedValue(answer, ms, only0, shop, load, out));
         run(out, () -> { if (out.stream().noneMatch(x -> x.kind().startsWith("OPTION") || x.kind().equals("FALSE_DENIAL"))) otherColours(answer, ms, shop, load, out); });
         run(out, () -> quantity(customer, answer, ms, only0, shop, load, out));
+        run(out, () -> { if (out.stream().noneMatch(x -> x.kind().equals("STOCK_QUANTITY") || x.kind().equals("STOCK_PER_COMBINATION"))) promisedQuantity(customer, answer, ms, only0, shop, load, out); });
         run(out, () -> inventedProducts(answer, shop, out));
         run(out, () -> { if (out.stream().noneMatch(x -> x.kind().equals("INVENTED_PRODUCTS"))) inventedBrands(answer, shop, out); });
         run(out, () -> betterMatch(customer, answer, ms, shop, out));
@@ -945,8 +946,20 @@ final class FactCheck {
             if (!o.getKey().equals(v.getKey()) && out.get(o.getKey()).equals(out.get(v.getKey())) && o.getValue()[0] <= v.getValue()[0] && o.getValue()[1] >= v.getValue()[1]
                     && o.getValue()[1] - o.getValue()[0] > v.getValue()[1] - v.getValue()[0]) inside.add(v.getKey());
         out.keySet().removeAll(inside);
+        // «ميديام» is the size M, «لارج» the size L: a customer says a size in letters of their own, and the stock of the exact variant must still be the one checked
+        String joined = " " + toks.stream().map(Tok::word).collect(java.util.stream.Collectors.joining(" ")) + " ";
+        for (Variant v : p.variants())
+            for (var e : v.options().entrySet()) {
+                List<String> aliases = SIZE_ALIASES.get(light(e.getValue()).trim());
+                if (aliases == null || out.containsKey(e.getValue())) continue;
+                for (String a : aliases) if (joined.contains(" " + light(a).trim() + " ")) { out.put(e.getValue(), e.getKey()); break; }
+            }
         return out;
     }
+
+    /** The ways a customer writes a size code in Arabic letters («ميديام» for M). «صغير» and «كبير» are left out: a menu has those as option values of their own. */
+    private static final Map<String, List<String>> SIZE_ALIASES = Map.of("s", List.of("سمول", "سمل"), "m", List.of("ميديم", "ميديام", "ميديوم", "ميدم", "مديم", "وسط"), "l", List.of("لارج", "لارجه", "لارجة"),
+            "xl", List.of("اكس لارج", "اكسلارج", "اكس لارجه", "إكس لارج"), "xxl", List.of("دبل اكس", "اكسين لارج", "اكسيين لارج", "دبل اكس لارج"));
 
     /** What is in stock, grouped by colour when the product has colours («زيتي: S، M؛ أسود: L، XL، XXL»). */
     static String stockLine(Product p, Map<String, String> focus) {
@@ -1479,7 +1492,9 @@ final class FactCheck {
         // «أبيض ووردي ١٢٨ جيجا»: two values of one option are either of them
         Map<String, Set<String>> byOption = new LinkedHashMap<>();
         for (var e : want.entrySet()) byOption.computeIfAbsent(e.getValue(), k -> new java.util.HashSet<>()).add(e.getKey());
-        int stock = p.variants().stream().filter(v -> byOption.entrySet().stream().allMatch(e -> e.getValue().contains(v.options().get(e.getKey())))).mapToInt(Variant::available).sum();
+        List<Variant> matching = p.variants().stream().filter(v -> byOption.entrySet().stream().allMatch(e -> e.getValue().contains(v.options().get(e.getKey())))).toList();
+        int stock = matching.stream().mapToInt(Variant::available).sum();
+        if (matching.stream().filter(v -> v.available() > 0).count() > 1) { partialStock(p, want, matching, stock, l, answer, customer, out); return; }   // an option is still open: the stock is per exact combination
         if (stock >= asked || stock >= MADE_TO_ORDER) return;   // a kitchen's «300» is no real limit; the summary refuses more than the stock anyway
         // the reply has to say the real number («متاح منه ٨ بس», «قطعتين بس»), or that it is sold out when nothing is left; «١٧ قطعة فقط» when 12 are left is wrong
         if (stock > 0 && (Pattern.compile("(?<!\\d)" + stock + "(?!\\d)").matcher(l).find() || stock < STOCK_WORDS.size() && STOCK_WORDS.get(stock).matcher(l).find())) return;
@@ -1491,6 +1506,71 @@ final class FactCheck {
                 : (ar ? what + " خلص حالياً 🙏 المتاح منه: " + stockLine(p, Map.of()) + "." : p.name() + " is sold out in that option 🙏 In stock: " + stockLine(p, Map.of()) + ".");
         out.add(new Problem("STOCK_QUANTITY", "The customer asked for " + asked + " of " + what + " but only " + stock
                 + " are in stock: " + stockLine(p, want) + ". Say exactly how many are available (" + stock + "); never promise more and never give another number.", truth));
+    }
+
+    /**
+     * The customer named a product and some of its options but left one open («كحلي» of a shirt that comes in S, M and L): the stock exists only per exact combination, so the number of the
+     * navy shirts of every size added up («٩ قطع») is nothing anyone can promise. A reply that states that total is replaced by the stock of each combination.
+     */
+    private static void partialStock(Product p, Map<String, String> want, List<Variant> matching, int total, String lightAnswer, String answer, String customer, List<Problem> out) {
+        if (total >= MADE_TO_ORDER) return;
+        java.util.Set<Integer> single = new java.util.HashSet<>();
+        for (Variant v : matching) if (v.available() > 0) single.add(v.available());
+        if (single.contains(total)) return;   // the total happens to be one combination's own stock: not told apart, and not wrong for it
+        String n = String.valueOf(total);
+        Pattern stated = Pattern.compile("(?<!\\d)" + n + "(?!\\d)\\s*(?:قطع|قطعه|حته|حتت|pieces?|pcs|units?|in\\s+stock)|(?:متاح|المتاح|فاضل|باقي|متبقي|عندنا|available|only|just|stock)[^.؟?!\\n\\d]{0,40}(?<!\\d)" + n + "(?!\\d)");
+        if (!stated.matcher(lightAnswer).find()) return;
+        List<String> parts = new ArrayList<>();
+        for (Variant v : matching) {
+            if (v.available() <= 0) continue;
+            List<String> open = new ArrayList<>();
+            for (String val : v.options().values()) if (!want.containsKey(val)) open.add(val);
+            parts.add((open.isEmpty() ? String.join(" ", v.options().values()) : String.join(" ", open)) + ": " + v.available());
+        }
+        String what = "«" + p.name() + "»" + (want.isEmpty() ? "" : " " + String.join(" ", want.keySet()));
+        boolean ar = arabic(answer) || arabic(customer);
+        String line = String.join(ar ? "، " : ", ", parts);
+        String truth = ar ? what + " المتاح منه حسب الاختيار: " + line + ". تحب أنهي واحد؟" : what + " in stock by choice: " + line + ". Which one would you like?";
+        out.add(new Problem("STOCK_PER_COMBINATION", "Stock exists only per exact combination of ALL options. " + what + " has an option still open, so «" + total + "» (the sum over its sizes or colours) is not a number you can give or promise. "
+                + "Say the stock of each combination (" + line + ") or ask which one, and never add combinations up.", truth));
+    }
+
+    /**
+     * The reply accepts or promises a quantity («قميص أبيض مقاس M × ٩ قطع») of one exact variant that has fewer in stock: the customer said the number before (or in the same message), the model repeated
+     * it without checking that exact combination. A reply that states the real number, or says it is not possible, is fine.
+     */
+    private static final Pattern PROMISED_QTY = Pattern.compile("(?:(?<![\\p{L}\\p{N}])[×✕]\\s*(\\d{1,4})(?!\\d)|(?<![\\d×])(?<!\\d\\s)(\\d{1,4})\\s*(?:قطع|قطعه|حته|حتت|pieces?|pcs)(?!\\p{L}))", Pattern.CASE_INSENSITIVE);
+
+    private static void promisedQuantity(String customer, String answer, List<Mention> ms, String only, Shop shop, java.util.function.Function<String, Product> load, List<Problem> out) {
+        String slug = ms.stream().map(Mention::slug).distinct().count() == 1 ? ms.get(0).slug() : only;
+        if (slug == null) return;
+        Product p = load.apply(slug);
+        if (p.variants().isEmpty()) return;
+        String l = light(answer);
+        Map<String, String> want = new LinkedHashMap<>(customer == null ? Map.of() : valuesIn(light(customer), p));
+        for (var e : valuesIn(l, p).entrySet()) if (!want.containsValue(e.getValue())) want.put(e.getKey(), e.getValue());
+        Map<String, Set<String>> byOption = new LinkedHashMap<>();
+        for (var e : want.entrySet()) byOption.computeIfAbsent(e.getValue(), k -> new java.util.HashSet<>()).add(e.getKey());
+        List<Variant> exact = p.variants().stream().filter(v -> byOption.entrySet().stream().allMatch(e -> e.getValue().contains(v.options().get(e.getKey())))).toList();
+        if (exact.size() != 1) return;   // an option is open: partialStock and the quantity check deal with it
+        int real = exact.get(0).available();
+        if (real <= 0 || real >= MADE_TO_ORDER) return;
+        if (Pattern.compile("(?<!\\d)" + real + "(?!\\d)").matcher(l).find() || real < STOCK_WORDS.size() && STOCK_WORDS.get(real).matcher(l).find()) return;   // the reply says the real number
+        Matcher m = PROMISED_QTY.matcher(l);
+        while (m.find()) {
+            int n = Integer.parseInt(m.group(1) != null ? m.group(1) : m.group(2));
+            if (n <= real || n < 2) continue;
+            final int promised = n;
+            if (want.keySet().stream().anyMatch(v -> light(v).matches(promised + "\\s*(?:قطع|قطعه|حته|حتت|pieces?).*"))) continue;   // «ناجتس ٦ قطع»: the pack, not the quantity
+            if (light(p.name()).matches("(?s).*(?<!\\d)" + promised + "\\s*(?:قطع|قطعه|حته|حتت|pieces?|pcs).*")) continue;   // «طقم ٦ قطع»: the pack is in the name
+            String sentence = l.substring(Math.max(0, l.lastIndexOf('.', m.start()) + 1), m.start());
+            if (NEG_STRICT.matcher(sentence).find()) continue;   // «مش هقدر أجهز ٩ قطع»
+            String what = "«" + p.name() + "» " + String.join(" ", want.keySet());
+            boolean ar = arabic(answer) || (customer != null && arabic(customer));
+            String truth = ar ? what + " متاح منه " + real + " بس حالياً 🙏 تحب أجهزلك الـ " + real + "؟" : what + ": only " + real + " in stock right now 🙏 Shall I get the " + real + " ready for you?";
+            out.add(new Problem("STOCK_QUANTITY", "You accepted " + n + " of " + what + " but that exact combination has only " + real + " in stock: " + stockLine(p, want) + ". Say exactly " + real + "; never promise more.", truth));
+            return;
+        }
     }
 
     // ---- 11. products the shop does not sell ------------------------------------------------------------------------------
