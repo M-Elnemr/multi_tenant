@@ -11,7 +11,7 @@ This is the run you asked for: **GLM `low`, DeepSeek `low`, Qwen thinking on**, 
 - **It helped one thing: DeepSeek's tool discipline.** Its first `prepare_order` attempt succeeded in 24 of 24 conversations (100%) with reasoning on, against 5 of 10 with `none` in the previous run, and its tool error rate is 1.7%. Qwen's did not improve (15.6% tool errors, first try OK in 11 of 29).
 - **DeepSeek now leads Qwen on quality, narrowly:** 62.4% vs 57.3% pooled; difference +5.0 points, interval [+0.2, +10.2], the lower bound only just above zero while one trial moves a configuration by 4.3 points on average. Treat it as a lead worth confirming, not a settled result. GLM (59.9%) is level with both.
 - **Orders are identical and correct for all three** (34 of 36 per configuration; quantity and variant 36 of 36; the 2 failures are one scenario that exposes a separate backend bug, below).
-- **Recommendation:** keep Qwen as primary with reasoning **off** (reasoning on doubled its latency and raised its cost for no measurable gain); keep GLM as the second opinion; DeepSeek with reasoning on is the best-behaved candidate for a backup or for order-heavy flows, but about 3.7x Qwen's cost per successful conversation. Section 14.
+- **Recommendation:** keep Qwen as primary with reasoning **off** (reasoning on doubled its latency and raised its cost for no measurable gain); keep GLM as the second opinion; DeepSeek with reasoning on is the best-behaved candidate for a backup or for order-heavy flows, but about 3x Qwen's cost per successful conversation. Section 14.
 
 ## 2. Verified reasoning configuration
 
@@ -120,7 +120,7 @@ Where models differ most (pooled, small n): full outfit for a budget GLM 92%, De
 |---|---|---|---|
 | Judge pooled (GLM / DeepSeek / Qwen) | 57.6 / 59.3 / 55.4 | 59.5 / 60.9 / 58.3 | **59.9 / 62.4 / 57.3** |
 | Orders correct per configuration | 4 to 6 of 6 | 34 of 36 | 34 of 36 |
-| First `prepare_order` OK | 5% / 14% / 0% | 6 of 10 by model pooled, see REPORT-2 | GLM 90%, **DeepSeek 100%**, Qwen 38% |
+| First `prepare_order` OK (GLM / DeepSeek / Qwen) | 5% / 14% / 0% | 80% / 50% / 42% | 88% / **100%** / 38% |
 | Tool errors | 17.0% / 8.5% / 15.7% | 6.7% / 2.3% / 18.8% | 6.0% / 1.7% / 15.6% |
 | Replies made without RAG | 7.3% | 0.5% | 0.5% |
 | Latency avg (GLM / DeepSeek / Qwen) | 10.5 / 15.2 / 7.5 s | 9.3 / 8.6 / 6.6 s | 10.0 / 13.3 / 13.8 s |
@@ -131,10 +131,10 @@ Where models differ most (pooled, small n): full outfit for a budget GLM 92%, De
 - **Does DeepSeek perform better with reasoning at Low?** Not in judged quality: +1.3 points [-3.0, +5.6], within noise (the GLM control moved -0.1 with an unchanged setting). It performs better at tools (100% first-try `prepare_order`, 1.7% errors) and, in this run, leads Qwen narrowly (+5.0, borderline). It also costs 1.55x the time and +23% per success.
 - **Was its previous result affected by running with `none`?** Not measurably. Quality with `none` was inside the noise of quality with `low`; what `none` gave up was some tool discipline (first try 5 of 10 vs 24 of 24), which cost a few extra calls and no wrong orders.
 - **Does Qwen remain competitive with thinking enabled?** On quality yes (57.3%, within noise of the others), but thinking bought nothing: no quality gain, tool errors only 18.8% to 15.6%, latency 2.09x, cost +32%. It is the slowest model in this run.
-- **Does GLM still give better order accuracy or recovery?** No: order correctness is identical for all three. GLM's first-try success is 90% against DeepSeek's 100%, with the flakiest endpoint (20 unanswered calls, 170 hedged).
+- **Does GLM still give better order accuracy or recovery?** No: order correctness is identical for all three. GLM's first-try success is 88% against DeepSeek's 100%, with the flakiest endpoint (20 unanswered calls, 170 hedged).
 - **Most reliable Egyptian Arabic sales conversations:** a tie on judged quality with a narrow DeepSeek lead; wording slips are rare for all (0.9%, 0.9%, 1.4% of checks).
 - **Most reliable tools and multi-turn order workflows:** DeepSeek (1.7% errors, 100% first try, 0 unanswered), then GLM (6.0%), then Qwen (15.6%).
-- **Primary model:** Qwen with reasoning off, as today: with reasoning on it is slower and dearer than DeepSeek and no better. If the lead you see in this run is confirmed, DeepSeek with reasoning on is the quality choice, at about 3.7x Qwen's cost per successful conversation ($0.00405 vs $0.00122 full prompt) and 13 s average replies.
+- **Primary model:** Qwen with reasoning off, as today: with reasoning on it is slower and dearer than DeepSeek and no better. If the lead you see in this run is confirmed, DeepSeek with reasoning on is the quality choice, at about 3x Qwen's cost per successful conversation ($0.00405 vs $0.00122 full prompt) and 13 s average replies.
 - **Backup / second opinion:** keep GLM for now; DeepSeek (reasoning on) is the best-behaved candidate and a second opinion fires on only about 1% to 2% of replies, so its price barely matters, but switching needs its own check of second-opinion quality.
 
 ## Limits

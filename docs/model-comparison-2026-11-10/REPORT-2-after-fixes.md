@@ -1,3 +1,5 @@
+> **Note (2026-11-11):** this run used GLM `low`, DeepSeek `none` and Qwen thinking off (the production reasoning settings). That was my reading of an ambiguous message and not what was first asked. The run with all three models reasoning on is in `REPORT-3-reasoning-on.md`, which also compares the two settings directly.
+
 # AI model benchmark, re-run after the reliability fixes (2026-11-10/11)
 
 Two identical trials, 1,104 conversations, three live shops, production reasoning settings. Raw data: `rerun-after-fixes-trial1.json.gz`, `rerun-after-fixes-trial2.json.gz`; plan: `plan-rerun-after-fixes.json`; scripts: `bench2.py`, `report2.py`. The earlier benchmark is `REPORT.md` (data `main-run.json.gz`, `orders-rerun.json.gz`).
