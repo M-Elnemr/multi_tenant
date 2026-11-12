@@ -17,3 +17,4 @@ class ChannelAiQwenThinkingTest {
         assertThat(ChannelAi.qwenExtra(null)).isEmpty();
     }
 }
+// CI re-run after a flaky failure
