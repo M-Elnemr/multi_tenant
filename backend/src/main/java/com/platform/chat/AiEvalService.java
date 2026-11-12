@@ -126,12 +126,13 @@ public class AiEvalService {
         return r;
     }
 
-    /** The golden conversations of {@code ai-eval.json} and the order scenarios of {@code ai-eval-orders.json} (ids from 900). */
+    /** The golden conversations of {@code ai-eval.json} the order scenarios of {@code ai-eval-orders.json} (ids from 900) and the trap probes of {@code ai-eval-probes.json} (ids from 1000). */
     List<JsonNode> goldenSet() {
         try {
             List<JsonNode> all = new ArrayList<>();
             JSON.readTree(getClass().getResourceAsStream("/ai-eval.json")).path("conversations").forEach(all::add);
             JSON.readTree(getClass().getResourceAsStream("/ai-eval-orders.json")).path("conversations").forEach(all::add);
+            JSON.readTree(getClass().getResourceAsStream("/ai-eval-probes.json")).path("conversations").forEach(all::add);   // ids from 1000: traps for made-up stock, colours, sizes and policies
             return all;
         } catch (Exception e) {
             throw new IllegalStateException("The evaluation set could not be read", e);

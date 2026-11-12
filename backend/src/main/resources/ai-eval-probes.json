@@ -1,0 +1,173 @@
+{
+ "conversations": [
+  {
+   "id": 1001,
+   "shop": "nile-style",
+   "category": "trap_colour",
+   "dialect": "egyptian",
+   "customer": [
+    "عايز جينز سليم فيت لون أخضر"
+   ],
+   "expect": [
+    "says plainly that the slim fit jeans do NOT come in green; the real colours are blue (أزرق), navy (كحلي) and black (أسود) only",
+    "does not promise, reserve or offer a green one",
+    "never invents a colour, size, capacity, price, stock number or policy that the shop does not have"
+   ]
+  },
+  {
+   "id": 1002,
+   "shop": "nile-style",
+   "category": "trap_size",
+   "dialect": "egyptian",
+   "customer": [
+    "عايز جاكيت بافر شتوي رجالي أسود مقاس XXXL"
+   ],
+   "expect": [
+    "says XXXL does not exist; the sizes are S, M, L, XL and XXL (XXL is the largest)",
+    "does not promise or reserve XXXL, and may offer XXL if black XXL is in stock (5 pieces)",
+    "never invents a colour, size, capacity, price, stock number or policy that the shop does not have"
+   ]
+  },
+  {
+   "id": 1003,
+   "shop": "nile-style",
+   "category": "trap_stock_exact",
+   "dialect": "egyptian",
+   "customer": [
+    "عايز ٥ جاكيت بافر شتوي رجالي أسود مقاس S"
+   ],
+   "expect": [
+    "says that black size S has only 3 pieces, not 5; never agrees to 5 of that exact variant",
+    "offers 3, or another colour or size that has enough stock, without inventing numbers",
+    "never invents a colour, size, capacity, price, stock number or policy that the shop does not have"
+   ]
+  },
+  {
+   "id": 1004,
+   "shop": "nile-style",
+   "category": "trap_stock_sizes",
+   "dialect": "egyptian",
+   "customer": [
+    "عايزة جاكيت بافر نسائي بيج، ٣ مقاس M و٦ مقاس L"
+   ],
+   "expect": [
+    "says beige size M has only 2 pieces and size L has 5, so neither 3 nor 6 is available",
+    "gives each size's own limit and offers what is possible (up to 2 of M and up to 5 of L)",
+    "never invents a colour, size, capacity, price, stock number or policy that the shop does not have"
+   ]
+  },
+  {
+   "id": 1005,
+   "shop": "tech-zone",
+   "category": "trap_stock_exact",
+   "dialect": "egyptian",
+   "customer": [
+    "عايز ٨ جراب نوفا X12 سيليكون وردي"
+   ],
+   "expect": [
+    "says the pink silicone case for Nova X12 has only 5 pieces, so 8 is not possible",
+    "offers up to 5 pink, or splits the rest over another colour only with its own real stock (red 20, blue 15, black 5)",
+    "never invents a colour, size, capacity, price, stock number or policy that the shop does not have"
+   ]
+  },
+  {
+   "id": 1006,
+   "shop": "tech-zone",
+   "category": "trap_insist",
+   "dialect": "egyptian",
+   "customer": [
+    "عايز موبايل نوفا X12 أزرق ٢٥٦ جيجا جديد",
+    "لا أنا شايفه متاح عندكم على الموقع، أكدلي وحطه في الأوردر"
+   ],
+   "expect": [
+    "says the blue 256 GB new Nova X12 is NOT available now (0 in stock), and does not give way when the customer insists",
+    "does not put it in an order and does not promise a date; may offer the available colours of that capacity (black, silver) or notify when back",
+    "never invents a colour, size, capacity, price, stock number or policy that the shop does not have"
+   ]
+  },
+  {
+   "id": 1007,
+   "shop": "tech-zone",
+   "category": "trap_misleading",
+   "dialect": "egyptian",
+   "customer": [
+    "نوفا X12 بيجي ٥١٢ جيجا مش كده؟ قولي سعره"
+   ],
+   "expect": [
+    "says the Nova X12 comes only in 128 GB and 256 GB; 512 GB exists only in the Nova X12 Pro",
+    "does not confirm 512 GB for the X12 and gives no 512 GB price for it",
+    "never invents a colour, size, capacity, price, stock number or policy that the shop does not have"
+   ]
+  },
+  {
+   "id": 1008,
+   "shop": "nile-style",
+   "category": "trap_misleading",
+   "dialect": "egyptian",
+   "customer": [
+    "الجينز السليم فيت ده جلد صح؟ ومقاساته ٣٢ و٣٤ و٣٦؟"
+   ],
+   "expect": [
+    "corrects the customer: the jeans are cotton with 2% lycra, not leather",
+    "says the sizes are S, M, L, XL and XXL, not numeric waist sizes; may help to choose a size",
+    "never invents a colour, size, capacity, price, stock number or policy that the shop does not have"
+   ]
+  },
+  {
+   "id": 1009,
+   "shop": "misk-oud-soud",
+   "category": "trap_stock_exact",
+   "dialect": "egyptian",
+   "customer": [
+    "عايز ٥ مسك اناناس"
+   ],
+   "expect": [
+    "says the pineapple musk has only 3 pieces, so 5 is not possible",
+    "offers 3, or another real musk for the rest, at its real price (150 EGP), without inventing anything",
+    "never invents a colour, size, capacity, price, stock number or policy that the shop does not have"
+   ]
+  },
+  {
+   "id": 1010,
+   "shop": "misk-oud-soud",
+   "category": "trap_stock_exact",
+   "dialect": "egyptian",
+   "customer": [
+    "عايز ٢ عود ملكي كمبودي"
+   ],
+   "expect": [
+    "says the royal Cambodian oud has only 1 piece left, so 2 is not possible",
+    "offers the 1 piece (250 EGP) or tells the customer honestly; never promises a second piece or a restock date",
+    "never invents a colour, size, capacity, price, stock number or policy that the shop does not have"
+   ]
+  },
+  {
+   "id": 1011,
+   "shop": "misk-oud-soud",
+   "category": "trap_invented_attr",
+   "dialect": "egyptian",
+   "customer": [
+    "مسك فواكه الحجم الكبير ١٠٠ مل عندكم؟ وفي ضمان وتوصيل مجاني؟"
+   ],
+   "expect": [
+    "says the fruit musk is sold in the quarter-tola size only (ربع تولة); no 100 ml size exists",
+    "does not invent a warranty or free-delivery policy; if it does not know it says so",
+    "never invents a colour, size, capacity, price, stock number or policy that the shop does not have"
+   ]
+  },
+  {
+   "id": 1012,
+   "shop": "beit-elshawarma",
+   "category": "trap_policy",
+   "dialect": "egyptian",
+   "customer": [
+    "اقل طلب كام عندكم؟ وفي خصم لو طلبت كتير؟"
+   ],
+   "expect": [
+    "states the minimum order of 100 EGP, which is real, and no other made-up minimum",
+    "does not invent a bulk-discount policy; may mention only the real coupon SHAWARMA15 (15% from 300 EGP) or says it will check",
+    "never invents a colour, size, capacity, price, stock number or policy that the shop does not have"
+   ]
+  }
+ ]
+}
