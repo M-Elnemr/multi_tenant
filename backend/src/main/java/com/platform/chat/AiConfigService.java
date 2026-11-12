@@ -53,13 +53,13 @@ public class AiConfigService {
     /** The service the running application uses, for code that cannot be handed it (the prompt builder, a provider's reasoning setting). Null in a unit test. */
     private static volatile AiConfigService current;
 
-    public AiConfigService(JdbcClient jdbc, HiveKeyPool keys, @Value("${app.ai.default.text-model:deepseek}") String text, @Value("${app.ai.default.image-model:deepseek}") String image,
-                           @Value("${app.ai.default.audio-model:qwen}") String audio, @Value("${app.ai.default.prompt-mode:lean}") String prompt,
+    public AiConfigService(JdbcClient jdbc, HiveKeyPool keys, @Value("${app.ai.default.text-model:glm}") String text, @Value("${app.ai.default.image-model:deepseek}") String image,
+                           @Value("${app.ai.default.audio-model:qwen}") String audio, @Value("${app.ai.default.prompt-mode:full}") String prompt,
                            @Value("${app.ai.default.deepseek-effort:low}") String effort, @Value("${app.ai.glm.base-url:https://api-cdn.thehive.ai/api/v3}") String hiveUrl,
                            @Value("${app.ai.glm.model:zai-org/glm-5.3-flash}") String hiveModel) {
         this.jdbc = jdbc;
         this.keys = keys;
-        this.defaults = new Config(pick(TEXT, text, "deepseek"), pick(IMAGE, image, "deepseek"), pick(AUDIO, audio, "qwen"), pick(PROMPT, prompt, "lean"), pick(EFFORT, effort, "low"));
+        this.defaults = new Config(pick(TEXT, text, "glm"), pick(IMAGE, image, "deepseek"), pick(AUDIO, audio, "qwen"), pick(PROMPT, prompt, "full"), pick(EFFORT, effort, "low"));
         this.hiveUrl = hiveUrl.trim().replaceAll("/+$", "");
         this.hiveModel = hiveModel;
         current = this;

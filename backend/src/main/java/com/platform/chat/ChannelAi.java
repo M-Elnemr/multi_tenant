@@ -30,7 +30,7 @@ public class ChannelAi {
                      @Value("${app.ai.glm.api-key:}") String glmKey, @Value("${app.ai.glm.model:zai-org/glm-5.3-flash}") String glmModel,
                      @Value("${app.ai.glm.base-url:https://api-cdn.thehive.ai/api/v3}") String glmUrl, @Value("${app.ai.glm.reasoning-effort:low}") String glmEffort,
                      @Value("${app.ai.qwen.api-key:}") String qwenKey, @Value("${app.ai.qwen.model:qwen3.7-flash}") String qwenModel,
-                     @Value("${app.ai.qwen.base-url:https://dashscope-intl.aliyuncs.com/compatible-mode/v1}") String qwenUrl, @Value("${app.ai.qwen.thinking:off}") String qwenThinking,
+                     @Value("${app.ai.qwen.base-url:https://dashscope-intl.aliyuncs.com/compatible-mode/v1}") String qwenUrl, @Value("${app.ai.qwen.thinking:low}") String qwenThinking,
                      @Value("${app.ai.glm.temperature:}") String glmTemperature, @Value("${app.ai.qwen.temperature:}") String qwenTemperature,
                      @Value("${app.ai.glm.max-rps:5}") int glmRps, @Value("${app.ai.qwen.max-rps:0}") int qwenRps,
                      @Value("${app.ai.deepseek.api-key:}") String deepseekKey, @Value("${app.ai.deepseek.model:deepseek-ai/deepseek-v4.1-flash-1017}") String deepseekModel,
@@ -49,7 +49,14 @@ public class ChannelAi {
     /** Alibaba's compatible mode reads {@code enable_thinking}: "off" (default) and "on" set it, anything else ("unset") sends nothing, for a host that rejects the field. */
     static String qwenExtra(String thinking) {
         String t = thinking == null ? "" : thinking.trim().toLowerCase(Locale.ROOT);
-        return "off".equals(t) ? "{\"enable_thinking\":false}" : "on".equals(t) ? "{\"enable_thinking\":true}" : "";
+        return switch (t) {
+            case "off" -> "{\"enable_thinking\":false}";
+            case "on" -> "{\"enable_thinking\":true}";
+            case "low" -> "{\"enable_thinking\":true,\"thinking_budget\":1024}";   // Alibaba has no effort levels for Qwen3.7 Flash: a small budget is "low"
+            case "medium" -> "{\"enable_thinking\":true,\"thinking_budget\":4096}";
+            case "high" -> "{\"enable_thinking\":true,\"thinking_budget\":16384}";
+            default -> "";
+        };
     }
 
     /** Adds {@code "temperature"} to a model's extra request settings when one is configured (empty = the service's own default). Lower means steadier answers that stick to the facts. */

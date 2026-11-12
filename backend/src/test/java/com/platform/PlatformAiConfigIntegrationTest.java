@@ -46,35 +46,36 @@ class PlatformAiConfigIntegrationTest extends IntegrationTestBase {
     void theDefaultIsPreselectedAndTaggedAndOnlyThePlatformAdminCanSeeOrChange() throws Exception {
         String admin = platformToken();
         String v = get(admin);
-        assertThat(JsonPath.<String>read(v, "$.text.selected")).isEqualTo("deepseek");
+        assertThat(JsonPath.<String>read(v, "$.text.selected")).isEqualTo("glm");
         assertThat(JsonPath.<Boolean>read(v, "$.text.isDefault")).isTrue();
-        assertThat(JsonPath.<List<String>>read(v, "$.text.options[?(@.default == true)].code")).containsExactly("deepseek");
+        assertThat(JsonPath.<List<String>>read(v, "$.text.options[?(@.default == true)].code")).containsExactly("glm");
+        assertThat(JsonPath.<String>read(v, "$.promptMode.selected")).isEqualTo("full");
         assertThat(JsonPath.<List<String>>read(v, "$.text.options[*].code")).containsExactly("deepseek", "glm", "qwen", "anthropic");
         assertThat(JsonPath.<List<String>>read(v, "$.image.options[*].code")).containsExactly("deepseek", "qwen");
         assertThat(JsonPath.<List<String>>read(v, "$.audio.options[*].code")).containsExactly("qwen");
         assertThat(JsonPath.<String>read(v, "$.deepseekEffort.selected")).isEqualTo("low");
         Tenant shop = onboard("STORE");
         onHost("platform.test", shop.access(), "GET", BASE, null).andExpect(status().isForbidden());
-        onHost("platform.test", shop.access(), "PUT", BASE, "{\"textModel\":\"glm\"}").andExpect(status().isForbidden());
+        onHost("platform.test", shop.access(), "PUT", BASE, "{\"textModel\":\"qwen\"}").andExpect(status().isForbidden());
         onHost("platform.test", null, "GET", BASE, null).andExpect(status().is4xxClientError());
     }
 
     @Test
     void aChoiceIsSavedNoLongerTaggedAsTheDefaultAndResetGoesBack() throws Exception {
         String admin = platformToken();
-        String v = put(admin, "{\"textModel\":\"glm\",\"imageModel\":\"qwen\",\"promptMode\":\"full\",\"deepseekEffort\":\"none\"}");
-        assertThat(JsonPath.<String>read(v, "$.text.selected")).isEqualTo("glm");
+        String v = put(admin, "{\"textModel\":\"deepseek\",\"imageModel\":\"qwen\",\"promptMode\":\"lean\",\"deepseekEffort\":\"none\"}");
+        assertThat(JsonPath.<String>read(v, "$.text.selected")).isEqualTo("deepseek");
         assertThat(JsonPath.<Boolean>read(v, "$.text.isDefault")).isFalse();
         assertThat(JsonPath.<String>read(v, "$.image.selected")).isEqualTo("qwen");
-        assertThat(JsonPath.<String>read(v, "$.promptMode.selected")).isEqualTo("full");
-        assertThat(JsonPath.<String>read(get(admin), "$.text.selected")).isEqualTo("glm");   // kept
+        assertThat(JsonPath.<String>read(v, "$.promptMode.selected")).isEqualTo("lean");
+        assertThat(JsonPath.<String>read(get(admin), "$.text.selected")).isEqualTo("deepseek");   // kept
         v = put(admin, "{\"textModel\":\"default\"}");   // one setting back to its default, the others stay
-        assertThat(JsonPath.<String>read(v, "$.text.selected")).isEqualTo("deepseek");
+        assertThat(JsonPath.<String>read(v, "$.text.selected")).isEqualTo("glm");
         assertThat(JsonPath.<Boolean>read(v, "$.text.isDefault")).isTrue();
         assertThat(JsonPath.<String>read(v, "$.image.selected")).isEqualTo("qwen");
         onHost("platform.test", admin, "PUT", BASE, "{\"textModel\":\"gemini\"}").andExpect(status().isBadRequest());
         onHost("platform.test", admin, "PUT", BASE, "{\"audioModel\":\"deepseek\"}").andExpect(status().isBadRequest());   // DeepSeek cannot take audio
-        assertThat(JsonPath.<String>read(get(admin), "$.text.selected")).isEqualTo("deepseek");
+        assertThat(JsonPath.<String>read(get(admin), "$.text.selected")).isEqualTo("glm");
     }
 
     @Test

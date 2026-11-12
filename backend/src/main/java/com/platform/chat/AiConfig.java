@@ -12,7 +12,7 @@ class AiConfig {
                          @Value("${app.ai.glm.reasoning-effort:low}") String effort, @Value("${app.ai.glm.max-output-tokens:3000}") int maxOutput,
                          @Value("${app.ai.glm.temperature:}") String temperature, @Value("${app.ai.glm.max-rps:5}") int maxRps,
                          @Value("${app.ai.features:glm}") String features, @Value("${app.ai.qwen.api-key:}") String qwenKey, @Value("${app.ai.qwen.model:qwen3.7-flash}") String qwenModel,
-                         @Value("${app.ai.qwen.base-url:https://dashscope-intl.aliyuncs.com/compatible-mode/v1}") String qwenUrl, @Value("${app.ai.qwen.thinking:off}") String qwenThinking,
+                         @Value("${app.ai.qwen.base-url:https://dashscope-intl.aliyuncs.com/compatible-mode/v1}") String qwenUrl, @Value("${app.ai.qwen.thinking:low}") String qwenThinking,
                          @Value("${app.ai.qwen.temperature:}") String qwenTemperature, @Value("${app.ai.qwen.max-rps:0}") int qwenRps, HiveKeyPool hive) {
         AiProvider glm = new OpenAiProvider("glm", "GLM", hive, model, () -> effort, baseUrl, maxOutput, true, ChannelAi.withTemperature("", temperature), maxRps);
         // AI_FEATURES=qwen: the features without a model of their own use Alibaba's Qwen first, GLM when Qwen fails
