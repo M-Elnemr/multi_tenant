@@ -28,7 +28,7 @@ Every quantity the model stated was compared with the exact variant it named:
 ## Problems seen (not about stock)
 1. nile-style 74 (full outfit under 2500): garbled reply, «اتنين تشكيلة جاهزة:» followed by only the second bullet and no prices of the pieces. Looks like a line lost after the model wrote it (code-side clean-up) or a bad answer; not reproduced separately.
 2. tech-zone 83 (laptop for coding, 35k): promised to show laptops and showed none.
-3. beit-elshawarma 56/57/62: lists prices instead of asking one short question, skips asking size and bread for a shawarma sandwich, and states «أقل طلب ١٠٠ جنيه», which I could not verify in the shop data. The judge also flagged «SHAWARMA15» and free delivery from 400, but those are real (the shop's announcement), so they are not inventions.
+3. beit-elshawarma 56/57/62: lists prices instead of asking one short question and skips asking size and bread for a shawarma sandwich. The “100 EGP minimum”, «SHAWARMA15» and free delivery from 400 that the judge flagged are REAL (the shop profile and announcement), not inventions.
 4. tech-zone 82: refusal for opened headphones was right but omitted the 14-day window.
 5. Misk: for a request like «عايز القميص ده» it says it searched, with no tool call visible in the transcript; the answer was still true.
 
