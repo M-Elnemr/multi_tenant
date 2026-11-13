@@ -661,6 +661,7 @@ public class CatalogService {
                 JOIN commerce.product_option_values ov ON ov.option_id = o.id
                 JOIN commerce.attribute_values a ON a.attr = o.attribute_code AND a.scale = o.size_scale AND a.code = ov.value_code
                 WHERE o.product_id = :p AND o.attribute_code <> '' AND ov.value_code <> ''
+                ORDER BY ov.sort_order
                 """).param("p", id).query().listOfRows();
         for (var o : options) {
             List<Map<String, Object>> vm = new ArrayList<>();

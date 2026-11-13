@@ -1,0 +1,159 @@
+{
+ "slug": "list-stock",
+ "policies": "الدفع كاش عند الاستلام.",
+ "products": [
+  {
+   "slug": "شنطة-رياضة",
+   "name": "شنطة رياضة",
+   "before": 0,
+   "search": "شنطة رياضة",
+   "tags": [],
+   "variants": [
+    {
+     "options": {
+      "اللون": "أسود"
+     },
+     "price": 620,
+     "before": 0,
+     "available": 6
+    },
+    {
+     "options": {
+      "اللون": "كحلي"
+     },
+     "price": 620,
+     "before": 0,
+     "available": 0
+    }
+   ]
+  },
+  {
+   "slug": "شنطة-ظهر",
+   "name": "شنطة ظهر",
+   "before": 0,
+   "search": "شنطة ظهر",
+   "tags": [],
+   "variants": [
+    {
+     "options": {
+      "اللون": "أسود"
+     },
+     "price": 690,
+     "before": 0,
+     "available": 5
+    },
+    {
+     "options": {
+      "اللون": "رمادي"
+     },
+     "price": 690,
+     "before": 0,
+     "available": 0
+    },
+    {
+     "options": {
+      "اللون": "أزرق"
+     },
+     "price": 690,
+     "before": 0,
+     "available": 3
+    }
+   ]
+  },
+  {
+   "slug": "شنطة-كروس",
+   "name": "شنطة كروس",
+   "before": 0,
+   "search": "شنطة كروس",
+   "tags": [],
+   "variants": [
+    {
+     "options": {
+      "اللون": "بني"
+     },
+     "price": 590,
+     "before": 0,
+     "available": 15
+    },
+    {
+     "options": {
+      "اللون": "أسود"
+     },
+     "price": 590,
+     "before": 0,
+     "available": 8
+    }
+   ]
+  },
+  {
+   "slug": "حقيبة-سهرة",
+   "name": "حقيبة سهرة",
+   "before": 0,
+   "search": "حقيبة سهرة",
+   "tags": [],
+   "variants": [
+    {
+     "options": {
+      "اللون": "ذهبي"
+     },
+     "price": 590,
+     "before": 0,
+     "available": 0
+    },
+    {
+     "options": {
+      "اللون": "فضي"
+     },
+     "price": 590,
+     "before": 0,
+     "available": 0
+    }
+   ]
+  },
+  {
+   "slug": "حقيبة-يد",
+   "name": "حقيبة يد",
+   "before": 0,
+   "search": "حقيبة يد",
+   "tags": [],
+   "variants": [
+    {
+     "options": {
+      "اللون": "أسود",
+      "المقاس": "M"
+     },
+     "price": 900,
+     "before": 0,
+     "available": 4
+    },
+    {
+     "options": {
+      "اللون": "أسود",
+      "المقاس": "L"
+     },
+     "price": 900,
+     "before": 0,
+     "available": 0
+    },
+    {
+     "options": {
+      "اللون": "بني",
+      "المقاس": "M"
+     },
+     "price": 900,
+     "before": 0,
+     "available": 0
+    },
+    {
+     "options": {
+      "اللون": "بني",
+      "المقاس": "L"
+     },
+     "price": 900,
+     "before": 0,
+     "available": 2
+    }
+   ]
+  }
+ ]
+}

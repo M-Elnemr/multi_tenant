@@ -805,6 +805,11 @@ final class FactCheck {
                     if (p.variants().stream().noneMatch(v -> v.available() > 0 && v.options().containsValue(e.getKey()))) soldOut.add(e.getKey());
                 if (!invented.isEmpty()) out.add(new Problem("OPTION_STOCK", "«" + p.name() + "» does not come in " + String.join("، ", invented) + "; its sizes are " + String.join("، ", shownSizes) + ". Say only those.", null));
                 else if (!soldOut.isEmpty() && said.size() == soldOut.size()) {
+                    String inList = listLineFix(answer, s[0], s[1], p, soldOut, arabic(answer));
+                    if (inList != null) {
+                        out.add(new Problem("OPTION_STOCK", "«" + p.name() + "» " + String.join(" ", soldOut) + " is SOLD OUT right now: " + stockLine(p, Map.of()) + ".", inList));
+                        continue;
+                    }
                     String truth = arabic(answer) ? "«" + p.name() + "» " + String.join(" ", soldOut) + " خلص حالياً 🙏 المتاح منه: " + stockLine(p, Map.of()) + "."
                                                   : p.name() + " in " + String.join(" ", soldOut) + " is sold out right now 🙏 In stock: " + stockLine(p, Map.of()) + ".";
                     out.add(new Problem("OPTION_STOCK", "«" + p.name() + "» " + String.join(" ", soldOut) + " is SOLD OUT right now: " + stockLine(p, Map.of()) + ".",
@@ -1638,6 +1643,51 @@ final class FactCheck {
         }
     }
 
+    // ---- a sold-out value named in one line of a list --------------------------------------------------------------------------
+
+    /** A pattern that finds {@code value} however the hamza, ta marbuta or ya of it is written. */
+    private static String fuzzy(String value) {
+        StringBuilder b = new StringBuilder();
+        for (char c : value.toCharArray()) {
+            if ("اأإآ".indexOf(c) >= 0) b.append("[اأإآ]");
+            else if ("ةه".indexOf(c) >= 0) b.append("[ةه]");
+            else if ("يى".indexOf(c) >= 0) b.append("[يى]");
+            else b.append(Pattern.quote(String.valueOf(c)));
+        }
+        return b.toString();
+    }
+
+    /**
+     * The sold-out value sits in one line of a list («- شنطة رياضة — كحلي وأسود، ٦٢٠ جنيه»): the line stays where it is, with «(خلص حالياً)» right after the sold-out value, and the notice with the
+     * real stock goes after the list, so the list is never cut and never claims the value is available. Null when the value cannot be found in the line (the caller then replaces the sentence).
+     */
+    private static String listLineFix(String answer, int s0, int s1, Product p, List<String> soldOut, boolean ar) {
+        String line = answer.substring(s0, s1);
+        if (!LIST_LINE.matcher(line).find()) return null;
+        String marked = line, mark = ar ? " (خلص حالياً)" : " (sold out now)";
+        boolean changed = false;
+        for (String v : soldOut) {
+            String next = marked.replaceFirst("(?<![\\p{L}])((?:ب|و|ال|وال|بال)?" + fuzzy(v) + ")(?![\\p{L}])(?!\\s*\\((?:خلص|sold))", "$1" + java.util.regex.Matcher.quoteReplacement(mark));
+            if (!next.equals(marked)) { marked = next; changed = true; }
+        }
+        if (!changed) return null;
+        int end = s1;   // the list goes on while the next lines are list lines; a blank line or other text ends it
+        while (end < answer.length()) {
+            int nl = answer.indexOf('\n', end);
+            String next = answer.substring(end, nl < 0 ? answer.length() : nl);
+            if (next.isBlank() || !LIST_LINE.matcher(next).find()) break;
+            end = nl < 0 ? answer.length() : nl + 1;
+        }
+        String stock = stockLine(p, Map.of());
+        String values = String.join(ar ? " و" : " and ", soldOut);
+        String note = "nothing in stock".equals(stock)
+                ? (ar ? "«" + p.name() + "» " + values + " خلص حالياً 🙏" : p.name() + " in " + values + " is sold out right now 🙏")
+                : (ar ? "«" + p.name() + "» " + values + " خلص حالياً 🙏 المتاح منه: " + stock + "." : p.name() + " in " + values + " is sold out right now 🙏 In stock: " + stock + ".");
+        String before = answer.substring(0, s0) + marked + answer.substring(s1, end);
+        String after = answer.substring(end);
+        return before.stripTrailing() + "\n\n" + note + (after.isBlank() ? "" : "\n\n" + after.stripLeading());
+    }
+
     // ---- 10b. a size that does not exist, a sold-out colour offered --------------------------------------------------------------
 
     private static final Pattern BEYOND_SIZE = Pattern.compile("(?<![\\p{L}\\d])(xxxxl|xxxl|[3-6]\\s?xl|xxs|[3-6]\\s?xs)(?![\\p{L}\\d])", Pattern.CASE_INSENSITIVE);
@@ -1678,7 +1728,8 @@ final class FactCheck {
         String l = light(answer);
         for (int[] s : sentences(answer)) {
             String sentence = l.substring(s[0], s[1]);
-            if (NEG.matcher(sentence).find() || !(OFFER.matcher(sentence).find() || sentence.contains("ولا ") || sentence.contains(" او "))) continue;
+            boolean listLine = LIST_LINE.matcher(answer.substring(s[0], s[1])).find();
+            if (NEG.matcher(sentence).find() || !(listLine || OFFER.matcher(sentence).find() || sentence.contains("ولا ") || sentence.contains(" او "))) continue;
             List<Mention> here = ms.stream().filter(m -> m.start() >= s[0] && m.start() < s[1]).toList();
             String prior = lastBefore(ms, s[0], only);
             String slug = here.size() == 1 ? here.get(0).slug() : here.isEmpty() ? (prior != null ? prior : about) : null;
@@ -1689,10 +1740,15 @@ final class FactCheck {
             Map<String, List<String>> byOption = new LinkedHashMap<>();
             said.forEach((value, option) -> byOption.computeIfAbsent(option, k -> new ArrayList<>()).add(value));
             for (var e : byOption.entrySet()) {
-                if (e.getValue().size() < 2) continue;
+                if (e.getValue().size() < (listLine ? 1 : 2)) continue;   // a list line names its values as offered, even one
                 List<String> zero = e.getValue().stream().filter(v -> p.variants().stream().noneMatch(x -> x.available() > 0 && x.options().containsValue(v))).toList();
-                if (zero.isEmpty() || zero.size() == e.getValue().size()) continue;
+                if (zero.isEmpty() || (zero.size() == e.getValue().size() && !listLine)) continue;
                 boolean ar = arabic(answer);
+                String inList = listLine ? listLineFix(answer, s[0], s[1], p, zero, ar) : null;
+                if (inList != null) {
+                    out.add(new Problem("OPTION_STOCK", "«" + p.name() + "» " + String.join(" ", zero) + " is SOLD OUT in every combination: " + stockLine(p, Map.of()) + ". Never list it as available next to the colours that are in stock.", inList));
+                    return;
+                }
                 String truth = ar ? "«" + p.name() + "» " + String.join(" ", zero) + " خلص حالياً 🙏 المتاح منه: " + stockLine(p, Map.of()) + ". تحب أجهزلك واحد من المتاح؟"
                                   : p.name() + " in " + String.join(" ", zero) + " is sold out right now 🙏 In stock: " + stockLine(p, Map.of()) + ". Shall I get one of these ready for you?";
                 out.add(new Problem("OPTION_STOCK", "«" + p.name() + "» " + String.join(" ", zero) + " is SOLD OUT in every combination: " + stockLine(p, Map.of()) + ". Never offer it next to the colours that are in stock.",
