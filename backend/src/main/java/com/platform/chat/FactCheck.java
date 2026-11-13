@@ -604,7 +604,12 @@ final class FactCheck {
         Set<String> seen = new LinkedHashSet<>();
         boolean priced = false;
         String aheadTaken = null;
+        boolean everPriced = false;
         for (int i = 0; i < toks.size(); i++) {
+            if (i > 0 && everPriced) {   // a dash after a priced part starts a new clause («… ١٦٩٩٩ — الأزرق المتاح ١٢٨ جيجا جديد بـ ١٣٤٩٩»): its values are its own
+                String gap = answer.substring(toks.get(i - 1).end(), toks.get(i).start());
+                if (gap.contains("—") || gap.contains("–")) { seen.clear(); priced = false; aheadTaken = null; everPriced = false; }
+            }
             Object[] v = valueAt(toks, i, values);
             if (v != null) {
                 String matched = (String) v[0];
@@ -641,6 +646,7 @@ final class FactCheck {
             }
             if (ahead != null) aheadTaken = ahead;
             priced = true;
+            everPriced = true;
             double amount = Double.parseDouble(t.word());
             List<Variant> fit = p.variants().stream().filter(x -> x.options().values().containsAll(context)).toList();
             if (fit.isEmpty()) continue;

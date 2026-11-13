@@ -57,4 +57,10 @@ class LiveTrapGuardsTest {
         // Air 13 silver is 0 in both storages: only gold can be booked
         assertThat(kinds("عايز لاب توب", "اللي أنصحك بيه إير 13 بالـ 1 تيرا: رامات قوية. تحب أجهزلك إير 13 ذهبي ولا فضي؟", "لاب-توب-زينترا-إير-13")).anyMatch(x -> x.startsWith("OPTION") || x.equals("SOLD_OUT_OFFER"));
     }
+
+    @Test
+    void theNewPriceOfAColourAndCapacityIsNotTheOpenBoxPrice() {
+        // blue 128 GB new costs 14,999; 13,499 is the open-box price
+        assertThat(kinds("عايز موبايل نوفا X12 أزرق ٢٥٦ جيجا جديد", "موبايل نوفا X12 الجديد ٢٥٦ جيجا بـ ١٦٩٩٩ جنيه، بس الأزرق ٢٥٦ جيجا جديد مش متوفر دلوقتي — الأزرق المتاح ١٢٨ جيجا جديد بـ ١٣٤٩٩ جنيه.", "موبايل-نوفا-X12")).contains("OPTION_PRICE");
+    }
 }
