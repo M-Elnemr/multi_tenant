@@ -1466,6 +1466,37 @@ final class FactCheck {
         }
     }
 
+    // ---- the options chosen earlier in the chat ---------------------------------------------------------------------------------
+
+    private static final ThreadLocal<List<String>> EARLIER = new ThreadLocal<>();
+
+    /** The customer's earlier messages of this chat, newest first (the newest one is the {@code customer} text itself), for the reply being checked on this thread. */
+    static void earlier(List<String> customerMessages) { EARLIER.set(customerMessages); }
+
+    static void clearEarlier() { EARLIER.remove(); }
+
+    /**
+     * The options the customer means for {@code p}: the ones in their newest message, then the ones chosen in earlier messages of the chat (newest first: «٢٨» and «كحلي» said one after the
+     * other, then «عايز ١٣ قطعه»), then the ones the reply names for an option still left open. A bare number is the size when exactly one option value starts with it («٢٨» = «٢٨ بوصة»).
+     */
+    private static Map<String, String> chosen(String customer, String lightAnswer, Product p) {
+        Map<String, String> want = new LinkedHashMap<>(customer == null ? Map.of() : valuesIn(light(customer), p));
+        List<String> earlier = EARLIER.get();
+        if (earlier != null) for (String e : earlier) {
+            if (e == null || e.isBlank() || e.equals(customer)) continue;
+            String le = light(e).trim();
+            Map<String, String> found = new LinkedHashMap<>(valuesIn(le, p));
+            if (le.matches("\\d{1,3}")) {   // a bare number: the one option value that starts with it
+                Map<String, String> starts = new LinkedHashMap<>();
+                for (Variant v : p.variants()) for (var o : v.options().entrySet()) { String lv = light(o.getValue()); if (lv.equals(le) || lv.startsWith(le + " ")) starts.put(o.getValue(), o.getKey()); }
+                if (starts.size() == 1) found.putAll(starts);
+            }
+            for (var f : found.entrySet()) if (!want.containsValue(f.getValue())) want.put(f.getKey(), f.getValue());
+        }
+        for (var e : valuesIn(lightAnswer, p).entrySet()) if (!want.containsValue(e.getValue())) want.put(e.getKey(), e.getValue());
+        return want;
+    }
+
     // ---- 10. more pieces than the stock -------------------------------------------------------------------------------------
 
     private static final String NOT_A_QTY_UNIT = "(?!جنيه|ج(?!\\p{L})|egp|le(?![a-z])|%|جيجا|gb|tb|بوصه|سم|متر|مم|سنه|سنين|شهر|يوم|ايام|وات|w(?![a-z])|مللي|الف)";
@@ -1521,8 +1552,7 @@ final class FactCheck {
         if (!pieces && p.variants().stream().flatMap(v -> v.options().values().stream()).anyMatch(v -> Pattern.compile("(?<!\\d)" + n + "(?!\\d)").matcher(light(v)).find())) return;
         String l = light(answer);
         // the options the customer chose decide the stock; the reply's values count only for an option the customer left out («متاحة بالمقاسات S, M, L» is not the size asked)
-        Map<String, String> want = new LinkedHashMap<>(valuesIn(light(customer), p));
-        for (var e : valuesIn(l, p).entrySet()) if (!want.containsValue(e.getValue())) want.put(e.getKey(), e.getValue());
+        Map<String, String> want = chosen(customer, l, p);
         // «أبيض ووردي ١٢٨ جيجا»: two values of one option are either of them
         Map<String, Set<String>> byOption = new LinkedHashMap<>();
         for (var e : want.entrySet()) byOption.computeIfAbsent(e.getValue(), k -> new java.util.HashSet<>()).add(e.getKey());
@@ -1583,8 +1613,7 @@ final class FactCheck {
         Product p = load.apply(slug);
         if (p.variants().isEmpty()) return;
         String l = light(answer);
-        Map<String, String> want = new LinkedHashMap<>(customer == null ? Map.of() : valuesIn(light(customer), p));
-        for (var e : valuesIn(l, p).entrySet()) if (!want.containsValue(e.getValue())) want.put(e.getKey(), e.getValue());
+        Map<String, String> want = chosen(customer, l, p);
         Map<String, Set<String>> byOption = new LinkedHashMap<>();
         for (var e : want.entrySet()) byOption.computeIfAbsent(e.getValue(), k -> new java.util.HashSet<>()).add(e.getKey());
         List<Variant> exact = p.variants().stream().filter(v -> byOption.entrySet().stream().allMatch(e -> e.getValue().contains(v.options().get(e.getKey())))).toList();

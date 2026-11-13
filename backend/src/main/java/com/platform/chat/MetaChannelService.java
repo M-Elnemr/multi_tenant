@@ -172,6 +172,9 @@ public class MetaChannelService {
                     }
                     for (JsonNode m : v.path("messages")) {
                         if ("reaction".equals(m.path("type").asText())) continue;   // a reaction (❤️ on a message) is not a message to answer
+                        // a button works once: tapped again (WhatsApp keeps the buttons under the message), it is ignored
+                        String tappedOn = "interactive".equals(m.path("type").asText()) && "button_reply".equals(m.path("interactive").path("type").asText()) ? m.path("context").path("id").asText("") : "";
+                        if (!tappedOn.isEmpty() && jdbc.sql("INSERT INTO chat.meta_events (mid) VALUES (:m) ON CONFLICT DO NOTHING").param("m", "btn:" + tappedOn).update() == 0) continue;
                         String from = m.path("from").asText(""), name = null;
                         for (JsonNode c : v.path("contacts")) if (from.equals(c.path("wa_id").asText())) name = c.path("profile").path("name").asText(null);   // the customer's WhatsApp profile name
                         inbound("WHATSAPP", pnid, from, m.path("id").asText(""), whatsappText(m), name, whatsappMedia(m), false);

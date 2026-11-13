@@ -483,6 +483,19 @@ public class ChatService {
             jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();
             return new Reply(conv, answer, orderBox[0], ctx.products());
         }
+        // a second «تمام» right after the order was confirmed (a button tapped twice, or a habit): code says it is already placed, the model is never asked
+        if (isConfirmation(text) && !summaryIsLast(conv)) {
+            String lastAssistant = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'assistant' ORDER BY id DESC LIMIT 1").param("c", conv).query(String.class).optional().orElse(null);
+            var number = lastAssistant == null ? null : ORDER_NUMBER.matcher(lastAssistant);
+            if (number != null && number.find() && (lastAssistant.contains("تم تأكيد") || lastAssistant.toLowerCase(java.util.Locale.ROOT).contains("confirmed"))) {
+                boolean arabic = arabicConversation(conv);
+                answer = arabic ? "الأوردر اتسجل بالفعل ✅ رقم الأوردر: " + number.group(1) + "\nلو محتاج أي تعديل أو حاجة تانية قولّي 🌸"
+                                : "Your order is already placed ✅ Order number: " + number.group(1) + "\nTell me if you need a change or anything else 🌸";
+                jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x)").param("c", conv).param("x", answer).update();
+                jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();
+                return new Reply(conv, answer, null, List.of());
+            }
+        }
         // Test words (only while app.ai.name-probe is on): "ai-name" says which model answers this chat; "claude", "glm", "qwen" or "alibaba" switch this chat to that model.
         if (nameProbe) {
             String pick = ChannelAi.command(text);
@@ -520,6 +533,7 @@ public class ChatService {
         String fallbackWhy = null;
         AiBudget.start(REPLY_BUDGET_MS);
         AiBudget.forTenant(tenantId);
+        FactCheck.earlier(earlierCustomer(turns));   // the colour and size chosen earlier in the chat are what a later «عايز ١٣ قطعه» is about
         try {
             // the customer sent every order detail for the one thing they chose, and asked nothing: code makes the summary at once (the same locks, they still confirm it), instead
             // of the model taking 30-45 seconds to ask again before code made it anyway
@@ -595,6 +609,7 @@ public class ChatService {
                 answer = routed.showsErrors() ? "⚠️ " + routed.label() + ": " + e.getMessage() : unavailableText(arabicChat);
             }
         } finally {
+            FactCheck.clearEarlier();
             AiBudget.clear();
         }
         if (routed.fellBack()) events.record(tenantId, conv, channel, routed.code(), "FALLBACK", fallbackWhy != null ? fallbackWhy : "the first call failed", null);
@@ -2180,6 +2195,19 @@ public class ChatService {
         return true;
     }
 
+    /** The customer's messages before their newest one, newest first (at most 6), without the system's own checks. */
+    static List<String> earlierCustomer(List<Turn> turns) {
+        List<String> out = new ArrayList<>();
+        boolean skippedNewest = false;
+        for (int i = turns.size() - 1; i >= 0 && out.size() < 6; i--) {
+            Turn t = turns.get(i);
+            if (!"user".equals(t.role()) || t.text() == null || t.text().startsWith("[SYSTEM CHECK")) continue;
+            if (!skippedNewest) { skippedNewest = true; continue; }
+            out.add(t.text());
+        }
+        return out;
+    }
+
     private static String lastCustomerText(List<Turn> turns) {
         for (int i = turns.size() - 1; i >= 0; i--) if ("user".equals(turns.get(i).role()) && turns.get(i).text() != null && !turns.get(i).text().startsWith("[SYSTEM CHECK")) return turns.get(i).text();
         return "";
@@ -2269,6 +2297,7 @@ public class ChatService {
 
     // ---- confirmation ----------------------------------------------------------------------------------------
 
+    private static final Pattern ORDER_NUMBER = Pattern.compile("(?:رقم\\s+الأوردر|رقم\\s+الاوردر|Order\\s+number)\\s*[:：]\\s*([A-Z]{1,4}-[A-Z0-9-]+|[A-Z0-9-]{4,})");
     private static final Pattern ARABIC_HINT = Pattern.compile("[\\u0600-\\u06FF]");
     private static final java.util.Set<String> YES = java.util.Set.of("تمام", "نعم", "ايوه", "ايوا", "ايوة", "اه", "اها", "اكيد", "موافق", "موافقه", "ماشي", "تاكيد", "اكد", "اكده", "اوكي", "اوك", "اوكيه",
             "يلا", "خلاص", "تم", "حاضر", "طيب", "اتمم", "كمل", "كملي", "اعتمد", "اعتمده", "صح", "بالظبط", "ok", "okay", "yes", "yep", "yeah", "yup", "confirm", "confirmed", "sure", "y", "k", "deal", "agreed", "go", "proceed");

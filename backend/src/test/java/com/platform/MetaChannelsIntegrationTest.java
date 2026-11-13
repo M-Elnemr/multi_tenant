@@ -120,6 +120,12 @@ class MetaChannelsIntegrationTest extends IntegrationTestBase {
         String list = body(onHost(t.host(), t.access(), "GET", "/api/v1/store/orders", null));
         assertThat((Integer) JsonPath.read(list, "$.meta.total")).isEqualTo(1);
         assertThat(JsonPath.<String>read(list, "$.data[0].source")).isEqualTo("AI_CHAT");
+        // a second «yes» after the confirmation: code says it is already placed (no model call, no second order)
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("should never be said"));
+        String m3 = wa.apply("yes");
+        webhook(m3, sign(m3)).andExpect(status().isOk());
+        assertThat(FakeMetaGraph.SENT.get(FakeMetaGraph.SENT.size() - 1).body().toString()).contains("already placed").doesNotContain("should never be said");
+        assertThat((Integer) JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/orders", null)), "$.meta.total")).isEqualTo(1);
     }
 
     @Test
@@ -142,6 +148,16 @@ class MetaChannelsIntegrationTest extends IntegrationTestBase {
         webhook(tapped, sign(tapped)).andExpect(status().isOk());
         assertThat(FakeMetaGraph.SENT.size()).isGreaterThan(before);
         assertThat(seen.get()).isEqualTo("أيوه");
+        // the same button tapped again (WhatsApp keeps it under the message): ignored, nothing new goes out
+        String again = "{\"object\":\"whatsapp_business_account\",\"entry\":[{\"id\":\"1\",\"changes\":[{\"field\":\"messages\",\"value\":{\"metadata\":{\"phone_number_id\":\"%s\"},\"messages\":[{\"from\":\"201011113333\",\"id\":\"wamid.%s\",\"type\":\"interactive\",\"context\":{\"id\":\"wamid.BOTMSG1\"},\"interactive\":{\"type\":\"button_reply\",\"button_reply\":{\"id\":\"أيوه\",\"title\":\"أيوه\"}}}]}}]}]}";
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام تمام"));
+        String firstTap = again.formatted(pnid, uniq());
+        webhook(firstTap, sign(firstTap)).andExpect(status().isOk());   // first tap on that message: answered
+        int afterFirstTap = FakeMetaGraph.SENT.size();
+        String second = again.formatted(pnid, uniq());
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("should not be said"));
+        webhook(second, sign(second)).andExpect(status().isOk());
+        assertThat(FakeMetaGraph.SENT.size()).isEqualTo(afterFirstTap);
     }
 
     @Test

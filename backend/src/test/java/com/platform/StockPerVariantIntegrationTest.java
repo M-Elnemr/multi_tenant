@@ -66,4 +66,16 @@ class StockPerVariantIntegrationTest extends IntegrationTestBase {
         assertThat(reply).as(reply).doesNotContain("٩ قطع").doesNotContain("9 قطع");
         assertThat(reply).as("each size with its own number").containsAnyOf("S: 3", "S ٣", "S: ٣");
     }
+
+    @Test
+    void aQuantityAfterTheColourAndSizeWereChosenInEarlierMessagesIsCheckedForThatCombination() throws Exception {
+        Shop s = shop();
+        String ext = "stk3-" + uniq();
+        say(s, ext, "وريني " + s.name(), "ده " + s.name() + " بـ 450 جنيه، متاح بالأبيض والأزرق والكحلي ومقاسات S و M و L. تحب أنهي لون ومقاس؟");
+        say(s, ext, "كحلي", "تمام، الكحلي. تحب أنهي مقاس؟");
+        say(s, ext, "M", "تمام، كحلي مقاس M. تحب كام قطعة؟");
+        // the draft talks about another combination (white L): the stock of the navy M chosen earlier is what the customer is told
+        String reply = say(s, ext, "عايز ١٢ قطعه", "تمام يا فندم، ١٢ قطعة من القميص الأبيض مقاس L متوفرة 👌", "تمام يا فندم، ١٢ قطعة من القميص الأبيض مقاس L متوفرة 👌", "تمام يا فندم، ١٢ قطعة من القميص الأبيض مقاس L متوفرة 👌");
+        assertThat(reply).as(reply).contains("كحلي").containsAnyOf("3", "٣").doesNotContain("الأبيض").doesNotContain("أبيض");
+    }
 }
