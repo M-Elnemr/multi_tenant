@@ -123,6 +123,28 @@ class MetaChannelsIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void aYesOrNoQuestionOnWhatsAppGoesOutWithTapButtonsAndATappedButtonIsTheCustomersMessage() throws Exception {
+        Tenant t = onboard("STORE");
+        String pnid = pageId();
+        connect(t, "WHATSAPP", pnid);
+        FakeMetaGraph.reset();
+        java.util.function.Function<String, String> wa = text -> "{\"object\":\"whatsapp_business_account\",\"entry\":[{\"id\":\"1\",\"changes\":[{\"field\":\"messages\",\"value\":{\"metadata\":{\"phone_number_id\":\"%s\"},\"messages\":[{\"from\":\"201011113333\",\"id\":\"wamid.%s\",\"type\":\"text\",\"text\":{\"body\":\"%s\"}}]}}]}]}".formatted(pnid, uniq(), text);
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("القميص بـ ١٥٠ جنيه ومتاح. تحب أحجزهولك؟"));
+        String m1 = wa.apply("القميص ده متاح؟");
+        webhook(m1, sign(m1)).andExpect(status().isOk());
+        String body = FakeMetaGraph.SENT.get(FakeMetaGraph.SENT.size() - 1).body().toString();
+        assertThat(body).contains("type=interactive").contains("type=button").contains("أيوه").contains("لا شكراً").contains("تحب أحجزهولك");
+        // a tapped button comes back as an interactive reply whose id is the text it stands for
+        String tapped = "{\"object\":\"whatsapp_business_account\",\"entry\":[{\"id\":\"1\",\"changes\":[{\"field\":\"messages\",\"value\":{\"metadata\":{\"phone_number_id\":\"%s\"},\"messages\":[{\"from\":\"201011113333\",\"id\":\"wamid.%s\",\"type\":\"interactive\",\"interactive\":{\"type\":\"button_reply\",\"button_reply\":{\"id\":\"أيوه\",\"title\":\"أيوه\"}}}]}}]}]}".formatted(pnid, uniq());
+        java.util.concurrent.atomic.AtomicReference<String> seen = new java.util.concurrent.atomic.AtomicReference<>();
+        FakeAiProvider.SCRIPT.add(turns -> { seen.set(turns.stream().filter(x -> "user".equals(x.role())).reduce((a, b) -> b).map(Turn::text).orElse("")); return Turn.model("تمام، ابعتلي اسمك الأول ورقم الواتساب."); });
+        int before = FakeMetaGraph.SENT.size();
+        webhook(tapped, sign(tapped)).andExpect(status().isOk());
+        assertThat(FakeMetaGraph.SENT.size()).isGreaterThan(before);
+        assertThat(seen.get()).isEqualTo("أيوه");
+    }
+
+    @Test
     void aPhotoAndAVoiceNoteOnWhatsAppAreReadIntoTheChatAndAnswered() throws Exception {
         Tenant t = onboard("STORE");
         String pnid = pageId();

@@ -125,7 +125,7 @@ class DeepSeekSelfReviewIntegrationTest extends IntegrationTestBase {
         assertThat(DEEPSEEK_SEEN.get(2).has("tools")).isFalse();
         assertThat(DEEPSEEK_SEEN.get(0).path("reasoning_effort").asText()).as("the conversation keeps its reasoning level").isEqualTo("low");
         assertThat(DEEPSEEK_SEEN.get(1).path("reasoning_effort").asText()).isEqualTo("low");
-        assertThat(DEEPSEEK_SEEN.get(2).path("reasoning_effort").asText()).as("the review is a short check: no reasoning").isEqualTo("none");
+        assertThat(DEEPSEEK_SEEN.get(2).path("reasoning_effort").asText()).as("the review runs at low reasoning like every model (AI_REVIEW_REASONING default since 2026-11-12)").isEqualTo("low");
         assertThat(GLM_SEEN).as("GLM is not a reviewer").isEmpty();
     }
 

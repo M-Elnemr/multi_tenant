@@ -61,6 +61,7 @@ public class ChatController {
         m.put("reply", r.text());
         m.put("order", r.order());
         m.put("products", r.products());
+        m.put("buttons", ReplyButtons.asMaps(ReplyButtons.pick(r.text())));
         return m;
     }
 
@@ -83,7 +84,13 @@ public class ChatController {
     @GetMapping("/api/v1/shop/chat/history")
     public List<Map<String, Object>> history(@RequestParam String conversationId) {
         if (!CONV_ID.matcher(conversationId).matches()) return List.of();
-        return chat.history(StoreContext.tenantId(), "WEB", conversationId);
+        var h = new java.util.ArrayList<>(chat.history(StoreContext.tenantId(), "WEB", conversationId));
+        if (!h.isEmpty() && "assistant".equals(h.get(h.size() - 1).get("role")) && h.get(h.size() - 1).get("content") instanceof String c) {   // the buttons of the question still waiting for its answer
+            var last = new java.util.LinkedHashMap<>(h.get(h.size() - 1));
+            last.put("buttons", ReplyButtons.asMaps(ReplyButtons.pick(c)));
+            h.set(h.size() - 1, last);
+        }
+        return h;
     }
 
     @PostMapping("/api/v1/shop/chat")

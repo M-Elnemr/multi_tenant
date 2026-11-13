@@ -16,13 +16,29 @@ final class FastAnswers {
                 .replaceAll("[^\\p{L}\\p{N}\\s]", " ").replaceAll("\\s+", " ").trim();
     }
 
+    /** True when the text has emoji or symbols and no letter or digit at all. */
+    static boolean emojiOnly(String text) {
+        boolean symbol = false;
+        for (int i = 0; i < text.length(); ) {
+            int cp = text.codePointAt(i); i += Character.charCount(cp);
+            if (Character.isLetterOrDigit(cp)) return false;
+            int type = Character.getType(cp);
+            if (type == Character.OTHER_SYMBOL || type == Character.MODIFIER_SYMBOL || type == Character.SURROGATE || cp >= 0x1F000 || (cp >= 0x2600 && cp <= 0x27BF) || cp == 0x2764) symbol = true;
+        }
+        return symbol;
+    }
+
     private static boolean arabic(String s) { return s.codePoints().anyMatch(cp -> cp >= 0x0600 && cp <= 0x06FF); }
 
     /** @param firstMessage true when the customer has not been answered yet in this chat. */
     static Optional<String> answer(String text, boolean firstMessage, String shopGreeting) {
         if (text == null || text.length() > 40) return Optional.empty();
         String n = norm(text);
-        if (n.isEmpty()) return Optional.empty();
+        if (n.isEmpty()) {   // only emoji («❤️❤️», «👍»): a warm line from code, never a model's guess at what it meant
+            if (!emojiOnly(text)) return Optional.empty();
+            if (firstMessage && shopGreeting != null && !shopGreeting.isBlank()) return Optional.of(shopGreeting.trim());
+            return Optional.of("❤️ تحت أمرك يا فندم، لو محتاج أي حاجة أنا موجود 🌸 / Anytime! Tell me if you need anything.");
+        }
         boolean ar = arabic(text);
         if (firstMessage && HELLO.contains(n)) {
             if (shopGreeting != null && !shopGreeting.isBlank()) return Optional.of(shopGreeting.trim());

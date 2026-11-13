@@ -280,6 +280,8 @@ final class FactCheck {
         run(out, () -> betterMatch(customer, answer, ms, shop, out));
         run(out, () -> { if (out.stream().noneMatch(x -> x.fixed() != null)) specLock(customer, answer, ms, only0, shop, out); });
         run(out, () -> answerLock(customer, answer, ms, shop, load, out));
+        run(out, () -> { if (out.stream().noneMatch(x -> x.kind().startsWith("OPTION") || x.kind().equals("FALSE_DENIAL"))) askedMissingSize(customer, answer, ms, only0, shop, load, out); });
+        run(out, () -> { if (out.stream().noneMatch(x -> x.kind().startsWith("OPTION"))) soldOutChoice(answer, ms, only0, about0, load, out); });
         return out;
     }
 
@@ -561,6 +563,7 @@ final class FactCheck {
                 List<String> w = new ArrayList<>();
                 for (Tok t : tokens(light(val), 0, val.length())) w.add(t.word());
                 if (!w.isEmpty()) out.putIfAbsent(w, val);
+                if (w.size() >= 3 && Set.of("ssd", "hdd", "nvme", "ram", "رام", "رامات").contains(w.get(w.size() - 1))) out.putIfAbsent(new ArrayList<>(w.subList(0, w.size() - 1)), val);   // «1 تيرا» is the option «1 تيرا SSD»
                 for (String en : VALUE_WORDS.getOrDefault(bare(light(val)).replace("\u200C", ""), List.of())) out.putIfAbsent(List.of(en), val);
             }
         return out;
@@ -606,8 +609,16 @@ final class FactCheck {
             if (v != null) {
                 String matched = (String) v[0];
                 if (i > 0 && RANGE_WORDS.contains(toks.get(i - 1).word())) { i += (int) v[1] - 1; continue; }   // «تخزين لحد 2 تيرا»: the top of a range, not the option priced
-                if (matched.equals(aheadTaken)) { seen.clear(); seen.add(matched); priced = true; aheadTaken = null; i += (int) v[1] - 1; continue; }
-                if (priced) { seen.clear(); priced = false; }
+                if (matched.equals(aheadTaken)) {   // the value after the amount belongs to it; the values of other options said before stay with it («٢٥٦ جيجا: ١٦٩٩٩ (جديد)»)
+                    String option = optionOf(p, matched);
+                    seen.removeIf(sv -> option == null || optionOf(p, sv) == null || option.equals(optionOf(p, sv)));
+                    seen.add(matched); priced = true; aheadTaken = null; i += (int) v[1] - 1; continue;
+                }
+                if (priced) {   // a value of the same option replaces the earlier one; the values of other options (the capacity before «أوبن بوكس») stay
+                    String option = optionOf(p, matched);
+                    seen.removeIf(sv -> option == null || optionOf(p, sv) == null || option.equals(optionOf(p, sv)));
+                    priced = false;
+                }
                 // «(ربع/نص كيلو)»: the bare first word of another value just before this one counts as that value too
                 if (i > 0) for (var e : values.entrySet()) if (e.getKey().size() > 1 && same(toks.get(i - 1).word(), e.getKey().get(0)) && !e.getValue().equals(matched)) seen.add(e.getValue());
                 seen.add(matched);
@@ -617,7 +628,8 @@ final class FactCheck {
             }
             Tok t = toks.get(i);
             if (!NUMBER.matcher(t.word()).matches()) continue;
-            if (UNIT_AFTER.matcher(l.substring(t.end(), Math.min(l.length(), t.end() + 14))).find()) continue;
+            String afterAmount = l.substring(t.end(), Math.min(l.length(), t.end() + 14));
+            if (!afterAmount.matches("(?s)[ \\t]*\\n.*") && UNIT_AFTER.matcher(afterAmount).find()) continue;   // the dash of the next list line («١٣٤٩٩\n- ١٢٨ جيجا») is no unit
             if (l.substring(Math.max(from, t.start() - 3), t.start()).matches(".*[x×]\\s*$")) continue;
             // «٥٥ بوصة بـ ٢٠٤٩٩ (بدون تركيب)»: a value right after the amount is that amount's, with the other options said before it
             String ahead = valueAhead(answer, toks, i + 1, values);
@@ -653,6 +665,11 @@ final class FactCheck {
             out.add(new Problem("OPTION_PRICE", what + " costs " + num(right, false) + ", not " + num(amount, false) + ". Say exactly " + num(right, false) + ".", fixed));
             return;
         }
+    }
+
+    private static String optionOf(Product p, String value) {
+        for (Variant v : p.variants()) for (var e : v.options().entrySet()) if (e.getValue().equals(value)) return e.getKey();
+        return null;
     }
 
     private static final Set<String> RANGE_WORDS = Set.of("لحد", "حتي", "لغايه", "ل", "لـ", "up", "to");
@@ -1445,7 +1462,13 @@ final class FactCheck {
 
     // ---- 10. more pieces than the stock -------------------------------------------------------------------------------------
 
-    private static final Pattern ASKED_QTY = Pattern.compile("(?<![\\p{L}\\d.])(\\d{1,4})\\s+(?!جنيه|ج(?!\\p{L})|egp|le(?![a-z])|%|جيجا|gb|tb|بوصه|سم|متر|مم|سنه|سنين|شهر|يوم|ايام|وات|w(?![a-z])|مللي|الف)\\p{L}");
+    private static final String NOT_A_QTY_UNIT = "(?!جنيه|ج(?!\\p{L})|egp|le(?![a-z])|%|جيجا|gb|tb|بوصه|سم|متر|مم|سنه|سنين|شهر|يوم|ايام|وات|w(?![a-z])|مللي|الف)";
+    private static final Pattern ASKED_QTY = Pattern.compile("(?<![\\p{L}\\d.])(\\d{1,4})\\s+" + NOT_A_QTY_UNIT + "\\p{L}");
+    /** «اتنين شاحن», «تلاتة قمصان»: 2 to 10 written in words, before the thing asked for. */
+    private static final Pattern ASKED_QTY_WORDS = Pattern.compile("(?<!\\p{L})(اتنين|اثنين|زوجين|تلاته|ثلاثه|اربعه|خمسه|سته|سبعه|تمانيه|ثمانيه|تسعه|عشره)\\s+" + NOT_A_QTY_UNIT + "\\p{L}");
+    private static int wordsToNumber(String w) {
+        return switch (w) { case "اتنين", "اثنين", "زوجين" -> 2; case "تلاته", "ثلاثه" -> 3; case "اربعه" -> 4; case "خمسه" -> 5; case "سته" -> 6; case "سبعه" -> 7; case "تمانيه", "ثمانيه" -> 8; case "تسعه" -> 9; default -> 10; };
+    }
 
     /**
      * «عايز ١٠ موبايلات نوفا ميني 8» answered «متوفر بالكمية»: the customer asked for more pieces than the product has in stock (all its options together) and the reply offers them.
@@ -1462,7 +1485,7 @@ final class FactCheck {
         if (customer == null) return;
         // a number inside a product's name («موبايل نوفا ميني 8», a code) is not a quantity: the names the customer wrote are taken out first
         String lc = light(customer);
-        for (Mention mn : mentions(customer, shop.names())) lc = lc.substring(0, mn.start()) + " ".repeat(mn.end() - mn.start()) + lc.substring(mn.end());
+        for (Mention mn : mentions(customer, shop.names())) lc = lc.substring(0, mn.start()) + "ز".repeat(mn.end() - mn.start()) + lc.substring(mn.end());   // «٢ عود ملكي»: the product named is what the number counts
         Matcher m = ASKED_QTY.matcher(lc);
         boolean found = false;
         while (m.find()) {
@@ -1473,9 +1496,14 @@ final class FactCheck {
             found = true;
             break;
         }
-        if (!found) return;
-        int asked = Integer.parseInt(m.group(1));
-        if (asked < 3) return;
+        int askedInWords = 0;
+        if (!found) {
+            Matcher w = ASKED_QTY_WORDS.matcher(lc);
+            if (!w.find()) return;
+            askedInWords = wordsToNumber(w.group(1));
+        }
+        int asked = found ? Integer.parseInt(m.group(1)) : askedInWords;
+        if (asked < 2) return;
         // the product the customer named decides (a reply about another one, «جينز سكيني ممزق … 8 قطع» for «… هاي ويست», is no answer)
         var named = mentions(customer, shop.names()).stream().map(Mention::slug).distinct().toList();
         String slug = named.size() == 1 ? named.get(0) : ms.size() == 1 ? ms.get(0).slug() : only;
@@ -1501,7 +1529,9 @@ final class FactCheck {
         if (stock <= 0 && NEG_STRICT.matcher(l).find()) return;
         String what = "«" + p.name() + "»" + (want.isEmpty() ? "" : " " + String.join(" ", want.keySet()));
         boolean ar = arabic(answer) || arabic(customer);
-        String truth = stock > 0
+        String truth = stock == 1
+                ? (ar ? what + " متاح منه قطعة واحدة بس حالياً 🙏 تحب أجهزهالك؟" : p.name() + (want.isEmpty() ? "" : " " + String.join(" ", want.keySet())) + ": only 1 left right now 🙏 Shall I get it ready for you?")
+                : stock > 0
                 ? (ar ? what + " متاح منه " + stock + " بس حالياً 🙏 تحب أجهزلك الـ " + stock + "؟" : p.name() + (want.isEmpty() ? "" : " " + String.join(" ", want.keySet())) + ": only " + stock + " in stock right now 🙏 Shall I get the " + stock + " ready for you?")
                 : (ar ? what + " خلص حالياً 🙏 المتاح منه: " + stockLine(p, Map.of()) + "." : p.name() + " is sold out in that option 🙏 In stock: " + stockLine(p, Map.of()) + ".");
         out.add(new Problem("STOCK_QUANTITY", "The customer asked for " + asked + " of " + what + " but only " + stock
@@ -1570,6 +1600,70 @@ final class FactCheck {
             String truth = ar ? what + " متاح منه " + real + " بس حالياً 🙏 تحب أجهزلك الـ " + real + "؟" : what + ": only " + real + " in stock right now 🙏 Shall I get the " + real + " ready for you?";
             out.add(new Problem("STOCK_QUANTITY", "You accepted " + n + " of " + what + " but that exact combination has only " + real + " in stock: " + stockLine(p, want) + ". Say exactly " + real + "; never promise more.", truth));
             return;
+        }
+    }
+
+    // ---- 10b. a size that does not exist, a sold-out colour offered --------------------------------------------------------------
+
+    private static final Pattern BEYOND_SIZE = Pattern.compile("(?<![\\p{L}\\d])(xxxxl|xxxl|[3-6]\\s?xl|xxs|[3-6]\\s?xs)(?![\\p{L}\\d])", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * «مقاس XXXL» asked for a jacket whose sizes end at XXL, and the reply goes on as if it existed («متاح عندنا ✅») without ever saying it does not. Unless the reply denies that size, it is
+     * replaced by the real sizes.
+     */
+    private static void askedMissingSize(String customer, String answer, List<Mention> ms, String only, Shop shop, java.util.function.Function<String, Product> load, List<Problem> out) {
+        if (customer == null) return;
+        Matcher m = BEYOND_SIZE.matcher(customer);
+        if (!m.find()) return;
+        String asked = m.group(1).toUpperCase(Locale.ROOT).replace(" ", "");
+        var named = mentions(customer, shop.names()).stream().map(Mention::slug).distinct().toList();
+        String slug = named.size() == 1 ? named.get(0) : ms.stream().map(Mention::slug).distinct().count() == 1 ? ms.get(0).slug() : only;
+        if (slug == null) return;
+        Product p = load.apply(slug);
+        Set<String> real = new LinkedHashSet<>();
+        for (Variant v : p.variants()) v.options().forEach((k, val) -> { if (sizeOption(k)) real.add(val); });
+        if (real.isEmpty() || real.stream().anyMatch(r -> r.replace(" ", "").equalsIgnoreCase(asked))) return;
+        String l = light(answer), token = asked.toLowerCase(Locale.ROOT);
+        for (int[] s : sentences(answer)) {
+            String sentence = l.substring(s[0], s[1]);
+            if ((sentence.replace(" ", "").contains(token)) && NEG.matcher(sentence).find()) return;   // the reply says it does not exist
+        }
+        boolean ar = arabic(answer) || arabic(customer);
+        String sizes = String.join(ar ? "، " : ", ", real);
+        String truth = ar ? "«" + p.name() + "» مفيش منه مقاس " + asked + " 🙏 المقاسات المتاحة: " + sizes + ". تحب أنهي مقاس؟"
+                          : "«" + p.name() + "» does not come in " + asked + " 🙏 Sizes: " + sizes + ". Which one would you like?";
+        out.add(new Problem("OPTION_STOCK", "«" + p.name() + "» has no size " + asked + "; its sizes are " + sizes + ". Say that plainly and offer only those.", truth));
+    }
+
+    /**
+     * «تحب أجهزلك إير 13 ذهبي ولا فضي؟» when silver is sold out in every combination: a choice between an available and a sold-out colour (or size) is not a choice. The sentence is replaced by
+     * the real stock.
+     */
+    private static void soldOutChoice(String answer, List<Mention> ms, String only, String about, java.util.function.Function<String, Product> load, List<Problem> out) {
+        String l = light(answer);
+        for (int[] s : sentences(answer)) {
+            String sentence = l.substring(s[0], s[1]);
+            if (NEG.matcher(sentence).find() || !(OFFER.matcher(sentence).find() || sentence.contains("ولا ") || sentence.contains(" او "))) continue;
+            List<Mention> here = ms.stream().filter(m -> m.start() >= s[0] && m.start() < s[1]).toList();
+            String prior = lastBefore(ms, s[0], only);
+            String slug = here.size() == 1 ? here.get(0).slug() : here.isEmpty() ? (prior != null ? prior : about) : null;
+            if (slug == null) continue;
+            Product p = load.apply(slug);
+            if (p.variants().isEmpty()) continue;
+            Map<String, String> said = valuesIn(sentence, p);
+            Map<String, List<String>> byOption = new LinkedHashMap<>();
+            said.forEach((value, option) -> byOption.computeIfAbsent(option, k -> new ArrayList<>()).add(value));
+            for (var e : byOption.entrySet()) {
+                if (e.getValue().size() < 2) continue;
+                List<String> zero = e.getValue().stream().filter(v -> p.variants().stream().noneMatch(x -> x.available() > 0 && x.options().containsValue(v))).toList();
+                if (zero.isEmpty() || zero.size() == e.getValue().size()) continue;
+                boolean ar = arabic(answer);
+                String truth = ar ? "«" + p.name() + "» " + String.join(" ", zero) + " خلص حالياً 🙏 المتاح منه: " + stockLine(p, Map.of()) + ". تحب أجهزلك واحد من المتاح؟"
+                                  : p.name() + " in " + String.join(" ", zero) + " is sold out right now 🙏 In stock: " + stockLine(p, Map.of()) + ". Shall I get one of these ready for you?";
+                out.add(new Problem("OPTION_STOCK", "«" + p.name() + "» " + String.join(" ", zero) + " is SOLD OUT in every combination: " + stockLine(p, Map.of()) + ". Never offer it next to the colours that are in stock.",
+                        (answer.substring(0, s[0]) + truth + (answer.substring(s[1]).startsWith("\n") ? "" : "\n") + answer.substring(s[1])).trim()));
+                return;
+            }
         }
     }
 

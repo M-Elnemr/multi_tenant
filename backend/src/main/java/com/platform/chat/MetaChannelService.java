@@ -171,6 +171,7 @@ public class MetaChannelService {
                         continue;
                     }
                     for (JsonNode m : v.path("messages")) {
+                        if ("reaction".equals(m.path("type").asText())) continue;   // a reaction (❤️ on a message) is not a message to answer
                         String from = m.path("from").asText(""), name = null;
                         for (JsonNode c : v.path("contacts")) if (from.equals(c.path("wa_id").asText())) name = c.path("profile").path("name").asText(null);   // the customer's WhatsApp profile name
                         inbound("WHATSAPP", pnid, from, m.path("id").asText(""), whatsappText(m), name, whatsappMedia(m), false);
@@ -398,8 +399,16 @@ public class MetaChannelService {
         }
         try {
             String gendered = "WHATSAPP".equals(platform) ? genders.forPhone(tenantId, sender).apply(answer) : com.platform.shared.Gender.MALE.apply(answer);
-            for (String message : ChatService.messages(gendered))   // the assistant may answer two separate topics in two messages
-                for (String part : chunks(message, "INSTAGRAM".equals(platform) ? 900 : "WHATSAPP".equals(platform) ? 3500 : 1900)) send(platform, accountId, sender, token, part);
+            List<String> messages = ChatService.messages(gendered);   // the assistant may answer two separate topics in two messages
+            List<ReplyButtons.Button> buttons = answer != null && !answer.isBlank() ? ReplyButtons.pick(messages.isEmpty() ? "" : messages.get(messages.size() - 1)) : List.of();
+            for (int mi = 0; mi < messages.size(); mi++) {
+                List<String> parts = chunks(messages.get(mi), "INSTAGRAM".equals(platform) ? 900 : "WHATSAPP".equals(platform) ? 3500 : 1900);
+                for (int pi = 0; pi < parts.size(); pi++) {
+                    boolean lastPart = mi == messages.size() - 1 && pi == parts.size() - 1;
+                    if (lastPart && !buttons.isEmpty()) sendWithButtons(platform, accountId, sender, token, parts.get(pi), buttons);
+                    else send(platform, accountId, sender, token, parts.get(pi));
+                }
+            }
         } catch (MetaGraph.MetaException e) {
             log.warn("Could not send the {} reply: {}", platform, e.getMessage());
         }
@@ -421,6 +430,31 @@ public class MetaChannelService {
             try { send(platform, accountId, to, token, card.caption()); } catch (MetaGraph.MetaException ignored) { log.warn("Could not send a product card: {}", e.getMessage()); }
         }
     }
+
+    /**
+     * The reply with tap buttons: WhatsApp's reply buttons (up to 3, a title up to 20 characters, the id is what comes back as the customer's message) or Messenger / Instagram quick replies
+     * (up to 13). A reply too long for the interactive body, or a platform that refuses it, goes out as plain text.
+     */
+    void sendWithButtons(String platform, String accountId, String to, String token, String text, List<ReplyButtons.Button> buttons) {
+        try {
+            if ("WHATSAPP".equals(platform)) {
+                if (text.length() > 1000) { send(platform, accountId, to, token, text); return; }
+                List<Map<String, Object>> rows = new java.util.ArrayList<>();
+                for (ReplyButtons.Button b : buttons.stream().limit(3).toList()) rows.add(Map.of("type", "reply", "reply", Map.of("id", b.value(), "title", clip(b.label(), 20))));
+                graph.post(accountId + "/messages", token, Map.of("messaging_product", "whatsapp", "to", to, "type", "interactive",
+                        "interactive", Map.of("type", "button", "body", Map.of("text", text), "action", Map.of("buttons", rows))));
+            } else {
+                List<Map<String, Object>> quick = new java.util.ArrayList<>();
+                for (ReplyButtons.Button b : buttons.stream().limit(13).toList()) quick.add(Map.of("content_type", "text", "title", clip(b.label(), 20), "payload", b.value()));
+                graph.post("me/messages", token, Map.of("recipient", Map.of("id", to), "messaging_type", "RESPONSE", "message", Map.of("text", text, "quick_replies", quick)));
+            }
+        } catch (MetaGraph.MetaException e) {
+            log.debug("Buttons refused ({}), sending the reply as text", e.getMessage());
+            send(platform, accountId, to, token, text);
+        }
+    }
+
+    private static String clip(String s, int max) { return s.length() <= max ? s : s.substring(0, max); }
 
     void send(String platform, String accountId, String to, String token, String text) {
         if ("WHATSAPP".equals(platform)) graph.post(accountId + "/messages", token, Map.of("messaging_product", "whatsapp", "to", to, "type", "text", "text", Map.of("body", text)));

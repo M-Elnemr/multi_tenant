@@ -316,6 +316,7 @@ public class EvolutionService {
         if (sender.length() < 8 || id.isEmpty()) return;
         if (jdbc.sql("INSERT INTO chat.meta_events (mid) VALUES (:m) ON CONFLICT DO NOTHING").param("m", "evo:" + id).update() == 0) return;
         JsonNode msg = m.path("message");
+        if (msg.has("reactionMessage") || msg.has("protocolMessage") || msg.has("pollUpdateMessage")) return;   // a reaction (❤️ on a message), an edit or a poll vote is not a message to answer
         String text = msg.hasNonNull("conversation") ? msg.path("conversation").asText() : msg.path("extendedTextMessage").hasNonNull("text") ? msg.path("extendedTextMessage").path("text").asText() : null;
         String name = m.path("pushName").asText(""), burstKey = tenantId + "|" + sender;
         // a photo or voice note is read into text (a few seconds); what the customer sends meanwhile waits for it, so «بكام ده؟» is answered with the photo, in order

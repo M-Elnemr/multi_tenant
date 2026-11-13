@@ -105,13 +105,27 @@ class CommentsAndIdentityIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void theFirstReplyAlwaysStartsWithTheAssistantsNameWhateverTheCustomerOpenedWith() throws Exception {
+        Tenant t = onboard("STORE");
+        onHost(t.host(), t.access(), "PUT", "/api/v1/store/ai/settings", "{\"agentName\":\"ندى\"}").andExpect(status().isOk());
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("الجاكيت بـ ٨٩٠ جنيه، تحب أنهي لون؟"));
+        String web = UUID.randomUUID().toString();
+        String first = JsonPath.read(onHost(t.host(), null, "POST", "/api/v1/shop/chat", "{\"conversationId\":\"%s\",\"message\":\"الجاكيت بكام؟\"}".formatted(web)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), "$.reply");
+        assertThat(first).as(first).startsWith("مع حضرتك ندى من").contains("أتشرف باسم حضرتك؟");
+        // only the first reply: the next one is just the answer
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("متاح بأسود وكحلي."));
+        String second = JsonPath.read(onHost(t.host(), null, "POST", "/api/v1/shop/chat", "{\"conversationId\":\"%s\",\"message\":\"ألوان؟\"}".formatted(web)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), "$.reply");
+        assertThat(second).doesNotContain("مع حضرتك ندى");
+    }
+
+    @Test
     void theAiIntroducesItselfAndAsksTheNameAndOnTheWebsiteThePhone() throws Exception {
         Tenant t = onboard("STORE");
         UUID tenant = id(t);
         onHost(t.host(), t.access(), "PUT", "/api/v1/store/ai/settings", "{\"agentName\":\"محمد\"}").andExpect(status().isOk()).andExpect(jsonPath("$.agentName").value("محمد"));
         String web = UUID.randomUUID().toString();
         String hello = JsonPath.read(onHost(t.host(), null, "POST", "/api/v1/shop/chat", "{\"conversationId\":\"%s\",\"message\":\"السلام عليكم\"}".formatted(web)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), "$.reply");
-        assertThat(hello).startsWith("وعليكم السلام").contains("معاك محمد من").contains("أتشرف باسم حضرتك؟");
+        assertThat(hello).startsWith("وعليكم السلام").contains("مع حضرتك محمد من").contains("أتشرف باسم حضرتك؟");
 
         // the next model call is told who it is and to ask for the name, then the phone (website chat)
         onHost(t.host(), null, "POST", "/api/v1/shop/chat", "{\"conversationId\":\"%s\",\"message\":\"عندكم جاكيتات؟\"}".formatted(web)).andExpect(status().isOk());

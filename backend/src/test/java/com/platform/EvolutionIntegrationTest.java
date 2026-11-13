@@ -113,6 +113,28 @@ class EvolutionIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void aReactionAnEditAndALoneHeartAreNeverAnsweredWithATextOnlyNoticeOrAGuess() throws Exception {
+        Tenant t = onboard("STORE");
+        onHost(t.host(), t.access(), "POST", "/api/v1/store/ai/evolution/enable", "{\"acceptedRisk\":true}").andExpect(status().isOk());
+        FakeEvolutionApi.STATE = "open";
+        onHost(t.host(), t.access(), "GET", "/api/v1/store/ai/evolution", null).andExpect(jsonPath("$.status").value("CONNECTED"));
+        String inst = instanceOf(t);
+        String from = "2010" + (10000000 + (int) (Math.random() * 80000000));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("Welcome! What are you looking for?"));
+        webhook(SECRET, message(inst, from, "R1" + uniq(), "hello I need a dress")).andExpect(status().isOk());
+        int count = FakeEvolutionApi.CALLS.size();
+        // a ❤️ reaction on the assistant's message and a message edit: nothing goes out
+        webhook(SECRET, "{\"event\":\"messages.upsert\",\"instance\":\"%s\",\"data\":{\"key\":{\"remoteJid\":\"%s@s.whatsapp.net\",\"fromMe\":false,\"id\":\"R2%s\"},\"message\":{\"reactionMessage\":{\"text\":\"❤️\",\"key\":{\"id\":\"x\"}}}}}".formatted(inst, from, uniq())).andExpect(status().isOk());
+        webhook(SECRET, "{\"event\":\"messages.upsert\",\"instance\":\"%s\",\"data\":{\"key\":{\"remoteJid\":\"%s@s.whatsapp.net\",\"fromMe\":false,\"id\":\"R3%s\"},\"message\":{\"protocolMessage\":{\"type\":14}}}}".formatted(inst, from, uniq())).andExpect(status().isOk());
+        assertThat(FakeEvolutionApi.CALLS.size()).isEqualTo(count);
+        // a typed ❤️❤️ gets a short warm line from code, not a model call
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("should never be said"));
+        webhook(SECRET, message(inst, from, "R4" + uniq(), "❤️❤️")).andExpect(status().isOk());
+        var sent = FakeEvolutionApi.CALLS.get(FakeEvolutionApi.CALLS.size() - 1);
+        assertThat((String) sent.body().get("text")).contains("تحت أمرك").doesNotContain("should never be said").doesNotContain("text messages").doesNotContain("واتساب");
+    }
+
+    @Test
     void aPhotoOnTheShopsOwnNumberIsFetchedFromEvolutionAndReadIntoTheChat() throws Exception {
         Tenant t = onboard("STORE");
         onHost(t.host(), t.access(), "POST", "/api/v1/store/ai/evolution/enable", "{\"acceptedRisk\":true}").andExpect(status().isOk());

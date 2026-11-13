@@ -12,9 +12,10 @@ import { AgentAvatar, DEFAULT_AGENT_AVATAR, isAvatarId } from "@/components/shop
 
 type Product = { name: string; slug: string; priceMinor: number; currency: string; imageUrl?: string; imageMediaBase?: string; imageMediaExt?: string };
 type Order = { orderNumber: string; totalMinor: number; currency: string; trackPath?: string; paymentPath?: string; whatsappUrl?: string; whatsappConfirmed?: boolean; test?: boolean };
-type Msg = { role: "user" | "assistant"; content: string; mediaUrl?: string | null; audioUrl?: string; products?: Product[]; order?: Order | null };
-type Reply = { conversationId: string; reply: string; order?: Order | null; products?: Product[]; heard?: string };
-type History = { role: "user" | "assistant"; content: string; mediaUrl?: string | null }[];
+type Btn = { label: string; value: string };
+type Msg = { role: "user" | "assistant"; content: string; mediaUrl?: string | null; audioUrl?: string; products?: Product[]; order?: Order | null; buttons?: Btn[] };
+type Reply = { conversationId: string; reply: string; order?: Order | null; products?: Product[]; heard?: string; buttons?: Btn[] };
+type History = { role: "user" | "assistant"; content: string; mediaUrl?: string | null; buttons?: Btn[] }[];
 type Job = { text: string } | { file: File; caption: string };
 type Config = { enabled: boolean; greeting: string; agentName?: string; agentAvatar?: string; media?: boolean };
 
@@ -142,7 +143,7 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
         const r = "file" in job && sendMedia ? await sendMedia(job.file, job.caption) : await send("text" in job ? job.text : job.caption);
         // an empty reply: the shop team is answering this chat themselves, nothing automatic to show
         if (r.reply && r.reply.trim()) {
-          setMsgs((m) => [...m, { role: "assistant", content: r.reply, products: r.products, order: r.order }]);
+          setMsgs((m) => [...m, { role: "assistant", content: r.reply, products: r.products, order: r.order, buttons: r.buttons }]);
           onReply?.();
         }
       } catch (e) {
@@ -262,6 +263,15 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
                     <p className="line-clamp-2 px-2 pt-1 text-xs font-semibold">{p.name}</p>
                     <p className="px-2 pb-2 text-xs font-bold" style={{ color: "var(--brand)" }}>{money(p.priceMinor, p.currency, locale)}</p>
                   </Link>
+                ))}
+              </div>
+            )}
+            {/* quick actions of the newest question: tapping one sends its text as the customer's own message */}
+            {m.role === "assistant" && m.buttons && m.buttons.length > 0 && i === msgs.length - 1 && !busy && (
+              <div className={widget ? "flex flex-wrap justify-end gap-2 ps-10" : "flex flex-wrap gap-2"}>
+                {m.buttons.map((b) => (
+                  <button key={b.value} type="button" onClick={() => void go(b.value)}
+                    className="rounded-full border border-[var(--brand)] bg-white px-4 py-2 text-sm font-semibold shadow-sm transition hover:bg-[var(--s-soft,#f1f5f9)]" style={{ color: "var(--brand)" }}>{b.label}</button>
                 ))}
               </div>
             )}

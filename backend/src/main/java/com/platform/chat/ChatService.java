@@ -618,6 +618,7 @@ public class ChatService {
         else if (EVAL.get() != null) EVAL.get().add(rounds, tookMs, routed.fellBack(), routed.code());
         if (answer == null || answer.isBlank()) answer = arabicChat ? "معلش يا فندم، ممكن توضحلي أكتر حضرتك محتاج إيه؟ وأنا أساعدك على طول 🌸" : "Sorry, could you tell me a little more about what you need? I will help right away.";
         answer = polish(noLaughter(messaging(channel) ? forChannel(channel, answer) : forChannel("WEB", oneMessage(answer))), conv, tenantId, channel, externalId, clientId);
+        if (first && ctx.summary()[0] == null && orderBox[0] == null) answer = withIntro(answer, tenantId, conv, channel, externalId, clientId, arabicChat);
         var seenCards = new java.util.HashSet<Object>();
         ctx.products().removeIf(p -> !seenCards.add(p.get("slug")));   // one card per product
         String replyWords = FastAnswers.norm(answer);
@@ -629,7 +630,8 @@ public class ChatService {
         long saved = jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x) RETURNING id").param("c", conv).param("x", answer).query(Long.class).single();
         if (ctx.summary()[0] != null) markSummary(conv, saved);
         jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();
-        return new Reply(conv, answer, orderBox[0], ctx.products());
+        boolean orderText = ctx.summary()[0] != null || orderBox[0] != null;   // the order summary and the confirmation list the items: a product card after them is only noise
+        return new Reply(conv, answer, orderBox[0], orderText ? List.of() : ctx.products());
     }
 
     // ---- hand-over to the shop team ----------------------------------------------------------------------------------------
@@ -1294,17 +1296,31 @@ public class ChatService {
     }
 
     /**
+     * The reply without its stalling or offering clauses. A sentence that only stalls goes whole; a sentence that gives something real (a name with a price, a list line) and only ends with the
+     * offer («- قميص أكسفورد ٥٢٠ جنيه، تحب أعرضلك التفاصيل؟») keeps its text before the offer, so a recommendation never loses a line.
+     */
+    static String dropOffers(String answer) {
+        StringBuilder kept = new StringBuilder();
+        for (String sentence : answer.split("(?<=[.!؟?\\n])")) {
+            var stall = STALL.matcher(sentence);
+            var offer = OFFER_TO_SHOW.matcher(sentence);
+            int at = stall.find() ? stall.start() : Integer.MAX_VALUE;
+            if (offer.find()) at = Math.min(at, offer.start());
+            if (at == Integer.MAX_VALUE) { kept.append(sentence); continue; }
+            String prefix = sentence.substring(0, at).replaceAll("[\\s،,\\-–—:]+$", "");
+            boolean real = prefix.length() >= 12 && prefix.matches("(?s).*\\p{N}.*") && prefix.matches("(?s).*\\p{L}{3,}.*") && !STALL.matcher(prefix).find() && !OFFER_TO_SHOW.matcher(prefix).find();
+            if (real) kept.append(prefix).append(sentence.endsWith("\n") ? "\n" : "");
+        }
+        return kept.toString();
+    }
+
+    /**
      * When the model could not put a stall right in time: its stalling or offering sentences go, and the products the tools found this turn are listed by code (name, size, the real
      * price, «من» when the price changes by option), so the customer never waits on «هرجعلك» or has to say «أيوه» to see them.
      */
     String stallFallback(Ctx ctx, String answer) {
         boolean ar = arabicConversation(ctx.conversationId());
-        StringBuilder kept = new StringBuilder();
-        for (String sentence : answer.split("(?<=[.!؟?\\n])")) {
-            if (STALL.matcher(sentence).find() || OFFER_TO_SHOW.matcher(sentence).find()) continue;
-            kept.append(sentence);
-        }
-        String rest = kept.toString().replaceAll("[ \\t]+\\n", "\n").replaceAll("\\n{3,}", "\n\n").trim();
+        String rest = dropOffers(answer).replaceAll("[ \\t]+\\n", "\n").replaceAll("\\n{3,}", "\n\n").trim();
         var found = new LinkedHashMap<String, Map<String, Object>>();
         for (var p : ctx.products()) if (p.get("slug") != null) found.putIfAbsent(String.valueOf(p.get("slug")), p);
         if (!found.isEmpty() && FactCheck.mentions(rest, shopView(ctx.tenantId()).names()).isEmpty()) {
@@ -2360,6 +2376,7 @@ public class ChatService {
             - NEVER INVENT: no products, prices, stock, discounts, delivery times, policies, warranties, reviews, brand or import claims («أصلي», «مستورد»), «last piece» or «the price will rise» unless a tool or the shop data says so. Never say the shop lacks an item, color or size before the SHOP CATALOG or a tool shows it. If you do not know, say so; for a policy, warranty or the owner's decision that is not stated, say once that you will confirm with the team (flag_unanswered) and keep selling.
             - PRODUCTS: whenever they name a kind of item, search_products first; their exact words (kind, material, color, size) pick the product, and say "not available" only after checking every product that could match; never push out-of-stock items. For a product's details (material, specs, size, care, warranty) use get_product or shop_knowledge, then explain simply why it fits THIS customer; general know-how is fine when clearly general («عادةً»), never as a fact about this product. A measurement (waist 34) is converted with the size guide, not refused. Say a product's size, weight or count together with its price. Who it is for: pass audience to the search; never show kids' items to an adult buying for themself; ask «ليك ولا لحد تاني؟» only when the shop sells it for several groups and nothing tells. To show pictures call show_products; never write links.
             - CUSTOMER PHOTOS AND VOICE NOTES: «[صورة من العميل: …]» is what their photo shows and «🎤 …» is their voice note written out: you can see and hear them, never say you cannot. For a product photo search for the closest real products; a receipt or a damaged item: thank them or say sorry and that the team will check (flag_unanswered).
+            - A COLOUR OR SIZE ON ITS OWN (strict): when the customer names only a colour or a size («عايز اللون البني», «مقاس L», «وأسود كمان», «اتنين بني») while an item is being discussed or ordered, it is an option of THAT item: answer for that item and its exact variant, and never search for a new product with that word. Colour words are colours: بني = brown, بيج = beige, كحلي = navy, زيتي = olive; «البني» is the colour brown and is never a person's name or a product.
             - STOCK IS PER EXACT VARIANT (strict, no exceptions): a product's stock exists only for each exact combination of ALL its options (colour AND size AND any other option): red in size M can have 3 while red in total has 20. Never state, add up, estimate or promise a quantity for a colour or a size alone, and never use a total over several combinations. Before you say a quantity or accept one («٩ قطع»), the customer must have chosen EVERY option of the product, and the number you give is that exact combination's «in stock» number from the tool result or the SHOP CATALOG (EXACT COMBINATIONS). While an option is still open, list the stock of each combination or ask which one. When the customer wants more than that combination has, say exactly how many it has and offer the other combinations that have stock. If you are not sure of a number, call get_product first.
             - ARABIC NUMBERS (strict): a counted noun agrees with its number: 1 is singular (قميص واحد), 2 is the dual (قميصين), 3 to 10 take the PLURAL (٣ قمصان, ٨ بناطيل, ٥ ساندوتشات: never «٨ قميص»), 11 and more take the singular (١١ قميص).
             - SELLING: a broad request: one short question that narrows it, then 2-3 matching products by name and price; once they choose, ask in one message for every option they did not choose (size, color...), then the delivery details. Answer a direct question first, then ask one question. «ضيفه» means add it to the order. Out of stock: the closest option or notify_back_in_stock. After they choose, one light add-on (recommend_related), once. Save what matters (remember_customer); order questions: order_status.
@@ -2513,6 +2530,7 @@ public class ChatService {
                 - CANCELLING: ask kindly in one short question why (maybe the shop can fix it: a delay, a size, the price). With a reason, call cancel_order with it: the shop calls them and the order is NOT cancelled. If they will not say, call cancel_order with noReason=true. Never say an order is cancelled unless cancel_order answered cancelled=true.
                 - SIZE OF WHAT THEY GET: when a product has a weight, volume, count or size («٣٠٠ جرام», «نصف توله», «١ لتر», «٦ قطع»: its "size" field, or in its name or options), say it with the price every time you list, recommend or quote it («بن محوج ٣٠٠ جرام بـ ١٥٠ جنيه»), so the customer knows what the price buys; never guess a size that is not written.
                 - KNOW YOUR PRODUCTS: questions about the product itself (material, washing, ironing, shrinking, fading, fit, what it goes with) you answer yourself from get_product plus common knowledge, honestly («عادةً»); never ask the owner about these.
+                - A COLOUR OR SIZE ON ITS OWN (strict): when the customer names only a colour or a size («عايز اللون البني», «مقاس L», «وأسود كمان», «اتنين بني») while an item is being discussed or ordered, it is an option of THAT item: answer for that item and its exact variant, and never search for a new product with that word. Colour words are colours: بني = brown, بيج = beige, كحلي = navy, زيتي = olive; «البني» is the colour brown and is never a person's name or a product.
                 - STOCK IS PER EXACT VARIANT (strict, no exceptions): a product's stock exists only for each exact combination of ALL its options (colour AND size AND any other option): red in size M can have 3 while red in total has 20. Never state, add up, estimate or promise a quantity for a colour or a size alone, and never use a total over several combinations. Before you say a quantity or accept one («٩ قطع»), the customer must have chosen EVERY option of the product, and the number you give is that exact combination's «in stock» number from the tool result or the SHOP CATALOG (EXACT COMBINATIONS). While an option is still open, list the stock of each combination or ask which one. When the customer wants more than that combination has, say exactly how many it has and offer the other combinations that have stock. If you are not sure of a number, call get_product first.
                 - ARABIC NUMBERS (strict): a counted noun agrees with its number: 1 is singular (قميص واحد), 2 is the dual (قميصين), 3 to 10 take the PLURAL (٣ قمصان, ٨ بناطيل, ٥ ساندوتشات: never «٨ قميص»), 11 and more take the singular (١١ قميص).
                 - WORDS: plain, correct everyday words of the customer's dialect (a sheet «بتتغسل», never «اتمسحت»); if they ask what a word meant or point at a mistake, say sorry briefly, explain, continue.
@@ -3080,7 +3098,7 @@ public class ChatService {
     private String identityRule(UUID tenantId, UUID conv, String channel, String externalId, UUID clientId, String shopName, String agentName) {
         StringBuilder b = new StringBuilder("\nWHO YOU ARE AND WHAT TO LEARN ABOUT THE CUSTOMER:\n");
         if (agentName != null && !agentName.isBlank())
-            b.append("- Your name is ").append(agentName.trim()).append(" and you work at ").append(shopName).append(". When you greet a customer for the first time, introduce yourself warmly (e.g. «وعليكم السلام، معاك ")
+            b.append("- Your name is ").append(agentName.trim()).append(" and you work at ").append(shopName).append(". When you greet a customer for the first time, introduce yourself warmly (e.g. «وعليكم السلام، مع حضرتك ")
              .append(agentName.trim()).append(" من ").append(shopName).append("»). If asked, you are ").append(agentName.trim()).append(" from the shop team; never say you are a bot unless asked directly.\n");
         boolean nameKnown = customerName(tenantId, conv, channel, externalId, clientId) != null;
         long asked = jdbc.sql("SELECT count(*) FROM chat.messages WHERE conversation_id = :c AND role = 'assistant'").param("c", conv).query(Long.class).single();
@@ -3099,7 +3117,7 @@ public class ChatService {
 
     /**
      * The instant answer to a first «السلام عليكم» / «أهلاً»: returns the salam, introduces the AI by its name when the shop gave one, and asks the customer's name when it is
-     * not known («وعليكم السلام 🌸 معاك محمد من ليلان ستور، أتشرف باسم حضرتك؟»). Without an agent name and with a known customer, the shop's own greeting (if any) is used.
+     * not known («وعليكم السلام 🌸 مع حضرتك محمد من ليلان ستور، أتشرف باسم حضرتك؟»). Without an agent name and with a known customer, the shop's own greeting (if any) is used.
      */
     private String introGreeting(UUID tenantId, UUID conv, String channel, String externalId, UUID clientId, String text) {
         var st = getSettings(tenantId);
@@ -3110,11 +3128,30 @@ public class ChatService {
         String shop = String.valueOf(settings.publicProfile(tenantId).getOrDefault("storeName", ""));
         StringBuilder g = new StringBuilder();
         if (agent == null || agent.isBlank()) g.append(own != null && !own.isBlank() ? own.trim() : ar ? "أهلاً بحضرتك 🌸" : "Hello! 🌸");
-        else if (ar) g.append(text.contains("السلام") || text.contains("سلام") ? "وعليكم السلام ورحمة الله 🌸 " : "أهلاً بحضرتك 🌸 ").append("معاك ").append(agent.trim()).append(" من ").append(shop);
+        else if (ar) g.append(text.contains("السلام") || text.contains("سلام") ? "وعليكم السلام ورحمة الله 🌸 " : "أهلاً بحضرتك 🌸 ").append("مع حضرتك ").append(agent.trim()).append(" من ").append(shop);
         else g.append("Hello! 🌸 I'm ").append(agent.trim()).append(" from ").append(shop).append('.');
         if (!nameKnown) g.append(ar ? (g.toString().trim().endsWith("🌸") ? " " : "، ") + "أتشرف باسم حضرتك؟" : " May I have your name?");
         else g.append(ar ? "، تحب أساعدك في إيه؟" : " How can I help you today?");
         return g.toString().replace(" ،", "،");
+    }
+
+    /**
+     * The first reply of every chat starts with who the customer is talking to, by the name the shop gave its assistant («مع حضرتك ندي من ليلان ستور 🌸»), and asks the customer's name when
+     * it is not known: a basic part of the first message, whatever the customer opened with and whatever the model wrote. Nothing is added when the shop gave no name or the reply already
+     * has it.
+     */
+    String withIntro(String answer, UUID tenantId, UUID conv, String channel, String externalId, UUID clientId, boolean ar) {
+        if (answer == null || answer.isBlank()) return answer;
+        String agent = (String) getSettings(tenantId).get("agentName");
+        if (agent == null || agent.isBlank()) return answer;
+        agent = agent.trim();
+        String shop = String.valueOf(settings.publicProfile(tenantId).getOrDefault("storeName", ""));
+        String out = answer;
+        if (!out.contains(agent)) out = (ar ? "مع حضرتك " + agent + " من " + shop + " 🌸" : "Hi, this is " + agent + " from " + shop + " 🌸") + "\n" + out;
+        boolean nameKnown = customerName(tenantId, conv, channel, externalId, clientId) != null;
+        String lower = out.toLowerCase(java.util.Locale.ROOT);
+        if (!nameKnown && !out.contains("اسم") && !lower.contains("your name")) out = out.stripTrailing() + "\n\n" + (ar ? "أتشرف باسم حضرتك؟" : "May I have your name?");
+        return out;
     }
 
     private String clientFacts(UUID clientId) {
