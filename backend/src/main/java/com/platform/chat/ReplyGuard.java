@@ -16,6 +16,8 @@ final class ReplyGuard {
         Rule(String name, String regex) { this(name, Pattern.compile(regex, Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE)); }
     }
 
+    static final String PAYMENT_CLAIM = "a payment received that no order shows as paid";
+
     private static final List<Rule> RULES = List.of(
             new Rule("a price rise", "(?:هيغلي|هيغلى|هتغلي|هتغلى|هيزيد|هتزيد|هيرتفع|هترتفع|هتبقى أغلى|هيبقى أغلى)|(?:price|prices)\\s+(?:will|are going to|is going to|are about to)\\s+(?:go up|increase|rise)|(?:prices?)\\s+(?:is|are)\\s+(?:going up|rising)"),
             new Rule("exporting or a brand", "(?:بيصدر|بتصدر|بنصدر|بيصدّر|مصدّر|مصدر\\s+بره|بره مصر)|\\bexport(?:s|ed|ing)?\\b"),
@@ -32,6 +34,9 @@ final class ReplyGuard {
             new Rule("a promised contact number", "(?:هديك|هبعتلك|هديلك)\\s+(?:رقم|نمرة)\\s+(?:التواصل|خدمة العملاء|الفريق|المسؤول)|i(?:'ll| will) give you (?:the|a) (?:number|contact)"),
                         // a payment method offered that the shop data does not list (card when only cash on delivery is enabled)
             new Rule("a payment method the shop does not offer", "(?:أو|او|ولا)\\s*(?:بال)?(?:بطاقة|بطاقه|كارت|فيزا|visa|card|credit card)|(?:or|and)\\s+(?:by\\s+)?(?:card|visa)"),
+            // a payment said to be received: only an order that really is PAID (its status is in ORDER ON FILE) makes this true
+            new Rule(PAYMENT_CLAIM, "(?:تم\\s+(?:استلام|تأكيد|تاكيد)\\s+(?:ال)?(?:دفع|دفعه|دفعة|مبلغ|تحويل|فلوس)|استلمنا\\s+(?:ال)?(?:دفع|دفعه|دفعة|مبلغ|تحويل|فلوس)|وصلنا\\s+(?:ال)?(?:تحويل|دفع|دفعه|دفعة|مبلغ|فلوس)|(?:ال)?(?:دفع|دفعه|دفعة)\\s+(?:تمت|تم|وصلت|اتأكدت)|اتأكد\\s+(?:ال)?دفع|"
+                    + "(?:your\\s+)?payment\\s+(?:was\\s+|has\\s+been\\s+|is\\s+)?(?:received|confirmed|successful|complete|went through|processed)|we(?:'ve| have)\\s+received\\s+(?:your\\s+)?(?:payment|transfer|money))"),
             // a gift, extra or service the shop never offered
             new Rule("an invented gift or extra", "(?:هدية\\s+(?:منّ?ا|من\\s+المحل|مننا)|تغليف\\s+(?:فاخر|هدايا|مجاني)|أكياس\\s+تغليف|اكياس\\s+تغليف|free gift|gift wrap)"),
             // refusing a job its tools do («I have no access to track orders»)
@@ -53,6 +58,7 @@ final class ReplyGuard {
             Matcher m = r.pattern().matcher(text);
             while (m.find()) {
                 if (facts != null && r.pattern().matcher(facts).find()) continue;
+                if (PAYMENT_CLAIM.equals(r.name()) && facts != null && facts.contains("payment status PAID")) continue;   // the order on file says it is paid
                 out.add(new Claim(r.name(), m.group()));
             }
         }

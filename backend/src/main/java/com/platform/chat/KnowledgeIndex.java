@@ -327,20 +327,18 @@ public class KnowledgeIndex {
      */
     public List<Hit> searchByWords(UUID tenantId, String query, String type, int k) {
         if (query == null || query.isBlank()) return List.of();
-        Set<String> words = new LinkedHashSet<>();
-        for (String w : FastAnswers.norm(query).split("[^\\p{L}\\p{N}]+")) {
-            String bare = w.replaceFirst("^(?:وال|بال|ال)", "");
-            if (bare.length() >= 3) words.add(bare);
-        }
-        if (words.isEmpty()) return List.of();
-        int need = words.size() >= 2 ? 2 : 1;
+        // each word of the query becomes a group of variants (its Arabic spelling normalised, its Arabic equivalent when it is common retail vocabulary typed in Latin letters or English), and a
+        // longer word may be one typo away: the old exact-word match is a subset of this
+        List<Set<String>> groups = new ArrayList<>(QueryNormalizer.groups(query));
+        groups.removeIf(g -> g.stream().noneMatch(v -> v.length() >= 3));
+        if (groups.isEmpty()) return List.of();
+        int need = groups.size() >= 2 ? 2 : 1;
         try {
             List<Map.Entry<Row, Integer>> scored = new ArrayList<>();
             for (Row r : rows(tenantId)) {
                 if (type != null && !type.equals(r.type())) continue;
                 String text = FastAnswers.norm((r.title() == null ? "" : r.title()) + " " + (r.body() == null ? "" : r.body()));
-                int n = 0;
-                for (String w : words) if (text.contains(w)) n++;
+                int n = QueryNormalizer.matched(groups, text);
                 if (n >= need) scored.add(Map.entry(r, n));
             }
             scored.sort(Map.Entry.<Row, Integer>comparingByValue().reversed());
@@ -349,7 +347,7 @@ public class KnowledgeIndex {
             for (var e : scored) {
                 Row r = e.getKey();
                 if (out.size() >= k) break;
-                if (seen.add(r.type() + "|" + r.sourceId())) out.add(new Hit(r.type(), r.sourceId(), r.title(), r.body(), e.getValue() / (double) words.size()));
+                if (seen.add(r.type() + "|" + r.sourceId())) out.add(new Hit(r.type(), r.sourceId(), r.title(), r.body(), e.getValue() / (double) groups.size()));
             }
             return out;
         } catch (RuntimeException e) {
@@ -357,6 +355,46 @@ public class KnowledgeIndex {
             return List.of();
         }
     }
+
+    /**
+     * The products whose WHOLE name the query contains (spelling normalised, Latin-letter and English retail words mapped to Arabic, one typo allowed on longer words), best match first.
+     * A customer who names a product wants that product: this is exact evidence, so the caller puts these first instead of hoping the vector search ranks them. A one-word name must be at least
+     * six letters (a common word like «شنطة» or «جاكيت» alone names a category, not a product). Tenant-scoped like every read here.
+     */
+    public List<Hit> identityHits(UUID tenantId, String query, int k) {
+        if (query == null || query.isBlank()) return List.of();
+        List<Set<String>> groups = QueryNormalizer.groups(query);
+        if (groups.isEmpty()) return List.of();
+        try {
+            List<Map.Entry<Row, Integer>> found = new ArrayList<>();
+            for (Row r : rows(tenantId)) {
+                if (!"PRODUCT".equals(r.type()) || r.title() == null) continue;
+                List<String> name = QueryNormalizer.nameTokens(r.title());
+                if (QueryNormalizer.namedIn(groups, name)) found.add(Map.entry(r, name.size()));
+            }
+            found.sort(Map.Entry.<Row, Integer>comparingByValue().reversed());
+            List<Hit> out = new ArrayList<>();
+            Set<String> seen = new LinkedHashSet<>();
+            for (var e : found) if (out.size() < k && seen.add(e.getKey().sourceId())) out.add(new Hit(e.getKey().type(), e.getKey().sourceId(), e.getKey().title(), e.getKey().body(), 1.0));
+            return out;
+        } catch (RuntimeException e) {
+            log.warn("Identity search failed: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    /** Reciprocal rank fusion of several rankings of the same kind of item: an item ranked high by any of them, or by several, comes first (k = 60, the usual constant). Pure. */
+    static <T> List<T> rrf(List<List<T>> rankings, int limit) {
+        Map<T, Double> score = new java.util.LinkedHashMap<>();
+        for (List<T> r : rankings) for (int i = 0; i < r.size(); i++) score.merge(r.get(i), 1.0 / (60 + i + 1), Double::sum);
+        return score.entrySet().stream().sorted(Map.Entry.<T, Double>comparingByValue().reversed()).limit(limit).map(Map.Entry::getKey).toList();
+    }
+
+    /** Whether the search by meaning is combined with the word search by rank fusion in shop_knowledge (app.ai.rag.hybrid). Off until it has been measured with the production embedding. */
+    public boolean hybrid() { return hybrid; }
+
+    @org.springframework.beans.factory.annotation.Value("${app.ai.rag.hybrid:false}")
+    private boolean hybrid;
 
     /** The products most like this one (from its stored vector, no call to the provider), best first; empty when off or not indexed yet. */
     public List<String> similarProducts(UUID tenantId, String slug, int k) {
