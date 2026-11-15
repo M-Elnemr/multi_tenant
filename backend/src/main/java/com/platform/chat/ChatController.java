@@ -90,8 +90,9 @@ public class ChatController {
     }
 
     @GetMapping("/api/v1/shop/chat/history")
-    public List<Map<String, Object>> history(@RequestParam String conversationId) {
+    public List<Map<String, Object>> history(@RequestParam String conversationId, @RequestParam(required = false) Long around) {
         if (!CONV_ID.matcher(conversationId).matches()) return List.of();
+        if (around != null) return chat.historyAround(StoreContext.tenantId(), "WEB", conversationId, around, 15, 25);   // the page around an old message the customer is jumping to (a quote)
         var h = new java.util.ArrayList<>(chat.history(StoreContext.tenantId(), "WEB", conversationId));
         if (!h.isEmpty() && "assistant".equals(h.get(h.size() - 1).get("role")) && h.get(h.size() - 1).get("content") instanceof String c) {   // the buttons of the question still waiting for its answer
             var last = new java.util.LinkedHashMap<>(h.get(h.size() - 1));

@@ -46,3 +46,7 @@ Text detection is deliberately narrow: only an answer with no tool call, at most
 
 ## Reply to a specific message (round 3)
 Request lifecycle addition: after the customer's message is stored, a reply reference (our id from the website, or the platform's id/quote from WhatsApp, Messenger, Instagram) is validated against tenant and conversation and saved (`reply_to_id`, `reply_to_mid`, `reply_quote`); the quoted message is read by primary key and written as a labelled "MESSAGE BEING REPLIED TO" block at the end of the system prompt (after the cache break). Platform message ids of everything we send and receive go to `chat.message_mids`. Details, API, limits: `docs/ai-reply-context.md`.
+
+
+## Round 4 additions
+Burst lines reach the handler one by one (`InboundBurst.Line`), each with its platform id and reply reference; `reply_refs` stores them in order; the reply block names the line of each quote. The prompt gets, at its end and in no customer turn: the reply block and, for chats longer than the window, the earlier-messages digest. The money check is built from the prompt **without** those two parts and without the quoted shop/assistant messages (their amounts are old); the customer's own earlier words stay allowed. WhatsApp Cloud answers to a threaded message are contextual replies. See `docs/ai-reply-context.md`.

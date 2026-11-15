@@ -14,7 +14,9 @@ final class ReplyContext {
     private ReplyContext() {}
 
     /** One quoted message with the messages beside it and the products its text names. */
-    record Item(MessageReplies.Quoted quoted, List<MessageReplies.Quoted> around, List<String> products, boolean insideHistory) {}
+    record Item(MessageReplies.Quoted quoted, List<MessageReplies.Quoted> around, List<String> products, boolean insideHistory, String line) {
+        Item(MessageReplies.Quoted quoted, List<MessageReplies.Quoted> around, List<String> products, boolean insideHistory) { this(quoted, around, products, insideHistory, null); }
+    }
 
     private static final DateTimeFormatter WHEN = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.of("Africa/Cairo"));
 
@@ -41,9 +43,13 @@ final class ReplyContext {
         if (items.isEmpty() && !unavailable) return "";
         StringBuilder b = new StringBuilder("\nTHE CUSTOMER IS REPLYING TO A SPECIFIC EARLIER MESSAGE (they used «reply» on it). Their latest message is about THAT message, not necessarily about the one just before it.\n");
         int n = 0;
+        int lines = latest == null ? 0 : (int) latest.lines().filter(l -> !l.isBlank()).count();
+        boolean burst = lines > 1;   // several customer lines in one turn: each reference belongs to ITS line
         for (Item it : items) {
             var q = it.quoted();
-            b.append(items.size() > 1 ? "MESSAGE BEING REPLIED TO (" + (++n) + " of " + items.size() + "):\n" : "MESSAGE BEING REPLIED TO:\n");
+            String head = items.size() > 1 ? "MESSAGE BEING REPLIED TO (" + (++n) + " of " + items.size() + ")" : "MESSAGE BEING REPLIED TO";
+            if (burst && it.line() != null && !it.line().isBlank()) head += ", quoted by the customer line «" + MessageReplies.clip(it.line(), 120) + "»";
+            b.append(head).append(":\n");
             b.append("  ORIGINAL MESSAGE SENDER: ").append(sender(q.sender())).append("\n");
             if (q.at() != null) b.append("  SENT: ").append(WHEN.format(q.at())).append(" (Cairo time)\n");
             b.append("  ORIGINAL MESSAGE CONTENT: ").append(content(q)).append("\n");
@@ -54,6 +60,8 @@ final class ReplyContext {
                 for (var m : it.around()) b.append("  - ").append(shortSender(m.sender())).append(": ").append(content(m)).append("\n");
             }
         }
+        if (burst && !items.isEmpty() && items.stream().anyMatch(i -> i.line() != null && !i.line().isBlank()) && (items.size() < lines || unavailable))
+            b.append("Only the customer lines named above quote an earlier message; the customer's other lines do not reply to anything: do not apply a quote to a line that has none.\n");
         if (unavailable) b.append("A MESSAGE THE CUSTOMER REPLIED TO IS NOT AVAILABLE (deleted, too old to find, or never seen by this system). Never guess what it said and never mention ids or errors. If their message cannot be understood without it, ask ONE short question: which product or which message do they mean.\n");
         if (latest != null && !latest.isBlank()) b.append("CUSTOMER'S LATEST MESSAGE (the reply itself): «").append(MessageReplies.clip(latest.strip(), 300)).append("»\n");
         b.append("""

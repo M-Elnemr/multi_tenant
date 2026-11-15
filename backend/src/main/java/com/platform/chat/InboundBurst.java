@@ -16,6 +16,9 @@ import java.util.function.Consumer;
  * This holds a customer's messages for a short quiet window, joins them, and answers once. The window restarts with every new message but never runs past {@code maxMs} in total.
  */
 final class InboundBurst {
+    /** One line of a burst as the handler gets it: its text (empty for an unreadable photo) and what came with it. */
+    record Line(String text, Object meta) {}
+
     private static final int MAX_CHARS = 1000;   // what one model request takes from a customer message
 
     private static final class Entry {
@@ -99,7 +102,8 @@ final class InboundBurst {
                 if (all.length() > 0) all.append('\n');
                 all.append(part, 0, Math.min(part.length(), MAX_CHARS - all.length()));
             }
-            metas = new ArrayList<>(entry.metas);
+            metas = new ArrayList<>();
+            for (int i = 0; i < entry.parts.size(); i++) metas.add(new Line(entry.parts.get(i) == null ? "" : entry.parts.get(i), entry.metas.get(i)));
         }
         worker.execute(() -> entry.fire.accept(all.toString(), metas));
     }

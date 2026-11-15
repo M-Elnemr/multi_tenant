@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 @Component
 @Primary
 public class FakeMetaGraph implements MetaGraph {
+    public static volatile boolean FAIL_CONTEXT_SEND = false;
     public record Sent(String path, String token, Map<String, Object> body) {}
 
     public static final List<Sent> SENT = new ArrayList<>();
@@ -27,7 +28,7 @@ public class FakeMetaGraph implements MetaGraph {
     public static volatile boolean FAIL_TEMPLATE_SEND = false;
     public static volatile boolean FAIL_TEXT_SEND = false;
 
-    public static synchronized void reset() { SENT.clear(); TEMPLATE_STATUS = "APPROVED"; FAIL_TEMPLATE_SEND = false; FAIL_TEXT_SEND = false; }
+    public static synchronized void reset() { FAIL_CONTEXT_SEND = false; SENT.clear(); TEMPLATE_STATUS = "APPROVED"; FAIL_TEMPLATE_SEND = false; FAIL_TEXT_SEND = false; }
 
     @Override
     public synchronized Map<String, Object> get(String path, String token) {
@@ -67,6 +68,7 @@ public class FakeMetaGraph implements MetaGraph {
         if (path.endsWith("/photos")) { SENT.add(new Sent(path, token, body)); return Map.of("id", "photo-1", "post_id", "page_post-1"); }
         if ("template".equals(body.get("type")) && FAIL_TEMPLATE_SEND) throw new MetaException("Template send failed");
         if (FAIL_TEXT_SEND && ("text".equals(body.get("type")) || body.get("message") instanceof Map<?, ?> mm && mm.containsKey("text"))) throw new MetaException("(#10) Message failed to send");
+        if (FAIL_CONTEXT_SEND && body.containsKey("context")) throw new MetaException("(#100) Invalid context");   // a platform that refuses a quoted reply
         SENT.add(new Sent(path, token, body));
         String n = "-" + SENT.size();   // each sent message has its own id, like the platform's
         if (path.startsWith("me/")) return Map.of("ok", true, "recipient_id", "r", "message_id", "mid.TEST" + n);

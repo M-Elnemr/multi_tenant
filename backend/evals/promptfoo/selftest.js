@@ -52,4 +52,12 @@ expect('ambiguous: question without price passes', run(metric(937, 'asks and inv
 expect('ambiguous: invented price fails', run(metric(937, 'asks and invents no price'), out('بـ 250 جنيه')), false);
 expect('rejected reference passes', run(metric(938, 'backend refused the reference'), out('أهلا', '[rejected: INVALID_REPLY_REFERENCE]')), true);
 expect('an answer to a rejected reference fails', run(metric(938, 'backend refused the reference'), out('أهلا', 'السعر 250')), false);
+
+// ---- round 3b ----
+expect('corrected name after a reply passes', run(metric(942, 'uses the corrected name'), out('اتفضل يا محمود')), true);
+expect('old name after a reply fails', run(metric(942, 'uses the corrected name'), out('اتفضل يا احمد')), false);
+expect('budget+size recall passes', run(metric(943, 'recalls budget and size'), out('ميزانيتك ٣٠٠ ومقاسك M')), true);
+expect('budget amnesia fails', run(metric(943, 'recalls budget and size'), out('ميزانيتك كام؟')), false);
+expect('arabizi not-understood fails', run(metric(941, 'does not say it did not understand'), out('مش فاهم')), false);
+expect('beyond-window memory case has 32 turns', JSON.parse(t(943).vars.turns).length, 32);
 console.log(bad ? `${bad} assertion self-test(s) FAILED` : 'all assertion self-tests passed'); process.exit(bad ? 1 : 0);

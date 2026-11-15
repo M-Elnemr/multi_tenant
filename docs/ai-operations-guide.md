@@ -47,3 +47,10 @@ Set `LANGFUSE_ENABLED=false` (or unset) and restart: telemetry code becomes no-o
 - Migration `V93__message_replies.sql` runs with Flyway on start. Rollback script: `docs/rollback/V93_message_replies_rollback.sql` (run by hand, then delete version 93 from `flyway_schema_history`). Messages are never changed by either.
 - No new configuration. Reply spans: `replyContext` appears in the per-reply timeline (`Reply timeline:` log line).
 - Troubleshooting: a customer's native reply that the assistant treats as "not available" means we hold no copy of the quoted message (sent before this feature, from the phone itself, or an owner message to Messenger/Instagram). Rollback of the feature: revert the commit; the extra columns/table can stay.
+
+
+## Round 4 operations notes
+- Migration `V94__message_reply_refs.sql` (one nullable column) runs with Flyway on the next start; rollback `docs/rollback/V94_message_reply_refs_rollback.sql`. Both V93 and V94 were verified (migrate, re-run, rollback, re-migrate) on a copy of an older database with 1306 messages. This work did not touch `platform_dev` (V93 was applied there in round 3; V94 will be applied the next time that app starts).
+- WhatsApp Cloud: the first text bubble of an answer to a *threaded* customer message is sent as a contextual reply (`context.message_id`). If WhatsApp refuses it the text is resent plainly (look for the debug line "Quoted WhatsApp reply refused"). Nothing else changes in sending.
+- `GET /api/v1/shop/chat/history?...&around=ID` is public and unthrottled like the history endpoint it extends.
+- Troubleshooting: a customer reply the assistant calls "not available" means we hold neither the message nor a platform quote (see ai-reply-context.md). The digest and the reply block add to the end of the system prompt only (spans `replyContext` and `earlierDigest` in the reply timeline).

@@ -59,7 +59,14 @@ public class ChatService {
     /** The reply input of a burst of inbound lines, from the metas the burst collected (in order). */
     static ReplyInput input(List<Object> metas) {
         List<ReplyRef> refs = new ArrayList<>(); List<String> mids = new ArrayList<>();
-        for (Object o : metas) if (o instanceof InboundMeta m) { if (m.reply() != null && !m.reply().empty()) refs.add(m.reply()); if (m.mid() != null && !m.mid().isBlank()) mids.add(m.mid()); }
+        for (Object o : metas) {
+            InboundBurst.Line line = o instanceof InboundBurst.Line l ? l : null;
+            Object meta = line != null ? line.meta() : o;
+            if (meta instanceof InboundMeta m) {
+                if (m.reply() != null && !m.reply().empty()) refs.add(line == null ? m.reply() : m.reply().withLine(line.text()));   // each line keeps ITS reference, in the order the customer sent them
+                if (m.mid() != null && !m.mid().isBlank()) mids.add(m.mid());
+            }
+        }
         return new ReplyInput(refs, mids);
     }
 
@@ -70,6 +77,30 @@ public class ChatService {
 
     /** The names of the products the quoted message talks about, for the knowledge tool of this reply (so «does it shrink?» searches the right product). */
     static final ThreadLocal<List<String>> REPLY_PRODUCTS = new ThreadLocal<>();
+
+    /**
+     * What the reply context and the earlier-messages digest added to the prompt of this reply, so the money check can tell it from shop data: an amount in an OLD quoted message of the shop or
+     * the assistant is not a current price and is never an allowed amount by itself (it counts only when a tool or the catalog gives the same amount now), while what the CUSTOMER wrote (their
+     * budget, their own quoted message) is allowed like any of their messages.
+     */
+    static final class PromptExtras {
+        final StringBuilder blocks = new StringBuilder();
+        final java.util.Set<String> shopTexts = new java.util.HashSet<>();
+        final List<String> customerTexts = new ArrayList<>();
+
+        void quoted(MessageReplies.Quoted q) {
+            if (q == null || q.text() == null || q.text().isBlank()) return;
+            if ("customer".equals(q.sender())) customerTexts.add(q.text()); else shopTexts.add(q.text());
+        }
+
+        boolean isQuotedShopText(String turnText) {
+            if (turnText == null) return false;
+            for (String s : shopTexts) if (turnText.equals(s) || (s.endsWith("…") && turnText.startsWith(s.substring(0, s.length() - 1)))) return true;
+            return false;
+        }
+    }
+
+    static final ThreadLocal<PromptExtras> EXTRAS = new ThreadLocal<>();
 
     /** A line holding only this mark separates two messages: the assistant answers two unrelated topics in two short messages on WhatsApp, Messenger and Instagram. */
     static final String SPLIT = "⸻";
@@ -457,6 +488,27 @@ public class ChatService {
         return rows;
     }
 
+    /**
+     * A page of this chat around message {@code id}: up to {@code before} messages before it, itself, and up to {@code after} after it (two bounded indexed reads, never the whole chat). Empty when
+     * the message is not part of THIS chat of THIS shop (deleted, never existed, someone else's: the caller cannot tell which).
+     */
+    public List<Map<String, Object>> historyAround(UUID tenantId, String channel, String externalId, long id, int before, int after) {
+        UUID conv = jdbc.sql("SELECT id FROM chat.conversations WHERE tenant_id = :t AND channel = :c AND external_id = :e").param("t", tenantId).param("c", channel).param("e", externalId).query(UUID.class).optional().orElse(null);
+        if (conv == null || replies == null || replies.load(tenantId, conv, id) == null) return List.of();
+        String cols = "SELECT m.id, m.role, m.content, m.media_url FROM chat.messages m WHERE m.conversation_id = :c AND m.id ";
+        List<Map<String, Object>> rows = new ArrayList<>(com.platform.shared.Rows.camel(jdbc.sql(cols + "<= :i ORDER BY m.id DESC LIMIT :n").param("c", conv).param("i", id).param("n", Math.max(1, Math.min(before, 40)) + 1).query().listOfRows()));
+        java.util.Collections.reverse(rows);
+        rows.addAll(com.platform.shared.Rows.camel(jdbc.sql(cols + "> :i ORDER BY m.id ASC LIMIT :n").param("c", conv).param("i", id).param("n", Math.max(0, Math.min(after, 40))).query().listOfRows()));
+        Map<Long, Map<String, Object>> quotes = replies.forScreens(tenantId, conv, rows.stream().map(r -> ((Number) r.get("id")).longValue()).toList());
+        for (int i = 0; i < rows.size(); i++) {
+            Map<String, Object> r = new java.util.LinkedHashMap<>(rows.get(i));
+            Map<String, Object> q = quotes.get(((Number) r.get("id")).longValue());
+            if (q != null) r.put("replyTo", q);
+            rows.set(i, r);
+        }
+        return rows;
+    }
+
     public void reset(UUID tenantId, String channel, String externalId) {
         jdbc.sql("DELETE FROM chat.conversations WHERE tenant_id = :t AND channel = :c AND external_id = :e").param("t", tenantId).param("c", channel).param("e", externalId).update();
     }
@@ -471,7 +523,7 @@ public class ChatService {
     public Reply reply(UUID tenantId, String channel, String externalId, UUID clientId, String message, String displayName, ReplyInput in) {
         ReplyTimeline.begin();
         try { return replyTimed(tenantId, channel, externalId, clientId, message, displayName, in == null ? ReplyInput.NONE : in); }
-        finally { ReplyTimeline.finish(channel, externalId); REPLY_PRODUCTS.remove(); }
+        finally { ReplyTimeline.finish(channel, externalId); REPLY_PRODUCTS.remove(); EXTRAS.remove(); }
     }
 
     private Reply replyTimed(UUID tenantId, String channel, String externalId, UUID clientId, String message, String displayName, ReplyInput in) {
@@ -492,7 +544,7 @@ public class ChatService {
         long userMsgId = jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'user', :x) RETURNING id").param("c", conv).param("x", text).query(Long.class).single();
         if (replies != null) {
             try {
-                if (!refs.isEmpty()) replies.attach(tenantId, conv, userMsgId, refs.get(0), false);
+                if (!refs.isEmpty()) replies.attachAll(tenantId, conv, userMsgId, refs);   // every line of a burst keeps its own reference
                 for (String mid : in.mids()) replies.recordMid(tenantId, conv, userMsgId, mid, null);
             } catch (RuntimeException e) { log.warn("Reply reference not saved: {}", e.toString()); }
         }
@@ -522,8 +574,13 @@ public class ChatService {
         ReplyTimeline.mark("prep");
         String system = systemPrompt(tenantId, conv, clientId, channel, externalId);
         long replyStart = System.nanoTime();
-        try { system += replyContextBlock(tenantId, conv, userMsgId, refs, text, windowFrom); } catch (RuntimeException e) { log.warn("Reply context skipped: {}", e.toString()); }
+        PromptExtras extras = new PromptExtras();
+        EXTRAS.set(extras);
+        try { String rc = replyContextBlock(tenantId, conv, userMsgId, refs, text, windowFrom, extras); system += rc; extras.blocks.append(rc); } catch (RuntimeException e) { log.warn("Reply context skipped: {}", e.toString()); }
         ReplyTimeline.span("replyContext", ReplyTimeline.since(replyStart));
+        long digestStart = System.nanoTime();
+        try { String dg = earlierCustomerDigest(conv, windowFrom, extras); system += dg; extras.blocks.append(dg); } catch (RuntimeException e) { log.warn("Earlier-messages digest skipped: {}", e.toString()); }
+        ReplyTimeline.span("earlierDigest", ReplyTimeline.since(digestStart));
         ReplyTimeline.mark("prompt");
         if (!system.contains("ALL PRODUCTS (")) system += productsForMessage(tenantId, text);
         List<ToolDef> tools = tools();
@@ -709,28 +766,60 @@ public class ChatService {
     }
 
     /**
+     * What the customer said BEFORE the messages the model is given as history (the window is the last {@code AI_HISTORY} messages): their first few messages and the latest ones that fell out of
+     * the window, without fillers («تمام», «ok»), each cut at 220 characters. Name, size, colour, quantity, budget and corrections stated early would otherwise be lost. Two bounded indexed reads,
+     * no model call; empty while the whole chat fits in the window. It sits at the end of the system prompt (after the cache break) and in no turn, so the guards never read it as a new request.
+     */
+    String earlierCustomerDigest(UUID conv, long windowFrom) { return earlierCustomerDigest(conv, windowFrom, new PromptExtras()); }
+
+    String earlierCustomerDigest(UUID conv, long windowFrom, PromptExtras extras) {
+        if (windowFrom <= 0) return "";
+        String sql = "SELECT id, content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id < :w ORDER BY id %s LIMIT :n";
+        java.util.TreeMap<Long, String> picked = new java.util.TreeMap<>();
+        for (var r : jdbc.sql(sql.formatted("ASC")).param("c", conv).param("w", windowFrom).param("n", 4).query().listOfRows()) picked.put(((Number) r.get("id")).longValue(), String.valueOf(r.get("content")));
+        for (var r : jdbc.sql(sql.formatted("DESC")).param("c", conv).param("w", windowFrom).param("n", 12).query().listOfRows()) picked.put(((Number) r.get("id")).longValue(), String.valueOf(r.get("content")));
+        StringBuilder b = new StringBuilder();
+        for (String raw : picked.values()) {
+            String t = raw.strip().replaceAll("\\s+", " ");
+            String n = FastAnswers.norm(t);
+            if (t.length() < 4 || n.isEmpty() || YES.contains(n) || FILLER.contains(n) || FastAnswers.emojiOnly(t)) continue;
+            b.append("  - «").append(clip(t, 220)).append("»\n");
+            extras.customerTexts.add(t);   // their own words: allowed like any of their messages
+        }
+        if (b.length() == 0) return "";
+        return "\nEARLIER IN THIS CHAT (the customer's own messages from BEFORE the conversation you see, oldest first: their first messages and the latest ones that no longer fit). What they say here still counts: name, size, colour, quantity, budget, corrections, what they decided. "
+                + "If two statements conflict the later one wins; never ask again for something stated here. This is NOT current shop data: prices, stock and offers still come only from the tools.\n" + b;
+    }
+
+    /**
      * The «MESSAGE BEING REPLIED TO» part of the prompt: the quoted message read straight from the database by its validated reference (one indexed read, however old it is), the
      * messages beside it when it is older than the history window, and the products its text names. Nothing here calls a model.
      */
-    private String replyContextBlock(UUID tenantId, UUID conv, long userMsgId, List<ReplyRef> refs, String latest, long windowFrom) {
+    private String replyContextBlock(UUID tenantId, UUID conv, long userMsgId, List<ReplyRef> refs, String latest, long windowFrom, PromptExtras extras) {
         if (replies == null) return "";
-        List<MessageReplies.Quoted> found = new ArrayList<>();
+        List<MessageReplies.LineQuote> found = new ArrayList<>();
         boolean missing = false;
-        for (ReplyRef r : refs) { var q = replies.resolve(tenantId, conv, r, false); if (q == null) missing = true; else found.add(q); }
-        if (refs.isEmpty()) { var q = replies.quotedBy(tenantId, conv, userMsgId); if (q != null) found.add(q); }   // a message stored with its reference and processed later (queue, retry)
+        for (ReplyRef r : refs) { var q = replies.resolve(tenantId, conv, r, false); if (q == null) missing = true; else found.add(new MessageReplies.LineQuote(r.line(), q)); }
+        if (refs.isEmpty()) {   // a message stored with its references and processed later (queue, retry): they come from the row
+            found.addAll(replies.quotedAll(tenantId, conv, userMsgId));
+            if (found.isEmpty()) { var q = replies.quotedBy(tenantId, conv, userMsgId); if (q != null) found.add(new MessageReplies.LineQuote(null, q)); }
+        }
         if (found.isEmpty() && !missing) return "";
         FactCheck.Shop shop = shopView(tenantId);
         List<FactCheck.Named> names = shop.names();
         List<ReplyContext.Item> items = new ArrayList<>();
         List<String> productNames = new ArrayList<>();
-        for (var q : found) {
+        for (var lq : found) {
+            var q = lq.quoted();
             List<String> products = new ArrayList<>();
             for (var m : FactCheck.mentions(q.text() == null ? "" : q.text(), names)) {
                 names.stream().filter(x -> x.slug().equals(m.slug())).findFirst().ifPresent(x -> { String label = x.name() + " [" + x.slug() + "]"; if (!products.contains(label)) { products.add(label); productNames.add(x.name()); } });
             }
             boolean inside = q.messageId() != null && windowFrom > 0 && q.messageId() >= windowFrom;   // the model already has it as history: labelled, not repeated
             List<MessageReplies.Quoted> around = q.messageId() == null || inside ? List.of() : replies.around(tenantId, conv, q.messageId(), 2, 2);
-            items.add(new ReplyContext.Item(q, around, products, inside));
+            extras.quoted(q);
+            around.forEach(extras::quoted);
+            items.add(new ReplyContext.Item(q, around, products, inside, lq.line()));
         }
         REPLY_PRODUCTS.set(productNames);
         return ReplyContext.block(items, missing, latest);
@@ -893,12 +982,19 @@ public class ChatService {
      */
     private String converse(Ctx ctx, ChannelAi.Routed routed, String system, List<Turn> turns, List<ToolDef> tools, List<AiUsageService.Round> rounds, boolean arabic) {
         MoneyGuard.Allowed allowed = new MoneyGuard.Allowed(((Number) getSettings(ctx.tenantId()).get("maxDiscountPct")).intValue());
-        allowed.addText(system);
-        allowed.addFact(section(system, "SHOP FACTS:", 20_000) + section(system, CATALOG_HEADING, 20_000));
-        allowed.addPrices(section(system, CATALOG_HEADING, 20_000));   // product names like «طقم ملايات قطن مصري» are the shop's own words
+        PromptExtras extras = EXTRAS.get();
+        String base = extras == null || extras.blocks.length() == 0 ? system : system.replace(extras.blocks.toString(), "");   // the reply block and the digest are not shop data
+        allowed.addText(base);
+        allowed.addFact(section(base, "SHOP FACTS:", 20_000) + section(base, CATALOG_HEADING, 20_000));
+        allowed.addPrices(section(base, CATALOG_HEADING, 20_000));   // product names like «طقم ملايات قطن مصري» are the shop's own words
         var real = shopPrices(ctx.tenantId());
         allowed.addShopPrices(real.prices(), real.steps());
-        for (Turn t : turns) { allowed.addText(t.text()); if ("user".equals(t.role())) allowed.addFact(t.text()); }
+        for (Turn t : turns) {
+            if (extras != null && !"user".equals(t.role()) && extras.isQuotedShopText(t.text())) continue;   // an old message the customer replied to: its amounts are not current prices
+            allowed.addText(t.text());
+            if ("user".equals(t.role())) allowed.addFact(t.text());
+        }
+        if (extras != null) for (String c : extras.customerTexts) { allowed.addText(c); allowed.addFact(c); }   // what the customer themselves wrote earlier
         String answer = modelLoop(ctx, routed, system, turns, tools, rounds, allowed);
         if (answer == null || answer.isBlank() || ctx.summary()[0] != null) return answer;   // a code-written summary replaces the model's words anyway
         // a draft that stalls or only offers to show will be rewritten by the checks anyway: no review first, so the rewrite has the time

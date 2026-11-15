@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  SWIPE, excerpt, mergeMessages, needsOlder, senderLabelKey, senderOf, swipeEnds, swipeMove, swipeOffset, swipeProgress, swipeSign, swipeStart, targetFromMessage, targetOf,
+  SWIPE, excerpt, mergeMessages, withOlderWindow, needsOlder, senderLabelKey, senderOf, swipeEnds, swipeMove, swipeOffset, swipeProgress, swipeSign, swipeStart, targetFromMessage, targetOf,
   type ReplyTarget,
 } from "./reply.ts";
 
@@ -126,4 +126,23 @@ test("pages merge oldest first without duplicates, so a refresh keeps the older 
   const merged = mergeMessages([{ id: 1, v: "old" }, { id: 2, v: "old" }], [{ id: 2, v: "new" }, { id: 3, v: "new" }]);
   assert.deepEqual(merged.map((m) => m.id), [1, 2, 3]);
   assert.equal(merged[1].v, "new");
+});
+
+test("a jumped-to window goes before the loaded page, never duplicates a loaded message, and says when it may not touch the page", () => {
+  const m = (id: number) => ({ id, content: "m" + id });
+  // far away: a separator before the loaded page
+  const far = withOlderWindow([m(10), m(11), m(12)], [m(100), m(101)]);
+  assert.deepEqual(far.items.map((x) => x.id), [10, 11, 12, 100, 101]);
+  assert.equal(far.gapBefore, 3);
+  // the window reaches the loaded page: no separator, no duplicate
+  const near = withOlderWindow([m(98), m(99), m(100)], [m(100), m(101)]);
+  assert.deepEqual(near.items.map((x) => x.id), [98, 99, 100, 101]);
+  assert.equal(near.gapBefore, -1);
+  // nothing older (everything is already loaded) or no window: unchanged
+  assert.equal(withOlderWindow([m(100)], [m(100), m(101)]).items.length, 2);
+  assert.equal(withOlderWindow([], [m(1)]).gapBefore, -1);
+  // optimistic messages without an id are kept as they are
+  const mixed = withOlderWindow([m(5)], [{ content: "sending…" }, m(100)] as { id?: number; content: string }[]);
+  assert.equal(mixed.items.length, 3);
+  assert.equal(mixed.items[1].content, "sending…");
 });

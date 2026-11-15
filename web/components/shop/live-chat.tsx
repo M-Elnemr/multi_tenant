@@ -11,7 +11,7 @@ import { Icon } from "@/components/icons";
 import { AgentAvatar, DEFAULT_AGENT_AVATAR, isAvatarId } from "@/components/shop/agent-avatar";
 import { ReplyButton, ReplyPreview, ReplyQuote, SwipeIcon } from "@/components/reply/reply-bits";
 import { useSwipeReply } from "@/components/reply/use-swipe-reply";
-import { targetFromMessage, targetOf, type Quoted, type ReplyTarget } from "@/lib/reply";
+import { targetFromMessage, targetOf, withOlderWindow, type Quoted, type ReplyTarget } from "@/lib/reply";
 
 type Product = { name: string; slug: string; priceMinor: number; currency: string; imageUrl?: string; imageMediaBase?: string; imageMediaExt?: string };
 type Order = { orderNumber: string; totalMinor: number; currency: string; trackPath?: string; paymentPath?: string; whatsappUrl?: string; whatsappConfirmed?: boolean; test?: boolean };
@@ -91,11 +91,12 @@ function pretty(content: string, photo: string, voice: string): string {
  * The conversation, shared by the storefront chat window and the owner's test screen (same messages, different endpoint). {@code widget} is the storefront look: round avatar, pill
  * suggestions, a pill-shaped input with emoji, photo and voice note. {@code sendMedia} switches the photo and voice buttons on.
  */
-export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, greeting, agentAvatar = DEFAULT_AGENT_AVATAR, live = false, widget = false, replies = false, className = "" }: {
+export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, greeting, agentAvatar = DEFAULT_AGENT_AVATAR, live = false, widget = false, replies = false, loadAround, className = "" }: {
   send: (text: string, replyToId?: number | null) => Promise<Reply>; sendMedia?: (file: File, caption: string) => Promise<Reply>;
   load: () => Promise<History>; onReset?: () => Promise<void>; onTeach?: (question: string, answer: string) => void; onReply?: () => void; greeting: string;
   agentAvatar?: string; live?: boolean; widget?: boolean; className?: string;
   /** Let the customer reply to a specific message (swipe, or the reply button): only the storefront chat, whose backend takes the reference. */ replies?: boolean;
+  /** Fetches the page of the chat around an old message (the chat shows the newest 60): used when a quote points to a message that is not on the screen. */ loadAround?: (id: number) => Promise<History>;
 }) {
   const { t, locale } = useI18n();
   const [msgs, setMsgs] = useState<Msg[]>([]);
@@ -176,15 +177,33 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
     void drain();
   };
 
-  /** Scrolls to a message of this chat and marks it for a moment (the chat keeps its last 60 messages: an older original cannot be shown). */
+  /** Scrolls to a message of this chat and marks it for a moment. A message that is not on the screen is fetched with the page around it (one bounded request), never the whole chat. */
   const [flash, setFlash] = useState<number | null>(null);
-  const jump = (id: number) => {
+  const [windowMsgs, setWindowMsgs] = useState<Msg[]>([]);   // the page fetched around an old message, shown before the newest page
+  const [notice, setNotice] = useState<string | null>(null);
+  const pendingJump = useRef<number | null>(null);
+  const reveal = (id: number): boolean => {
     const el = scroller.current?.querySelector<HTMLElement>(`[data-msg-id="${id}"]`);
-    if (!el) return;
+    if (!el) return false;
     el.scrollIntoView({ block: "center", behavior: "smooth" });
     setFlash(id);
     setTimeout(() => setFlash((f) => (f === id ? null : f)), 1600);
+    return true;
   };
+  const jump = (id: number) => {
+    if (reveal(id)) return;
+    if (!loadAround) return;
+    void loadAround(id).then((page) => {
+      if (!page.some((m) => m.id === id)) { setNotice(t("reply.jumpMissing")); setTimeout(() => setNotice(null), 3500); return; }   // deleted, or not part of this chat: nothing is shown
+      pendingJump.current = id;
+      setWindowMsgs(page);
+    }).catch(() => { setNotice(t("reply.jumpMissing")); setTimeout(() => setNotice(null), 3500); });
+  };
+  const { items: all, gapBefore } = withOlderWindow(windowMsgs, msgs);
+  useEffect(() => {   // the fetched page is on the screen: scroll to the message
+    const id = pendingJump.current;
+    if (id !== null && reveal(id)) pendingJump.current = null;
+  });   // eslint-disable-line react-hooks/exhaustive-deps
 
   const sendPhoto = async () => {
     if (!attach) return;
@@ -265,10 +284,11 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
             ))}
           </div>
         )}
-        {msgs.map((m, i) => (
-          <div key={i} className="space-y-2">
+        {all.map((m, i) => (
+          <div key={m.id ?? `l${m.local ?? i}`} className="space-y-2">
+            {gapBefore === i && <p className="py-1 text-center text-xs text-slate-400" aria-hidden>• • •</p>}
             <Swipeable m={m} dir={dir} enabled={replies && !!m.id} flash={flash === m.id} onReply={() => { const tg = targetFromMessage({ id: m.id, role: m.role, content: m.content, mediaUrl: m.mediaUrl }); if (tg) { setReplyTo(tg); field.current?.focus(); } }}>
-              <Bubble role={m.role} widget={widget} avatar={widget && m.role === "assistant" && msgs[i - 1]?.role !== "assistant" ? agentAvatar : widget && m.role === "assistant" ? "" : undefined}>
+              <Bubble role={m.role} widget={widget} avatar={widget && m.role === "assistant" && all[i - 1]?.role !== "assistant" ? agentAvatar : widget && m.role === "assistant" ? "" : undefined}>
                 {m.replyTo && <ReplyQuote target={targetOf(m.replyTo)!} viewer="customer" onJump={jump} tone={m.role === "user" ? "brand" : "light"} />}
                 {/* a picture the shop sent from its inbox, or the customer's own photo */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -278,7 +298,7 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
               </Bubble>
             </Swipeable>
             {onTeach && m.role === "assistant" && i > 0 && (
-              <button type="button" onClick={() => onTeach(msgs[i - 1]?.role === "user" ? msgs[i - 1].content : "", m.content)} className="text-xs font-semibold text-brand underline">🎓 {t("ai.teachThis")}</button>
+              <button type="button" onClick={() => onTeach(all[i - 1]?.role === "user" ? all[i - 1].content : "", m.content)} className="text-xs font-semibold text-brand underline">🎓 {t("ai.teachThis")}</button>
             )}
             {m.products && m.products.length > 0 && (
               <div data-no-swipe className="flex gap-2 overflow-x-auto pb-1">
@@ -292,7 +312,7 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
               </div>
             )}
             {/* quick actions of the newest question: tapping one sends its text as the customer's own message */}
-            {m.role === "assistant" && m.buttons && m.buttons.length > 0 && i === msgs.length - 1 && !busy && (
+            {m.role === "assistant" && m.buttons && m.buttons.length > 0 && i === all.length - 1 && !busy && (
               <div className={widget ? "flex flex-wrap justify-end gap-2 ps-10" : "flex flex-wrap gap-2"}>
                 {m.buttons.map((b) => (
                   <button key={b.value} type="button" onClick={() => void go(b.value)}
@@ -331,6 +351,7 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
         </form>
       ) : (
         <div className="relative px-3 pb-1 pt-1">
+          {notice && <p role="status" className="mb-1 rounded-xl bg-white px-3 py-2 text-center text-xs text-slate-600 shadow-sm">{notice}</p>}
           {replies && replyTo && <div className="-mx-3 mb-1"><ReplyPreview target={replyTo} viewer="customer" onCancel={() => setReplyTo(null)} onJump={jump} /></div>}
           {attach && (
             <div className="mb-2 flex items-center gap-2 rounded-2xl bg-white p-2 shadow-sm">
@@ -478,6 +499,7 @@ export function LiveChat() {
   useVisualViewport(open);
 
   const loadFn = useCallback(() => api<History>(`shop/chat/history?conversationId=${conv}`), [conv]);
+  const loadAround = useCallback((id: number) => api<History>(`shop/chat/history?conversationId=${conv}&around=${id}`), [conv]);
   const send = useCallback((text: string, replyToId?: number | null) => api<Reply>("shop/chat", { body: { conversationId: conv, message: text, replyToMessageId: replyToId ?? undefined } }), [conv]);
   const sendMedia = useCallback((file: File, caption: string) => {
     const form = new FormData();
@@ -524,7 +546,7 @@ export function LiveChat() {
             </button>
           </header>
           {conv && (
-            <ChatPanel live widget replies className="flex-1" agentAvatar={avatar} greeting={cfg.greeting || t("chat.greeting")} load={loadFn} send={send}
+            <ChatPanel live widget replies loadAround={loadAround} className="flex-1" agentAvatar={avatar} greeting={cfg.greeting || t("chat.greeting")} load={loadFn} send={send}
               sendMedia={cfg.media === false ? undefined : sendMedia} onReply={() => { if (sound) ping(); }} />
           )}
           {!whiteLabel && <p className="pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1 text-center text-xs text-slate-400">{t("brand.powered")} {t("brand.name")}</p>}

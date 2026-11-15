@@ -433,7 +433,9 @@ public class MetaChannelService {
                 List<String> parts = chunks(messages.get(mi), "INSTAGRAM".equals(platform) ? 900 : "WHATSAPP".equals(platform) ? 3500 : 1900);
                 for (int pi = 0; pi < parts.size(); pi++) {
                     boolean lastPart = mi == messages.size() - 1 && pi == parts.size() - 1;
-                    String mid = lastPart && !buttons.isEmpty() ? sendWithButtons(platform, accountId, sender, token, parts.get(pi), buttons) : send(platform, accountId, sender, token, parts.get(pi));
+                    // a customer who used «reply» is in a threaded chat: the first text bubble of the answer quotes the message they just sent (WhatsApp Cloud's contextual reply)
+                    String quote = mi == 0 && pi == 0 && !in.refs().isEmpty() && !in.mids().isEmpty() ? in.mids().get(in.mids().size() - 1) : null;
+                    String mid = lastPart && !buttons.isEmpty() ? sendWithButtons(platform, accountId, sender, token, parts.get(pi), buttons) : sendQuoting(platform, accountId, sender, token, parts.get(pi), quote);
                     if (sentReply != null && replies != null) replies.recordMid(tenantId, sentReply.conversationId(), sentReply.messageId(), mid, parts.get(pi));   // so the customer's reply to THIS bubble is found
                 }
             }
@@ -493,6 +495,20 @@ public class MetaChannelService {
 
     private static String clip(String s, int max) { return s.length() <= max ? s : s.substring(0, max); }
 
+    /**
+     * A text bubble as a CONTEXTUAL REPLY that quotes {@code quoteMid}: WhatsApp Cloud only, where Meta documents {@code context.message_id} on a send. If WhatsApp refuses it, the same text is
+     * sent plainly (a reply is never lost for its quote). Messenger and Instagram: no equivalent parameter could be confirmed in Meta's documentation, so nothing is sent there.
+     */
+    String sendQuoting(String platform, String accountId, String to, String token, String text, String quoteMid) {
+        if (!"WHATSAPP".equals(platform) || quoteMid == null || quoteMid.isBlank()) return send(platform, accountId, to, token, text);
+        try {
+            return midOf(graph.post(accountId + "/messages", token, Map.of("messaging_product", "whatsapp", "to", to, "context", Map.of("message_id", quoteMid), "type", "text", "text", Map.of("body", text))));
+        } catch (MetaGraph.MetaException e) {
+            log.debug("Quoted WhatsApp reply refused ({}), sending it plainly", e.getMessage());
+            return send(platform, accountId, to, token, text);
+        }
+    }
+
     String send(String platform, String accountId, String to, String token, String text) {
         if ("WHATSAPP".equals(platform)) return midOf(graph.post(accountId + "/messages", token, Map.of("messaging_product", "whatsapp", "to", to, "type", "text", "text", Map.of("body", text))));
         return midOf(graph.post("me/messages", token, Map.of("recipient", Map.of("id", to), "messaging_type", "RESPONSE", "message", Map.of("text", text))));
@@ -547,7 +563,10 @@ public class MetaChannelService {
     boolean deliver(UUID tenantId, String platform, String to, String text) { return deliver(tenantId, platform, to, text, null); }
 
     /** Same, with a picture (the text goes as its caption; when the picture cannot be sent, the text alone). */
-    boolean deliver(UUID tenantId, String platform, String to, String text, String imageUrl) {
+    boolean deliver(UUID tenantId, String platform, String to, String text, String imageUrl) { return deliver(tenantId, platform, to, text, imageUrl, null); }
+
+    /** Same, and {@code midSink} receives the platform's id of the message that went out (only when the platform returned one: never made up), so a customer's native reply to it is understood. */
+    boolean deliver(UUID tenantId, String platform, String to, String text, String imageUrl, java.util.function.Consumer<String> midSink) {
         try {
             var ch = jdbc.sql("SELECT external_id, token_enc FROM chat.channels WHERE tenant_id = :t AND platform = :p AND status = 'ACTIVE' ORDER BY created_at LIMIT 1").param("t", tenantId).param("p", platform).query().listOfRows().stream().findFirst();
             if (ch.isEmpty()) return false;
@@ -556,8 +575,8 @@ public class MetaChannelService {
                     : jdbc.sql("SELECT EXISTS (SELECT 1 FROM chat.conversations c JOIN chat.messages m ON m.conversation_id = c.id AND m.role = 'user' WHERE c.tenant_id = :t AND c.channel = :p AND c.external_id = :e AND m.created_at > now() - interval '23 hours') OR EXISTS (SELECT 1 FROM chat.conversations c WHERE c.tenant_id = :t AND c.channel = :p AND c.external_id = :e AND c.window_until > now())").param("t", tenantId).param("p", platform).param("e", to).query(Boolean.class).single();
             if (!open) return false;
             String account = (String) ch.get().get("external_id"), token = crypto.decrypt((String) ch.get().get("token_enc"));
-            if (imageUrl != null && !imageUrl.isBlank()) sendCard(platform, account, to, token, new ProductShare.Card(imageUrl, text == null ? "" : text, null));
-            else send(platform, account, to, token, text);
+            String mid = imageUrl != null && !imageUrl.isBlank() ? sendCard(platform, account, to, token, new ProductShare.Card(imageUrl, text == null ? "" : text, null)) : send(platform, account, to, token, text);
+            if (midSink != null && mid != null && !mid.isBlank()) midSink.accept(mid);
             return true;
         } catch (RuntimeException e) {
             log.warn("Could not send the promised {} message: {}", platform, e.getMessage());

@@ -55,3 +55,26 @@ See `docs/ai-reply-context.md` for the feature, tests and limits.
 | Browser check (real Chrome, local backend, stub model) | swipe/reply/cancel/quote/reload/jump behave as designed (see ai-reply-context.md) |
 | Quoted-message read | 0.07 ms on a 3000+ message chat (index scan) |
 | **Not validated** | a real model's understanding of replies (no credentials; 117-case Promptfoo suite not run), real WhatsApp/Meta/Evolution webhooks, real touch hardware, screen readers, retrieval quality |
+
+
+## Round 4 (reply limitations and awareness)
+| Item | Status |
+|---|---|
+| Per-line reply references in bursts (V94), FB/IG outbound ids, widget `around` navigation, WhatsApp Cloud quoted replies with plain fallback, earlier-messages digest, old-quoted-price guard fix | Implemented; **tested with mocked platforms and a scripted assistant** |
+| Messenger / Instagram / own-number WhatsApp native quoting | **Not implemented** (no verifiable official parameter / unofficial gateway) |
+| Quote the real WhatsApp Cloud API accepts our `context.message_id` | **Not validated** (docs confirm the field; no live call) |
+| Live-model understanding of replies, digest and block | **Pending** (no credentials; 121-case suite not run) |
+| Widget navigation in a real browser | **Pending** for this change |
+Test counts are in the final table below.
+
+
+### Round 4 test results
+| Check | Result |
+|---|---|
+| Backend full suite (`cleanTest test`, 20 min on a busy machine) | **786 tests, 5 skipped, 0 failures** = 770 before + 16 new (ReplyPhase2IntegrationTest 14, ReplyUnitTest +2) |
+| Provider fallback tests (GLM first, Alibaba fallback, no breaker, no duplicated order) | still pass |
+| Web: `tsc`, `eslint --quiet`, i18n, `npm test` | clean / clean / ok / 13 of 13 |
+| Promptfoo assertion self-test | 43 checks pass; suite is 121 cases, **not run live** |
+| Migrations V93 + V94 and both rollbacks on a copy of an older database (1306 messages) | migrate, re-run, rollback, re-migrate all ok |
+| Reply-path reads (4000+ message chat, busy machine) | quoted read 0.40 ms, around 0.80 ms, digest 8.6 ms |
+| Not validated | live model behaviour; real WhatsApp/Meta/Evolution traffic including the quoted send; the widget navigation in a browser |

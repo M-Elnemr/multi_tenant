@@ -69,7 +69,7 @@ class ReplyUnitTest {
     // ---- a burst keeps the reference of each line ------------------------------------------------------------------------
 
     @Test
-    void aBurstOfLinesKeepsEachLinesPlatformIdAndReplyReference() throws Exception {
+    void aBurstOfLinesKeepsEachLinesPlatformIdAndItsOwnReplyReference() throws Exception {
         var timers = Executors.newSingleThreadScheduledExecutor();
         try {
             var burst = new InboundBurst(timers, Runnable::run, 80, 500);
@@ -79,13 +79,40 @@ class ReplyUnitTest {
             java.util.function.BiConsumer<String, List<Object>> fire = (t, metas) -> { text[0] = t; got.addAll(metas); done.countDown(); };
             burst.add("k", "بكام ده", new ChatService.InboundMeta("m1", ReplyRef.ofMid("old-1", null)), fire);
             burst.add("k", "وفيه أزرق؟", new ChatService.InboundMeta("m2", null), fire);
+            burst.add("k", "والتاني بكام", new ChatService.InboundMeta("m3", ReplyRef.ofMid("old-2", null)), fire);
             assertThat(done.await(3, TimeUnit.SECONDS)).isTrue();
-            assertThat(text[0]).isEqualTo("بكام ده\nوفيه أزرق؟");
+            assertThat(text[0]).isEqualTo("بكام ده\nوفيه أزرق؟\nوالتاني بكام");
             var in = ChatService.input(got);
-            assertThat(in.mids()).containsExactly("m1", "m2");
-            assertThat(in.refs()).hasSize(1);
+            assertThat(in.mids()).containsExactly("m1", "m2", "m3");
+            assertThat(in.refs()).hasSize(2);
             assertThat(in.refs().get(0).providerMid()).isEqualTo("old-1");
+            assertThat(in.refs().get(0).line()).as("the first reference belongs to the FIRST line").isEqualTo("بكام ده");
+            assertThat(in.refs().get(1).providerMid()).isEqualTo("old-2");
+            assertThat(in.refs().get(1).line()).as("the second to the THIRD line, not to every line").isEqualTo("والتاني بكام");
         } finally { timers.shutdownNow(); }
+    }
+
+    @Test
+    void linesArrivingConcurrentlyAreAllKeptOnceAndAnsweredOnce() throws Exception {
+        var timers = Executors.newSingleThreadScheduledExecutor();
+        var pool = Executors.newFixedThreadPool(8);
+        try {
+            var burst = new InboundBurst(timers, Runnable::run, 150, 2000);
+            var fired = new java.util.concurrent.atomic.AtomicInteger();
+            var seen = new java.util.concurrent.CopyOnWriteArrayList<Object>();
+            var done = new CountDownLatch(1);
+            java.util.function.BiConsumer<String, List<Object>> fire = (t, metas) -> { fired.incrementAndGet(); seen.addAll(metas); done.countDown(); };
+            var start = new CountDownLatch(1);
+            for (int th = 0; th < 8; th++) { int id = th; pool.submit(() -> { try { start.await(); } catch (InterruptedException e) { return; } for (int i = 0; i < 20; i++) burst.add("k", "line " + id + "-" + i, new ChatService.InboundMeta("mid-" + id + "-" + i, i % 2 == 0 ? ReplyRef.ofMid("q-" + id + "-" + i, null) : null), fire); }); }
+            start.countDown();
+            assertThat(done.await(5, TimeUnit.SECONDS)).isTrue();
+            Thread.sleep(400);   // nothing may fire a second time
+            assertThat(fired.get()).as("one answer for the whole burst").isEqualTo(1);
+            var in = ChatService.input(seen);
+            assertThat(in.mids()).hasSize(160).doesNotHaveDuplicates();
+            assertThat(in.refs()).hasSize(80);
+            for (var r : in.refs()) assertThat(r.line()).as("each reference keeps its own line").isEqualTo("line " + r.providerMid().substring(2));
+        } finally { timers.shutdownNow(); pool.shutdownNow(); }
     }
 
     // ---- what the assistant is told --------------------------------------------------------------------------------------
@@ -113,6 +140,21 @@ class ReplyUnitTest {
         assertThat(ReplyContext.block(List.of(), false, "x")).as("no reply, no block").isEmpty();
         String two = ReplyContext.block(List.of(new ReplyContext.Item(q("assistant", "text", "الأول", false), List.of(), List.of(), true), new ReplyContext.Item(q("assistant", "text", "التاني", false), List.of(), List.of(), true)), false, "x");
         assertThat(two).contains("(1 of 2)").contains("(2 of 2)");
+    }
+
+    @Test
+    void aBurstNamesTheLineOfEachQuoteInOrderAndSaysWhichLinesQuoteNothing() {
+        var a = new ReplyContext.Item(q("assistant", "text", "الجاكيت الأسود", false), List.of(), List.of(), true, "بكام ده");
+        var b = new ReplyContext.Item(q("assistant", "text", "الشنطة البني", false), List.of(), List.of(), true, "والتاني");
+        String two = ReplyContext.block(List.of(a, b), false, "بكام ده\nوفيه أزرق؟\nوالتاني");
+        assertThat(two).contains("(1 of 2), quoted by the customer line «بكام ده»").contains("(2 of 2), quoted by the customer line «والتاني»");
+        assertThat(two.indexOf("الجاكيت الأسود")).as("in the order of the lines").isLessThan(two.indexOf("الشنطة البني"));
+        assertThat(two).contains("do not apply a quote to a line that has none");   // 3 lines, 2 quotes: the middle line quotes nothing
+        // the same original quoted by two lines: both lines are named
+        String same = ReplyContext.block(List.of(new ReplyContext.Item(a.quoted(), List.of(), List.of(), true, "بكام"), new ReplyContext.Item(a.quoted(), List.of(), List.of(), true, "وبالأزرق؟")), false, "بكام\nوبالأزرق؟");
+        assertThat(same).contains("«بكام»").contains("«وبالأزرق؟»").doesNotContain("do not apply a quote");
+        // a single-line message: no line labels at all
+        assertThat(ReplyContext.block(List.of(new ReplyContext.Item(a.quoted(), List.of(), List.of(), true, "بكام ده")), false, "بكام ده")).doesNotContain("quoted by the customer line");
     }
 
     @Test

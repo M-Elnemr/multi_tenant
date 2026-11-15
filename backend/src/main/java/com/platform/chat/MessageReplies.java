@@ -105,6 +105,51 @@ public class MessageReplies {
         return n.toString();
     }
 
+    /** A quoted message together with the customer line that replied to it (null when the whole message is one line). */
+    public record LineQuote(String line, Quoted quoted) {}
+
+    /**
+     * Stores every reference of a burst of customer lines on the message, each with ITS line and in order (the first also goes into the primary columns). A reference that cannot be
+     * resolved and has no platform id is not stored. Nothing is invented: the quote of a reference is what was found or what the platform reported.
+     */
+    public void attachAll(UUID tenantId, UUID conversationId, long messageId, List<ReplyRef> refs) {
+        if (refs == null || refs.isEmpty()) return;
+        attach(tenantId, conversationId, messageId, refs.get(0), false);
+        if (refs.size() < 2 && refs.get(0).line() == null) return;   // one plain reference: the primary columns say it all
+        var arr = JSON.createArrayNode();
+        for (ReplyRef r : refs) {
+            Quoted q = resolve(tenantId, conversationId, r, false);
+            if (q == null && r.providerMid() == null) continue;
+            ObjectNode n = arr.addObject();
+            n.put("line", r.line() == null ? "" : r.line());
+            if (q != null && q.messageId() != null) n.put("id", q.messageId());
+            if (r.providerMid() != null) n.put("mid", r.providerMid());
+            if (q != null) {
+                n.put("sender", q.sender()).put("kind", q.kind()).put("text", q.text() == null ? "" : q.text()).put("hasMedia", q.mediaUrl() != null);
+                if (q.at() != null) n.put("at", q.at().toString());
+                n.put("source", q.fromSnapshot() ? (r.quote() != null && r.quote().source() != null ? r.quote().source() : "platform") : "stored");
+            }
+        }
+        if (arr.isEmpty()) return;
+        jdbc.sql("UPDATE chat.messages SET reply_refs = CAST(:r AS jsonb) WHERE id = :id AND conversation_id = :c").param("r", arr.toString()).param("id", messageId).param("c", conversationId).update();
+    }
+
+    /** Every reference stored on the message, in the order of the customer's lines: the stored original when it still exists, else the snapshot. Empty when it replies to nothing. */
+    public List<LineQuote> quotedAll(UUID tenantId, UUID conversationId, long messageId) {
+        String json = jdbc.sql("SELECT m.reply_refs::text FROM chat.messages m JOIN chat.conversations c ON c.id = m.conversation_id WHERE m.id = :id AND m.conversation_id = :c AND c.tenant_id = :t")
+                .param("id", messageId).param("c", conversationId).param("t", tenantId).query(String.class).optional().orElse(null);
+        List<LineQuote> out = new ArrayList<>();
+        if (json == null) return out;
+        try {
+            for (var n : JSON.readTree(json)) {
+                Quoted live = n.hasNonNull("id") ? load(tenantId, conversationId, n.path("id").asLong()) : null;
+                Quoted q = live != null ? live : n.hasNonNull("sender") ? new Quoted(null, n.path("sender").asText("shop"), n.path("kind").asText("text"), n.path("text").asText(""), null, parse(n.path("at").asText(null)), true) : null;
+                if (q != null) out.add(new LineQuote(n.path("line").asText(""), q));
+            }
+        } catch (Exception e) { log.debug("Reply references unreadable: {}", e.toString()); }
+        return out;
+    }
+
     /** What the message {@code messageId} quotes, for the assistant: the stored original when it still exists, else the snapshot taken when the reply was written, else null (never guessed). */
     public Quoted quotedBy(UUID tenantId, UUID conversationId, long messageId) {
         var row = jdbc.sql("""

@@ -789,5 +789,174 @@
     "value": "const all = JSON.parse(output).replies; const last = all[all.length-1] || ''; return !/(تقصد|قصدك) (ايه|إيه|انهي|أنهي)|أي منتج|انهي منتج|أنهي منتج|which (product|item)|what do you mean/i.test(last);"
    }
   ]
+ },
+ {
+  "id": 940,
+  "category": "reply_typos_dialect",
+  "dialect": "egyptian",
+  "customer": [
+   "عايز تيشيرت قطن اسود",
+   "شكرا",
+   "ماشي",
+   "تمام",
+   "اه",
+   "طيب",
+   "أوكيه",
+   "ماشي",
+   "اه فعلا",
+   "تمام جدا",
+   "طيب شكرا",
+   "ماشي",
+   "اه",
+   "تمام",
+   "طيب",
+   "أوكيه",
+   "ماشي",
+   {
+    "say": "دا متاح بالاسود؟",
+    "replyTo": {
+     "text": "عايز تيشيرت قطن"
+    }
+   }
+  ],
+  "expect": [
+   "understands «دا» is the cotton t-shirt of the replied message despite the spelling",
+   "answers for that product"
+  ],
+  "assert": [
+   {
+    "type": "javascript",
+    "metric": "does not ask which product is meant",
+    "value": "const all = JSON.parse(output).replies; const last = all[all.length-1] || ''; return !/(تقصد|قصدك) (ايه|إيه|انهي|أنهي)|أي منتج|انهي منتج|أنهي منتج|which (product|item)|what do you mean/i.test(last);"
+   }
+  ]
+ },
+ {
+  "id": 941,
+  "category": "reply_arabizi",
+  "dialect": "arabizi",
+  "customer": [
+   "3ayez jacket shitwy",
+   "ماشي",
+   "تمام",
+   "اه",
+   "طيب",
+   "أوكيه",
+   "ماشي",
+   "اه فعلا",
+   "تمام جدا",
+   "طيب شكرا",
+   "ماشي",
+   "اه",
+   "تمام",
+   "طيب",
+   "أوكيه",
+   "ماشي",
+   {
+    "say": "da be kam?",
+    "replyTo": {
+     "text": "3ayez jacket"
+    }
+   }
+  ],
+  "expect": [
+   "understands the Arabizi reply to the jacket message"
+  ],
+  "assert": [
+   {
+    "type": "javascript",
+    "metric": "does not say it did not understand",
+    "value": "const all = JSON.parse(output).replies; const last = all[all.length-1] || ''; return !/مش فاهم|لم أفهم|didn't understand|did not understand/i.test(last);"
+   }
+  ]
+ },
+ {
+  "id": 942,
+  "category": "reply_to_correction",
+  "dialect": "egyptian",
+  "customer": [
+   "اسمي احمد",
+   "لا اسمي محمود",
+   "ماشي",
+   "تمام",
+   "اه",
+   "طيب",
+   "أوكيه",
+   "ماشي",
+   "اه فعلا",
+   "تمام جدا",
+   "طيب شكرا",
+   "ماشي",
+   "اه",
+   "تمام",
+   "طيب",
+   "أوكيه",
+   "ماشي",
+   {
+    "say": "ناديني باسمي",
+    "replyTo": {
+     "text": "لا اسمي محمود"
+    }
+   }
+  ],
+  "expect": [
+   "uses the corrected name from the replied message, never the old one"
+  ],
+  "assert": [
+   {
+    "type": "javascript",
+    "metric": "uses the corrected name",
+    "value": "const all = JSON.parse(output).replies; const last = all[all.length-1] || ''; return /محمود/.test(last) && !/أحمد|احمد/.test(last);"
+   }
+  ]
+ },
+ {
+  "id": 943,
+  "category": "memory_beyond_window",
+  "dialect": "egyptian",
+  "customer": [
+   "ميزانيتي ٣٠٠ جنيه ومقاسي M",
+   "ماشي",
+   "تمام",
+   "اه",
+   "طيب",
+   "أوكيه",
+   "ماشي",
+   "اه فعلا",
+   "تمام جدا",
+   "طيب شكرا",
+   "ماشي",
+   "اه",
+   "تمام",
+   "طيب",
+   "أوكيه",
+   "ماشي",
+   "ماشي",
+   "تمام",
+   "اه",
+   "طيب",
+   "أوكيه",
+   "ماشي",
+   "اه فعلا",
+   "تمام جدا",
+   "طيب شكرا",
+   "ماشي",
+   "اه",
+   "تمام",
+   "طيب",
+   "أوكيه",
+   "ماشي",
+   "فاكر ميزانيتي ومقاسي؟"
+  ],
+  "expect": [
+   "recalls the 300 budget and size M from before the history window (the earlier-messages digest)"
+  ],
+  "assert": [
+   {
+    "type": "javascript",
+    "metric": "recalls budget and size",
+    "value": "const all = JSON.parse(output).replies; const last = all[all.length-1] || ''; return /٣٠٠|300/.test(last) && /\\bM\\b|ميديم|ام/i.test(last);"
+   }
+  ]
  }
 ]

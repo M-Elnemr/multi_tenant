@@ -112,3 +112,18 @@ export function mergeMessages<T extends { id: number }>(...pages: T[][]): T[] {
   for (const p of pages) for (const m of p) byId.set(m.id, m);
   return [...byId.values()].sort((a, b) => a.id - b.id);
 }
+
+/**
+ * The messages to show when the customer jumped to an old message and the page around it was fetched ({@code window}) while the newest page is {@code loaded}: the window's messages that are
+ * older than everything loaded come first (never a duplicate of a loaded one), and {@code gapBefore} is the index of the first loaded message when the two may not touch (ids are shared by
+ * every chat, so a difference between ids says nothing about messages in between: a separator is shown instead of a claim). Without a window, nothing changes.
+ */
+export function withOlderWindow<T extends { id?: number | null }>(window: T[], loaded: T[]): { items: T[]; gapBefore: number } {
+  const ids = loaded.map((m) => m.id).filter((n): n is number => typeof n === "number");
+  const have = new Set(ids);
+  const minLoaded = ids.length ? Math.min(...ids) : Infinity;
+  const before = window.filter((m) => typeof m.id === "number" && !have.has(m.id) && (m.id as number) < minLoaded);
+  if (before.length === 0) return { items: loaded, gapBefore: -1 };
+  const touches = window.some((m) => typeof m.id === "number" && have.has(m.id));   // the window overlaps the loaded page: nothing is missing in between
+  return { items: [...before, ...loaded], gapBefore: touches ? -1 : before.length };
+}

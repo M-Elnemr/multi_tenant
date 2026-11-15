@@ -4488,6 +4488,174 @@
     "category": "reply_old_vs_current_price",
     "id": 939
    }
+  },
+  {
+   "description": "#940 reply_typos_dialect/egyptian",
+   "vars": {
+    "turns": "[\"عايز تيشيرت قطن اسود\", \"شكرا\", \"ماشي\", \"تمام\", \"اه\", \"طيب\", \"أوكيه\", \"ماشي\", \"اه فعلا\", \"تمام جدا\", \"طيب شكرا\", \"ماشي\", \"اه\", \"تمام\", \"طيب\", \"أوكيه\", \"ماشي\", {\"say\": \"دا متاح بالاسود؟\", \"replyTo\": {\"text\": \"عايز تيشيرت قطن\"}}]"
+   },
+   "assert": [
+    {
+     "type": "javascript",
+     "value": "\nconst all = JSON.parse(output).replies; const last = all[all.length-1] || '';\nreturn all.every(r => r.trim().length > 0);",
+     "metric": "no empty reply"
+    },
+    {
+     "type": "javascript",
+     "value": "\nconst all = JSON.parse(output).replies; const last = all[all.length-1] || '';\nreturn !all.some(r => /customer service|خدمة العملاء|موظف(ين)? (هيتواصل|هيكلم|هيرد)|a human will|someone from (the|our) team|as an ai language model|system prompt:/i.test(r));",
+     "metric": "no forbidden phrases / persona break"
+    },
+    {
+     "type": "javascript",
+     "value": "\nconst all = JSON.parse(output).replies; const last = all[all.length-1] || '';\nreturn all.every(r => r.length <= 900 && (r.match(/[؟?]/g)||[]).length <= 3);",
+     "metric": "short enough (<=900 chars) and <=3 questions"
+    },
+    {
+     "type": "javascript",
+     "value": "\nconst all = JSON.parse(output).replies; const last = all[all.length-1] || '';\nreturn !all.some(r => /<\\/?(tool|invoke|dsml)|\"tool_calls\"|reasoning_content/i.test(r));",
+     "metric": "no tool markup or raw JSON leaked"
+    },
+    {
+     "type": "javascript",
+     "value": "\nconst all = JSON.parse(output).replies; const last = all[all.length-1] || '';\nreturn !all.some(r => /https?:\\/\\//i.test(r));",
+     "metric": "no invented links"
+    },
+    {
+     "type": "javascript",
+     "metric": "does not ask which product is meant",
+     "value": "const all = JSON.parse(output).replies; const last = all[all.length-1] || ''; return !/(تقصد|قصدك) (ايه|إيه|انهي|أنهي)|أي منتج|انهي منتج|أنهي منتج|which (product|item)|what do you mean/i.test(last);"
+    }
+   ],
+   "metadata": {
+    "category": "reply_typos_dialect",
+    "id": 940
+   }
+  },
+  {
+   "description": "#941 reply_arabizi/arabizi",
+   "vars": {
+    "turns": "[\"3ayez jacket shitwy\", \"ماشي\", \"تمام\", \"اه\", \"طيب\", \"أوكيه\", \"ماشي\", \"اه فعلا\", \"تمام جدا\", \"طيب شكرا\", \"ماشي\", \"اه\", \"تمام\", \"طيب\", \"أوكيه\", \"ماشي\", {\"say\": \"da be kam?\", \"replyTo\": {\"text\": \"3ayez jacket\"}}]"
+   },
+   "assert": [
+    {
+     "type": "javascript",
+     "value": "\nconst all = JSON.parse(output).replies; const last = all[all.length-1] || '';\nreturn all.every(r => r.trim().length > 0);",
+     "metric": "no empty reply"
+    },
+    {
+     "type": "javascript",
+     "value": "\nconst all = JSON.parse(output).replies; const last = all[all.length-1] || '';\nreturn !all.some(r => /customer service|خدمة العملاء|موظف(ين)? (هيتواصل|هيكلم|هيرد)|a human will|someone from (the|our) team|as an ai language model|system prompt:/i.test(r));",
+     "metric": "no forbidden phrases / persona break"
+    },
+    {
+     "type": "javascript",
+     "value": "\nconst all = JSON.parse(output).replies; const last = all[all.length-1] || '';\nreturn all.every(r => r.length <= 900 && (r.match(/[؟?]/g)||[]).length <= 3);",
+     "metric": "short enough (<=900 chars) and <=3 questions"
+    },
+    {
+     "type": "javascript",
+     "value": "\nconst all = JSON.parse(output).replies; const last = all[all.length-1] || '';\nreturn !all.some(r => /<\\/?(tool|invoke|dsml)|\"tool_calls\"|reasoning_content/i.test(r));",
+     "metric": "no tool markup or raw JSON leaked"
+    },
+    {
+     "type": "javascript",
+     "value": "\nconst all = JSON.parse(output).replies; const last = all[all.length-1] || '';\nreturn !all.some(r => /https?:\\/\\//i.test(r));",
+     "metric": "no invented links"
+    },
+    {
+     "type": "javascript",
+     "metric": "does not say it did not understand",
+     "value": "const all = JSON.parse(output).replies; const last = all[all.length-1] || ''; return !/مش فاهم|لم أفهم|didn't understand|did not understand/i.test(last);"
+    }
+   ],
+   "metadata": {
+    "category": "reply_arabizi",
+    "id": 941
+   }
+  },
+  {
+   "description": "#942 reply_to_correction/egyptian",
+   "vars": {
+    "turns": "[\"اسمي احمد\", \"لا اسمي محمود\", \"ماشي\", \"تمام\", \"اه\", \"طيب\", \"أوكيه\", \"ماشي\", \"اه فعلا\", \"تمام جدا\", \"طيب شكرا\", \"ماشي\", \"اه\", \"تمام\", \"طيب\", \"أوكيه\", \"ماشي\", {\"say\": \"ناديني باسمي\", \"replyTo\": {\"text\": \"لا اسمي محمود\"}}]"
+   },
+   "assert": [
+    {
+     "type": "javascript",
+     "value": "\nconst all = JSON.parse(output).replies; const last = all[all.length-1] || '';\nreturn all.every(r => r.trim().length > 0);",
+     "metric": "no empty reply"
+    },
+    {
+     "type": "javascript",
+     "value": "\nconst all = JSON.parse(output).replies; const last = all[all.length-1] || '';\nreturn !all.some(r => /customer service|خدمة العملاء|موظف(ين)? (هيتواصل|هيكلم|هيرد)|a human will|someone from (the|our) team|as an ai language model|system prompt:/i.test(r));",
+     "metric": "no forbidden phrases / persona break"
+    },
+    {
+     "type": "javascript",
+     "value": "\nconst all = JSON.parse(output).replies; const last = all[all.length-1] || '';\nreturn all.every(r => r.length <= 900 && (r.match(/[؟?]/g)||[]).length <= 3);",
+     "metric": "short enough (<=900 chars) and <=3 questions"
+    },
+    {
+     "type": "javascript",
+     "value": "\nconst all = JSON.parse(output).replies; const last = all[all.length-1] || '';\nreturn !all.some(r => /<\\/?(tool|invoke|dsml)|\"tool_calls\"|reasoning_content/i.test(r));",
+     "metric": "no tool markup or raw JSON leaked"
+    },
+    {
+     "type": "javascript",
+     "value": "\nconst all = JSON.parse(output).replies; const last = all[all.length-1] || '';\nreturn !all.some(r => /https?:\\/\\//i.test(r));",
+     "metric": "no invented links"
+    },
+    {
+     "type": "javascript",
+     "metric": "uses the corrected name",
+     "value": "const all = JSON.parse(output).replies; const last = all[all.length-1] || ''; return /محمود/.test(last) && !/أحمد|احمد/.test(last);"
+    }
+   ],
+   "metadata": {
+    "category": "reply_to_correction",
+    "id": 942
+   }
+  },
+  {
+   "description": "#943 memory_beyond_window/egyptian",
+   "vars": {
+    "turns": "[\"ميزانيتي ٣٠٠ جنيه ومقاسي M\", \"ماشي\", \"تمام\", \"اه\", \"طيب\", \"أوكيه\", \"ماشي\", \"اه فعلا\", \"تمام جدا\", \"طيب شكرا\", \"ماشي\", \"اه\", \"تمام\", \"طيب\", \"أوكيه\", \"ماشي\", \"ماشي\", \"تمام\", \"اه\", \"طيب\", \"أوكيه\", \"ماشي\", \"اه فعلا\", \"تمام جدا\", \"طيب شكرا\", \"ماشي\", \"اه\", \"تمام\", \"طيب\", \"أوكيه\", \"ماشي\", \"فاكر ميزانيتي ومقاسي؟\"]"
+   },
+   "assert": [
+    {
+     "type": "javascript",
+     "value": "\nconst all = JSON.parse(output).replies; const last = all[all.length-1] || '';\nreturn all.every(r => r.trim().length > 0);",
+     "metric": "no empty reply"
+    },
+    {
+     "type": "javascript",
+     "value": "\nconst all = JSON.parse(output).replies; const last = all[all.length-1] || '';\nreturn !all.some(r => /customer service|خدمة العملاء|موظف(ين)? (هيتواصل|هيكلم|هيرد)|a human will|someone from (the|our) team|as an ai language model|system prompt:/i.test(r));",
+     "metric": "no forbidden phrases / persona break"
+    },
+    {
+     "type": "javascript",
+     "value": "\nconst all = JSON.parse(output).replies; const last = all[all.length-1] || '';\nreturn all.every(r => r.length <= 900 && (r.match(/[؟?]/g)||[]).length <= 3);",
+     "metric": "short enough (<=900 chars) and <=3 questions"
+    },
+    {
+     "type": "javascript",
+     "value": "\nconst all = JSON.parse(output).replies; const last = all[all.length-1] || '';\nreturn !all.some(r => /<\\/?(tool|invoke|dsml)|\"tool_calls\"|reasoning_content/i.test(r));",
+     "metric": "no tool markup or raw JSON leaked"
+    },
+    {
+     "type": "javascript",
+     "value": "\nconst all = JSON.parse(output).replies; const last = all[all.length-1] || '';\nreturn !all.some(r => /https?:\\/\\//i.test(r));",
+     "metric": "no invented links"
+    },
+    {
+     "type": "javascript",
+     "metric": "recalls budget and size",
+     "value": "const all = JSON.parse(output).replies; const last = all[all.length-1] || ''; return /٣٠٠|300/.test(last) && /\\bM\\b|ميديم|ام/i.test(last);"
+    }
+   ],
+   "metadata": {
+    "category": "memory_beyond_window",
+    "id": 943
+   }
   }
  ],
  "defaultTest": {

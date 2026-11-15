@@ -53,3 +53,9 @@ The Promptfoo suite is now **117 cases** (87 golden + 30 extra). Ten new live ca
 Not expressible through the owner test chat, covered by backend integration tests instead: image and attachment replies, deleted original, order-summary reply (the order flow is exercised by the existing order tests and the restart guard).
 What the deterministic backend tests prove: the assistant is GIVEN the right quoted message, even outside the history window. They do not prove a real model understands it.
 Frontend: `npm test` in `web/` (12 tests of the gesture state machine, quote excerpt, sender labels, paging merge), `tsc`, `eslint`, i18n check, and the browser check described in `ai-reply-context.md`.
+
+
+## Round 4
+Promptfoo suite: **121 cases** (87 golden + 34 extra). New: reply with typos (940), Arabizi (941), reply to a correction (942), budget and size recall beyond the history window through the new digest (943). Assertion self-test: 43 checks. **Not run against a live model.**
+New deterministic backend tests (`ReplyPhase2IntegrationTest` 14, `ReplyUnitTest` 11): per-line references in bursts (same original twice, different originals, none, mixed, concurrent, duplicate delivery), FB/IG outbound ids (and none recorded when the send fails), WhatsApp Cloud quoted replies (quoted, not quoted, plain fallback; Messenger gets no quote field), the page around an old message (bounded; other chat, other shop, nonexistent, deleted: `[]`), the earlier-messages digest (bounded, fillers removed, absent in short chats), a reply far beyond the window with saved memory, old order summary (shown, no order created), image original (described, not invented), old quoted price (cut unless current; customer's own budget allowed), cross-shop burst reference (never resolved or stored), index plans and timings.
+Frontend: `npm test` 13 tests (adds the older-window merge), `tsc`, `eslint`, i18n.

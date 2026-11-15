@@ -54,7 +54,7 @@ public class ChatDelivery {
                       : new Result("FAILED", "The message could not be sent on WhatsApp. Copy the message and send it from your phone.");
         }
         if ("FACEBOOK".equals(channel) || "INSTAGRAM".equals(channel)) {
-            boolean ok = meta.deliver(tenantId, channel, externalId, text, image ? imageUrl : null);
+            boolean ok = meta.deliver(tenantId, channel, externalId, text, image ? imageUrl : null, mid -> { if (onMid != null) onMid.accept(mid, text); });   // the platform's id of what went out, so a native reply to it is understood
             return ok ? new Result("SENT", null) : new Result("FAILED", "The message could not be sent: the 24-hour window with this customer is closed or the page is not connected. Copy the message and reply from the page inbox.");
         }
         return new Result("SAVED", null);   // the website chat: the message is in the chat, and an open chat window picks it up
