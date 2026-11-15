@@ -134,12 +134,19 @@ public class OpenAiProvider implements AiProvider {
             HiveKeyPool.Lease lease = lease(used == null ? null : used.id());   // a retry goes on another key when the pool has one
             if (lease == null) throw new AiUnavailableException("The AI assistant is not configured yet");
             used = lease;
+            long callStartMs = System.currentTimeMillis();
             try {
                 Throttle throttle = throttleFor(lease.key());
                 if (throttle != null) throttle.acquire();
                 long timeout = Math.min(Math.max(3_000, Math.min(callTimeoutMs(), AiBudget.remainingMs() - 1_000)), AiBudget.callCapMs());
                 HttpResponse<String> res = send(body, lease, timeout);
-                if (res.statusCode() / 100 == 2) { if (pool != null) pool.ok(lease); return parse(JSON.readTree(res.body())); }
+                if (res.statusCode() / 100 == 2) {
+                    if (pool != null) pool.ok(lease);
+                    Turn ok = parse(JSON.readTree(res.body()));
+                    AiTelemetry.generation(code, model, callStartMs, System.currentTimeMillis(), ok.usage(), res.statusCode(), null, null, ok.text());
+                    return ok;
+                }
+                AiTelemetry.generation(code, model, callStartMs, System.currentTimeMillis(), null, res.statusCode(), "HTTP " + res.statusCode(), null, null);
                 if (pool != null) pool.failed(lease, res.statusCode());
                 ChatService.evalHttp(res.statusCode());
                 last = new AiUnavailableException("The AI assistant is busy, try again (HTTP " + res.statusCode() + ")");
@@ -153,6 +160,7 @@ public class OpenAiProvider implements AiProvider {
             } catch (Exception e) {
                 if (pool != null) pool.failed(lease, 0);
                 ChatService.evalHttp(0);   // no answer at all (timeout, connection)
+                AiTelemetry.generation(code, model, callStartMs, System.currentTimeMillis(), null, 0, e.getClass().getSimpleName(), null, null);
                 last = new AiUnavailableException("The AI assistant could not be reached", e);
             }
         }

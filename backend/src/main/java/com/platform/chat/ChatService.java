@@ -438,6 +438,7 @@ public class ChatService {
         if (text.isEmpty()) throw BusinessException.badRequest("VALIDATION_ERROR", "Write a message");
         if (text.length() > 1000) throw BusinessException.badRequest("VALIDATION_ERROR", "The message is too long");
         UUID conv = conversation(tenantId, channel, externalId, clientId);
+        AiTelemetry.beginReply(tenantId, conv);
         String shown = DummyName.check(displayName) ? null : firstName(displayName);   // a handle like «x7k_29» is not a name: the AI asks for the real one
         if (shown != null) jdbc.sql("UPDATE chat.conversations SET display_name = :n WHERE id = :c AND display_name IS DISTINCT FROM :n").param("n", shown).param("c", conv).update();
         String named = statedName(text);

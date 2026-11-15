@@ -54,6 +54,7 @@ final class ReplyTimeline {
             String summary = "total=" + (System.nanoTime() - t.start) / 1_000_000 + " " + String.join(" ", t.phases);
             LAST.set(summary);
             org.slf4j.LoggerFactory.getLogger(ReplyTimeline.class).info("Reply timeline: {} channel={} conversation={}", summary, channel, conversation);
+            AiTelemetry.endReply(String.valueOf(channel), summary, System.currentTimeMillis() - (System.nanoTime() - t.start) / 1_000_000);
         } catch (RuntimeException ignored) { /* see mark */ }
         finally { CURRENT.remove(); }
     }
