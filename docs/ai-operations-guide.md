@@ -54,3 +54,10 @@ Set `LANGFUSE_ENABLED=false` (or unset) and restart: telemetry code becomes no-o
 - WhatsApp Cloud: the first text bubble of an answer to a *threaded* customer message is sent as a contextual reply (`context.message_id`). If WhatsApp refuses it the text is resent plainly (look for the debug line "Quoted WhatsApp reply refused"). Nothing else changes in sending.
 - `GET /api/v1/shop/chat/history?...&around=ID` is public and unthrottled like the history endpoint it extends.
 - Troubleshooting: a customer reply the assistant calls "not available" means we hold neither the message nor a platform quote (see ai-reply-context.md). The digest and the reply block add to the end of the system prompt only (spans `replyContext` and `earlierDigest` in the reply timeline).
+
+
+## Final phase operations notes
+- Migration `V95__memory_facts.sql` (a new table, nothing else) runs with Flyway on the next start; rollback `docs/rollback/V95_memory_facts_rollback.sql` (loses only the structured facts). Verified on a copy of an older schema (1306 messages): migrate V93+V94+V95, constraints (one ACTIVE fact per key, type check), re-run, rollback of all three, re-migrate. This phase did not touch `platform_dev` (schema 93; `replydemo` and `replyinbox` still there).
+- `app.ai.rag.hybrid` (env: none yet; set it as a Spring property) is **false**: rank fusion of the search by meaning and the word search in `shop_knowledge`. Turn it on only after comparing it with the production embedding; the benchmark that motivated it used a stand-in.
+- Memory facts live and die with their conversation (cascade); they are scoped by shop and conversation in every query. To forget a customer's facts, delete the rows of that conversation.
+- The prompt now carries the UNTRUSTED TEXT rule (both modes) and the order on file shows `payment status`; a reply that claims a payment without `payment status PAID` is rewritten or cut (log line "Claims check ... a payment received that no order shows as paid").

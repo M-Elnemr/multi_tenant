@@ -22,3 +22,7 @@ Future recommendations (not implemented): a faster/hosted GLM endpoint or lower 
 | Activepieces | Not adopted | Integrations are code with tests; a no-code runner adds an unreviewed path into orders. |
 | PostHog / Metabase | Not adopted | Visitor analytics and platform reports already exist in the app; no AI-quality question they answer that Langfuse + `ai_usage_log` do not. |
 Earlier decisions (Promptfoo, Ragas, DSPy, OpenTelemetry, GlitchTip, LiteLLM) stand; LiteLLM is even less justified now that fallback is implemented in `OpenAiProvider`/`ChannelAi` with tests.
+
+
+## Final phase: embeddings, rerankers, database
+Decisions and the facts they rest on are in `docs/ai-memory-and-rag.md` section 3: current embedding kept; Qwen3-Embedding (Apache-2.0 open weights), Voyage-4 (hosted API; `voyage-4-nano` open weights with unstated license), Jina v5 (license unstated on the page) and any reranker not adopted because none can be benchmarked here and none is justified by a measured failure; pgvector not available locally and not needed; no new infrastructure was added.

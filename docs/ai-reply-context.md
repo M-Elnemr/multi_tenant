@@ -57,3 +57,12 @@ quoted-message read 0.40 ms; around-context 0.80 ms; earlier-messages digest (2 
 - The new widget navigation was not re-checked in a browser this round (the swipe/reply UI was, in round 3).
 - A message the customer's platform quotes that we never held (sent from the phone itself, before this feature) still shows as unavailable, except on own-number WhatsApp where the platform sends the quote's text.
 - The history window is still 24 messages; the digest keeps what the customer said before it, not what the assistant said.
+
+
+## Final phase: browser verification of the widget's old-message navigation
+Real Chrome, a disposable database (created and dropped for this run), the local backend with a stub model, a local test shop on `browsertest.localhost`, a conversation of 124 messages whose last message replies to message 1.
+- Newest page on screen: 60 messages (ids 65-124); the original (id 1) is **not** among them; the last message shows its quote.
+- Click the quote: **one** around-request; 26 messages added (the original plus 25 after it); no duplicates; time order kept; the newest messages still there; a "• • •" separator between the fetched page and the newest page; the original is scrolled into view and marked, then the mark clears.
+- Delete the original (in the database) after the page loaded and click the quote again: the widget shows "The original message could not be found", adds nothing, and the notice clears itself after about 3.5 s. After a reload the quote still shows from its stored snapshot and is no longer clickable.
+- Emulated phone width (a 386 px frame of the same page; the browser window itself could not be resized in this environment, so this is an emulation, not a device): widget full-width, right-to-left layout, quote and composer correct; touch gestures (vertical scroll and wrong direction cancel, 30 px does not reply, 80 px replies), reply button and Escape and the X all behave as designed.
+Not covered: real touch hardware, screen readers, a slow or failing network for the around-request (the failure path is the same notice), the inbox side of the final phase (checked in round 3).

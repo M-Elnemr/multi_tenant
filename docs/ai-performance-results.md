@@ -78,3 +78,19 @@ Test counts are in the final table below.
 | Migrations V93 + V94 and both rollbacks on a copy of an older database (1306 messages) | migrate, re-run, rollback, re-migrate all ok |
 | Reply-path reads (4000+ message chat, busy machine) | quoted read 0.40 ms, around 0.80 ms, digest 8.6 ms |
 | Not validated | live model behaviour; real WhatsApp/Meta/Evolution traffic including the quoted send; the widget navigation in a browser |
+
+
+## Final phase (memory, retrieval, prompt safety, payment guard)
+| Check | Result |
+|---|---|
+| Backend full suite (`cleanTest test`, 25 min on a busy machine) | **811 tests, 5 skipped (Redis, S3, scale volume: environment-dependent, same as before), 0 failures** = 786 before + 25 new |
+| A first full run of this phase had 2 failures caused by my own change (the money check's lookup of the order block matched the words inside the rules and allowed an invented urgency claim); fixed, a real-order payment test added, then the whole suite rerun from scratch | see the row above |
+| Provider fallback (GLM first, Alibaba fallback, no breaker, no duplicated order) | all still pass (GlmAlibabaFallbackTest 14, ProviderFailureTest 5, ProviderFallbackOrderIntegrationTest 3); no provider file or configuration was touched |
+| New tests | MemoryFactsExtractionTest 7, MemoryFactsIntegrationTest 9, RetrievalBenchmarkTest 2, KnowledgeRetrievalIntegrationTest 2, PaymentClaimGuardTest 2, PaymentClaimIntegrationTest 1, ProductDetailsBatchTest 1, ReplyPerfProfileTest 1 |
+| Web: `tsc`, `eslint --quiet`, i18n, `npm test` | clean / clean / ok / 13 of 13 (no web file changed in this phase) |
+| Promptfoo | 143 cases; assertion self-test 66 checks pass; **not run against a live model** |
+| Browser (real Chrome, disposable DB, stub model) | widget old-message navigation, deleted original, snapshot after reload, phone-width emulation, touch gestures: see ai-reply-context.md |
+| Migrations V93+V94+V95 and rollbacks on a copy of an older schema (1306 messages) | migrate, constraints enforced, re-run, rollback of all three, re-migrate: all ok |
+| Retrieval benchmark (synthetic, mechanism only) | Recall@5 .49 -> .81 (normalising word search), hybrid .95 on a stand-in vector; see ai-memory-and-rag.md |
+| Performance | statements per reply -10% for a 60-product shop (569 -> 510); latency differences within noise on a loaded machine; see ai-performance-audit.md |
+| **Not validated** | any live-model behaviour (memory use, retrieval with the production embedding, prompt rules, Egyptian-Arabic quality); real WhatsApp/Meta traffic; real touch hardware and screen readers; hybrid retrieval and any embedding candidate on real data |
