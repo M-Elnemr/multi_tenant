@@ -11,7 +11,7 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /**
- * Offline retrieval benchmark on a SYNTHETIC Egyptian catalog (30 products) with 80 labelled queries in 9 categories, written for this test. It compares the lexical matcher as it was, the
+ * Offline retrieval benchmark on a SYNTHETIC Egyptian catalog (30 products) with 68 labelled queries (63 answerable, 5 not sold) in 9 categories, written for this test. It compares the lexical matcher as it was, the
  * normalising matcher (Arabizi/English vocabulary, repeated letters, one typo), a character-trigram vector STAND-IN (what the test embedder is: not the production embedding) and the identity
  * fusion (a product whose full name is in the query comes first). It measures mechanisms on data the author wrote: it says nothing about the production embedding model, which needs a live key.
  * Run with BENCH_OVERHEAD=1 to print the tables.
@@ -212,12 +212,19 @@ class RetrievalBenchmarkTest {
 
     @Test
     void theNormaliserHandlesTheWordsItIsBuiltFor() {
-        assertThat(QueryNormalizer.groups("3ayez jacket eswed")).flatExtracting(g -> g).contains("جاكيت", "اسود", "عايز");
+        assertThat(QueryNormalizer.groups("3ayez jacket eswed")).flatExtracting(g -> g).contains("جاكيت", "اسود").doesNotContain("عايز");   // the request word is dropped, the product words stay
         assertThat(QueryNormalizer.squeeze("جاكيييييت")).isEqualTo("جاكيت");
         assertThat(QueryNormalizer.nearlyEqual("تيشيرت", "تيشرت")).isTrue();
         assertThat(QueryNormalizer.nearlyEqual("جاكيت", "جاكيتت")).isTrue();
         assertThat(QueryNormalizer.nearlyEqual("جاكيت", "بنطلون")).isFalse();
         assertThat(QueryNormalizer.nearlyEqual("قطن", "قطط")).as("short words are never fuzzy").isFalse();
+        // request words are not product words: «عايز لابتوب» must be matched on «لابتوب» alone (it used to need a second, impossible, word and found nothing)
+        assertThat(QueryNormalizer.groups("عايز لابتوب")).flatExtracting(g -> g).contains("لابتوب").doesNotContain("عايز", "عاوز");
+        assertThat(QueryNormalizer.groups("محتاج موبايل لو سمحت")).hasSize(1);
+        assertThat(QueryNormalizer.groups("i want a laptop please")).flatExtracting(g -> g).doesNotContain("want", "please");
+        assertThat(QueryNormalizer.groups("3ayez laptop")).flatExtracting(g -> g).contains("لابتوب").doesNotContain("عايز");
+        assertThat(QueryNormalizer.groups("عايز")).as("a query of only fillers keeps them: nothing better to match").isNotEmpty();
+        assertThat(QueryNormalizer.groups("ساعة ذكية")).as("product words are never dropped").hasSize(2);
         assertThat(QueryNormalizer.nameTokens("شنطة")).as("a generic one-word name identifies nothing").isEmpty();
         assertThat(QueryNormalizer.namedIn(QueryNormalizer.groups("عايز جاكيت بافر شتوي رجالي بكام"), QueryNormalizer.nameTokens("جاكيت بافر شتوي رجالي"))).isTrue();
         assertThat(QueryNormalizer.namedIn(QueryNormalizer.groups("عايز جاكيت جلد"), QueryNormalizer.nameTokens("جاكيت بافر شتوي رجالي"))).isFalse();

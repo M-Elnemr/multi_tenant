@@ -26,7 +26,7 @@ Validation: **unit/offline** (extraction table incl. negatives and sensitive dat
 3. Optional **hybrid** rank fusion of the vector search and the word search (`app.ai.rag.hybrid`, **default off**).
 4. Tenant isolation is tested at every new step (word search, identity, memory, details batch): another shop's rows are never returned, including when two shops have the same product name and even the same slug.
 
-**Benchmark** (`RetrievalBenchmarkTest`, synthetic: 30 Egyptian products, 80 labelled queries in 9 categories written for this test; the "vector" is a **character-trigram stand-in**, not the production embedding). Recall@1 / @5 / MRR:
+**Benchmark** (`RetrievalBenchmarkTest`, synthetic: 30 Egyptian products, 68 labelled queries (63 answerable and 5 not sold) in 9 categories; the first version of this document said 80, which was wrong written for this test; the "vector" is a **character-trigram stand-in**, not the production embedding). Recall@1 / @5 / MRR:
 
 | category (n) | legacy word search | normalising word search | vector stand-in | + identity | hybrid |
 |---|---|---|---|---|---|

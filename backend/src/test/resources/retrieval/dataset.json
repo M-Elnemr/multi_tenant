@@ -1,0 +1,1889 @@
+{
+ "description": "synthetic, author-written, fixed; see build_dataset.py",
+ "shops": [
+  {
+   "name": "A-fashion",
+   "products": [
+    {
+     "id": 1,
+     "title": "جاكيت بافر شتوي رجالي",
+     "body": "جاكيت منفوخ دافي للشتا حشو صناعي مقاوم للمطر الخفيف غسيل بالماء البارد"
+    },
+    {
+     "id": 2,
+     "title": "جاكيت جلد طبيعي اسود",
+     "body": "جلد طبيعي 100% بطانة قطن يتنضف بقماشة مبلولة ولا يتغسل"
+    },
+    {
+     "id": 3,
+     "title": "تيشيرت قطن اسود",
+     "body": "قطن 100% بيتغسل في الغسالة على 30 درجة وممكن ينكمش لو اتغسل ساخن"
+    },
+    {
+     "id": 4,
+     "title": "تيشيرت رياضي دراي فيت",
+     "body": "قماش بوليستر بينشف بسرعة مناسب للجيم والجري"
+    },
+    {
+     "id": 5,
+     "title": "قميص كتان صيفي",
+     "body": "كتان طبيعي خفيف للصيف بيتكوي وهو مبلول"
+    },
+    {
+     "id": 6,
+     "title": "بنطلون جينز ازرق",
+     "body": "جينز استريتش مريح قصة مستقيمة"
+    },
+    {
+     "id": 7,
+     "title": "بنطلون قماش كلاسيك رمادي",
+     "body": "قماش رسمي للشغل قصة ضيقة"
+    },
+    {
+     "id": 8,
+     "title": "فستان سهرة اسود طويل",
+     "body": "فستان سهرة طويل قماش ساتان"
+    },
+    {
+     "id": 9,
+     "title": "فستان صيفي مورد",
+     "body": "فستان خفيف مورد للصيف قطن"
+    },
+    {
+     "id": 10,
+     "title": "شنطة ظهر لابتوب",
+     "body": "تشيل لابتوب 15.6 بوصة مقاومة للماء جيوب كتير"
+    },
+    {
+     "id": 11,
+     "title": "شنطة يد جلد بني حريمي",
+     "body": "جلد صناعي بني شنطة يد انيقة"
+    },
+    {
+     "id": 12,
+     "title": "محفظة جلد رجالي",
+     "body": "محفظة جلد طبيعي بجيوب للكروت"
+    },
+    {
+     "id": 13,
+     "title": "حزام جلد بني",
+     "body": "حزام جلد طبيعي بمشبك معدن"
+    },
+    {
+     "id": 14,
+     "title": "جزمة كلاسيك جلد اسود",
+     "body": "جزمة رسمية جلد طبيعي نعل مريح"
+    },
+    {
+     "id": 15,
+     "title": "كوتشي رياضي ابيض",
+     "body": "كوتشي نعل مرن للجري والمشي"
+    },
+    {
+     "id": 16,
+     "title": "ساعة يد ذكية",
+     "body": "بطارية 7 ايام مقاومة للماء تتابع النبض"
+    },
+    {
+     "id": 17,
+     "title": "سماعة بلوتوث رياضية",
+     "body": "بطارية 20 ساعة مقاومة للعرق للجري"
+    },
+    {
+     "id": 18,
+     "title": "شاحن موبايل سريع 30 وات",
+     "body": "شاحن سريع يدعم كل الموبايلات"
+    },
+    {
+     "id": 19,
+     "title": "كوفية صوف شتوي",
+     "body": "صوف ناعم يدفي في البرد"
+    },
+    {
+     "id": 20,
+     "title": "طقم ملايات قطن مصري",
+     "body": "قطن مصري 400 خيط ناعم"
+    },
+    {
+     "id": 21,
+     "title": "بيجامة قطن اطفال",
+     "body": "بيجامة قطن للاطفال مريحة"
+    },
+    {
+     "id": 22,
+     "title": "جاكيت جينز ازرق",
+     "body": "جاكيت جينز كلاسيك للربيع"
+    },
+    {
+     "id": 23,
+     "title": "تيشيرت بولو ابيض",
+     "body": "بولو قطن بياقة"
+    },
+    {
+     "id": 24,
+     "title": "شورت رياضي رجالي",
+     "body": "شورت خفيف للجيم"
+    },
+    {
+     "id": 25,
+     "title": "كوباية سيراميك",
+     "body": "كوباية قهوة سيراميك"
+    },
+    {
+     "id": 26,
+     "title": "مج حراري ستانلس",
+     "body": "بيحافظ على سخونة المشروب 8 ساعات"
+    },
+    {
+     "id": 27,
+     "title": "عطر مسك رجالي",
+     "body": "عطر مسك ثابت"
+    },
+    {
+     "id": 28,
+     "title": "نظارة شمس",
+     "body": "نظارة شمس حماية من الاشعة"
+    },
+    {
+     "id": 29,
+     "title": "حقيبة سفر هارد",
+     "body": "حقيبة سفر صلبة بعجلات"
+    },
+    {
+     "id": 30,
+     "title": "قبعة صوف شتوية",
+     "body": "قبعة صوف دافية"
+    }
+   ],
+   "queries": [
+    {
+     "category": "exact name",
+     "text": "كوباية سيراميك",
+     "relevant": [
+      25
+     ]
+    },
+    {
+     "category": "exact name",
+     "text": "طقم ملايات قطن مصري",
+     "relevant": [
+      20
+     ]
+    },
+    {
+     "category": "exact name",
+     "text": "كوفية صوف شتوي",
+     "relevant": [
+      19
+     ]
+    },
+    {
+     "category": "exact name",
+     "text": "ساعة يد ذكية",
+     "relevant": [
+      16
+     ]
+    },
+    {
+     "category": "exact name",
+     "text": "شنطة ظهر لابتوب",
+     "relevant": [
+      10
+     ]
+    },
+    {
+     "category": "exact name",
+     "text": "قميص كتان صيفي",
+     "relevant": [
+      5
+     ]
+    },
+    {
+     "category": "exact name",
+     "text": "تيشيرت قطن اسود",
+     "relevant": [
+      3
+     ]
+    },
+    {
+     "category": "exact name",
+     "text": "جاكيت بافر شتوي رجالي",
+     "relevant": [
+      1
+     ]
+    },
+    {
+     "category": "egyptian",
+     "text": "عايز جاكيت جلد",
+     "relevant": [
+      2
+     ]
+    },
+    {
+     "category": "egyptian",
+     "text": "فيه تيشيرت قطن؟",
+     "relevant": [
+      3
+     ]
+    },
+    {
+     "category": "egyptian",
+     "text": "عايزة فستان للسهرة",
+     "relevant": [
+      8
+     ]
+    },
+    {
+     "category": "egyptian",
+     "text": "محتاج بنطلون جينز",
+     "relevant": [
+      6
+     ]
+    },
+    {
+     "category": "egyptian",
+     "text": "ابغى شنطة للابتوب",
+     "relevant": [
+      10
+     ]
+    },
+    {
+     "category": "egyptian",
+     "text": "عندكم سماعة رياضية",
+     "relevant": [
+      17
+     ]
+    },
+    {
+     "category": "egyptian",
+     "text": "عايز كوتشي ابيض",
+     "relevant": [
+      15
+     ]
+    },
+    {
+     "category": "egyptian",
+     "text": "بدور على حزام جلد",
+     "relevant": [
+      13
+     ]
+    },
+    {
+     "category": "egyptian",
+     "text": "فين المحفظة الجلد",
+     "relevant": [
+      12
+     ]
+    },
+    {
+     "category": "arabizi",
+     "text": "3ayez jacket geld eswed",
+     "relevant": [
+      2
+     ]
+    },
+    {
+     "category": "arabizi",
+     "text": "tshirt cotton eswed",
+     "relevant": [
+      3
+     ]
+    },
+    {
+     "category": "arabizi",
+     "text": "bantalon jeans azra2",
+     "relevant": [
+      6
+     ]
+    },
+    {
+     "category": "arabizi",
+     "text": "shanta laptop",
+     "relevant": [
+      10
+     ]
+    },
+    {
+     "category": "arabizi",
+     "text": "sa3a smart",
+     "relevant": [
+      16
+     ]
+    },
+    {
+     "category": "arabizi",
+     "text": "3ayza fostan sayfy",
+     "relevant": [
+      9
+     ]
+    },
+    {
+     "category": "arabizi",
+     "text": "gazma classic eswed",
+     "relevant": [
+      14
+     ]
+    },
+    {
+     "category": "arabizi",
+     "text": "kotshi abyad",
+     "relevant": [
+      15
+     ]
+    },
+    {
+     "category": "arabizi",
+     "text": "jaket shitwy",
+     "relevant": [
+      1
+     ]
+    },
+    {
+     "category": "typos",
+     "text": "جاكيييت بافر",
+     "relevant": [
+      1
+     ]
+    },
+    {
+     "category": "typos",
+     "text": "تيشرت قطن اسود",
+     "relevant": [
+      3
+     ]
+    },
+    {
+     "category": "typos",
+     "text": "بنطلونن جينز",
+     "relevant": [
+      6
+     ]
+    },
+    {
+     "category": "typos",
+     "text": "قميصص كتان",
+     "relevant": [
+      5
+     ]
+    },
+    {
+     "category": "typos",
+     "text": "فستانن سهرهه",
+     "relevant": [
+      8
+     ]
+    },
+    {
+     "category": "typos",
+     "text": "كوتشيي رياضي",
+     "relevant": [
+      15
+     ]
+    },
+    {
+     "category": "typos",
+     "text": "ساعه ذكيه",
+     "relevant": [
+      16
+     ]
+    },
+    {
+     "category": "typos",
+     "text": "محفضة جلد",
+     "relevant": [
+      12
+     ]
+    },
+    {
+     "category": "typos",
+     "text": "شاحنن موبايل",
+     "relevant": [
+      18
+     ]
+    },
+    {
+     "category": "english",
+     "text": "black cotton t-shirt",
+     "relevant": [
+      3
+     ]
+    },
+    {
+     "category": "english",
+     "text": "winter jacket men",
+     "relevant": [
+      1
+     ]
+    },
+    {
+     "category": "english",
+     "text": "leather wallet",
+     "relevant": [
+      12
+     ]
+    },
+    {
+     "category": "english",
+     "text": "laptop bag",
+     "relevant": [
+      10
+     ]
+    },
+    {
+     "category": "english",
+     "text": "smart watch waterproof",
+     "relevant": [
+      16
+     ]
+    },
+    {
+     "category": "english",
+     "text": "wool scarf winter",
+     "relevant": [
+      19
+     ]
+    },
+    {
+     "category": "english",
+     "text": "white sneakers",
+     "relevant": [
+      15
+     ]
+    },
+    {
+     "category": "english",
+     "text": "bluetooth headphones",
+     "relevant": [
+      17
+     ]
+    },
+    {
+     "category": "attribute",
+     "text": "التيشيرت القطن بيتغسل في الغسالة",
+     "relevant": [
+      3
+     ]
+    },
+    {
+     "category": "attribute",
+     "text": "هل القطن ينكمش",
+     "relevant": [
+      3,
+      20,
+      21,
+      23
+     ]
+    },
+    {
+     "category": "attribute",
+     "text": "جاكيت مقاوم للمطر",
+     "relevant": [
+      1
+     ]
+    },
+    {
+     "category": "attribute",
+     "text": "كتان للصيف",
+     "relevant": [
+      5
+     ]
+    },
+    {
+     "category": "attribute",
+     "text": "الجاكيت الجلد يتغسل",
+     "relevant": [
+      2
+     ]
+    },
+    {
+     "category": "attribute",
+     "text": "شنطة مقاومة للماء",
+     "relevant": [
+      10
+     ]
+    },
+    {
+     "category": "attribute",
+     "text": "ساعة بطارية 7 ايام",
+     "relevant": [
+      16
+     ]
+    },
+    {
+     "category": "attribute",
+     "text": "سماعة مقاومة للعرق",
+     "relevant": [
+      17
+     ]
+    },
+    {
+     "category": "follow-up (name carried)",
+     "text": "تيشيرت قطن اسود هل بينكمش؟",
+     "relevant": [
+      3
+     ]
+    },
+    {
+     "category": "follow-up (name carried)",
+     "text": "جاكيت بافر شتوي رجالي ينفع في المطر",
+     "relevant": [
+      1
+     ]
+    },
+    {
+     "category": "follow-up (name carried)",
+     "text": "فستان سهرة اسود طويل مقاس كام",
+     "relevant": [
+      8
+     ]
+    },
+    {
+     "category": "follow-up (name carried)",
+     "text": "ساعة يد ذكية بتتشحن ازاي",
+     "relevant": [
+      16
+     ]
+    },
+    {
+     "category": "follow-up (name carried)",
+     "text": "بنطلون جينز ازرق ممكن اكبر",
+     "relevant": [
+      6
+     ]
+    },
+    {
+     "category": "follow-up (name carried)",
+     "text": "حزام جلد بني بكام",
+     "relevant": [
+      13
+     ]
+    },
+    {
+     "category": "paraphrase (semantic)",
+     "text": "حاجة تدفيني في البرد",
+     "relevant": [
+      1,
+      19,
+      30
+     ]
+    },
+    {
+     "category": "paraphrase (semantic)",
+     "text": "عايز حاجة اجري بيها",
+     "relevant": [
+      4,
+      15,
+      17,
+      24
+     ]
+    },
+    {
+     "category": "paraphrase (semantic)",
+     "text": "هدية لراجل",
+     "relevant": [
+      12,
+      27,
+      13
+     ]
+    },
+    {
+     "category": "paraphrase (semantic)",
+     "text": "حاجة اشرب فيها قهوة",
+     "relevant": [
+      25,
+      26
+     ]
+    },
+    {
+     "category": "paraphrase (semantic)",
+     "text": "هسافر شهر",
+     "relevant": [
+      29
+     ]
+    },
+    {
+     "category": "paraphrase (semantic)",
+     "text": "عايز احمي عيني من الشمس",
+     "relevant": [
+      28
+     ]
+    },
+    {
+     "category": "not sold",
+     "text": "ايفون ١٥ برو",
+     "relevant": []
+    },
+    {
+     "category": "not sold",
+     "text": "تلاجة سامسونج",
+     "relevant": []
+    },
+    {
+     "category": "not sold",
+     "text": "laptop dell",
+     "relevant": []
+    },
+    {
+     "category": "not sold",
+     "text": "غسالة اطباق",
+     "relevant": []
+    },
+    {
+     "category": "not sold",
+     "text": "psp game console",
+     "relevant": []
+    }
+   ]
+  },
+  {
+   "name": "B-electronics-home",
+   "products": [
+    {
+     "id": 1,
+     "title": "موبايل سامسونج جالاكسي A55",
+     "body": "شاشة 6.6 بوصة بطارية 5000 ملي امبير كاميرا 50 ميجا بكسل ذاكرة 256 جيجا"
+    },
+    {
+     "id": 2,
+     "title": "موبايل ايفون 15",
+     "body": "شاشة 6.1 بوصة كاميرا 48 ميجا شحن يو اس بي سي ذاكرة 128 جيجا"
+    },
+    {
+     "id": 3,
+     "title": "لابتوب لينوفو ايديا باد",
+     "body": "معالج كور i5 رامات 16 جيجا هارد 512 SSD للدراسة والشغل"
+    },
+    {
+     "id": 4,
+     "title": "لابتوب ديل انسبيرون",
+     "body": "معالج رايزن 7 رامات 16 جيجا شاشة 15.6 بوصة"
+    },
+    {
+     "id": 5,
+     "title": "تابلت سامسونج تاب A9",
+     "body": "شاشة 8.7 بوصة بطارية 5100 ملي امبير للاطفال والمشاهدة"
+    },
+    {
+     "id": 6,
+     "title": "سماعة بلوتوث ايرباودز",
+     "body": "سماعة اذن لاسلكية عزل ضوضاء بطارية 24 ساعة مع العلبة"
+    },
+    {
+     "id": 7,
+     "title": "سماعة راس جيمنج",
+     "body": "سماعة بميكروفون صوت محيطي مريحة للعب الطويل"
+    },
+    {
+     "id": 8,
+     "title": "شاحن لاسلكي سريع",
+     "body": "شحن لاسلكي 15 وات يدعم الايفون والاندرويد"
+    },
+    {
+     "id": 9,
+     "title": "باور بانك 20000",
+     "body": "سعة 20000 ملي امبير منفذين شحن سريع"
+    },
+    {
+     "id": 10,
+     "title": "كابل شحن تايب سي",
+     "body": "كابل مضفر طول متر ونص يتحمل شحن سريع"
+    },
+    {
+     "id": 11,
+     "title": "تلفزيون سمارت 50 بوصة",
+     "body": "شاشة 4K اندرويد تي في واي فاي يدعم نتفليكس ويوتيوب"
+    },
+    {
+     "id": 12,
+     "title": "ريسيفر اتش دي",
+     "body": "جهاز استقبال قنوات رقمية مع ريموت"
+    },
+    {
+     "id": 13,
+     "title": "مروحة ستاند",
+     "body": "مروحة 16 بوصة ثلاث سرعات ارتفاع قابل للتعديل هادية"
+    },
+    {
+     "id": 14,
+     "title": "مكنسة كهربائية",
+     "body": "شفط قوي 2000 وات كيس قابل للغسل خرطوم طويل"
+    },
+    {
+     "id": 15,
+     "title": "خلاط كهربائي",
+     "body": "خلاط 1.5 لتر 600 وات بثلاث سرعات سكاكين ستانلس"
+    },
+    {
+     "id": 16,
+     "title": "غلاية مياه كهربائية",
+     "body": "سعة 1.7 لتر فصل اوتوماتيكي سريعة الغليان"
+    },
+    {
+     "id": 17,
+     "title": "ماكينة قهوة اسبريسو",
+     "body": "ضغط 15 بار بتعمل اسبريسو وكابتشينو مع رغاية"
+    },
+    {
+     "id": 18,
+     "title": "مكواة بخار",
+     "body": "مكواة 2400 وات بخار مستمر نعل سيراميك"
+    },
+    {
+     "id": 19,
+     "title": "سخان مياه كهربائي 50 لتر",
+     "body": "سخان بترموستات حماية من الصدأ تركيب سهل"
+    },
+    {
+     "id": 20,
+     "title": "ثلاجة 16 قدم نوفروست",
+     "body": "ثلاجة بابين لا تحتاج إذابة ثلج موفرة للكهرباء"
+    },
+    {
+     "id": 21,
+     "title": "غسالة اوتوماتيك 8 كيلو",
+     "body": "غسالة تحميل امامي 8 كيلو 1200 لفة"
+    },
+    {
+     "id": 22,
+     "title": "ميكروويف 25 لتر",
+     "body": "ميكروويف مع شواية 900 وات"
+    },
+    {
+     "id": 23,
+     "title": "شاشة كمبيوتر 24 بوصة",
+     "body": "شاشة فول اتش دي 75 هرتز منفذ HDMI"
+    },
+    {
+     "id": 24,
+     "title": "كيبورد ميكانيكال",
+     "body": "كيبورد بإضاءة RGB مفاتيح زرقاء للكتابة والجيمنج"
+    },
+    {
+     "id": 25,
+     "title": "ماوس لاسلكي",
+     "body": "ماوس بطارية تدوم سنة اتصال USB صغير"
+    },
+    {
+     "id": 26,
+     "title": "راوتر واي فاي 6",
+     "body": "راوتر سرعة 3000 ميجا تغطية واسعة 4 هوائيات"
+    },
+    {
+     "id": 27,
+     "title": "كاميرا مراقبة خارجية",
+     "body": "كاميرا 2 ميجا ليلي مقاومة للماء تسجيل على الموبايل"
+    },
+    {
+     "id": 28,
+     "title": "سماعة بلوتوث محمولة",
+     "body": "سبيكر مقاوم للماء بطارية 12 ساعة صوت قوي"
+    },
+    {
+     "id": 29,
+     "title": "ساعة ذكية رياضية",
+     "body": "ساعة تتابع النبض والخطوات بطارية 7 ايام مقاومة للماء"
+    },
+    {
+     "id": 30,
+     "title": "بروجكتر صغير",
+     "body": "بروجكتر 1080p واي فاي للافلام في البيت"
+    }
+   ],
+   "queries": [
+    {
+     "category": "exact name",
+     "text": "موبايل سامسونج جالاكسي A55",
+     "relevant": [
+      1
+     ]
+    },
+    {
+     "category": "exact name",
+     "text": "لابتوب ديل انسبيرون",
+     "relevant": [
+      4
+     ]
+    },
+    {
+     "category": "exact name",
+     "text": "سماعة راس جيمنج",
+     "relevant": [
+      7
+     ]
+    },
+    {
+     "category": "exact name",
+     "text": "كابل شحن تايب سي",
+     "relevant": [
+      10
+     ]
+    },
+    {
+     "category": "exact name",
+     "text": "مروحة ستاند",
+     "relevant": [
+      13
+     ]
+    },
+    {
+     "category": "exact name",
+     "text": "غلاية مياه كهربائية",
+     "relevant": [
+      16
+     ]
+    },
+    {
+     "category": "exact name",
+     "text": "سخان مياه كهربائي 50 لتر",
+     "relevant": [
+      19
+     ]
+    },
+    {
+     "category": "exact name",
+     "text": "ميكروويف 25 لتر",
+     "relevant": [
+      22
+     ]
+    },
+    {
+     "category": "exact name",
+     "text": "ماوس لاسلكي",
+     "relevant": [
+      25
+     ]
+    },
+    {
+     "category": "exact name",
+     "text": "سماعة بلوتوث محمولة",
+     "relevant": [
+      28
+     ]
+    },
+    {
+     "category": "egyptian",
+     "text": "عايز موبايل ايفون",
+     "relevant": [
+      2
+     ]
+    },
+    {
+     "category": "egyptian",
+     "text": "عايز سماعة بلوتوث",
+     "relevant": [
+      6
+     ]
+    },
+    {
+     "category": "egyptian",
+     "text": "عايز كابل شحن",
+     "relevant": [
+      10
+     ]
+    },
+    {
+     "category": "egyptian",
+     "text": "عايز مكنسة كهربائية",
+     "relevant": [
+      14
+     ]
+    },
+    {
+     "category": "egyptian",
+     "text": "عايز مكواة بخار",
+     "relevant": [
+      18
+     ]
+    },
+    {
+     "category": "egyptian",
+     "text": "عايز ميكروويف 25",
+     "relevant": [
+      22
+     ]
+    },
+    {
+     "category": "egyptian",
+     "text": "عايز راوتر واي",
+     "relevant": [
+      26
+     ]
+    },
+    {
+     "category": "egyptian",
+     "text": "عايز بروجكتر صغير",
+     "relevant": [
+      30
+     ]
+    },
+    {
+     "category": "typos",
+     "text": "لابتتوب لينوفو ايديا باد",
+     "relevant": [
+      3
+     ]
+    },
+    {
+     "category": "typos",
+     "text": "سمعة راس جيمنج",
+     "relevant": [
+      7
+     ]
+    },
+    {
+     "category": "typos",
+     "text": "تلفززيون سمارت 50 بوصة",
+     "relevant": [
+      11
+     ]
+    },
+    {
+     "category": "typos",
+     "text": "خلاط كهرائي",
+     "relevant": [
+      15
+     ]
+    },
+    {
+     "category": "typos",
+     "text": "سخان مياه كهرببائي 50 لتر",
+     "relevant": [
+      19
+     ]
+    },
+    {
+     "category": "typos",
+     "text": "شاشة كمبوتر 24 بوصة",
+     "relevant": [
+      23
+     ]
+    },
+    {
+     "category": "typos",
+     "text": "كامييرا مراقبة خارجية",
+     "relevant": [
+      27
+     ]
+    },
+    {
+     "category": "follow-up (name carried)",
+     "text": "لابتوب ديل انسبيرون فيه ضمان؟",
+     "relevant": [
+      4
+     ]
+    },
+    {
+     "category": "follow-up (name carried)",
+     "text": "باور بانك 20000 حجمه كام؟",
+     "relevant": [
+      9
+     ]
+    },
+    {
+     "category": "follow-up (name carried)",
+     "text": "مكنسة كهربائية بيستهلك كهربا كتير؟",
+     "relevant": [
+      14
+     ]
+    },
+    {
+     "category": "follow-up (name carried)",
+     "text": "سخان مياه كهربائي 50 لتر ممكن اركبه بنفسي؟",
+     "relevant": [
+      19
+     ]
+    },
+    {
+     "category": "follow-up (name carried)",
+     "text": "كيبورد ميكانيكال بيدعم ايه؟",
+     "relevant": [
+      24
+     ]
+    },
+    {
+     "category": "follow-up (name carried)",
+     "text": "ساعة ذكية رياضية بيتشحن ازاي؟",
+     "relevant": [
+      29
+     ]
+    },
+    {
+     "category": "arabizi",
+     "text": "3ayez mobile samsung galaxy",
+     "relevant": [
+      1
+     ]
+    },
+    {
+     "category": "arabizi",
+     "text": "laptop lenovo bekam",
+     "relevant": [
+      3
+     ]
+    },
+    {
+     "category": "arabizi",
+     "text": "sama3a bluetooth airpods",
+     "relevant": [
+      6
+     ]
+    },
+    {
+     "category": "arabizi",
+     "text": "sha7en la sel2y sare3",
+     "relevant": [
+      8
+     ]
+    },
+    {
+     "category": "arabizi",
+     "text": "tilifizion smart 50",
+     "relevant": [
+      11
+     ]
+    },
+    {
+     "category": "arabizi",
+     "text": "makena qahwa espresso",
+     "relevant": [
+      17
+     ]
+    },
+    {
+     "category": "arabizi",
+     "text": "thallaga 16 qadam",
+     "relevant": [
+      20
+     ]
+    },
+    {
+     "category": "arabizi",
+     "text": "ghassala automatic",
+     "relevant": [
+      21
+     ]
+    },
+    {
+     "category": "arabizi",
+     "text": "sa3a zakeya",
+     "relevant": [
+      29
+     ]
+    },
+    {
+     "category": "english",
+     "text": "samsung galaxy phone",
+     "relevant": [
+      1
+     ]
+    },
+    {
+     "category": "english",
+     "text": "iphone 15",
+     "relevant": [
+      2
+     ]
+    },
+    {
+     "category": "english",
+     "text": "wireless charger",
+     "relevant": [
+      8
+     ]
+    },
+    {
+     "category": "english",
+     "text": "smart tv 50 inch",
+     "relevant": [
+      11
+     ]
+    },
+    {
+     "category": "english",
+     "text": "washing machine",
+     "relevant": [
+      21
+     ]
+    },
+    {
+     "category": "english",
+     "text": "gaming headset",
+     "relevant": [
+      7
+     ]
+    },
+    {
+     "category": "english",
+     "text": "mechanical keyboard",
+     "relevant": [
+      24
+     ]
+    },
+    {
+     "category": "english",
+     "text": "security camera",
+     "relevant": [
+      27
+     ]
+    },
+    {
+     "category": "attribute",
+     "text": "البطارية كام ساعة في الايرباودز",
+     "relevant": [
+      6
+     ]
+    },
+    {
+     "category": "attribute",
+     "text": "كام جيجا الرامات في لينوفو",
+     "relevant": [
+      3
+     ]
+    },
+    {
+     "category": "attribute",
+     "text": "الكاميرا كام ميجا في الايفون",
+     "relevant": [
+      2
+     ]
+    },
+    {
+     "category": "attribute",
+     "text": "المكنسة بتشفط بكام وات",
+     "relevant": [
+      14
+     ]
+    },
+    {
+     "category": "attribute",
+     "text": "الغسالة كام كيلو",
+     "relevant": [
+      21
+     ]
+    },
+    {
+     "category": "attribute",
+     "text": "السبيكر بيتحمل الماء",
+     "relevant": [
+      28
+     ]
+    },
+    {
+     "category": "category (disambiguation)",
+     "text": "عايز لابتوب",
+     "relevant": [
+      3,
+      4
+     ]
+    },
+    {
+     "category": "category (disambiguation)",
+     "text": "عايز موبايل",
+     "relevant": [
+      1,
+      2
+     ]
+    },
+    {
+     "category": "category (disambiguation)",
+     "text": "عايز سماعة",
+     "relevant": [
+      6,
+      7,
+      28
+     ]
+    },
+    {
+     "category": "category (disambiguation)",
+     "text": "عايز شاحن",
+     "relevant": [
+      8,
+      9,
+      10
+     ]
+    },
+    {
+     "category": "paraphrase (semantic)",
+     "text": "حاجة اسمع بيها اغاني وانا ماشي",
+     "relevant": [
+      6,
+      28
+     ]
+    },
+    {
+     "category": "paraphrase (semantic)",
+     "text": "عايز ابرد الاوضة",
+     "relevant": [
+      13
+     ]
+    },
+    {
+     "category": "paraphrase (semantic)",
+     "text": "حاجة اشرب بيها قهوة زي الكافيه",
+     "relevant": [
+      17
+     ]
+    },
+    {
+     "category": "paraphrase (semantic)",
+     "text": "اشاهد افلام على الحيطة",
+     "relevant": [
+      30
+     ]
+    },
+    {
+     "category": "paraphrase (semantic)",
+     "text": "احفظ الاكل بارد",
+     "relevant": [
+      20
+     ]
+    },
+    {
+     "category": "not sold",
+     "text": "بلايستيشن 5",
+     "relevant": []
+    },
+    {
+     "category": "not sold",
+     "text": "سيارة",
+     "relevant": []
+    },
+    {
+     "category": "not sold",
+     "text": "تكييف شارب",
+     "relevant": []
+    },
+    {
+     "category": "not sold",
+     "text": "طابعة ليزر",
+     "relevant": []
+    }
+   ]
+  },
+  {
+   "name": "C-beauty-kids-food",
+   "products": [
+    {
+     "id": 1,
+     "title": "عطر مسك رجالي",
+     "body": "عطر مسك ثابت يدوم 12 ساعة رائحة دافية"
+    },
+    {
+     "id": 2,
+     "title": "عطر ورد حريمي",
+     "body": "عطر ورد ناعم برائحة الياسمين وزجاجة انيقة"
+    },
+    {
+     "id": 3,
+     "title": "كريم ترطيب للوجه",
+     "body": "كريم بالالوفيرا لجميع انواع البشرة بدون عطر"
+    },
+    {
+     "id": 4,
+     "title": "غسول وجه بالصبار",
+     "body": "غسول لطيف للبشرة الدهنية ينظف المسام"
+    },
+    {
+     "id": 5,
+     "title": "شامبو للشعر الجاف",
+     "body": "شامبو بزيت الارجان يغذي الشعر الجاف والمتقصف"
+    },
+    {
+     "id": 6,
+     "title": "بلسم للشعر",
+     "body": "بلسم بالكيراتين يفك التشابك ويلمع الشعر"
+    },
+    {
+     "id": 7,
+     "title": "زيت شعر طبيعي",
+     "body": "زيت جوز الهند وزيت الخروع يقوي الشعر"
+    },
+    {
+     "id": 8,
+     "title": "احمر شفاه مطفي",
+     "body": "احمر شفاه ثابت لون وردي مطفي لا يلطخ"
+    },
+    {
+     "id": 9,
+     "title": "ماسكارا مقاومة للماء",
+     "body": "ماسكارا تطويل ورموش كثيفة تقاوم الدموع والماء"
+    },
+    {
+     "id": 10,
+     "title": "كريم اساس سائل",
+     "body": "كريم اساس تغطية كاملة درجات متعددة"
+    },
+    {
+     "id": 11,
+     "title": "لعبة مكعبات للاطفال",
+     "body": "مكعبات خشب ملونة لتنمية الذكاء من سنتين"
+    },
+    {
+     "id": 12,
+     "title": "عروسة قماش ناعمة",
+     "body": "عروسة قطن امنة للاطفال تتغسل في الغسالة"
+    },
+    {
+     "id": 13,
+     "title": "سيارة تحكم عن بعد",
+     "body": "سيارة بريموت وبطارية قابلة للشحن للاولاد"
+    },
+    {
+     "id": 14,
+     "title": "كراسة تلوين مع الوان",
+     "body": "كراسة 40 صفحة مع علبة الوان خشب"
+    },
+    {
+     "id": 15,
+     "title": "شنطة مدرسة للاطفال",
+     "body": "شنطة ظهر خفيفة بجيوب للكراسات مقاومة للماء"
+    },
+    {
+     "id": 16,
+     "title": "حذاء مدرسي اسود",
+     "body": "جزمة مدرسية جلد صناعي نعل مريح للمشي"
+    },
+    {
+     "id": 17,
+     "title": "بيجامة اطفال قطن",
+     "body": "بيجامة قطن 100% مريحة للنوم تتغسل بالماء الدافي"
+    },
+    {
+     "id": 18,
+     "title": "حفاضات اطفال مقاس 4",
+     "body": "حفاضات امتصاص عالي حماية 12 ساعة"
+    },
+    {
+     "id": 19,
+     "title": "لبن اطفال مرحلة اولى",
+     "body": "لبن مجفف للرضع من الشهر الاول بالحديد"
+    },
+    {
+     "id": 20,
+     "title": "زجاجة رضاعة 240 مل",
+     "body": "زجاجة خالية من البيسفينول مع حلمة سيليكون"
+    },
+    {
+     "id": 21,
+     "title": "عسل نحل طبيعي",
+     "body": "عسل سدر طبيعي 100% بدون اضافات برطمان 500 جرام"
+    },
+    {
+     "id": 22,
+     "title": "تمر سكري",
+     "body": "تمر سكري فاخر طري علبة كيلو"
+    },
+    {
+     "id": 23,
+     "title": "زيت زيتون بكر",
+     "body": "زيت زيتون بكر ممتاز عصرة اولى زجاجة 500 مل"
+    },
+    {
+     "id": 24,
+     "title": "قهوة تركي بالهيل",
+     "body": "قهوة تركي محمصة مطحونة مع الهيل 250 جرام"
+    },
+    {
+     "id": 25,
+     "title": "شاي اخضر",
+     "body": "شاي اخضر 25 كيس بدون سكر لحرق الدهون"
+    },
+    {
+     "id": 26,
+     "title": "مكسرات مشكلة",
+     "body": "لوز وكاجو وبندق محمص علبة 500 جرام"
+    },
+    {
+     "id": 27,
+     "title": "شوكولاتة داكنة",
+     "body": "شوكولاتة داكنة 70% كاكاو بدون لبن"
+    },
+    {
+     "id": 28,
+     "title": "عصير مانجو طبيعي",
+     "body": "عصير مانجو بدون سكر مضاف علبة لتر"
+    },
+    {
+     "id": 29,
+     "title": "بسكويت بالشوفان",
+     "body": "بسكويت شوفان وعسل صحي للاطفال والكبار"
+    },
+    {
+     "id": 30,
+     "title": "مربى فراولة",
+     "body": "مربى فراولة طبيعي برطمان 350 جرام"
+    }
+   ],
+   "queries": [
+    {
+     "category": "exact name",
+     "text": "عطر مسك رجالي",
+     "relevant": [
+      1
+     ]
+    },
+    {
+     "category": "exact name",
+     "text": "غسول وجه بالصبار",
+     "relevant": [
+      4
+     ]
+    },
+    {
+     "category": "exact name",
+     "text": "زيت شعر طبيعي",
+     "relevant": [
+      7
+     ]
+    },
+    {
+     "category": "exact name",
+     "text": "كريم اساس سائل",
+     "relevant": [
+      10
+     ]
+    },
+    {
+     "category": "exact name",
+     "text": "سيارة تحكم عن بعد",
+     "relevant": [
+      13
+     ]
+    },
+    {
+     "category": "exact name",
+     "text": "حذاء مدرسي اسود",
+     "relevant": [
+      16
+     ]
+    },
+    {
+     "category": "exact name",
+     "text": "لبن اطفال مرحلة اولى",
+     "relevant": [
+      19
+     ]
+    },
+    {
+     "category": "exact name",
+     "text": "تمر سكري",
+     "relevant": [
+      22
+     ]
+    },
+    {
+     "category": "exact name",
+     "text": "شاي اخضر",
+     "relevant": [
+      25
+     ]
+    },
+    {
+     "category": "exact name",
+     "text": "عصير مانجو طبيعي",
+     "relevant": [
+      28
+     ]
+    },
+    {
+     "category": "egyptian",
+     "text": "عايز عطر ورد",
+     "relevant": [
+      2
+     ]
+    },
+    {
+     "category": "egyptian",
+     "text": "عايز بلسم للشعر",
+     "relevant": [
+      6
+     ]
+    },
+    {
+     "category": "egyptian",
+     "text": "عايز كريم اساس",
+     "relevant": [
+      10
+     ]
+    },
+    {
+     "category": "egyptian",
+     "text": "عايز كراسة تلوين",
+     "relevant": [
+      14
+     ]
+    },
+    {
+     "category": "egyptian",
+     "text": "عايز حفاضات اطفال",
+     "relevant": [
+      18
+     ]
+    },
+    {
+     "category": "egyptian",
+     "text": "عايز تمر سكري",
+     "relevant": [
+      22
+     ]
+    },
+    {
+     "category": "egyptian",
+     "text": "عايز مكسرات مشكلة",
+     "relevant": [
+      26
+     ]
+    },
+    {
+     "category": "egyptian",
+     "text": "عايز مربى فراولة",
+     "relevant": [
+      30
+     ]
+    },
+    {
+     "category": "typos",
+     "text": "كريم ترططيب للوجه",
+     "relevant": [
+      3
+     ]
+    },
+    {
+     "category": "typos",
+     "text": "زيت شعر طبعي",
+     "relevant": [
+      7
+     ]
+    },
+    {
+     "category": "typos",
+     "text": "لعبة مكعبات للاططفال",
+     "relevant": [
+      11
+     ]
+    },
+    {
+     "category": "typos",
+     "text": "شنطة مدرسة للافال",
+     "relevant": [
+      15
+     ]
+    },
+    {
+     "category": "typos",
+     "text": "لبن اطففال مرحلة اولى",
+     "relevant": [
+      19
+     ]
+    },
+    {
+     "category": "typos",
+     "text": "زيت زيون بكر",
+     "relevant": [
+      23
+     ]
+    },
+    {
+     "category": "typos",
+     "text": "شوكوللاتة داكنة",
+     "relevant": [
+      27
+     ]
+    },
+    {
+     "category": "follow-up (name carried)",
+     "text": "غسول وجه بالصبار فيه ضمان صلاحية؟",
+     "relevant": [
+      4
+     ]
+    },
+    {
+     "category": "follow-up (name carried)",
+     "text": "ماسكارا مقاومة للماء كام جرام؟",
+     "relevant": [
+      9
+     ]
+    },
+    {
+     "category": "follow-up (name carried)",
+     "text": "كراسة تلوين مع الوان طبيعي ولا صناعي؟",
+     "relevant": [
+      14
+     ]
+    },
+    {
+     "category": "follow-up (name carried)",
+     "text": "لبن اطفال مرحلة اولى من سن كام؟",
+     "relevant": [
+      19
+     ]
+    },
+    {
+     "category": "follow-up (name carried)",
+     "text": "قهوة تركي بالهيل بيتخزن ازاي؟",
+     "relevant": [
+      24
+     ]
+    },
+    {
+     "category": "follow-up (name carried)",
+     "text": "بسكويت بالشوفان مناسب لبشرتي الحساسة؟",
+     "relevant": [
+      29
+     ]
+    },
+    {
+     "category": "arabizi",
+     "text": "3ayez 3atr misk regaly",
+     "relevant": [
+      1
+     ]
+    },
+    {
+     "category": "arabizi",
+     "text": "shampoo lel sha3r el gaf",
+     "relevant": [
+      5
+     ]
+    },
+    {
+     "category": "arabizi",
+     "text": "kareem tarteeb lel wesh",
+     "relevant": [
+      3
+     ]
+    },
+    {
+     "category": "arabizi",
+     "text": "3asal na7l tabe3y",
+     "relevant": [
+      21
+     ]
+    },
+    {
+     "category": "arabizi",
+     "text": "zeit zeitoon bekr",
+     "relevant": [
+      23
+     ]
+    },
+    {
+     "category": "arabizi",
+     "text": "tamr sukkary",
+     "relevant": [
+      22
+     ]
+    },
+    {
+     "category": "arabizi",
+     "text": "shanta madrasa lel atfal",
+     "relevant": [
+      15
+     ]
+    },
+    {
+     "category": "arabizi",
+     "text": "lo3ba mokaab lel atfal",
+     "relevant": [
+      11
+     ]
+    },
+    {
+     "category": "english",
+     "text": "face moisturizer cream",
+     "relevant": [
+      3
+     ]
+    },
+    {
+     "category": "english",
+     "text": "dry hair shampoo",
+     "relevant": [
+      5
+     ]
+    },
+    {
+     "category": "english",
+     "text": "natural honey",
+     "relevant": [
+      21
+     ]
+    },
+    {
+     "category": "english",
+     "text": "olive oil",
+     "relevant": [
+      23
+     ]
+    },
+    {
+     "category": "english",
+     "text": "waterproof mascara",
+     "relevant": [
+      9
+     ]
+    },
+    {
+     "category": "english",
+     "text": "baby diapers size 4",
+     "relevant": [
+      18
+     ]
+    },
+    {
+     "category": "english",
+     "text": "green tea",
+     "relevant": [
+      25
+     ]
+    },
+    {
+     "category": "english",
+     "text": "dark chocolate",
+     "relevant": [
+      27
+     ]
+    },
+    {
+     "category": "attribute",
+     "text": "الكريم ده فيه عطر",
+     "relevant": [
+      3
+     ]
+    },
+    {
+     "category": "attribute",
+     "text": "العسل مصدره ايه",
+     "relevant": [
+      21
+     ]
+    },
+    {
+     "category": "attribute",
+     "text": "الشوكولاتة فيها لبن",
+     "relevant": [
+      27
+     ]
+    },
+    {
+     "category": "attribute",
+     "text": "العروسة بتتغسل",
+     "relevant": [
+      12
+     ]
+    },
+    {
+     "category": "attribute",
+     "text": "الماسكارا بتقاوم الماء",
+     "relevant": [
+      9
+     ]
+    },
+    {
+     "category": "attribute",
+     "text": "زجاجة الرضاعة فيها بيسفينول",
+     "relevant": [
+      20
+     ]
+    },
+    {
+     "category": "category (disambiguation)",
+     "text": "عايز عطر",
+     "relevant": [
+      1,
+      2
+     ]
+    },
+    {
+     "category": "category (disambiguation)",
+     "text": "عايز حاجة للشعر",
+     "relevant": [
+      5,
+      6,
+      7
+     ]
+    },
+    {
+     "category": "category (disambiguation)",
+     "text": "عايز لعبة للاطفال",
+     "relevant": [
+      11,
+      12,
+      13
+     ]
+    },
+    {
+     "category": "category (disambiguation)",
+     "text": "عايز مكياج",
+     "relevant": [
+      8,
+      9,
+      10
+     ]
+    },
+    {
+     "category": "paraphrase (semantic)",
+     "text": "حاجة تخلي شعري ناعم",
+     "relevant": [
+      6,
+      5,
+      7
+     ]
+    },
+    {
+     "category": "paraphrase (semantic)",
+     "text": "هدية لطفل صغير",
+     "relevant": [
+      11,
+      12
+     ]
+    },
+    {
+     "category": "paraphrase (semantic)",
+     "text": "حاجة حلوة وصحية",
+     "relevant": [
+      27,
+      29,
+      22
+     ]
+    },
+    {
+     "category": "paraphrase (semantic)",
+     "text": "رايحة المدرسة",
+     "relevant": [
+      15,
+      16
+     ]
+    },
+    {
+     "category": "paraphrase (semantic)",
+     "text": "اشرب حاجة منعشة",
+     "relevant": [
+      28,
+      25
+     ]
+    },
+    {
+     "category": "not sold",
+     "text": "فستان سهرة",
+     "relevant": []
+    },
+    {
+     "category": "not sold",
+     "text": "لابتوب",
+     "relevant": []
+    },
+    {
+     "category": "not sold",
+     "text": "دواء للصداع",
+     "relevant": []
+    },
+    {
+     "category": "not sold",
+     "text": "كورس انجليزي",
+     "relevant": []
+    }
+   ]
+  }
+ ]
+}

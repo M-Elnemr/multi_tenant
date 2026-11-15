@@ -55,6 +55,8 @@ class KnowledgeRetrievalIntegrationTest extends IntegrationTestBase {
         assertThat(knowledge.searchByWords(ta, "جاكيييت بافر", "PRODUCT", 3)).extracting(KnowledgeIndex.Hit::sourceId).as("repeated letters").contains(jacket);
         assertThat(knowledge.searchByWords(ta, "تيشرت قطن", "PRODUCT", 3)).extracting(KnowledgeIndex.Hit::sourceId).as("one letter missing").contains(tee);
         assertThat(knowledge.searchByWords(ta, "غسالة اطباق", "PRODUCT", 3)).as("a thing the shop does not sell finds nothing").isEmpty();
+        assertThat(knowledge.searchByWords(ta, "عايز تيشيرت", "PRODUCT", 3)).extracting(KnowledgeIndex.Hit::sourceId).as("«I want a t-shirt»: the request word is not a required word").contains(tee);
+        assertThat(knowledge.searchByWords(ta, "محتاج جاكيت لو سمحت", "PRODUCT", 3)).extracting(KnowledgeIndex.Hit::sourceId).contains(jacket);
 
         assertThat(knowledge.identityHits(ta, "عايز جاكيت بافر شتوي رجالي بكام", 2)).extracting(KnowledgeIndex.Hit::sourceId).containsExactly(jacket);
         assertThat(knowledge.identityHits(ta, "3ayez tishirt cotton eswed", 2)).extracting(KnowledgeIndex.Hit::sourceId).as("Arabizi plus a typo: still the named product").containsExactly(tee);

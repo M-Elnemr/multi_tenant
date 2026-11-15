@@ -39,6 +39,17 @@ final class QueryNormalizer {
     /** The word with letters repeated for emphasis squeezed («جاكيييت» -> «جاكيت») and Arabic letters unified (the same normalisation the rest of the search uses). */
     static String squeeze(String w) { return FastAnswers.norm(w).replaceAll("(\\p{L})\\1{2,}", "$1$1").replaceAll("(\\p{L})\\1+(?=\\p{L})", "$1"); }
 
+    /**
+     * Words a customer uses to ASK, not to name what they want («عايز لابتوب»: «عايز» is not in any catalog): matching them as required words made a request like «عايز موبايل» find nothing.
+     * Request verbs, politeness, question words and English request phrases only; no product, colour, material or size word is in this list (generic on purpose).
+     */
+    static final Set<String> FILLER = Set.of("عايز", "عايزه", "عايزين", "عاوز", "عاوزه", "محتاج", "محتاجه", "محتاجين", "ممكن", "لو", "سمحت", "فضلك", "فيه", "عندكم", "عندك", "ابغي", "ابغا", "بدور", "دور", "دوري",
+            "هات", "هاتلي", "وريني", "ورني", "اشوف", "شوف", "ازاي", "ايه", "ايش", "هل", "كام", "بكام", "انا", "ده", "دي", "دا", "ديه", "دول", "اللي", "يا", "فندم", "عن", "علي", "على", "لي", "ليا", "لينا", "في", "مع", "من",
+            "want", "need", "looking", "for", "have", "you", "can", "get", "show", "please", "the", "and", "with", "any", "some", "do", "does", "how", "much", "is", "are", "there", "iwant", "ineed");
+
+    /** True when a variant of the group is a request filler (so «3ayez», whose Arabic spelling is «عايز», is one too): the group names nothing. */
+    static boolean isFiller(Set<String> group) { return group.stream().anyMatch(FILLER::contains) || group.stream().allMatch(v -> v.length() < 3 && !LATIN.containsKey(v)); }
+
     /** One group per word of the query, each group the variants worth trying (never empty). Words shorter than 2 letters are dropped. */
     static List<Set<String>> groups(String query) {
         List<Set<String>> out = new ArrayList<>();
@@ -57,7 +68,9 @@ final class QueryNormalizer {
             }
             out.add(g);
         }
-        return out;
+        List<Set<String>> named = new ArrayList<>(out);
+        named.removeIf(QueryNormalizer::isFiller);
+        return named.isEmpty() ? out : named;   // a query made only of filler words keeps them (nothing better to match)
     }
 
     /** True when {@code token} is {@code word} with at most one letter wrong, missing or extra (only for words long enough that this is not a different word). */
