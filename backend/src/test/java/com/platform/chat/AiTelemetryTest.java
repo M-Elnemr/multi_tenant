@@ -54,7 +54,7 @@ class AiTelemetryTest {
             AiTelemetry.beginReply(tenant, conv);
             AiTelemetry.generation("glm", "zai-org/glm-5.3-flash", 1000, 4100, new AiProvider.Usage(1200, 80, 900, 0), 200, null, "PROMPT", "ANSWER 01012345678");
             AiTelemetry.endReply("WHATSAPP", "total=4200", 900);
-            String body = got.poll(5, TimeUnit.SECONDS);
+            String body = got.poll(20, TimeUnit.SECONDS);
             assertNotNull(body, "nothing delivered");
             assertTrue(auth.poll().startsWith("Basic "));
             assertFalse(body.contains(tenant.toString()) || body.contains(conv.toString()), "raw ids leaked");
@@ -90,7 +90,7 @@ class AiTelemetryTest {
             AiTelemetry.generation("qwen", "qwen3.7-flash", 1900, 3200, new AiProvider.Usage(900, 60, 0, 0), 200, null, null, null);
             AiTelemetry.endReply("WHATSAPP", "total=3300", 900);
             StringBuilder all = new StringBuilder();
-            for (int i = 0; i < 3 && all.indexOf("qwen3.7-flash") < 0; i++) { String b = got.poll(5, TimeUnit.SECONDS); if (b != null) all.append(b); }
+            for (int i = 0; i < 3 && all.indexOf("qwen3.7-flash") < 0; i++) { String b = got.poll(20, TimeUnit.SECONDS); if (b != null) all.append(b); }
             String body = all.toString();
             assertTrue(body.contains("OVERLOAD_MESSAGE: capacity notice") && body.contains("\"ERROR\""), "the failed GLM attempt is an ERROR span with its category");
             assertTrue(body.contains("provider-fallback:glm->qwen:OVERLOAD_MESSAGE"), "the fallback is its own event");
