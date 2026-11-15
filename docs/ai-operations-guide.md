@@ -29,3 +29,15 @@ See `ai-evaluation-strategy.md`.
 
 ## Rollback
 Set `LANGFUSE_ENABLED=false` (or unset) and restart: telemetry code becomes no-ops. Full revert: `git revert` the commit; no DB migration, no schema change, no new dependency was added.
+
+
+## Provider configuration (round 2)
+| Var | Meaning |
+|---|---|
+| `GLM_API_KEY` | The **Hive** key (the variable name is historical; there is no separate GLM account). Extra Hive keys: admin AI screen. Unchanged. |
+| `GLM_MODEL`, `GLM_BASE_URL`, `GLM_REASONING_EFFORT` | Hive GLM model/endpoint/reasoning. Unchanged defaults. |
+| `QWEN_API_KEY`, `QWEN_MODEL`, `QWEN_BASE_URL`, `QWEN_THINKING` | Alibaba fallback. Without `QWEN_API_KEY` GLM has no backup and a GLM failure shows the polite unavailable text. |
+| `AI_HEDGE_MS` | Slow-call twin on another Hive key (unchanged). |
+**Check that the fallback is armed:** admin AI screen shows both models available; log line `glm did not answer, using qwen: CATEGORY: ...` appears when it fires.
+**Not verified live:** no Hive or Alibaba credential exists on this machine, so fallback was proven against mocked services only. Verify after deploy with a staging key by pointing `GLM_BASE_URL` at a stub that returns 503 / a capacity message and confirming the reply comes from Qwen.
+**Rollback of round 2:** `git revert` the round-2 commit (restores the retry-with-sleep behaviour and removes detection). No migration, no config change needed.

@@ -141,27 +141,43 @@ public class OpenAiProvider implements AiProvider {
                 long timeout = Math.min(Math.max(3_000, Math.min(callTimeoutMs(), AiBudget.remainingMs() - 1_000)), AiBudget.callCapMs());
                 HttpResponse<String> res = send(body, lease, timeout);
                 if (res.statusCode() / 100 == 2) {
+                    JsonNode root;
+                    try { root = JSON.readTree(res.body()); }
+                    catch (com.fasterxml.jackson.core.JsonProcessingException bad) { throw new AiUnavailableException(ProviderFailure.MALFORMED, "The AI assistant returned an unreadable response", bad); }   // never retried: the next answer would cost the customer more seconds
+                    String inBody = ProviderFailure.inBody(root);
+                    if (inBody != null) {   // HTTP 200 that carries the provider's own error: a failure of THIS request (the key is not penalised), whatever the status line said
+                        ChatService.evalHttp(200);
+                        throw new AiUnavailableException(ProviderFailure.PROVIDER_ERROR, "The AI assistant reported a problem (" + inBody + ")", null);
+                    }
+                    Turn ok = parse(root);
                     if (pool != null) pool.ok(lease);
-                    Turn ok = parse(JSON.readTree(res.body()));
                     AiTelemetry.generation(code, model, callStartMs, System.currentTimeMillis(), ok.usage(), res.statusCode(), null, null, ok.text());
                     return ok;
                 }
-                AiTelemetry.generation(code, model, callStartMs, System.currentTimeMillis(), null, res.statusCode(), "HTTP " + res.statusCode(), null, null);
+                AiTelemetry.generation(code, model, callStartMs, System.currentTimeMillis(), null, res.statusCode(), ProviderFailure.ofStatus(res.statusCode()) + " HTTP " + res.statusCode(), null, null);
                 if (pool != null) pool.failed(lease, res.statusCode());
                 ChatService.evalHttp(res.statusCode());
-                last = new AiUnavailableException("The AI assistant is busy, try again (HTTP " + res.statusCode() + ")");
-                if (res.statusCode() != 429 && res.statusCode() != 408 && res.statusCode() / 100 != 5) break;   // 408: Hive's "busy, try again" (seen live 2026-11-03)
+                last = new AiUnavailableException(ProviderFailure.ofStatus(res.statusCode()), "The AI assistant is busy, try again (HTTP " + res.statusCode() + ")", null);
+                int st = res.statusCode();
+                if (st != 429 && st != 408 && st / 100 != 5) break;   // 408: Hive's "busy, try again" (seen live 2026-11-03)
+                // Through Hive (a key pool) there is NO waiting and no retry loop: a request over a per-key limit (429 / 408) goes once, at once, on ANOTHER key when the pool has one;
+                // a server error goes straight to the fallback model. Every new request still tries this provider first (nothing here remembers a failure for the next request).
+                if (pool != null) { if ((st == 429 || st == 408) && attempt == 0 && pool.size() > 1) continue; break; }
                 Thread.sleep(attempt == 0 ? 1000 : 2500);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new AiUnavailableException("The AI assistant was interrupted", e);
             } catch (AiUnavailableException e) {
+                AiTelemetry.generation(code, model, callStartMs, System.currentTimeMillis(), null, 200, e.describe(), null, null);
                 throw e;
             } catch (Exception e) {
                 if (pool != null) pool.failed(lease, 0);
                 ChatService.evalHttp(0);   // no answer at all (timeout, connection)
-                AiTelemetry.generation(code, model, callStartMs, System.currentTimeMillis(), null, 0, e.getClass().getSimpleName(), null, null);
-                last = new AiUnavailableException("The AI assistant could not be reached", e);
+                boolean timedOut = e instanceof java.net.http.HttpTimeoutException || e instanceof java.util.concurrent.TimeoutException || e.getCause() instanceof java.net.http.HttpTimeoutException;
+                String category = timedOut ? ProviderFailure.TIMEOUT : ProviderFailure.CONNECTION;
+                AiTelemetry.generation(code, model, callStartMs, System.currentTimeMillis(), null, 0, category + " " + e.getClass().getSimpleName(), null, null);
+                last = new AiUnavailableException(category, "The AI assistant could not be reached", e);
+                if (pool != null) break;   // no second wait on a provider that did not answer (the hedged twin already covered a stall): the fallback model answers now
             }
         }
         throw last != null ? last : new AiUnavailableException("The AI assistant could not be reached");
@@ -323,6 +339,10 @@ public class OpenAiProvider implements AiProvider {
             calls.add(new ToolCall(c.path("function").path("name").asText(), args));
         }
         boolean fromText = false;
+        if (calls.isEmpty() && !DsmlToolCalls.has(text)) {
+            String overload = ProviderFailure.overloadMessage(text);
+            if (overload != null) throw new AiUnavailableException(overload, "The AI assistant answered with a capacity notice instead of a reply", null);   // discarded: the customer never sees it
+        }
         if (DsmlToolCalls.has(text)) {   // the model wrote its tool call as text: run it as a call, and never let the markup reach the customer
             if (calls.isEmpty()) { calls.addAll(DsmlToolCalls.read(text)); fromText = !calls.isEmpty(); }
             text = DsmlToolCalls.strip(text);

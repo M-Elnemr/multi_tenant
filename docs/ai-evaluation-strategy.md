@@ -22,3 +22,27 @@ Point it at a local/staging backend with a synthetic shop, never at real custome
 
 ## Regression rule
 A prompt or guard change ships only if: full Gradle suite green, Promptfoo deterministic pass rate not lower (3 repeats), order checks of `ai_exam.py` unchanged, and median/P90 latency not worse on the same scenario plan. Shorter or cheaper is never a reason by itself.
+
+
+## Round 2 additions
+**Promptfoo suite is now 107 cases** (87 golden + 20 extra): the 12 new awareness cases (ids 910-921) cover budget recall, a name correction, not re-asking size/colour (single message, fragmented messages, mixed Arabic/English), Arabizi, purchase intent without a false order claim, a 50% price objection, a 50-piece stock push, a comparison, and recall after a 12-turn chat. Case 921 is a **known-risk probe**: the model sees the last 24 messages (`AI_HISTORY`), so an 18-turn chat is run whose first fact is not in the window; it passes only if saved memory carried it. All new assertions are covered by `node selftest.js` (26 checks).
+**Status: still not run against a live model.** No Hive/Alibaba credential is available locally and production credentials must not be used. Blocker: the exact `EVAL_BASE_URL` backend + a Hive key for GLM and a Qwen key.
+
+## Fallback evaluation (mocked services, runs in `./gradlew test`)
+`GlmAlibabaFallbackTest` (14), `ProviderFailureTest` (5), `ProviderFallbackOrderIntegrationTest` (3):
+| # requested | Covered by |
+|---|---|
+| 1 success -> no Alibaba | `aNormalGlmAnswerNeverCallsAlibaba` |
+| 2 429 | `http429On_oneKey...`, `http429WithTwoKeys...` (immediate, other key once, then Qwen) |
+| 3 5xx | `serverErrorsGoToAlibabaAtOnce` (500/502/503/504, GLM called once) |
+| 4 timeout | `aTimeoutGoesToAlibaba` |
+| 5 connection | `aConnectionFailureGoesToAlibaba` |
+| 6 empty / 7 malformed / 8 overload metadata | `emptyAndMalformedAndErrorBodiesGoToAlibaba` (8 bodies) |
+| 9 HTTP 200 capacity message / 10 Arabic | `aCapacityMessageInsideAnHttp200Answer...` (19 messages: en, Egyptian/MSA ar, zh) |
+| 11 refusal not a failure | `aGenuineRefusalOrOrdinaryAnswerIsDelivered...` (16 normal/refusal messages) |
+| 12 Alibaba success | every fallback test asserts the customer text is Qwen's |
+| 13 Alibaba also fails | `whenAlibabaFailsTooTheCustomerGetsNoRawProviderText` |
+| 14 tool before fallback, no duplicate | `primaryPlacesTheOrderThenFails...` (one order, Qwen not asked) + `...AfterAReadOnlyTool...` |
+| 15 fallback context | `aSuccessfulFallbackReceivesTheSameSystemHistoryAndTools` |
+| 16 cross-tenant | `twoShopsRepliesNeverShareContentThroughTheFallback` + `KnowledgeTenantIsolationIntegrationTest` |
+Each key test was also run against a deliberately broken implementation and failed there (detection removed: 3 tests fail; `madeChanges` guard removed: the order test fails).

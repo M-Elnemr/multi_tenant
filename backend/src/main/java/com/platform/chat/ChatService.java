@@ -587,11 +587,13 @@ public class ChatService {
         } catch (AiProvider.AiUnavailableException e) {
             log.warn("AI unavailable: {} ({})", e.getMessage(), e.getCause() == null ? "no cause" : e.getCause().toString());
             if (EVAL.get() != null) EVAL.get().failure(routed.code(), e.getMessage());
-            var backup = AiBudget.hasLeft(12_000) ? routed.restartOnFallback() : null;
+            // never replay a reply whose failed attempt already did something that cannot be done twice (an order placed or cancelled, a question sent to the owner, a summary shown):
+            // the persisted state is the truth, the customer gets the code-written confirmation or the safe message, and the other model is not asked to repeat the action
+            var backup = AiBudget.hasLeft(12_000) && !madeChanges(ctx, rounds) ? routed.restartOnFallback() : null;
             if (backup != null) {
                 // the model failed after its tool exchange had begun: the whole reply again, on the other model (two companies, so one outage never silences the shop)
                 log.warn("Restarting the reply on {} after {} failed", backup.code(), routed.code());
-                fallbackWhy = routed.code() + ": " + e.getMessage();
+                fallbackWhy = routed.code() + " " + e.describe();
                 failedRounds.addAll(rounds);
                 rounds.clear();
                 routed = backup;
@@ -602,11 +604,11 @@ public class ChatService {
                 } catch (AiProvider.AiUnavailableException e2) {
                     log.warn("AI unavailable on the fallback too: {}", e2.getMessage());
                     if (EVAL.get() != null) EVAL.get().failure(routed.code(), e2.getMessage());
-                    events.record(tenantId, conv, channel, routed.code(), "ERROR", e2.getMessage(), null);
+                    events.record(tenantId, conv, channel, routed.code(), "ERROR", e2.describe(), null);
                     answer = unavailableText(arabicChat);
                 }
             } else {
-                events.record(tenantId, conv, channel, routed.code(), "ERROR", e.getMessage(), null);
+                events.record(tenantId, conv, channel, routed.code(), "ERROR", e.describe(), null);
                 answer = routed.showsErrors() ? "⚠️ " + routed.label() + ": " + e.getMessage() : unavailableText(arabicChat);
             }
         } finally {
@@ -2272,6 +2274,8 @@ public class ChatService {
             ReplyTimeline.llm(routed.code(), ReplyTimeline.since(callStart));
             rounds.add(new AiUsageService.Round(t.calls().stream().map(ToolCall::name).toList(), t.usage()));
             if (t.calls().isEmpty() && (t.text() == null || t.text().isBlank()) && !retried) { retried = true; round--; continue; }   // an empty answer now and then: ask once more before giving up
+            if (t.calls().isEmpty() && (t.text() == null || t.text().isBlank()) && rounds.stream().allMatch(r -> r.tools().isEmpty()))
+                throw new AiProvider.AiUnavailableException(ProviderFailure.EMPTY, "The model returned no answer twice", null);   // an empty answer after the retry is a provider failure: the other model answers (see the restart in reply)
             if (t.calls().isEmpty()) return t.text();
             turns.add(t);
             List<ToolResult> results = new ArrayList<>();

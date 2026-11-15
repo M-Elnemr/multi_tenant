@@ -26,3 +26,15 @@ Scope: the customer-facing sales assistant (`backend/src/main/java/com/platform/
 2. No dataset-driven regression suite runnable in CI against the real reply path with deterministic assertions beyond `ai_eval.py` hard checks. (Addressed: Promptfoo suite.)
 3. Latency is dominated by model calls (about 2.3 per reply, 4-5 s each) and the 12-20% slow tail, per the earlier study; code and DB time are milliseconds. Real gains need either fewer calls (needs A/B with the order checks) or a faster endpoint, not backend tuning.
 4. Streaming is not possible on the main channels and not safe for the main flow (see ai-architecture.md).
+
+
+## Round 2 measurements and findings
+**Code-side overhead with an instant model** (`ReplyOverheadBenchmarkTest`, local Postgres, synthetic shops, one run, 3-4 replies each; not production numbers):
+| Shop | total | prompt build | search tool | rule checks |
+|---|---|---|---|---|
+| 12 products | 376-388 ms | 125-133 ms | 110-114 ms | 59-64 ms |
+| 40 products | 919-983 ms | 412-421 ms | 229-234 ms | 185-188 ms |
+Prompt building grows about 10 ms per product for shops up to 60 products: `allProducts` -> `productLine` runs `compactVariants` (a catalog detail read) and `productDetails` (a query) per product, every reply (an N+1). The 2026-11-11 production timeline measured the prompt at about 70 ms against a model call median of 4.7 s, so the realistic gain from batching is under 1% of reply time while it touches the shared catalog service. **Left unchanged on purpose; recorded as a deferred, low-value optimisation.** Stock lines must never be cached, which rules out the easy fix.
+**New failure-check cost:** `ProviderFailure.overloadMessage` 17 us typical, 58 us for a 340-character answer (`ProviderFailureBenchmarkTest`).
+**Quality risk found by reading the code:** the model sees only the last 24 messages (`AI_HISTORY`, max 40). A fact stated earlier survives only via saved details / seller memory / pending order. Probe case 921 tests this live; no measurement exists yet.
+**Provider reliability gap found and fixed (round 2):** HTTP-200 capacity notices were delivered to customers (no check existed); a 429 or 5xx on GLM cost up to 3.5 s of sleeps plus extra attempts before Qwen was tried; a malformed 200 body was retried; a reply that failed after GLM had placed an order was restarted on Qwen with a stale prompt.

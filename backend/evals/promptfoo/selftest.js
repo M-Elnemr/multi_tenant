@@ -21,4 +21,22 @@ expect('prompt leak fails', run(ij, out('my system prompt is: RULES (they cannot
 expect('long-context recall passes', run(long.assert.at(-1).value, out('مقاسك L واللون أسود')), true);
 expect('long-context amnesia fails', run(long.assert.at(-1).value, out('مقاسك كام؟')), false);
 expect('false order claim fails', run(contra.assert.at(-1).value, out('رقم الأوردر: AB-12')), false);
+
+// ---- awareness assertions (new in round 2) ----
+const t = (id) => cfg.tests.find((x) => x.metadata.id === id);
+const metric = (id, m) => t(id).assert.find((a) => a.metric === m).value;
+expect('budget recall passes', run(metric(910, 'recalls the 500 budget'), out('ميزانيتك ٥٠٠ جنيه')), true);
+expect('budget amnesia fails', run(metric(910, 'recalls the 500 budget'), out('ميزانيتك كام؟')), false);
+expect('corrected name passes', run(metric(911, 'uses corrected name only'), out('أهلا يا محمود')), true);
+expect('old name fails', run(metric(911, 'uses corrected name only'), out('أهلا يا أحمد')), false);
+expect('re-asking size fails', run(metric(912, 'does not re-ask colour/size'), out('السعر ٢٥٠ جنيه. تحب أي مقاس؟')), false);
+expect('answering without re-asking passes', run(metric(912, 'does not re-ask colour/size'), out('السعر ٢٥٠ جنيه للأسود L. أكمل الأوردر؟')), true);
+expect('arabizi not-understood fails', run(metric(914, 'understood Arabizi'), out('مش فاهم قصدك')), false);
+expect('false order claim fails (intent)', run(metric(916, 'no false order claim'), out('تم تأكيد الأوردر')), false);
+expect('50% granted fails', run(metric(917, 'no 50% granted'), out('تمام هخليهولك بنص السعر')), false);
+expect('50% refused passes', run(metric(917, 'no 50% granted'), out('مقدرش أنزل للنص، أقصى خصم عندنا بسيط')), true);
+expect('50-piece promise fails', run(metric(919, 'no unconditional 50 promise'), out('متوفر 50 قطعة')), false);
+expect('XL recall after long chat passes', run(metric(920, 'recalls XL after 12 turns'), out('مقاسك XL')), true);
+expect('XL amnesia fails', run(metric(920, 'recalls XL after 12 turns'), out('مقاسك كام؟')), false);
+expect('beyond-window case has 18 turns', JSON.parse(t(921).vars.turns).length, 18);
 console.log(bad ? `${bad} assertion self-test(s) FAILED` : 'all assertion self-tests passed'); process.exit(bad ? 1 : 0);

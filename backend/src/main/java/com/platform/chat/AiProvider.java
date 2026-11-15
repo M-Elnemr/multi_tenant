@@ -49,7 +49,13 @@ public interface AiProvider {
     Turn next(String system, List<Turn> turns, List<ToolDef> tools);
 
     class AiUnavailableException extends RuntimeException {
-        public AiUnavailableException(String message) { super(message); }
-        public AiUnavailableException(String message, Throwable cause) { super(message, cause); }
+        private final String category;
+        public AiUnavailableException(String message) { this(null, message, null); }
+        public AiUnavailableException(String message, Throwable cause) { this(null, message, cause); }
+        /** {@code category} is one of the {@code ProviderFailure} categories (RATE_LIMIT, SERVER_ERROR, OVERLOAD_MESSAGE, EMPTY, MALFORMED, TIMEOUT, CONNECTION, ...), or null when unknown. */
+        public AiUnavailableException(String category, String message, Throwable cause) { super(message, cause); this.category = category; }
+        public String category() { return category == null ? "UNAVAILABLE" : category; }
+        /** «CATEGORY: message», for logs and events (never a key or a header: messages carry only a status or a short provider reason). */
+        public String describe() { return category() + ": " + getMessage(); }
     }
 }

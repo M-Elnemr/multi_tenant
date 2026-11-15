@@ -75,4 +75,26 @@ class AiTelemetryTest {
         assertTrue((System.nanoTime() - t0) / 1_000_000 < 1500, "the reply path waited on telemetry");
         assertTrue(AiTelemetry.dropped() > 0, "a full queue must drop, not block");
     }
+
+    @Test
+    void aProviderFailureAndTheFallbackAreVisibleWithTheirCategory() throws Exception {
+        BlockingQueue<String> got = new LinkedBlockingQueue<>();
+        HttpServer srv = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        srv.createContext("/api/public/otel/v1/traces", ex -> { got.add(new String(ex.getRequestBody().readAllBytes())); ex.sendResponseHeaders(200, -1); ex.close(); });
+        srv.start();
+        try {
+            assertTrue(AiTelemetry.configure(true, "http://127.0.0.1:" + srv.getAddress().getPort(), "pk", "sk", "salt", false, 100, ""));
+            AiTelemetry.beginReply(UUID.randomUUID(), UUID.randomUUID());
+            AiTelemetry.generation("glm", "zai-org/glm-5.3-flash", 1000, 1900, null, 200, "OVERLOAD_MESSAGE: capacity notice", null, null);
+            AiTelemetry.step("event", "provider-fallback:glm->qwen:OVERLOAD_MESSAGE", 1900, 1900, true);
+            AiTelemetry.generation("qwen", "qwen3.7-flash", 1900, 3200, new AiProvider.Usage(900, 60, 0, 0), 200, null, null, null);
+            AiTelemetry.endReply("WHATSAPP", "total=3300", 900);
+            StringBuilder all = new StringBuilder();
+            for (int i = 0; i < 3 && all.indexOf("qwen3.7-flash") < 0; i++) { String b = got.poll(5, TimeUnit.SECONDS); if (b != null) all.append(b); }
+            String body = all.toString();
+            assertTrue(body.contains("OVERLOAD_MESSAGE: capacity notice") && body.contains("\"ERROR\""), "the failed GLM attempt is an ERROR span with its category");
+            assertTrue(body.contains("provider-fallback:glm->qwen:OVERLOAD_MESSAGE"), "the fallback is its own event");
+            assertTrue(body.contains("qwen3.7-flash") && body.contains("zai-org/glm-5.3-flash"), "both models are on the trace");
+        } finally { srv.stop(0); }
+    }
 }
