@@ -40,3 +40,18 @@ No improvement is claimed.
 | **Deliberately not done** | prompt/memory/RAG changes (no way to measure them); batching the prompt-build N+1 (measured, under 1% of reply time, shared service); streaming; new infrastructure (Typesense, Meilisearch, Temporal, Activepieces, PostHog, Metabase) |
 
 **Before/after:** latency, quality and cost on real traffic are **not re-measured**; the only valid GLM baseline remains 2026-11-12 (orders 15/15, median 6.5 s, P90 20.3 s). Behavioural changes that should help the tail (no 3.5 s of GLM sleeps before Qwen, no retries of malformed 200s, capacity notices no longer reach customers) are proven by tests to happen; their effect in seconds on production is **not measured**.
+
+
+## Round 3 (reply to a specific message)
+See `docs/ai-reply-context.md` for the feature, tests and limits.
+
+| Check | Result |
+|---|---|
+| Backend full suite (`cleanTest test`, 34 min on a busy machine) | **770 tests, 5 skipped, 0 failures** = 751 before + 19 new (ReplyReferenceIntegrationTest 7, ReplyChannelsIntegrationTest 3, ReplyUnitTest 9) |
+| Provider fallback tests (GLM first, Alibaba fallback, no circuit breaker, no duplicated order) | all still pass (GlmAlibabaFallbackTest 14, ProviderFallbackOrderIntegrationTest 3, ProviderFailureTest 5) |
+| Web: `tsc`, `eslint --quiet`, i18n check, `npm test` | clean / clean / ok / 12 of 12 |
+| Promptfoo assertion self-test | 37 checks pass |
+| Migration V93 + rollback on a copy of an older database (1306 messages) | migrate, re-run, rollback, re-migrate all ok, messages untouched |
+| Browser check (real Chrome, local backend, stub model) | swipe/reply/cancel/quote/reload/jump behave as designed (see ai-reply-context.md) |
+| Quoted-message read | 0.07 ms on a 3000+ message chat (index scan) |
+| **Not validated** | a real model's understanding of replies (no credentials; 117-case Promptfoo suite not run), real WhatsApp/Meta/Evolution webhooks, real touch hardware, screen readers, retrieval quality |

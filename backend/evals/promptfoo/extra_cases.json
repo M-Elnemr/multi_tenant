@@ -390,5 +390,404 @@
     "value": "const all = JSON.parse(output).replies; const last = all[all.length-1] || ''; return /\\bXL\\b|٦٠٠|600/i.test(last);"
    }
   ]
+ },
+ {
+  "id": 930,
+  "category": "reply_old_product",
+  "dialect": "egyptian",
+  "customer": [
+   "عايز جاكيت قطن",
+   "ماشي",
+   "تمام",
+   "اه",
+   "طيب",
+   "أوكيه",
+   "ماشي",
+   "اه فعلا",
+   "تمام جدا",
+   "طيب شكرا",
+   "ماشي",
+   "اه",
+   "تمام",
+   "طيب",
+   "أوكيه",
+   "ماشي",
+   {
+    "say": "هل ده متاح بالأزرق؟",
+    "replyTo": {
+     "role": "user",
+     "nth": 1
+    }
+   }
+  ],
+  "expect": [
+   "understands «ده» is the cotton jacket from the replied message, 30 messages earlier",
+   "answers about blue for that jacket from real product data",
+   "does not ask which product"
+  ],
+  "assert": [
+   {
+    "type": "javascript",
+    "metric": "does not ask which product is meant",
+    "value": "const all = JSON.parse(output).replies; const last = all[all.length-1] || ''; return !/(تقصد|قصدك) (ايه|إيه|انهي|أنهي)|أي منتج|انهي منتج|أنهي منتج|which (product|item)|what do you mean/i.test(last);"
+   }
+  ]
+ },
+ {
+  "id": 931,
+  "category": "reply_old_price",
+  "dialect": "egyptian",
+  "customer": [
+   "بكام الجاكيت القطن؟",
+   "ماشي",
+   "تمام",
+   "اه",
+   "طيب",
+   "أوكيه",
+   "ماشي",
+   "اه فعلا",
+   "تمام جدا",
+   "طيب شكرا",
+   "ماشي",
+   "اه",
+   "تمام",
+   "طيب",
+   "أوكيه",
+   "ماشي",
+   {
+    "say": "ينفع تخليه ٨٠٠؟",
+    "replyTo": {
+     "role": "assistant",
+     "nth": 1
+    }
+   }
+  ],
+  "expect": [
+   "understands the customer bargains over the product whose price was quoted",
+   "checks the current price and applies the shop's discount rule",
+   "never grants an unauthorised price"
+  ],
+  "assert": [
+   {
+    "type": "javascript",
+    "metric": "does not ask which product is meant",
+    "value": "const all = JSON.parse(output).replies; const last = all[all.length-1] || ''; return !/(تقصد|قصدك) (ايه|إيه|انهي|أنهي)|أي منتج|انهي منتج|أنهي منتج|which (product|item)|what do you mean/i.test(last);"
+   },
+   {
+    "type": "javascript",
+    "metric": "grants no unauthorised 800",
+    "value": "const all = JSON.parse(output).replies; const last = all[all.length-1] || ''; return !/(تمام|موافق|ماشي|هنزلهولك|هخليه)[^.؟?\\n]*(٨٠٠|800)/.test(last);"
+   }
+  ]
+ },
+ {
+  "id": 932,
+  "category": "reply_old_question_color",
+  "dialect": "egyptian",
+  "customer": [
+   "عايز تيشيرت",
+   "ماشي",
+   "تمام",
+   "اه",
+   "طيب",
+   "أوكيه",
+   "ماشي",
+   "اه فعلا",
+   "تمام جدا",
+   "طيب شكرا",
+   "ماشي",
+   "اه",
+   "تمام",
+   "طيب",
+   "أوكيه",
+   "ماشي",
+   {
+    "say": "أسود",
+    "replyTo": {
+     "role": "assistant",
+     "nth": 1
+    }
+   }
+  ],
+  "expect": [
+   "takes «أسود» as the answer to the replied message's question",
+   "continues the purchase flow"
+  ],
+  "assert": [
+   {
+    "type": "javascript",
+    "metric": "does not say it did not understand",
+    "value": "const all = JSON.parse(output).replies; const last = all[all.length-1] || ''; return !/مش فاهم|لم أفهم|تقصد ايه|تقصد إيه/i.test(last);"
+   }
+  ]
+ },
+ {
+  "id": 933,
+  "category": "reply_old_question_size",
+  "dialect": "egyptian",
+  "customer": [
+   "عايز قميص",
+   "ماشي",
+   "تمام",
+   "اه",
+   "طيب",
+   "أوكيه",
+   "ماشي",
+   "اه فعلا",
+   "تمام جدا",
+   "طيب شكرا",
+   "ماشي",
+   "اه",
+   "تمام",
+   "طيب",
+   "أوكيه",
+   "ماشي",
+   {
+    "say": "L",
+    "replyTo": {
+     "role": "assistant",
+     "nth": 1
+    }
+   }
+  ],
+  "expect": [
+   "takes «L» as the size answer for the replied message",
+   "does not ask for the size again"
+  ],
+  "assert": [
+   {
+    "type": "javascript",
+    "metric": "does not re-ask size",
+    "value": "const all = JSON.parse(output).replies; const last = all[all.length-1] || ''; const qs = last.split(/(?<=[؟?])/).filter(x => /[؟?]\\s*$/.test(x)); return !qs.some(x => /(مقاس|size)/i.test(x));"
+   }
+  ]
+ },
+ {
+  "id": 934,
+  "category": "reply_several_products",
+  "dialect": "egyptian",
+  "customer": [
+   "رشحلي جاكيتين",
+   "ماشي",
+   "تمام",
+   "اه",
+   "طيب",
+   "أوكيه",
+   "ماشي",
+   "اه فعلا",
+   "تمام جدا",
+   "طيب شكرا",
+   "ماشي",
+   "اه",
+   "تمام",
+   "طيب",
+   "أوكيه",
+   "ماشي",
+   {
+    "say": "عايز التاني",
+    "replyTo": {
+     "role": "assistant",
+     "nth": 1
+    }
+   }
+  ],
+  "expect": [
+   "resolves «التاني» in the order of the replied message, or asks ONE short question if the original does not list two",
+   "never invents a second product"
+  ],
+  "assert": [
+   {
+    "type": "javascript",
+    "metric": "at most one question",
+    "value": "const all = JSON.parse(output).replies; const last = all[all.length-1] || ''; return (last.match(/[؟?]/g)||[]).length <= 1;"
+   }
+  ]
+ },
+ {
+  "id": 935,
+  "category": "reply_after_long_chat",
+  "dialect": "egyptian",
+  "customer": [
+   "اسمي منى وعايزة فستان سهرة",
+   "ماشي",
+   "تمام",
+   "اه",
+   "طيب",
+   "أوكيه",
+   "ماشي",
+   "اه فعلا",
+   "تمام جدا",
+   "طيب شكرا",
+   "ماشي",
+   "اه",
+   "تمام",
+   "طيب",
+   "أوكيه",
+   "ماشي",
+   "ماشي",
+   "تمام",
+   "اه",
+   "طيب",
+   "أوكيه",
+   "ماشي",
+   "اه فعلا",
+   "تمام جدا",
+   "طيب شكرا",
+   "ماشي",
+   "اه",
+   "تمام",
+   "طيب",
+   "أوكيه",
+   "ماشي",
+   {
+    "say": "طيب ده بكام؟",
+    "replyTo": {
+     "role": "user",
+     "nth": 1
+    }
+   }
+  ],
+  "expect": [
+   "still knows the replied message was about an evening dress after 60+ messages",
+   "gives the current price from the shop's data or asks one short question"
+  ],
+  "assert": [
+   {
+    "type": "javascript",
+    "metric": "does not ask which product is meant",
+    "value": "const all = JSON.parse(output).replies; const last = all[all.length-1] || ''; return !/(تقصد|قصدك) (ايه|إيه|انهي|أنهي)|أي منتج|انهي منتج|أنهي منتج|which (product|item)|what do you mean/i.test(last);"
+   }
+  ]
+ },
+ {
+  "id": 936,
+  "category": "reply_typos",
+  "dialect": "egyptian",
+  "customer": [
+   "عاوز جاكت شتوى",
+   "ماشي",
+   "تمام",
+   "اه",
+   "طيب",
+   "أوكيه",
+   "ماشي",
+   "اه فعلا",
+   "تمام جدا",
+   "طيب شكرا",
+   "ماشي",
+   "اه",
+   "تمام",
+   "طيب",
+   "أوكيه",
+   "ماشي",
+   {
+    "say": "داا بكم؟",
+    "replyTo": {
+     "role": "user",
+     "nth": 1
+    }
+   }
+  ],
+  "expect": [
+   "understands the typos «داا بكم» as «ده بكام»",
+   "answers for the winter jacket"
+  ],
+  "assert": [
+   {
+    "type": "javascript",
+    "metric": "does not say it did not understand",
+    "value": "const all = JSON.parse(output).replies; const last = all[all.length-1] || ''; return !/مش فاهم|لم أفهم|مش واضح/i.test(last);"
+   }
+  ]
+ },
+ {
+  "id": 937,
+  "category": "reply_ambiguous",
+  "dialect": "egyptian",
+  "customer": [
+   "أهلا",
+   {
+    "say": "ده بكام؟",
+    "replyTo": {
+     "role": "assistant",
+     "nth": 1
+    }
+   }
+  ],
+  "expect": [
+   "the replied message is only a greeting: asks one short question about what the customer means",
+   "invents no product or price"
+  ],
+  "assert": [
+   {
+    "type": "javascript",
+    "metric": "asks and invents no price",
+    "value": "const all = JSON.parse(output).replies; const last = all[all.length-1] || ''; return /[؟?]/.test(last) && !/\\d+\\s*(جنيه|EGP|ج\\b)/.test(last);"
+   }
+  ]
+ },
+ {
+  "id": 938,
+  "category": "reply_invalid_reference",
+  "dialect": "egyptian",
+  "customer": [
+   "أهلا",
+   {
+    "say": "ده بكام؟",
+    "replyToId": 999999999,
+    "expectRejected": true
+   }
+  ],
+  "expect": [
+   "a reference to a message that is not in this chat is refused by the backend"
+  ],
+  "assert": [
+   {
+    "type": "javascript",
+    "metric": "backend refused the reference",
+    "value": "const all = JSON.parse(output).replies; const last = all[all.length-1] || ''; return last === '[rejected: INVALID_REPLY_REFERENCE]';"
+   }
+  ]
+ },
+ {
+  "id": 939,
+  "category": "reply_old_vs_current_price",
+  "dialect": "egyptian",
+  "customer": [
+   "بكام الجاكيت القطن؟",
+   "ماشي",
+   "تمام",
+   "اه",
+   "طيب",
+   "أوكيه",
+   "ماشي",
+   "اه فعلا",
+   "تمام جدا",
+   "طيب شكرا",
+   "ماشي",
+   "اه",
+   "تمام",
+   "طيب",
+   "أوكيه",
+   "ماشي",
+   {
+    "say": "هو لسه بنفس السعر ده؟",
+    "replyTo": {
+     "role": "assistant",
+     "nth": 1
+    }
+   }
+  ],
+  "expect": [
+   "checks the current price with the tools instead of repeating the old quoted price",
+   "says so plainly if it changed"
+  ],
+  "assert": [
+   {
+    "type": "javascript",
+    "metric": "does not ask which product is meant",
+    "value": "const all = JSON.parse(output).replies; const last = all[all.length-1] || ''; return !/(تقصد|قصدك) (ايه|إيه|انهي|أنهي)|أي منتج|انهي منتج|أنهي منتج|which (product|item)|what do you mean/i.test(last);"
+   }
+  ]
  }
 ]

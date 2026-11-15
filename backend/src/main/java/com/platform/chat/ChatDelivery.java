@@ -27,7 +27,10 @@ public class ChatDelivery {
     public Result send(UUID tenantId, String channel, String externalId, String text, List<Map<String, Object>> products) { return send(tenantId, channel, externalId, text, products, null); }
 
     /** Same, with a picture the shop attached (sent with the text as its caption; the website chat shows it from the saved message). */
-    public Result send(UUID tenantId, String channel, String externalId, String text, List<Map<String, Object>> products, String imageUrl) {
+    public Result send(UUID tenantId, String channel, String externalId, String text, List<Map<String, Object>> products, String imageUrl) { return send(tenantId, channel, externalId, text, products, imageUrl, null); }
+
+    /** Same, and {@code onMid} gets (the platform's id, the text of that bubble) of each WhatsApp message that went out, so a customer's native reply to it can be understood. */
+    public Result send(UUID tenantId, String channel, String externalId, String text, List<Map<String, Object>> products, String imageUrl, java.util.function.BiConsumer<String, String> onMid) {
         if (channel == null || externalId == null) return new Result("SAVED", null);
         boolean image = imageUrl != null && !imageUrl.isBlank();
         if ("WHATSAPP".equals(channel)) {
@@ -36,10 +39,15 @@ public class ChatDelivery {
             boolean ok;
             {
                 ok = true;
-                if (image) ok = evolution.deliver(tenantId, externalId, text, imageUrl) != EvolutionService.Delivery.FAILED;
-                else for (String part : MetaChannelService.chunks(text, 3000)) ok &= evolution.sendFree(tenantId, externalId, part);
+                if (image) ok = evolution.deliver(tenantId, externalId, text, imageUrl, m -> { if (onMid != null && m != null && !m.isBlank()) onMid.accept(m, text); }) != EvolutionService.Delivery.FAILED;
+                else for (String part : MetaChannelService.chunks(text, 3000)) {
+                    String mid = evolution.sendFreeMid(tenantId, externalId, part);
+                    ok &= mid != null;
+                    if (onMid != null && mid != null && !mid.isBlank()) onMid.accept(mid, part);
+                }
                 if (ok) for (var card : share.pick(tenantId, text, products == null ? List.of() : products)) {   // the pictures of the products the message mentions, like in any reply
-                    if (evolution.deliver(tenantId, externalId, card.caption(), card.imageUrl()) == EvolutionService.Delivery.FAILED && card.imageUrl() != null) evolution.deliver(tenantId, externalId, card.caption(), null);
+                    java.util.function.Consumer<String> sink = m -> { if (onMid != null && m != null && !m.isBlank()) onMid.accept(m, card.caption()); };
+                    if (evolution.deliver(tenantId, externalId, card.caption(), card.imageUrl(), sink) == EvolutionService.Delivery.FAILED && card.imageUrl() != null) evolution.deliver(tenantId, externalId, card.caption(), null, sink);
                 }
             }
             return ok ? new Result("SENT", null)

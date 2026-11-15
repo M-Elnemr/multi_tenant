@@ -42,7 +42,34 @@ public class ChatService {
     private static final int MAX_TOOL_ROUNDS = 6;
     static final Map<String, String> GOVERNORATES = govs();
 
-    public record Reply(UUID conversationId, String text, Map<String, Object> order, List<Map<String, Object>> products) {}
+    /** {@code messageId}: the stored assistant message (0 when none), so a channel can link the platform's ids of what it sent to it; {@code userMessageId}: the customer's stored message this answers. */
+    public record Reply(UUID conversationId, String text, Map<String, Object> order, List<Map<String, Object>> products, long messageId, long userMessageId) {
+        public Reply(UUID conversationId, String text, Map<String, Object> order, List<Map<String, Object>> products) { this(conversationId, text, order, products, 0L, 0L); }
+    }
+
+    /** What came with a customer message about the message it answers: the reply references, and the platform's ids of the message itself (a burst has several). */
+    public record ReplyInput(List<ReplyRef> refs, List<String> mids) {
+        public static final ReplyInput NONE = new ReplyInput(List.of(), List.of());
+        public ReplyInput { refs = refs == null ? List.of() : refs; mids = mids == null ? List.of() : mids; }
+    }
+
+    /** What one inbound line carries: the platform's id of the line and the message it answers (null when it answers none). */
+    record InboundMeta(String mid, ReplyRef reply) {}
+
+    /** The reply input of a burst of inbound lines, from the metas the burst collected (in order). */
+    static ReplyInput input(List<Object> metas) {
+        List<ReplyRef> refs = new ArrayList<>(); List<String> mids = new ArrayList<>();
+        for (Object o : metas) if (o instanceof InboundMeta m) { if (m.reply() != null && !m.reply().empty()) refs.add(m.reply()); if (m.mid() != null && !m.mid().isBlank()) mids.add(m.mid()); }
+        return new ReplyInput(refs, mids);
+    }
+
+    private volatile MessageReplies replies;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void replies(MessageReplies replies) { this.replies = replies; }
+
+    /** The names of the products the quoted message talks about, for the knowledge tool of this reply (so «does it shrink?» searches the right product). */
+    static final ThreadLocal<List<String>> REPLY_PRODUCTS = new ThreadLocal<>();
 
     /** A line holding only this mark separates two messages: the assistant answers two unrelated topics in two short messages on WhatsApp, Messenger and Instagram. */
     static final String SPLIT = "⸻";
@@ -412,10 +439,21 @@ public class ChatService {
 
     public List<Map<String, Object>> history(UUID tenantId, String channel, String externalId) {
         List<Map<String, Object>> rows = new ArrayList<>(com.platform.shared.Rows.camel(jdbc.sql("""
-                SELECT m.role, m.content, m.media_url FROM chat.messages m JOIN chat.conversations c ON c.id = m.conversation_id
+                SELECT m.id, m.conversation_id, m.role, m.content, m.media_url FROM chat.messages m JOIN chat.conversations c ON c.id = m.conversation_id
                 WHERE c.tenant_id = :t AND c.channel = :c AND c.external_id = :e ORDER BY m.id DESC LIMIT 60
                 """).param("t", tenantId).param("c", channel).param("e", externalId).query().listOfRows()));
         java.util.Collections.reverse(rows);
+        if (!rows.isEmpty()) {   // the message ids (to reply to a message) and, for a message that quotes one, who said what: one query for the page
+            UUID conv = (UUID) rows.get(0).get("conversationId");
+            Map<Long, Map<String, Object>> quotes = replies == null ? Map.of() : replies.forScreens(tenantId, conv, rows.stream().map(r -> ((Number) r.get("id")).longValue()).toList());
+            for (int i = 0; i < rows.size(); i++) {
+                Map<String, Object> r = new java.util.LinkedHashMap<>(rows.get(i));
+                r.remove("conversationId");
+                Map<String, Object> q = quotes.get(((Number) r.get("id")).longValue());
+                if (q != null) r.put("replyTo", q);
+                rows.set(i, r);
+            }
+        }
         return rows;
     }
 
@@ -427,13 +465,16 @@ public class ChatService {
     public Reply reply(UUID tenantId, String channel, String externalId, UUID clientId, String message) { return reply(tenantId, channel, externalId, clientId, message, null); }
 
     /** Same, with the name the customer's chat app shows for them (WhatsApp profile name), kept on the conversation so the assistant can greet them by name. */
-    public Reply reply(UUID tenantId, String channel, String externalId, UUID clientId, String message, String displayName) {
+    public Reply reply(UUID tenantId, String channel, String externalId, UUID clientId, String message, String displayName) { return reply(tenantId, channel, externalId, clientId, message, displayName, ReplyInput.NONE); }
+
+    /** Same, for a message that answers a specific earlier message ({@code in}). A reference the website sent that is not of this chat and shop is refused before anything is saved. */
+    public Reply reply(UUID tenantId, String channel, String externalId, UUID clientId, String message, String displayName, ReplyInput in) {
         ReplyTimeline.begin();
-        try { return replyTimed(tenantId, channel, externalId, clientId, message, displayName); }
-        finally { ReplyTimeline.finish(channel, externalId); }
+        try { return replyTimed(tenantId, channel, externalId, clientId, message, displayName, in == null ? ReplyInput.NONE : in); }
+        finally { ReplyTimeline.finish(channel, externalId); REPLY_PRODUCTS.remove(); }
     }
 
-    private Reply replyTimed(UUID tenantId, String channel, String externalId, UUID clientId, String message, String displayName) {
+    private Reply replyTimed(UUID tenantId, String channel, String externalId, UUID clientId, String message, String displayName, ReplyInput in) {
         String text = message == null ? "" : message.trim();
         if (text.isEmpty()) throw BusinessException.badRequest("VALIDATION_ERROR", "Write a message");
         if (text.length() > 1000) throw BusinessException.badRequest("VALIDATION_ERROR", "The message is too long");
@@ -445,7 +486,16 @@ public class ChatService {
         if (named != null) jdbc.sql("UPDATE chat.conversations SET display_name = :n WHERE id = :c").param("n", named).param("c", conv).update();
         String said = statedGender(text);
         if (said != null) jdbc.sql("UPDATE chat.conversations SET gender = :g WHERE id = :c").param("g", said).param("c", conv).update();
+        List<ReplyRef> refs = in.refs().stream().filter(r -> r != null && !r.empty()).toList();
+        boolean fromClient = "WEB".equals(channel) || "TEST".equals(channel);   // a website client names a message by our id: it must be of this chat and this shop (the channels' own ids are looked up, never trusted)
+        if (replies != null && fromClient) for (ReplyRef r : refs) replies.resolve(tenantId, conv, r, true);   // throws before anything is saved
         long userMsgId = jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'user', :x) RETURNING id").param("c", conv).param("x", text).query(Long.class).single();
+        if (replies != null) {
+            try {
+                if (!refs.isEmpty()) replies.attach(tenantId, conv, userMsgId, refs.get(0), false);
+                for (String mid : in.mids()) replies.recordMid(tenantId, conv, userMsgId, mid, null);
+            } catch (RuntimeException e) { log.warn("Reply reference not saved: {}", e.toString()); }
+        }
         if (!"TEST".equals(channel)) {
             String phone = "WHATSAPP".equals(channel) ? null : statedPhone(text);   // a mobile number the customer gave (website, Messenger, Instagram): shown in the inbox, links the customer
             if (phone != null) jdbc.sql("UPDATE chat.conversations SET contact_phone = :p WHERE id = :c").param("p", phone).param("c", conv).update();
@@ -460,14 +510,20 @@ public class ChatService {
         }
 
         List<Turn> turns = new ArrayList<>();
-        for (var m : jdbc.sql("SELECT role, content FROM (SELECT id, role, content FROM chat.messages WHERE conversation_id = :c ORDER BY id DESC LIMIT :n) x ORDER BY id").param("c", conv).param("n", Math.max(4, Math.min(historyMessages, 40))).query().listOfRows())
+        long windowFrom = 0;   // the oldest message the model is given as history
+        for (var m : jdbc.sql("SELECT id, role, content FROM (SELECT id, role, content FROM chat.messages WHERE conversation_id = :c ORDER BY id DESC LIMIT :n) x ORDER BY id").param("c", conv).param("n", Math.max(4, Math.min(historyMessages, 40))).query().listOfRows()) {
+            if (windowFrom == 0) windowFrom = ((Number) m.get("id")).longValue();
             turns.add("user".equals(m.get("role")) ? Turn.user((String) m.get("content")) : Turn.model((String) m.get("content")));
+        }
 
         @SuppressWarnings("unchecked") Map<String, Object>[] orderBox = new Map[1];
         boolean[] ragDown = new boolean[1];
         Ctx ctx = new Ctx(tenantId, conv, channel, externalId, clientId, userMsgId, new ArrayList<>(), orderBox, new String[1], new String[1], ragDown);
         ReplyTimeline.mark("prep");
         String system = systemPrompt(tenantId, conv, clientId, channel, externalId);
+        long replyStart = System.nanoTime();
+        try { system += replyContextBlock(tenantId, conv, userMsgId, refs, text, windowFrom); } catch (RuntimeException e) { log.warn("Reply context skipped: {}", e.toString()); }
+        ReplyTimeline.span("replyContext", ReplyTimeline.since(replyStart));
         ReplyTimeline.mark("prompt");
         if (!system.contains("ALL PRODUCTS (")) system += productsForMessage(tenantId, text);
         List<ToolDef> tools = tools();
@@ -649,7 +705,35 @@ public class ChatService {
         if (ctx.summary()[0] != null) markSummary(conv, saved);
         jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();
         boolean orderText = ctx.summary()[0] != null || orderBox[0] != null;   // the order summary and the confirmation list the items: a product card after them is only noise
-        return new Reply(conv, answer, orderBox[0], orderText ? List.of() : ctx.products());
+        return new Reply(conv, answer, orderBox[0], orderText ? List.of() : ctx.products(), saved, userMsgId);
+    }
+
+    /**
+     * The «MESSAGE BEING REPLIED TO» part of the prompt: the quoted message read straight from the database by its validated reference (one indexed read, however old it is), the
+     * messages beside it when it is older than the history window, and the products its text names. Nothing here calls a model.
+     */
+    private String replyContextBlock(UUID tenantId, UUID conv, long userMsgId, List<ReplyRef> refs, String latest, long windowFrom) {
+        if (replies == null) return "";
+        List<MessageReplies.Quoted> found = new ArrayList<>();
+        boolean missing = false;
+        for (ReplyRef r : refs) { var q = replies.resolve(tenantId, conv, r, false); if (q == null) missing = true; else found.add(q); }
+        if (refs.isEmpty()) { var q = replies.quotedBy(tenantId, conv, userMsgId); if (q != null) found.add(q); }   // a message stored with its reference and processed later (queue, retry)
+        if (found.isEmpty() && !missing) return "";
+        FactCheck.Shop shop = shopView(tenantId);
+        List<FactCheck.Named> names = shop.names();
+        List<ReplyContext.Item> items = new ArrayList<>();
+        List<String> productNames = new ArrayList<>();
+        for (var q : found) {
+            List<String> products = new ArrayList<>();
+            for (var m : FactCheck.mentions(q.text() == null ? "" : q.text(), names)) {
+                names.stream().filter(x -> x.slug().equals(m.slug())).findFirst().ifPresent(x -> { String label = x.name() + " [" + x.slug() + "]"; if (!products.contains(label)) { products.add(label); productNames.add(x.name()); } });
+            }
+            boolean inside = q.messageId() != null && windowFrom > 0 && q.messageId() >= windowFrom;   // the model already has it as history: labelled, not repeated
+            List<MessageReplies.Quoted> around = q.messageId() == null || inside ? List.of() : replies.around(tenantId, conv, q.messageId(), 2, 2);
+            items.add(new ReplyContext.Item(q, around, products, inside));
+        }
+        REPLY_PRODUCTS.set(productNames);
+        return ReplyContext.block(items, missing, latest);
     }
 
     // ---- hand-over to the shop team ----------------------------------------------------------------------------------------
@@ -768,8 +852,11 @@ public class ChatService {
         String channel = (String) c.get("channel"), externalId = (String) c.get("external_id");
         UUID clientId = (UUID) c.get("client_id");
         List<Turn> turns = new ArrayList<>();
-        for (var m : jdbc.sql("SELECT role, content FROM (SELECT id, role, content FROM chat.messages WHERE conversation_id = :c ORDER BY id DESC LIMIT :n) x ORDER BY id").param("c", conv).param("n", Math.max(4, Math.min(historyMessages, 40))).query().listOfRows())
+        long windowFrom = 0;   // the oldest message the model is given as history
+        for (var m : jdbc.sql("SELECT id, role, content FROM (SELECT id, role, content FROM chat.messages WHERE conversation_id = :c ORDER BY id DESC LIMIT :n) x ORDER BY id").param("c", conv).param("n", Math.max(4, Math.min(historyMessages, 40))).query().listOfRows()) {
+            if (windowFrom == 0) windowFrom = ((Number) m.get("id")).longValue();
             turns.add("user".equals(m.get("role")) ? Turn.user((String) m.get("content")) : Turn.model((String) m.get("content")));
+        }
         String note = "[NOTE FROM THE SHOP. The customer cannot see this note.] The shop owner has now answered the question you could not answer earlier. The customer's question: «" + question
                 + "». The owner's answer: «" + ownerAnswer + "». Write your message to the customer now, in the customer's own language and dialect: give them this answer warmly and clearly, using only what the owner said "
                 + "(add no facts of your own: no urgency, no price talk, no promises, nothing the owner did not say), in simple correct words, then take one step toward the sale. Do not mention this note or flag the question again.";
@@ -3719,9 +3806,19 @@ public class ChatService {
         return out;
     }
 
+    /** A short or vague question asked in reply to a message about a product keeps that product's name in the search («هل بينكمش؟» becomes «جاكيت قطن هل بينكمش؟»); a question that already names it is left alone. */
+    static String withReplyProduct(String question) {
+        List<String> names = REPLY_PRODUCTS.get();
+        if (names == null || names.isEmpty()) return question;
+        String q = FastAnswers.norm(question);
+        for (String n : names) if (q.contains(FastAnswers.norm(n))) return question;
+        return names.get(0) + " " + question;
+    }
+
     private Map<String, Object> shopKnowledge(Ctx ctx, Map<String, Object> a) {
         String q = a.get("question") == null ? "" : String.valueOf(a.get("question")).trim();
         if (q.isEmpty()) return obj("error", "Give the customer's question");
+        q = withReplyProduct(q);
         List<Map<String, Object>> out = new ArrayList<>();
         var foundByMeaning = knowledge.searchChecked(ctx.tenantId(), q, null, 5);
         if (foundByMeaning.unavailable()) {   // not "the shop's data says nothing": the shop's data could not be searched

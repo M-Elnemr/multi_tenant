@@ -11,7 +11,9 @@ export type ChatRow = {
   statuses: Status[]; priority: "HIGH" | "MEDIUM" | "LOW"; lastOrder?: string | null;
 };
 
-export type Msg = { id: number; role: "user" | "assistant"; content: string; byOwner: boolean; kind: "TEXT" | "FOLLOWUP"; mediaUrl?: string | null; createdAt: string };
+import type { Quoted } from "@/lib/reply";
+
+export type Msg = { id: number; role: "user" | "assistant"; content: string; byOwner: boolean; kind: "TEXT" | "FOLLOWUP"; mediaUrl?: string | null; createdAt: string; replyTo?: Quoted | null };
 export type ChatEvent = { id: number; kind: string; meta?: string | null; createdAt: string; actor?: string | null };
 export type Note = { id: number; body: string; createdAt: string; author?: string | null; authorUserId?: string | null };
 export type Window = { canSend: boolean; mode: "WEB" | "OWN_NUMBER" | "CLOUD" | "MESSENGER" | "INSTAGRAM" | "OTHER"; endsAt?: string; reason?: "CLOSED" | "NOT_CONNECTED" | "NOT_SUPPORTED"; openUrl?: string; openKind?: string };

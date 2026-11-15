@@ -177,7 +177,7 @@ public class MetaChannelService {
                         if (!tappedOn.isEmpty() && jdbc.sql("INSERT INTO chat.meta_events (mid) VALUES (:m) ON CONFLICT DO NOTHING").param("m", "btn:" + tappedOn).update() == 0) continue;
                         String from = m.path("from").asText(""), name = null;
                         for (JsonNode c : v.path("contacts")) if (from.equals(c.path("wa_id").asText())) name = c.path("profile").path("name").asText(null);   // the customer's WhatsApp profile name
-                        inbound("WHATSAPP", pnid, from, m.path("id").asText(""), whatsappText(m), name, whatsappMedia(m), false);
+                        inbound("WHATSAPP", pnid, from, m.path("id").asText(""), whatsappText(m), name, whatsappMedia(m), false, whatsappReply(m));
                     }
                 }
             } else if ("page".equals(object) || "instagram".equals(object)) {
@@ -191,10 +191,33 @@ public class MetaChannelService {
                     String sender = ev.path("sender").path("id").asText("");
                     if (msg.isMissingNode() || msg.path("is_echo").asBoolean(false) || sender.equals(accountId)) continue;
                     boolean ad = hasReferral(msg) || hasReferral(ev) || hasReferral(ev.path("postback"));   // Click-to-Messenger / Instagram ad: Meta lets the shop write for 7 days
-                    inbound(platform, accountId, sender, msg.path("mid").asText(""), msg.hasNonNull("text") ? msg.path("text").asText("") : null, null, messengerMedia(msg), ad);
+                    inbound(platform, accountId, sender, msg.path("mid").asText(""), msg.hasNonNull("text") ? msg.path("text").asText("") : null, null, messengerMedia(msg), ad, messengerReply(msg));
                 }
             }
         }
+    }
+
+    /**
+     * The message a WhatsApp Cloud customer swiped to reply to: {@code context.id} is that message's id (WhatsApp sends no text with it, so the text is found among the messages we stored).
+     * A tap on a reply button also carries {@code context.id} (the message the buttons were under) but its text is the button's own value, so it is not a reply to quote.
+     */
+    static ReplyRef whatsappReply(JsonNode m) {
+        if ("interactive".equals(m.path("type").asText())) return null;
+        String id = m.path("context").path("id").asText("");
+        return id.isBlank() ? null : ReplyRef.ofMid(id, null);
+    }
+
+    /**
+     * Messenger and Instagram: {@code reply_to.mid} is the id of the quoted message (no text with it). An Instagram reply to a story carries {@code reply_to.story} instead: the story's own
+     * content is not sent, so only the fact that it answers one of the shop's stories is kept (nothing is invented about what the story showed).
+     */
+    static ReplyRef messengerReply(JsonNode msg) {
+        JsonNode r = msg.path("reply_to");
+        if (!r.isObject()) return null;
+        String mid = r.path("mid").asText("");
+        if (!mid.isBlank()) return ReplyRef.ofMid(mid, null);
+        if (r.path("story").isObject()) return ReplyRef.ofMid(null, new ReplyRef.Quote("shop", "story", null, false, null, "instagram"));
+        return null;
     }
 
     /** True when the event carries an ad referral (ad_id, source ADS). */
@@ -313,7 +336,7 @@ public class MetaChannelService {
 
     private boolean running(UUID tenantId) { return jdbc.sql("SELECT " + com.platform.shared.TenantState.running("CAST(:t AS uuid)")).param("t", tenantId).query(Boolean.class).single(); }
 
-    private void inbound(String platform, String accountId, String sender, String mid, String text, String name, MediaRef ref, boolean ad) {
+    private void inbound(String platform, String accountId, String sender, String mid, String text, String name, MediaRef ref, boolean ad, ReplyRef reply) {
         if (accountId.isEmpty() || sender.isEmpty() || mid.isEmpty()) return;
         var ch = jdbc.sql("SELECT tenant_id, token_enc, status FROM chat.channels WHERE platform = :p AND external_id = :e").param("p", platform).param("e", accountId).query().listOfRows().stream().findFirst();
         if (ch.isEmpty() || !"ACTIVE".equals(ch.get().get("status"))) return;
@@ -324,7 +347,7 @@ public class MetaChannelService {
         // a photo or voice note is read into text (a few seconds); what the customer sends meanwhile waits for it, so «بكام ده؟» is answered with the photo, in order
         if ((text == null || text.isBlank()) && ref != null && media.enabled() && chat.enabled((UUID) row.get("tenant_id"), platform) && chat.hasPoints((UUID) row.get("tenant_id")) && mediaAllowed("media|" + key)) {
             if (burst.enabled()) {
-                var release = burst.hold(key, joined -> respond(platform, accountId, sender, joined, row, name));
+                var release = burst.hold(key, new ChatService.InboundMeta(mid, reply), (joined, metas) -> respond(platform, accountId, sender, joined, row, name, ChatService.input(metas)));
                 String read = null;
                 try { read = readMedia(platform, row, ref); } finally { release.accept(read); }
                 return;
@@ -332,8 +355,8 @@ public class MetaChannelService {
             text = readMedia(platform, row, ref);
         }
         // a customer's quick lines are joined and answered once (see InboundBurst); empty messages go straight on
-        if (burst.enabled() && text != null && !text.isBlank()) { burst.add(key, text, joined -> respond(platform, accountId, sender, joined, row, name)); return; }
-        respond(platform, accountId, sender, text, row, name);
+        if (burst.enabled() && text != null && !text.isBlank()) { burst.add(key, text, new ChatService.InboundMeta(mid, reply), (joined, metas) -> respond(platform, accountId, sender, joined, row, name, ChatService.input(metas))); return; }
+        respond(platform, accountId, sender, text, row, name, ChatService.input(List.of(new ChatService.InboundMeta(mid, reply))));
     }
 
     /** At most 20 photos and voice notes read per customer in 10 minutes (each read costs a model call); past that they get the "please type" answer. */
@@ -356,7 +379,7 @@ public class MetaChannelService {
         }
     }
 
-    private void respond(String platform, String accountId, String sender, String text, Map<String, Object> chRow, String name) {
+    private void respond(String platform, String accountId, String sender, String text, Map<String, Object> chRow, String name, ChatService.ReplyInput in) {
         UUID tenantId = (UUID) chRow.get("tenant_id");
         if (!running(tenantId)) return;   // a suspended, cancelled or archived shop does not answer customers
         String token = crypto.decrypt((String) chRow.get("token_enc"));
@@ -365,6 +388,7 @@ public class MetaChannelService {
         boolean aiOn = chat.enabled(tenantId, platform);
         String answer;
         List<ProductShare.Card> cards = List.of();
+        ChatService.Reply sentReply = null;
         if (text == null || text.isBlank()) {
             if (!aiOn) return;
             answer = "أستطيع قراءة الرسائل النصية فقط، {اكتب|اكتبي} لي ما {تحتاجه|تحتاجيه} 🙏 / I can only read text messages, please type what you need.";
@@ -385,8 +409,9 @@ public class MetaChannelService {
                         try { send(platform, accountId, sender, token, arabic ? "لحظات معايا... 🌸" : "One moment, I am checking for you... 🌸"); } catch (RuntimeException ignored) { /* best effort */ }
                     }, 5, java.util.concurrent.TimeUnit.SECONDS);
                     try {
-                        var reply = chat.reply(tenantId, platform, sender, null, text.length() > 1000 ? text.substring(0, 1000) : text, name);
+                        var reply = chat.reply(tenantId, platform, sender, null, text.length() > 1000 ? text.substring(0, 1000) : text, name, in);
                         if (reply.text() == null || reply.text().isBlank()) return;   // the shop team took this chat over: nothing goes out automatically
+                        sentReply = reply;
                         answer = reply.text();
                         cards = share.pick(tenantId, answer, reply.products());
                         if (reply.order() != null && reply.order().get("accountNotice") instanceof String n && !n.isBlank()) answer += "\n\n" + n;
@@ -408,60 +433,69 @@ public class MetaChannelService {
                 List<String> parts = chunks(messages.get(mi), "INSTAGRAM".equals(platform) ? 900 : "WHATSAPP".equals(platform) ? 3500 : 1900);
                 for (int pi = 0; pi < parts.size(); pi++) {
                     boolean lastPart = mi == messages.size() - 1 && pi == parts.size() - 1;
-                    if (lastPart && !buttons.isEmpty()) sendWithButtons(platform, accountId, sender, token, parts.get(pi), buttons);
-                    else send(platform, accountId, sender, token, parts.get(pi));
+                    String mid = lastPart && !buttons.isEmpty() ? sendWithButtons(platform, accountId, sender, token, parts.get(pi), buttons) : send(platform, accountId, sender, token, parts.get(pi));
+                    if (sentReply != null && replies != null) replies.recordMid(tenantId, sentReply.conversationId(), sentReply.messageId(), mid, parts.get(pi));   // so the customer's reply to THIS bubble is found
                 }
             }
         } catch (MetaGraph.MetaException e) {
             log.warn("Could not send the {} reply: {}", platform, e.getMessage());
         }
-        for (var card : cards) sendCard(platform, accountId, sender, token, card);
+        for (var card : cards) { String mid = sendCard(platform, accountId, sender, token, card); if (sentReply != null && replies != null) replies.recordMid(tenantId, sentReply.conversationId(), sentReply.messageId(), mid, card.caption()); }
     }
 
     /** A suggested product: its picture with name, price and link; when the picture cannot be sent, the link alone. */
-    private void sendCard(String platform, String accountId, String to, String token, ProductShare.Card card) {
+    private String sendCard(String platform, String accountId, String to, String token, ProductShare.Card card) {
         try {
             if (card.imageUrl() != null) {
-                if ("WHATSAPP".equals(platform)) {
-                    graph.post(accountId + "/messages", token, Map.of("messaging_product", "whatsapp", "to", to, "type", "image", "image", Map.of("link", card.imageUrl(), "caption", card.caption())));
-                    return;
-                }
+                if ("WHATSAPP".equals(platform)) return midOf(graph.post(accountId + "/messages", token, Map.of("messaging_product", "whatsapp", "to", to, "type", "image", "image", Map.of("link", card.imageUrl(), "caption", card.caption()))));
                 graph.post("me/messages", token, Map.of("recipient", Map.of("id", to), "messaging_type", "RESPONSE", "message", Map.of("attachment", Map.of("type", "image", "payload", Map.of("url", card.imageUrl(), "is_reusable", false)))));
             }
-            send(platform, accountId, to, token, card.caption());
+            return send(platform, accountId, to, token, card.caption());
         } catch (MetaGraph.MetaException e) {
-            try { send(platform, accountId, to, token, card.caption()); } catch (MetaGraph.MetaException ignored) { log.warn("Could not send a product card: {}", e.getMessage()); }
+            try { return send(platform, accountId, to, token, card.caption()); } catch (MetaGraph.MetaException ignored) { log.warn("Could not send a product card: {}", e.getMessage()); return null; }
         }
     }
+
+    /** The platform's id of a message we just sent: WhatsApp {@code messages[0].id}, Messenger / Instagram {@code message_id}; null when the answer has none (nothing is invented). */
+    static String midOf(Map<String, Object> response) {
+        if (response == null) return null;
+        if (response.get("messages") instanceof List<?> l && !l.isEmpty() && l.get(0) instanceof Map<?, ?> m && m.get("id") != null) return String.valueOf(m.get("id"));
+        return response.get("message_id") == null ? null : String.valueOf(response.get("message_id"));
+    }
+
+    private volatile MessageReplies replies;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void replies(MessageReplies replies) { this.replies = replies; }
 
     /**
      * The reply with tap buttons: WhatsApp's reply buttons (up to 3, a title up to 20 characters, the id is what comes back as the customer's message) or Messenger / Instagram quick replies
      * (up to 13). A reply too long for the interactive body, or a platform that refuses it, goes out as plain text.
      */
-    void sendWithButtons(String platform, String accountId, String to, String token, String text, List<ReplyButtons.Button> buttons) {
+    String sendWithButtons(String platform, String accountId, String to, String token, String text, List<ReplyButtons.Button> buttons) {
         try {
             if ("WHATSAPP".equals(platform)) {
-                if (text.length() > 1000) { send(platform, accountId, to, token, text); return; }
+                if (text.length() > 1000) return send(platform, accountId, to, token, text);
                 List<Map<String, Object>> rows = new java.util.ArrayList<>();
                 for (ReplyButtons.Button b : buttons.stream().limit(3).toList()) rows.add(Map.of("type", "reply", "reply", Map.of("id", b.value(), "title", clip(b.label(), 20))));
-                graph.post(accountId + "/messages", token, Map.of("messaging_product", "whatsapp", "to", to, "type", "interactive",
-                        "interactive", Map.of("type", "button", "body", Map.of("text", text), "action", Map.of("buttons", rows))));
+                return midOf(graph.post(accountId + "/messages", token, Map.of("messaging_product", "whatsapp", "to", to, "type", "interactive",
+                        "interactive", Map.of("type", "button", "body", Map.of("text", text), "action", Map.of("buttons", rows)))));
             } else {
                 List<Map<String, Object>> quick = new java.util.ArrayList<>();
                 for (ReplyButtons.Button b : buttons.stream().limit(13).toList()) quick.add(Map.of("content_type", "text", "title", clip(b.label(), 20), "payload", b.value()));
-                graph.post("me/messages", token, Map.of("recipient", Map.of("id", to), "messaging_type", "RESPONSE", "message", Map.of("text", text, "quick_replies", quick)));
+                return midOf(graph.post("me/messages", token, Map.of("recipient", Map.of("id", to), "messaging_type", "RESPONSE", "message", Map.of("text", text, "quick_replies", quick))));
             }
         } catch (MetaGraph.MetaException e) {
             log.debug("Buttons refused ({}), sending the reply as text", e.getMessage());
-            send(platform, accountId, to, token, text);
+            return send(platform, accountId, to, token, text);
         }
     }
 
     private static String clip(String s, int max) { return s.length() <= max ? s : s.substring(0, max); }
 
-    void send(String platform, String accountId, String to, String token, String text) {
-        if ("WHATSAPP".equals(platform)) graph.post(accountId + "/messages", token, Map.of("messaging_product", "whatsapp", "to", to, "type", "text", "text", Map.of("body", text)));
-        else graph.post("me/messages", token, Map.of("recipient", Map.of("id", to), "messaging_type", "RESPONSE", "message", Map.of("text", text)));
+    String send(String platform, String accountId, String to, String token, String text) {
+        if ("WHATSAPP".equals(platform)) return midOf(graph.post(accountId + "/messages", token, Map.of("messaging_product", "whatsapp", "to", to, "type", "text", "text", Map.of("body", text))));
+        return midOf(graph.post("me/messages", token, Map.of("recipient", Map.of("id", to), "messaging_type", "RESPONSE", "message", Map.of("text", text))));
     }
 
     /** Links the customer needs outside the website: where to track the order, and where to pay when it is by card. */

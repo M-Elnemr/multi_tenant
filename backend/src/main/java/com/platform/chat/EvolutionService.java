@@ -248,13 +248,18 @@ public class EvolutionService {
     public enum Delivery { SENT, FAILED, DEFERRED }
 
     /** One message from the shop's own number, text or a picture with the text as its caption. Used by broadcasts, which retry a deferred message later. */
-    public Delivery deliver(UUID tenantId, String number, String text, String imageUrl) {
+    public Delivery deliver(UUID tenantId, String number, String text, String imageUrl) { return deliver(tenantId, number, text, imageUrl, null); }
+
+    /** Same, and {@code midSink} receives the platform's id of the message that went out (when the gateway returns one). */
+    public Delivery deliver(UUID tenantId, String number, String text, String imageUrl, java.util.function.Consumer<String> midSink) {
         try {
             if (!connected(tenantId)) return Delivery.FAILED;
             try { throttle.check("evo-out|" + tenantId, 20, Duration.ofMinutes(1)); } catch (BusinessException e) { return Delivery.DEFERRED; }
             String n = number.replaceAll("\\D", ""), inst = row(tenantId).get("instance").toString();
-            if (imageUrl != null && !imageUrl.isBlank()) api.call("POST", "/message/sendMedia/" + inst, Map.of("number", n, "mediatype", "image", "media", imageUrl, "caption", text == null ? "" : text, "delay", typingDelayMs));
-            else api.call("POST", "/message/sendText/" + inst, Map.of("number", n, "text", text, "delay", typingDelayMs));
+            Map<String, Object> res;
+            if (imageUrl != null && !imageUrl.isBlank()) res = api.call("POST", "/message/sendMedia/" + inst, Map.of("number", n, "mediatype", "image", "media", imageUrl, "caption", text == null ? "" : text, "delay", typingDelayMs));
+            else res = api.call("POST", "/message/sendText/" + inst, Map.of("number", n, "text", text, "delay", typingDelayMs));
+            if (midSink != null) midSink.accept(keyId(res));
             return Delivery.SENT;
         } catch (RuntimeException e) {
             log.warn("Unofficial WhatsApp send failed: {}", e.getMessage());
@@ -263,18 +268,34 @@ public class EvolutionService {
     }
 
     /** Sends a normal text from the shop's own number. False when the mode is off, the phone is not linked, the shop is sending too fast, or the send failed. Never throws. */
-    public boolean sendFree(UUID tenantId, String number, String text) {
+    public boolean sendFree(UUID tenantId, String number, String text) { return sendFreeMid(tenantId, number, text) != null; }
+
+    /** The id of a message the gateway sent ({@code key.id} of its answer), or null when it returned none. */
+    static String keyId(Map<String, Object> res) {
+        return res != null && res.get("key") instanceof Map<?, ?> k && k.get("id") != null ? String.valueOf(k.get("id")) : null;
+    }
+
+    /**
+     * Sends a normal text from the shop's own number and returns the platform's id of it ("" when the gateway gave none; null when the mode is off, the phone is not linked, the shop is sending
+     * too fast or the send failed). Never throws.
+     */
+    public String sendFreeMid(UUID tenantId, String number, String text) {
         try {
-            if (!connected(tenantId) || text == null || text.isBlank()) return false;
+            if (!connected(tenantId) || text == null || text.isBlank()) return null;
             throttle.check("evo-out|" + tenantId, 20, Duration.ofMinutes(1));   // a person does not send faster; a ban is likelier when a number does
             String n = number.replaceAll("\\D", "");
-            api.call("POST", "/message/sendText/" + row(tenantId).get("instance"), Map.of("number", n, "text", text, "delay", typingDelayMs));
-            return true;
+            String id = keyId(api.call("POST", "/message/sendText/" + row(tenantId).get("instance"), Map.of("number", n, "text", text, "delay", typingDelayMs)));
+            return id == null ? "" : id;   // "" = sent, the gateway gave no id (never stored as one)
         } catch (RuntimeException e) {
             log.warn("Unofficial WhatsApp send failed: {}", e.getMessage());
-            return false;
+            return null;
         }
     }
+
+    private volatile MessageReplies replies;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void replies(MessageReplies replies) { this.replies = replies; }
 
     // ---- Evolution calls us ----------------------------------------------------------------------------------------------------------
 
@@ -319,13 +340,14 @@ public class EvolutionService {
         if (msg.has("reactionMessage") || msg.has("protocolMessage") || msg.has("pollUpdateMessage")) return;   // a reaction (❤️ on a message), an edit or a poll vote is not a message to answer
         String text = msg.hasNonNull("conversation") ? msg.path("conversation").asText() : msg.path("extendedTextMessage").hasNonNull("text") ? msg.path("extendedTextMessage").path("text").asText() : null;
         String name = m.path("pushName").asText(""), burstKey = tenantId + "|" + sender;
+        var meta = new ChatService.InboundMeta(id, replyOf(msg, jid));
         // a photo or voice note is read into text (a few seconds); what the customer sends meanwhile waits for it, so «بكام ده؟» is answered with the photo, in order
         MediaReader.Kind kind = msg.has("imageMessage") ? MediaReader.Kind.IMAGE : msg.has("audioMessage") ? MediaReader.Kind.AUDIO : null;
         if ((text == null || text.isBlank()) && kind != null && media.enabled() && chat.enabled(tenantId, "WHATSAPP") && chat.hasPoints(tenantId) && mediaAllowed(burstKey)) {
             JsonNode part = msg.path(kind == MediaReader.Kind.IMAGE ? "imageMessage" : "audioMessage");
             var ref = new MediaReader.Media(kind, () -> mediaBytes(tenantId, m, kind), part.path("mimetype").asText(null), part.path("caption").asText(null));
             if (burst.enabled()) {
-                var release = burst.hold(burstKey, joined -> respond(tenantId, sender, joined, name));
+                var release = burst.hold(burstKey, meta, (joined, metas) -> respond(tenantId, sender, joined, name, ChatService.input(metas)));
                 String read = null;
                 try { read = media.read(tenantId, "WHATSAPP", ref); } finally { release.accept(read); }
                 return;
@@ -333,8 +355,27 @@ public class EvolutionService {
             text = media.read(tenantId, "WHATSAPP", ref);
         }
         // a customer's quick lines are joined and answered once (see InboundBurst); empty messages go straight on
-        if (burst.enabled() && text != null && !text.isBlank()) { burst.add(burstKey, text, joined -> respond(tenantId, sender, joined, name)); return; }
-        respond(tenantId, sender, text, name);
+        if (burst.enabled() && text != null && !text.isBlank()) { burst.add(burstKey, text, meta, (joined, metas) -> respond(tenantId, sender, joined, name, ChatService.input(metas))); return; }
+        respond(tenantId, sender, text, name, ChatService.input(List.of(meta)));
+    }
+
+    /**
+     * The message a customer quoted on their own number's WhatsApp: {@code contextInfo.stanzaId} is its id and {@code quotedMessage} carries its content, so unlike the Cloud API the text arrives
+     * with the reply. Who wrote it: our own message (found by its id when the reply is resolved) or the customer's: {@code participant} is the quoted message's author.
+     */
+    static ReplyRef replyOf(JsonNode msg, String customerJid) {
+        JsonNode ctx = null;
+        for (var f : msg.properties()) if (f.getValue().isObject() && f.getValue().path("contextInfo").path("stanzaId").isTextual()) { ctx = f.getValue().path("contextInfo"); break; }
+        if (ctx == null) return null;
+        String stanza = ctx.path("stanzaId").asText("");
+        JsonNode q = ctx.path("quotedMessage");
+        String text = q.hasNonNull("conversation") ? q.path("conversation").asText() : q.path("extendedTextMessage").hasNonNull("text") ? q.path("extendedTextMessage").path("text").asText()
+                : q.path("imageMessage").hasNonNull("caption") ? q.path("imageMessage").path("caption").asText() : q.path("videoMessage").hasNonNull("caption") ? q.path("videoMessage").path("caption").asText() : null;
+        boolean media = q.has("imageMessage") || q.has("videoMessage") || q.has("documentMessage") || q.has("audioMessage");
+        String author = ctx.path("participant").asText("");
+        String sender = !author.isEmpty() && author.replaceAll("\\D", "").equals(customerJid.replaceAll("\\D", "")) ? "customer" : "shop";
+        ReplyRef.Quote quote = q.isMissingNode() || q.isEmpty() ? null : new ReplyRef.Quote(sender, media && (text == null || text.isBlank()) ? "attachment" : media ? "image" : "text", text, media, null, "whatsapp");
+        return ReplyRef.ofMid(stanza, quote);
     }
 
     /** At most 20 photos and voice notes read per customer in 10 minutes (each read costs a model call); past that they get the "please type" answer. */
@@ -359,7 +400,8 @@ public class EvolutionService {
         return bytes;
     }
 
-    private void respond(UUID tenantId, String sender, String text, String pushName) {
+    private void respond(UUID tenantId, String sender, String text, String pushName, ChatService.ReplyInput in) {
+        ChatService.Reply sentReply = null;
         boolean aiOn = chat.enabled(tenantId, "WHATSAPP");
         String answer;
         List<ProductShare.Card> cards = List.of();
@@ -373,8 +415,9 @@ public class EvolutionService {
                 if (special.isPresent()) answer = special.get();
                 else if (!aiOn) return;
                 else {
-                    var reply = chat.reply(tenantId, "WHATSAPP", sender, null, text.length() > 1000 ? text.substring(0, 1000) : text, pushName);
+                    var reply = chat.reply(tenantId, "WHATSAPP", sender, null, text.length() > 1000 ? text.substring(0, 1000) : text, pushName, in);
                     if (reply.text() == null || reply.text().isBlank()) return;   // the shop team took this chat over: nothing goes out automatically
+                    sentReply = reply;
                     answer = reply.text();
                     if (reply.order() != null && reply.order().get("accountNotice") instanceof String n && !n.isBlank()) answer += "\n\n" + n;   // confirmed on WhatsApp: the account message follows
                     cards = share.pick(tenantId, answer, reply.products());
@@ -388,9 +431,15 @@ public class EvolutionService {
         com.platform.shared.Gender g = genders.forPhone(tenantId, sender);
         if (g == com.platform.shared.Gender.UNKNOWN) g = com.platform.commerce.GenderService.forName(pushName);
         for (String message : ChatService.messages(g.apply(answer)))   // the assistant may answer two separate topics in two messages
-            for (String part : MetaChannelService.chunks(message, 3000)) sendFree(tenantId, sender, part);
+            for (String part : MetaChannelService.chunks(message, 3000)) {
+                String mid = sendFreeMid(tenantId, sender, part);
+                if (sentReply != null && replies != null) replies.recordMid(tenantId, sentReply.conversationId(), sentReply.messageId(), mid, part);   // so the customer's reply to THIS bubble is found
+            }
         for (var card : cards) {   // the picture, price and link of each product the assistant suggested; a product without a picture goes as its link alone
-            if (deliver(tenantId, sender, card.caption(), card.imageUrl()) == Delivery.FAILED && card.imageUrl() != null) deliver(tenantId, sender, card.caption(), null);
+            String[] cardMid = new String[1];
+            Delivery d = deliver(tenantId, sender, card.caption(), card.imageUrl(), m -> cardMid[0] = m);
+            if (d == Delivery.FAILED && card.imageUrl() != null) d = deliver(tenantId, sender, card.caption(), null, m -> cardMid[0] = m);
+            if (sentReply != null && replies != null) replies.recordMid(tenantId, sentReply.conversationId(), sentReply.messageId(), cardMid[0], card.caption());
         }
     }
 

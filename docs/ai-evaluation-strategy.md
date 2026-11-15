@@ -46,3 +46,10 @@ A prompt or guard change ships only if: full Gradle suite green, Promptfoo deter
 | 15 fallback context | `aSuccessfulFallbackReceivesTheSameSystemHistoryAndTools` |
 | 16 cross-tenant | `twoShopsRepliesNeverShareContentThroughTheFallback` + `KnowledgeTenantIsolationIntegrationTest` |
 Each key test was also run against a deliberately broken implementation and failed there (detection removed: 3 tests fail; `madeChanges` guard removed: the order test fails).
+
+
+## Round 3: reply understanding
+The Promptfoo suite is now **117 cases** (87 golden + 30 extra). Ten new live cases (930-939) reply to a specific earlier message through the owner test chat (the provider reads the id from the chat's own history; a turn can be `{say, replyTo:{role|text, nth}}` or `{say, replyToId, expectRejected}`): reply to an old product/price/colour/size/multi-product message after 30+ messages (beyond the 24-message window), after 60+ messages, with typos, an ambiguous reference (a greeting), a reference the backend must refuse, and old price vs current price. Assertions are deterministic (no "which product?" question, no unauthorised price, no re-asked size, one question at most, backend refusal) and covered by `node selftest.js` (37 checks). **Not run against a live model** (no credentials locally; production keys must not be used).
+Not expressible through the owner test chat, covered by backend integration tests instead: image and attachment replies, deleted original, order-summary reply (the order flow is exercised by the existing order tests and the restart guard).
+What the deterministic backend tests prove: the assistant is GIVEN the right quoted message, even outside the history window. They do not prove a real model understands it.
+Frontend: `npm test` in `web/` (12 tests of the gesture state machine, quote excerpt, sender labels, paging merge), `tsc`, `eslint`, i18n check, and the browser check described in `ai-reply-context.md`.

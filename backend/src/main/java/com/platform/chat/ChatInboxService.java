@@ -200,6 +200,13 @@ public class ChatInboxService {
         boolean more = msgs.size() > 60;
         if (more) msgs.remove(msgs.size() - 1);
         java.util.Collections.reverse(msgs);
+        if (replies != null && !msgs.isEmpty()) {   // for each message that answers another: who said what (the stored original, else the snapshot); one query for the page
+            var quotes = replies.forScreens(tenantId, id, msgs.stream().map(m -> ((Number) m.get("id")).longValue()).toList());
+            for (int i = 0; i < msgs.size(); i++) {
+                var q = quotes.get(((Number) msgs.get(i).get("id")).longValue());
+                if (q != null) { Map<String, Object> m = new LinkedHashMap<>(msgs.get(i)); m.put("replyTo", q); msgs.set(i, m); }
+            }
+        }
         out.put("messages", msgs);
         out.put("hasOlder", more);
         Object oldest = msgs.isEmpty() ? null : msgs.get(0).get("createdAt");
@@ -244,11 +251,20 @@ public class ChatInboxService {
      */
     public Map<String, Object> reply(UUID tenantId, UUID actor, UUID id, String text) { return reply(tenantId, actor, id, text, null); }
 
-    public Map<String, Object> reply(UUID tenantId, UUID actor, UUID id, String text, UUID imageFileId) {
+    public Map<String, Object> reply(UUID tenantId, UUID actor, UUID id, String text, UUID imageFileId) { return reply(tenantId, actor, id, text, imageFileId, null); }
+
+    private volatile MessageReplies replies;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void replies(MessageReplies replies) { this.replies = replies; }
+
+    /** Same, as a reply to a message of this chat ({@code replyToMessageId}, checked against this chat and shop before anything is saved or sent). */
+    public Map<String, Object> reply(UUID tenantId, UUID actor, UUID id, String text, UUID imageFileId, Long replyToMessageId) {
         String t = text == null ? "" : text.trim();
         if (t.isEmpty() && imageFileId == null) throw BusinessException.badRequest("VALIDATION_ERROR", "Write the message");
         if (t.length() > 2000) throw BusinessException.badRequest("VALIDATION_ERROR", "The message is too long (up to 2000 characters)");
         var r = row(tenantId, id);
+        if (replyToMessageId != null && replies != null) replies.resolve(tenantId, id, ReplyRef.ofId(replyToMessageId), true);   // not of this chat and shop: refused, nothing saved
         String channel = (String) r.get("channel"), ext = (String) r.get("external_id");
         Instant lastCustomer = r.get("last_customer_at") instanceof java.sql.Timestamp ts ? ts.toInstant() : null;
         var w = window.of(tenantId, channel, ext, lastCustomer);
@@ -256,10 +272,11 @@ public class ChatInboxService {
             throw new BusinessException(org.springframework.http.HttpStatus.CONFLICT, "WINDOW_CLOSED", "This channel does not allow a message to this customer right now (the 24-hour window is closed or the channel is not connected)");
         t = fill(tenantId, r, t);
         String imageUrl = imageUrl(tenantId, imageFileId);
-        jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content, by_owner, media_url) VALUES (:c, 'assistant', :x, TRUE, :u)").param("c", id).param("x", t).param("u", imageUrl).update();
+        long saved = jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content, by_owner, media_url) VALUES (:c, 'assistant', :x, TRUE, :u) RETURNING id").param("c", id).param("x", t).param("u", imageUrl).query(Long.class).single();
+        if (replyToMessageId != null && replies != null) replies.attach(tenantId, id, saved, ReplyRef.ofId(replyToMessageId), false);
         jdbc.sql("UPDATE chat.conversations SET updated_at = now(), needs_human = FALSE, owner_read_at = now(), ai_paused_until = CASE WHEN takeover THEN ai_paused_until ELSE now() + make_interval(hours => :h) END WHERE id = :c")
                 .param("h", PAUSE_HOURS).param("c", id).update();
-        var sent = delivery.send(tenantId, channel, ext, t, List.of(), imageUrl);
+        var sent = delivery.send(tenantId, channel, ext, t, List.of(), imageUrl, (mid, part) -> { if (replies != null) replies.recordMid(tenantId, id, saved, mid, part); });
         audit.record(actor, tenantId, "CHAT_OWNER_REPLY", "conversation", id, "{\"channel\":\"" + channel + "\"}");
         Map<String, Object> out = get(tenantId, id);
         out.put("delivery", sent.delivery());

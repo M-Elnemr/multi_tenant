@@ -27,7 +27,7 @@ public class ChatInboxController {
 
     public ChatInboxController(ChatInboxService inbox) { this.inbox = inbox; }
 
-    public record ReplyRequest(String message, UUID imageFileId) {}
+    public record ReplyRequest(String message, UUID imageFileId, Long replyToMessageId) {}
     public record PauseRequest(Integer hours) {}
     public record NoteRequest(String body) {}
     public record UnhappyRequest(Boolean on) {}
@@ -66,7 +66,7 @@ public class ChatInboxController {
 
     @PostMapping("/conversations/{id}/reply")
     @PreAuthorize("hasAuthority('ai.manage')")
-    public Map<String, Object> reply(@PathVariable UUID id, @RequestBody ReplyRequest r, Authentication a) { return inbox.reply(StoreContext.tenantId(), me(a), id, r.message(), r.imageFileId()); }
+    public Map<String, Object> reply(@PathVariable UUID id, @RequestBody ReplyRequest r, Authentication a) { return inbox.reply(StoreContext.tenantId(), me(a), id, r.message(), r.imageFileId(), r.replyToMessageId()); }
 
     @PostMapping("/conversations/{id}/takeover")
     @PreAuthorize("hasAuthority('ai.manage')")

@@ -68,6 +68,8 @@ public class FakeMetaGraph implements MetaGraph {
         if ("template".equals(body.get("type")) && FAIL_TEMPLATE_SEND) throw new MetaException("Template send failed");
         if (FAIL_TEXT_SEND && ("text".equals(body.get("type")) || body.get("message") instanceof Map<?, ?> mm && mm.containsKey("text"))) throw new MetaException("(#10) Message failed to send");
         SENT.add(new Sent(path, token, body));
-        return Map.of("ok", true, "messages", java.util.List.of(Map.of("id", "wamid.TEST")));
+        String n = "-" + SENT.size();   // each sent message has its own id, like the platform's
+        if (path.startsWith("me/")) return Map.of("ok", true, "recipient_id", "r", "message_id", "mid.TEST" + n);
+        return Map.of("ok", true, "messages", java.util.List.of(Map.of("id", "wamid.TEST" + n)));
     }
 }

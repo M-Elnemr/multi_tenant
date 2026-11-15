@@ -45,8 +45,14 @@ public class ChatController {
         this.eval = eval;
     }
 
-    public record SendRequest(String conversationId, String message) {}
-    public record TestRequest(String message) {}
+    /** {@code replyToMessageId}: the message of this chat the customer is answering (optional; checked against this chat and shop before it is used). */
+    public record SendRequest(String conversationId, String message, Long replyToMessageId) {
+        public SendRequest(String conversationId, String message) { this(conversationId, message, null); }
+    }
+    /** {@code replyToMessageId}: a message of the owner's own test chat to answer (so reply-aware behaviour can be tried and evaluated). */
+    public record TestRequest(String message, Long replyToMessageId) {
+        public TestRequest(String message) { this(message, null); }
+    }
     public record SettingsRequest(Boolean enabled, String tone, Integer maxDiscountPct, String greeting, List<String> channels, String agentName, String agentAvatar) {}
     public record LessonRequest(String instruction, String exampleQuestion, String exampleAnswer) {}
 
@@ -62,6 +68,8 @@ public class ChatController {
         m.put("order", r.order());
         m.put("products", r.products());
         m.put("buttons", ReplyButtons.asMaps(ReplyButtons.pick(r.text())));
+        if (r.messageId() > 0) m.put("messageId", r.messageId());
+        if (r.userMessageId() > 0) m.put("userMessageId", r.userMessageId());
         return m;
     }
 
@@ -102,7 +110,8 @@ public class ChatController {
         throttle.check("chat-conv10|" + r.conversationId(), 30, Duration.ofMinutes(10));
         throttle.check("chat-ip|" + ClientInfo.ip(req), 300, Duration.ofMinutes(10));
         throttle.check("chat-conv|" + r.conversationId(), 300, Duration.ofDays(1));
-        return view(chat.reply(t, "WEB", r.conversationId(), clientOrNull(a), r.message()));
+        var in = r.replyToMessageId() == null ? ChatService.ReplyInput.NONE : new ChatService.ReplyInput(List.of(ReplyRef.ofId(r.replyToMessageId())), List.of());
+        return view(chat.reply(t, "WEB", r.conversationId(), clientOrNull(a), r.message(), null, in));
     }
 
     /**
@@ -181,7 +190,8 @@ public class ChatController {
     public Map<String, Object> test(@RequestBody TestRequest r, Authentication a, HttpServletRequest req) {
         UUID user = (UUID) a.getPrincipal();
         throttle.check("chat-test|" + user, 120, Duration.ofHours(1));
-        return view(chat.reply(StoreContext.tenantId(), "TEST", user.toString(), null, r.message()));
+        var in = r.replyToMessageId() == null ? ChatService.ReplyInput.NONE : new ChatService.ReplyInput(List.of(ReplyRef.ofId(r.replyToMessageId())), List.of());
+        return view(chat.reply(StoreContext.tenantId(), "TEST", user.toString(), null, r.message(), null, in));
     }
 
     @GetMapping("/api/v1/store/ai/test")

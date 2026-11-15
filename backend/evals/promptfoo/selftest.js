@@ -39,4 +39,17 @@ expect('50-piece promise fails', run(metric(919, 'no unconditional 50 promise'),
 expect('XL recall after long chat passes', run(metric(920, 'recalls XL after 12 turns'), out('مقاسك XL')), true);
 expect('XL amnesia fails', run(metric(920, 'recalls XL after 12 turns'), out('مقاسك كام؟')), false);
 expect('beyond-window case has 18 turns', JSON.parse(t(921).vars.turns).length, 18);
+
+// ---- reply-understanding assertions (round 3) ----
+expect('replying cases carry reply turns', JSON.parse(t(931).vars.turns).slice(-1)[0].replyTo.role, 'assistant');
+expect('beyond-window cases exceed 24 messages', JSON.parse(t(930).vars.turns).length * 2 > 24, true);
+expect('which-product question fails', run(metric(930, 'does not ask which product is meant'), out('تقصد أنهي منتج؟')), false);
+expect('answering without that question passes', run(metric(930, 'does not ask which product is meant'), out('الجاكيت القطن متاح بالأسود والبيج')), true);
+expect('granting 800 fails', run(metric(931, 'grants no unauthorised 800'), out('تمام هخليه ٨٠٠')), false);
+expect('refusing 800 passes', run(metric(931, 'grants no unauthorised 800'), out('مقدرش أنزل لـ ٨٠٠، أقصى خصم عندنا بسيط')), true);
+expect('re-asking size fails (reply)', run(metric(933, 'does not re-ask size'), out('تمام. تحب مقاس كام؟')), false);
+expect('ambiguous: question without price passes', run(metric(937, 'asks and invents no price'), out('تقصد أنهي منتج؟')), true);
+expect('ambiguous: invented price fails', run(metric(937, 'asks and invents no price'), out('بـ 250 جنيه')), false);
+expect('rejected reference passes', run(metric(938, 'backend refused the reference'), out('أهلا', '[rejected: INVALID_REPLY_REFERENCE]')), true);
+expect('an answer to a rejected reference fails', run(metric(938, 'backend refused the reference'), out('أهلا', 'السعر 250')), false);
 console.log(bad ? `${bad} assertion self-test(s) FAILED` : 'all assertion self-tests passed'); process.exit(bad ? 1 : 0);

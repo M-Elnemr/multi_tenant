@@ -38,3 +38,7 @@ Prompt building grows about 10 ms per product for shops up to 60 products: `allP
 **New failure-check cost:** `ProviderFailure.overloadMessage` 17 us typical, 58 us for a 340-character answer (`ProviderFailureBenchmarkTest`).
 **Quality risk found by reading the code:** the model sees only the last 24 messages (`AI_HISTORY`, max 40). A fact stated earlier survives only via saved details / seller memory / pending order. Probe case 921 tests this live; no measurement exists yet.
 **Provider reliability gap found and fixed (round 2):** HTTP-200 capacity notices were delivered to customers (no check existed); a 429 or 5xx on GLM cost up to 3.5 s of sleeps plus extra attempts before Qwen was tried; a malformed 200 body was retried; a reply that failed after GLM had placed an order was restarted on Qwen with a stale prompt.
+
+
+## Round 3: reply path cost
+Reading the quoted message: one primary-key read joined to its conversation: **0.07 ms** on a chat of 3000+ messages (index scan confirmed with EXPLAIN), `replyContext` span in the reply timeline. Around-context: two bounded indexed reads, only when the original is older than the history window. No model call, no chat load. Prompt: about 1.5k characters of fixed instructions plus the quote, only on replies; the stable prefix and its cache are untouched (the block is after the cache break). Retrieval, ranking and embeddings were not changed.

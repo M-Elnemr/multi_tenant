@@ -41,3 +41,9 @@ Set `LANGFUSE_ENABLED=false` (or unset) and restart: telemetry code becomes no-o
 **Check that the fallback is armed:** admin AI screen shows both models available; log line `glm did not answer, using qwen: CATEGORY: ...` appears when it fires.
 **Not verified live:** no Hive or Alibaba credential exists on this machine, so fallback was proven against mocked services only. Verify after deploy with a staging key by pointing `GLM_BASE_URL` at a stub that returns 503 / a capacity message and confirming the reply comes from Qwen.
 **Rollback of round 2:** `git revert` the round-2 commit (restores the retry-with-sleep behaviour and removes detection). No migration, no config change needed.
+
+
+## Reply feature (round 3)
+- Migration `V93__message_replies.sql` runs with Flyway on start. Rollback script: `docs/rollback/V93_message_replies_rollback.sql` (run by hand, then delete version 93 from `flyway_schema_history`). Messages are never changed by either.
+- No new configuration. Reply spans: `replyContext` appears in the per-reply timeline (`Reply timeline:` log line).
+- Troubleshooting: a customer's native reply that the assistant treats as "not available" means we hold no copy of the quoted message (sent before this feature, from the phone itself, or an owner message to Messenger/Instagram). Rollback of the feature: revert the commit; the extra columns/table can stay.

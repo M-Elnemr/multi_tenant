@@ -10,6 +10,8 @@ import { ChannelIcon } from "../channel-icons";
 import { Icon } from "../icons";
 import { Popover } from "../overlay";
 import { useToast } from "../toast";
+import { ReplyPreview } from "../reply/reply-bits";
+import type { ReplyTarget } from "@/lib/reply";
 import { left } from "./bits";
 import type { ChatDetail, SavedReply } from "./types";
 
@@ -22,9 +24,10 @@ const ASSIST = ["SUGGEST", "REWRITE", "FRIENDLIER", "SHORTER", "SELL"] as const;
  * (suggests or rewrites, never sends by itself), Reply / Internal note, and Ctrl+Enter to send. When the channel's window is closed, the box is closed with the reason and
  * the way to reach the customer on the platform itself.
  */
-export function Composer({ chat, canWrite, onSent, onNote, onTakeover, saved, onSummarize }: {
-  chat: ChatDetail; canWrite: boolean; onSent: (text: string, imageFileId: string | null) => Promise<void>; onNote: (text: string) => Promise<void>;
+export function Composer({ chat, canWrite, onSent, onNote, onTakeover, saved, onSummarize, replyTo, onCancelReply, onJumpReply }: {
+  chat: ChatDetail; canWrite: boolean; onSent: (text: string, imageFileId: string | null, replyToId: number | null) => Promise<void>; onNote: (text: string) => Promise<void>;
   onTakeover: () => void; saved: SavedReply[]; onSummarize: () => void;
+  /** The message being replied to (shown above the box, sent with the message). */ replyTo: ReplyTarget | null; onCancelReply: () => void; onJumpReply: (id: number) => void;
 }) {
   const { t, locale } = useI18n();
   const toast = useToast();
@@ -49,6 +52,7 @@ export function Composer({ chat, canWrite, onSent, onNote, onTakeover, saved, on
     el.style.height = "0px";
     el.style.height = Math.min(220, Math.max(44, el.scrollHeight)) + "px";
   }, [text]);
+  useEffect(() => { if (replyTo) box.current?.focus(); }, [replyTo]);   // swiping or choosing «reply» on a message puts the cursor in the box
   useEffect(() => {   // «r» focuses the reply box
     const h = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement;
@@ -83,7 +87,7 @@ export function Composer({ chat, canWrite, onSent, onNote, onTakeover, saved, on
     setBusy(true);
     try {
       if (mode === "note") await onNote(v);
-      else await onSent(v, image?.id ?? null);
+      else await onSent(v, image?.id ?? null, replyTo?.id ?? null);
       setText(""); setImage(null);
     } catch (e) {
       toast(e instanceof ApiError ? e.message : t("inbox.sendFailed"), { tone: "error" });
@@ -156,8 +160,9 @@ export function Composer({ chat, canWrite, onSent, onNote, onTakeover, saved, on
                 <button type="button" onClick={() => setImage(null)} aria-label={t("common.remove")} className="absolute -end-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full bg-ink text-surface"><Icon name="close" className="h-3 w-3" /></button>
               </div>
             )}
+            {mode === "reply" && replyTo && <ReplyPreview target={replyTo} viewer="owner" onCancel={onCancelReply} onJump={onJumpReply} />}
             <textarea ref={box} value={text} onChange={(e) => onChange(e.target.value)} rows={1} maxLength={2000}
-              onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send(); } if (e.key === "Escape") setPop(null); }}
+              onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send(); } if (e.key === "Escape") { if (pop) setPop(null); else if (replyTo) onCancelReply(); } }}
               placeholder={mode === "note" ? t("inbox.notePh") : t("inbox.replyPh")}
               className="block w-full resize-none bg-transparent px-3 py-2 text-[14px] leading-relaxed text-ink outline-none placeholder:text-faint" />
             <div className="flex items-center justify-between gap-2 px-2 pb-2">

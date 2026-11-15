@@ -26,7 +26,23 @@ module.exports = class ElmanassaChatProvider {
       await call(base, 'DELETE', '/api/bff/store/ai/test');
       const replies = [];
       const t0 = Date.now();
-      for (const t of turns) replies.push((await call(base, 'POST', '/api/bff/store/ai/test', { message: t })).reply || '');
+      // a turn is the customer's text, or {say, replyTo: {role, nth} | {text}}: the customer answers a specific earlier message of this chat (the nth message of that role, 1-based,
+      // negative from the end; or the first message containing the text). The id comes from the chat's own history, never invented.
+      for (const t of turns) {
+        const turn = typeof t === 'string' ? { say: t } : t;
+        let replyToMessageId;
+        if (turn.replyTo) {
+          const hist = await call(base, 'GET', '/api/bff/store/ai/test');
+          const pool = turn.replyTo.text ? hist.filter((m) => (m.content || '').includes(turn.replyTo.text)) : hist.filter((m) => m.role === (turn.replyTo.role || 'assistant'));
+          const n = turn.replyTo.nth || 1;
+          const m = n > 0 ? pool[n - 1] : pool[pool.length + n];
+          replyToMessageId = m && m.id;
+          if (!replyToMessageId) { replies.push('[eval error: the message to reply to was not found]'); continue; }
+        }
+        if (turn.replyToId) replyToMessageId = turn.replyToId;   // an id we do not hold (another chat, another shop, nothing): the backend must refuse it
+        try { replies.push((await call(base, 'POST', '/api/bff/store/ai/test', { message: turn.say, replyToMessageId })).reply || ''); }
+        catch (e) { if (turn.expectRejected && /INVALID_REPLY_REFERENCE|HTTP 400/.test(String(e.message))) replies.push('[rejected: INVALID_REPLY_REFERENCE]'); else throw e; }
+      }
       return { output: JSON.stringify({ replies }), latencyMs: Date.now() - t0 };
     } catch (e) { return { error: String(e.message || e) }; }
   }

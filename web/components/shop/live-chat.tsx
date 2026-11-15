@@ -9,14 +9,17 @@ import { mediaUrl } from "@/lib/media";
 import { useI18n } from "@/components/i18n-provider";
 import { Icon } from "@/components/icons";
 import { AgentAvatar, DEFAULT_AGENT_AVATAR, isAvatarId } from "@/components/shop/agent-avatar";
+import { ReplyButton, ReplyPreview, ReplyQuote, SwipeIcon } from "@/components/reply/reply-bits";
+import { useSwipeReply } from "@/components/reply/use-swipe-reply";
+import { targetFromMessage, targetOf, type Quoted, type ReplyTarget } from "@/lib/reply";
 
 type Product = { name: string; slug: string; priceMinor: number; currency: string; imageUrl?: string; imageMediaBase?: string; imageMediaExt?: string };
 type Order = { orderNumber: string; totalMinor: number; currency: string; trackPath?: string; paymentPath?: string; whatsappUrl?: string; whatsappConfirmed?: boolean; test?: boolean };
 type Btn = { label: string; value: string };
-type Msg = { role: "user" | "assistant"; content: string; mediaUrl?: string | null; audioUrl?: string; products?: Product[]; order?: Order | null; buttons?: Btn[] };
-type Reply = { conversationId: string; reply: string; order?: Order | null; products?: Product[]; heard?: string; buttons?: Btn[] };
-type History = { role: "user" | "assistant"; content: string; mediaUrl?: string | null; buttons?: Btn[] }[];
-type Job = { text: string } | { file: File; caption: string };
+type Msg = { id?: number; local?: number; role: "user" | "assistant"; content: string; mediaUrl?: string | null; audioUrl?: string; products?: Product[]; order?: Order | null; buttons?: Btn[]; replyTo?: Quoted | null };
+type Reply = { conversationId: string; reply: string; order?: Order | null; products?: Product[]; heard?: string; buttons?: Btn[]; messageId?: number; userMessageId?: number };
+type History = { id?: number; role: "user" | "assistant"; content: string; mediaUrl?: string | null; buttons?: Btn[]; replyTo?: Quoted | null }[];
+type Job = { text: string; replyToId?: number | null; local?: number } | { file: File; caption: string };
 type Config = { enabled: boolean; greeting: string; agentName?: string; agentAvatar?: string; media?: boolean };
 
 const KEY = "chatConv";
@@ -88,16 +91,21 @@ function pretty(content: string, photo: string, voice: string): string {
  * The conversation, shared by the storefront chat window and the owner's test screen (same messages, different endpoint). {@code widget} is the storefront look: round avatar, pill
  * suggestions, a pill-shaped input with emoji, photo and voice note. {@code sendMedia} switches the photo and voice buttons on.
  */
-export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, greeting, agentAvatar = DEFAULT_AGENT_AVATAR, live = false, widget = false, className = "" }: {
-  send: (text: string) => Promise<Reply>; sendMedia?: (file: File, caption: string) => Promise<Reply>;
+export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, greeting, agentAvatar = DEFAULT_AGENT_AVATAR, live = false, widget = false, replies = false, className = "" }: {
+  send: (text: string, replyToId?: number | null) => Promise<Reply>; sendMedia?: (file: File, caption: string) => Promise<Reply>;
   load: () => Promise<History>; onReset?: () => Promise<void>; onTeach?: (question: string, answer: string) => void; onReply?: () => void; greeting: string;
   agentAvatar?: string; live?: boolean; widget?: boolean; className?: string;
+  /** Let the customer reply to a specific message (swipe, or the reply button): only the storefront chat, whose backend takes the reference. */ replies?: boolean;
 }) {
   const { t, locale } = useI18n();
   const [msgs, setMsgs] = useState<Msg[]>([]);
+  const [replyTo, setReplyTo] = useState<ReplyTarget | null>(null);
+  const localSeq = useRef(0);
+  const dir: "ltr" | "rtl" = locale === "ar" ? "rtl" : "ltr";
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const end = useRef<HTMLDivElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
   const queue = useRef<Job[]>([]);   // messages typed while the assistant is still answering are sent one after another
   const running = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -140,10 +148,12 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
     while (queue.current.length > 0) {
       const job = queue.current.shift() as Job;
       try {
-        const r = "file" in job && sendMedia ? await sendMedia(job.file, job.caption) : await send("text" in job ? job.text : job.caption);
+        const r = "file" in job && sendMedia ? await sendMedia(job.file, job.caption) : await send("text" in job ? job.text : job.caption, "text" in job ? job.replyToId : null);
+        // the stored ids, so this message and the answer can be replied to without reloading the chat
+        if ("local" in job && job.local !== undefined && r.userMessageId) setMsgs((m) => m.map((x) => (x.local === job.local ? { ...x, id: r.userMessageId } : x)));
         // an empty reply: the shop team is answering this chat themselves, nothing automatic to show
         if (r.reply && r.reply.trim()) {
-          setMsgs((m) => [...m, { role: "assistant", content: r.reply, products: r.products, order: r.order, buttons: r.buttons }]);
+          setMsgs((m) => [...m, { id: r.messageId, role: "assistant", content: r.reply, products: r.products, order: r.order, buttons: r.buttons }]);
           onReply?.();
         }
       } catch (e) {
@@ -159,9 +169,21 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
     if (!v) return;
     setText("");
     setEmojis(false);
-    setMsgs((m) => [...m, { role: "user", content: v }]);
-    queue.current.push({ text: v });
+    const local = ++localSeq.current, target = replies ? replyTo : null;
+    setReplyTo(null);
+    setMsgs((m) => [...m, { local, role: "user", content: v, replyTo: target ? { id: target.id, sender: target.sender, text: target.text, hasMedia: target.hasMedia, available: target.available } : null }]);
+    queue.current.push({ text: v, replyToId: target?.id ?? null, local });
     void drain();
+  };
+
+  /** Scrolls to a message of this chat and marks it for a moment (the chat keeps its last 60 messages: an older original cannot be shown). */
+  const [flash, setFlash] = useState<number | null>(null);
+  const jump = (id: number) => {
+    const el = scroller.current?.querySelector<HTMLElement>(`[data-msg-id="${id}"]`);
+    if (!el) return;
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    setFlash(id);
+    setTimeout(() => setFlash((f) => (f === id ? null : f)), 1600);
   };
 
   const sendPhoto = async () => {
@@ -233,7 +255,7 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
   const shown = (m: Msg) => pretty(m.content, t("chat.photo"), t("chat.voiceNote"));
   return (
     <div className={`flex min-h-0 flex-col ${className}`}>
-      <div className={`min-h-0 flex-1 overflow-y-auto text-sm ${widget ? "space-y-2.5 px-3 pb-2 pt-1" : "space-y-3 p-3"}`}>
+      <div ref={scroller} className={`min-h-0 flex-1 overflow-y-auto text-sm ${widget ? "space-y-2.5 px-3 pb-2 pt-1" : "space-y-3 p-3"}`}>
         <Bubble role="assistant" widget={widget} avatar={widget ? agentAvatar : undefined}>{greeting}</Bubble>
         {msgs.length === 0 && (
           <div className={widget ? "flex flex-col items-end gap-2 ps-10" : "flex flex-wrap gap-2"}>
@@ -245,18 +267,21 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
         )}
         {msgs.map((m, i) => (
           <div key={i} className="space-y-2">
-            <Bubble role={m.role} widget={widget} avatar={widget && m.role === "assistant" && msgs[i - 1]?.role !== "assistant" ? agentAvatar : widget && m.role === "assistant" ? "" : undefined}>
-              {/* a picture the shop sent from its inbox, or the customer's own photo */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              {m.mediaUrl && <img src={m.mediaUrl} alt="" className="mb-1.5 max-h-56 rounded-xl object-cover" />}
-              {m.audioUrl && <audio src={m.audioUrl} controls className="h-9 max-w-full" />}
-              {shown(m)}
-            </Bubble>
+            <Swipeable m={m} dir={dir} enabled={replies && !!m.id} flash={flash === m.id} onReply={() => { const tg = targetFromMessage({ id: m.id, role: m.role, content: m.content, mediaUrl: m.mediaUrl }); if (tg) { setReplyTo(tg); field.current?.focus(); } }}>
+              <Bubble role={m.role} widget={widget} avatar={widget && m.role === "assistant" && msgs[i - 1]?.role !== "assistant" ? agentAvatar : widget && m.role === "assistant" ? "" : undefined}>
+                {m.replyTo && <ReplyQuote target={targetOf(m.replyTo)!} viewer="customer" onJump={jump} tone={m.role === "user" ? "brand" : "light"} />}
+                {/* a picture the shop sent from its inbox, or the customer's own photo */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                {m.mediaUrl && <img src={m.mediaUrl} alt="" className="mb-1.5 max-h-56 rounded-xl object-cover" />}
+                {m.audioUrl && <audio src={m.audioUrl} controls className="h-9 max-w-full" />}
+                {shown(m)}
+              </Bubble>
+            </Swipeable>
             {onTeach && m.role === "assistant" && i > 0 && (
               <button type="button" onClick={() => onTeach(msgs[i - 1]?.role === "user" ? msgs[i - 1].content : "", m.content)} className="text-xs font-semibold text-brand underline">🎓 {t("ai.teachThis")}</button>
             )}
             {m.products && m.products.length > 0 && (
-              <div className="flex gap-2 overflow-x-auto pb-1">
+              <div data-no-swipe className="flex gap-2 overflow-x-auto pb-1">
                 {m.products.slice(0, 6).map((p) => (
                   <Link key={p.slug} href={`/products/${p.slug}`} className="w-32 shrink-0 overflow-hidden rounded-xl border border-[var(--s-line,#e2e8f0)] bg-white">
                     {(p.imageUrl || p.imageMediaBase) &&   <img src={mediaUrl({ url: p.imageUrl, mediaBase: p.imageMediaBase, mediaExt: p.imageMediaExt }, "thumb") ?? ""} alt="" className="h-24 w-full bg-[var(--s-soft,#f1f5f9)] object-cover" />}
@@ -295,8 +320,9 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
       </div>
 
       {!widget ? (
-        <form onSubmit={(e) => { e.preventDefault(); void go(text); }} className="flex items-center gap-2 border-t border-[var(--s-line,#e2e8f0)] bg-white p-2">
-          <input value={text} onChange={(e) => setText(e.target.value)} maxLength={1000} placeholder={t("chat.placeholder")} aria-label={t("chat.placeholder")}
+        <form onSubmit={(e) => { e.preventDefault(); void go(text); }} className="flex flex-wrap items-center gap-2 border-t border-[var(--s-line,#e2e8f0)] bg-white p-2">
+          {replies && replyTo && <div className="-mx-3 -mt-1 w-full"><ReplyPreview target={replyTo} viewer="customer" onCancel={() => setReplyTo(null)} onJump={jump} /></div>}
+          <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape" && replyTo) setReplyTo(null); }} maxLength={1000} placeholder={t("chat.placeholder")} aria-label={t("chat.placeholder")}
             className="min-w-0 flex-1 rounded-full border border-[var(--s-line,#e2e8f0)] bg-white px-4 py-2.5 text-sm outline-none focus:border-[var(--brand)]" />
           <button type="submit" disabled={!text.trim()} aria-label={t("chat.send")} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white disabled:opacity-50" style={{ background: "var(--brand)" }}>
             <Icon name="arrow" className="h-4 w-4 rtl:rotate-180" />
@@ -305,6 +331,7 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
         </form>
       ) : (
         <div className="relative px-3 pb-1 pt-1">
+          {replies && replyTo && <div className="-mx-3 mb-1"><ReplyPreview target={replyTo} viewer="customer" onCancel={() => setReplyTo(null)} onJump={jump} /></div>}
           {attach && (
             <div className="mb-2 flex items-center gap-2 rounded-2xl bg-white p-2 shadow-sm">
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -337,7 +364,7 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
                   </button>
                 </>
               )}
-              <input ref={field} value={text} onChange={(e) => setText(e.target.value)} onFocus={() => setEmojis(false)} maxLength={1000} placeholder={t("chat.placeholder")} aria-label={t("chat.placeholder")} enterKeyHint="send"
+              <input ref={field} value={text} onChange={(e) => setText(e.target.value)} onFocus={() => setEmojis(false)} onKeyDown={(e) => { if (e.key === "Escape" && replyTo) setReplyTo(null); }} maxLength={1000} placeholder={t("chat.placeholder")} aria-label={t("chat.placeholder")} enterKeyHint="send"
                 className="min-w-0 flex-1 bg-transparent px-2 text-base outline-none placeholder:text-slate-400" />
               {canMedia && !text.trim() && !attach ? (
                 <button type="button" onClick={() => void startRecording()} aria-label={t("chat.voice")} className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--s-soft,#f1f5f9)]">
@@ -352,6 +379,21 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/** One message row that can be swiped (touch) or replied to with its button (any device) when {@code enabled}; otherwise a plain row. */
+function Swipeable({ m, dir, enabled, flash, onReply, children }: { m: Msg; dir: "ltr" | "rtl"; enabled: boolean; flash: boolean; onReply: () => void; children: React.ReactNode }) {
+  const swipe = useSwipeReply({ onReply, dir, disabled: !enabled });
+  if (!enabled) return <div data-msg-id={m.id}>{children}</div>;
+  const mine = m.role === "user";
+  return (
+    <div data-msg-id={m.id} className={`group/msg relative flex items-center gap-1 rounded-2xl ${mine ? "justify-end" : "justify-start"} ${flash ? "ring-2 ring-violet-400" : ""}`}>
+      {mine && <ReplyButton onClick={onReply} />}
+      <div {...swipe.handlers} style={swipe.style} className="min-w-0 flex-1">{children}</div>
+      {!mine && <ReplyButton onClick={onReply} />}
+      {swipe.swiping && <SwipeIcon progress={swipe.progress} side="start" />}
     </div>
   );
 }
@@ -436,7 +478,7 @@ export function LiveChat() {
   useVisualViewport(open);
 
   const loadFn = useCallback(() => api<History>(`shop/chat/history?conversationId=${conv}`), [conv]);
-  const send = useCallback((text: string) => api<Reply>("shop/chat", { body: { conversationId: conv, message: text } }), [conv]);
+  const send = useCallback((text: string, replyToId?: number | null) => api<Reply>("shop/chat", { body: { conversationId: conv, message: text, replyToMessageId: replyToId ?? undefined } }), [conv]);
   const sendMedia = useCallback((file: File, caption: string) => {
     const form = new FormData();
     form.set("conversationId", conv);
@@ -482,7 +524,7 @@ export function LiveChat() {
             </button>
           </header>
           {conv && (
-            <ChatPanel live widget className="flex-1" agentAvatar={avatar} greeting={cfg.greeting || t("chat.greeting")} load={loadFn} send={send}
+            <ChatPanel live widget replies className="flex-1" agentAvatar={avatar} greeting={cfg.greeting || t("chat.greeting")} load={loadFn} send={send}
               sendMedia={cfg.media === false ? undefined : sendMedia} onReply={() => { if (sound) ping(); }} />
           )}
           {!whiteLabel && <p className="pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1 text-center text-xs text-slate-400">{t("brand.powered")} {t("brand.name")}</p>}

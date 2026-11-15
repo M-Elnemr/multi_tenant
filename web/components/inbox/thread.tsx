@@ -6,16 +6,22 @@ import { useI18n } from "../i18n-provider";
 import { ChannelIcon } from "../channel-icons";
 import { Icon } from "../icons";
 import { Menu } from "../overlay";
+import { useToast } from "../toast";
+import { ReplyButton, ReplyQuote, SwipeIcon } from "../reply/reply-bits";
+import { useSwipeReply } from "../reply/use-swipe-reply";
+import { targetFromMessage, targetOf, type ReplyTarget } from "@/lib/reply";
 import { AiPill, ChatAvatar, StatusTag, dayLabel, left } from "./bits";
 import type { ChatDetail, ChatEvent, Msg, Note } from "./types";
 
 type Item = ({ at: string; kind: "msg"; m: Msg } | { at: string; kind: "event"; e: ChatEvent } | { at: string; kind: "note"; n: Note }) & { newDay?: boolean };
 
 /** One conversation: the header with the controls, then customer / AI / team messages, system events and the team's notes in time order. */
-export function Thread({ chat, onBack, panelOpen, onTogglePanel, actions, canWrite, onOlder, olderLoading, composer, onDeleteNote }: {
+export function Thread({ chat, onBack, panelOpen, onTogglePanel, actions, canWrite, onOlder, olderLoading, composer, onDeleteNote, onReply, onReveal }: {
   chat: ChatDetail; onBack?: () => void; panelOpen: boolean; onTogglePanel: () => void; canWrite: boolean;
   actions: { takeover: () => void; resume: () => void; close: () => void; reopen: () => void; unread: () => void; unhappy: (on: boolean) => void; prev?: () => void; next?: () => void };
   onOlder: () => void; olderLoading: boolean; composer: React.ReactNode; onDeleteNote: (id: number) => void;
+  /** Start replying to a message (swipe, the reply button, or «r»). */ onReply: (target: ReplyTarget) => void;
+  /** Loads older pages until message {@code id} is there; resolves false when it cannot be found. */ onReveal: (id: number) => Promise<boolean>;
 }) {
   const { t, locale } = useI18n();
   const reduce = useReducedMotion();
@@ -23,6 +29,25 @@ export function Thread({ chat, onBack, panelOpen, onTogglePanel, actions, canWri
   const atBottom = useRef(true);
   const lastId = useRef<number | null>(null);
   const [newBelow, setNewBelow] = useState(false);
+  const toast = useToast();
+  const [flash, setFlash] = useState<number | null>(null);
+  const pendingJump = useRef<number | null>(null);
+  const dir: "ltr" | "rtl" = locale === "ar" ? "rtl" : "ltr";
+  const canReply = canWrite && chat.window.canSend;
+
+  /** Scrolls to a message and marks it for a moment. False when it is not on the page (yet). */
+  const reveal = (id: number): boolean => {
+    const el = scroller.current?.querySelector<HTMLElement>(`[data-msg-id="${id}"]`);
+    if (!el) return false;
+    el.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
+    setFlash(id);
+    setTimeout(() => setFlash((f) => (f === id ? null : f)), 1600);
+    return true;
+  };
+  const jump = (id: number) => {
+    if (reveal(id)) return;
+    void onReveal(id).then((found) => { if (!found) { toast(t("reply.jumpMissing"), { tone: "info" }); return; } pendingJump.current = id; requestAnimationFrame(() => { if (pendingJump.current === id && reveal(id)) pendingJump.current = null; }); });   // the page scrolls once the older messages are in
+  };
 
   const items = useMemo<Item[]>(() => {
     const out: Item[] = [
@@ -44,6 +69,11 @@ export function Thread({ chat, onBack, panelOpen, onTogglePanel, actions, canWri
     else if (changed) setNewBelow(true);
     lastId.current = newest;
   }, [chat.messages, chat.notes.length, chat.events.length]);
+
+  useLayoutEffect(() => {
+    const id = pendingJump.current;
+    if (id !== null && reveal(id)) pendingJump.current = null;
+  });
 
   const name = chat.customerName || chat.customerPhone || t("inbox.guest");
   const remaining = left(chat.window.endsAt, locale);
@@ -110,7 +140,7 @@ export function Thread({ chat, onBack, panelOpen, onTogglePanel, actions, canWri
             return (
               <div key={`${it.kind}-${it.kind === "msg" ? it.m.id : it.kind === "event" ? it.e.id : it.n.id}`}>
                 {sep}
-                {it.kind === "msg" && <Bubble m={it.m} prev={items[i - 1]} reduce={!!reduce} locale={locale} t={t} />}
+                {it.kind === "msg" && <Bubble m={it.m} prev={items[i - 1]} reduce={!!reduce} locale={locale} t={t} dir={dir} flash={flash === it.m.id} onReply={canReply ? () => { const tg = targetFromMessage(it.m); if (tg) onReply(tg); } : undefined} onJump={jump} />}
                 {it.kind === "event" && <EventPill e={it.e} locale={locale} t={t} />}
                 {it.kind === "note" && <NoteCard n={it.n} locale={locale} t={t} onDelete={canWrite ? () => onDeleteNote(it.n.id) : undefined} />}
               </div>
@@ -133,18 +163,21 @@ export function Thread({ chat, onBack, panelOpen, onTogglePanel, actions, canWri
   );
 }
 
-function Bubble({ m, prev, reduce, locale, t }: { m: Msg; prev?: Item; reduce: boolean; locale: string; t: (k: string, p?: Record<string, string | number>) => string }) {
+function Bubble({ m, prev, reduce, locale, t, dir, flash, onReply, onJump }: { m: Msg; prev?: Item; reduce: boolean; locale: string; t: (k: string, p?: Record<string, string | number>) => string; dir: "ltr" | "rtl"; flash: boolean; onReply?: () => void; onJump: (id: number) => void }) {
   const mine = m.role === "assistant";
   const who = m.kind === "FOLLOWUP" ? "followup" : m.byOwner ? "team" : mine ? "ai" : "customer";
   const sameAsPrev = prev?.kind === "msg" && prev.m.role === m.role && prev.m.byOwner === m.byOwner && new Date(m.createdAt).getTime() - new Date(prev.m.createdAt).getTime() < 5 * 60_000;
   const time = new Date(m.createdAt).toLocaleTimeString(locale === "ar" ? "ar-EG" : "en-GB", { hour: "numeric", minute: "2-digit" });
+  const swipe = useSwipeReply({ onReply: onReply ?? (() => undefined), dir, disabled: !onReply });
+  const quote = targetOf(m.replyTo);
   const cls = who === "customer" ? "bg-surface text-ink ring-1 ring-line rounded-ss-[6px]"
     : who === "team" ? "bg-ink text-surface rounded-se-[6px]"
     : who === "followup" ? "bg-sky-50 text-sky-950 ring-1 ring-sky-200 rounded-se-[6px]"
     : "bg-[linear-gradient(135deg,rgb(124_92_255/.10),rgb(34_211_238/.10))] text-ink ring-1 ring-violet-200/70 rounded-se-[6px]";
   return (
-    <motion.div initial={reduce ? false : { opacity: 0, y: 8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.22, ease: [0.2, 0.8, 0.2, 1] }}
-      className={`flex ${mine ? "justify-end" : "justify-start"} ${sameAsPrev ? "" : "pt-2"}`}>
+    <motion.div initial={reduce ? false : { opacity: 0, y: 8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.22, ease: [0.2, 0.8, 0.2, 1] }} data-msg-id={m.id}
+      className={`group/msg relative flex items-center gap-1.5 ${mine ? "justify-end" : "justify-start"} ${sameAsPrev ? "" : "pt-2"}`}>
+      {onReply && mine && <ReplyButton onClick={onReply} />}
       <div className={`max-w-[85%] sm:max-w-[72%] ${mine ? "items-end" : "items-start"} flex flex-col`}>
         {!sameAsPrev && mine && (
           <span className="mb-1 flex items-center gap-1 px-1 text-[11px] font-semibold text-faint">
@@ -153,7 +186,8 @@ function Bubble({ m, prev, reduce, locale, t }: { m: Msg; prev?: Item; reduce: b
             {who === "followup" && <><Icon name="clock" className="h-3 w-3 text-sky-500" />{t("inbox.who.followup")}</>}
           </span>
         )}
-        <div className={`rounded-[18px] px-3.5 py-2.5 text-[14px] leading-relaxed shadow-[0_1px_1px_rgb(16_18_24/.04)] ${cls}`}>
+        <div {...swipe.handlers} style={swipe.style} className={`relative rounded-[18px] px-3.5 py-2.5 text-[14px] leading-relaxed shadow-[0_1px_1px_rgb(16_18_24/.04)] transition-shadow ${flash ? "ring-2 ring-violet-400" : ""} ${cls}`}>
+          {quote && <ReplyQuote target={quote} viewer="owner" onJump={onJump} tone={who === "team" ? "dark" : "light"} />}
           {m.mediaUrl &&   <img src={m.mediaUrl} alt="" className="mb-1.5 max-h-60 rounded-[12px] object-cover" />}
           {m.content && <p className="whitespace-pre-wrap break-words" dir="auto">{m.content}</p>}
           <span className={`mt-1 flex items-center justify-end gap-1 text-[10.5px] tnum ${who === "team" ? "text-surface/60" : "text-faint"}`}>
@@ -161,6 +195,8 @@ function Bubble({ m, prev, reduce, locale, t }: { m: Msg; prev?: Item; reduce: b
           </span>
         </div>
       </div>
+      {onReply && !mine && <ReplyButton onClick={onReply} />}
+      {swipe.swiping && <SwipeIcon progress={swipe.progress} side="start" />}
     </motion.div>
   );
 }

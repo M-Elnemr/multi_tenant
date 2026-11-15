@@ -8,6 +8,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 /**
@@ -19,11 +20,12 @@ final class InboundBurst {
 
     private static final class Entry {
         final List<String> parts = new ArrayList<>();   // in the order the customer sent them; null = a photo or voice note still being read
+        final List<Object> metas = new ArrayList<>();   // what came with each part (its platform id, the message it answers), same order; null = nothing
         final long first = System.currentTimeMillis();
-        final Consumer<String> fire;
+        final BiConsumer<String, List<Object>> fire;
         int waiting;   // photos and voice notes still being read: the burst is not answered before they are
         ScheduledFuture<?> timer;
-        Entry(Consumer<String> fire) { this.fire = fire; }
+        Entry(BiConsumer<String, List<Object>> fire) { this.fire = fire; }
     }
 
     private final ScheduledExecutorService timers;
@@ -38,9 +40,13 @@ final class InboundBurst {
     boolean enabled() { return windowMs > 0; }
 
     /** Adds one message of the conversation {@code key}; {@code fire} (the one passed with the burst's first message) runs once with all the text. */
-    synchronized void add(String key, String text, Consumer<String> fire) {
+    synchronized void add(String key, String text, Consumer<String> fire) { add(key, text, null, (t, metas) -> fire.accept(t)); }
+
+    /** Same, and {@code meta} (the line's platform id and the message it answers) travels with the line: {@code fire} gets the metas of every line of the burst, in order. */
+    synchronized void add(String key, String text, Object meta, BiConsumer<String, List<Object>> fire) {
         Entry e = entry(key, fire);
         e.parts.add(text);
+        e.metas.add(meta);
         restart(key, e);
     }
 
@@ -48,10 +54,13 @@ final class InboundBurst {
      * Keeps a place in the burst for a photo or voice note that is still being read (a few seconds), so «بكام ده؟» sent right after the photo is answered together with it and in
      * order. Call the returned function once with the text read (null when nothing could be read); the burst is not answered before that.
      */
-    synchronized Consumer<String> hold(String key, Consumer<String> fire) {
+    synchronized Consumer<String> hold(String key, Consumer<String> fire) { return hold(key, null, (t, metas) -> fire.accept(t)); }
+
+    synchronized Consumer<String> hold(String key, Object meta, BiConsumer<String, List<Object>> fire) {
         Entry e = entry(key, fire);
         int slot = e.parts.size();
         e.parts.add(null);
+        e.metas.add(meta);
         e.waiting++;
         if (e.timer != null) e.timer.cancel(false);
         boolean[] done = {false};
@@ -66,7 +75,7 @@ final class InboundBurst {
         };
     }
 
-    private Entry entry(String key, Consumer<String> fire) {
+    private Entry entry(String key, BiConsumer<String, List<Object>> fire) {
         Entry e = pending.get(key);
         if (e == null) { e = new Entry(fire); pending.put(key, e); }
         else if (e.timer != null) e.timer.cancel(false);
@@ -81,6 +90,7 @@ final class InboundBurst {
 
     private void flush(String key, Entry entry) {
         StringBuilder all = new StringBuilder();
+        List<Object> metas;
         synchronized (this) {
             if (pending.get(key) != entry || entry.waiting > 0) return;   // already flushed by a later timer, or a photo is still being read
             pending.remove(key);
@@ -89,7 +99,8 @@ final class InboundBurst {
                 if (all.length() > 0) all.append('\n');
                 all.append(part, 0, Math.min(part.length(), MAX_CHARS - all.length()));
             }
+            metas = new ArrayList<>(entry.metas);
         }
-        worker.execute(() -> entry.fire.accept(all.toString()));
+        worker.execute(() -> entry.fire.accept(all.toString(), metas));
     }
 }

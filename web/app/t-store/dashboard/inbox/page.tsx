@@ -13,7 +13,8 @@ import { Composer } from "@/components/inbox/composer";
 import { CustomerPanel } from "@/components/inbox/customer-panel";
 import { ConversationList } from "@/components/inbox/list";
 import { Thread } from "@/components/inbox/thread";
-import type { ChatDetail, SavedReply } from "@/components/inbox/types";
+import type { ChatDetail, ChatEvent, Msg, SavedReply } from "@/components/inbox/types";
+import { mergeMessages, type ReplyTarget } from "@/lib/reply";
 import { useChat, useChatList, useCounts, useFilters } from "@/components/inbox/use-inbox";
 
 const mq = (q: string) => (cb: () => void) => { const m = window.matchMedia(q); m.addEventListener("change", cb); return () => m.removeEventListener("change", cb); };
@@ -47,6 +48,13 @@ function Inbox() {
   const [sheet, setSheet] = useState(false);
   const [summary, setSummary] = useState<{ open: boolean; text?: string; loading?: boolean }>({ open: false });
   const [olderLoading, setOlderLoading] = useState(false);
+  // older pages the owner loaded stay when the chat refreshes (the refresh brings only the newest page), and the message being replied to belongs to one chat
+  const [olderState, setOlderState] = useState<{ chatId: string; msgs: Msg[]; hasOlder: boolean; events: ChatEvent[] } | null>(null);
+  const [replyState, setReplyState] = useState<{ chatId: string; target: ReplyTarget } | null>(null);
+  const view = chat && olderState?.chatId === chat.id
+    ? { ...chat, messages: mergeMessages(olderState.msgs, chat.messages), hasOlder: olderState.hasOlder, events: [...olderState.events.filter((e) => !chat.events.some((x) => x.id === e.id)), ...chat.events] }
+    : chat;
+  const replyTo = chat && replyState?.chatId === chat.id ? replyState.target : null;
 
   const select = useCallback((next: string | null) => {
     const p = new URLSearchParams(params.toString());
@@ -114,10 +122,11 @@ function Inbox() {
     return () => window.removeEventListener("keydown", h);
   }, [move, chat, write, resume, takeover, close, wide, id, select]);
 
-  const send = async (text: string, imageFileId: string | null) => {
+  const send = async (text: string, imageFileId: string | null, replyToId: number | null) => {
     if (!chat) return;
-    const r = await api<ChatDetail>(`store/chat/conversations/${chat.id}/reply`, { body: { message: text, imageFileId: imageFileId ?? undefined } });
+    const r = await api<ChatDetail>(`store/chat/conversations/${chat.id}/reply`, { body: { message: text, imageFileId: imageFileId ?? undefined, replyToMessageId: replyToId ?? undefined } });
     setChat(r);
+    setReplyState(null);
     if (r.delivery === "FAILED") toast(r.deliveryNote ?? t("inbox.sendFailed"), { tone: "error", ms: 7000 });
     else toast(r.delivery === "SAVED" ? t("inbox.toast.savedWeb") : t("inbox.toast.sent"));
     void list.reload(true); void reloadCounts();
@@ -141,13 +150,24 @@ function Inbox() {
       setSummary({ open: true, text: r.text });
     } catch (e) { setSummary({ open: true, text: e instanceof ApiError ? e.message : t("inbox.assistFailed") }); }
   };
-  const older = async () => {
-    if (!chat || chat.messages.length === 0) return;
+  /** Loads older pages until message {@code target} is among the loaded ones (at most 20 pages), keeping them across refreshes. False when it is not found. */
+  const reveal = async (target: number): Promise<boolean> => {
+    if (!view || !chat) return false;
+    let msgs = view.messages, hasOlder = view.hasOlder, events = view.events, pages = 0;
     setOlderLoading(true);
     try {
-      const r = await api<ChatDetail>(`store/chat/conversations/${chat.id}?before=${chat.messages[0].id}&read=false`);
-      setChat({ ...chat, messages: [...r.messages, ...chat.messages], hasOlder: r.hasOlder, events: [...r.events.filter((e) => !chat.events.some((x) => x.id === e.id)), ...chat.events] });
+      while (!msgs.some((m) => m.id === target) && hasOlder && msgs.length > 0 && target < msgs[0].id && pages++ < 20) {
+        const r = await api<ChatDetail>(`store/chat/conversations/${view.id}?before=${msgs[0].id}&read=false`);
+        msgs = mergeMessages(r.messages, msgs); hasOlder = r.hasOlder; events = [...r.events.filter((e) => !events.some((x) => x.id === e.id)), ...events];
+      }
     } finally { setOlderLoading(false); }
+    const newest = new Set(chat.messages.map((m) => m.id));
+    setOlderState({ chatId: view.id, msgs: msgs.filter((m) => !newest.has(m.id)), hasOlder, events });
+    return msgs.some((m) => m.id === target);
+  };
+  const older = async () => {
+    if (!view || view.messages.length === 0) return;
+    await reveal(view.messages[0].id - 1);   // one page older than the oldest loaded message
   };
   const bulk = async (ids: string[], action: string) => {
     try {
@@ -168,10 +188,11 @@ function Inbox() {
       activeFilters={active} selected={id} onSelect={(x) => select(x)} counts={counts} canWrite={write} onBulk={bulk} phone={!wide} />
   );
   const threadEl = chat ? (
-    <Thread key={chat.id} chat={chat} onBack={wide ? undefined : () => select(null)} panelOpen={xl ? panel : false} onTogglePanel={() => (xl ? setPanel((v) => !v) : setSheet(true))} canWrite={write}
+    <Thread key={chat.id} chat={view ?? chat} onBack={wide ? undefined : () => select(null)} panelOpen={xl ? panel : false} onTogglePanel={() => (xl ? setPanel((v) => !v) : setSheet(true))} canWrite={write}
       actions={{ takeover, resume, close, reopen, unread, unhappy, prev: idx > 0 ? () => move(-1) : undefined, next: idx >= 0 && idx < rows.length - 1 ? () => move(1) : undefined }}
-      onOlder={older} olderLoading={olderLoading} onDeleteNote={deleteNote}
-      composer={<Composer key={chat.id} chat={chat} canWrite={write} onSent={send} onNote={note} onTakeover={takeover} saved={saved.data ?? []} onSummarize={summarize} />} />
+      onOlder={older} olderLoading={olderLoading} onDeleteNote={deleteNote} onReply={(target) => setReplyState({ chatId: chat.id, target })} onReveal={reveal}
+      composer={<Composer key={chat.id} chat={chat} canWrite={write} onSent={send} onNote={note} onTakeover={takeover} saved={saved.data ?? []} onSummarize={summarize}
+        replyTo={replyTo} onCancelReply={() => setReplyState(null)} onJumpReply={(mid) => { void reveal(mid).then((found) => { if (!found) { toast(t("reply.jumpMissing"), { tone: "info" }); return; } requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-msg-id="${mid}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" })); }); }} />} />
   ) : id ? (
     <div className="flex h-full flex-col bg-canvas"><div className="flex items-center gap-3 border-b border-line bg-surface px-5 py-3.5"><div className="skeleton h-10 w-10 rounded-full" /><div className="space-y-2"><div className="skeleton h-3.5 w-40 rounded" /><div className="skeleton h-3 w-24 rounded" /></div></div>
       <div className="flex-1 space-y-3 p-6">{[60, 40, 70, 30].map((w, i) => <div key={i} className={`flex ${i % 2 ? "justify-end" : ""}`}><div className="skeleton h-12 rounded-[18px]" style={{ width: `${w}%` }} /></div>)}</div></div>
