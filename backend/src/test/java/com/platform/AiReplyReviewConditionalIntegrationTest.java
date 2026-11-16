@@ -15,7 +15,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.TestPropertySource;
 
 /** app.ai.review.mode=conditional: a plain draft is not sent for a second model call, a risky one still is; and the reviewer is given the products the model itself was given. */
-@TestPropertySource(properties = {"app.ai.review.enabled=true", "app.ai.review.mode=conditional"})
+@TestPropertySource(properties = {"app.ai.review.enabled=true", "app.ai.review.mode=conditional", "app.ai.experiment.tenants=*"})
 class AiReplyReviewConditionalIntegrationTest extends IntegrationTestBase {
     @Autowired JdbcClient jdbc;
     @Autowired ChatService chat;
