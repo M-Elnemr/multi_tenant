@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -30,6 +31,12 @@ public class GlobalExceptionHandler {
         Map<String, String> fields = new LinkedHashMap<>();
         e.getBindingResult().getFieldErrors().forEach(f -> fields.putIfAbsent(f.getField(), f.getDefaultMessage()));
         return body(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "One or more fields are invalid", fields);
+    }
+
+    /** A body that is not valid JSON, or a field of the wrong type («replyToMessageId»: "abc"): the caller's mistake, not a server error. */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    ResponseEntity<Map<String, Object>> unreadable(HttpMessageNotReadableException e) {
+        return body(HttpStatus.BAD_REQUEST, "INVALID_REQUEST_BODY", "The request body could not be read", null);
     }
 
     @ExceptionHandler(Exception.class)
