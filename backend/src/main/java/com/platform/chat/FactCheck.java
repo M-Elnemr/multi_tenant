@@ -172,6 +172,8 @@ final class FactCheck {
                 found.add(new Mention(n.slug(), toks.get(i).start(), toks.get(i + nw.size() - 1).end()));
             }
         }
+        Set<String> heads = new java.util.HashSet<>();   // the first word of every product's name: its kind («شنطة», «حذاء»)
+        for (Named n : names) if (!n.words().isEmpty()) heads.add(n.words().get(0));
         // loose names: 2 to 5 words of the text, in the order of one product's name, covering most of it, and fitting no other product
         for (int len = 5; len >= 2; len--)
             for (int i = 0; i + len <= toks.size(); i++) {
@@ -184,7 +186,20 @@ final class FactCheck {
                     if (nw.size() <= len || len * 3 < nw.size() * 2) continue;   // at least two thirds of the name
                     int at = 0;
                     for (String w : nw) if (at < win.size() && same(win.get(at), w)) at++;
-                    if (at == win.size()) { hits++; hit = e.getKey(); }
+                    if (at != win.size()) continue;
+                    // «شنطة مدرسة أطفال» is not «حذاء مدرسة أطفال»: a window that leaves out the product's own first word (its kind) while another product's kind stands among the words just before it (in the same
+                    // sentence, and not one of this name's own words) names something else. Looking back a few words keeps «جراب ضهر لاب توب» from becoming «لاب توب ...» one word later.
+                    if (!same(win.get(0), nw.get(0))) {
+                        boolean otherKind = false;
+                        for (int k = 1; k <= 3 && i - k >= 0 && !otherKind; k++) {
+                            String gapText = l.substring(toks.get(i - k).end(), toks.get(i - k + 1).start());
+                            if (gapText.matches("(?s).*[.!?؟\\n].*")) break;
+                            String prev = toks.get(i - k).word();
+                            otherKind = !same(prev, nw.get(0)) && nw.stream().noneMatch(x -> same(prev, x)) && heads.stream().anyMatch(h -> same(prev, h));
+                        }
+                        if (otherKind) continue;
+                    }
+                    hits++; hit = e.getKey();
                 }
                 if (hits == 1) {
                     int st = toks.get(i).start(), en = toks.get(i + len - 1).end();
