@@ -1,0 +1,282 @@
+[
+ {
+  "category": "holdout",
+  "text": "عايزة فستان مقاسي M وميزانيتي ٣ الاف",
+  "expect": [
+   {
+    "type": "SIZE",
+    "key": "size",
+    "value": "M"
+   },
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "3000"
+   }
+  ]
+ },
+ {
+  "category": "holdout",
+  "text": "مقاس الحذاء ٤٠ ومقاس البنطلون ٣٠",
+  "expect": [
+   {
+    "type": "SIZE",
+    "key": "size:shoes",
+    "value": "40"
+   },
+   {
+    "type": "SIZE",
+    "key": "size:pants",
+    "value": "30"
+   }
+  ]
+ },
+ {
+  "category": "holdout",
+  "text": "بلبس ميديم في التيشيرتات",
+  "expect": [
+   {
+    "type": "SIZE",
+    "key": "size:tshirt",
+    "value": "M"
+   }
+  ]
+ },
+ {
+  "category": "holdout",
+  "text": "مقاسي 40 في الجزمة",
+  "expect": [
+   {
+    "type": "SIZE",
+    "key": "size:shoes",
+    "value": "40"
+   }
+  ]
+ },
+ {
+  "category": "holdout",
+  "text": "ميزانيتي ٥٠٠٠ ج",
+  "expect": [
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "5000"
+   }
+  ]
+ },
+ {
+  "category": "holdout",
+  "text": "ميزانيتي 5,000",
+  "expect": [
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "5000"
+   }
+  ]
+ },
+ {
+  "category": "holdout",
+  "text": "معييش اكتر من ٨٠٠",
+  "expect": [
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "800"
+   }
+  ]
+ },
+ {
+  "category": "holdout",
+  "text": "مش حابب اللون الاحمر",
+  "expect": [
+   {
+    "type": "COLOR",
+    "key": "color:red",
+    "value": "avoid"
+   }
+  ]
+ },
+ {
+  "category": "holdout",
+  "text": "افضل الوان غامقة",
+  "expect": []
+ },
+ {
+  "category": "holdout",
+  "text": "بحب البيج والزيتي",
+  "expect": [
+   {
+    "type": "COLOR",
+    "key": "color:beige",
+    "value": "like"
+   },
+   {
+    "type": "COLOR",
+    "key": "color:olive",
+    "value": "like"
+   }
+  ]
+ },
+ {
+  "category": "holdout",
+  "text": "من غير الوان فاقعة",
+  "expect": [
+   {
+    "type": "CONSTRAINT",
+    "key": "constraint:الوان",
+    "value": "without الوان فاقعة"
+   }
+  ]
+ },
+ {
+  "category": "holdout",
+  "text": "مش عايز ابعت فلوس قبل الاستلام",
+  "expect": [
+   {
+    "type": "CONSTRAINT",
+    "key": "constraint:ابعت",
+    "value": "not ابعت فلوس قبل الاستلام"
+   }
+  ]
+ },
+ {
+  "category": "holdout",
+  "text": "my name is Ahmed",
+  "expect": [
+   {
+    "type": "NAME",
+    "key": "name",
+    "value": "Ahmed"
+   }
+  ]
+ },
+ {
+  "category": "holdout",
+  "text": "خلاص هاخدها",
+  "expect": [
+   {
+    "type": "INTENT",
+    "key": "intent:purchase",
+    "value": "wants to order"
+   }
+  ]
+ },
+ {
+  "category": "holdout",
+  "text": "هاخدها ولا لا؟",
+  "expect": []
+ },
+ {
+  "category": "holdout",
+  "text": "ممكن اشوف الاسود الاول وبعدين اقرر",
+  "expect": []
+ },
+ {
+  "category": "holdout",
+  "text": "للاسف مقاسي مش موجود",
+  "expect": []
+ },
+ {
+  "category": "holdout",
+  "text": "عايز اشتري ٣ قطع بس ميزانيتي ٩٠٠",
+  "expect": [
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "900"
+   }
+  ]
+ },
+ {
+  "category": "holdout",
+  "text": "مقاسي XXL",
+  "expect": [
+   {
+    "type": "SIZE",
+    "key": "size",
+    "value": "XXL"
+   }
+  ]
+ },
+ {
+  "category": "holdout",
+  "text": "i wear size 10",
+  "expect": []
+ },
+ {
+  "category": "holdout",
+  "text": "بنطلون مقاس ٣٢ طول ٣٤",
+  "expect": [
+   {
+    "type": "SIZE",
+    "key": "size:pants",
+    "value": "32"
+   }
+  ]
+ },
+ {
+  "category": "holdout",
+  "text": "اللي قبله كان ضيق",
+  "expect": []
+ },
+ {
+  "category": "holdout",
+  "text": "مقاسي L بس في التيشيرت بلبس M",
+  "expect": [
+   {
+    "type": "SIZE",
+    "key": "size",
+    "value": "L"
+   },
+   {
+    "type": "SIZE",
+    "key": "size:tshirt",
+    "value": "M"
+   }
+  ]
+ },
+ {
+  "category": "holdout",
+  "text": "ميزانيتي ٣٠٠ مش اكتر",
+  "expect": [
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "300"
+   }
+  ]
+ },
+ {
+  "category": "holdout",
+  "text": "جزمة مقاس 41 لو سمحت",
+  "expect": [
+   {
+    "type": "SIZE",
+    "key": "size:shoes",
+    "value": "41"
+   }
+  ]
+ },
+ {
+  "category": "holdout",
+  "text": "مش بحب الاسود",
+  "expect": [
+   {
+    "type": "COLOR",
+    "key": "color:black",
+    "value": "avoid"
+   }
+  ]
+ },
+ {
+  "category": "holdout",
+  "text": "شكرا ليك",
+  "expect": []
+ },
+ {
+  "category": "holdout",
+  "text": "عندكم بنطلون جينز مقاس 32؟",
+  "expect": []
+ }
+]

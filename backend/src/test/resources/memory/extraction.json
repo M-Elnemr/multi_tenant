@@ -1,0 +1,1220 @@
+[
+ {
+  "category": "budget",
+  "text": "ميزانيتي ١٥٠٠ جنيه",
+  "expect": [
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "1500"
+   }
+  ]
+ },
+ {
+  "category": "budget",
+  "text": "budget 2000 EGP",
+  "expect": [
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "2000"
+   }
+  ]
+ },
+ {
+  "category": "budget",
+  "text": "ميزانيتي بقت 2000",
+  "expect": [
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "2000"
+   }
+  ]
+ },
+ {
+  "category": "budget",
+  "text": "لا لا ميزانيتي اتغيرت لـ ٢٠٠٠",
+  "expect": [
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "2000"
+   }
+  ]
+ },
+ {
+  "category": "budget",
+  "text": "في حدود ٨٠٠",
+  "expect": [
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "800"
+   }
+  ]
+ },
+ {
+  "category": "budget",
+  "text": "مش اكتر من 500",
+  "expect": [
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "500"
+   }
+  ]
+ },
+ {
+  "category": "budget",
+  "text": "my budget is 750",
+  "expect": [
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "750"
+   }
+  ]
+ },
+ {
+  "category": "budget",
+  "text": "ميزانيتي ٣٠٠ ومقاسي L",
+  "expect": [
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "300"
+   },
+   {
+    "type": "SIZE",
+    "key": "size",
+    "value": "L"
+   }
+  ]
+ },
+ {
+  "category": "budget",
+  "text": "ميزانيتي 3 الاف جنيه",
+  "expect": [
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "3000"
+   }
+  ]
+ },
+ {
+  "category": "budget",
+  "text": "ميزانيتي ٢ الاف",
+  "expect": [
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "2000"
+   }
+  ]
+ },
+ {
+  "category": "budget",
+  "text": "budget 2k",
+  "expect": [
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "2000"
+   }
+  ]
+ },
+ {
+  "category": "budget",
+  "text": "ميزانيتي 1.5 الف",
+  "expect": [
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "1500"
+   }
+  ]
+ },
+ {
+  "category": "not a budget",
+  "text": "الجاكيت بـ 1200 جنيه",
+  "expect": []
+ },
+ {
+  "category": "not a budget",
+  "text": "ينفع تخليه 800؟",
+  "expect": []
+ },
+ {
+  "category": "not a budget",
+  "text": "رقمي 01012345678",
+  "expect": []
+ },
+ {
+  "category": "not a budget",
+  "text": "عايز اشتري 3 قطع",
+  "expect": []
+ },
+ {
+  "category": "not a budget",
+  "text": "السعر ده كتير",
+  "expect": []
+ },
+ {
+  "category": "not a budget",
+  "text": "ميزانيتي كام؟",
+  "expect": []
+ },
+ {
+  "category": "size",
+  "text": "مقاسي L",
+  "expect": [
+   {
+    "type": "SIZE",
+    "key": "size",
+    "value": "L"
+   }
+  ]
+ },
+ {
+  "category": "size",
+  "text": "مقاسي xl",
+  "expect": [
+   {
+    "type": "SIZE",
+    "key": "size",
+    "value": "XL"
+   }
+  ]
+ },
+ {
+  "category": "size",
+  "text": "انا بلبس ميديم",
+  "expect": [
+   {
+    "type": "SIZE",
+    "key": "size",
+    "value": "M"
+   }
+  ]
+ },
+ {
+  "category": "size",
+  "text": "i wear size M",
+  "expect": [
+   {
+    "type": "SIZE",
+    "key": "size",
+    "value": "M"
+   }
+  ]
+ },
+ {
+  "category": "size",
+  "text": "مقاس 42",
+  "expect": [
+   {
+    "type": "SIZE",
+    "key": "size",
+    "value": "42"
+   }
+  ]
+ },
+ {
+  "category": "size",
+  "text": "مقاسي 3xl",
+  "expect": [
+   {
+    "type": "SIZE",
+    "key": "size",
+    "value": "XXXL"
+   }
+  ]
+ },
+ {
+  "category": "size",
+  "text": "لا قصدي مقاس L",
+  "expect": [
+   {
+    "type": "SIZE",
+    "key": "size",
+    "value": "L"
+   }
+  ]
+ },
+ {
+  "category": "not a size",
+  "text": "size guide لو سمحت",
+  "expect": []
+ },
+ {
+  "category": "not a size",
+  "text": "مقاس 7",
+  "expect": []
+ },
+ {
+  "category": "not a size",
+  "text": "مش عارف مقاسي",
+  "expect": []
+ },
+ {
+  "category": "not a size",
+  "text": "ده مش مقاسي L",
+  "expect": []
+ },
+ {
+  "category": "not a size",
+  "text": "مقاسي مش L",
+  "expect": []
+ },
+ {
+  "category": "colour",
+  "text": "بحب اللون الاسود",
+  "expect": [
+   {
+    "type": "COLOR",
+    "key": "color:black",
+    "value": "like"
+   }
+  ]
+ },
+ {
+  "category": "colour",
+  "text": "مش بحب الاحمر خالص",
+  "expect": [
+   {
+    "type": "COLOR",
+    "key": "color:red",
+    "value": "avoid"
+   }
+  ]
+ },
+ {
+  "category": "colour",
+  "text": "3ayez eswed",
+  "expect": [
+   {
+    "type": "COLOR",
+    "key": "color:black",
+    "value": "like"
+   }
+  ]
+ },
+ {
+  "category": "colour",
+  "text": "i love blue",
+  "expect": [
+   {
+    "type": "COLOR",
+    "key": "color:blue",
+    "value": "like"
+   }
+  ]
+ },
+ {
+  "category": "colour",
+  "text": "i don't like green",
+  "expect": [
+   {
+    "type": "COLOR",
+    "key": "color:green",
+    "value": "avoid"
+   }
+  ]
+ },
+ {
+  "category": "colour",
+  "text": "عايز بيج",
+  "expect": [
+   {
+    "type": "COLOR",
+    "key": "color:beige",
+    "value": "like"
+   }
+  ]
+ },
+ {
+  "category": "colour",
+  "text": "من غير الاصفر لو سمحت",
+  "expect": [
+   {
+    "type": "COLOR",
+    "key": "color:yellow",
+    "value": "avoid"
+   }
+  ]
+ },
+ {
+  "category": "not a colour",
+  "text": "الجاكيت الاسود بكام؟",
+  "expect": []
+ },
+ {
+  "category": "not a colour",
+  "text": "عندكم احمر؟",
+  "expect": []
+ },
+ {
+  "category": "scoped colour (must not become global)",
+  "text": "مش بحب الاسود في الجاكيت ده",
+  "expect": []
+ },
+ {
+  "category": "scoped colour (must not become global)",
+  "text": "الاسود مش حلو على القميص ده بس",
+  "expect": []
+ },
+ {
+  "category": "temporary",
+  "text": "النهارده بس عايز احمر",
+  "expect": [
+   {
+    "type": "COLOR",
+    "key": "color:red",
+    "value": "like",
+    "ttl": 1
+   }
+  ]
+ },
+ {
+  "category": "temporary",
+  "text": "للهدية بس عايز وردي",
+  "expect": [
+   {
+    "type": "COLOR",
+    "key": "color:pink",
+    "value": "like",
+    "ttl": 1
+   }
+  ]
+ },
+ {
+  "category": "temporary",
+  "text": "just for this time i want white",
+  "expect": [
+   {
+    "type": "COLOR",
+    "key": "color:white",
+    "value": "like",
+    "ttl": 1
+   }
+  ]
+ },
+ {
+  "category": "constraint",
+  "text": "عايز بدون جلد",
+  "expect": [
+   {
+    "type": "CONSTRAINT",
+    "key": "constraint:جلد",
+    "value": "without جلد"
+   }
+  ]
+ },
+ {
+  "category": "constraint",
+  "text": "من غير ازرار",
+  "expect": [
+   {
+    "type": "CONSTRAINT",
+    "key": "constraint:ازرار",
+    "value": "without ازرار"
+   }
+  ]
+ },
+ {
+  "category": "constraint",
+  "text": "without leather",
+  "expect": [
+   {
+    "type": "CONSTRAINT",
+    "key": "constraint:leather",
+    "value": "without leather"
+   }
+  ]
+ },
+ {
+  "category": "constraint",
+  "text": "مش عايز حاجة ضيقة",
+  "expect": [
+   {
+    "type": "CONSTRAINT",
+    "key": "constraint:حاجة",
+    "value": "not حاجة ضيقة"
+   }
+  ]
+ },
+ {
+  "category": "not a constraint",
+  "text": "مش ده اللي قصدي عليه",
+  "expect": []
+ },
+ {
+  "category": "not a constraint",
+  "text": "مش فاهم",
+  "expect": []
+ },
+ {
+  "category": "name",
+  "text": "اسمي منى",
+  "expect": [
+   {
+    "type": "NAME",
+    "key": "name",
+    "value": "منى"
+   }
+  ]
+ },
+ {
+  "category": "name",
+  "text": "انا احمد",
+  "expect": [
+   {
+    "type": "NAME",
+    "key": "name",
+    "value": "احمد"
+   }
+  ]
+ },
+ {
+  "category": "not a name",
+  "text": "انا عايز جاكيت",
+  "expect": []
+ },
+ {
+  "category": "intent",
+  "text": "خلاص هاخده",
+  "expect": [
+   {
+    "type": "INTENT",
+    "key": "intent:purchase",
+    "value": "wants to order"
+   }
+  ]
+ },
+ {
+  "category": "intent",
+  "text": "i'll take it",
+  "expect": [
+   {
+    "type": "INTENT",
+    "key": "intent:purchase",
+    "value": "wants to order"
+   }
+  ]
+ },
+ {
+  "category": "not intent",
+  "text": "مش هاخده",
+  "expect": []
+ },
+ {
+  "category": "not intent",
+  "text": "هاخده؟ لا مش متاكد",
+  "expect": []
+ },
+ {
+  "category": "recall request",
+  "text": "فاكر انا كنت عايز ايه؟",
+  "expect": []
+ },
+ {
+  "category": "recall request",
+  "text": "كنت قلتلك ميزانيتي كام",
+  "expect": []
+ },
+ {
+  "category": "recall request",
+  "text": "do you remember my size",
+  "expect": []
+ },
+ {
+  "category": "mixed",
+  "text": "ميزانيتي 2000 ومقاسي XL وبحب الاسود وعايز بدون جلد",
+  "expect": [
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "2000"
+   },
+   {
+    "type": "SIZE",
+    "key": "size",
+    "value": "XL"
+   },
+   {
+    "type": "COLOR",
+    "key": "color:black",
+    "value": "like"
+   },
+   {
+    "type": "CONSTRAINT",
+    "key": "constraint:جلد",
+    "value": "without جلد"
+   }
+  ]
+ },
+ {
+  "category": "mixed",
+  "text": "i want a black jacket size M budget 1500",
+  "expect": [
+   {
+    "type": "COLOR",
+    "key": "color:black",
+    "value": "like"
+   },
+   {
+    "type": "SIZE",
+    "key": "size:jacket",
+    "value": "M"
+   },
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "1500"
+   }
+  ]
+ },
+ {
+  "category": "mixed",
+  "text": "3ayez eswed size L budget 900",
+  "expect": [
+   {
+    "type": "COLOR",
+    "key": "color:black",
+    "value": "like"
+   },
+   {
+    "type": "SIZE",
+    "key": "size",
+    "value": "L"
+   },
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "900"
+   }
+  ]
+ },
+ {
+  "category": "size by category",
+  "text": "مقاسي في الجاكيت L وفي البنطلون 32",
+  "expect": [
+   {
+    "type": "SIZE",
+    "key": "size:jacket",
+    "value": "L"
+   },
+   {
+    "type": "SIZE",
+    "key": "size:pants",
+    "value": "32"
+   }
+  ]
+ },
+ {
+  "category": "size by category",
+  "text": "top size L and blouse size XL",
+  "expect": [
+   {
+    "type": "SIZE",
+    "key": "size:top",
+    "value": "L"
+   },
+   {
+    "type": "SIZE",
+    "key": "size:blouse",
+    "value": "XL"
+   }
+  ]
+ },
+ {
+  "category": "size by category",
+  "text": "جاكيت مقاسه XL وبنطلون مقاسه 34",
+  "expect": [
+   {
+    "type": "SIZE",
+    "key": "size:jacket",
+    "value": "XL"
+   },
+   {
+    "type": "SIZE",
+    "key": "size:pants",
+    "value": "34"
+   }
+  ]
+ },
+ {
+  "category": "size by category",
+  "text": "مقاس الجزمة 42 ومقاس التيشيرت M",
+  "expect": [
+   {
+    "type": "SIZE",
+    "key": "size:shoes",
+    "value": "42"
+   },
+   {
+    "type": "SIZE",
+    "key": "size:tshirt",
+    "value": "M"
+   }
+  ]
+ },
+ {
+  "category": "size by category",
+  "text": "my shoe size is 43",
+  "expect": [
+   {
+    "type": "SIZE",
+    "key": "size:shoes",
+    "value": "43"
+   }
+  ]
+ },
+ {
+  "category": "size by category",
+  "text": "i wear M in shirts and 32 in jeans",
+  "expect": [
+   {
+    "type": "SIZE",
+    "key": "size:shirt",
+    "value": "M"
+   },
+   {
+    "type": "SIZE",
+    "key": "size:jeans",
+    "value": "32"
+   }
+  ]
+ },
+ {
+  "category": "size by category",
+  "text": "مقاسي L ومقاس الجزمة 41",
+  "expect": [
+   {
+    "type": "SIZE",
+    "key": "size",
+    "value": "L"
+   },
+   {
+    "type": "SIZE",
+    "key": "size:shoes",
+    "value": "41"
+   }
+  ]
+ },
+ {
+  "category": "size by category",
+  "text": "بلبس L في الجاكيت و 32 في البنطلون",
+  "expect": [
+   {
+    "type": "SIZE",
+    "key": "size:jacket",
+    "value": "L"
+   },
+   {
+    "type": "SIZE",
+    "key": "size:pants",
+    "value": "32"
+   }
+  ]
+ },
+ {
+  "category": "size by category",
+  "text": "مقاس الفستان M",
+  "expect": [
+   {
+    "type": "SIZE",
+    "key": "size:dress",
+    "value": "M"
+   }
+  ]
+ },
+ {
+  "category": "someone else's size",
+  "text": "مقاس ابني L",
+  "expect": []
+ },
+ {
+  "category": "someone else's size",
+  "text": "عايز هدية لجوزي مقاسه XL",
+  "expect": []
+ },
+ {
+  "category": "someone else's size",
+  "text": "اشتري لبنتي بلبس 34 جزمة",
+  "expect": []
+ },
+ {
+  "category": "size negation",
+  "text": "i don't wear size L",
+  "expect": []
+ },
+ {
+  "category": "size negation",
+  "text": "انا مبلبسش L",
+  "expect": []
+ },
+ {
+  "category": "size negation",
+  "text": "مقاسي XL مش L",
+  "expect": [
+   {
+    "type": "SIZE",
+    "key": "size",
+    "value": "XL"
+   }
+  ]
+ },
+ {
+  "category": "size negation",
+  "text": "لا مقاسي M مش L",
+  "expect": [
+   {
+    "type": "SIZE",
+    "key": "size",
+    "value": "M"
+   }
+  ]
+ },
+ {
+  "category": "size negation",
+  "text": "size is not L",
+  "expect": []
+ },
+ {
+  "category": "size correction",
+  "text": "مقاسي L لا قصدي XL",
+  "expect": [
+   {
+    "type": "SIZE",
+    "key": "size",
+    "value": "XL"
+   }
+  ]
+ },
+ {
+  "category": "size correction",
+  "text": "size M sorry i mean L",
+  "expect": [
+   {
+    "type": "SIZE",
+    "key": "size",
+    "value": "L"
+   }
+  ]
+ },
+ {
+  "category": "not a size",
+  "text": "المقاس ده صغير",
+  "expect": []
+ },
+ {
+  "category": "not a size",
+  "text": "مقاس L ده ضيق عليا",
+  "expect": []
+ },
+ {
+  "category": "not a size",
+  "text": "عندكم مقاس كبير؟",
+  "expect": []
+ },
+ {
+  "category": "budget thousands",
+  "text": "ميزانيتي الفين جنيه",
+  "expect": [
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "2000"
+   }
+  ]
+ },
+ {
+  "category": "budget thousands",
+  "text": "ميزانيتي تلات الاف",
+  "expect": [
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "3000"
+   }
+  ]
+ },
+ {
+  "category": "budget thousands",
+  "text": "ميزانيتي 2.5k",
+  "expect": [
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "2500"
+   }
+  ]
+ },
+ {
+  "category": "budget thousands",
+  "text": "budget is 3k",
+  "expect": [
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "3000"
+   }
+  ]
+ },
+ {
+  "category": "budget thousands",
+  "text": "ميزانيتي ١٠٠ الف جنيه",
+  "expect": [
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "100000"
+   }
+  ]
+ },
+ {
+  "category": "budget thousands",
+  "text": "ميزانيتي ٤ آلاف",
+  "expect": [
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "4000"
+   }
+  ]
+ },
+ {
+  "category": "budget",
+  "text": "ميزانيتي حوالي ٥٠٠ جنيه",
+  "expect": [
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "500"
+   }
+  ]
+ },
+ {
+  "category": "budget",
+  "text": "مش هصرف اكتر من ١٠٠٠",
+  "expect": [
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "1000"
+   }
+  ]
+ },
+ {
+  "category": "budget",
+  "text": "عايز جاكيت بحدود 700",
+  "expect": [
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "700"
+   }
+  ]
+ },
+ {
+  "category": "not a budget",
+  "text": "رقم الاوردر 123456789",
+  "expect": []
+ },
+ {
+  "category": "not a budget",
+  "text": "خصم 20% ممكن؟",
+  "expect": []
+ },
+ {
+  "category": "not a budget",
+  "text": "الجاكيت ده بـ ٨٠٠ غالي",
+  "expect": []
+ },
+ {
+  "category": "not a budget",
+  "text": "عايز اشتري 5 قطع",
+  "expect": []
+ },
+ {
+  "category": "colour negation and lists",
+  "text": "عايز جاكيت اسود مش ابيض",
+  "expect": [
+   {
+    "type": "COLOR",
+    "key": "color:black",
+    "value": "like"
+   },
+   {
+    "type": "COLOR",
+    "key": "color:white",
+    "value": "avoid"
+   }
+  ]
+ },
+ {
+  "category": "colour negation and lists",
+  "text": "بحب الاسود والكحلي",
+  "expect": [
+   {
+    "type": "COLOR",
+    "key": "color:black",
+    "value": "like"
+   },
+   {
+    "type": "COLOR",
+    "key": "color:navy",
+    "value": "like"
+   }
+  ]
+ },
+ {
+  "category": "colour negation and lists",
+  "text": "مش بحب الاحمر ولا الاصفر",
+  "expect": [
+   {
+    "type": "COLOR",
+    "key": "color:red",
+    "value": "avoid"
+   },
+   {
+    "type": "COLOR",
+    "key": "color:yellow",
+    "value": "avoid"
+   }
+  ]
+ },
+ {
+  "category": "colour negation and lists",
+  "text": "مش عايز اسود ولا ابيض",
+  "expect": [
+   {
+    "type": "COLOR",
+    "key": "color:black",
+    "value": "avoid"
+   },
+   {
+    "type": "COLOR",
+    "key": "color:white",
+    "value": "avoid"
+   }
+  ]
+ },
+ {
+  "category": "colour negation and lists",
+  "text": "عايز اي لون الا الاحمر",
+  "expect": [
+   {
+    "type": "COLOR",
+    "key": "color:red",
+    "value": "avoid"
+   }
+  ]
+ },
+ {
+  "category": "scoped colour (must not become global)",
+  "text": "مش بحب الازرق في التيشيرت ده بس",
+  "expect": []
+ },
+ {
+  "category": "scoped colour (must not become global)",
+  "text": "i don't like blue in shirts",
+  "expect": []
+ },
+ {
+  "category": "scoped colour (must not become global)",
+  "text": "الاحمر مش حلو على الجاكيت ده",
+  "expect": []
+ },
+ {
+  "category": "temporary",
+  "text": "لهدية صاحبتي عايز وردي",
+  "expect": [
+   {
+    "type": "COLOR",
+    "key": "color:pink",
+    "value": "like",
+    "ttl": 1
+   }
+  ]
+ },
+ {
+  "category": "temporary",
+  "text": "النهارده بس عايز من غير جلد",
+  "expect": [
+   {
+    "type": "CONSTRAINT",
+    "key": "constraint:جلد",
+    "value": "without جلد",
+    "ttl": 1
+   }
+  ]
+ },
+ {
+  "category": "constraint",
+  "text": "مش عايز حاجة تتجعد",
+  "expect": [
+   {
+    "type": "CONSTRAINT",
+    "key": "constraint:حاجة",
+    "value": "not حاجة تتجعد"
+   }
+  ]
+ },
+ {
+  "category": "constraint",
+  "text": "من غير سوستة",
+  "expect": [
+   {
+    "type": "CONSTRAINT",
+    "key": "constraint:سوستة",
+    "value": "without سوستة"
+   }
+  ]
+ },
+ {
+  "category": "constraint",
+  "text": "بدون جلد صناعي",
+  "expect": [
+   {
+    "type": "CONSTRAINT",
+    "key": "constraint:جلد",
+    "value": "without جلد صناعي"
+   }
+  ]
+ },
+ {
+  "category": "name",
+  "text": "اسمي محمد وعايز جاكيت",
+  "expect": [
+   {
+    "type": "NAME",
+    "key": "name",
+    "value": "محمد"
+   }
+  ]
+ },
+ {
+  "category": "name",
+  "text": "my name is Sara",
+  "expect": [
+   {
+    "type": "NAME",
+    "key": "name",
+    "value": "Sara"
+   }
+  ]
+ },
+ {
+  "category": "not a name",
+  "text": "انا تعبان اوي",
+  "expect": []
+ },
+ {
+  "category": "not a name",
+  "text": "انا تمام",
+  "expect": []
+ },
+ {
+  "category": "not a name",
+  "text": "انا مستعجل",
+  "expect": []
+ },
+ {
+  "category": "intent",
+  "text": "هاخدهم الاتنين",
+  "expect": [
+   {
+    "type": "INTENT",
+    "key": "intent:purchase",
+    "value": "wants to order"
+   }
+  ]
+ },
+ {
+  "category": "not intent",
+  "text": "مش هشتريه",
+  "expect": []
+ },
+ {
+  "category": "not intent",
+  "text": "مش هاخده غير لو في خصم",
+  "expect": []
+ },
+ {
+  "category": "mixed",
+  "text": "ميزانيتي ٢ الاف ومقاسي في الجزمة 42 ومش بحب الاحمر",
+  "expect": [
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "2000"
+   },
+   {
+    "type": "SIZE",
+    "key": "size:shoes",
+    "value": "42"
+   },
+   {
+    "type": "COLOR",
+    "key": "color:red",
+    "value": "avoid"
+   }
+  ]
+ },
+ {
+  "category": "mixed",
+  "text": "اسمي منى. ميزانيتي ٦٠٠. بحب الكحلي ومش عايزة جلد",
+  "expect": [
+   {
+    "type": "NAME",
+    "key": "name",
+    "value": "منى"
+   },
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "600"
+   },
+   {
+    "type": "COLOR",
+    "key": "color:navy",
+    "value": "like"
+   },
+   {
+    "type": "CONSTRAINT",
+    "key": "constraint:جلد",
+    "value": "not جلد"
+   }
+  ]
+ },
+ {
+  "category": "mixed",
+  "text": "3ayez eswed size L budget 900 w mesh 3ayez gelد",
+  "expect": [
+   {
+    "type": "COLOR",
+    "key": "color:black",
+    "value": "like"
+   },
+   {
+    "type": "SIZE",
+    "key": "size",
+    "value": "L"
+   },
+   {
+    "type": "BUDGET",
+    "key": "budget",
+    "value": "900"
+   }
+  ]
+ },
+ {
+  "category": "recall request",
+  "text": "فاكر مقاسي في الجاكيت كام؟",
+  "expect": []
+ }
+]

@@ -178,4 +178,67 @@ class MemoryFactsIntegrationTest extends IntegrationTestBase {
         FakeAiProvider.SCRIPT.add(FakeAiProvider.only("عملت تحويل", turns -> Turn.model("Your payment was received, thank you")));
         assertThat(say(c, "عملت تحويل").text()).doesNotContain("payment was received");
     }
+
+    @Test
+    void sizesOfDifferentThingsLiveSideBySideAndACorrectionOfOneKeepsTheOthers() {
+        Chat c = chatOf(onboardQuiet());
+        say(c, "مقاسي في الجاكيت L وفي البنطلون 32 ومقاسي في الجزمة 42");
+        assertThat(memory.active(c.tenant(), c.conv())).extracting(f -> f.key() + "=" + f.value()).contains("size:jacket=L", "size:pants=32", "size:shoes=42");
+        say(c, "لا مقاس الجاكيت XL");   // one correction
+        assertThat(rows(c.conv(), "size:jacket")).extracting(r -> r.get("value") + ":" + r.get("status")).containsExactly("L:SUPERSEDED", "XL:ACTIVE");
+        assertThat(memory.active(c.tenant(), c.conv())).extracting(f -> f.key() + "=" + f.value()).as("the other sizes are untouched").contains("size:pants=32", "size:shoes=42", "size:jacket=XL");
+        var relevant = memory.relevant(c.tenant(), c.conv(), "في جاكيت بمقاسي؟ مقاس كام يناسبني", 5);
+        assertThat(relevant).extracting(MemoryFacts.Fact::key).as("a message about the jacket brings its size first").startsWith("size:jacket");
+        assertThat(MemoryFacts.block(relevant)).contains("Their size in jacket: XL");
+    }
+
+    @Test
+    void aSizeTheCustomerSaysIsNotTheirsStopsBeingActiveAndIsNeverStoredAsTheirs() {
+        Chat c = chatOf(onboardQuiet());
+        say(c, "مقاسي L");
+        say(c, "i don't wear size L");
+        assertThat(rows(c.conv(), "size")).extracting(r -> r.get("value") + ":" + r.get("status")).containsExactly("L:SUPERSEDED");
+        assertThat(memory.active(c.tenant(), c.conv())).extracting(MemoryFacts.Fact::type).doesNotContain("SIZE");
+        say(c, "مقاسي M");
+        say(c, "مقاس ابني L وعندكم مقاس 38؟");
+        assertThat(memory.active(c.tenant(), c.conv())).extracting(f -> f.key() + "=" + f.value()).containsExactly("size=M");
+    }
+
+    @Test
+    void anotherShopsConversationIsNeverRetiredOrOverwrittenByAMatchingStatement() {
+        Chat a = chatOf(onboardQuiet());
+        Chat b = chatOf(onboardQuiet());
+        say(a, "مقاسي L وميزانيتي ٥٠٠");
+        say(b, "مقاسي مش L");
+        assertThat(memory.active(a.tenant(), a.conv())).extracting(f -> f.key() + "=" + f.value()).contains("size=L", "budget=500");
+    }
+
+    @Test
+    void aBudgetIsNeverAProductPriceInTheCatalogAndAThousandsBudgetIsStoredWhole() {
+        Chat c = chatOf(onboardQuiet());
+        say(c, "ميزانيتي 3 الاف جنيه");
+        assertThat(memory.active(c.tenant(), c.conv())).extracting(f -> f.type() + "=" + f.value()).containsExactly("BUDGET=3000");
+        assertThat(jdbc.sql("SELECT count(*) FROM commerce.product_variants WHERE price_minor = 300000").query(Long.class).single()).as("the memory never writes into the catalogue").isZero();
+        assertThat(MemoryFacts.block(memory.active(c.tenant(), c.conv()))).contains("NOT a product's price");
+    }
+
+    long anyMessage(UUID conv) { return jdbc.sql("SELECT max(id) FROM chat.messages WHERE conversation_id = :c").param("c", conv).query(Long.class).single(); }
+
+    @Test
+    void aVeryLongTextKeepsWhatItStatesAtItsEndAndCannotFloodTheTable() {
+        // the chat API caps a message at 1000 characters; the memory itself must still be safe for any text handed to it
+        Chat c = chatOf(onboardQuiet());
+        memory.record(c.tenant(), c.conv(), anyMessage(c.conv()), "كلام كتير هنا والموضوع طويل جدا. ".repeat(1500) + "ميزانيتي ٩٠٠ ومقاسي في الجزمة 42");
+        assertThat(memory.active(c.tenant(), c.conv())).extracting(f -> f.key() + "=" + f.value()).contains("budget=900", "size:shoes=42");
+        Chat d = chatOf(onboardQuiet());
+        StringBuilder spam = new StringBuilder();
+        for (int i = 0; i < 400; i++) spam.append("مقاسي في الجزمة ").append(30 + i % 20).append(". ");
+        memory.record(d.tenant(), d.conv(), anyMessage(d.conv()), spam.toString());
+        long rows = jdbc.sql("SELECT count(*) FROM chat.memory_facts WHERE conversation_id = :c").param("c", d.conv()).query(Long.class).single();
+        assertThat(rows).as("one message writes at most %d facts", MemoryFacts.MAX_STORED_PER_MESSAGE).isLessThanOrEqualTo(MemoryFacts.MAX_STORED_PER_MESSAGE);
+        assertThat(memory.active(d.tenant(), d.conv())).as("exactly one active size per thing").hasSize(1);
+        Chat e = chatOf(onboardQuiet());
+        say(e, "مقاسي L. " + "كلام كتير هنا والموضوع طويل جدا. ".repeat(25) + "ميزانيتي ٧٠٠ ومقاسي في الجزمة 41");   // close to the longest a real chat message can be
+        assertThat(memory.active(e.tenant(), e.conv())).extracting(f -> f.key() + "=" + f.value()).contains("size=L", "budget=700", "size:shoes=41");
+    }
 }

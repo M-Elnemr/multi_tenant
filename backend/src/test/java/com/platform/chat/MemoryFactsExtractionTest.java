@@ -91,4 +91,81 @@ class MemoryFactsExtractionTest {
         assertThat(b).doesNotContain("[inferred, not confirmed]  — said on 2026-11-02: «ميزانيتي");   // the firm fact carries no inference mark
         assertThat(MemoryFacts.block(List.of())).isEmpty();
     }
+
+    static List<String> sig(String text) { return MemoryFacts.extract(text).stream().map(c -> c.type() + "|" + c.key() + "|" + c.value()).toList(); }
+
+    @Test
+    void oneCustomerKeepsADifferentSizeForEachKindOfThing() {
+        assertThat(sig("مقاسي في الجاكيت L وفي البنطلون 32")).containsExactlyInAnyOrder("SIZE|size:jacket|L", "SIZE|size:pants|32");
+        assertThat(sig("top size L and blouse size XL")).containsExactlyInAnyOrder("SIZE|size:top|L", "SIZE|size:blouse|XL");
+        assertThat(sig("مقاسي L ومقاس الجزمة 41")).containsExactlyInAnyOrder("SIZE|size|L", "SIZE|size:shoes|41");
+        assertThat(sig("عايزة فستان مقاسي M")).as("their own size, said after the thing they want: general, not the dress's").contains("SIZE|size|M");
+        assertThat(sig("i wear M in shirts and 32 in jeans")).as("«shirts» is not «shirt» plus size S").containsExactlyInAnyOrder("SIZE|size:shirt|M", "SIZE|size:jeans|32");
+    }
+
+    @Test
+    void aSizeThatIsNegatedScopedToAProductSomebodyElsesOrAskedAboutIsNotTheCustomers() {
+        assertThat(sig("i don't wear size L")).isEmpty();
+        assertThat(sig("ده مش مقاسي L")).isEmpty();
+        assertThat(sig("مقاسي XL مش L")).containsExactly("SIZE|size|XL");
+        assertThat(sig("لا مقاسي M مش L")).as("a bare «لا» opens a correction, it does not negate").containsExactly("SIZE|size|M");
+        assertThat(sig("مقاس L ده ضيق عليا")).as("the size of that product").isEmpty();
+        assertThat(sig("مقاس ابني L")).as("somebody else's").isEmpty();
+        assertThat(sig("عندكم بنطلون جينز مقاس 32؟")).as("a stock question is not a statement of their size").isEmpty();
+        assertThat(MemoryFacts.negatedSizes("i don't wear size L")).extracting(c -> c.key() + "|" + c.value()).containsExactly("size|L");
+        assertThat(MemoryFacts.negatedSizes("مقاسي L")).isEmpty();
+    }
+
+    @Test
+    void aSizeSaidAgainAsACorrectionReplacesTheOneBeforeIt() {
+        assertThat(sig("مقاسي L لا قصدي XL")).containsExactly("SIZE|size|XL");
+        assertThat(sig("size M sorry i mean L")).containsExactly("SIZE|size|L");
+    }
+
+    @Test
+    void thousandsInEveryWrittenFormAreTheWholeAmountAndOnlyABudgetWordMakesThemOne() {
+        for (String[] c : new String[][] {{"ميزانيتي 3 الاف جنيه", "3000"}, {"ميزانيتي ٢ الاف", "2000"}, {"budget 2k", "2000"}, {"ميزانيتي 1.5 الف", "1500"}, {"ميزانيتي 2.5k", "2500"}, {"ميزانيتي الفين", "2000"},
+                {"ميزانيتي تلات الاف", "3000"}, {"ميزانيتي ٤ آلاف", "4000"}, {"ميزانيتي ١٠٠ الف جنيه", "100000"}, {"ميزانيتي 5,000", "5000"}, {"ميزانيتي 12,500", "12500"}, {"مش هصرف اكتر من ١٠٠٠", "1000"}, {"معييش اكتر من ٨٠٠", "800"}})
+            assertThat(sig(c[0])).as(c[0]).contains("BUDGET|budget|" + c[1]);
+        assertThat(sig("الجاكيت بـ 3 الاف جنيه")).as("a product's price is not a budget").isEmpty();
+        assertThat(sig("عايز اشتري 3 قطع")).isEmpty();
+    }
+
+    @Test
+    void aTemporaryWantLivesADayAndAScopedColourIsNotTheirTaste() {
+        assertThat(MemoryFacts.extract("النهارده بس عايز احمر")).extracting(MemoryFacts.Candidate::ttlDays).containsExactly(1L);
+        assertThat(MemoryFacts.extract("لهدية صاحبتي عايز وردي")).extracting(MemoryFacts.Candidate::ttlDays).containsExactly(1L);
+        assertThat(sig("مش بحب الاسود في الجاكيت ده")).isEmpty();
+        assertThat(sig("i don't like blue in shirts")).isEmpty();
+        assertThat(sig("بحب الاسود والكحلي")).containsExactlyInAnyOrder("COLOR|color:black|like", "COLOR|color:navy|like");
+        assertThat(sig("عايز جاكيت اسود مش ابيض")).containsExactlyInAnyOrder("COLOR|color:black|like", "COLOR|color:white|avoid");
+    }
+
+    @Test
+    void negatedOrDoubtedIntentIsNotAnIntent() {
+        for (String t : List.of("مش هاخده", "هاخده؟ لا مش متاكد", "مش هاخده غير لو في خصم", "هاخدها ولا لا؟")) assertThat(sig(t)).as(t).isEmpty();
+        assertThat(sig("خلاص هاخده")).containsExactly("INTENT|intent:purchase|wants to order");
+    }
+
+    @Test
+    void aVeryLongMessageIsReadInFullQuicklyAndWhatItStatesAtTheEndIsNotLost() {
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < 6000; i++) b.append(i % 7 == 0 ? "عايز اعرف اكتر عن المنتج. " : "كلام كتير بيتقال هنا والموضوع طويل جدا ");
+        String filler = b.toString();
+        long t = System.nanoTime();
+        var found = sig(filler + " ميزانيتي ٩٠٠ ومقاسي في الجزمة 42 ومش بحب الاحمر");
+        long ms = (System.nanoTime() - t) / 1_000_000;
+        assertThat(found).as("a message of %d characters", filler.length()).contains("BUDGET|budget|900", "SIZE|size:shoes|42", "COLOR|color:red|avoid");
+        assertThat(ms).as("extraction time for a very long message (ms)").isLessThan(3000);
+        StringBuilder oneLine = new StringBuilder("ميزانيتي ٥٠٠ ");
+        for (int i = 0; i < 40_000; i++) oneLine.append("كلمة ");
+        assertThat(sig(oneLine.toString())).as("one huge sentence is clipped, not hung on").contains("BUDGET|budget|500");
+        assertThat(MemoryFacts.chunks("a. ".repeat(5000))).hasSizeLessThanOrEqualTo(MemoryFacts.MAX_CHUNKS);
+    }
+
+    @Test
+    void aBareNameStatementIsAnInferredNameButAStateOfBeingIsNot() {
+        assertThat(MemoryFacts.extract("انا احمد")).extracting(c -> c.key() + "|" + c.value() + "|" + (c.confidence() < 0.8)).containsExactly("name|احمد|true");
+        for (String t : List.of("انا تعبان اوي", "انا تمام", "انا مستعجل", "انا عايز جاكيت")) assertThat(sig(t)).as(t).noneMatch(x -> x.startsWith("NAME"));
+    }
 }
