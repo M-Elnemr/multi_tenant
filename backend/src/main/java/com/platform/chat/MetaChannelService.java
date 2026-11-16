@@ -72,6 +72,8 @@ public class MetaChannelService {
         this.verifyToken = verifyToken == null || verifyToken.isBlank() ? null : verifyToken.trim();
         this.pool = async ? Executors.newFixedThreadPool(4) : null;
         this.burst = pool == null ? new InboundBurst(holder, Runnable::run, 0, 0) : new InboundBurst(holder, pool, burstMs, 15_000);
+        ReplyMetrics.pool("meta", pool);   // measurement only: how busy the 4 workers are and how many replies wait for one
+        ReplyMetrics.gauge("elmanassa.burst.pending", burst, InboundBurst::pendingBursts, "pool", "meta");
     }
 
     public boolean configured() { return appSecret != null && verifyToken != null; }
@@ -379,7 +381,12 @@ public class MetaChannelService {
         }
     }
 
+    /** Answers one customer message; the reply's trace is completed here once the outbound sends (or the decision to send nothing) are done. */
     private void respond(String platform, String accountId, String sender, String text, Map<String, Object> chRow, String name, ChatService.ReplyInput in) {
+        try { respondNow(platform, accountId, sender, text, chRow, name, in); } finally { ReplyTrace.completeDeferred(); }
+    }
+
+    private void respondNow(String platform, String accountId, String sender, String text, Map<String, Object> chRow, String name, ChatService.ReplyInput in) {
         UUID tenantId = (UUID) chRow.get("tenant_id");
         if (!running(tenantId)) return;   // a suspended, cancelled or archived shop does not answer customers
         String token = crypto.decrypt((String) chRow.get("token_enc"));
@@ -435,14 +442,16 @@ public class MetaChannelService {
                     boolean lastPart = mi == messages.size() - 1 && pi == parts.size() - 1;
                     // a customer who used «reply» is in a threaded chat: the first text bubble of the answer quotes the message they just sent (WhatsApp Cloud's contextual reply)
                     String quote = mi == 0 && pi == 0 && !in.refs().isEmpty() && !in.mids().isEmpty() ? in.mids().get(in.mids().size() - 1) : null;
-                    String mid = lastPart && !buttons.isEmpty() ? sendWithButtons(platform, accountId, sender, token, parts.get(pi), buttons) : sendQuoting(platform, accountId, sender, token, parts.get(pi), quote);
+                    String partText = parts.get(pi);
+                    String mid = lastPart && !buttons.isEmpty() ? ReplyTrace.outbound(platform, "graph", "buttons", () -> sendWithButtons(platform, accountId, sender, token, partText, buttons))
+                            : ReplyTrace.outbound(platform, "graph", "text", () -> sendQuoting(platform, accountId, sender, token, partText, quote));
                     if (sentReply != null && replies != null) replies.recordMid(tenantId, sentReply.conversationId(), sentReply.messageId(), mid, parts.get(pi));   // so the customer's reply to THIS bubble is found
                 }
             }
         } catch (MetaGraph.MetaException e) {
             log.warn("Could not send the {} reply: {}", platform, e.getMessage());
         }
-        for (var card : cards) { String mid = sendCard(platform, accountId, sender, token, card); if (sentReply != null && replies != null) replies.recordMid(tenantId, sentReply.conversationId(), sentReply.messageId(), mid, card.caption()); }
+        for (var card : cards) { String mid = ReplyTrace.outbound(platform, "graph", "card", () -> sendCard(platform, accountId, sender, token, card)); if (sentReply != null && replies != null) replies.recordMid(tenantId, sentReply.conversationId(), sentReply.messageId(), mid, card.caption()); }
     }
 
     /** A suggested product: its picture with name, price and link; when the picture cannot be sent, the link alone. */

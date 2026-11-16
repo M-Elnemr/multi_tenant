@@ -19,6 +19,7 @@ class ScaleSupportIntegrationTest extends IntegrationTestBase {
     @Autowired JdbcClient jdbc;
     @Autowired RetentionJob retention;
     @Autowired RateLimitStore store;
+    @Autowired java.util.List<com.platform.notifications.NotificationChannel> channels;
 
     @Test
     void unknownHostsAreCachedAndANewTenantResolvesImmediatelyDespiteACachedUnknown() throws Exception {
@@ -42,12 +43,18 @@ class ScaleSupportIntegrationTest extends IntegrationTestBase {
 
     @Test
     void retentionRemovesOnlyOldChurnRowsAndNeverBusinessData() throws Exception {
+        // The pending row must stay pending until retention has run, so it goes on a channel this server's background dispatcher does not handle (the dispatcher only takes channels that have a
+        // sender here, and a PENDING row on another channel "waits for a server that has it"). A row on a handled channel could be sent, and so purged as an old SENT row, by a dispatcher tick during the
+        // seconds retention.run() takes on a big outbox. The channel is looked up, not assumed: if every channel the table allows ever gets a sender here, this fails with a clear message.
+        var handled = channels.stream().map(com.platform.notifications.NotificationChannel::code).collect(java.util.stream.Collectors.toSet());
+        String pendingChannel = java.util.List.of("SMS", "WHATSAPP", "EMAIL", "PUSH").stream().filter(c -> !handled.contains(c)).findFirst().orElse(null);
+        assertThat(pendingChannel).as("a channel with no sender on this server is needed to keep a PENDING row away from the dispatcher; senders: " + handled).isNotNull();
         Tenant store = onboard("STORE");
         UUID tenant = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", store.slug()).query(UUID.class).single();
         UUID user = jdbc.sql("SELECT user_id FROM core.user_tenant_memberships WHERE tenant_id = :t LIMIT 1").param("t", tenant).query(UUID.class).single();
         String tag = uniq();
-        jdbc.sql("INSERT INTO notifications.outbox (channel, to_address, subject, body, status, created_at) VALUES ('EMAIL', :o,'s','b','SENT', now() - interval '40 days'), ('EMAIL', :n,'s','b','SENT', now()), ('EMAIL', :p,'s','b','PENDING', now() - interval '40 days')")
-                .param("o", "old" + tag + "@x.com").param("n", "new" + tag + "@x.com").param("p", "pend" + tag + "@x.com").update();
+        jdbc.sql("INSERT INTO notifications.outbox (channel, to_address, subject, body, status, created_at) VALUES ('EMAIL', :o,'s','b','SENT', now() - interval '40 days'), ('EMAIL', :n,'s','b','SENT', now()), (:c, :p,'s','b','PENDING', now() - interval '40 days')")
+                .param("o", "old" + tag + "@x.com").param("n", "new" + tag + "@x.com").param("p", "pend" + tag + "@x.com").param("c", pendingChannel).update();
         jdbc.sql("INSERT INTO notifications.notifications (user_id, tenant_id, notification_type, title, body, read_at, created_at) VALUES (:u,:t,'X','old read','b', now(), now() - interval '100 days'), (:u,:t,'X','old unread','b', NULL, now() - interval '100 days'), (:u,:t,'X','fresh','b', NULL, now())").param("u", user).param("t", tenant).update();
         jdbc.sql("INSERT INTO core.idempotency_keys (key, scope, created_at) VALUES (:k1,'onboarding', now() - interval '10 days'), (:k2,'onboarding', now())").param("k1", "old-" + tag).param("k2", "new-" + tag).update();
         long ordersBefore = jdbc.sql("SELECT count(*) FROM core.tenants").query(Long.class).single();

@@ -526,17 +526,21 @@ public class ChatService {
 
     /** Same, for a message that answers a specific earlier message ({@code in}). A reference the website sent that is not of this chat and shop is refused before anything is saved. */
     public Reply reply(UUID tenantId, String channel, String externalId, UUID clientId, String message, String displayName, ReplyInput in) {
-        ReplyTimeline.begin();
+        ReplyTimeline.begin(channel);
+        boolean failed = false;
         try { return replyTimed(tenantId, channel, externalId, clientId, message, displayName, in == null ? ReplyInput.NONE : in); }
-        finally { ReplyTimeline.finish(channel, externalId); REPLY_PRODUCTS.remove(); EXTRAS.remove(); }
+        catch (RuntimeException | Error e) { failed = true; throw e; }
+        finally { ReplyTimeline.finish(channel, externalId, failed); REPLY_PRODUCTS.remove(); EXTRAS.remove(); }
     }
 
     private Reply replyTimed(UUID tenantId, String channel, String externalId, UUID clientId, String message, String displayName, ReplyInput in) {
         String text = message == null ? "" : message.trim();
         if (text.isEmpty()) throw BusinessException.badRequest("VALIDATION_ERROR", "Write a message");
         if (text.length() > 1000) throw BusinessException.badRequest("VALIDATION_ERROR", "The message is too long");
+        long contextStart = System.nanoTime();
         UUID conv = conversation(tenantId, channel, externalId, clientId);
-        AiTelemetry.beginReply(tenantId, conv);
+        AiTelemetry.beginReply(tenantId, conv, ReplyTrace.currentHexId());   // one id for the trace row, the Langfuse spans and the log lines
+        ReplyTrace.identify(tenantId, conv, EVAL.get() != null, "TEST".equals(channel));
         String shown = DummyName.check(displayName) ? null : firstName(displayName);   // a handle like «x7k_29» is not a name: the AI asks for the real one
         if (shown != null) jdbc.sql("UPDATE chat.conversations SET display_name = :n WHERE id = :c AND display_name IS DISTINCT FROM :n").param("n", shown).param("c", conv).update();
         String named = statedName(text);
@@ -578,28 +582,38 @@ public class ChatService {
         boolean[] ragDown = new boolean[1];
         Ctx ctx = new Ctx(tenantId, conv, channel, externalId, clientId, userMsgId, new ArrayList<>(), orderBox, new String[1], new String[1], ragDown);
         ReplyTimeline.mark("prep");
+        ReplyTrace.span("context_load", contextStart, "history_messages", turns.size());   // the conversation, the saved message, the shop-team and points checks, the history window
+        long promptStart = System.nanoTime();
         String system = systemPrompt(tenantId, conv, clientId, channel, externalId);
+        ReplyTrace.span("prompt_build", promptStart, "chars", system.length());
         long replyStart = System.nanoTime();
         PromptExtras extras = new PromptExtras();
         EXTRAS.set(extras);
         try { String rc = replyContextBlock(tenantId, conv, userMsgId, refs, text, windowFrom, extras); system += rc; extras.blocks.append(rc); } catch (RuntimeException e) { log.warn("Reply context skipped: {}", e.toString()); }
         ReplyTimeline.span("replyContext", ReplyTimeline.since(replyStart));
         long memStart = System.nanoTime();
+        int[] memFacts = {0};
         try {
             if (memoryFacts != null && windowFrom > 0) {   // only the historical part: what was said inside the history window is already in front of the model
                 var picked = memoryFacts.relevant(tenantId, conv, text, 5, windowFrom);
+                memFacts[0] = picked.size();
                 String mb = MemoryFacts.block(picked);
                 system += mb; extras.blocks.append(mb);
                 for (var f : picked) { if (f.sourceText() != null) { extras.customerTexts.add(f.sourceText()); extras.covered.add(MemoryFacts.normalize(f.sourceText())); } }   // their own words: allowed like any of their messages
             }
         } catch (RuntimeException e) { log.warn("Memory facts skipped: {}", e.toString()); }
         ReplyTimeline.span("memoryFacts", ReplyTimeline.since(memStart));
+        ReplyTrace.span("memory_load", memStart, "facts", memFacts[0]);
         long digestStart = System.nanoTime();
         try { String dg = earlierCustomerDigest(conv, windowFrom, extras); system += dg; extras.blocks.append(dg); } catch (RuntimeException e) { log.warn("Earlier-messages digest skipped: {}", e.toString()); }
         ReplyTimeline.span("earlierDigest", ReplyTimeline.since(digestStart));
         ReplyTimeline.mark("prompt");
-        if (!system.contains("ALL PRODUCTS (")) system += productsForMessage(tenantId, text);
+        long ragStart = System.nanoTime();
+        boolean ragRan = !system.contains("ALL PRODUCTS (");
+        if (ragRan) system += productsForMessage(tenantId, text);
+        ReplyTrace.span("rag", ragStart, "ran", ragRan, "unavailable", ragDown[0]);
         List<ToolDef> tools = tools();
+        ReplyTrace.instant("prompt_ready", "chars", system.length(), "tools", tools.size());
         ReplyTimeline.mark("products");
         if (EVAL.get() != null) EVAL.get().setup(system.length(), Integer.toHexString(tools.toString().hashCode()) + ":" + tools.size(), tools.stream().anyMatch(td -> "shop_knowledge".equals(td.name())));
         String answer = null;
@@ -677,7 +691,9 @@ public class ChatService {
                 List<AiUsageService.Round> r2 = new ArrayList<>();
                 List<Turn> t2 = new ArrayList<>(fresh);
                 try {
-                    String b = converse(ctx2, other, system, t2, tools, r2, arabicChat);
+                    String b;
+                    ReplyTrace.role("second_opinion");   // measurement only: these calls are the other model's second opinion in the timeline
+                    try { b = converse(ctx2, other, system, t2, tools, r2, arabicChat); } finally { ReplyTrace.role(null); }
                     List<String> left2 = b == null || b.isBlank() ? left : unresolved(ctx2, text, b, t2, r2);
                     log.info("Second opinion: {} {} -> {} {} (conversation {})", routed.code(), left, other.code(), left2, conv);
                     events.record(tenantId, conv, channel, other.code(), "SECOND_OPINION", routed.code() + " " + left + " -> " + other.code() + " " + left2, null);
@@ -722,6 +738,7 @@ public class ChatService {
             if (backup != null) {
                 // the model failed after its tool exchange had begun: the whole reply again, on the other model (two companies, so one outage never silences the shop)
                 log.warn("Restarting the reply on {} after {} failed", backup.code(), routed.code());
+                ReplyTrace.fallbackStarted(routed.code(), backup.code(), e.category(), (System.nanoTime() - started) / 1_000_000);
                 fallbackWhy = routed.code() + " " + e.describe();
                 failedRounds.addAll(rounds);
                 rounds.clear();
@@ -735,10 +752,12 @@ public class ChatService {
                     if (EVAL.get() != null) EVAL.get().failure(routed.code(), e2.getMessage());
                     events.record(tenantId, conv, channel, routed.code(), "ERROR", e2.describe(), null);
                     answer = unavailableText(arabicChat);
+                    ReplyTrace.note("ai_unavailable", true);
                 }
             } else {
                 events.record(tenantId, conv, channel, routed.code(), "ERROR", e.describe(), null);
                 answer = routed.showsErrors() ? "⚠️ " + routed.label() + ": " + e.getMessage() : unavailableText(arabicChat);
+                ReplyTrace.note("ai_unavailable", true);
             }
         } finally {
             FactCheck.clearEarlier();
@@ -759,7 +778,7 @@ public class ChatService {
         long tookMs = (System.nanoTime() - started) / 1_000_000;
         // which steps the reply took («3 calls: search_products > - > review»), so a slow reply shows where its time went
         String steps = rounds.stream().map(r -> r.tools().isEmpty() ? "-" : String.join("+", r.tools())).collect(java.util.stream.Collectors.joining(" > "));
-        log.info("Reply timing: model={} calls={} ms={} steps=[{}] conversation={}", routed.code(), rounds.size(), tookMs, steps, conv);
+        log.info("Reply timing: model={} calls={} ms={} steps=[{}] conversation={} trace={}", routed.code(), rounds.size(), tookMs, steps, conv, ReplyTrace.currentId());
         events.record(tenantId, conv, channel, routed.code(), "REPLY", rounds.size() + " calls" + (steps.isEmpty() ? (ctx.summary()[0] != null ? ": summary by code" : "") : ": " + steps), tookMs);
         if (!"TEST".equals(channel)) { seller.count(tenantId); usageLog.record(tenantId, "CHAT", channel, conv, false, text, rounds, routed.code(), routed.fellBack()); }
         else if (EVAL.get() != null) EVAL.get().add(rounds, tookMs, routed.fellBack(), routed.code());
@@ -1017,7 +1036,8 @@ public class ChatService {
         // a draft that stalls or only offers to show will be rewritten by the checks anyway: no review first, so the rewrite has the time
         if (!stallsOrOffers(ctx, answer)) { long reviewStart = System.nanoTime(); answer = reviewed(ctx, routed, system, turns, rounds, answer); ReplyTimeline.span("review", ReplyTimeline.since(reviewStart)); }
         long checksStart = System.nanoTime();
-        answer = ruleChecks(ctx, routed, system, turns, tools, rounds, allowed, answer);
+        final String draftBeforeChecks = answer;
+        answer = ReplyTrace.ruleChecks(() -> ruleChecks(ctx, routed, system, turns, tools, rounds, allowed, draftBeforeChecks), draftBeforeChecks);
         ReplyTimeline.span("ruleChecks", ReplyTimeline.since(checksStart));
         if (ctx.summary()[0] != null) return answer;
         answer = moneySafe(ctx, routed, system, turns, tools, rounds, allowed, arabic, answer);
@@ -1029,29 +1049,47 @@ public class ChatService {
      * reply. Any failure sends the draft; the money and claims checks run after it either way.
      */
     private String reviewed(Ctx ctx, ChannelAi.Routed routed, String system, List<Turn> turns, List<AiUsageService.Round> rounds, String draft) {
-        if (!review || trivial(draft) || !AiBudget.hasLeft(REPLY_BUDGET_MS - 20_000)) return draft;   // past 20 seconds the customer has waited enough
+        long reviewStart = System.nanoTime();
+        if (!review || trivial(draft) || !AiBudget.hasLeft(REPLY_BUDGET_MS - 20_000)) {   // past 20 seconds the customer has waited enough
+            if (review) ReplyTrace.review("skipped", reviewStart, null, trivial(draft) ? "trivial" : "budget", false, null);
+            return draft;
+        }
+        String verdict = "unknown", detail = "";
+        boolean differs = false;
+        String reviewerCode = null;
+        AiProvider.Usage usage = null;
         try {
             // the review runs on the answering model, or on the model set in app.ai.review.model (its cost is then logged under that model)
             ChannelAi.Routed reviewer = reviewModel == null || reviewModel.equals(routed.code()) ? routed : channelAi.forChannel(ctx.channel(), reviewModel);
+            reviewerCode = reviewer.code();
             String asked = ReplyReview.request(turns, addressing(system), foundProducts(ctx) + section(system, "SHOP FACTS:", 2500) + section(system, CATALOG_HEADING, 4000), draft);
             Turn t;
             AiBudget.capCalls(reviewTimeoutMs);   // one short try: a slow or failing review costs the customer at most this long, never the reply
             AiBudget.reasoning(reviewReasoning);   // the verdict is a few tokens: measured on 2026-11-11, DeepSeek without reasoning gave the same verdict as with it on 10 drafts, in 3.0 s instead of 4.4 s
-            try { t = reviewer.nextOnActive(ReplyReview.SYSTEM, List.of(Turn.user(asked)), List.of()); } finally { AiBudget.uncapCalls(); AiBudget.clearReasoning(); }
+            try { t = ReplyTrace.withPurpose("review", () -> reviewer.nextOnActive(ReplyReview.SYSTEM, List.of(Turn.user(asked)), List.of())); } finally { AiBudget.uncapCalls(); AiBudget.clearReasoning(); }
+            usage = t.usage();
             var round = new AiUsageService.Round(List.of("review"), t.usage());
             if (reviewer == routed) rounds.add(round);
             else if (!"TEST".equals(ctx.channel())) usageLog.record(ctx.tenantId(), "CHAT_REVIEW", ctx.channel(), ctx.conversationId(), false, "[review]", List.of(round), reviewer.code(), false);
             var v = ReplyReview.parse(t.text());
-            if (v == null) { log.info("Review: {} gave no usable verdict (conversation {})", reviewer.code(), ctx.conversationId()); return draft; }
-            if (v.ok()) return draft;
-            if (v.reply().length() > draft.length() * 3 + 300) { log.info("Review: {} rewrote far too much, keeping the draft (conversation {})", reviewer.code(), ctx.conversationId()); return draft; }
-            if (ReplyReview.introducesNewNumbers(v.reply(), asked)) { log.info("Review: {} brought a number nobody showed it, keeping the draft (conversation {}): «{}»", reviewer.code(), ctx.conversationId(), v.reply()); return draft; }
-            if (ReviewVariantGuard.introducesUnavailableOptions(v.reply(), draft, ReplyReview.newestCustomerText(turns), foundProductData(ctx))) { log.info("Review: {} offered a colour or size that is not in stock, keeping the draft (conversation {}): «{}»", reviewer.code(), ctx.conversationId(), v.reply()); return draft; }
+            if (v == null) { log.info("Review: {} gave no usable verdict (conversation {})", reviewer.code(), ctx.conversationId()); verdict = "unknown"; detail = "no_verdict"; return draft; }
+            if (v.ok()) { verdict = "approved"; return draft; }
+            if (v.reply().length() > draft.length() * 3 + 300) { log.info("Review: {} rewrote far too much, keeping the draft (conversation {})", reviewer.code(), ctx.conversationId()); verdict = "kept_original"; detail = "too_long"; return draft; }
+            if (ReplyReview.introducesNewNumbers(v.reply(), asked)) { log.info("Review: {} brought a number nobody showed it, keeping the draft (conversation {}): «{}»", reviewer.code(), ctx.conversationId(), v.reply()); verdict = "kept_original"; detail = "new_numbers"; return draft; }
+            if (ReviewVariantGuard.introducesUnavailableOptions(v.reply(), draft, ReplyReview.newestCustomerText(turns), foundProductData(ctx))) { log.info("Review: {} offered a colour or size that is not in stock, keeping the draft (conversation {}): «{}»", reviewer.code(), ctx.conversationId(), v.reply()); verdict = "kept_original"; detail = "unavailable_option"; return draft; }
             log.info("Review: {} corrected the reply (conversation {}) {}: «{}» -> «{}»", reviewer.code(), ctx.conversationId(), v.problems(), draft, v.reply());
+            verdict = "corrected"; differs = !v.reply().equals(draft);
             return v.reply();
-        } catch (RuntimeException e) {   // an unavailable or slow reviewer, or anything unexpected in it: the draft is sent
+        } catch (AiProvider.AiUnavailableException e) {   // an unavailable or slow reviewer: the draft is sent
+            verdict = ProviderFailure.TIMEOUT.equals(e.category()) ? "timeout" : "error"; detail = ReplyMetrics.code(e.category());
             log.warn("Review: failed, sending the draft: {}", e.toString());
             return draft;
+        } catch (RuntimeException e) {   // anything unexpected in it: the draft is sent
+            verdict = "error"; detail = "unexpected";
+            log.warn("Review: failed, sending the draft: {}", e.toString());
+            return draft;
+        } finally {
+            ReplyTrace.review(verdict, reviewStart, reviewerCode, detail, differs, usage);
         }
     }
 
@@ -1117,7 +1155,7 @@ public class ChatService {
         if (canRewrite(rounds)) try {
             turns.add(Turn.model(answer));
             turns.add(Turn.user(ReplyGuard.note(bad) + lastCustomerWords(turns)));
-            retry = modelLoop(ctx, routed, system, turns, tools, rounds, allowed);
+            retry = ReplyTrace.rewrite("claims", () -> modelLoop(ctx, routed, system, turns, tools, rounds, allowed));
         } catch (AiProvider.AiUnavailableException e) {
             log.warn("Claims check: the rewrite failed: {}", e.getMessage());
         }
@@ -1244,6 +1282,7 @@ public class ChatService {
         if (switched != null) problems.put("SWITCHED_PRODUCT", switched);
         if (problems.isEmpty()) return answer;
         for (String kind : problems.keySet()) events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:" + kind, problems.get(kind), null);
+        ReplyTrace.checkProblems(problems.keySet());
         boolean phoneDoubt = PHONE_DOUBT.matcher(answer).find() && customerGaveMobile(turns);
         boolean stalled = problems.containsKey("STALL") || problems.containsKey("OFFER_INSTEAD_OF_SHOWING");
         if (!canRewrite(rounds)) return factsFixed(last, falseCancel ? cancelFallback(answer) : phoneDoubt ? phoneFallback(answer) : problems.containsKey("FAKE_SUMMARY") && summaryShaped(answer) ? withoutSelfSummary(answer)
@@ -1253,7 +1292,7 @@ public class ChatService {
             turns.add(Turn.model(answer));
             turns.add(Turn.user("[SYSTEM CHECK, not from the customer] " + String.join(" ", problems.values())
                     + " Write your reply again. The customer has NOT seen your draft: never apologise for it or mention a mistake." + lastCustomerWords(turns)));
-            String retry = withoutDraftApology(modelLoop(ctx, routed, system, turns, tools, rounds, allowed));
+            String retry = withoutDraftApology(ReplyTrace.rewrite("rule_check", () -> modelLoop(ctx, routed, system, turns, tools, rounds, allowed)));
             if (retry == null || retry.isBlank()) return factsFixed(last, falseCancel ? cancelFallback(answer) : phoneDoubt ? phoneFallback(answer) : answer, shopData, touched);
             if (CANCEL_CLAIM.matcher(retry).find() && !orderCancelled(ctx)) return cancelFallback(retry);
             if (PHONE_DOUBT.matcher(retry).find() && customerGaveMobile(turns)) return phoneFallback(retry);
@@ -2456,7 +2495,7 @@ public class ChatService {
             turns.add(Turn.user("[SYSTEM CHECK, not from the customer] Your draft states the amount(s) " + bad.stream().map(MoneyGuard.Amount::raw).toList() + " that no tool returned and that are not in the shop data or the chat. "
                     + "Never calculate, add, round or guess money. Use the right tool (search_products or get_product for prices, delivery_quote for delivery, prepare_order for an order total) and quote exactly what it returns, or leave the amount out. "
                     + "If this is about an order that is already placed, answer only from ORDER ON FILE. Write your reply to the customer again now." + lastCustomerWords(turns)));
-            retry = modelLoop(ctx, routed, system, turns, tools, rounds, allowed);
+            retry = ReplyTrace.rewrite("money", () -> modelLoop(ctx, routed, system, turns, tools, rounds, allowed));
         } catch (AiProvider.AiUnavailableException e) {
             log.warn("Money check: the rewrite failed: {}", e.getMessage());
         }
@@ -2486,6 +2525,7 @@ public class ChatService {
                 long toolStart = System.nanoTime();
                 Map<String, Object> r = runTool(ctx, c);
                 ReplyTimeline.span("tool:" + c.name(), ReplyTimeline.since(toolStart));
+                ReplyTrace.tool(c.name(), toolStart, r == null || r.get("error") == null, round);
                 if (EVAL.get() != null) EVAL.get().tool(routed.code(), c, r);
                 allowed.addJson(r);
                 results.add(new ToolResult(c.name(), r));

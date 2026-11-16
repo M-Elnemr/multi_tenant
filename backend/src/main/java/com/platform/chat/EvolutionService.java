@@ -65,6 +65,8 @@ public class EvolutionService {
         this.typingDelayMs = Math.max(0, typingDelayMs);
         this.pool = async ? Executors.newFixedThreadPool(2) : null;
         this.burst = pool == null ? new InboundBurst(timers, Runnable::run, 0, 0) : new InboundBurst(timers, pool, burstMs, 15_000);
+        ReplyMetrics.pool("evolution", pool);   // measurement only: how busy the 2 workers are and how many replies wait for one
+        ReplyMetrics.gauge("elmanassa.burst.pending", burst, InboundBurst::pendingBursts, "pool", "evolution");
     }
 
     /** True when this server runs an Evolution API; without one the switch in Settings is hidden. */
@@ -400,7 +402,12 @@ public class EvolutionService {
         return bytes;
     }
 
+    /** Answers one customer message; the reply's trace is completed here once the outbound sends (or the decision to send nothing) are done. */
     private void respond(UUID tenantId, String sender, String text, String pushName, ChatService.ReplyInput in) {
+        try { respondNow(tenantId, sender, text, pushName, in); } finally { ReplyTrace.completeDeferred(); }
+    }
+
+    private void respondNow(UUID tenantId, String sender, String text, String pushName, ChatService.ReplyInput in) {
         ChatService.Reply sentReply = null;
         boolean aiOn = chat.enabled(tenantId, "WHATSAPP");
         String answer;
@@ -432,13 +439,13 @@ public class EvolutionService {
         if (g == com.platform.shared.Gender.UNKNOWN) g = com.platform.commerce.GenderService.forName(pushName);
         for (String message : ChatService.messages(g.apply(answer)))   // the assistant may answer two separate topics in two messages
             for (String part : MetaChannelService.chunks(message, 3000)) {
-                String mid = sendFreeMid(tenantId, sender, part);
+                String mid = ReplyTrace.outbound("WHATSAPP", "evolution", "text", () -> sendFreeMid(tenantId, sender, part));
                 if (sentReply != null && replies != null) replies.recordMid(tenantId, sentReply.conversationId(), sentReply.messageId(), mid, part);   // so the customer's reply to THIS bubble is found
             }
         for (var card : cards) {   // the picture, price and link of each product the assistant suggested; a product without a picture goes as its link alone
             String[] cardMid = new String[1];
-            Delivery d = deliver(tenantId, sender, card.caption(), card.imageUrl(), m -> cardMid[0] = m);
-            if (d == Delivery.FAILED && card.imageUrl() != null) d = deliver(tenantId, sender, card.caption(), null, m -> cardMid[0] = m);
+            Delivery d = ReplyTrace.outbound("WHATSAPP", "evolution", "card", () -> deliver(tenantId, sender, card.caption(), card.imageUrl(), m -> cardMid[0] = m), r -> r != Delivery.FAILED);
+            if (d == Delivery.FAILED && card.imageUrl() != null) d = ReplyTrace.outbound("WHATSAPP", "evolution", "card", () -> deliver(tenantId, sender, card.caption(), null, m -> cardMid[0] = m), r -> r != Delivery.FAILED);
             if (sentReply != null && replies != null) replies.recordMid(tenantId, sentReply.conversationId(), sentReply.messageId(), cardMid[0], card.caption());
         }
     }

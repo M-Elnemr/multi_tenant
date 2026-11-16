@@ -76,6 +76,7 @@ public class AiEvalService {
         run.put("results", results);
         runs.put(id, run);
         worker.execute(() -> {
+            long evalStart = System.nanoTime();   // measurement only: how long the run took, from a monotonic clock
             try {
                 for (JsonNode c : set) { results.add(play(tenantId, m, id, c, false, null)); run.put("done", results.size()); }
                 run.put("summary", summary(results));
@@ -85,6 +86,15 @@ public class AiEvalService {
                 log.warn("AI evaluation failed", e);
                 run.put("status", "FAILED"); run.put("error", String.valueOf(e.getMessage()));
                 keep(id, tenantId, m, kind, run);
+            } finally {
+                try {
+                    long ms = (System.nanoTime() - evalStart) / 1_000_000;
+                    String st = String.valueOf(run.get("status"));
+                    ReplyMetrics.timer("elmanassa.eval.run.duration", ms, "model", ReplyMetrics.code(m), "kind", ReplyMetrics.code(kind), "status", ReplyMetrics.code(st));
+                    ReplyMetrics.count("elmanassa.eval.runs", "model", ReplyMetrics.code(m), "kind", ReplyMetrics.code(kind), "status", ReplyMetrics.code(st));
+                    // its model calls are in chat.reply_traces with source = EVAL (tokens per trace), never in chat.ai_usage_log (owner and evaluation chats are not billed to a shop)
+                    log.info("AI evaluation run: id={} model={} kind={} status={} cases={} played={} duration_ms={}", id, m, kind, st, set.size(), results.size(), ms);
+                } catch (RuntimeException ignored) { /* measurement never fails a run */ }
             }
         });
         return id;

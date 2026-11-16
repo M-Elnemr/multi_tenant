@@ -52,6 +52,7 @@ services:
       AI_ROUTE_WEB: ${AI_ROUTE_WEB:-default}
       AI_NAME_PROBE: ${AI_NAME_PROBE:-false}
       AI_REVIEW: ${AI_REVIEW:-true}
+      AI_TRACE: ${AI_TRACE:-true}
       AI_REVIEW_MODEL: ${AI_REVIEW_MODEL:-}
       AI_REVIEW_TIMEOUT_MS: ${AI_REVIEW_TIMEOUT_MS:-8000}
       AI_REVIEW_REASONING: ${AI_REVIEW_REASONING:-none}

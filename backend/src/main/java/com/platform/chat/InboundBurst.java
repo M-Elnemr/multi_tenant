@@ -25,6 +25,8 @@ final class InboundBurst {
         final List<String> parts = new ArrayList<>();   // in the order the customer sent them; null = a photo or voice note still being read
         final List<Object> metas = new ArrayList<>();   // what came with each part (its platform id, the message it answers), same order; null = nothing
         final long first = System.currentTimeMillis();
+        final long firstNano = System.nanoTime();   // measurement only: when the first line of the burst arrived
+        volatile long lastNano = firstNano;
         final BiConsumer<String, List<Object>> fire;
         int waiting;   // photos and voice notes still being read: the burst is not answered before they are
         ScheduledFuture<?> timer;
@@ -41,6 +43,9 @@ final class InboundBurst {
     }
 
     boolean enabled() { return windowMs > 0; }
+
+    /** How many customers' bursts are waiting for their quiet window right now (a gauge). */
+    int pendingBursts() { synchronized (this) { return pending.size(); } }
 
     /** Adds one message of the conversation {@code key}; {@code fire} (the one passed with the burst's first message) runs once with all the text. */
     synchronized void add(String key, String text, Consumer<String> fire) { add(key, text, null, (t, metas) -> fire.accept(t)); }
@@ -86,6 +91,7 @@ final class InboundBurst {
     }
 
     private void restart(String key, Entry e) {
+        e.lastNano = System.nanoTime();
         if (e.waiting > 0) return;   // the photo's text restarts the window when it is read
         long wait = Math.max(0, Math.min(windowMs, maxMs - (System.currentTimeMillis() - e.first)));
         e.timer = timers.schedule(() -> flush(key, e), wait, TimeUnit.MILLISECONDS);
@@ -105,6 +111,13 @@ final class InboundBurst {
             metas = new ArrayList<>();
             for (int i = 0; i < entry.parts.size(); i++) metas.add(new Line(entry.parts.get(i) == null ? "" : entry.parts.get(i), entry.metas.get(i)));
         }
-        worker.execute(() -> entry.fire.accept(all.toString(), metas));
+        // measurement only: what this holder knows (the window the lines waited, and below the time the job then waits for a worker) travels to the reply's trace on the worker's thread
+        long flushNano = System.nanoTime();
+        int lines = metas.size();
+        var timing = new ReplyTrace.Inbound(entry.firstNano, entry.lastNano, flushNano, flushNano, lines);
+        worker.execute(() -> {
+            ReplyTrace.inboundStart(timing);
+            try { entry.fire.accept(all.toString(), metas); } finally { ReplyTrace.inboundEnd(); }
+        });
     }
 }

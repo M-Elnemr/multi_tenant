@@ -184,15 +184,17 @@ public class ChannelAi {
          * whose last turn is a user turn as the first round of a reply and, when the model fails, answers it with the fallback model and stays on it; the review is such a call, so a review
          * that timed out used to hand the whole reply (and the review itself) to GLM.
          */
-        public Turn nextOnActive(String system, List<Turn> turns, List<ToolDef> tools) { return active.next(system, turns, tools); }
+        public Turn nextOnActive(String system, List<Turn> turns, List<ToolDef> tools) { return ReplyTrace.withRole(fellBack ? "fallback" : ReplyTrace.role(), () -> active.next(system, turns, tools)); }
 
         @Override
         public Turn next(String system, List<Turn> turns, List<ToolDef> tools) {
             boolean firstRound = turns.isEmpty() || "user".equals(turns.get(turns.size() - 1).role());
-            if (fallback == null || active == fallback || !firstRound) return active.next(system, turns, tools);
+            String role = fellBack ? "fallback" : ReplyTrace.role();   // measurement only: which model's calls these are in the reply's timeline
+            if (fallback == null || active == fallback || !firstRound) return ReplyTrace.withRole(role, () -> active.next(system, turns, tools));
             AiProvider routed = active;
+            long routedStart = System.nanoTime();
             try {
-                Turn t = routed.next(system, turns, tools);
+                Turn t = ReplyTrace.withRole(role, () -> routed.next(system, turns, tools));
                 // a refusal or an empty answer from the routed model is not a reply a customer should get: ask the default model instead
                 if (t.calls().isEmpty() && (t.text() == null || t.text().isBlank())) throw new AiUnavailableException("The routed model returned no answer");
                 return t;
@@ -202,7 +204,14 @@ public class ChannelAi {
                 AiTelemetry.step("event", "provider-fallback:" + routed.code() + "->" + fallback.code() + ":" + e.category(), fallbackStart, fallbackStart, true);
                 active = fallback;
                 fellBack = true;
-                return fallback.next(system, turns, tools);
+                ReplyTrace.fallbackStarted(routed.code(), fallback.code(), e.category(), (System.nanoTime() - routedStart) / 1_000_000);
+                long fallbackStartNano = System.nanoTime();
+                boolean fellOk = false;
+                try {
+                    Turn t = ReplyTrace.withRole("fallback", () -> fallback.next(system, turns, tools));
+                    fellOk = true;
+                    return t;
+                } finally { ReplyTrace.fallbackCompleted(routed.code(), fallback.code(), fallbackStartNano, fellOk); }
             }
         }
     }

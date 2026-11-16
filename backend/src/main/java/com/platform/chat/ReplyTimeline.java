@@ -19,7 +19,10 @@ final class ReplyTimeline {
 
     private ReplyTimeline() {}
 
-    static void begin() { CURRENT.set(new ReplyTimeline()); LAST.remove(); }
+    static void begin() { begin(null); }
+
+    /** Starts the reply's timeline and its {@link ReplyTrace} (the per-message trace with burst and queue waits, every model attempt, outbound sends...). */
+    static void begin(String channel) { CURRENT.set(new ReplyTimeline()); LAST.remove(); ReplyTrace.begin(channel); }
 
     /** Ends a phase: the time since the previous mark, with the model calls, tools and checks that happened inside it. */
     static void mark(String phase) {
@@ -27,6 +30,7 @@ final class ReplyTimeline {
             ReplyTimeline t = CURRENT.get();
             if (t == null) return;
             long now = System.nanoTime();
+            ReplyTrace.span("phase", t.lastMark, "name", phase);
             t.phases.add(phase + "=" + (now - t.lastMark) / 1_000_000 + (t.nested.isEmpty() ? "" : "(" + String.join(" ", t.nested) + ")"));
             t.nested.clear();
             t.lastMark = now;
@@ -46,17 +50,19 @@ final class ReplyTimeline {
     static long since(long startNanos) { return (System.nanoTime() - startNanos) / 1_000_000; }
 
     /** Ends the reply's timeline: the rest is «post», the summary is logged and kept for {@link #takeLast()}. */
-    static void finish(String channel, Object conversation) {
+    static void finish(String channel, Object conversation) { finish(channel, conversation, false); }
+
+    static void finish(String channel, Object conversation, boolean failed) {
         try {
             ReplyTimeline t = CURRENT.get();
             if (t == null) return;
             mark("post");
             String summary = "total=" + (System.nanoTime() - t.start) / 1_000_000 + " " + String.join(" ", t.phases);
             LAST.set(summary);
-            org.slf4j.LoggerFactory.getLogger(ReplyTimeline.class).info("Reply timeline: {} channel={} conversation={}", summary, channel, conversation);
+            org.slf4j.LoggerFactory.getLogger(ReplyTimeline.class).info("Reply timeline: {} channel={} conversation={} trace={}", summary, channel, conversation, ReplyTrace.currentId());
             AiTelemetry.endReply(String.valueOf(channel), summary, System.currentTimeMillis() - (System.nanoTime() - t.start) / 1_000_000);
         } catch (RuntimeException ignored) { /* see mark */ }
-        finally { CURRENT.remove(); }
+        finally { CURRENT.remove(); ReplyTrace.finish(failed, null); }
     }
 
     /** The summary of the reply that just finished on this thread (an evaluation reads it after {@code chat.reply} returns), once. */

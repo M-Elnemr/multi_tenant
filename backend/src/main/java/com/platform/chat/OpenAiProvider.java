@@ -124,6 +124,21 @@ public class OpenAiProvider implements AiProvider {
 
     @Override
     public Turn next(String system, List<Turn> turns, List<ToolDef> tools) {
+        ReplyTrace.Call call = ReplyTrace.callStart(code, model);   // measurement only: every attempt of this call, failed ones included, reaches the reply's timeline
+        try {
+            Turn t = nextInner(system, turns, tools, call);
+            call.end(true, null, t.usage());
+            return t;
+        } catch (AiUnavailableException e) {
+            call.end(false, e.category(), null);
+            throw e;
+        } catch (RuntimeException e) {
+            call.end(false, "ERROR", null);
+            throw e;
+        }
+    }
+
+    private Turn nextInner(String system, List<Turn> turns, List<ToolDef> tools, ReplyTrace.Call call) {
         if (!available()) throw new AiUnavailableException("The AI assistant is not configured yet");
         String body;
         try { body = JSON.writeValueAsString(requestBody(system, turns, tools)); } catch (Exception e) { throw new AiUnavailableException("The AI assistant could not be reached", e); }
@@ -135,11 +150,12 @@ public class OpenAiProvider implements AiProvider {
             if (lease == null) throw new AiUnavailableException("The AI assistant is not configured yet");
             used = lease;
             long callStartMs = System.currentTimeMillis();
+            ReplyTrace.Attempt at = call.attempt(attempt > 0);
             try {
                 Throttle throttle = throttleFor(lease.key());
-                if (throttle != null) throttle.acquire();
+                if (throttle != null) { long th = System.nanoTime(); throttle.acquire(); at.throttled((System.nanoTime() - th) / 1_000_000); }
                 long timeout = Math.min(Math.max(3_000, Math.min(callTimeoutMs(), AiBudget.remainingMs() - 1_000)), AiBudget.callCapMs());
-                HttpResponse<String> res = send(body, lease, timeout);
+                HttpResponse<String> res = send(body, lease, timeout, call);
                 if (res.statusCode() / 100 == 2) {
                     JsonNode root;
                     try { root = JSON.readTree(res.body()); }
@@ -150,11 +166,13 @@ public class OpenAiProvider implements AiProvider {
                         throw new AiUnavailableException(ProviderFailure.PROVIDER_ERROR, "The AI assistant reported a problem (" + inBody + ")", null);
                     }
                     Turn ok = parse(root);
+                    at.finish(res.statusCode(), null, false, true, ok.usage());
                     if (pool != null) pool.ok(lease);
                     AiTelemetry.generation(code, model, callStartMs, System.currentTimeMillis(), ok.usage(), res.statusCode(), null, null, ok.text());
                     return ok;
                 }
                 AiTelemetry.generation(code, model, callStartMs, System.currentTimeMillis(), null, res.statusCode(), ProviderFailure.ofStatus(res.statusCode()) + " HTTP " + res.statusCode(), null, null);
+                at.finish(res.statusCode(), ProviderFailure.ofStatus(res.statusCode()), false, false, null);
                 if (pool != null) pool.failed(lease, res.statusCode());
                 ChatService.evalHttp(res.statusCode());
                 last = new AiUnavailableException(ProviderFailure.ofStatus(res.statusCode()), "The AI assistant is busy, try again (HTTP " + res.statusCode() + ")", null);
@@ -165,9 +183,11 @@ public class OpenAiProvider implements AiProvider {
                 if (pool != null) { if ((st == 429 || st == 408) && attempt == 0 && pool.size() > 1) continue; break; }
                 Thread.sleep(attempt == 0 ? 1000 : 2500);
             } catch (InterruptedException e) {
+                at.finish(0, "INTERRUPTED", false, false, null);
                 Thread.currentThread().interrupt();
                 throw new AiUnavailableException("The AI assistant was interrupted", e);
             } catch (AiUnavailableException e) {
+                at.finish(200, e.category(), false, false, null);
                 AiTelemetry.generation(code, model, callStartMs, System.currentTimeMillis(), null, 200, e.describe(), null, null);
                 throw e;
             } catch (Exception e) {
@@ -175,6 +195,7 @@ public class OpenAiProvider implements AiProvider {
                 ChatService.evalHttp(0);   // no answer at all (timeout, connection)
                 boolean timedOut = e instanceof java.net.http.HttpTimeoutException || e instanceof java.util.concurrent.TimeoutException || e.getCause() instanceof java.net.http.HttpTimeoutException;
                 String category = timedOut ? ProviderFailure.TIMEOUT : ProviderFailure.CONNECTION;
+                at.finish(0, category, timedOut, false, null);
                 AiTelemetry.generation(code, model, callStartMs, System.currentTimeMillis(), null, 0, category + " " + e.getClass().getSimpleName(), null, null);
                 last = new AiUnavailableException(category, "The AI assistant could not be reached", e);
                 if (pool != null) break;   // no second wait on a provider that did not answer (the hedged twin already covered a stall): the fallback model answers now
@@ -199,10 +220,11 @@ public class OpenAiProvider implements AiProvider {
 
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(OpenAiProvider.class);
 
-    private HttpResponse<String> send(String body, HiveKeyPool.Lease lease, long timeoutMs) throws Exception {
+    private HttpResponse<String> send(String body, HiveKeyPool.Lease lease, long timeoutMs, ReplyTrace.Call call) throws Exception {
         HttpRequest req = request(body, lease, timeoutMs);
         boolean waiting = AiBudget.remainingMs() != Long.MAX_VALUE;
         if (!waiting || timeoutMs < HEDGE_MS + 3_000) return http.send(req, HttpResponse.BodyHandlers.ofString());
+        long firstStart = System.nanoTime();
         var first = http.sendAsync(req, HttpResponse.BodyHandlers.ofString());
         try {
             return unwrap(() -> first.get(HEDGE_MS, java.util.concurrent.TimeUnit.MILLISECONDS));
@@ -211,26 +233,35 @@ public class OpenAiProvider implements AiProvider {
             ChatService.evalHedge();
         }
         if (!AiBudget.takeHedge()) {   // this reply has used its one twin: wait for the first call to the end of its time
+            call.hedgeRefused(HEDGE_MS);
             try { return unwrap(() -> first.get(Math.max(1_000, timeoutMs - HEDGE_MS + 1_000), java.util.concurrent.TimeUnit.MILLISECONDS)); }
             catch (Exception noAnswer) { first.cancel(true); throw noAnswer; }   // gave up on it: do not leave it running behind the retry
         }
         HiveKeyPool.Lease other = pool != null ? pool.acquire(lease.id()) : lease;   // the twin goes over another key when there is one: it is not held back by the first key's limit
         Throttle throttle = throttleFor(other.key());
         if (throttle != null) throttle.acquire();
+        call.hedgeLaunched(HEDGE_MS);
+        long twinStart = System.nanoTime();
         var second = http.sendAsync(other == lease ? req : request(body, other, timeoutMs), HttpResponse.BodyHandlers.ofString());
         var winner = new java.util.concurrent.CompletableFuture<HttpResponse<String>>();
         var finished = new java.util.concurrent.atomic.AtomicInteger();
         var won = new java.util.concurrent.atomic.AtomicBoolean();
         java.util.UUID tenant = AiBudget.tenant();   // the other thread has no reply budget
-        java.util.function.Function<HiveKeyPool.Lease, java.util.function.BiConsumer<HttpResponse<String>, Throwable>> doneFor = l -> (r, ex) -> {
+        java.util.function.BiFunction<HiveKeyPool.Lease, String, java.util.function.BiConsumer<HttpResponse<String>, Throwable>> doneFor = (l, which) -> (r, ex) -> {
+            long begun = "first".equals(which) ? firstStart : twinStart;
             if (pool != null && (ex != null || r.statusCode() / 100 != 2)) pool.failed(l, ex != null ? 0 : r.statusCode());
             if (ex == null && r.statusCode() / 100 == 2) {
-                if (won.compareAndSet(false, true)) winner.complete(r);   // the first good answer
+                boolean first_ = won.compareAndSet(false, true);
+                if (first_) winner.complete(r);   // the first good answer
                 else lostTwin(tenant, r);   // the slower twin also answered: the service billed it, so it is recorded
-            } else if (finished.incrementAndGet() == 2) { if (ex != null) winner.completeExceptionally(ex); else winner.complete(r); }   // both failed: the last failure
+                call.hedgeRequest(which, begun, r.statusCode(), null, first_, usageOf(r));
+            } else {
+                call.hedgeRequest(which, begun, ex != null ? 0 : r.statusCode(), ex == null ? ProviderFailure.ofStatus(r.statusCode()) : ex instanceof java.util.concurrent.CancellationException ? "CANCELLED" : ex.getCause() instanceof java.net.http.HttpTimeoutException || ex instanceof java.net.http.HttpTimeoutException ? ProviderFailure.TIMEOUT : ProviderFailure.CONNECTION, false, null);
+                if (finished.incrementAndGet() == 2) { if (ex != null) winner.completeExceptionally(ex); else winner.complete(r); }   // both failed: the last failure
+            }
         };
-        first.whenComplete(doneFor.apply(lease));
-        second.whenComplete(doneFor.apply(other));
+        first.whenComplete(doneFor.apply(lease, "first"));
+        second.whenComplete(doneFor.apply(other, "twin"));
         try {
             return unwrap(() -> winner.get(Math.max(1_000, timeoutMs - HEDGE_MS + 1_000), java.util.concurrent.TimeUnit.MILLISECONDS));
         } catch (Exception noAnswer) {
@@ -246,6 +277,14 @@ public class OpenAiProvider implements AiProvider {
     interface LostTwinSink { void lost(java.util.UUID tenantId, String modelCode, Usage usage); }
 
     static volatile LostTwinSink LOST_TWIN_SINK;
+
+    /** The tokens a response reports (measurement only; zero when it cannot be read). */
+    private static Usage usageOf(HttpResponse<String> res) {
+        try {
+            JsonNode u = JSON.readTree(res.body()).path("usage");
+            return new Usage(u.path("prompt_tokens").asInt(0), u.path("completion_tokens").asInt(0), Math.max(u.path("prompt_tokens_details").path("cached_tokens").asInt(0), u.path("prompt_cache_hit_tokens").asInt(0)));
+        } catch (Exception e) { return null; }
+    }
 
     private void lostTwin(java.util.UUID tenant, HttpResponse<String> res) {
         try {

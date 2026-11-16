@@ -80,12 +80,18 @@ public final class AiTelemetry {
     // ---- reply scope (a thread-local trace id, like AiBudget) ------------------------------------------------------------------
 
     /** A new reply begins on this thread: its model calls and the final timeline become one trace. */
-    public static void beginReply(UUID tenantId, UUID conversationId) {
+    public static void beginReply(UUID tenantId, UUID conversationId) { beginReply(tenantId, conversationId, null); }
+
+    /** Same, with the id of the reply's {@code ReplyTrace} (32 hex characters) so that a Langfuse trace and the chat.reply_traces row are one record; a missing or malformed id gets a random one as before. */
+    public static void beginReply(UUID tenantId, UUID conversationId, String traceId) {
         AiTelemetry t = INSTANCE;
         if (t == null) return;
-        TRACE.set(randomHex(16));
+        TRACE.set(traceId != null && traceId.matches("[0-9a-f]{32}") ? traceId : randomHex(16));
         SESSION.set(t.hash(conversationId) + "|" + t.hash(tenantId));
     }
+
+    /** The trace id of the reply running on this thread, or null (telemetry off, or no reply). */
+    static String currentTrace() { return TRACE.get(); }
 
     /** Ends the reply: one root span with the timeline summary (phases, in ms) and the channel. */
     public static void endReply(String channel, String timelineSummary, long startMillis) {
