@@ -68,7 +68,7 @@ final class ReplyReview {
         return "RECENT CHAT:\n" + clip(tail(chat.toString(), 2500), 2500)
                 + "\nCUSTOMER'S NEWEST MESSAGE(S):\n" + clip(newest.toString(), 1200)
                 + "\nFACTS (tool results for this reply" + (facts.length() == 0 ? "; none: the salesperson used no tool" : "") + "):\n" + clip(facts.toString(), 10000)
-                + (shop == null || shop.isBlank() ? "" : "\nSHOP DATA (also facts):\n" + clip(shop, 5000))
+                + (shop == null || shop.isBlank() ? "" : "\nSHOP DATA (also facts):\n" + clip(shop, 14000))
                 + "\nADDRESSING:" + (address == null ? " not known, use «حضرتك»" : address)
                 + "\nDRAFT:\n" + draft;
     }

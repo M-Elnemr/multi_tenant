@@ -282,7 +282,7 @@ public class OpenAiProvider implements AiProvider {
     private static Usage usageOf(HttpResponse<String> res) {
         try {
             JsonNode u = JSON.readTree(res.body()).path("usage");
-            return new Usage(u.path("prompt_tokens").asInt(0), u.path("completion_tokens").asInt(0), Math.max(u.path("prompt_tokens_details").path("cached_tokens").asInt(0), u.path("prompt_cache_hit_tokens").asInt(0)));
+            return new Usage(u.path("prompt_tokens").asInt(0), u.path("completion_tokens").asInt(0), Math.max(u.path("prompt_tokens_details").path("cached_tokens").asInt(0), u.path("prompt_cache_hit_tokens").asInt(0)), 0, u.path("completion_tokens_details").path("reasoning_tokens").asInt(0));
         } catch (Exception e) { return null; }
     }
 
@@ -406,6 +406,6 @@ public class OpenAiProvider implements AiProvider {
         JsonNode u = root.path("usage");
         // OpenAI reports the cached part under prompt_tokens_details, DeepSeek as prompt_cache_hit_tokens: both are part of prompt_tokens
         int cached = Math.max(u.path("prompt_tokens_details").path("cached_tokens").asInt(0), u.path("prompt_cache_hit_tokens").asInt(0));
-        return new Turn("model", text, calls, List.of(), raw, new Usage(u.path("prompt_tokens").asInt(0), u.path("completion_tokens").asInt(0), cached));
+        return new Turn("model", text, calls, List.of(), raw, new Usage(u.path("prompt_tokens").asInt(0), u.path("completion_tokens").asInt(0), cached, 0, u.path("completion_tokens_details").path("reasoning_tokens").asInt(0)));
     }
 }

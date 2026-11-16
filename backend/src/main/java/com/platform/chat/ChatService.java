@@ -106,6 +106,8 @@ public class ChatService {
     }
 
     static final ThreadLocal<PromptExtras> EXTRAS = new ThreadLocal<>();
+    /** Measurement only: the sizes (characters) of the parts of the system prompt just built on this thread. */
+    private static final ThreadLocal<int[]> PROMPT_PARTS = new ThreadLocal<>();
 
     /** A line holding only this mark separates two messages: the assistant answers two unrelated topics in two short messages on WhatsApp, Messenger and Instagram. */
     static final String SPLIT = "⸻";
@@ -210,6 +212,9 @@ public class ChatService {
     private final ChannelAi channelAi;
     private final boolean nameProbe;
     private final boolean review;
+    /** app.ai.review.mode: "always" (every non-trivial draft is reviewed: the default) or "conditional" (see {@link ReviewGate}). */
+    @org.springframework.beans.factory.annotation.Value("${app.ai.review.mode:always}")
+    private String reviewMode = "always";
     private final String reviewModel;
     /** The longest the review of a draft may take (AI_REVIEW_TIMEOUT_MS): one try, no retry, no second request. */
     @org.springframework.beans.factory.annotation.Value("${app.ai.review.timeout-ms:8000}")
@@ -610,10 +615,15 @@ public class ChatService {
         ReplyTimeline.mark("prompt");
         long ragStart = System.nanoTime();
         boolean ragRan = !system.contains("ALL PRODUCTS (");
-        if (ragRan) system += productsForMessage(tenantId, text);
+        int ragChars = 0;
+        if (ragRan) { String rag = productsForMessage(tenantId, text); ragChars = rag.length(); system += rag; }
         ReplyTrace.span("rag", ragStart, "ran", ragRan, "unavailable", ragDown[0]);
         List<ToolDef> tools = tools();
-        ReplyTrace.instant("prompt_ready", "chars", system.length(), "tools", tools.size());
+        int[] parts = PROMPT_PARTS.get(); PROMPT_PARTS.remove();
+        int historyChars = 0; for (Turn t : turns) if (t.text() != null) historyChars += t.text().length();
+        if (parts == null) parts = new int[4];
+        ReplyTrace.instant("prompt_ready", "chars", system.length(), "tools", tools.size(), "c_facts", parts[0], "c_catalog", parts[1], "c_rules", parts[2],
+                "c_blocks", parts[3] + extras.blocks.length(), "c_rag", ragChars, "c_history", historyChars, "c_tools", tools.toString().length(), "c_msg", text.length());
         ReplyTimeline.mark("products");
         if (EVAL.get() != null) EVAL.get().setup(system.length(), Integer.toHexString(tools.toString().hashCode()) + ":" + tools.size(), tools.stream().anyMatch(td -> "shop_knowledge".equals(td.name())));
         String answer = null;
@@ -1062,7 +1072,12 @@ public class ChatService {
             // the review runs on the answering model, or on the model set in app.ai.review.model (its cost is then logged under that model)
             ChannelAi.Routed reviewer = reviewModel == null || reviewModel.equals(routed.code()) ? routed : channelAi.forChannel(ctx.channel(), reviewModel);
             reviewerCode = reviewer.code();
-            String asked = ReplyReview.request(turns, addressing(system), foundProducts(ctx) + section(system, "SHOP FACTS:", 2500) + section(system, CATALOG_HEADING, 4000), draft);
+            String shop = foundProducts(ctx) + section(system, "SHOP FACTS:", 2500) + catalogSection(system, 9000) + section(system, RAG_HEADING, 8000);
+            if ("conditional".equalsIgnoreCase(reviewMode)) {
+                String why = ReviewGate.skipReason(draft, ReplyReview.request(turns, addressing(system), shop, ""));
+                if (why != null) { verdict = "skipped"; detail = why; return draft; }
+            }
+            String asked = ReplyReview.request(turns, addressing(system), shop, draft);   // the products the model itself was given for this message are facts for the reviewer too (an answer taken straight from them is not "invented")
             Turn t;
             AiBudget.capCalls(reviewTimeoutMs);   // one short try: a slow or failing review costs the customer at most this long, never the reply
             AiBudget.reasoning(reviewReasoning);   // the verdict is a few tokens: measured on 2026-11-11, DeepSeek without reasoning gave the same verdict as with it on 10 drafts, in 3.0 s instead of 4.4 s
@@ -1095,6 +1110,18 @@ public class ChatService {
 
     /** The catalog block's heading: the rules also mention "SHOP CATALOG", so lookups use this exact line start. */
     static final String CATALOG_HEADING = "SHOP CATALOG LIST";
+
+    /**
+     * The catalog block itself. {@link #section} finds the FIRST «SHOP CATALOG LIST», which is inside the rules paragraph («SHOP CATALOG LIST is the complete truth…»), so a lookup by the bare heading
+     * returns a rules sentence; the block is the line that starts with the heading followed by «(everything this shop sells».
+     */
+    static String catalogSection(String system, int max) {
+        int i = system == null ? -1 : system.indexOf("\n" + CATALOG_HEADING + " (everything");
+        return i < 0 ? "" : section(system.substring(i + 1), CATALOG_HEADING, max);
+    }
+
+    /** The heading of the block of products found for the customer's newest message (the retrieval result the model answers from). */
+    static final String RAG_HEADING = "PRODUCTS FOR THE CUSTOMER'S NEWEST MESSAGE";
 
     /** One block of the prompt, from its heading to the next blank line (at most 3000 characters); empty when it is not there. */
     static String section(String system, String heading) { return section(system, heading, 3000); }
@@ -2525,7 +2552,7 @@ public class ChatService {
                 long toolStart = System.nanoTime();
                 Map<String, Object> r = runTool(ctx, c);
                 ReplyTimeline.span("tool:" + c.name(), ReplyTimeline.since(toolStart));
-                ReplyTrace.tool(c.name(), toolStart, r == null || r.get("error") == null, round);
+                ReplyTrace.tool(c.name(), toolStart, r == null || r.get("error") == null, round, r == null ? 0 : String.valueOf(r).length());
                 if (EVAL.get() != null) EVAL.get().tool(routed.code(), c, r);
                 allowed.addJson(r);
                 results.add(new ToolResult(c.name(), r));
@@ -2830,13 +2857,18 @@ public class ChatService {
         p.append(lean ? LEAN_RULES : SalesPlaybook.TEXT);
         int maxPct = ((Number) s.get("maxDiscountPct")).intValue();
         p.append("MAXIMUM DISCOUNT YOU MAY GIVE: ").append(maxPct).append("%.").append(maxPct == 0 ? " This shop gives NO discounts: never offer, promise or hint at one (not for quantity either); say kindly the price is final and offer value or a cheaper option." : "").append("\n\n");
+        int partMark = p.length();
         p.append(shopFacts(tenantId, profile));
+        int factsChars = p.length() - partMark;
+        partMark = p.length();
         p.append(shopCatalog(tenantId));
+        int catalogChars = p.length() - partMark;
         var global = lessons(null);
         var own = lessons(tenantId);
         if (!global.isEmpty()) p.append("\nPLATFORM LESSONS (how to sell well; follow them unless they conflict with the RULES):\n").append(lessonText(global));
         if (!own.isEmpty()) p.append("\nTHIS SHOP'S LESSONS (the owner's instructions for this shop; follow them unless they conflict with the RULES):\n").append(lessonText(own));
         p.append(AiProvider.CACHE_BREAK);
+        int staticChars = p.length();
         p.append(openRightNow(tenantId));
         String memo = seller.memory(tenantId, channel, externalId);
         if (!memo.isBlank()) p.append("\nWHAT YOU REMEMBER ABOUT THIS CUSTOMER (use it naturally, do not recite it):\n").append(memo).append("\n");
@@ -2848,6 +2880,7 @@ public class ChatService {
         p.append(savedDetails(tenantId, clientId, channel, externalId));
         p.append(orderOnFile(tenantId, conv));
         p.append(openQuestions(conv));
+        PROMPT_PARTS.set(new int[] {factsChars, catalogChars, staticChars - factsChars - catalogChars, p.length() - staticChars});   // sizes only: facts, catalog, rules+lessons, per-customer part
         return p.toString();
     }
 
@@ -3279,7 +3312,7 @@ public class ChatService {
     private String productsForMessage(UUID tenantId, String text) {
         List<Map<String, Object>> rows = relatedProducts(tenantId, text);
         if (rows.isEmpty()) return "";
-        StringBuilder b = new StringBuilder("\nPRODUCTS FOR THE CUSTOMER'S NEWEST MESSAGE (found for you; use them, and search for anything else):\n");
+        StringBuilder b = new StringBuilder("\n" + RAG_HEADING + " (found for you; use them, and search for anything else):\n");
         for (var r : rows) b.append(productLine(tenantId, r));
         return b.toString();
     }

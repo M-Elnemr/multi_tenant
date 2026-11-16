@@ -49,7 +49,7 @@ final class ReplyTrace {
     static {
         for (String n : List.of("lines", "call", "attempt", "attempts", "round", "problems", "rewrites", "history_messages", "facts", "tools", "model_calls")) SPECS.put(n, Spec.num(10_000));   // counts
         for (String n : List.of("quiet_ms", "throttle_ms", "after_ms", "waited_ms", "deterministic_ms", "rewrite_ms")) SPECS.put(n, Spec.num(10_000_000));       // milliseconds (under 3 hours)
-        for (String n : List.of("in", "out", "cached", "chars")) SPECS.put(n, Spec.num(10_000_000));                                                              // tokens and characters
+        for (String n : List.of("in", "out", "cached", "chars", "reasoning", "c_rules", "c_facts", "c_catalog", "c_blocks", "c_rag", "c_history", "c_tools", "c_msg", "c_result")) SPECS.put(n, Spec.num(10_000_000));                                                              // tokens and characters
         for (String n : List.of("direct", "retry", "hedged", "usable", "allowed", "parallel", "winner", "billed", "ok", "next_model_call", "accepted_original", "threw", "differs", "confirmed", "ran", "unavailable",
                 "ai_unavailable")) SPECS.put(n, Spec.bool());
         SPECS.put("model", Spec.pat("[A-Za-z][A-Za-z0-9_.\\-]{0,39}"));   // a provider code or a configured model id, e.g. glm-5
@@ -286,7 +286,7 @@ final class ReplyTrace {
                 long ms = (System.nanoTime() - start) / 1_000_000;
                 String outcome = usable ? "ok" : ProviderFailure.TIMEOUT.equals(category) ? "timeout" : "failed";
                 if (tr != null) tr.add(new Event("provider_call", tr.since(start), ms, tr.attrs("call", id, "provider", provider, "model", model, "role", role, "purpose", purpose, "attempts", attempts.get(), "hedged", hedged,
-                        "usable", usable, "outcome", outcome, "failure", usable ? "" : category, "in", usage == null ? 0 : usage.input(), "out", usage == null ? 0 : usage.output(), "cached", usage == null ? 0 : usage.cached())));
+                        "usable", usable, "outcome", outcome, "failure", usable ? "" : category, "in", usage == null ? 0 : usage.input(), "out", usage == null ? 0 : usage.output(), "cached", usage == null ? 0 : usage.cached(), "reasoning", usage == null ? 0 : usage.reasoning())));
                 ReplyMetrics.timer("elmanassa.provider.call", ms, "provider", ReplyMetrics.code(provider), "role", ReplyMetrics.code(role), "purpose", ReplyMetrics.code(purpose), "outcome", outcome);
                 if (!usable) ReplyMetrics.count("elmanassa.provider.failures", "provider", ReplyMetrics.code(provider), "category", ReplyMetrics.code(category));
                 if ("timeout".equals(outcome)) ReplyMetrics.count("elmanassa.provider.timeouts", "provider", ReplyMetrics.code(provider));
@@ -351,7 +351,7 @@ final class ReplyTrace {
                 long ms = (System.nanoTime() - start) / 1_000_000;
                 String name = usable ? "provider_response_completed" : timedOut ? "provider_request_timed_out" : "provider_request_failed";
                 if (tr != null) tr.add(new Event(name, tr.since(start), ms, tr.attrs("call", call.id, "attempt", no, "provider", call.provider, "role", call.role, "purpose", call.purpose, "retry", retry, "hedged", call.hedged, "throttle_ms", throttleMs,
-                        "status", statusClass(httpStatus), "failure", usable ? "" : category == null ? "" : category, "usable", usable, "in", usage == null ? 0 : usage.input(), "out", usage == null ? 0 : usage.output())));
+                        "status", statusClass(httpStatus), "failure", usable ? "" : category == null ? "" : category, "usable", usable, "in", usage == null ? 0 : usage.input(), "out", usage == null ? 0 : usage.output(), "cached", usage == null ? 0 : usage.cached(), "reasoning", usage == null ? 0 : usage.reasoning())));
                 ReplyMetrics.timer("elmanassa.provider.attempt", ms, "provider", ReplyMetrics.code(call.provider), "kind", retry ? "retry" : "first", "outcome", usable ? "ok" : timedOut ? "timeout" : "failed");
             } catch (RuntimeException ignored) { /* see finish */ }
         }
@@ -374,9 +374,12 @@ final class ReplyTrace {
 
     // ---- tools, rule checks, rewrites, review ----------------------------------------------------------------------------------------
 
-    static void tool(String name, long startNano, boolean ok, int round) {
+    static void tool(String name, long startNano, boolean ok, int round) { tool(name, startNano, ok, round, 0); }
+
+    /** {@code resultChars} is the size of the tool result handed to the model (a count only, never the text). */
+    static void tool(String name, long startNano, boolean ok, int round, int resultChars) {
         String n = name != null && name.matches("[a-z_]{1,32}") ? name : "other";
-        span("tool", startNano, "tool", n, "ok", ok, "round", round, "next_model_call", true);
+        span("tool", startNano, "tool", n, "ok", ok, "round", round, "next_model_call", true, "c_result", resultChars);
         ReplyMetrics.timer("elmanassa.tool.duration", (System.nanoTime() - startNano) / 1_000_000, "tool", n, "outcome", ok ? "ok" : "failed");
     }
 

@@ -117,7 +117,7 @@ for p in rnd.sample(optioned, min(len(optioned), N // 6)):
     if not foreign: continue
     val = rnd.choice(foreign)
     q = rnd.choice(["{n} {v} عندكم؟", "عايز {n} {v}", "{n} بييجي {v}؟"]).format(n=p["name"], v=val)
-    add("invented_value", [q], product=p["name"], values=[val], own=sorted(own[k]))
+    add("invented_value", [q], product=p["name"], values=[val], own=sorted(own[k]), own_all=sorted({light(x) for vs in own.values() for x in vs}))
 for p in rnd.sample(optioned, min(len(optioned), N // 8)):
     ins = [x for x in p["variants"] if x["available"] > 0 and x["options"]]
     if not ins: continue
@@ -234,6 +234,7 @@ def grade(c):
         return None
     if k == "invented_value":
         v = light(c["values"][0])
+        if c.get("own_all") and v in c["own_all"]: return "SKIP: the product has this value under another option, the question is not an invented value"
         if re.search(r"(?:من\s+غير|بدون|ماعدا|عدا|بدل)\s+(?:\S+\s+){0,2}" + re.escape(v), lr): return None   # «S لحد XL، من غير XXL»
         own = c.get("own")
         if v in lr and not NEG.search(lr): return f"value {c['values'][0]} the product does not have was agreed to"
@@ -258,7 +259,7 @@ def grade(c):
         missing = [x for x in c["colours"] if light(x)[:3] not in lr]
         return ("in-stock colours missing: " + "، ".join(missing)) if missing else None
     if k.startswith("order_"):
-        told_min = re.search(r"اقل\s+(?:طلب|قيمه|مبلغ|حد)|الحد\s+الادني|حد\s+ادني|علي\s+الاقل|قيمه\s+(?:ال\s*)?\d|المطلوبه\s+للطلب|كحد\s+ادني|اقل\s+من\s+\d|minimum", lr)
+        told_min = re.search(r"(?:اقل|ادني)\s+(?:طلب|قيمه|مبلغ|حد)|الحد\s+الادني|حد\s+ادني|علي\s+الاقل|قيمه\s+(?:ال\s*)?\d|المطلوبه\s+للطلب|كحد\s+ادني|اقل\s+من\s+\d|minimum", lr)
         total = sum(i["amount"] for i in c["items"])
         if c.get("min_order") and total < c["min_order"]:
             return None if told_min and num_txt(c["min_order"]) in [num_txt(x) for x in nums] else f"below the minimum order {num_txt(c['min_order'])}: not told"
@@ -278,11 +279,11 @@ def grade(c):
                 if re.search(r"(?<!\w)" + re.escape(light(val)) + r"(?!\w)", light(ln)) and not any(light(val) in light(x) for x in it["values"]): return f"{it['name']}: still {val} after the change"
         if len(lines) != len(c["items"]): return f"summary has {len(lines)} items, the customer wants {len(c['items'])}"
         for g in c.get("gone_items", []):
-            if any(all(w in light(x) for w in light(g).split()[:3]) for x in lines): return f"{g} still in the summary after it was taken out"
+            if any(all(w in light(x) for w in light(g).split()) for x in lines): return f"{g} still in the summary after it was taken out"
         if c.get("pickup") and not re.search(r"استلام|pick\s*up", lr): return "pickup not in the summary"
         return None
     if k == "order":
-        told_min = re.search(r"اقل\s+(?:طلب|قيمه|مبلغ)|الحد\s+الادني|القيمه\s+الكليه|قيمه\s+(?:ال\s*)?\d|المطلوبه\s+للطلب|كحد\s+ادني|اقل\s+من\s+\d|اقل\s+حد|حد\s+ادني|علي\s+الاقل|(?:يصل|يوصل|توصل|نوصل)\s+(?:ل|لـ|الي)|minimum\s+order|minimum\s+is", lr)
+        told_min = re.search(r"(?:اقل|ادني)\s+(?:طلب|قيمه|مبلغ)|الحد\s+الادني|القيمه\s+الكليه|قيمه\s+(?:ال\s*)?\d|المطلوبه\s+للطلب|كحد\s+ادني|اقل\s+من\s+\d|اقل\s+حد|حد\s+ادني|علي\s+الاقل|(?:يصل|يوصل|توصل|نوصل)\s+(?:ل|لـ|الي)|minimum\s+order|minimum\s+is", lr)
         if c.get("min_order") and c["price"] < c["min_order"]:   # under the shop's minimum: no summary can be made, the customer must hear the minimum
             return None if told_min and num_txt(c["min_order"]) in [num_txt(x) for x in nums] else f"below the minimum order {num_txt(c['min_order'])}: not told"
         if told_min and not c.get("min_order"): return None   # an old run without the minimum: asking to add is right
@@ -304,6 +305,7 @@ else:
 by = {}
 for c in done:
     c["fail"] = grade(c)
+    if c["fail"] and c["fail"].startswith("SKIP"): c["skipped"], c["fail"] = c["fail"], None; skipped = globals().get("skipped", 0) + 1; globals()["skipped"] = skipped; continue
     by.setdefault(c["kind"], [0, 0])[0 if c["fail"] is None else 1] += 1
 if not REGRADE:
   with open(OUT + ".txt", "w") as f:
@@ -314,7 +316,7 @@ if not REGRADE:
   json.dump(done, open(OUT + ".json", "w"), ensure_ascii=False, indent=1)
 secs = sorted(s for c in done for s in c["secs"])
 total_fail = sum(v[1] for v in by.values())
-print(f"{SLUG} {MODEL}: {len(done)} cases, {total_fail} failed; avg {sum(secs)/max(1,len(secs)):.1f}s p90 {secs[int(len(secs)*.9)] if secs else 0}s")
+print(f"{SLUG} {MODEL}: {len(done) - globals().get('skipped', 0)} cases, {total_fail} failed; {globals().get('skipped', 0)} skipped as invalid probes; avg {sum(secs)/max(1,len(secs)):.1f}s p90 {secs[int(len(secs)*.9)] if secs else 0}s")
 for k, (ok, bad) in sorted(by.items()): print(f"  {k}: {ok} ok, {bad} failed")
 for c in done:
     if c["fail"]: print(f"  FAIL {c['kind']}: {c['msgs'][-1][:70]} -> {c['fail']}")
