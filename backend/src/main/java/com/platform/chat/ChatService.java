@@ -2313,12 +2313,15 @@ public class ChatService {
             "ده", "دي", "دا", "اللي", "الي", "مع", "من", "على", "عن", "و", "او", "ولا", "بس", "كمان", "طيب", "تمام", "اوي", "خالص", "متاح", "متوفر", "موجود", "سنين", "سنه", "عنده", "عمره");
 
     /** The products matching the meaningful words of a customer message (chat words, colors and sizes left out, everyday synonyms swapped), each word on its own; at most 4. */
+    /** A word that carries no product: request/politeness words and plain agreement («ايوه» must not find «مايوه» because it is a piece of its name). */
+    static boolean isChatWord(String w) { return CHAT_WORDS.contains(w) || YES.contains(FastAnswers.norm(w)); }
+
     List<Map<String, Object>> relatedProducts(UUID tenantId, String text) {
         if (text == null || text.isBlank()) return List.of();
         var found = new LinkedHashMap<Object, Map<String, Object>>();
         String q = withoutOptions(text);
         if (q == null) return List.of();
-        List<String> words = java.util.Arrays.stream(q.split("\\s+")).filter(w -> w.length() >= 3 && !CHAT_WORDS.contains(w)).toList();
+        List<String> words = java.util.Arrays.stream(q.split("\\s+")).filter(w -> w.length() >= 3 && !isChatWord(w)).toList();
         for (String w : words) {
             var hits = find(tenantId, w, null, null);
             if (hits.isEmpty() && SYNONYMS.containsKey(w)) hits = find(tenantId, SYNONYMS.get(w), null, null);
@@ -2348,7 +2351,7 @@ public class ChatService {
         String q = withoutOptions(customer);
         if (q != null) {
             List<String> words = java.util.Arrays.stream(q.split("\\s+")).map(w -> w.length() >= 5 && w.startsWith("ال") ? w.substring(2) : w)
-                    .filter(w -> w.length() >= 3 && !CHAT_WORDS.contains(w)).toList();
+                    .filter(w -> w.length() >= 3 && !isChatWord(w)).toList();
             for (var p : ctx.products()) {
                 String name = FastAnswers.norm(String.valueOf(p.get("name")));
                 if (words.stream().anyMatch(w -> name.contains(w) || (SYNONYMS.containsKey(w) && name.contains(SYNONYMS.get(w))))) return null;
