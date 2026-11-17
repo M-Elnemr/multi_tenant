@@ -149,4 +149,47 @@ class OrderGuardsIntegrationTest extends IntegrationTestBase {
         String text = chat.reply(s.id(), "WEB", "deny-en-" + uniq(), null, "I want هوت دوج please").text();
         assertThat(text).doesNotContain("don't have").contains("هوت دوج").contains("75");
     }
+
+    /** A shop with one sneaker that comes in white and black only, 1250 EGP, sizes 41 and 42. */
+    UUID sneakerShop() throws Exception {
+        Tenant t = onboard("STORE");
+        String branch = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
+        body(onHost(t.host(), t.access(), "POST", "/api/v1/store/products", """
+                {"taxonomySlug":"cookware","name":"سنيكرز كلاسيك","options":[{"name":"اللون","values":["أبيض","أسود"]},{"name":"المقاس","values":["41","42"]}],
+                 "variants":[{"sku":"SN-%1$s","priceMinor":125000,"optionValues":{"اللون":"أبيض","المقاس":"42"},"stock":[{"branchId":"%2$s","quantity":5}]},
+                             {"sku":"SK-%1$s","priceMinor":125000,"optionValues":{"اللون":"أسود","المقاس":"41"},"stock":[{"branchId":"%2$s","quantity":5}]}]}
+                """.formatted(uniq(), branch)).andExpect(status().isCreated()));
+        return jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", t.slug()).query(UUID.class).single();
+    }
+
+    void rewriteFails() {
+        for (int i = 0; i < 4; i++) FakeAiProvider.SCRIPT.add(turns -> { throw new com.platform.chat.AiProvider.AiUnavailableException("TIMEOUT", "TIMEOUT", null); });
+    }
+
+    @Test
+    void aColourTheProductDoesNotComeInNeverGoesOutWhenTheRewriteFails() throws Exception {
+        UUID id = sneakerShop();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("السنيكرز الكلاسيك متاح بالأحمر بـ 1250 جنيه."));
+        rewriteFails();
+        String text = chat.reply(id, "WEB", "crit-colour-" + uniq(), null, "عايز سنيكرز كلاسيك احمر").text();
+        assertThat(text).doesNotContain("بالأحمر").contains("سنيكرز كلاسيك").contains("أبيض").contains("أسود").contains("1250");
+    }
+
+    @Test
+    void anOrderSaidToBeRecordedWhenNoneExistsIsNeverSentEvenWhenTheRewriteFails() throws Exception {
+        UUID id = sneakerShop();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("سجلت طلبك يا فندم والسنيكرز الكلاسيك هيوصلك بكرة."));
+        rewriteFails();
+        String text = chat.reply(id, "WEB", "crit-order-" + uniq(), null, "عايز سنيكرز كلاسيك").text();
+        assertThat(text).doesNotContain("سجلت طلبك");
+    }
+
+    @Test
+    void aCancellationSaidToBeDoneWhenNothingWasCancelledIsNeverSent() throws Exception {
+        UUID id = sneakerShop();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("تم إلغاء طلبك يا فندم."));
+        rewriteFails();
+        String text = chat.reply(id, "WEB", "crit-cancel-" + uniq(), null, "الغي الطلب").text();
+        assertThat(text).doesNotContain("تم إلغاء طلبك");
+    }
 }

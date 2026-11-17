@@ -1068,8 +1068,8 @@ public class ChatService {
         if (ctx.summary()[0] != null) return answer;
         answer = moneySafe(ctx, routed, system, turns, tools, rounds, allowed, arabic, answer);
         if (ctx.summary()[0] != null) return answer;
-        // last gate: whichever step wrote the final text (a money or claims rewrite included), a denial of a product the shop sells and has in stock is replaced by code
-        return withoutSoldDenials(ctx, lastCustomerText(turns), claimsSafe(ctx, routed, system, turns, tools, rounds, allowed, answer));
+        // last gate: whichever step wrote the final text (a rewrite included), a critical commercial violation never reaches the customer
+        return criticalGate(ctx, routed, lastCustomerText(turns), claimsSafe(ctx, routed, system, turns, tools, rounds, allowed, answer));
     }
 
     /**
@@ -1641,6 +1641,57 @@ public class ChatService {
         var d = found.get(0);
         return "You said the shop does not have «" + d.name() + "», but the shop sells it and has it in stock: give its real price and options (get_product " + d.slug() + "). "
                 + "If the customer asked for an option of it that is missing (a colour, a size), say only that option is missing and offer the ones in stock; never say the product itself is unavailable.";
+    }
+
+    /** Fact checks whose violation is a commercial claim the shop's data contradicts (the others are style or completeness). */
+    private static final Set<String> CRITICAL_FACTS = Set.of("OPTION_PRICE", "OPTION_STOCK", "STOCK_QUANTITY", "STOCK_PER_COMBINATION", "INVENTED_PRODUCTS", "SALE");
+
+    /**
+     * The last deterministic gate, on the text that would be sent, whatever produced it (the first draft, a review, a rewrite, the budget running out): an order said to be recorded with none,
+     * a cancellation said to be done when it is not, a colour or size the product does not come in, a wrong stock or price claim, an invented product or sale, and a denial of a product the
+     * shop sells. What the code can put right it puts right; otherwise the claim is replaced by lines written from the shop's data, or by a neutral question when nothing is known.
+     * Costs no model call.
+     */
+    String criticalGate(Ctx ctx, ChannelAi.Routed routed, String last, String answer) {
+        if (answer == null || answer.isBlank()) return answer;
+        try {
+            String out = withoutSoldDenials(ctx, last, answer);
+            if (ctx.order()[0] == null && !hasOrderOnFile(ctx)) out = ORDER_CLAIM.matcher(out).replaceAll(english(out) ? "noted" : "تمام،");
+            if (CANCEL_CLAIM.matcher(out).find() && !orderCancelled(ctx)) return cancelFallback(out);
+            FactCheck.Shop shopData = shopView(ctx.tenantId());
+            List<String> touched = touchedOrBefore(ctx, shopData);
+            out = factsFixed(last, out, shopData, touched);
+            List<String> bad = new ArrayList<>();
+            if (inventedColors(ctx, out) != null || colourNotInProduct(ctx, out, shopData)) bad.add("INVENTED_COLOR");
+            if (inventedSize(last, out, shopData) != null) bad.add("INVENTED_SIZE");
+            for (var f : FactCheck.check(last, out, shopData, touched)) if (CRITICAL_FACTS.contains(f.kind())) bad.add(f.kind());
+            if (bad.isEmpty()) return out;
+            log.warn("Critical gate: {} still in the reply (conversation {}), replaced by shop data: {}", bad, ctx.conversationId(), out);
+            for (String kind : bad.stream().distinct().toList()) events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:FINAL_" + kind, null, null);
+            ReplyTrace.checkProblems(bad.stream().map(k -> "FINAL_" + k).collect(java.util.stream.Collectors.toSet()));
+            return verifiedReply(ctx, last, touched);
+        } catch (RuntimeException e) {
+            log.warn("Critical gate skipped", e);
+            return answer;
+        }
+    }
+
+    /** A reply made only of the shop's own data about the product(s) in question (real price, the options in stock), or a neutral question when none is known. */
+    String verifiedReply(Ctx ctx, String last, List<String> slugs) {
+        boolean ar = !english(last);
+        var names = shopView(ctx.tenantId()).names();
+        StringBuilder b = new StringBuilder();
+        for (String slug : slugs.stream().limit(2).toList()) {
+            String name = names.stream().filter(n -> n.slug().equals(slug)).map(FactCheck.Named::name).findFirst().orElse(null);
+            if (name == null) continue;
+            var vs = compactVariants(ctx.tenantId(), slug, null, 80).stream().filter(v -> !Boolean.FALSE.equals(v.get("available")) && !"0".equals(String.valueOf(v.get("available")))).toList();
+            if (vs.isEmpty()) continue;
+            var prices = vs.stream().map(v -> v.get("price")).filter(java.util.Objects::nonNull).map(String::valueOf).distinct().toList();
+            String options = vs.stream().map(v -> String.valueOf(v.get("options"))).filter(o -> !o.isBlank() && !"null".equals(o)).distinct().limit(8).collect(java.util.stream.Collectors.joining(" | "));
+            b.append("• ").append(name).append(prices.isEmpty() ? "" : " — " + (prices.size() > 1 ? (ar ? "من " : "from ") : "") + prices.get(0)).append(options.isEmpty() ? "" : (ar ? " — المتاح: " : " — in stock: ") + options).append("\n");
+        }
+        if (b.isEmpty()) return ar ? "قولّي المنتج والمقاس واللون اللي محتاجهم وأقولك المتاح بالظبط 🌸" : "Tell me the product, size and colour you need and I will tell you exactly what is available 🌸";
+        return (ar ? "ده المتاح عندنا بالظبط:\n" : "This is exactly what we have:\n") + b + (ar ? "تحب أنهي مقاس أو لون؟" : "Which size or colour would you like?");
     }
 
     /** One sentence of a reply that denies a product the shop sells and has in stock. */
@@ -2435,6 +2486,27 @@ public class ChatService {
             if (!real.contains(c) && Pattern.compile("(?<!\\p{L})(?:ال|بال|و|وال)?" + c + "(?!\\p{L})").matcher(said).find()) extra.add(c);
         if (extra.isEmpty()) return null;
         return "«" + p.get("name") + "» does not come in " + String.join("، ", extra) + "; its real colors are " + String.join("، ", real) + ". Say only those.";
+    }
+
+    /**
+     * The reply, naming exactly one product of the shop, offers a colour that product does not come in (a sentence that says it is NOT available in that colour is fine). Works from the shop's data,
+     * so it also covers replies written without a search this turn.
+     */
+    private boolean colourNotInProduct(Ctx ctx, String answer, FactCheck.Shop shop) {
+        var slugs = FactCheck.mentions(answer, shop.names()).stream().map(FactCheck.Mention::slug).distinct().toList();
+        if (slugs.size() != 1) return false;
+        Set<String> real = new java.util.HashSet<>();
+        for (var v : compactVariants(ctx.tenantId(), slugs.get(0), null, 80))
+            for (String kv : String.valueOf(v.get("options")).split(",\\s*"))
+                if (kv.startsWith("اللون:")) real.add(FastAnswers.norm(kv.substring(6).trim()));
+        if (real.isEmpty()) return false;
+        for (String sentence : answer.split("(?<=[.!؟?\\n])")) {
+            if (FactCheck.NEG.matcher(FactCheck.light(sentence)).find() || NOT_HAVE.matcher(sentence).find() || DENIES.matcher(sentence).find()) continue;
+            String said = FastAnswers.norm(sentence);
+            for (String c : COLOR_WORDS)
+                if (!real.contains(c) && Pattern.compile("(?<!\\p{L})(?:ال|بال|و|وال)?" + c + "(?!\\p{L})").matcher(said).find()) return true;
+        }
+        return false;
     }
 
     /** A reply that only points at the product pictures («دي الصور 👆», «الصور قدامك»). */
