@@ -4,7 +4,6 @@ import com.platform.audit.AuditService;
 import com.platform.core.auth.ActivationService;
 import com.platform.core.rbac.RbacService;
 import com.platform.core.rbac.ScreenCatalog;
-import com.platform.core.tenant.TenantType;
 import com.platform.shared.BusinessException;
 import com.platform.shared.PhoneNormalizer;
 import com.platform.shared.TenantContext;

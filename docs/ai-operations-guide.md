@@ -61,3 +61,11 @@ Set `LANGFUSE_ENABLED=false` (or unset) and restart: telemetry code becomes no-o
 - `app.ai.rag.hybrid` (env: none yet; set it as a Spring property) is **false**: rank fusion of the search by meaning and the word search in `shop_knowledge`. Turn it on only after comparing it with the production embedding; the benchmark that motivated it used a stand-in.
 - Memory facts live and die with their conversation (cascade); they are scoped by shop and conversation in every query. To forget a customer's facts, delete the rows of that conversation.
 - The prompt now carries the UNTRUSTED TEXT rule (both modes) and the order on file shows `payment status`; a reply that claims a payment without `payment status PAID` is rewritten or cut (log line "Claims check ... a payment received that no order shows as paid").
+
+## Second-look review mode (since the A/B benchmark of 2026-11-17)
+
+- `AI_REVIEW_MODE=conditional` (the default): a plain draft whose every figure is in the facts the model was given skips the second model call; everything else is reviewed. `ReviewGate` routes to the review any draft with a promise, offer, urgency, picture, guarantee or formal address, a denial or out-of-stock claim, store policy (minimum order), delivery wording, order-state wording, a new figure, or more than 700 characters.
+- `AI_REVIEW_MODE=always`: every non-trivial draft is reviewed. This is the immediate rollback: set it and recreate the backend container. An unknown value also means `always`.
+- The mode actually in effect is reported by `GET /api/v1/platform/ai-health/review-policy` (platform admin) and logged at startup (`AI second-look review: ... effective mode=...`).
+- The deterministic checks (prices, stock, variants, minimum order, FactCheck, MoneyGuard, the order guards) run on the sent text in both modes; the mode only decides about the model call.
+- Benchmark data, the pre-registered protocol and the blind-review pack are kept outside the repo with the benchmark artifacts (`PROTOCOL.md`, `blind_pack.json`, `blind_key.json`).

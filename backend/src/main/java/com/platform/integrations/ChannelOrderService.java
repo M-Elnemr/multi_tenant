@@ -1,6 +1,5 @@
 package com.platform.integrations;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.platform.audit.AuditService;
 import com.platform.shared.BusinessException;
 import com.platform.shared.Page;

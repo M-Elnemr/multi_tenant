@@ -1,7 +1,6 @@
 package com.platform.integrations;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.platform.shared.Rows;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;

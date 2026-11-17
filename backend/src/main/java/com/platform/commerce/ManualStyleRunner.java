@@ -8,7 +8,6 @@ import com.platform.chat.unofficial.UnofficialMetaService;
 import com.platform.notifications.NotificationService;
 import com.platform.shared.Gender;
 import java.sql.Timestamp;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;

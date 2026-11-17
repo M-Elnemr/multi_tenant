@@ -218,26 +218,6 @@ public class ChatService {
      */
     @org.springframework.beans.factory.annotation.Value("${app.ai.review.mode:conditional}")
     private String reviewMode = "conditional";
-    /** Experiment only (app.ai.experiment.tenants, shop slugs): review modes other than "always" and the self-check apply to these shops only; every other shop keeps today's behaviour whatever the settings say. */
-    @org.springframework.beans.factory.annotation.Value("${app.ai.experiment.tenants:}")
-    private String experimentTenants = "";
-    @org.springframework.beans.factory.annotation.Value("${app.ai.selfcheck.enabled:false}")
-    private boolean selfCheck = false;
-    private volatile java.util.Set<UUID> experimentIds = java.util.Set.of();
-    private volatile long experimentLoadedAt = 0;
-
-    private boolean inExperiment(UUID tenantId) {
-        if (experimentTenants == null || experimentTenants.isBlank()) return false;
-        if (experimentTenants.trim().equals("*")) return true;   // every shop: for tests and a local run only, never a server with real shops
-        long now = System.currentTimeMillis();
-        if (now - experimentLoadedAt > 60_000) {
-            java.util.Set<UUID> ids = new java.util.HashSet<>();
-            for (String slug : experimentTenants.split(",")) if (!slug.isBlank()) jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", slug.trim()).query(UUID.class).optional().ifPresent(ids::add);
-            experimentIds = ids; experimentLoadedAt = now;
-        }
-        return experimentIds.contains(tenantId);
-    }
-
     /** The review mode every shop runs on: "conditional" when configured so, otherwise (also for an unknown value) "always". */
     String effectiveReviewMode() {
         return reviewMode != null && "conditional".equals(reviewMode.trim().toLowerCase(java.util.Locale.ROOT)) ? "conditional" : "always";
@@ -256,15 +236,6 @@ public class ChatService {
     @jakarta.annotation.PostConstruct
     void logReviewPolicy() { log.info("AI second-look review: enabled={}, effective mode={} (configured '{}')", review, effectiveReviewMode(), reviewMode); }
 
-    /** A short checklist the model works through silently inside the same call (never printed, no extra call). The backend checks stay the authority for every commercial fact. */
-    static final String SELF_CHECK = """
-
-            BEFORE YOU WRITE THE ANSWER, CHECK SILENTLY (never mention this list; it is not a second answer):
-            1. Name the exact product, colour and size the customer means; if two fit, ask one short question instead of choosing.
-            2. Every price, stock figure, colour and size you state is in the product lines or a tool result above, for THAT colour and size; never mix variants.
-            3. Say nothing the data does not say (no guarantee, no discount, no material, no promise); if unknown, say you will check.
-            4. Do not contradict what you already told this customer; answer the question that was asked, first, then one next step.
-            """;
     private final String reviewModel;
     /** The longest the review of a draft may take (AI_REVIEW_TIMEOUT_MS): one try, no retry, no second request. */
     @org.springframework.beans.factory.annotation.Value("${app.ai.review.timeout-ms:8000}")
@@ -2996,7 +2967,6 @@ public class ChatService {
         p.append(savedDetails(tenantId, clientId, channel, externalId));
         p.append(orderOnFile(tenantId, conv));
         p.append(openQuestions(conv));
-        if (selfCheck && inExperiment(tenantId)) p.append(SELF_CHECK);
         PROMPT_PARTS.set(new int[] {factsChars, catalogChars, staticChars - factsChars - catalogChars, p.length() - staticChars});   // sizes only: facts, catalog, rules+lessons, per-customer part
         return p.toString();
     }
