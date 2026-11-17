@@ -334,6 +334,9 @@ class ChatTextTest {
         String line = "🙏 أقل قيمة للطلب 100 جنيه، وطلبك دلوقتي 60 جنيه. تحب تضيف إيه عشان نكمل الأوردر؟";
         org.assertj.core.api.Assertions.assertThat(ChatService.mentionsMinimum("أقل الطلب اللي هو 100 جنيه، عايز تضيف حاجة؟", line)).isFalse();
         org.assertj.core.api.Assertions.assertThat(ChatService.mentionsMinimum("طلبك ٦٠ جنيه وأقل طلب ١٠٠ جنيه، تضيف ساندوتش؟", line)).isTrue();
+        // the numbers without a minimum-order phrase (a garbled sentence seen in the benchmark) do not count as having said it: the code's clear line is added
+        org.assertj.core.api.Assertions.assertThat(ChatService.mentionsMinimum("الأوردر مينيصمم ١٠٠ جنيه، والبطاطس وسط لوحدها ٦٠ جنيه", line)).isFalse();
+        org.assertj.core.api.Assertions.assertThat(ChatService.mentionsMinimum(null, line)).isFalse();
         // offering to show instead of showing (seen live 2026-11-03), but not a question about an option or a real list
         org.assertj.core.api.Assertions.assertThat(ChatService.OFFER_TO_SHOW.matcher("أهلاً بيك يا فندم 🌟 تحب أعرض عليك الحلويات اللي عندنا تناسب بعد الأكل؟").find()).isTrue();
         org.assertj.core.api.Assertions.assertThat(ChatService.OFFER_TO_SHOW.matcher("تحب أرسل لك القائمة؟").find()).isTrue();

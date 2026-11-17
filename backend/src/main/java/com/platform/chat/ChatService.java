@@ -4602,7 +4602,12 @@ public class ChatService {
         return !Pattern.compile("(?<![\\d.,])" + minimumMajor + "(?![\\d])").matcher(MoneyGuard.digits(answer).replaceAll("(?<=\\d)[,٬](?=\\d{3})", "")).find();
     }
 
+    /**
+     * The reply already says what the code's line says: every amount AND a minimum-order phrase («أقل طلب», «الحد الأدنى»). The amounts alone are not enough: a reply that garbles the sentence but
+     * happens to contain «١٠٠» and «٤٥» (seen in the benchmark: «الأوردر مينيصمم ١٠٠ جنيه») would otherwise suppress the clear line the code wrote.
+     */
     static boolean mentionsMinimum(String answer, String line) {
+        if (answer == null || !MINIMUM_WORDS.matcher(FastAnswers.norm(answer)).find()) return false;
         java.util.regex.Matcher m = Pattern.compile("\\d+(?:\\.\\d+)?").matcher(line);
         String said = MoneyGuard.digits(answer).replace(",", "");
         boolean any = false;
