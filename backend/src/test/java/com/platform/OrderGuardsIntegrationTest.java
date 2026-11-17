@@ -115,4 +115,38 @@ class OrderGuardsIntegrationTest extends IntegrationTestBase {
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("للأسف مفيش بيتزا عندنا، عندنا هوت دوج بـ ٧٥ جنيه."));
         assertThat(chat.reply(s.id(), "WEB", "deny-ok-" + uniq(), null, "عايز بيتزا").text()).contains("مفيش بيتزا");
     }
+
+    static final String DENIAL = "بصراحة يا فندم مالناش هوت دوج عندنا. عندنا بطاطس بالجبنة بـ ٦٥ جنيه.";
+
+    /** The invariant: a denial of an in-stock product never goes out, whatever happened to the rewrite. */
+    @Test
+    void aRewriteThatFailsNeverLetsTheDenialOfASoldProductThrough() throws Exception {
+        for (String failure : new String[] {"TIMEOUT", "RATE_LIMIT", "SERVER_ERROR", "EMPTY", "MALFORMED", "CONNECTION"}) {
+            Shop s = shop();
+            FakeAiProvider.reset();
+            FakeAiProvider.SCRIPT.add(turns -> Turn.model(DENIAL));
+            for (int i = 0; i < 4; i++) FakeAiProvider.SCRIPT.add(turns -> { throw new com.platform.chat.AiProvider.AiUnavailableException(failure, failure, null); });
+            String text = chat.reply(s.id(), "WEB", "deny-fail-" + uniq(), null, "عايز هوت دوج").text();
+            assertThat(text).as(failure).doesNotContain("مالناش").contains("هوت دوج").contains("75").contains("بطاطس بالجبنة");
+        }
+    }
+
+    @Test
+    void aRewriteThatDeniesTheProductAgainIsReplacedByCodeFromTheShopData() throws Exception {
+        Shop s = shop();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model(DENIAL));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("للأسف مفيش هوت دوج عندنا النهاردة."));
+        String text = chat.reply(s.id(), "WEB", "deny-again-" + uniq(), null, "عايز هوت دوج").text();
+        assertThat(text).doesNotContain("مفيش هوت دوج").contains("هوت دوج").contains("75");
+        assertThat(text).as("never invents an option the customer did not get").doesNotContain("مقاس M");
+    }
+
+    @Test
+    void aDenialInAMixedLanguageMessageIsAlsoReplacedByTheShopFact() throws Exception {
+        Shop s = shop();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("Sorry, we don't have هوت دوج. We have cheese fries for 65."));
+        for (int i = 0; i < 3; i++) FakeAiProvider.SCRIPT.add(turns -> { throw new com.platform.chat.AiProvider.AiUnavailableException("TIMEOUT", "TIMEOUT", null); });
+        String text = chat.reply(s.id(), "WEB", "deny-en-" + uniq(), null, "I want هوت دوج please").text();
+        assertThat(text).doesNotContain("don't have").contains("هوت دوج").contains("75");
+    }
 }

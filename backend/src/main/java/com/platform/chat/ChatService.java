@@ -1067,7 +1067,9 @@ public class ChatService {
         ReplyTimeline.span("ruleChecks", ReplyTimeline.since(checksStart));
         if (ctx.summary()[0] != null) return answer;
         answer = moneySafe(ctx, routed, system, turns, tools, rounds, allowed, arabic, answer);
-        return ctx.summary()[0] != null ? answer : claimsSafe(ctx, routed, system, turns, tools, rounds, allowed, answer);
+        if (ctx.summary()[0] != null) return answer;
+        // last gate: whichever step wrote the final text (a money or claims rewrite included), a denial of a product the shop sells and has in stock is replaced by code
+        return withoutSoldDenials(ctx, lastCustomerText(turns), claimsSafe(ctx, routed, system, turns, tools, rounds, allowed, answer));
     }
 
     /**
@@ -1331,15 +1333,16 @@ public class ChatService {
         ReplyTrace.checkProblems(problems.keySet());
         boolean phoneDoubt = PHONE_DOUBT.matcher(answer).find() && customerGaveMobile(turns);
         boolean stalled = problems.containsKey("STALL") || problems.containsKey("OFFER_INSTEAD_OF_SHOWING");
-        if (!canRewrite(rounds)) return factsFixed(last, falseCancel ? cancelFallback(answer) : phoneDoubt ? phoneFallback(answer) : problems.containsKey("FAKE_SUMMARY") && summaryShaped(answer) ? withoutSelfSummary(answer)
-                : stalled ? stallFallback(ctx, answer) : answer, shopData, touched);
+        if (!canRewrite(rounds)) return factsFixed(last, withoutSoldDenials(ctx, last, falseCancel ? cancelFallback(answer) : phoneDoubt ? phoneFallback(answer) : problems.containsKey("FAKE_SUMMARY") && summaryShaped(answer) ? withoutSelfSummary(answer)
+                : stalled ? stallFallback(ctx, answer) : answer), shopData, touched);
         log.warn("Rule check: {} (conversation {}): {}", problems.values(), ctx.conversationId(), answer);
         try {
             turns.add(Turn.model(answer));
             turns.add(Turn.user("[SYSTEM CHECK, not from the customer] " + String.join(" ", problems.values())
                     + " Write your reply again. The customer has NOT seen your draft: never apologise for it or mention a mistake." + lastCustomerWords(turns)));
             String retry = withoutDraftApology(ReplyTrace.rewrite("rule_check", () -> modelLoop(ctx, routed, system, turns, tools, rounds, allowed)));
-            if (retry == null || retry.isBlank()) return factsFixed(last, falseCancel ? cancelFallback(answer) : phoneDoubt ? phoneFallback(answer) : answer, shopData, touched);
+            if (retry == null || retry.isBlank()) return factsFixed(last, withoutSoldDenials(ctx, last, falseCancel ? cancelFallback(answer) : phoneDoubt ? phoneFallback(answer) : answer), shopData, touched);
+            retry = withoutSoldDenials(ctx, last, retry);   // a rewrite that denies the product again is checked again, never trusted
             if (CANCEL_CLAIM.matcher(retry).find() && !orderCancelled(ctx)) return cancelFallback(retry);
             if (PHONE_DOUBT.matcher(retry).find() && customerGaveMobile(turns)) return phoneFallback(retry);
             if (stallsOrOffers(ctx, retry)) retry = stallFallback(ctx, retry);   // still «هتأكد وأرجعلك»: code says what the tools found
@@ -1352,7 +1355,7 @@ public class ChatService {
             return fixedRetry;
         } catch (AiProvider.AiUnavailableException e) {
             log.warn("Rule check: the rewrite failed: {}", e.getMessage());
-            return factsFixed(last, falseCancel ? cancelFallback(answer) : answer, shopData, touched);
+            return factsFixed(last, withoutSoldDenials(ctx, last, falseCancel ? cancelFallback(answer) : answer), shopData, touched);
         }
     }
 
@@ -1633,10 +1636,22 @@ public class ChatService {
      * both denies and names that product counts; a missing colour or size of it is a different sentence. Null when the reply is fine.
      */
     private String deniesSoldProduct(Ctx ctx, String last, String answer) {
-        if (answer == null || last == null || !DENIES.matcher(answer).find()) return null;
+        var found = soldDenials(ctx, last, answer);
+        if (found.isEmpty()) return null;
+        var d = found.get(0);
+        return "You said the shop does not have «" + d.name() + "», but the shop sells it and has it in stock: give its real price and options (get_product " + d.slug() + "). "
+                + "If the customer asked for an option of it that is missing (a colour, a size), say only that option is missing and offer the ones in stock; never say the product itself is unavailable.";
+    }
+
+    /** One sentence of a reply that denies a product the shop sells and has in stock. */
+    record SoldDenial(String sentence, String slug, String name) {}
+
+    private List<SoldDenial> soldDenials(Ctx ctx, String last, String answer) {
+        List<SoldDenial> out = new ArrayList<>();
+        if (answer == null || last == null || !DENIES.matcher(answer).find()) return out;
         var view = shopView(ctx.tenantId());
         var asked = FactCheck.mentions(last, view.names());
-        if (asked.isEmpty()) return null;
+        if (asked.isEmpty()) return out;
         for (String sentence : answer.split("(?<=[.!؟?\\n])")) {
             if (!DENIES.matcher(sentence).find()) continue;
             for (var m : asked) {
@@ -1647,11 +1662,31 @@ public class ChatService {
                                        WHERE p.tenant_id = :t AND p.slug = :s AND p.status = 'ACTIVE'
                                          AND (SELECT coalesce(sum(i.quantity_on_hand - i.quantity_reserved), 0) FROM commerce.inventory_items i JOIN commerce.branches b ON b.id = i.branch_id AND b.is_active WHERE i.variant_id = v.id) > 0)
                         """).param("t", ctx.tenantId()).param("s", m.slug()).query(Boolean.class).single();
-                if (inStock) return "You said the shop does not have «" + named.name() + "», but the shop sells it and has it in stock: give its real price and options (get_product " + m.slug() + "). "
-                        + "If the customer asked for an option of it that is missing (a colour, a size), say only that option is missing and offer the ones in stock; never say the product itself is unavailable.";
+                if (inStock) { out.add(new SoldDenial(sentence, m.slug(), named.name())); break; }
             }
         }
-        return null;
+        return out;
+    }
+
+    /**
+     * The invariant: a denial of a product the shop sells and has in stock never reaches the customer, whatever the review or rewrite budget did. Each such sentence is replaced by a line
+     * written from the shop's own data: the product is sold, its real price (from when it varies), and a question for the option, which never claims the asked option exists. Other sentences stay.
+     */
+    String withoutSoldDenials(Ctx ctx, String last, String answer) {
+        List<SoldDenial> denials;
+        try { denials = soldDenials(ctx, last, answer); } catch (RuntimeException e) { log.warn("Denial fallback skipped", e); return answer; }
+        if (denials.isEmpty()) return answer;
+        boolean ar = !english(last);
+        String out = answer;
+        for (var d : denials) {
+            var range = jdbc.sql("SELECT min(v.price_minor) AS lo, max(v.price_minor) AS hi, max(p.currency) AS cur FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE p.tenant_id = :t AND p.slug = :s AND v.status = 'ACTIVE'")
+                    .param("t", ctx.tenantId()).param("s", d.slug()).query().singleRow();
+            String price = range.get("lo") == null ? "" : (!range.get("lo").equals(range.get("hi")) ? (ar ? " — من " : " — from ") : (ar ? " — بـ " : " — ")) + moneyIn(ar, range.get("lo"), range.get("cur"));
+            String line = ar ? "«" + d.name() + "» متاح عندنا" + price + ". قولّي المقاس أو اللون اللي محتاجه وأقولك المتاح منه 🌸"
+                    : d.name() + " is available" + price + ". Tell me the size or colour you need and I will tell you what we have.";
+            out = out.replace(d.sentence(), line + (d.sentence().endsWith("\n") ? "\n" : " "));
+        }
+        return out.replaceAll("[ \\t]+\\n", "\n").trim();
     }
 
     /** The draft promises to check or get back later, or offers to show what the customer asked for without naming any product or price. */
