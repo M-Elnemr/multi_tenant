@@ -251,7 +251,7 @@ class _AssistantTabState extends State<_AssistantTab> {
         final u = d[0] as Map<String, dynamic>;
         final open = _maps(d[1]).where((q) => q['resolved'] != true).toList();
         return RefreshIndicator(onRefresh: reload, child: ListView(padding: const EdgeInsets.all(16), children: [
-          Card(child: ListTile(leading: const Icon(Icons.bolt_rounded), title: Text(ar ? 'الردود الآلية الشهر ده' : 'Automatic replies this month'), trailing: Text('${u['usedThisMonth']} / ${u['monthlyCap']}', style: const TextStyle(fontWeight: FontWeight.w900)))),
+          Card(child: ListTile(leading: const Icon(Icons.bolt_rounded), title: Text(ar ? 'الردود الآلية الشهر ده' : 'Automatic replies this month'), trailing: Text('${u['usedThisMonth']}', style: const TextStyle(fontWeight: FontWeight.w900)))),
           const SizedBox(height: 8),
           _Section(ar ? 'أسئلة المساعد ماقدرش يجاوبها' : 'Questions the assistant could not answer', [
             Text(ar ? 'علّم المساعد الإجابة (من الدروس في الموقع) عشان يرد عليها المرة الجاية.' : 'Teach the assistant the answer (Lessons on the website) so it can reply next time.', style: const TextStyle(color: Color(0xFF6B7C8D), fontSize: 12.5)),

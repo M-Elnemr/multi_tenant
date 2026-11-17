@@ -115,13 +115,13 @@ class AiSellerCopilotAutopilotIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void theMonthlyConversationLimitStopsTheModelPoliteley() throws Exception {
+    void theFormerMonthlyMessageCapNoLongerStopsTheModel() throws Exception {   // removed on purpose (docs/ai-usage-cap-removed.md); AiNoUsageCapIntegrationTest has the full set
         Shop s = shop();
         jdbc.sql("INSERT INTO chat.usage (tenant_id, month, ai_messages) VALUES (:t, date_trunc('month', now() AT TIME ZONE 'UTC')::date, 5000)").param("t", s.id()).update();
-        FakeAiProvider.SCRIPT.add(turns -> Turn.model("should never be said"));
-        String reply = chat(s, UUID.randomUUID().toString(), "hello");
-        assertThat(JsonPath.<String>read(reply, "$.reply")).contains("limit is reached").doesNotContain("should never be said");
-        assertThat(FakeAiProvider.SCRIPT).hasSize(1);
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("أهلاً بيك يا فندم، أقدر أساعدك إزاي؟"));
+        String reply = chat(s, UUID.randomUUID().toString(), "عندكم شنط؟");
+        assertThat(JsonPath.<String>read(reply, "$.reply")).contains("أقدر أساعدك").doesNotContain("limit is reached");
+        assertThat(FakeAiProvider.SCRIPT).isEmpty();
     }
 
     @Test

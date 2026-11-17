@@ -685,11 +685,6 @@ public class ChatService {
                 return new Reply(conv, answer, null, ctx.products());
             }
         }
-        if (!"TEST".equals(channel) && seller.overQuota(tenantId)) {
-            answer = "شكرًا لتواصلك! وصلنا للحد الشهري للمحادثات الآلية، ابعتلنا رسالتك تاني بعد شوية 🌸 / Thanks for your message! Our automatic chat limit is reached for now, please message again a little later.";
-            jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x)").param("c", conv).param("x", answer).update();
-            return new Reply(conv, answer, null, ctx.products());
-        }
         boolean first = turns.stream().noneMatch(t -> "model".equals(t.role()));
         var instant = FastAnswers.answer(text, first, introGreeting(tenantId, conv, channel, externalId, clientId, text));
         if (instant.isPresent()) {

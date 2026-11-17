@@ -1,6 +1,5 @@
 package com.platform.chat;
 
-import com.platform.billing.EntitlementService;
 import com.platform.chat.AiProvider.ToolDef;
 import com.platform.commerce.StoreFulfillmentService;
 import java.sql.Timestamp;
@@ -12,7 +11,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 
@@ -26,22 +24,17 @@ public class SellerTools {
 
     private final JdbcClient jdbc;
     private final StoreFulfillmentService fulfilment;
-    private final EntitlementService ent;
-    private final long defaultMonthlyCap;
     private final org.springframework.context.ApplicationEventPublisher events;
     private final KnowledgeIndex knowledge;
 
     /** Published when the assistant hands the owner a question it could not answer: {@link QuestionService} tells the owner. */
     public record QuestionAsked(UUID tenantId, long id) {}
 
-    public SellerTools(JdbcClient jdbc, StoreFulfillmentService fulfilment, EntitlementService ent, @Value("${app.ai.monthly-message-cap:5000}") long defaultMonthlyCap,
-                       org.springframework.context.ApplicationEventPublisher events, KnowledgeIndex knowledge) {
+    public SellerTools(JdbcClient jdbc, StoreFulfillmentService fulfilment, org.springframework.context.ApplicationEventPublisher events, KnowledgeIndex knowledge) {
         this.events = events;
         this.knowledge = knowledge;
         this.jdbc = jdbc;
         this.fulfilment = fulfilment;
-        this.ent = ent;
-        this.defaultMonthlyCap = defaultMonthlyCap;
     }
 
     private static Map<String, Object> obj(Object... kv) {
@@ -251,16 +244,11 @@ public class SellerTools {
         return obj("saved", true);
     }
 
-    // ---- quota and usage ---------------------------------------------------------------------------------------
+    // ---- usage (counted and shown; it never limits the assistant: see docs/ai-usage-cap-removed.md) ---------------------------------------------------------------------------------------
 
     private static LocalDate month() { return LocalDate.now(ZoneOffset.UTC).withDayOfMonth(1); }
 
-    /** The shop's plan limit "ai_messages" when it has one, else the platform default. */
-    public long monthlyCap(UUID t) { return ent.limit(t, "ai_messages").orElse(defaultMonthlyCap); }
-
     public long used(UUID t) { return jdbc.sql("SELECT ai_messages FROM chat.usage WHERE tenant_id = :t AND month = :m").param("t", t).param("m", java.sql.Date.valueOf(month())).query(Long.class).optional().orElse(0L); }
-
-    public boolean overQuota(UUID t) { return used(t) >= monthlyCap(t); }
 
     public void count(UUID t) {
         jdbc.sql("INSERT INTO chat.usage (tenant_id, month, ai_messages) VALUES (:t, :m, 1) ON CONFLICT (tenant_id, month) DO UPDATE SET ai_messages = chat.usage.ai_messages + 1")
@@ -268,9 +256,9 @@ public class SellerTools {
     }
 
     public Map<String, Object> usageView(UUID t) {
-        long cap = monthlyCap(t), u = used(t);
+        long u = used(t);
         long unanswered = jdbc.sql("SELECT count(*) FROM chat.unanswered WHERE tenant_id = :t AND NOT resolved").param("t", t).query(Long.class).single();
-        return obj("usedThisMonth", u, "monthlyCap", cap, "unanswered", unanswered);
+        return obj("usedThisMonth", u, "unanswered", unanswered);
     }
 
     public List<Map<String, Object>> unanswered(UUID t) {
