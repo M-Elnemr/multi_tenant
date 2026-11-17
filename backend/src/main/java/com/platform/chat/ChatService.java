@@ -3281,17 +3281,22 @@ public class ChatService {
         List<Map<String, Object>> rows = (List<Map<String, Object>>) search.list(tenantId, Page.of(1, FULL_CATALOG_MAX), new StoreSearchService.Filter(null, null, null, null, null, null, null, null, "name")).get("data");
         StringBuilder b = new StringBuilder("ALL PRODUCTS (the complete list, with every color, size and the stock of each; this is the truth, trust it over memory; a product not here does not exist in this shop):\n");
         Map<String, String> details = productDetailsFor(tenantId, rows.stream().map(r -> String.valueOf(r.get("slug"))).toList());   // one query for all of them
-        for (var r : rows) b.append(productLine(tenantId, r, details.getOrDefault(String.valueOf(r.get("slug")), "")));
+        var variants = catalog.activeVariantsBySlugs(tenantId, rows.stream().map(r -> String.valueOf(r.get("slug"))).toList());   // one query for all of them (a line used to cost eight)
+        Map<Object, String> categories = new java.util.HashMap<>();
+        for (var r : rows) b.append(productLine(tenantId, r, details.getOrDefault(String.valueOf(r.get("slug")), ""), variants.get(String.valueOf(r.get("slug"))), categories));
         return b.toString();
     }
 
     /** One product as the model should know it: name, who it is for, category, price, every option and the stock of each. */
     private String productLine(UUID tenantId, Map<String, Object> r) { return productLine(tenantId, r, null); }
 
-    private String productLine(UUID tenantId, Map<String, Object> r, String prefetchedDetails) {
+    private String productLine(UUID tenantId, Map<String, Object> r, String prefetchedDetails) { return productLine(tenantId, r, prefetchedDetails, null, null); }
+
+    /** {@code prefetchedVariants} (what {@code detailBySlug} would list) and {@code categories} (a memo of category texts) only save queries: the line is the same text as without them. */
+    private String productLine(UUID tenantId, Map<String, Object> r, String prefetchedDetails, List<Map<String, Object>> prefetchedVariants, Map<Object, String> categories) {
         Map<String, Object> m = new LinkedHashMap<>();
-        describe(m, r.get("audience"), r.get("taxonomyId"), null);
-        List<Map<String, Object>> vs = compactVariants(tenantId, String.valueOf(r.get("slug")), null, 40);
+        describe(m, r.get("audience"), r.get("taxonomyId"), null, categories);
+        List<Map<String, Object>> vs = prefetchedVariants != null ? compactFrom(prefetchedVariants, null, 40) : compactVariants(tenantId, String.valueOf(r.get("slug")), null, 40);
         optionSummary(m, vs);
         StringBuilder b = new StringBuilder("- ").append(r.get("name")).append(" [").append(r.get("slug")).append("]");
         if (m.get("for") != null) b.append(", for ").append(m.get("for"));
@@ -3871,12 +3876,22 @@ public class ChatService {
     }
 
     /** Adds who the product is for, its category and its short description, so the model never offers a kids' item to an adult or describes a product from imagination. */
-    private void describe(Map<String, Object> m, Object audience, Object taxonomyId, Object shortDescription) {
+    private void describe(Map<String, Object> m, Object audience, Object taxonomyId, Object shortDescription) { describe(m, audience, taxonomyId, shortDescription, null); }
+
+    /** {@code categories}, when given, remembers the category text of a taxonomy id for the caller's lifetime (one prompt's catalog): the same text, one query per category instead of one per product. */
+    private void describe(Map<String, Object> m, Object audience, Object taxonomyId, Object shortDescription, Map<Object, String> categories) {
         if (audience != null && AUDIENCES.containsKey(String.valueOf(audience))) m.put("for", AUDIENCES.get(String.valueOf(audience)));
-        if (taxonomyId != null) jdbc.sql("""
-                SELECT (SELECT string_agg(a.name_ar, ' › ' ORDER BY a.level) FROM commerce.taxonomy a WHERE t.path LIKE a.path || '%') || ' / ' || t.name_en
-                FROM commerce.taxonomy t WHERE t.id = :i
-                """).param("i", taxonomyId).query(String.class).optional().ifPresent(c -> m.put("category", c));
+        if (taxonomyId != null) {
+            String known = categories == null ? null : categories.get(taxonomyId);
+            if (known == null) {
+                known = jdbc.sql("""
+                        SELECT (SELECT string_agg(a.name_ar, ' › ' ORDER BY a.level) FROM commerce.taxonomy a WHERE t.path LIKE a.path || '%') || ' / ' || t.name_en
+                        FROM commerce.taxonomy t WHERE t.id = :i
+                        """).param("i", taxonomyId).query(String.class).optional().orElse(null);
+                if (known != null && categories != null) categories.put(taxonomyId, known);
+            }
+            if (known != null) m.put("category", known);
+        }
         if (shortDescription != null && !String.valueOf(shortDescription).isBlank()) m.put("about", clip(String.valueOf(shortDescription), 200));
     }
 
@@ -3995,14 +4010,25 @@ public class ChatService {
     /** Short variant list shown with each search hit: id, options, availability (price only when it differs from the product's own price is left to get_product). */
     private List<Map<String, Object>> compactVariants(UUID tenantId, String slug, String want, int max) {
         try {
-            List<Map<String, Object>> out = new ArrayList<>();
-            for (var v : variantsOf(catalog.detailBySlug(tenantId, slug), want, max)) {
-                Map<String, Object> c = obj("variantId", v.get("variantId"), "options", v.get("options"), "price", v.get("price"), "available", v.get("available"));
-                if (v.get("priceBeforeDiscount") != null) c.put("priceBeforeDiscount", v.get("priceBeforeDiscount"));
-                out.add(c);
-            }
-            return out;
+            return compactOf(catalog.detailBySlug(tenantId, slug), want, max);
         } catch (RuntimeException e) { return List.of(); }
+    }
+
+    /** The compact variants from variants already read (an unknown product has none, as in {@link #compactVariants}). */
+    private List<Map<String, Object>> compactFrom(List<Map<String, Object>> variants, String want, int max) {
+        try {
+            return compactOf(Map.of("variants", variants), want, max);
+        } catch (RuntimeException e) { return List.of(); }
+    }
+
+    private List<Map<String, Object>> compactOf(Map<String, Object> product, String want, int max) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (var v : variantsOf(product, want, max)) {
+            Map<String, Object> c = obj("variantId", v.get("variantId"), "options", v.get("options"), "price", v.get("price"), "available", v.get("available"));
+            if (v.get("priceBeforeDiscount") != null) c.put("priceBeforeDiscount", v.get("priceBeforeDiscount"));
+            out.add(c);
+        }
+        return out;
     }
 
     /** The products whose picture the customer gets: flagged {@code send} so ProductShare sends them even when the reply does not repeat the name word for word. */

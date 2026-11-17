@@ -633,6 +633,28 @@ public class CatalogService {
         return assemble(tenantId, p, true);
     }
 
+    /**
+     * The variants {@link #detailBySlug} would list for each of these products (same rows, same order, same keys) in ONE query instead of the seven per product that assembling a whole detail costs:
+     * the prompt's catalog line only needs the variants. A slug that is not an ACTIVE product of this shop is missing from the result (detailBySlug throws not-found for it).
+     */
+    public Map<String, List<Map<String, Object>>> activeVariantsBySlugs(UUID tenantId, List<String> slugs) {
+        Map<String, List<Map<String, Object>>> out = new java.util.HashMap<>();
+        if (slugs.isEmpty()) return out;
+        for (String s : slugs) out.putIfAbsent(s, new ArrayList<>());
+        for (var row : jdbc.sql("""
+                SELECT p.slug AS slug_key, v.id, v.sku, v.barcode, v.price_minor, v.compare_at_price_minor, v.currency, v.status, v.combo_key,
+                  (SELECT coalesce(sum(i.quantity_on_hand - i.quantity_reserved), 0) FROM commerce.inventory_items i
+                     JOIN commerce.branches b ON b.id = i.branch_id AND b.is_active WHERE i.variant_id = v.id) AS available
+                FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id
+                WHERE p.tenant_id = :t AND p.status = 'ACTIVE' AND p.slug = ANY(:s) AND v.tenant_id = :t AND v.status = 'ACTIVE' ORDER BY v.created_at, v.ctid
+                """).param("t", tenantId).param("s", slugs.toArray(String[]::new)).query().listOfRows()) {
+            Map<String, Object> r = new LinkedHashMap<>(row);
+            String slug = String.valueOf(r.remove("slug_key"));
+            out.get(slug).add(Rows.camel(r));
+        }
+        return out;
+    }
+
     private Map<String, Object> assemble(UUID tenantId, Map<String, Object> p, boolean publicOnly) {
         UUID id = (UUID) p.get("id");
         Map<String, Object> out = new LinkedHashMap<>();
