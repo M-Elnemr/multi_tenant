@@ -15,7 +15,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.TestPropertySource;
 
 /** app.ai.review.mode=conditional: a plain draft is not sent for a second model call, a risky one still is; and the reviewer is given the products the model itself was given. */
-@TestPropertySource(properties = {"app.ai.review.enabled=true", "app.ai.review.mode=conditional", "app.ai.experiment.tenants=*"})
+@TestPropertySource(properties = {"app.ai.review.enabled=true", "app.ai.review.mode=conditional"})
 class AiReplyReviewConditionalIntegrationTest extends IntegrationTestBase {
     @Autowired JdbcClient jdbc;
     @Autowired ChatService chat;
@@ -42,6 +42,20 @@ class AiReplyReviewConditionalIntegrationTest extends IntegrationTestBase {
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("عندنا شنط جلد عليها ضمان سنة، تحبي لون إيه؟"));
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("{\"ok\":false,\"problems\":[\"invented warranty\"],\"reply\":\"عندنا شنط جلد حلوة، تحبي لون إيه؟\"}"));
         assertThat(chat.reply(id, "WEB", "c2-" + uniq(), null, "عندكم شنط تانية؟").text()).isEqualTo("عندنا شنط جلد حلوة، تحبي لون إيه؟");
+    }
+
+    @Test
+    void denialsPolicyDeliveryAndOrderStateAreAlwaysSentToTheReview() {
+        UUID id = shop();
+        String[][] risky = {{"للأسف مفيش بيتزا عندنا، عندنا شنط جلد.", "عندنا شنط جلد حلوة، تحب لون إيه؟"}, {"أقل طلب عندنا ١٠٠ جنيه، تحب تضيف حاجة؟", "تحب تضيف حاجة تكمل الطلب؟"},
+                {"ده ملخص الأوردر يا فندم، تأكد؟", "تحب نكمل؟"}};
+        for (String[] r : risky) {
+            FakeAiProvider.reset();
+            FakeAiProvider.SCRIPT.add(turns -> Turn.model(r[0]));
+            FakeAiProvider.SCRIPT.add(turns -> Turn.model("{\"ok\":false,\"problems\":[\"x\"],\"reply\":\"" + r[1] + "\"}"));
+            chat.reply(id, "WEB", "risky-" + uniq(), null, "عندكم شنط؟");
+            assertThat(FakeAiProvider.SCRIPT).as("the review call was made for: " + r[0]).isEmpty();
+        }
     }
 
     @Test

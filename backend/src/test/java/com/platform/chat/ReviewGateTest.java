@@ -22,6 +22,13 @@ class ReviewGateTest {
     }
 
     @Test
+    void denialsOutOfStockPolicyDeliveryAndOrderStateAreAlwaysReviewed() {
+        for (String risky : new String[] {"للأسف مفيش هوت دوج", "مالناش بيتزا عندنا", "الأخضر ٦٤ جيجا خلص", "الكانز مش متاح", "أقل طلب عندنا ١٠٠ جنيه", "الحد الأدنى للطلب 100", "الشحن للقاهرة 50 جنيه",
+                "التوصيل في نفس اليوم", "ده ملخص الأوردر يا فندم", "سجلت بياناتك", "Sorry, we don't have it", "It is out of stock", "The minimum order is 100"})
+            assertThat(ReviewGate.skipReason(risky, "FACTS: 100 50 64")).as(risky).isNull();
+    }
+
+    @Test
     void promisesOffersPicturesAddressFormsLongAndTwoPartDraftsAreAlwaysReviewed() {
         for (String risky : new String[] {"عليها ضمان سنة", "في خصم لو طلبت النهاردة", "تحب أبعتلك صورتها؟", "أهلاً أستاذ كريم، تحب مقاس إيه؟", "خامة أصلي ١٠٠٪", "Original leather, tell me the size",
                 "تحب أبعتلك على واتساب؟", "ممكن ترجيع لو مش مناسبة"})

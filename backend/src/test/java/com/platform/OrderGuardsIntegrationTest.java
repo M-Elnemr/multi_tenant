@@ -1,0 +1,118 @@
+package com.platform;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.jayway.jsonpath.JsonPath;
+import com.platform.chat.AiProvider.Turn;
+import com.platform.chat.ChatService;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.test.web.servlet.ResultActions;
+
+/**
+ * Two defects found in the A/B benchmark, fixed in code and not in the prompt: (1) an order summary with a product the customer never asked for (the seller suggested a side item to reach the
+ * minimum order and the model counted a size change as the customer's yes); (2) the reply saying the shop does not have a product it sells and has in stock.
+ */
+class OrderGuardsIntegrationTest extends IntegrationTestBase {
+    @Autowired JdbcClient jdbc;
+    @Autowired ChatService chat;
+
+    @BeforeEach
+    void clean() { FakeAiProvider.reset(); }
+
+    String body(ResultActions r) throws Exception { return r.andReturn().getResponse().getContentAsString(); }
+
+    record Shop(UUID id, String fries, String falafel, String hotdog) {}
+
+    String variantOf(Tenant t, String branch, String name, int price) throws Exception {
+        String p = body(onHost(t.host(), t.access(), "POST", "/api/v1/store/products", """
+                {"taxonomySlug":"cookware","name":"%s","variants":[{"sku":"V-%s","priceMinor":%d,"optionValues":{},"stock":[{"branchId":"%s","quantity":9}]}]}
+                """.formatted(name, uniq(), price, branch)).andExpect(status().isCreated()));
+        return JsonPath.read(p, "$.variants[0].id");
+    }
+
+    Shop shop() throws Exception {
+        Tenant t = onboard("STORE");
+        String branch = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
+        UUID id = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", t.slug()).query(UUID.class).single();
+        return new Shop(id, variantOf(t, branch, "بطاطس بالجبنة", 6500), variantOf(t, branch, "ساندوتش فلافل سوري", 3500), variantOf(t, branch, "هوت دوج", 7500));
+    }
+
+    static Map<String, Object> prepare(List<String> variants) {
+        return Map.of("items", variants.stream().map(v -> Map.of("variantId", v, "quantity", 1)).toList(), "customerName", "Mido Ali", "phone", "01011112222",
+                "governorateCode", "GIZ", "addressLine1", "5 Tahrir St, floor 2", "area", "Dokki", "paymentMethod", "CASH_ON_DELIVERY");
+    }
+
+    @Test
+    void anItemTheCustomerNeverAskedForIsSentBackEvenWhenTheSellerOfferedItAndTheCustomerOnlyChangedASize() throws Exception {
+        Shop s = shop();
+        String ext = "unreq-" + uniq();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("بطاطس بالجبنة بـ ٦٥ جنيه، أقل طلب ١٠٠ جنيه: تحب تضيف ساندوتش فلافل سوري؟"));
+        chat.reply(s.id(), "WEB", ext, null, "عايز بطاطس بالجبنة");
+        FakeAiProvider.RESULTS.clear();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepare(List.of(s.fries(), s.falafel()))));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("الطلب أقل من الحد الأدنى، تحب تضيف إيه؟"));
+        String reply = chat.reply(s.id(), "WEB", ext, null, "معلش خليها صغير").text();
+        assertThat(String.valueOf(FakeAiProvider.RESULTS.get(0).result().get("error"))).contains("never asked for «ساندوتش فلافل سوري»");
+        assertThat(reply).doesNotContain("ملخص");
+    }
+
+    @Test
+    void anItemTheSellerOfferedAndTheCustomerSaidYesToIsAccepted() throws Exception {
+        Shop s = shop();
+        String ext = "unreq-yes-" + uniq();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("بطاطس بالجبنة بـ ٦٥ جنيه، أقل طلب ١٠٠ جنيه: تحب تضيف ساندوتش فلافل سوري؟"));
+        chat.reply(s.id(), "WEB", ext, null, "عايز بطاطس بالجبنة");
+        FakeAiProvider.RESULTS.clear();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepare(List.of(s.fries(), s.falafel()))));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ok"));
+        chat.reply(s.id(), "WEB", ext, null, "ايوه ضيفه");
+        assertThat(FakeAiProvider.RESULTS.get(0).result().get("error")).as(String.valueOf(FakeAiProvider.RESULTS)).isNull();
+    }
+
+    @Test
+    void anItemTheCustomerNamedIsNeverBlocked() throws Exception {
+        Shop s = shop();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepare(List.of(s.fries(), s.falafel()))));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ok"));
+        chat.reply(s.id(), "WEB", "named-" + uniq(), null, "عايز بطاطس بالجبنة وساندوتش فلافل");
+        assertThat(FakeAiProvider.RESULTS.get(0).result().get("error")).as(String.valueOf(FakeAiProvider.RESULTS)).isNull();
+    }
+
+    @Test
+    void aSingleItemTheCustomerOnlyReferredToIsNotBlocked() throws Exception {
+        Shop s = shop();
+        String ext = "refer-" + uniq();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ساندوتش فلافل سوري بـ ٣٥ جنيه، تحب تطلبه؟"));
+        chat.reply(s.id(), "WEB", ext, null, "عندكم ايه خفيف؟");
+        FakeAiProvider.RESULTS.clear();
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepare(List.of(s.falafel()))));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ok"));
+        chat.reply(s.id(), "WEB", ext, null, "عايز اطلب");
+        assertThat(FakeAiProvider.RESULTS.get(0).result().get("error")).as(String.valueOf(FakeAiProvider.RESULTS)).isNull();
+    }
+
+    @Test
+    void sayingTheShopLacksAProductItSellsAndHasInStockIsSentBackForARewrite() throws Exception {
+        Shop s = shop();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("بصراحة يا فندم مالناش هوت دوج عندنا، عندنا بطاطس بالجبنة بـ ٦٥ جنيه."));
+        FakeAiProvider.SCRIPT.add(turns -> {
+            String told = turns.stream().map(Turn::text).filter(java.util.Objects::nonNull).reduce("", (a, b) -> a + b);
+            return Turn.model(told.contains("sells it and has it in stock") ? "عندنا هوت دوج بـ ٧٥ جنيه، تحب أجهزهولك؟" : "WRONG: the problem was not sent");
+        });
+        assertThat(chat.reply(s.id(), "WEB", "deny-" + uniq(), null, "عايز هوت دوج").text()).contains("هوت دوج بـ ٧٥").doesNotContain("مالناش");
+    }
+
+    @Test
+    void aDenialOfAnOptionOrOfAProductTheShopDoesNotSellIsLeftAlone() throws Exception {
+        Shop s = shop();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("للأسف مفيش بيتزا عندنا، عندنا هوت دوج بـ ٧٥ جنيه."));
+        assertThat(chat.reply(s.id(), "WEB", "deny-ok-" + uniq(), null, "عايز بيتزا").text()).contains("مفيش بيتزا");
+    }
+}

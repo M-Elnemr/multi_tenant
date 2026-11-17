@@ -212,9 +212,12 @@ public class ChatService {
     private final ChannelAi channelAi;
     private final boolean nameProbe;
     private final boolean review;
-    /** app.ai.review.mode: "always" (every non-trivial draft is reviewed: the default) or "conditional" (see {@link ReviewGate}). */
-    @org.springframework.beans.factory.annotation.Value("${app.ai.review.mode:always}")
-    private String reviewMode = "always";
+    /**
+     * app.ai.review.mode: "conditional" (the default since the A/B benchmark: a plain draft whose figures are all grounded skips the second model call, everything else is reviewed, see {@link ReviewGate})
+     * or "always" (every non-trivial draft is reviewed: the immediate rollback, AI_REVIEW_MODE=always). Any other value means "always": a typo never weakens the review.
+     */
+    @org.springframework.beans.factory.annotation.Value("${app.ai.review.mode:conditional}")
+    private String reviewMode = "conditional";
     /** Experiment only (app.ai.experiment.tenants, shop slugs): review modes other than "always" and the self-check apply to these shops only; every other shop keeps today's behaviour whatever the settings say. */
     @org.springframework.beans.factory.annotation.Value("${app.ai.experiment.tenants:}")
     private String experimentTenants = "";
@@ -235,11 +238,23 @@ public class ChatService {
         return experimentIds.contains(tenantId);
     }
 
-    /** "always" for every shop outside the experiment; the configured mode (always | conditional | off) inside it. */
-    private String effectiveReviewMode(UUID tenantId) {
-        String m = reviewMode == null ? "always" : reviewMode.trim().toLowerCase(java.util.Locale.ROOT);
-        return "always".equals(m) || !inExperiment(tenantId) ? "always" : m;
+    /** The review mode every shop runs on: "conditional" when configured so, otherwise (also for an unknown value) "always". */
+    String effectiveReviewMode() {
+        return reviewMode != null && "conditional".equals(reviewMode.trim().toLowerCase(java.util.Locale.ROOT)) ? "conditional" : "always";
     }
+
+    /** What the platform admin and the deploy checks read to see the mode actually in effect (not merely the environment variable). */
+    public Map<String, Object> reviewPolicy() {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("reviewEnabled", review);
+        m.put("mode", effectiveReviewMode());
+        m.put("configured", reviewMode);
+        m.put("reviewModel", reviewModel == null ? "answering model" : reviewModel);
+        return m;
+    }
+
+    @jakarta.annotation.PostConstruct
+    void logReviewPolicy() { log.info("AI second-look review: enabled={}, effective mode={} (configured '{}')", review, effectiveReviewMode(), reviewMode); }
 
     /** A short checklist the model works through silently inside the same call (never printed, no extra call). The backend checks stay the authority for every commercial fact. */
     static final String SELF_CHECK = """
@@ -1095,8 +1110,7 @@ public class ChatService {
      */
     private String reviewed(Ctx ctx, ChannelAi.Routed routed, String system, List<Turn> turns, List<AiUsageService.Round> rounds, String draft) {
         long reviewStart = System.nanoTime();
-        String mode = effectiveReviewMode(ctx.tenantId());
-        if (review && "off".equals(mode) && !trivial(draft)) { ReplyTrace.review("skipped", reviewStart, null, "off", false, null); return draft; }
+        String mode = effectiveReviewMode();
         if (!review || trivial(draft) || !AiBudget.hasLeft(REPLY_BUDGET_MS - 20_000)) {   // past 20 seconds the customer has waited enough
             if (review) ReplyTrace.review("skipped", reviewStart, null, trivial(draft) ? "trivial" : "budget", false, null);
             return draft;
@@ -1262,6 +1276,8 @@ public class ChatService {
         if (!searched && !NOT_HAVE.matcher(answer).find() && !ONLY_OPTIONS.matcher(answer).find() && productFacts(answer) && !alreadySaid(answer, turns))
             problems.put("UNCHECKED_FACTS", "You described which colors, sizes or items are available without checking in this turn: call search_products (or get_product) now and answer only from the result.");
         if (!searched && !NOT_HAVE.matcher(answer).find() && ONLY_OPTIONS.matcher(answer).find()) problems.put("UNCHECKED_OPTIONS", "You stated which colors, sizes or quantities exist without checking in this turn: call search_products or get_product and answer from allOptions and inStockOptions.");
+        String deniedSold = deniesSoldProduct(ctx, last, answer);
+        if (deniedSold != null) problems.put("DENIED_EXISTING_PRODUCT", deniedSold);
         if (!searched && NOT_HAVE.matcher(answer).find()) problems.put("UNSEARCHED_DENIAL", "You said we do not have something without searching in this turn: call search_products for exactly what the customer asked (also by color and size) and answer from the result.");
         String norm = FastAnswers.norm(answer);
         if (BROKEN_RUN.matcher(answer).find())
@@ -1602,11 +1618,74 @@ public class ChatService {
     }
 
     /** The products the customer named in this chat so far (their own messages), in order. */
+    /** Words of a product's name that say nothing about which product it is. */
+    private static final Set<String> GENERIC_NAME_WORDS = Set.of("ساندوتش", "ساندويتش", "وجبه", "صحن", "بوكس", "طبق", "حجم", "كبير", "صغير", "وسط", "عادي", "قطعه", "قطع", "مع", "من", "في", "بدون", "جديد");
+    /** A customer's «yes» to something the seller offered, or an «add it». */
+    private static final Set<String> ACCEPT_WORDS = Set.of("ايوه", "ايوا", "ايوة", "اه", "تمام", "ماشي", "موافق", "اوكي", "اوك", "ok", "okay", "yes", "yeah", "yep", "ضيف", "ضيفه", "ضيفها", "ضيفهم", "زود", "زودها", "زوده", "هاته", "هاتها", "ده", "دي", "دول", "الاول", "التاني", "كمان", "اكيد", "طبعا");
+
+    /** The customer named this product: a mention of it in their messages, or one of its name's own words (not a word every dish has) in them. */
+    private static boolean productNamedByCustomer(List<String> named, String slug, String productName, String saidWords) {
+        if (named.contains(slug)) return true;
+        for (String w : FastAnswers.norm(productName).split("\\s+")) if (w.length() >= 3 && !GENERIC_NAME_WORDS.contains(w) && saidWords.contains(w)) return true;
+        return false;
+    }
+
+    /**
+     * A product the customer never asked for in an order summary (a model that adds a side item «to reach the minimum order»): the customer named it, or its name's own words are in their
+     * messages, or it is already in the summary or the placed order being changed, or the seller offered it by name in the message just before and the customer's newest message says yes.
+     * Otherwise the item is sent back so the model asks. Null when the item is fine.
+     */
+    private String unrequestedItem(Ctx ctx, FactCheck.Shop view, List<String> named, String slug, String productName, String saidWords, List<String> customerMsgs, UUID variantId, List<UUID> pending) {
+        if (productNamedByCustomer(named, slug, productName, saidWords)) return null;
+        if (pending != null && pending.contains(variantId)) return null;
+        boolean inPlacedOrder = jdbc.sql("""
+                SELECT EXISTS (SELECT 1 FROM commerce.order_items oi JOIN commerce.orders o ON o.id = oi.order_id
+                               WHERE o.tenant_id = :t AND o.order_number = (SELECT last_order FROM chat.conversations WHERE id = :c) AND oi.product_name_snapshot = :n)
+                """).param("t", ctx.tenantId()).param("c", ctx.conversationId()).param("n", productName).query(Boolean.class).single();
+        if (inPlacedOrder) return null;
+        String offered = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'assistant' AND id < :u ORDER BY id DESC LIMIT 1")
+                .param("c", ctx.conversationId()).param("u", ctx.userMsgId()).query(String.class).optional().orElse("");
+        String newest = customerMsgs.isEmpty() ? "" : FastAnswers.norm(customerMsgs.get(customerMsgs.size() - 1));
+        boolean accepts = java.util.Arrays.stream(newest.split("\\s+")).anyMatch(ACCEPT_WORDS::contains);
+        if (accepts && FactCheck.mentions(offered, view.names()).stream().anyMatch(m -> m.slug().equals(slug))) return null;
+        return "The customer never asked for «" + productName + "»: do not put it in the order. Use only what they asked for (and what they said yes to when you offered it). "
+                + "If the order is below the minimum order value, tell them the minimum and ask what they want to add; never add an item for them.";
+    }
+
     private List<String> chosenInChat(Ctx ctx, FactCheck.Shop shop) {
         Set<String> out = new java.util.LinkedHashSet<>();
         for (String m : jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u ORDER BY id").param("c", ctx.conversationId()).param("u", ctx.userMsgId()).query(String.class).list())
             for (var mn : FactCheck.mentions(m, shop.names())) out.add(mn.slug());
         return new ArrayList<>(out);
+    }
+
+    /** Ways of saying «we do not have it»: the checks' NOT_HAVE plus the shorter ones (مالناش, مش فيه, مش من أصنافنا, لا يوجد). */
+    private static final Pattern DENIES = Pattern.compile(NOT_HAVE.pattern() + "|مالناش|ملناش|مش\\s+فيه|مش\\s+من\\s+(?:اصنافنا|أصنافنا|منتجاتنا)|لا\\s+يوجد|مفيش|مش\\s+بنبيع|مبنبيعش", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * The reply says the shop does not have a product the customer named, yet the shop sells it and it is in stock («مالناش هوت دوج» when «هوت دوج» is in the menu at 75). Only a sentence that
+     * both denies and names that product counts; a missing colour or size of it is a different sentence. Null when the reply is fine.
+     */
+    private String deniesSoldProduct(Ctx ctx, String last, String answer) {
+        if (answer == null || last == null || !DENIES.matcher(answer).find()) return null;
+        var view = shopView(ctx.tenantId());
+        var asked = FactCheck.mentions(last, view.names());
+        if (asked.isEmpty()) return null;
+        for (String sentence : answer.split("(?<=[.!؟?\\n])")) {
+            if (!DENIES.matcher(sentence).find()) continue;
+            for (var m : asked) {
+                var named = view.names().stream().filter(n -> n.slug().equals(m.slug())).findFirst().orElse(null);
+                if (named == null || FactCheck.mentions(sentence, List.of(named)).isEmpty()) continue;
+                boolean inStock = jdbc.sql("""
+                        SELECT EXISTS (SELECT 1 FROM commerce.products p JOIN commerce.product_variants v ON v.product_id = p.id AND v.status = 'ACTIVE'
+                                       WHERE p.tenant_id = :t AND p.slug = :s AND p.status = 'ACTIVE'
+                                         AND (SELECT coalesce(sum(i.quantity_on_hand - i.quantity_reserved), 0) FROM commerce.inventory_items i JOIN commerce.branches b ON b.id = i.branch_id AND b.is_active WHERE i.variant_id = v.id) > 0)
+                        """).param("t", ctx.tenantId()).param("s", m.slug()).query(Boolean.class).single();
+                if (inStock) return "You said the shop does not have «" + named.name() + "», but the shop sells it and has it in stock: give its real price and options (get_product " + m.slug() + "). "
+                        + "If the customer asked for an option of it that is missing (a colour, a size), say only that option is missing and offer the ones in stock; never say the product itself is unavailable.";
+            }
+        }
+        return null;
     }
 
     /** The draft promises to check or get back later, or offers to show what the customer asked for without naming any product or price. */
@@ -4243,6 +4322,12 @@ public class ChatService {
         FactCheck.Shop view = shopView(tenantId);
         List<String> named = chosenInChat(ctx, view);
         Map<String, String> ownWords = wordsPerProduct(customerMsgs, view);
+        List<UUID> pendingNow = pendingVariants(ctx.conversationId());   // items of the summary already on the table (they passed this check when they were added)
+        // an unrequested item is only looked for next to an item the customer did name: a customer who says «عايز أطلب» about the one product just shown has named none, and that is fine
+        boolean someItemNamed = items.stream().anyMatch(it -> {
+            var r = jdbc.sql("SELECT p.slug, p.name FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE v.id = :v").param("v", it.variantId()).query().listOfRows().stream().findFirst().orElse(null);
+            return r != null && productNamedByCustomer(named, String.valueOf(r.get("slug")), String.valueOf(r.get("name")), saidWords);
+        });
         for (CheckoutService.Item it : items) {
             var row = jdbc.sql("SELECT p.slug, p.name FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE v.id = :v").param("v", it.variantId()).query().listOfRows().stream().findFirst().orElse(null);
             if (row == null) return obj("error", "Invalid variantId" + realVariantIds(ctx));
@@ -4254,6 +4339,8 @@ public class ChatService {
                     if (asked != null && FastAnswers.norm(asked.name()).startsWith(name + " "))
                         return obj("error", "The customer asked for «" + asked.name() + "» (slug " + n + "), not «" + row.get("name") + "»: use that product's variant (get_product " + n + ").");
                 }
+            String unrequested = someItemNamed ? unrequestedItem(ctx, view, named, slug, String.valueOf(row.get("name")), saidWords, customerMsgs, it.variantId(), pendingNow) : null;
+            if (unrequested != null) return obj("error", unrequested);
             List<String> changed = contradictedOptions(it.variantId(), itemWords, withoutProductNames(itemWords, view));
             if (!changed.isEmpty())
                 return obj("error", "Wrong option for " + variantNames(List.of(it.variantId())) + ": " + String.join("; ", changed) + ". Use the variant with what the customer said; if that one cannot be ordered (sold out, minimum order), tell them and ask, never pick another option for them.");
