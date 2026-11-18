@@ -290,6 +290,40 @@ class OrderGuardsIntegrationTest extends IntegrationTestBase {
         assertThat(text).doesNotContain("23,999").doesNotContain("23999");   // a safe reply, with the right price or none
     }
 
+    /** Seen on the final build: «عايز زينترا بوك 14 أوبن بوكس» was answered with the list of the NEW laptop's options (and another product's) because the fallback used the products the model had searched. */
+    @Test
+    void theShopDataFallbackIsAboutTheProductTheCustomerNamedNotTheOnesTheModelSearched() throws Exception {
+        Tenant t = onboard("STORE");
+        String branch = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
+        String tag = uniq(), base = "لاب توب زينترا " + tag, open = base + " أوبن بوكس";
+        for (String[] p : new String[][] {{base, "2499900"}, {open, "2099900"}})
+            body(onHost(t.host(), t.access(), "POST", "/api/v1/store/products", """
+                    {"taxonomySlug":"cookware","name":"%s","variants":[{"sku":"LP-%s","priceMinor":%s,"optionValues":{},"stock":[{"branchId":"%s","quantity":3}]}]}
+                    """.formatted(p[0], uniq(), p[1], branch)).andExpect(status().isCreated()));
+        UUID id = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", t.slug()).query(UUID.class).single();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model(open + " متاح بـ 20999 جنيه ومتبقي منه 9 قطع بس، والعرض ده لحد آخر النهاردة."));   // a wrong stock: the final gate replaces it with shop data
+        rewriteFails();
+        String text = chat.reply(id, "WEB", "fallbackAsked-" + uniq(), null, "عايز " + open).text();
+        assertThat(text).doesNotContain("9 قطع").doesNotContain("24999");
+        assertThat(text).contains(open);
+    }
+
+    /** A hedged invented spec («حوالي 6 ساعات») is still an invented spec. */
+    @Test
+    void anApproximateBatteryLifeThatTheShopNeverWroteIsNotSent() throws Exception {
+        Tenant t = onboard("STORE");
+        String branch = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
+        String name = "لاب توب أورا " + uniq();
+        body(onHost(t.host(), t.access(), "POST", "/api/v1/store/products", """
+                {"taxonomySlug":"cookware","name":"%s","variants":[{"sku":"LP-%s","priceMinor":2099900,"optionValues":{},"stock":[{"branchId":"%s","quantity":3}]}]}
+                """.formatted(name, uniq(), branch)).andExpect(status().isCreated()));
+        UUID id = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", t.slug()).query(UUID.class).single();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model(name + " بطاريته 50 واط في الساعة بتديك حوالي 6 ساعات شغل عادي. تحب أحجزهولك؟"));
+        rewriteFails();
+        String text = chat.reply(id, "WEB", "battery-" + uniq(), null, "والبطارية بتقعد قد إيه في " + name + "؟").text();
+        assertThat(text).doesNotContain("6 ساعات").doesNotContain("50 واط");
+    }
+
     /** A sandwich (85/110/140) and its meal (145/175) in a new shop; returns the tenant id. */
     private UUID sandwichAndMeal(Tenant t, String sandwich, String meal) throws Exception {
         String branch = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");

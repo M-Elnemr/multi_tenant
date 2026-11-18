@@ -88,6 +88,8 @@ class ChatTextTest {
         assertThat(ChatService.BROKEN_RUN.matcher("عندنا تيشيرت 很好 قطن").find()).isTrue();
         assertThat(ChatService.STALL.matcher("عذرًا يا فندم، دلوقتي محدش فينظش المخازن عشان أتأكد إن عندنا طقم ملايات قطن مصري أبيض").find()).isTrue();
         assertThat(ChatService.STALL.matcher("عندنا طقم ملايات قطن مصري أبيض بـ ٩٥٠ جنيه، تحب أجهزهولك؟").find()).isFalse();
+        assertThat(ChatService.BROKEN_RUN.matcher("الجديد بيبτι من 24999 جنيه يا فندم").find()).isTrue();   // Greek letters inside an Arabic word, seen on the final build
+        assertThat(ChatService.BROKEN_RUN.matcher("سماعة 32 Ω وميكروفون 5 μm").find()).isFalse();   // units are not garbage
         assertThat(ChatService.BROKEN_RUN.matcher("عندنا تيشيرت قطن مقاس XL، تحب أحجزهولك؟ 👌").find()).isFalse();
     }
 

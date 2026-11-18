@@ -84,6 +84,8 @@ public class ChatService {
     static final ThreadLocal<List<String>> REPLY_PRODUCTS = new ThreadLocal<>();
     /** The slugs of the products the quoted message is about (set only while a reply to an earlier message is being answered). */
     static final ThreadLocal<List<String>> REPLY_SLUGS = new ThreadLocal<>();
+    /** The product(s) of the chat when the customer's message names none (the product the shop named last). */
+    static final ThreadLocal<List<String>> FOCUS_SLUGS = new ThreadLocal<>();
 
     /**
      * What the reply context and the earlier-messages digest added to the prompt of this reply, so the money check can tell it from shop data: an amount in an OLD quoted message of the shop or
@@ -559,7 +561,7 @@ public class ChatService {
         boolean failed = false;
         try { return replyTimed(tenantId, channel, externalId, clientId, message, displayName, in == null ? ReplyInput.NONE : in); }
         catch (RuntimeException | Error e) { failed = true; throw e; }
-        finally { ReplyTimeline.finish(channel, externalId, failed); REPLY_PRODUCTS.remove(); REPLY_SLUGS.remove(); EXTRAS.remove(); }
+        finally { ReplyTimeline.finish(channel, externalId, failed); REPLY_PRODUCTS.remove(); REPLY_SLUGS.remove(); FOCUS_SLUGS.remove(); EXTRAS.remove(); }
     }
 
     private Reply replyTimed(UUID tenantId, String channel, String externalId, UUID clientId, String message, String displayName, ReplyInput in) {
@@ -876,6 +878,7 @@ public class ChatService {
         List<String> labels = new ArrayList<>();
         for (String sl : slugs) shop.names().stream().filter(n -> n.slug().equals(sl)).findFirst().ifPresent(n -> labels.add("«" + n.name() + "» [" + n.slug() + "]"));
         if (labels.isEmpty()) return "";
+        FOCUS_SLUGS.set(List.copyOf(slugs));
         return "\n\nTHE PRODUCT OF THIS CHAT (the customer's last message names no product, so it is about this one): " + String.join(" and ", labels) + ". Answer its price, colours, stock, warranty and details from get_product with that slug. "
                 + "If the shop sells other versions of the same model (new, open-box, another year), each is a different product with its own price, stock, colours and warranty: never answer for one with the other's data, never say the one being discussed is missing or only comes new, and say plainly when a detail is not in its own data.";
     }
@@ -1731,7 +1734,9 @@ public class ChatService {
             log.warn("Critical gate: {} still in the reply (conversation {}), replaced by shop data: {}", bad, ctx.conversationId(), out);
             for (String kind : bad.stream().distinct().toList()) events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:FINAL_" + kind, null, null);
             ReplyTrace.checkProblems(bad.stream().map(k -> "FINAL_" + k).collect(java.util.stream.Collectors.toSet()));
-            return verifiedReply(ctx, last, touched);
+            var askedNow = FactCheck.askedSlugs(last, shopData.names());   // the product the customer named, never the others the model happened to search
+            var focus = FOCUS_SLUGS.get();
+            return verifiedReply(ctx, last, !askedNow.isEmpty() ? askedNow : focus != null && !focus.isEmpty() ? focus : touched);
         } catch (RuntimeException e) {
             log.warn("Critical gate skipped", e);
             return answer;
@@ -2790,7 +2795,7 @@ public class ChatService {
     /** A reply saying the shop has no information about something («مفيش معلومات عن السعرات», «مش مكتوب في الوصف»). */
     /** One letter (or two) repeated on and on: the model's output broke. */
     /** A run of repeated letters («لجماااا…»), or letters of a script the customer never writes in (Qwen now and then slips into Chinese). */
-    static final Pattern BROKEN_RUN = Pattern.compile("(\\p{L}{1,2})\\1{7,}|[\\p{IsHan}\\p{IsHiragana}\\p{IsKatakana}\\p{IsHangul}\\p{IsCyrillic}\\p{IsThai}]");
+    static final Pattern BROKEN_RUN = Pattern.compile("(\\p{L}{1,2})\\1{7,}|[\\p{IsHan}\\p{IsHiragana}\\p{IsKatakana}\\p{IsHangul}\\p{IsCyrillic}\\p{IsThai}\\p{IsDevanagari}\\p{IsHebrew}]|[\\p{IsGreek}&&[^μΩω]]");
 
     static final Pattern NO_INFO = Pattern.compile("(?:(?:مفيش|معنديش|مش\\s+عندي|محدش\\s+عنده|معندناش|ماعندناش|مالقيتش|ملقيتش)\\s+(?:أي\\s+|اي\\s+)?(?:معلومات|معلومة|معلومه|بيانات|تفاصيل|مواصفات)|مش\\s+(?:مكتوب|مذكور|مذكوره|مذكورة)\\s+(?:في|ف)\\s+(?:الوصف|البيانات)|خارج\\s+عن\\s+(?:معلوماتنا|المعلومات)|(?:no|don'?t\\s+have)\\s+(?:detailed\\s+)?(?:information|details|specs|specifications))", Pattern.CASE_INSENSITIVE);
 
