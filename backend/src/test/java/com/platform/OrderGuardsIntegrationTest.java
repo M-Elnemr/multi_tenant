@@ -230,4 +230,53 @@ class OrderGuardsIntegrationTest extends IntegrationTestBase {
         assertThat(text.stripTrailing()).doesNotEndWith(":");
         assertThat(text).contains("أبيض").contains("أسود").contains("1250");
     }
+
+    @Test
+    void aDenialWrittenWithASpaceInTheNegationIsCaughtToo() throws Exception {
+        Shop s = shop();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("للأسف يا فندم م عندناش هوت دوج، بس عندنا بطاطس بالجبنة بـ ٦٥ جنيه."));
+        rewriteFails();
+        String text = chat.reply(s.id(), "WEB", "deny-space-" + uniq(), null, "عايز هوت دوج").text();
+        assertThat(text).doesNotContain("م عندناش").contains("هوت دوج").contains("75");
+    }
+
+    @Test
+    void anImplicitExclusionOfAnOpenBoxProductIsReplacedByItsRealData() throws Exception {
+        Tenant t = onboard("STORE");
+        String branch = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
+        for (String[] p : new String[][] {{"لاب توب زينترا بوك ١٤", "2499900"}, {"لاب توب زينترا بوك ١٤ أوبن بوكس", "2099900"}, {"موبايل نوفا ماكس", "1849900"}})
+            body(onHost(t.host(), t.access(), "POST", "/api/v1/store/products", """
+                    {"taxonomySlug":"cookware","name":"%s","variants":[{"sku":"LP-%s","priceMinor":%s,"optionValues":{},"stock":[{"branchId":"%s","quantity":3}]}]}
+                    """.formatted(p[0], uniq(), p[1], branch)).andExpect(status().isCreated()));
+        UUID id = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", t.slug()).query(UUID.class).single();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("للأسف يا فندم، الأوبن بوكس عندنا متاح في الموبايلات بس. لاب توب زينترا بوك ١٤ بييجي جديد فقط بـ 24999 جنيه."));
+        rewriteFails();
+        String text = chat.reply(id, "WEB", "openbox2-" + uniq(), null, "عايز لاب توب زينترا بوك ١٤ أوبن بوكس").text();
+        assertThat(text).doesNotContain("بييجي جديد فقط").contains("أوبن بوكس").contains("20999");
+    }
+
+    /** The sandwich (85/110/140) and its meal (145/175): a line that gives the sandwich's sizes at the meal's prices is never sent. */
+    @Test
+    void theOptionPricesOfAMealAreNeverGivenForItsSandwichSizes() throws Exception {
+        Tenant t = onboard("STORE");
+        String branch = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
+        String tag = uniq();
+        String sandwich = "ساندوتش شاورما فراخ " + tag, meal = "وجبة ساندوتش شاورما فراخ " + tag;
+        body(onHost(t.host(), t.access(), "POST", "/api/v1/store/products", """
+                {"taxonomySlug":"cookware","name":"%1$s","options":[{"name":"الحجم","values":["عادي","كبير","سوبر"]}],
+                 "variants":[{"sku":"A1-%2$s","priceMinor":8500,"optionValues":{"الحجم":"عادي"},"stock":[{"branchId":"%3$s","quantity":9}]},
+                             {"sku":"A2-%2$s","priceMinor":11000,"optionValues":{"الحجم":"كبير"},"stock":[{"branchId":"%3$s","quantity":9}]},
+                             {"sku":"A3-%2$s","priceMinor":14000,"optionValues":{"الحجم":"سوبر"},"stock":[{"branchId":"%3$s","quantity":9}]}]}
+                """.formatted(sandwich, uniq(), branch)).andExpect(status().isCreated()));
+        body(onHost(t.host(), t.access(), "POST", "/api/v1/store/products", """
+                {"taxonomySlug":"cookware","name":"%1$s","options":[{"name":"الحجم","values":["عادي","كبير"]}],
+                 "variants":[{"sku":"B1-%2$s","priceMinor":14500,"optionValues":{"الحجم":"عادي"},"stock":[{"branchId":"%3$s","quantity":9}]},
+                             {"sku":"B2-%2$s","priceMinor":17500,"optionValues":{"الحجم":"كبير"},"stock":[{"branchId":"%3$s","quantity":9}]}]}
+                """.formatted(meal, uniq(), branch)).andExpect(status().isCreated()));
+        UUID id = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", t.slug()).query(UUID.class).single();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("عندك اختيارين: " + meal + " من 145 جنيه، أو " + sandwich + " لوحده: عادي 145 / كبير 175 / سوبر 140."));
+        rewriteFails();
+        String text = chat.reply(id, "WEB", "mixed-" + uniq(), null, "عايز " + sandwich).text();
+        assertThat(text).doesNotContain("عادي 145").contains("85").contains("110");
+    }
 }

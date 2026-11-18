@@ -43,7 +43,7 @@ class ReviewGateTest {
     void spellingVariantsArabiziAndEnglishWordingNeverSkipTheReview() {
         for (String risky : new String[] {"مفيييييييش عندنا حاجة زي كده", "الأَخضر نَفَدَ", "نفدت الكمية يا فندم", "المقاس ده غير موجود", "ده غير متوفر حالياً", "مش لاقي المقاس ده", "هيوصلك خلال 3 ايام", "هيوصل بكرة",
                 "mafesh 3andna el hot dog", "mfish menu", "ma3ndnash el size da", "msh mawgod", "khalas el kamya", "el tawseel b 50", "closed now", "It is unavailable", "We have no stock", "wholesale price is 10",
-                "ده آخر سعر", "سعر الجملة 100", "المحل مقفول", "ده خلصانة"})
+                "للأسف م عندناش هوت دوج", "ده آخر سعر", "سعر الجملة 100", "المحل مقفول", "ده خلصانة"})
             assertThat(ReviewGate.skipReason(risky, "FACTS: 100 50 3 10")).as(risky).isNull();
     }
 

@@ -1218,7 +1218,7 @@ public class ChatService {
 
     private static final Pattern WHO_QUESTION = Pattern.compile("(?:ليك|ليكي|لحضرتك|لنفسك)\\s+(?:ولا|و\\s*لا)\\s+(?:لحد|ل\\s*حد)|(?:بتطلب|بتشتري|بتدور)\\s+(?:ل|لـ)?\\s*(?:حد|نفسك)|ليك\\s+ولا\\s+هدية|هدية\\s+(?:لحد|ل\\s*حد)|(?:لنفسك|ليكي|ليك|نفسك)\\s+(?:ولا|و\\s*لا)\\s+(?:لحد|ل\\s*حد)\\s*(?:تاني|تانية)?|(?:for you|for yourself)\\s+or\\s+(?:someone|a gift)", Pattern.CASE_INSENSITIVE);
     private static final Pattern FOR_ME = Pattern.compile("(?<![\\p{L}])(?:ليا|ليّا|لنفسي|عشاني|علشاني|لي انا|ليه انا|for me|for myself)(?![\\p{L}])", Pattern.CASE_INSENSITIVE);
-    private static final Pattern NOT_HAVE = Pattern.compile("(?:مفيش\\s+(?:لبس|ملابس|منتج|منتجات|حاجة|حاجه|حاجات|موديل|موديلات|أنواع|انواع|أصناف|اصناف|صنف|اختيارات|خيارات)|عندنا\\s+مفيش|مش\\s+(?:موجود|موجوده|موجودة|متوفر|متوفره|متوفرة|متاح|متاحه|متاحة)|معندناش|ماعندناش|مش\\s+عندنا|مفيش\\s+عندنا|مش\\s+عندهم|we\\s+(?:don't|do not)\\s+have|not\\s+available)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern NOT_HAVE = Pattern.compile("(?:مفيش\\s+(?:لبس|ملابس|منتج|منتجات|حاجة|حاجه|حاجات|موديل|موديلات|أنواع|انواع|أصناف|اصناف|صنف|اختيارات|خيارات)|عندنا\\s+مفيش|مش\\s+(?:موجود|موجوده|موجودة|متوفر|متوفره|متوفرة|متاح|متاحه|متاحة)|(?:ما|م)\\s*عندناش|مش\\s+عندنا|مفيش\\s+عندنا|مش\\s+عندهم|we\\s+(?:don't|do not)\\s+have|not\\s+available)", Pattern.CASE_INSENSITIVE);
     private static final java.util.List<String> EXAMPLE_LINES = examples();
     private static final Pattern ONLY_OPTIONS = Pattern.compile("(?:الألوان|الالوان|المقاسات|اللون)\\s+(?:المتاحة|المتاحه|المتوفرة|المتوفره|الموجودة|الموجوده)[^.؟?!\\n]{0,40}(?:فقط|بس)|(?:لونه|لونها|متاح|متاحة|متوفر|موجود)\\s+[^.؟?!\\n]{0,15}(?:بس|فقط)|(?:بقطعة|بقطعه)\\s+واحدة|معنديش\\s+معلومات\\s+(?:دقيقة\\s+)?عن\\s+(?:المقاسات|الألوان|المخزون)");
 
@@ -1331,6 +1331,10 @@ public class ChatService {
         if (noSize != null) problems.put("INVENTED_SIZE", noSize);
         String switched = switchedProduct(ctx, shopData, last, answer);
         if (switched != null) problems.put("SWITCHED_PRODUCT", switched);
+        String askedSlug = namedProductIgnored(ctx, last, answer, shopData);
+        if (askedSlug != null) problems.put("NAMED_PRODUCT_IGNORED", "The customer asked for «" + displayName(shopData, askedSlug) + "», which the shop has in stock, and your reply does not talk about it: call get_product " + askedSlug
+                + " and answer about exactly that product (never say it is only sold in another category or only new; it is its own product with its own price).");
+        if (mixedOptionPrices(answer, shopData)) problems.put("MIXED_OPTION_PRICES", "A line gives option prices (sizes) that no single product has: the prices of two products were mixed. Give each product's own prices from get_product, product by product.");
         String quotedSlug = quoteIgnored(last, answer, shopData);
         if (quotedSlug != null) problems.put("QUOTE_IGNORED", "The customer is replying to your earlier message about «" + displayName(shopData, quotedSlug) + "» (see THE PRODUCT THIS MESSAGE IS ABOUT) and their message names no other product: "
                 + "answer about THAT product (get_product " + quotedSlug + ") and not about another one.");
@@ -1635,7 +1639,7 @@ public class ChatService {
     }
 
     /** Ways of saying «we do not have it»: the checks' NOT_HAVE plus the shorter ones (مالناش, مش فيه, مش من أصنافنا, لا يوجد). */
-    private static final Pattern DENIES = Pattern.compile(NOT_HAVE.pattern() + "|مالناش|ملناش|مش\\s+فيه|مش\\s+من\\s+(?:اصنافنا|أصنافنا|منتجاتنا)|لا\\s+يوجد|مفيش|مش\\s+بنبيع|مبنبيعش", Pattern.CASE_INSENSITIVE);
+    private static final Pattern DENIES = Pattern.compile(NOT_HAVE.pattern() + "|مالناش|ملناش|(?:ما|م)\\s*لناش|مش\\s+فيه|مش\\s+من\\s+(?:اصنافنا|أصنافنا|منتجاتنا)|لا\\s+يوجد|مفيش|مش\\s+بنبيع|مبنبيعش", Pattern.CASE_INSENSITIVE);
 
     /**
      * The reply says the shop does not have a product the customer named, yet the shop sells it and it is in stock («مالناش هوت دوج» when «هوت دوج» is in the menu at 75). Only a sentence that
@@ -1677,6 +1681,19 @@ public class ChatService {
             out = factsFixed(last, out, shopData, touched);
             List<String> bad = new ArrayList<>();
             if (inventedColors(ctx, out) != null || colourNotInProduct(ctx, out, shopData)) bad.add("INVENTED_COLOR");
+            String asked = namedProductIgnored(ctx, last, out, shopData);
+            if (asked != null) {
+                log.warn("Critical gate: the reply ignores the product the customer named {} (conversation {})", asked, ctx.conversationId());
+                events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:FINAL_NAMED_PRODUCT_IGNORED", null, null);
+                ReplyTrace.checkProblems(Set.of("FINAL_NAMED_PRODUCT_IGNORED"));
+                return verifiedReply(ctx, last, List.of(asked));
+            }
+            if (mixedOptionPrices(out, shopData)) {
+                var named = FactCheck.mentions(last, shopData.names()).stream().map(FactCheck.Mention::slug).distinct().toList();
+                events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:FINAL_MIXED_OPTION_PRICES", null, null);
+                ReplyTrace.checkProblems(Set.of("FINAL_MIXED_OPTION_PRICES"));
+                return verifiedReply(ctx, last, named.isEmpty() ? touched : named);
+            }
             String quoted = quoteIgnored(last, out, shopData);
             if (quoted != null) {   // answered about another product than the one the customer replied to: the quoted product's own data, from the shop
                 log.warn("Critical gate: the reply ignores the quoted product {} (conversation {})", quoted, ctx.conversationId());
@@ -1707,9 +1724,14 @@ public class ChatService {
             if (name == null) continue;
             var vs = compactVariants(ctx.tenantId(), slug, null, 80).stream().filter(v -> !Boolean.FALSE.equals(v.get("available")) && !"0".equals(String.valueOf(v.get("available")))).toList();
             if (vs.isEmpty()) continue;
-            var prices = vs.stream().map(v -> v.get("price")).filter(java.util.Objects::nonNull).map(String::valueOf).distinct().toList();
-            String options = vs.stream().map(v -> String.valueOf(v.get("options"))).filter(o -> !o.isBlank() && !"null".equals(o)).distinct().limit(8).collect(java.util.stream.Collectors.joining(" | "));
-            b.append("• ").append(name).append(prices.isEmpty() ? "" : " — " + (prices.size() > 1 ? (ar ? "من " : "from ") : "") + prices.get(0)).append(options.isEmpty() ? "" : (ar ? " — المتاح: " : " — in stock: ") + options).append("\n");
+            b.append("• ").append(name).append("\n");
+            int shown = 0;
+            for (var v : vs) {
+                if (shown++ >= 8) break;
+                String opts = java.util.Arrays.stream(String.valueOf(v.get("options")).split(",\\s*")).map(o -> o.contains(":") ? o.substring(o.indexOf(':') + 1).trim() : o.trim()).filter(o -> !o.isBlank() && !"null".equals(o)).collect(java.util.stream.Collectors.joining(" / "));
+                String price = v.get("price") == null ? "" : new java.math.BigDecimal(String.valueOf(v.get("price")).replaceAll("[^0-9.]", "")).stripTrailingZeros().toPlainString();
+                b.append("   - ").append(opts.isEmpty() ? (ar ? "متاح" : "available") : opts).append(price.isEmpty() ? "" : " — " + price + (ar ? " جنيه" : " EGP")).append("\n");
+            }
         }
         if (b.isEmpty()) return ar ? "قولّي المنتج والمقاس واللون اللي محتاجهم وأقولك المتاح بالظبط 🌸" : "Tell me the product, size and colour you need and I will tell you exactly what is available 🌸";
         return (ar ? "ده المتاح عندنا بالظبط:\n" : "This is exactly what we have:\n") + b + (ar ? "تحب أنهي مقاس أو لون؟" : "Which size or colour would you like?");
@@ -1730,6 +1752,55 @@ public class ChatService {
 
     private static String displayName(FactCheck.Shop shop, String slug) {
         return shop.names().stream().filter(n -> n.slug().equals(slug)).map(FactCheck.Named::name).findFirst().orElse(slug);
+    }
+
+    /** Words around a denial that is not a denial word: «للأسف», «فقط», "only", "unfortunately" (the open-box laptop answered «بييجي جديد فقط»). */
+    private static final Pattern EXCLUSION_CUE = Pattern.compile("للأسف|للاسف|فقط|بس\\s+(?:بيجي|بييجي|موجود|متاح)|unfortunately|\\bonly\\b|مش\\s+(?:بيجي|بييجي)", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * The customer named exactly one product of the shop that is in stock, the reply names other products and not that one, and it excludes or denies something («الأوبن بوكس متاح في الموبايلات بس»,
+     * «بيجي جديد فقط»): the product the customer asked for is not in the answer. Returns its slug, or null.
+     */
+    private String namedProductIgnored(Ctx ctx, String last, String answer, FactCheck.Shop shop) {
+        if (answer == null || last == null || (!DENIES.matcher(answer).find() && !EXCLUSION_CUE.matcher(answer).find())) return null;
+        var asked = FactCheck.mentions(last, shop.names()).stream().map(FactCheck.Mention::slug).distinct().toList();
+        if (asked.size() != 1) return null;
+        var said = FactCheck.mentions(answer, shop.names()).stream().map(FactCheck.Mention::slug).distinct().toList();
+        if (said.isEmpty() || said.contains(asked.get(0))) return null;
+        var product = shop.product(asked.get(0));
+        if (product == null || product.variants().stream().noneMatch(v -> v.available() > 0)) return null;   // a product that is really gone may be answered with alternatives
+        return asked.get(0);
+    }
+
+    /**
+     * A sentence or line that gives the prices of several option values («عادي ١٤٥ / كبير ١٧٥ / سوبر ١٤٠») that no single product of the reply has: the prices of two products were
+     * mixed (the meal's prices for the sandwich's sizes). True when such a line exists.
+     */
+    private static boolean mixedOptionPrices(String answer, FactCheck.Shop shop) {
+        var slugs = FactCheck.mentions(answer, shop.names()).stream().map(FactCheck.Mention::slug).distinct().toList();
+        if (slugs.size() < 2) return false;   // one product: the option price check already knows exactly which
+        List<FactCheck.Product> products = slugs.stream().map(shop::product).filter(java.util.Objects::nonNull).toList();
+        Set<String> labels = new java.util.HashSet<>();
+        for (var pr : products) for (var v : pr.variants()) for (String val : v.options().values()) labels.add(FastAnswers.norm(val));
+        var pair = Pattern.compile("(\\S{2,12})\\s*[:=\\-–]?\\s*(\\d{2,6})(?:\\s*(?:جنيه|ج))?");
+        for (String line : answer.split("(?<=[.!؟?\\n])")) {
+            var ms = FactCheck.mentions(line, shop.names()).stream().sorted(java.util.Comparator.comparingInt(FactCheck.Mention::start)).toList();
+            for (int i = 0; i < ms.size(); i++) {   // the option prices written after a product's name, up to the next product's name, belong to the products of the reply
+                String segment = MoneyGuard.digits(line.substring(ms.get(i).end(), i + 1 < ms.size() ? ms.get(i + 1).start() : line.length()));
+                List<Object[]> pairs = new ArrayList<>();
+                var m = pair.matcher(segment);
+                while (m.find()) if (labels.contains(FastAnswers.norm(m.group(1)))) pairs.add(new Object[] {FastAnswers.norm(m.group(1)), Double.parseDouble(m.group(2))});
+                if (pairs.size() < 2) continue;
+                boolean explained = false;
+                for (var pr : products) {
+                    boolean all = true;
+                    for (var pa : pairs) all &= pr.variants().stream().anyMatch(v -> v.options().values().stream().anyMatch(x -> FastAnswers.norm(x).equals(pa[0])) && v.price() == (Double) pa[1]);
+                    if (all) { explained = true; break; }
+                }
+                if (!explained) return true;
+            }
+        }
+        return false;
     }
 
     /** One sentence of a reply that denies a product the shop sells and has in stock. */

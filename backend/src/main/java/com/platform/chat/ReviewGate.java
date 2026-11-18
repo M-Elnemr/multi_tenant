@@ -14,7 +14,7 @@ final class ReviewGate {
     private static final Pattern RISKY = Pattern.compile("ضمان|كفالة|كفاله|خصم|تخفيض|عرض|هدي[ةه]|مجان|اخر\\s+(?:قطع|حاج)|آخر\\s+(?:قطع|حاج)|بسرعة|الحق|صور[ةه]?|اصلي|أصلي|مستورد|100\\s*%|١٠٠\\s*٪|هتصل|هنتصل|هكلمك|مرتجع|استرجاع|استبدال|ترجيع|أستاذ|استاذ|يا\\s+(?:باشا|معلم|عم|ميدو|راجل|هانم|فندم\\s+فندم)|واتساب|whatsapp|guarantee|warranty|discount|free|original|imported|photo|picture|hurry|last\\s+piece"
             // added after the A/B benchmark: what the customer relies on and the shop is held to. A denial or an out-of-stock claim, the minimum order and other store policy, a delivery fee or time, and
             // anything that says an order is summarised, recorded or confirmed always get the second look; the code checks (prices, variants, stock) run on the sent text either way.
-            + "|مالناش|ملناش|مفيش|مش\\s+(?:موجود|متوفر|متاح|فيه|بييجي|بيجي|عندنا|بنبيع)|معندناش|ماعندناش|مبنبيعش|خلص|نفذ|غير\\s+متاح|لا\\s+يوجد|للأسف|للاسف|out\\s+of\\s+stock|not\\s+available|sold\\s+out|(?:don't|do\\s+not)\\s+have"
+            + "|مالناش|ملناش|مفيش|مش\\s+(?:موجود|متوفر|متاح|فيه|بييجي|بيجي|عندنا|بنبيع)|(?:ما|م)\\s*عندناش|مبنبيعش|خلص|نفذ|غير\\s+متاح|لا\\s+يوجد|للأسف|للاسف|out\\s+of\\s+stock|not\\s+available|sold\\s+out|(?:don't|do\\s+not)\\s+have"
             + "|أقل\\s+(?:طلب|قيمة)|اقل\\s+(?:طلب|قيمة)|الحد\\s+الأدنى|الحد\\s+الادنى|minimum"
             + "|توصيل|شحن|delivery|shipping"
             + "|ملخص|سجلت|اتسجل|تسجيل|تأكيد|تاكيد|أأكد|اأكد|الأوردر|الاوردر|confirmed|your\\s+order"
