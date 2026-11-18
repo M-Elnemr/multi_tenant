@@ -81,6 +81,8 @@ public class ChatService {
 
     /** The names of the products the quoted message talks about, for the knowledge tool of this reply (so «does it shrink?» searches the right product). */
     static final ThreadLocal<List<String>> REPLY_PRODUCTS = new ThreadLocal<>();
+    /** The slugs of the products the quoted message is about (set only while a reply to an earlier message is being answered). */
+    static final ThreadLocal<List<String>> REPLY_SLUGS = new ThreadLocal<>();
 
     /**
      * What the reply context and the earlier-messages digest added to the prompt of this reply, so the money check can tell it from shop data: an amount in an OLD quoted message of the shop or
@@ -556,7 +558,7 @@ public class ChatService {
         boolean failed = false;
         try { return replyTimed(tenantId, channel, externalId, clientId, message, displayName, in == null ? ReplyInput.NONE : in); }
         catch (RuntimeException | Error e) { failed = true; throw e; }
-        finally { ReplyTimeline.finish(channel, externalId, failed); REPLY_PRODUCTS.remove(); EXTRAS.remove(); }
+        finally { ReplyTimeline.finish(channel, externalId, failed); REPLY_PRODUCTS.remove(); REPLY_SLUGS.remove(); EXTRAS.remove(); }
     }
 
     private Reply replyTimed(UUID tenantId, String channel, String externalId, UUID clientId, String message, String displayName, ReplyInput in) {
@@ -883,6 +885,7 @@ public class ChatService {
             items.add(new ReplyContext.Item(q, around, products, inside, lq.line()));
         }
         REPLY_PRODUCTS.set(productNames);
+        REPLY_SLUGS.set(items.stream().flatMap(i -> i.products().stream()).map(l -> l.substring(l.lastIndexOf('[') + 1, l.length() - 1)).distinct().toList());
         return ReplyContext.block(items, missing, latest);
     }
 
@@ -1328,6 +1331,9 @@ public class ChatService {
         if (noSize != null) problems.put("INVENTED_SIZE", noSize);
         String switched = switchedProduct(ctx, shopData, last, answer);
         if (switched != null) problems.put("SWITCHED_PRODUCT", switched);
+        String quotedSlug = quoteIgnored(last, answer, shopData);
+        if (quotedSlug != null) problems.put("QUOTE_IGNORED", "The customer is replying to your earlier message about «" + displayName(shopData, quotedSlug) + "» (see THE PRODUCT THIS MESSAGE IS ABOUT) and their message names no other product: "
+                + "answer about THAT product (get_product " + quotedSlug + ") and not about another one.");
         if (problems.isEmpty()) return answer;
         for (String kind : problems.keySet()) events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:" + kind, problems.get(kind), null);
         ReplyTrace.checkProblems(problems.keySet());
@@ -1671,6 +1677,13 @@ public class ChatService {
             out = factsFixed(last, out, shopData, touched);
             List<String> bad = new ArrayList<>();
             if (inventedColors(ctx, out) != null || colourNotInProduct(ctx, out, shopData)) bad.add("INVENTED_COLOR");
+            String quoted = quoteIgnored(last, out, shopData);
+            if (quoted != null) {   // answered about another product than the one the customer replied to: the quoted product's own data, from the shop
+                log.warn("Critical gate: the reply ignores the quoted product {} (conversation {})", quoted, ctx.conversationId());
+                events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:FINAL_QUOTE_IGNORED", null, null);
+                ReplyTrace.checkProblems(Set.of("FINAL_QUOTE_IGNORED"));
+                return verifiedReply(ctx, last, List.of(quoted));
+            }
             if (inventedSize(last, out, shopData) != null) bad.add("INVENTED_SIZE");
             for (var f : FactCheck.check(last, out, shopData, touched)) if (CRITICAL_FACTS.contains(f.kind())) bad.add(f.kind());
             if (bad.isEmpty()) return out;
@@ -1700,6 +1713,23 @@ public class ChatService {
         }
         if (b.isEmpty()) return ar ? "قولّي المنتج والمقاس واللون اللي محتاجهم وأقولك المتاح بالظبط 🌸" : "Tell me the product, size and colour you need and I will tell you exactly what is available 🌸";
         return (ar ? "ده المتاح عندنا بالظبط:\n" : "This is exactly what we have:\n") + b + (ar ? "تحب أنهي مقاس أو لون؟" : "Which size or colour would you like?");
+    }
+
+    /**
+     * The customer replied to (quoted) a message that was about exactly one product, their own words name no product, and the reply talks about other products and not that one: the model
+     * answered about the latest product in the chat instead of the quoted one. Returns the quoted product's slug, or null when the reply is fine (or nothing was quoted).
+     */
+    private String quoteIgnored(String last, String answer, FactCheck.Shop shop) {
+        var slugs = REPLY_SLUGS.get();
+        if (slugs == null || slugs.size() != 1 || answer == null || last == null) return null;
+        if (!FactCheck.mentions(last, shop.names()).isEmpty()) return null;   // they named a product themselves: that is what they mean
+        var said = FactCheck.mentions(answer, shop.names()).stream().map(FactCheck.Mention::slug).distinct().toList();
+        if (said.isEmpty() || said.contains(slugs.get(0))) return null;
+        return slugs.get(0);
+    }
+
+    private static String displayName(FactCheck.Shop shop, String slug) {
+        return shop.names().stream().filter(n -> n.slug().equals(slug)).map(FactCheck.Named::name).findFirst().orElse(slug);
     }
 
     /** One sentence of a reply that denies a product the shop sells and has in stock. */

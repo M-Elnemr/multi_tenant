@@ -117,4 +117,32 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
         int at = system.indexOf("THE PRODUCT THIS MESSAGE IS ABOUT");
         assertThat(system.substring(at, system.indexOf('\n', at))).doesNotContain(bag);
     }
+
+    /** Seen in production (4 of 12 samples): the customer quotes the first answer and the model answers about the LAST product of the chat. Never sent: the quoted product's own data replaces it. */
+    @Test
+    void aReplyAboutAnotherProductThanTheQuotedOneIsNeverSentWhateverTheRewriteDoes() throws Exception {
+        Tenant t = onboard("STORE");
+        UUID tenant = tenant(t);
+        String tag = uniq();
+        String sport = "شنطة رياضة " + tag, school = "شنطة مدرسة " + tag;
+        product(t, sport, 620, "أسود");
+        product(t, school, 550, "بنفسجي");
+        for (int variant = 0; variant < 2; variant++) {
+            String ext = UUID.randomUUID().toString();
+            answer("أهلا");
+            say(t, ext, "السلام عليكم", null);
+            FakeAiProvider.SCRIPT.clear();
+            UUID conv = conv(tenant, ext);
+            seed(conv, "user", sport + " بكام؟");
+            long quoted = seed(conv, "assistant", sport + " بـ 620 جنيه يا فندم");
+            seed(conv, "user", school + " بكام؟");
+            seed(conv, "assistant", school + " بـ 550 جنيه يا فندم");
+            // the model answers about the school bag; the rewrite then fails (variant 0) or repeats the same mistake (variant 1)
+            FakeAiProvider.SCRIPT.add(turns -> Turn.model("أيوه يا فندم، السعر لسه ساري: " + school + " بـ 550 جنيه."));
+            if (variant == 0) for (int i = 0; i < 4; i++) FakeAiProvider.SCRIPT.add(turns -> { throw new com.platform.chat.AiProvider.AiUnavailableException("TIMEOUT", "TIMEOUT", null); });
+            else FakeAiProvider.SCRIPT.add(turns -> Turn.model("أيوه يا فندم، السعر لسه ساري: " + school + " بـ 550 جنيه."));
+            String reply = JsonPath.read(say(t, ext, "هو السعر ده لسه ساري؟", quoted), "$.reply");
+            assertThat(reply).as("variant " + variant).contains(sport).contains("620").doesNotContain(school);
+        }
+    }
 }
