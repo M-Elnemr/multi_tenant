@@ -255,13 +255,9 @@ class OrderGuardsIntegrationTest extends IntegrationTestBase {
         assertThat(text).doesNotContain("بييجي جديد فقط").contains("أوبن بوكس").contains("20999");
     }
 
-    /** The sandwich (85/110/140) and its meal (145/175): a line that gives the sandwich's sizes at the meal's prices is never sent. */
-    @Test
-    void theOptionPricesOfAMealAreNeverGivenForItsSandwichSizes() throws Exception {
-        Tenant t = onboard("STORE");
+    /** A sandwich (85/110/140) and its meal (145/175) in a new shop; returns the tenant id. */
+    private UUID sandwichAndMeal(Tenant t, String sandwich, String meal) throws Exception {
         String branch = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
-        String tag = uniq();
-        String sandwich = "ساندوتش شاورما فراخ " + tag, meal = "وجبة ساندوتش شاورما فراخ " + tag;
         body(onHost(t.host(), t.access(), "POST", "/api/v1/store/products", """
                 {"taxonomySlug":"cookware","name":"%1$s","options":[{"name":"الحجم","values":["عادي","كبير","سوبر"]}],
                  "variants":[{"sku":"A1-%2$s","priceMinor":8500,"optionValues":{"الحجم":"عادي"},"stock":[{"branchId":"%3$s","quantity":9}]},
@@ -274,9 +270,32 @@ class OrderGuardsIntegrationTest extends IntegrationTestBase {
                              {"sku":"B2-%2$s","priceMinor":17500,"optionValues":{"الحجم":"كبير"},"stock":[{"branchId":"%3$s","quantity":9}]}]}
                 """.formatted(meal, uniq(), branch)).andExpect(status().isCreated()));
         UUID id = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", t.slug()).query(UUID.class).single();
+        return id;
+    }
+
+    /** The sandwich (85/110/140) and its meal (145/175): a line that gives the sandwich's sizes at the meal's prices is never sent. */
+    @Test
+    void theOptionPricesOfAMealAreNeverGivenForItsSandwichSizes() throws Exception {
+        Tenant t = onboard("STORE");
+        String tag = uniq();
+        String sandwich = "ساندوتش شاورما فراخ " + tag, meal = "وجبة ساندوتش شاورما فراخ " + tag;
+        UUID id = sandwichAndMeal(t, sandwich, meal);
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("عندك اختيارين: " + meal + " من 145 جنيه، أو " + sandwich + " لوحده: عادي 145 / كبير 175 / سوبر 140."));
         rewriteFails();
         String text = chat.reply(id, "WEB", "mixed-" + uniq(), null, "عايز " + sandwich).text();
         assertThat(text).doesNotContain("عادي 145").contains("85").contains("110");
+    }
+
+    /** Seen in production on the final build: the reply names only the meal («ولو ساندوتش لوحده»), the customer asked for the sandwich, and the sizes carry the meal's prices. */
+    @Test
+    void theMealsPricesForTheSandwichSizesAreCaughtWhenTheReplyNamesOnlyTheMeal() throws Exception {
+        Tenant t = onboard("STORE");
+        String tag = uniq();
+        String sandwich = "ساندوتش شاورما فراخ " + tag, meal = "وجبة ساندوتش شاورما فراخ " + tag;
+        UUID id = sandwichAndMeal(t, sandwich, meal);
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("الكانز بييجي مع " + meal + " بـ 145 جنيه. ولو ساندوتش لوحده، اختار الحجم: عادي 145 / كبير 175 / سوبر 140."));
+        rewriteFails();
+        String text = chat.reply(id, "WEB", "mixed-" + uniq(), null, "عايز " + sandwich + " كانز").text();
+        assertThat(text).doesNotContain("عادي 145").doesNotContain("كبير 175").contains("85").contains("110");
     }
 }

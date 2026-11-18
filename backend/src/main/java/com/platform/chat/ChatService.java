@@ -1335,7 +1335,7 @@ public class ChatService {
         String askedSlug = namedProductIgnored(ctx, last, answer, shopData);
         if (askedSlug != null) problems.put("NAMED_PRODUCT_IGNORED", "The customer asked for «" + displayName(shopData, askedSlug) + "», which the shop has in stock, and your reply does not talk about it: call get_product " + askedSlug
                 + " and answer about exactly that product (never say it is only sold in another category or only new; it is its own product with its own price).");
-        if (mixedOptionPrices(answer, shopData)) problems.put("MIXED_OPTION_PRICES", "A line gives option prices (sizes) that no single product has: the prices of two products were mixed. Give each product's own prices from get_product, product by product.");
+        if (mixedOptionPrices(last, answer, shopData)) problems.put("MIXED_OPTION_PRICES", "A line gives option prices (sizes) that no single product has: the prices of two products were mixed. Give each product's own prices from get_product, product by product.");
         var quotedSlugs = quoteIgnored(last, answer, shopData);
         if (!quotedSlugs.isEmpty()) problems.put("QUOTE_IGNORED", "The customer is replying to your earlier message about «" + quotedSlugs.stream().map(x -> displayName(shopData, x)).collect(java.util.stream.Collectors.joining("» / «")) + "» (see THE PRODUCT THIS MESSAGE IS ABOUT) and their message names no other product: "
                 + "answer about THAT product (get_product " + quotedSlugs.get(0) + ") with its own price, and not about another one.");
@@ -1691,7 +1691,7 @@ public class ChatService {
                 ReplyTrace.checkProblems(Set.of("FINAL_NAMED_PRODUCT_IGNORED"));
                 return verifiedReply(ctx, last, List.of(asked));
             }
-            if (mixedOptionPrices(out, shopData)) {
+            if (mixedOptionPrices(last, out, shopData)) {
                 var named = FactCheck.mentions(last, shopData.names()).stream().map(FactCheck.Mention::slug).distinct().toList();
                 events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:FINAL_MIXED_OPTION_PRICES", null, null);
                 ReplyTrace.checkProblems(Set.of("FINAL_MIXED_OPTION_PRICES"));
@@ -1803,17 +1803,19 @@ public class ChatService {
      * A sentence or line that gives the prices of several option values («عادي ١٤٥ / كبير ١٧٥ / سوبر ١٤٠») that no single product of the reply has: the prices of two products were
      * mixed (the meal's prices for the sandwich's sizes). True when such a line exists.
      */
-    private static boolean mixedOptionPrices(String answer, FactCheck.Shop shop) {
-        var slugs = FactCheck.mentions(answer, shop.names()).stream().map(FactCheck.Mention::slug).distinct().toList();
-        if (slugs.size() < 2) return false;   // one product: the option price check already knows exactly which
+    private static boolean mixedOptionPrices(String last, String answer, FactCheck.Shop shop) {
+        // the products the reply names and the ones the customer asked for (a reply can say «ساندوتش لوحده» and give the meal's prices for its sizes)
+        var slugs = java.util.stream.Stream.concat(FactCheck.mentions(answer, shop.names()).stream(), last == null ? java.util.stream.Stream.<FactCheck.Mention>empty() : FactCheck.mentions(last, shop.names()).stream())
+                .map(FactCheck.Mention::slug).distinct().toList();
+        if (slugs.isEmpty()) return false;
         List<FactCheck.Product> products = slugs.stream().map(shop::product).filter(java.util.Objects::nonNull).toList();
         Set<String> labels = new java.util.HashSet<>();
         for (var pr : products) for (var v : pr.variants()) for (String val : v.options().values()) labels.add(FastAnswers.norm(val));
         var pair = Pattern.compile("(\\S{2,12})\\s*[:=\\-–]?\\s*(\\d{2,6})(?:\\s*(?:جنيه|ج))?");
         for (String line : answer.split("(?<=[.!؟?\\n])")) {
             var ms = FactCheck.mentions(line, shop.names()).stream().sorted(java.util.Comparator.comparingInt(FactCheck.Mention::start)).toList();
-            for (int i = 0; i < ms.size(); i++) {   // the option prices written after a product's name, up to the next product's name, belong to the products of the reply
-                String segment = MoneyGuard.digits(line.substring(ms.get(i).end(), i + 1 < ms.size() ? ms.get(i + 1).start() : line.length()));
+            for (int i = 0; i < Math.max(1, ms.size()); i++) {   // the option prices written after a product's name, up to the next product's name, belong to the products of the reply; a sentence that names none is one segment
+                String segment = MoneyGuard.digits(ms.isEmpty() ? line : line.substring(ms.get(i).end(), i + 1 < ms.size() ? ms.get(i + 1).start() : line.length()));
                 List<Object[]> pairs = new ArrayList<>();
                 var m = pair.matcher(segment);
                 while (m.find()) if (labels.contains(FastAnswers.norm(m.group(1)))) pairs.add(new Object[] {FastAnswers.norm(m.group(1)), Double.parseDouble(m.group(2))});
@@ -1821,7 +1823,7 @@ public class ChatService {
                 boolean explained = false;
                 for (var pr : products) {
                     boolean all = true;
-                    for (var pa : pairs) all &= pr.variants().stream().anyMatch(v -> v.options().values().stream().anyMatch(x -> FastAnswers.norm(x).equals(pa[0])) && v.price() == (Double) pa[1]);
+                    for (var pa : pairs) all &= pr.variants().stream().anyMatch(v -> v.options().values().stream().anyMatch(x -> FastAnswers.norm(x).equals(pa[0])) && (v.price() == (Double) pa[1] || v.before() == (Double) pa[1]));
                     if (all) { explained = true; break; }
                 }
                 if (!explained) return true;
