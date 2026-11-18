@@ -145,4 +145,29 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
             assertThat(reply).as("variant " + variant).contains(sport).contains("620").doesNotContain(school);
         }
     }
+
+    /** The «this detail is not in our data for X» note names the QUOTED product, never the latest one of the chat (seen in production: «باور بانك 10000» for a quote about the 20000). */
+    @Test
+    void theUnlistedDetailNoteNamesTheQuotedProduct() throws Exception {
+        Tenant t = onboard("STORE");
+        UUID tenant = tenant(t);
+        String tag = uniq();
+        String sport = "شنطة رياضة " + tag, school = "شنطة مدرسة " + tag;
+        product(t, sport, 620, "أسود");
+        product(t, school, 550, "بنفسجي");
+        String ext = UUID.randomUUID().toString();
+        answer("أهلا");
+        say(t, ext, "السلام عليكم", null);
+        FakeAiProvider.SCRIPT.clear();
+        UUID conv = conv(tenant, ext);
+        seed(conv, "user", sport + " بكام؟");
+        long quoted = seed(conv, "assistant", sport + " بـ 620 جنيه يا فندم");
+        seed(conv, "user", school + " بكام؟");
+        seed(conv, "assistant", school + " بـ 550 جنيه يا فندم");
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("أيوه يا فندم، السعر لسه ساري، وبطاريتها بتشتغل 20 ساعة بشحنة واحدة."));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("أيوه يا فندم، السعر لسه ساري، وبطاريتها بتشتغل 20 ساعة بشحنة واحدة."));
+        String reply = JsonPath.read(say(t, ext, "هو السعر ده لسه ساري؟", quoted), "$.reply");
+        assertThat(reply).doesNotContain("20 ساعة").doesNotContain(school);
+        if (reply.contains("مش مكتوبة")) assertThat(reply).contains(sport);
+    }
 }

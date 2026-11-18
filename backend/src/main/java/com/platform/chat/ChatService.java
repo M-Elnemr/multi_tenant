@@ -1416,6 +1416,8 @@ public class ChatService {
     private List<String> touchedOrBefore(Ctx ctx, FactCheck.Shop shop) {
         List<String> touched = ctx.products().stream().map(p -> String.valueOf(p.get("slug"))).distinct().toList();
         if (!touched.isEmpty()) return touched;
+        var quoted = REPLY_SLUGS.get();   // the customer replied to a message about exactly one product: that product is what this reply is about, not the latest one of the chat
+        if (quoted != null && quoted.size() == 1) return quoted;
         // the product the chat is about: the newest earlier assistant message that names exactly one product (the message right before often names none: «محتاج منك المقاس والعنوان»), then what the customer
         // named; without it the stock, quantity and price checks have no product and skip the reply («أبيض M × ٩ قطع» went out with 8 in stock)
         List<String> earlier = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'assistant' AND id < :u ORDER BY id DESC LIMIT 8").param("c", ctx.conversationId()).param("u", ctx.userMsgId())
