@@ -1788,14 +1788,39 @@ public class ChatService {
      * The customer named exactly one product of the shop that is in stock, the reply names other products and not that one, and it excludes or denies something («الأوبن بوكس متاح في الموبايلات بس»,
      * «بيجي جديد فقط»): the product the customer asked for is not in the answer. Returns its slug, or null.
      */
+    private static final Pattern PRICE_AFTER_WORD = Pattern.compile("(?:بـ|بسعر|بسعره|السعر|سعره|سعرها|بدل|من)\\s*(\\d{3,6})(?![\\d.,]*\\s*(?:جيجا|وات|مللي|بوصة|قطع|يوم|ايام|أيام))");
+
+    private static final Pattern NOTE_NAMING_A_PRODUCT = Pattern.compile("(?:التفصيلة دي مش مكتوبة في بيانات «[^»]*»[^\\n]*|That detail is not in our data for [^\\n]*)");
+
     private String namedProductIgnored(Ctx ctx, String last, String answer, FactCheck.Shop shop) {
-        if (answer == null || last == null || (!DENIES.matcher(answer).find() && !EXCLUSION_CUE.matcher(answer).find())) return null;
-        var asked = FactCheck.mentions(last, shop.names()).stream().map(FactCheck.Mention::slug).distinct().toList();
+        if (answer == null || last == null) return null;
+        boolean cue = DENIES.matcher(answer).find() || EXCLUSION_CUE.matcher(answer).find();
+        var asked = FactCheck.askedSlugs(last, shop.names());
         if (asked.size() != 1) return null;
-        var said = FactCheck.mentions(answer, shop.names()).stream().map(FactCheck.Mention::slug).distinct().toList();
-        if (said.isEmpty() || said.contains(asked.get(0))) return null;
+        // the «that detail is not in our data for X» note names X without answering about it
+        String body = NOTE_NAMING_A_PRODUCT.matcher(answer).replaceAll("");
+        var said = FactCheck.mentions(body, shop.names()).stream().map(FactCheck.Mention::slug).distinct().toList();
+        if (said.contains(asked.get(0))) return null;
         var product = shop.product(asked.get(0));
         if (product == null || product.variants().stream().noneMatch(v -> v.available() > 0)) return null;   // a product that is really gone may be answered with alternatives
+        if (!cue) {   // no denial wording (an earlier guard may have cut the denying sentence): the reply still gives prices of other products and none of the asked product's
+            Set<Long> own = new HashSet<>();
+            if (product.before() > 0) own.add(Math.round(product.before() * 100));
+            for (var v : product.variants()) { own.add(Math.round(v.price() * 100)); if (v.before() > 0) own.add(Math.round(v.before() * 100)); }
+            boolean foreign = false;
+            for (var a : MoneyGuard.amountsIn(body)) {
+                if (a.sum()) continue;
+                if (own.contains(a.cents())) return null;
+                if (!NOT_A_PRICE_CONTEXT.matcher(body.substring(Math.max(0, a.start() - 30), a.start())).find()) foreign = true;
+            }
+            var plain = PRICE_AFTER_WORD.matcher(MoneyGuard.digits(body));   // «بـ 15999» with no currency word
+            while (plain.find()) {
+                long cents = Long.parseLong(plain.group(1)) * 100;
+                if (own.contains(cents)) return null;
+                if (!NOT_A_PRICE_CONTEXT.matcher(plain.group().substring(0, Math.max(0, plain.start(1) - plain.start()))).find()) foreign = true;
+            }
+            if (!foreign) return null;
+        }
         return asked.get(0);
     }
 
@@ -1847,13 +1872,13 @@ public class ChatService {
         List<SoldDenial> out = new ArrayList<>();
         if (answer == null || last == null || !DENIES.matcher(answer).find()) return out;
         var view = shopView(ctx.tenantId());
-        var asked = FactCheck.mentions(last, view.names());
+        var asked = FactCheck.askedSlugs(last, view.names());
         if (asked.isEmpty()) return out;
         for (String sentence : answer.split("(?<=[.!؟?\\n])")) {
             if (!DENIES.matcher(sentence).find()) continue;
             SoldDenial best = null; int bestWords = 0;
-            for (var m : asked) {
-                var named = view.names().stream().filter(n -> n.slug().equals(m.slug())).findFirst().orElse(null);
+            for (String askedSlug : asked) {
+                var named = view.names().stream().filter(n -> n.slug().equals(askedSlug)).findFirst().orElse(null);
                 if (named == null) continue;
                 int words = nameWordsIn(sentence, named.name());
                 int total = (int) java.util.Arrays.stream(FastAnswers.norm(named.name()).split("\\s+")).filter(w -> w.length() >= 2).count();
@@ -1863,8 +1888,8 @@ public class ChatService {
                         SELECT EXISTS (SELECT 1 FROM commerce.products p JOIN commerce.product_variants v ON v.product_id = p.id AND v.status = 'ACTIVE'
                                        WHERE p.tenant_id = :t AND p.slug = :s AND p.status = 'ACTIVE'
                                          AND (SELECT coalesce(sum(i.quantity_on_hand - i.quantity_reserved), 0) FROM commerce.inventory_items i JOIN commerce.branches b ON b.id = i.branch_id AND b.is_active WHERE i.variant_id = v.id) > 0)
-                        """).param("t", ctx.tenantId()).param("s", m.slug()).query(Boolean.class).single();
-                if (inStock) { best = new SoldDenial(sentence, m.slug(), named.name()); bestWords = words; }
+                        """).param("t", ctx.tenantId()).param("s", askedSlug).query(Boolean.class).single();
+                if (inStock) { best = new SoldDenial(sentence, askedSlug, named.name()); bestWords = words; }
             }
             if (best != null) out.add(best);
         }

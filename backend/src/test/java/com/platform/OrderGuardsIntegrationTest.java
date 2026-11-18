@@ -255,6 +255,25 @@ class OrderGuardsIntegrationTest extends IntegrationTestBase {
         assertThat(text).doesNotContain("بييجي جديد فقط").contains("أوبن بوكس").contains("20999");
     }
 
+    /**
+     * Seen in production on the final build (1 of 5 samples): the customer writes «الزينترا بوك 14 الأوبن بوكس» (not the product's full name, no «لاب توب»), the reply says the laptop is
+     * «متاح جديد فقط». The extra words «أوبن بوكس» make the open-box product the one asked for.
+     */
+    @Test
+    void anOpenBoxProductAskedForBySomeOfItsWordsIsNotAnsweredWithNewOnly() throws Exception {
+        Tenant t = onboard("STORE");
+        String branch = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
+        for (String[] p : new String[][] {{"لاب توب زينترا بوك 14", "2499900"}, {"لاب توب زينترا بوك 14 أوبن بوكس", "2099900"}, {"لاب توب زينترا ستيودنت 15", "1599900"}})
+            body(onHost(t.host(), t.access(), "POST", "/api/v1/store/products", """
+                    {"taxonomySlug":"cookware","name":"%s","variants":[{"sku":"LP-%s","priceMinor":%s,"optionValues":{},"stock":[{"branchId":"%s","quantity":3}]}]}
+                    """.formatted(p[0], uniq(), p[1], branch)).andExpect(status().isCreated()));
+        UUID id = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", t.slug()).query(UUID.class).single();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام يا فندم، بس من بيانات المحل حالياً: الزينترا بوك 14 متاح جديد فقط، يبدأ من 24999 جنيه بضمان سنة من الوكيل. لو حابب أرخص في زينترا ستيودنت 15 بـ 15999. تحب أجهزلك واحد؟"));
+        rewriteFails();
+        String text = chat.reply(id, "WEB", "openbox3-" + uniq(), null, "الزينترا بوك 14 الأوبن بوكس متاح؟").text();
+        assertThat(text).doesNotContain("جديد فقط").contains("أوبن بوكس").contains("20999");
+    }
+
     /** A sandwich (85/110/140) and its meal (145/175) in a new shop; returns the tenant id. */
     private UUID sandwichAndMeal(Tenant t, String sandwich, String meal) throws Exception {
         String branch = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
