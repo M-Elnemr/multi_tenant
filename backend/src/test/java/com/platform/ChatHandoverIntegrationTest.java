@@ -70,22 +70,34 @@ class ChatHandoverIntegrationTest extends IntegrationTestBase {
         assertThat(JsonPath.<Integer>read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/chat/conversations", null)), "$.length()")).isEqualTo(2);
     }
 
+    @org.springframework.beans.factory.annotation.Autowired com.platform.chat.ChatController chatController;
+
+    /** The owner turned the chat message limits off (2026-11-18): a chat is never refused for sending many messages; with app.chat.rate-limit.enabled the old limits come back. */
     @Test
-    void oneChatCannotFloodButManyCustomersBehindOneAddressCanAllChat() throws Exception {
+    void theChatMessageLimitsAreOffByDefaultAndComeBackWhenEnabled() throws Exception {
         Tenant t = onboard("STORE");
-        // forty customers on one carrier address, a message each: all answered (the old limit was 40 per address in 10 minutes)
-        for (int i = 0; i < 45; i++) {
+        for (int i = 0; i < 45; i++) {   // many customers behind one address
             FakeAiProvider.SCRIPT.add(turns -> Turn.model("أهلاً"));
             onHost(t.host(), null, "POST", "/api/v1/shop/chat", "{\"conversationId\":\"%s\",\"message\":\"عندكم شنط؟\"}".formatted(UUID.randomUUID())).andExpect(status().isOk());
         }
-        // one chat sending more than 30 messages in 10 minutes is slowed down
         String conv = UUID.randomUUID().toString();
         int refused = 0;
-        for (int i = 0; i < 32; i++) {
+        for (int i = 0; i < 40; i++) {   // one chat, more than the old 30 per 10 minutes
             FakeAiProvider.SCRIPT.add(turns -> Turn.model("أهلاً"));
-            int code = onHost(t.host(), null, "POST", "/api/v1/shop/chat", "{\"conversationId\":\"%s\",\"message\":\"رسالة %d\"}".formatted(conv, i)).andReturn().getResponse().getStatus();
-            if (code == 429) refused++;
+            if (onHost(t.host(), null, "POST", "/api/v1/shop/chat", "{\"conversationId\":\"%s\",\"message\":\"رسالة %d\"}".formatted(conv, i)).andReturn().getResponse().getStatus() == 429) refused++;
         }
-        assertThat(refused).isEqualTo(2);
+        assertThat(refused).as("no limit on a chat").isZero();
+        org.springframework.test.util.ReflectionTestUtils.setField(chatController, "rateLimitEnabled", true);
+        try {
+            String conv2 = UUID.randomUUID().toString();
+            int refused2 = 0;
+            for (int i = 0; i < 32; i++) {
+                FakeAiProvider.SCRIPT.add(turns -> Turn.model("أهلاً"));
+                if (onHost(t.host(), null, "POST", "/api/v1/shop/chat", "{\"conversationId\":\"%s\",\"message\":\"رسالة %d\"}".formatted(conv2, i)).andReturn().getResponse().getStatus() == 429) refused2++;
+            }
+            assertThat(refused2).as("the old limit when switched on").isEqualTo(2);
+        } finally {
+            org.springframework.test.util.ReflectionTestUtils.setField(chatController, "rateLimitEnabled", false);
+        }
     }
 }
