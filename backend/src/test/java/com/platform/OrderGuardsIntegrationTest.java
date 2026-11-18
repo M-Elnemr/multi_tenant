@@ -204,4 +204,30 @@ class OrderGuardsIntegrationTest extends IntegrationTestBase {
             assertThat(text).as(claim).doesNotContain("مسجل").doesNotContain("تم تأكيد").doesNotContain("اتأكد");
         }
     }
+
+    /** The open-box laptop: a product of its own whose name holds the new laptop's name; denying it is denying an in-stock product. */
+    @Test
+    void denyingAnOpenBoxProductThatIsAProductOfItsOwnIsReplacedByItsRealData() throws Exception {
+        Tenant t = onboard("STORE");
+        String branch = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
+        for (String[] p : new String[][] {{"لاب توب زينترا بوك ١٤", "2499900"}, {"لاب توب زينترا بوك ١٤ أوبن بوكس", "2099900"}})
+            body(onHost(t.host(), t.access(), "POST", "/api/v1/store/products", """
+                    {"taxonomySlug":"cookware","name":"%s","variants":[{"sku":"LP-%s","priceMinor":%s,"optionValues":{},"stock":[{"branchId":"%s","quantity":3}]}]}
+                    """.formatted(p[0], uniq(), p[1], branch)).andExpect(status().isCreated()));
+        UUID id = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", t.slug()).query(UUID.class).single();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("للأسف يا فندم زينترا بوك ١٤ عندنا جديد بس ومفيش منه أوبن بوكس."));
+        rewriteFails();
+        String text = chat.reply(id, "WEB", "openbox-" + uniq(), null, "عايز لاب توب زينترا بوك ١٤ أوبن بوكس").text();
+        assertThat(text).doesNotContain("مفيش").contains("أوبن بوكس").contains("20999");
+    }
+
+    @Test
+    void aReplyThatEndsOnAColonWithNoListGetsTheShopsOwnOptions() throws Exception {
+        UUID id = sneakerShop();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("للأسف الأحمر مش متاح.\n\nالمتاح عندنا في سنيكرز كلاسيك:"));
+        rewriteFails();
+        String text = chat.reply(id, "WEB", "dangling-" + uniq(), null, "عايز سنيكرز كلاسيك احمر").text();
+        assertThat(text.stripTrailing()).doesNotEndWith(":");
+        assertThat(text).contains("أبيض").contains("أسود").contains("1250");
+    }
 }
