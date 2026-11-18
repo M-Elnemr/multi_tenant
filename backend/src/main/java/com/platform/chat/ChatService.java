@@ -1656,6 +1656,14 @@ public class ChatService {
         if (answer == null || answer.isBlank()) return answer;
         try {
             String out = withoutSoldDenials(ctx, last, answer);
+            String tail = out.stripTrailing();
+            if (tail.endsWith(":") || tail.endsWith("：")) {   // «المتاح عندنا:» and then nothing: the list never arrived, the data is added by code
+                int nl = tail.lastIndexOf('\n');
+                String head = nl > 0 ? tail.substring(0, nl).stripTrailing() : "";
+                String data = verifiedReply(ctx, last, touchedOrBefore(ctx, shopView(ctx.tenantId())));
+                out = head.isBlank() ? data : head + "\n\n" + data;
+                events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:FINAL_DANGLING_LIST", null, null);
+            }
             if (ctx.order()[0] == null && !hasOrderOnFile(ctx)) out = ORDER_CLAIM.matcher(out).replaceAll(english(out) ? "noted" : "تمام،");
             if (CANCEL_CLAIM.matcher(out).find() && !orderCancelled(ctx)) return cancelFallback(out);
             FactCheck.Shop shopData = shopView(ctx.tenantId());
@@ -1697,6 +1705,14 @@ public class ChatService {
     /** One sentence of a reply that denies a product the shop sells and has in stock. */
     record SoldDenial(String sentence, String slug, String name) {}
 
+    /** How many of the product's own name words the sentence has (the open-box laptop is a product of its own whose name holds the new laptop's name: «مفيش منه أوبن بوكس» denies it). */
+    private static int nameWordsIn(String sentence, String productName) {
+        Set<String> said = new java.util.HashSet<>(java.util.Arrays.asList(FastAnswers.norm(sentence).split("\\s+")));
+        int n = 0;
+        for (String w : FastAnswers.norm(productName).split("\\s+")) if (w.length() >= 2 && said.contains(w)) n++;
+        return n;
+    }
+
     private List<SoldDenial> soldDenials(Ctx ctx, String last, String answer) {
         List<SoldDenial> out = new ArrayList<>();
         if (answer == null || last == null || !DENIES.matcher(answer).find()) return out;
@@ -1705,16 +1721,22 @@ public class ChatService {
         if (asked.isEmpty()) return out;
         for (String sentence : answer.split("(?<=[.!؟?\\n])")) {
             if (!DENIES.matcher(sentence).find()) continue;
+            SoldDenial best = null; int bestWords = 0;
             for (var m : asked) {
                 var named = view.names().stream().filter(n -> n.slug().equals(m.slug())).findFirst().orElse(null);
-                if (named == null || FactCheck.mentions(sentence, List.of(named)).isEmpty()) continue;
+                if (named == null) continue;
+                int words = nameWordsIn(sentence, named.name());
+                int total = (int) java.util.Arrays.stream(FastAnswers.norm(named.name()).split("\\s+")).filter(w -> w.length() >= 2).count();
+                boolean names = !FactCheck.mentions(sentence, List.of(named)).isEmpty() || (total >= 3 && words >= 3 && words * 10 >= total * 6);
+                if (!names || words < bestWords || (best != null && words == bestWords && named.name().length() <= best.name().length())) continue;
                 boolean inStock = jdbc.sql("""
                         SELECT EXISTS (SELECT 1 FROM commerce.products p JOIN commerce.product_variants v ON v.product_id = p.id AND v.status = 'ACTIVE'
                                        WHERE p.tenant_id = :t AND p.slug = :s AND p.status = 'ACTIVE'
                                          AND (SELECT coalesce(sum(i.quantity_on_hand - i.quantity_reserved), 0) FROM commerce.inventory_items i JOIN commerce.branches b ON b.id = i.branch_id AND b.is_active WHERE i.variant_id = v.id) > 0)
                         """).param("t", ctx.tenantId()).param("s", m.slug()).query(Boolean.class).single();
-                if (inStock) { out.add(new SoldDenial(sentence, m.slug(), named.name())); break; }
+                if (inStock) { best = new SoldDenial(sentence, m.slug(), named.name()); bestWords = words; }
             }
+            if (best != null) out.add(best);
         }
         return out;
     }

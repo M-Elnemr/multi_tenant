@@ -38,4 +38,19 @@ class ReviewGateTest {
         assertThat(ReviewGate.skipReason("", SHOWN)).isNull();
         assertThat(ReviewGate.skipReason(null, SHOWN)).isNull();
     }
+
+    @Test
+    void spellingVariantsArabiziAndEnglishWordingNeverSkipTheReview() {
+        for (String risky : new String[] {"مفيييييييش عندنا حاجة زي كده", "الأَخضر نَفَدَ", "نفدت الكمية يا فندم", "المقاس ده غير موجود", "ده غير متوفر حالياً", "مش لاقي المقاس ده", "هيوصلك خلال 3 ايام", "هيوصل بكرة",
+                "mafesh 3andna el hot dog", "mfish menu", "ma3ndnash el size da", "msh mawgod", "khalas el kamya", "el tawseel b 50", "closed now", "It is unavailable", "We have no stock", "wholesale price is 10",
+                "ده آخر سعر", "سعر الجملة 100", "المحل مقفول", "ده خلصانة"})
+            assertThat(ReviewGate.skipReason(risky, "FACTS: 100 50 3 10")).as(risky).isNull();
+    }
+
+    @Test
+    void ordinaryProductAnswersWithGroundedFiguresStillSkip() {
+        assertThat(ReviewGate.skipReason("الشنطة بـ 620 جنيه، تحب لون إيه؟", SHOWN)).isEqualTo("grounded_plain");
+        assertThat(ReviewGate.skipReason("Which colour would you like?", SHOWN)).isEqualTo("grounded_plain");
+        assertThat(ReviewGate.skipReason("ماشي يا فندم، قولي المقاس", SHOWN)).isEqualTo("grounded_plain");
+    }
 }
