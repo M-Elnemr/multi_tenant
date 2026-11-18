@@ -2459,7 +2459,7 @@ public class ChatService {
     static final Pattern CANCEL_CLAIM = Pattern.compile("(?:(?<!\\p{L})اتلغ[ىيا]|تم\\s+(?:ال)?[إا]لغا[ءئ]|(?<!\\p{L})(?:أ|ا)?لغيت(?:ه|هولك|لك|ها)?(?!\\p{L})|(?<!\\p{L})(?:has been|is|was)\\s+cancell?ed)", Pattern.CASE_INSENSITIVE);
 
     /** A reply that says the order is already recorded («سجلت طلبك», «تم تسجيل الطلب», "your order is placed"). */
-    static final Pattern ORDER_CLAIM = Pattern.compile("(?:(?:سجلت|سجلنا|سجلتلك|سجلنالك)(?:ه|ها|هولك|هالك)?\\s*[:：]|(?:سجلت|سجلنا|سجلتلك|سجلنالك)\\s+(?:لك\\s+)?(?:طلبك|الطلب|الأوردر|الاوردر|طلب)|تم\\s+تسجيل\\s+(?:طلبك|الطلب|الأوردر|الاوردر)|(?:طلبك|الطلب|الأوردر|الاوردر)\\s+اتسجل|(?:has been|is)\\s+placed|placed your order)", Pattern.CASE_INSENSITIVE);
+    static final Pattern ORDER_CLAIM = Pattern.compile("(?:(?:سجلت|سجلنا|سجلتلك|سجلنالك)(?:ه|ها|هولك|هالك)?\\s*[:：]|(?:سجلت|سجلنا|سجلتلك|سجلنالك)\\s+(?:لك\\s+)?(?:طلبك|الطلب|الأوردر|الاوردر|طلب)|تم\\s+تسجيل\\s+(?:طلبك|الطلب|الأوردر|الاوردر)|(?:طلبك|الطلب|الأوردر|الاوردر)\\s+اتسجل|(?:طلبك|الطلب|الأوردر|الاوردر|الطلب ده)\\s+(?:\\S+\\s+)?(?:مسجل|اتاكد|اتأكد|متأكد|مؤكد)(?!\\p{L})|تم\\s+(?:تأكيد|تاكيد)\\s+(?:طلبك|الطلب|الأوردر|الاوردر)|(?:has been|is)\\s+placed|placed your order)", Pattern.CASE_INSENSITIVE);
 
     private boolean hasOrderOnFile(Ctx ctx) {
         return jdbc.sql("SELECT last_order IS NOT NULL FROM chat.conversations WHERE id = :c").param("c", ctx.conversationId()).query(Boolean.class).optional().orElse(false);

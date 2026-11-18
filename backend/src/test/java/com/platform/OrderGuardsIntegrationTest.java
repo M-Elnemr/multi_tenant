@@ -192,4 +192,16 @@ class OrderGuardsIntegrationTest extends IntegrationTestBase {
         String text = chat.reply(id, "WEB", "crit-cancel-" + uniq(), null, "الغي الطلب").text();
         assertThat(text).doesNotContain("تم إلغاء طلبك");
     }
+
+    @Test
+    void theOtherWaysOfSayingAnOrderIsRecordedAreCaughtToo() throws Exception {
+        for (String claim : new String[] {"الطلب مسجل عندك كاش واستلام من الفرع.", "تم تأكيد طلبك يا فندم.", "طلبك اتأكد وهيوصلك بكرة."}) {
+            UUID id = sneakerShop();
+            FakeAiProvider.reset();
+            FakeAiProvider.SCRIPT.add(turns -> Turn.model(claim));
+            rewriteFails();
+            String text = chat.reply(id, "WEB", "crit-order2-" + uniq(), null, "عايز سنيكرز كلاسيك").text();
+            assertThat(text).as(claim).doesNotContain("مسجل").doesNotContain("تم تأكيد").doesNotContain("اتأكد");
+        }
+    }
 }
