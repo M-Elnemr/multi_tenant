@@ -274,6 +274,22 @@ class OrderGuardsIntegrationTest extends IntegrationTestBase {
         assertThat(text).doesNotContain("جديد فقط").contains("أوبن بوكس").contains("20999");
     }
 
+    /** Seen in production on the final build: a price written with «بـ» and no currency word («الجديد بـ 23,999», a price no product has) was invisible to the money guard. */
+    @Test
+    void aPriceWrittenAfterBaWithNoCurrencyWordThatNoProductHasIsNeverSent() throws Exception {
+        Tenant t = onboard("STORE");
+        String branch = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
+        for (String[] p : new String[][] {{"لاب توب زينترا بوك 14", "2499900"}, {"لاب توب زينترا بوك 14 أوبن بوكس", "2099900"}})
+            body(onHost(t.host(), t.access(), "POST", "/api/v1/store/products", """
+                    {"taxonomySlug":"cookware","name":"%s","variants":[{"sku":"LP-%s","priceMinor":%s,"optionValues":{},"stock":[{"branchId":"%s","quantity":3}]}]}
+                    """.formatted(p[0], uniq(), p[1], branch)).andExpect(status().isCreated()));
+        UUID id = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", t.slug()).query(UUID.class).single();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("لاب توب زينترا بوك 14 الجديد بـ 23,999 يا فندم، والأوبن بوكس بـ 20,999. الفرق 3,000 جنيه."));
+        rewriteFails();
+        String text = chat.reply(id, "WEB", "barePrice-" + uniq(), null, "والجديد بكام؟").text();
+        assertThat(text).doesNotContain("23,999").doesNotContain("23999");   // a safe reply, with the right price or none
+    }
+
     /** A sandwich (85/110/140) and its meal (145/175) in a new shop; returns the tenant id. */
     private UUID sandwichAndMeal(Tenant t, String sandwich, String meal) throws Exception {
         String branch = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");

@@ -209,4 +209,30 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
         assertThat(reply).doesNotContain("20 ساعة").doesNotContain(school);
         if (reply.contains("مش مكتوبة")) assertThat(reply).contains(sport);
     }
+    /** Seen on the final build: «بيجي بأي لون؟» after the open-box laptop was priced was answered for the NEW laptop (or denied the open-box one). The assistant is told which product the chat is about. */
+    @Test
+    void aQuestionWithNoProductNameIsAboutTheProductTheShopLastNamed() throws Exception {
+        Tenant t = onboard("STORE");
+        UUID tenant = tenant(t);
+        String tag = uniq();
+        String base = "لاب توب زينترا " + tag, open = base + " أوبن بوكس";
+        product(t, base, 24999, "فضي", "رمادي");
+        product(t, open, 20999, "فضي");
+        String ext = UUID.randomUUID().toString();
+        answer("أهلا");
+        say(t, ext, "السلام عليكم", null);
+        UUID conv = conv(tenant, ext);
+        seed(conv, "user", open + " بكام؟");
+        seed(conv, "assistant", open + " بـ 20999 جنيه، فضي، ومتاح منه 3 قطع.");
+        answer("فضي بس يا فندم");
+        say(t, ext, "بيجي بأي لون؟", null);
+        String system = FakeAiProvider.lastSystem;
+        assertThat(system).contains("THE PRODUCT OF THIS CHAT").contains(open + "» [");
+        int at = system.indexOf("THE PRODUCT OF THIS CHAT");
+        assertThat(system.substring(at, Math.min(system.length(), at + 200 + open.length()))).doesNotContain("«" + base + "» [");
+        // a message that names its own product gets no such block
+        answer("ايوه متاح");
+        say(t, ext, base + " متاح؟", null);
+        assertThat(FakeAiProvider.lastSystem).doesNotContain("THE PRODUCT OF THIS CHAT");
+    }
 }

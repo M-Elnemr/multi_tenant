@@ -619,6 +619,7 @@ public class ChatService {
         PromptExtras extras = new PromptExtras();
         EXTRAS.set(extras);
         try { String rc = replyContextBlock(tenantId, conv, userMsgId, refs, text, windowFrom, extras); system += rc; extras.blocks.append(rc); } catch (RuntimeException e) { log.warn("Reply context skipped: {}", e.toString()); }
+        if (refs.isEmpty()) try { String fb = focusBlock(tenantId, conv, userMsgId, text); system += fb; extras.blocks.append(fb); } catch (RuntimeException e) { log.warn("Focus block skipped: {}", e.toString()); }
         ReplyTimeline.span("replyContext", ReplyTimeline.since(replyStart));
         long memStart = System.nanoTime();
         int[] memFacts = {0};
@@ -859,6 +860,26 @@ public class ChatService {
      * The «MESSAGE BEING REPLIED TO» part of the prompt: the quoted message read straight from the database by its validated reference (one indexed read, however old it is), the
      * messages beside it when it is older than the history window, and the products its text names. Nothing here calls a model.
      */
+    /**
+     * A question with no product name («بكام؟», «بيجي بأي لون؟», «فاضل كام؟», «الضمان قد إيه؟») is about the product the last message of the shop named. In a long chat the model searched by the
+     * words of the question, found the other version of the same model (new vs open-box) and answered for it, or denied the one being discussed. The block names the product of the chat.
+     */
+    private String focusBlock(UUID tenantId, UUID conv, long userMsgId, String latest) {
+        if (latest == null || latest.length() > 160) return "";
+        String lastShop = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'assistant' AND id < :u ORDER BY id DESC LIMIT 1")
+                .param("c", conv).param("u", userMsgId).query(String.class).optional().orElse("");
+        if (lastShop.isBlank()) return "";
+        FactCheck.Shop shop = shopView(tenantId);
+        if (!FactCheck.askedSlugs(latest, shop.names()).isEmpty()) return "";
+        var slugs = FactCheck.askedSlugs(lastShop, shop.names());
+        if (slugs.isEmpty() || slugs.size() > 2) return "";
+        List<String> labels = new ArrayList<>();
+        for (String sl : slugs) shop.names().stream().filter(n -> n.slug().equals(sl)).findFirst().ifPresent(n -> labels.add("«" + n.name() + "» [" + n.slug() + "]"));
+        if (labels.isEmpty()) return "";
+        return "\n\nTHE PRODUCT OF THIS CHAT (the customer's last message names no product, so it is about this one): " + String.join(" and ", labels) + ". Answer its price, colours, stock, warranty and details from get_product with that slug. "
+                + "If the shop sells other versions of the same model (new, open-box, another year), each is a different product with its own price, stock, colours and warranty: never answer for one with the other's data, never say the one being discussed is missing or only comes new, and say plainly when a detail is not in its own data.";
+    }
+
     private String replyContextBlock(UUID tenantId, UUID conv, long userMsgId, List<ReplyRef> refs, String latest, long windowFrom, PromptExtras extras) {
         if (replies == null) return "";
         List<MessageReplies.LineQuote> found = new ArrayList<>();
