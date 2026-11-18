@@ -146,6 +146,45 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
         }
     }
 
+    /**
+     * Seen in production after the first fix (3 of 36): the reply to a quote gave the prices of another product and named none (a phone's storage prices for a quoted phone case), or the quote was a
+     * list of several products and the reply priced a product that is in none of them. The quoted products' own prices must be in what is sent.
+     */
+    @Test
+    void aReplyWithOnlyOtherProductsPricesIsReplacedByTheQuotedProductsOwnData() throws Exception {
+        Tenant t = onboard("STORE");
+        UUID tenant = tenant(t);
+        String tag = uniq();
+        String caseName = "جراب حماية " + tag, phone = "موبايل ألفا " + tag, bankA = "باور بانك ميجا " + tag, bankB = "باور بانك ماكس " + tag, bag = "شنطة ظهر " + tag;
+        product(t, caseName, 349, "أسود");
+        product(t, phone, 14999, "أزرق");
+        product(t, bankA, 599, "أبيض");
+        product(t, bankB, 899, "أبيض");
+        product(t, bag, 999, "رمادي");
+        for (int variant = 0; variant < 2; variant++) {
+            String ext = UUID.randomUUID().toString();
+            answer("أهلا");
+            say(t, ext, "السلام عليكم", null);
+            FakeAiProvider.SCRIPT.clear();
+            UUID conv = conv(tenant, ext);
+            long quoted;
+            String wrong;
+            if (variant == 0) {   // one quoted product; the reply names nothing and gives the phone's prices
+                seed(conv, "user", caseName + " بكام؟");
+                quoted = seed(conv, "assistant", caseName + " بـ 349 جنيه يا فندم");
+                wrong = "أيوه يا فندم، السعر لسه ساري: بـ 14999 جنيه ومتاح. تحب أحجزلك؟";
+            } else {              // a quoted list of two products; the reply prices a third one
+                seed(conv, "user", "عندكم باور بانك؟");
+                quoted = seed(conv, "assistant", bankA + " بـ 599 جنيه، و" + bankB + " بـ 899 جنيه. تحب أنهي واحد؟");
+                wrong = "أيوه يا فندم، السعر لسه ساري: " + bag + " بـ 999 جنيه، متوفرة رمادي. تحب تحجز؟";
+            }
+            for (int i = 0; i < 3; i++) { String w = wrong; FakeAiProvider.SCRIPT.add(turns -> Turn.model(w)); }
+            String reply = JsonPath.read(say(t, ext, "هو السعر ده لسه ساري؟", quoted), "$.reply");
+            if (variant == 0) assertThat(reply).as("variant 0").contains("349").doesNotContain("14999");
+            else assertThat(reply).as("variant 1").contains("599").contains("899").doesNotContain("999 جنيه");
+        }
+    }
+
     /** The «this detail is not in our data for X» note names the QUOTED product, never the latest one of the chat (seen in production: «باور بانك 10000» for a quote about the 20000). */
     @Test
     void theUnlistedDetailNoteNamesTheQuotedProduct() throws Exception {

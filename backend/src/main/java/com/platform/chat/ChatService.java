@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -1335,9 +1336,9 @@ public class ChatService {
         if (askedSlug != null) problems.put("NAMED_PRODUCT_IGNORED", "The customer asked for «" + displayName(shopData, askedSlug) + "», which the shop has in stock, and your reply does not talk about it: call get_product " + askedSlug
                 + " and answer about exactly that product (never say it is only sold in another category or only new; it is its own product with its own price).");
         if (mixedOptionPrices(answer, shopData)) problems.put("MIXED_OPTION_PRICES", "A line gives option prices (sizes) that no single product has: the prices of two products were mixed. Give each product's own prices from get_product, product by product.");
-        String quotedSlug = quoteIgnored(last, answer, shopData);
-        if (quotedSlug != null) problems.put("QUOTE_IGNORED", "The customer is replying to your earlier message about «" + displayName(shopData, quotedSlug) + "» (see THE PRODUCT THIS MESSAGE IS ABOUT) and their message names no other product: "
-                + "answer about THAT product (get_product " + quotedSlug + ") and not about another one.");
+        var quotedSlugs = quoteIgnored(last, answer, shopData);
+        if (!quotedSlugs.isEmpty()) problems.put("QUOTE_IGNORED", "The customer is replying to your earlier message about «" + quotedSlugs.stream().map(x -> displayName(shopData, x)).collect(java.util.stream.Collectors.joining("» / «")) + "» (see THE PRODUCT THIS MESSAGE IS ABOUT) and their message names no other product: "
+                + "answer about THAT product (get_product " + quotedSlugs.get(0) + ") with its own price, and not about another one.");
         if (problems.isEmpty()) return answer;
         for (String kind : problems.keySet()) events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:" + kind, problems.get(kind), null);
         ReplyTrace.checkProblems(problems.keySet());
@@ -1696,12 +1697,12 @@ public class ChatService {
                 ReplyTrace.checkProblems(Set.of("FINAL_MIXED_OPTION_PRICES"));
                 return verifiedReply(ctx, last, named.isEmpty() ? touched : named);
             }
-            String quoted = quoteIgnored(last, out, shopData);
-            if (quoted != null) {   // answered about another product than the one the customer replied to: the quoted product's own data, from the shop
+            var quoted = quoteIgnored(last, out, shopData);
+            if (!quoted.isEmpty()) {   // answered about another product than the one the customer replied to: the quoted product's own data, from the shop
                 log.warn("Critical gate: the reply ignores the quoted product {} (conversation {})", quoted, ctx.conversationId());
                 events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:FINAL_QUOTE_IGNORED", null, null);
                 ReplyTrace.checkProblems(Set.of("FINAL_QUOTE_IGNORED"));
-                return verifiedReply(ctx, last, List.of(quoted));
+                return verifiedReply(ctx, last, quoted.size() > 4 ? quoted.subList(0, 4) : quoted);
             }
             if (inventedSize(last, out, shopData) != null) bad.add("INVENTED_SIZE");
             for (var f : FactCheck.check(last, out, shopData, touched)) if (CRITICAL_FACTS.contains(f.kind())) bad.add(f.kind());
@@ -1743,13 +1744,37 @@ public class ChatService {
      * The customer replied to (quoted) a message that was about exactly one product, their own words name no product, and the reply talks about other products and not that one: the model
      * answered about the latest product in the chat instead of the quoted one. Returns the quoted product's slug, or null when the reply is fine (or nothing was quoted).
      */
-    private String quoteIgnored(String last, String answer, FactCheck.Shop shop) {
+    /** Words that make an amount a delivery fee, a threshold or a coupon, not the price of a product. */
+    private static final Pattern NOT_A_PRICE_CONTEXT = Pattern.compile("توصيل|شحن|فوق|اكتر من|أكتر من|الحد الأدنى|الحد الادنى|كوبون|كود|خصم|delivery|shipping|minimum|coupon|over\\s*$", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * The customer replied to a message about some products (one or several; the quoted text can match more than one name) and their own message names no product, but the reply gives only prices
+     * that belong to none of those products (a phone's prices for the quoted phone case, a backpack's for a list of power banks), or names another product and not the quoted one when there is
+     * exactly one. Returns the quoted slugs, or an empty list.
+     */
+    private List<String> quoteIgnored(String last, String answer, FactCheck.Shop shop) {
         var slugs = REPLY_SLUGS.get();
-        if (slugs == null || slugs.size() != 1 || answer == null || last == null) return null;
-        if (!FactCheck.mentions(last, shop.names()).isEmpty()) return null;   // they named a product themselves: that is what they mean
+        if (slugs == null || slugs.isEmpty() || answer == null || last == null) return List.of();
+        if (!FactCheck.mentions(last, shop.names()).isEmpty()) return List.of();   // they named a product themselves: that is what they mean
         var said = FactCheck.mentions(answer, shop.names()).stream().map(FactCheck.Mention::slug).distinct().toList();
-        if (said.isEmpty() || said.contains(slugs.get(0))) return null;
-        return slugs.get(0);
+        if (slugs.size() == 1 && !said.isEmpty() && !said.contains(slugs.get(0))) return slugs;
+        if (said.stream().anyMatch(slugs::contains)) return List.of();   // the reply does talk about a quoted product
+        Set<Long> quotedPrices = new HashSet<>();
+        for (String slug : slugs) {
+            var product = shop.product(slug);
+            if (product == null) continue;
+            if (product.before() > 0) quotedPrices.add(Math.round(product.before() * 100));
+            for (var v : product.variants()) { quotedPrices.add(Math.round(v.price() * 100)); if (v.before() > 0) quotedPrices.add(Math.round(v.before() * 100)); }
+        }
+        if (quotedPrices.isEmpty()) return List.of();
+        boolean foreign = false;
+        for (var a : MoneyGuard.amountsIn(answer)) {
+            if (a.sum()) continue;
+            if (quotedPrices.contains(a.cents())) return List.of();   // the quoted product's price is in the reply
+            String before = answer.substring(Math.max(0, a.start() - 30), a.start());
+            if (!NOT_A_PRICE_CONTEXT.matcher(before).find()) foreign = true;
+        }
+        return foreign ? slugs : List.of();
     }
 
     private static String displayName(FactCheck.Shop shop, String slug) {
