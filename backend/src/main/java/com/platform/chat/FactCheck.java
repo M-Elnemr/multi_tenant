@@ -1939,9 +1939,11 @@ final class FactCheck {
             List<Mention> here = ms.stream().filter(m -> m.start() >= sn[0] && m.start() < sn[1]).toList();
             String slug = here.size() == 1 ? here.get(0).slug() : here.isEmpty() ? (lastBefore(ms, sn[0], only) != null ? lastBefore(ms, sn[0], only) : only) : null;
             if (slug == null) continue;
+            String se = la.substring(sn[0], sn[1]);
+            int label = versionLabel(se);   // «- الجديد: 24,999 جنيه، بضمان سنة» next to the open-box line: the line is about the other version of the product the text named last
+            if (label != 0) slug = otherVersion(label == 2 ? "جديد" : "أوبن بوكس", List.of(slug), shop.names()).get(0);
             String facts = shop.facts(slug);
             if (facts == null) continue;
-            String se = la.substring(sn[0], sn[1]);
             if (NOT_A_SPEC.matcher(se).find() || NEG_STRICT.matcher(se).find() || DENY.matcher(se).find() || WITHOUT.matcher(se).find() || CONDITIONAL.matcher(se).find()
                     || OTHER_CHOICES.matcher(se).find() || HOURS_TALK.matcher(se).find() || se.contains("؟") || se.contains("?")) continue;   // a no, another product offered, the opening hours
             String lf = light(facts);
@@ -1992,6 +1994,32 @@ final class FactCheck {
     }
 
     /** 1 when the message says «أوبن بوكس», 2 when it only says «جديد» (or a form of it), 0 when neither (or both). */
+    /** A line that starts with the version it is about («- الجديد: …», «الأوبن بوكس (فضي): …»): 1 open-box, 2 new, 0 none. */
+    private static final Pattern OPEN_LABEL = Pattern.compile("^[\\s\\-•*·]*(?:ال)?(?:اوبن|open)\\s*(?:بوكس|box)\\s*[:(\\-—،]");
+    private static final Pattern NEW_LABEL = Pattern.compile("^[\\s\\-•*·]*(?:ال)?(?:نسخه\\s+)?(?:ال)?(?:جديد(?:ه)?|new)\\s*[:(\\-—،]");
+    static int versionLabel(String lightSentence) {
+        if (lightSentence == null) return 0;
+        return OPEN_LABEL.matcher(lightSentence).find() ? 1 : NEW_LABEL.matcher(lightSentence).find() ? 2 : 0;
+    }
+
+    /** «الفرق», «الاتنين», «compare»: the customer wants both versions of a model, not one. */
+    private static final Pattern COMPARE_WORDS = Pattern.compile("فرق|مقارن|قارن|compare|difference|(?<!\\p{L})(?:ال)?(?:اتنين|اثنين)(?!\\p{L})|كلهم");
+    /** The slugs, plus the other version (new or open-box) of each one when the customer's text compares. */
+    static List<String> withSiblingWhenComparing(String latest, List<String> slugs, List<Named> names) {
+        if (latest == null || slugs.isEmpty() || !COMPARE_WORDS.matcher(light(latest)).find()) return slugs;
+        List<String> out = new ArrayList<>(slugs);
+        for (String sl : slugs) {
+            String n = names.stream().filter(x -> x.slug().equals(sl)).map(x -> light(x.name()).replaceAll("\\s+", " ").trim()).findFirst().orElse("");
+            for (Named x : names) {
+                String o = light(x.name()).replaceAll("\\s+", " ").trim();
+                boolean sibling = OPEN_BOX_WORDS.matcher(n).find() ? OPEN_BOX_WORDS.matcher(n).replaceAll(" ").replaceAll("\\s+", " ").trim().equals(o)
+                        : o.startsWith(n + " ") && OPEN_BOX_WORDS.matcher(o.substring(n.length())).find();
+                if (sibling && !out.contains(x.slug())) out.add(x.slug());
+            }
+        }
+        return out;
+    }
+
     /** Says new or open-box at all (both included): the customer's message itself decides the version, so earlier messages do not. */
     static boolean saysVersion(String latest) {
         if (latest == null) return false;

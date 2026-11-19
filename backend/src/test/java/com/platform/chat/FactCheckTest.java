@@ -731,4 +731,30 @@ class FactCheckTest {
         assertThat(FactCheck.otherVersion("إيه الفرق بين الجديد والأوبن بوكس", java.util.List.of("open"), names)).containsExactly("open");
         assertThat(FactCheck.versionWords("جديد مش أوبن بوكس")).isEqualTo(2);
     }
+
+    /** Seen in the open-box run on the final build: a comparison with the lines «- الأوبن بوكس: … ضمانه ٦ شهور» and «- الجديد: … بضمان سنة» lost the new one's year (its line was read as about the open-box product, named before it). */
+    @Test
+    void aLineLabelledWithTheNewVersionIsCheckedAgainstTheNewVersionsOwnWarranty() {
+        FactCheck.Named nw = new FactCheck.Named("new", "لاب توب زينترا بوك 14"), ob = new FactCheck.Named("open", "لاب توب زينترا بوك 14 أوبن بوكس");
+        Map<String, String> facts = Map.of("new", "الضمان: سنة من الوكيل", "open", "الضمان: 6 شهور");
+        FactCheck.Shop shop = new FactCheck.Shop() {
+            public List<FactCheck.Named> names() { return List.of(nw, ob); }
+            public FactCheck.Product product(String s) { return null; }
+            public List<FactCheck.Named> searchAll(List<String> words) { return List.of(); }
+            public Set<String> served() { return Set.of(); }
+            public List<int[]> hours() { return List.of(); }
+            public String pickup() { return null; }
+            public Set<String> tags() { return Set.of(); }
+            public String facts(String slug) { return facts.get(slug); }
+        };
+        String reply = "الفرق بينهم يا فندم:\n- الأوبن بوكس: لاب توب زينترا بوك 14 أوبن بوكس بـ 20999 وضمانه ٦ شهور\n- الجديد: بـ 24999 بضمان سنة كاملة\nتحب أحجزلك؟";
+        var problems = FactCheck.check("إيه الفرق بينهم؟", reply, shop, List.of("open"));
+        assertThat(problems.stream().map(FactCheck.Problem::kind)).as(problems.toString()).doesNotContain("SPEC_UNKNOWN");
+        assertThat(FactCheck.versionLabel(FactCheck.light("- الجديد: بـ 24999 بضمان سنة"))).isEqualTo(2);
+        assertThat(FactCheck.versionLabel(FactCheck.light("الأوبن بوكس (فضي): 20999"))).isEqualTo(1);
+        assertThat(FactCheck.versionLabel(FactCheck.light("ضمانه ٦ شهور — الجهاز جديد مستخدمش"))).isZero();
+        // «وفرق السعر كام؟»: the safe fallback names both versions
+        assertThat(FactCheck.withSiblingWhenComparing("وفرق السعر كام؟", List.of("open"), List.of(nw, ob))).containsExactly("open", "new");
+        assertThat(FactCheck.withSiblingWhenComparing("بكام؟", List.of("open"), List.of(nw, ob))).containsExactly("open");
+    }
 }

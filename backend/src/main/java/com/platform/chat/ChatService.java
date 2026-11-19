@@ -783,12 +783,12 @@ public class ChatService {
                     log.warn("AI unavailable on the fallback too: {}", e2.getMessage());
                     if (EVAL.get() != null) EVAL.get().failure(routed.code(), e2.getMessage());
                     events.record(tenantId, conv, channel, routed.code(), "ERROR", e2.describe(), null);
-                    answer = unavailableText(arabicChat);
+                    answer = dataOrUnavailable(ctx, text, arabicChat);
                     ReplyTrace.note("ai_unavailable", true);
                 }
             } else {
                 events.record(tenantId, conv, channel, routed.code(), "ERROR", e.describe(), null);
-                answer = routed.showsErrors() ? "⚠️ " + routed.label() + ": " + e.getMessage() : unavailableText(arabicChat);
+                answer = routed.showsErrors() ? "⚠️ " + routed.label() + ": " + e.getMessage() : dataOrUnavailable(ctx, text, arabicChat);
                 ReplyTrace.note("ai_unavailable", true);
             }
         } finally {
@@ -1044,6 +1044,27 @@ public class ChatService {
 
     /** The whole of one reply (every model call, review and rewrite) has to fit well inside the 60 seconds after which the gateway gives up on the customer. */
     static final long REPLY_BUDGET_MS = 45_000;
+
+    /**
+     * The models did not answer in time. When the customer's message is about a product (named, or the one of this chat), the reply is the shop's own data about it (real prices and what is in stock),
+     * never an invented line and never a bare «we are busy»; otherwise the busy text.
+     */
+    private static final java.util.regex.Pattern PRODUCT_QUESTION = java.util.regex.Pattern.compile("بكام|بكم|سعر|متاح|متوفر|موجود|فاضل|لون|مقاس|ضمان|كارت|بطاريه|available|price|how much|in stock|colou?r|size|warranty");
+    private String dataOrUnavailable(Ctx ctx, String text, boolean arabic) {
+        try {
+            var names = shopView(ctx.tenantId()).names();
+            var slugs = FactCheck.askedSlugs(text, names);
+            if (slugs.isEmpty() && PRODUCT_QUESTION.matcher(FactCheck.light(text)).find()) { var focus = FOCUS_SLUGS.get(); if (focus != null) slugs = focus; }   // «بكام؟», «متاح؟»: about the chat's product; «إزاي أدفع؟» is not
+            if (!slugs.isEmpty() && slugs.size() <= 2) {
+                String data = verifiedReply(ctx, text, slugs);
+                if (data.startsWith("ده المتاح") || data.startsWith("This is exactly")) {
+                    events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), "-", "CHECK:UNAVAILABLE_DATA_REPLY", null, null);
+                    return data;
+                }
+            }
+        } catch (RuntimeException e) { log.warn("Data reply instead of the busy text skipped", e); }
+        return unavailableText(arabic);
+    }
 
     private static String unavailableText(boolean arabic) {
         return arabic ? "معلش يا فندم، عندنا ضغط دلوقتي 🙏 ابعتلي رسالتك تاني بعد دقيقة وهرد عليك على طول."
@@ -1789,6 +1810,7 @@ public class ChatService {
         boolean ar = !english(last);
         var names = shopView(ctx.tenantId()).names();
         slugs = FactCheck.otherVersion(last, slugs, names);   // «جديد مش أوبن بوكس»: the data is the new version's
+        slugs = FactCheck.withSiblingWhenComparing(last, slugs, names);   // «وفرق السعر كام؟»: both versions, each with its own price
         StringBuilder b = new StringBuilder();
         for (String slug : slugs.stream().limit(2).toList()) {
             String name = names.stream().filter(n -> n.slug().equals(slug)).map(FactCheck.Named::name).findFirst().orElse(null);

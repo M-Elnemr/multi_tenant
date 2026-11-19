@@ -353,6 +353,27 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
         assertThat(FakeAiProvider.lastSystem).contains("«" + open + "» [");
     }
 
+    /** Seen on the final build: 15 of 173 turns of the open-box run were the bare «we are busy» text while the models were slow. A message about a product gets the shop's own data about it (real price); anything else keeps the busy text. */
+    @Test
+    void whenTheModelsDoNotAnswerAMessageAboutAProductGetsTheShopsOwnData() throws Exception {
+        Tenant t = onboard("STORE");
+        UUID tenant = tenant(t);
+        String tag = uniq();
+        String bag = "شنطة اختبار " + tag;
+        product(t, bag, 620, "أسود");
+        String ext = UUID.randomUUID().toString();
+        answer("أهلا");
+        say(t, ext, "السلام عليكم", null);
+        FakeAiProvider.SCRIPT.clear();
+        for (int i = 0; i < 6; i++) FakeAiProvider.SCRIPT.add(turns -> { throw new com.platform.chat.AiProvider.AiUnavailableException("TIMEOUT", "TIMEOUT", null); });
+        String named = JsonPath.read(say(t, ext, bag + " بكام؟", null), "$.reply");
+        assertThat(named).as(named).contains("620").doesNotContain("ضغط");
+        FakeAiProvider.SCRIPT.clear();
+        for (int i = 0; i < 6; i++) FakeAiProvider.SCRIPT.add(turns -> { throw new com.platform.chat.AiProvider.AiUnavailableException("TIMEOUT", "TIMEOUT", null); });
+        String none = JsonPath.read(say(t, ext, "إزاي أدفع؟", null), "$.reply");
+        assertThat(none).as(none).contains("ضغط");
+    }
+
     /** Seen on the final build (scenario B): the first reply was the busy text (it names no product), then «بيجي بأي ألوان؟» about the NEW laptop was answered with the open-box one. The product the customer named last is the chat's product. */
     @Test
     void whenTheShopNamedNoProductTheProductTheCustomerNamedLastIsTheChatsProduct() throws Exception {
