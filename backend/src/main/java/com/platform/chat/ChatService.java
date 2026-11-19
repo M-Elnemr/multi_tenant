@@ -888,6 +888,12 @@ public class ChatService {
             }
         }
         int version = FactCheck.versionWords(latest);
+        String versionText = latest;
+        if (version == 0 && !FactCheck.saysVersion(latest)) {   // «لا خليني في الجديد» and then «بكام؟»: the newest of the customer's last three messages that says new or open-box still holds
+            List<String> before = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id < :u ORDER BY id DESC LIMIT 3")
+                    .param("c", conv).param("u", userMsgId).query(String.class).list();
+            for (String said : before) if (FactCheck.versionWords(said) != 0) { version = FactCheck.versionWords(said); versionText = said; break; }
+        }
         if (version != 0 && (slugs.isEmpty() || slugs.stream().noneMatch(sl -> FactCheck.hasOtherVersion(sl, shop.names())))) {
             // «الأوبن بوكس لسه متاح؟» 50 messages after the laptop, with accessories in between: the newest product of the chat that comes both new and open-box (any age for «أوبن بوكس», the last 30 messages for the plain «الجديد»)
             List<String> recent = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND id < :u ORDER BY id DESC LIMIT " + (version == 1 ? 120 : 30))
@@ -898,7 +904,7 @@ public class ChatService {
                     if (FactCheck.hasOtherVersion(sl, shop.names())) { slugs = List.of(sl); break search; }
         }
         if (slugs.isEmpty() || slugs.size() > 2) return "";
-        slugs = FactCheck.otherVersion(latest, slugs, shop.names());   // «لا خليني في الجديد»: the other version of the product being discussed
+        slugs = FactCheck.otherVersion(versionText, slugs, shop.names());   // «لا خليني في الجديد»: the other version of the product being discussed
         List<String> labels = new ArrayList<>();
         for (String sl : slugs) shop.names().stream().filter(n -> n.slug().equals(sl)).findFirst().ifPresent(n -> labels.add("«" + n.name() + "» [" + n.slug() + "]"));
         if (labels.isEmpty()) return "";
@@ -1782,6 +1788,7 @@ public class ChatService {
     String verifiedReply(Ctx ctx, String last, List<String> slugs) {
         boolean ar = !english(last);
         var names = shopView(ctx.tenantId()).names();
+        slugs = FactCheck.otherVersion(last, slugs, names);   // «جديد مش أوبن بوكس»: the data is the new version's
         StringBuilder b = new StringBuilder();
         for (String slug : slugs.stream().limit(2).toList()) {
             String name = names.stream().filter(n -> n.slug().equals(slug)).map(FactCheck.Named::name).findFirst().orElse(null);

@@ -1968,9 +1968,11 @@ final class FactCheck {
      * «لا خليني في الجديد» while the chat is about the open-box version of a model, «والأوبن بوكس متاح؟» while it is about the new one: the customer names no product but switches to the other version of the
      * product being discussed (the same name with or without «أوبن بوكس»). Returns the products the message is about: the sibling of each, or the same list when no switch is asked.
      */
+    /** «جديد مش أوبن بوكس», «بدون أوبن بوكس»: the open-box version is named only to be refused, so it is not a version the customer asks for. */
+    private static final Pattern NEGATED_OPEN_BOX = Pattern.compile("(?:مش|مو|بدون|غير|not)\\s*(?:عايز\\s*|عاوز\\s*|want\\s*)?(?:ال)?(?:اوبن|open)\\s*(?:بوكس|box)");
     static List<String> otherVersion(String latest, List<String> slugs, List<Named> names) {
         if (latest == null || slugs.isEmpty()) return slugs;
-        String ln = light(latest);
+        String ln = NEGATED_OPEN_BOX.matcher(light(latest)).replaceAll(" ");
         boolean open = OPEN_BOX_WORDS.matcher(ln).find(), fresh = NEW_VERSION_WORDS.matcher(ln).find();
         if (open == fresh) return slugs;   // neither, or both («الجديد والأوبن بوكس»): the product the shop named stays
         List<String> out = new ArrayList<>();
@@ -1990,9 +1992,15 @@ final class FactCheck {
     }
 
     /** 1 when the message says «أوبن بوكس», 2 when it only says «جديد» (or a form of it), 0 when neither (or both). */
+    /** Says new or open-box at all (both included): the customer's message itself decides the version, so earlier messages do not. */
+    static boolean saysVersion(String latest) {
+        if (latest == null) return false;
+        String ln = light(latest);
+        return OPEN_BOX_WORDS.matcher(ln).find() || NEW_VERSION_WORDS.matcher(ln).find();
+    }
     static int versionWords(String latest) {
         if (latest == null) return 0;
-        String ln = light(latest);
+        String ln = NEGATED_OPEN_BOX.matcher(light(latest)).replaceAll(" ");
         boolean open = OPEN_BOX_WORDS.matcher(ln).find(), fresh = NEW_VERSION_WORDS.matcher(ln).find();
         return open && !fresh ? 1 : fresh && !open ? 2 : 0;
     }
@@ -2012,7 +2020,7 @@ final class FactCheck {
     private static final Pattern BOTH_VERSIONS = Pattern.compile("(?<!\\p{L})(?:و|ف|ب)?(?:ال)?جديد(?:ه|ة)?(?!\\p{L})|(?<!\\p{L})(?:و|ف)?(?:ال)?(?:اتنين|اثنين|التنين)(?!\\p{L})|فرق|مقارن|قارن|compare|difference|(?<![a-z])new(?![a-z])|مقفول|بالعلبه|كلهم|الاتنين", Pattern.CASE_INSENSITIVE);
 
     /** A graphics claim («كارت الشاشة مدمج», «integrated graphics», «RTX 3050»): a kind of spec with no number that the shop writes for one version of a model and not for another. */
-    private static final Pattern GRAPHICS_CLAIM = Pattern.compile("(?:كارت\\s+(?:ال)?شاشه|جرافيكس|graphics|gpu)[^.\\n]{0,40}?(?:مدمج|مدمجه|integrated|مخصص|dedicated|rtx|gtx|radeon)|(?:مدمج|مدمجه|integrated|مخصص|dedicated|rtx|gtx|radeon)[^.\\n]{0,25}?(?:كارت\\s+(?:ال)?شاشه|جرافيكس|graphics|gpu)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern GRAPHICS_CLAIM = Pattern.compile("(?:كا?رت(?:\\s+(?:ال)?شاشه)?|جرافيكس|graphics|gpu)[^.\\n]{0,40}?(?:مدمج|مدمجه|integrated|مخصص|dedicated|منفصل|منفصله|separate|rtx|gtx|radeon)|(?:مدمج|مدمجه|integrated|مخصص|dedicated|منفصل|منفصله|separate|rtx|gtx|radeon)[^.\\n]{0,25}?(?:كا?رت(?:\\s+(?:ال)?شاشه)?|جرافيكس|graphics|gpu)", Pattern.CASE_INSENSITIVE);
 
     /**
      * The chat is about ONE product (the one the shop last named) and the customer names no other: «كارت الشاشة فيه مدمج» said with the plain name of a version («الزينترا بوك 14») is the
