@@ -295,7 +295,8 @@ class OrderGuardsIntegrationTest extends IntegrationTestBase {
     void theShopDataFallbackIsAboutTheProductTheCustomerNamedNotTheOnesTheModelSearched() throws Exception {
         Tenant t = onboard("STORE");
         String branch = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
-        String tag = uniq(), base = "لاب توب زينترا " + tag, open = base + " أوبن بوكس";
+        // the name has a «3» of its own, the real stock: a digit of the name must not pass for the stock being said (flaky in CI when the tag was random)
+        String tag = "cc11cbe3e6", base = "لاب توب زينترا " + tag, open = base + " أوبن بوكس";
         for (String[] p : new String[][] {{base, "2499900"}, {open, "2099900"}})
             body(onHost(t.host(), t.access(), "POST", "/api/v1/store/products", """
                     {"taxonomySlug":"cookware","name":"%s","variants":[{"sku":"LP-%s","priceMinor":%s,"optionValues":{},"stock":[{"branchId":"%s","quantity":3}]}]}

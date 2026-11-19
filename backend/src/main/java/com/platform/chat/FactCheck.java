@@ -1669,7 +1669,8 @@ final class FactCheck {
         if (exact.size() != 1) return;   // an option is open: partialStock and the quantity check deal with it
         int real = exact.get(0).available();
         if (real <= 0 || real >= MADE_TO_ORDER) return;
-        if (Pattern.compile("(?<!\\d)" + real + "(?!\\d)").matcher(l).find() || real < STOCK_WORDS.size() && STOCK_WORDS.get(real).matcher(l).find()) return;   // the reply says the real number
+        String withoutName = l.replace(light(p.name()), " ");   // «آيفون 3» with 3 in stock: a digit of the product's own name is not the stock being said
+        if (Pattern.compile("(?<!\\d)" + real + "(?!\\d)").matcher(withoutName).find() || real < STOCK_WORDS.size() && STOCK_WORDS.get(real).matcher(withoutName).find()) return;   // the reply says the real number
         Matcher m = PROMISED_QTY.matcher(l);
         while (m.find()) {
             int n = Integer.parseInt(m.group(1) != null ? m.group(1) : m.group(2));
