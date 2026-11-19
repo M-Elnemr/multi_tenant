@@ -2054,7 +2054,7 @@ final class FactCheck {
     private static final Pattern BOTH_VERSIONS = Pattern.compile("(?<!\\p{L})(?:و|ف|ب)?(?:ال)?جديد(?:ه|ة)?(?!\\p{L})|(?<!\\p{L})(?:و|ف)?(?:ال)?(?:اتنين|اثنين|التنين)(?!\\p{L})|فرق|مقارن|قارن|compare|difference|(?<![a-z])new(?![a-z])|مقفول|بالعلبه|كلهم|الاتنين", Pattern.CASE_INSENSITIVE);
 
     /** A graphics claim («كارت الشاشة مدمج», «integrated graphics», «RTX 3050»): a kind of spec with no number that the shop writes for one version of a model and not for another. */
-    private static final Pattern GRAPHICS_CLAIM = Pattern.compile("(?:كا?رت(?:\\s+(?:ال)?شاشه)?|جرافيكس|graphics|gpu)[^.\\n]{0,40}?(?:مدمج|مدمجه|integrated|مخصص|dedicated|منفصل|منفصله|separate|rtx|gtx|radeon)|(?:مدمج|مدمجه|integrated|مخصص|dedicated|منفصل|منفصله|separate|rtx|gtx|radeon)[^.\\n]{0,25}?(?:كا?رت(?:\\s+(?:ال)?شاشه)?|جرافيكس|graphics|gpu)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern GRAPHICS_CLAIM = Pattern.compile("(?:كا?رت(?:\\s+(?:ال)?شاشه)?|جرافيك[سز]?|graphics|gpu)[^.\\n]{0,40}?(?:مدمج|مدمجه|integrated|مخصص|dedicated|منفصل|منفصله|separate|rtx|gtx|radeon)|(?:مدمج|مدمجه|integrated|مخصص|dedicated|منفصل|منفصله|separate|rtx|gtx|radeon)[^.\\n]{0,25}?(?:كا?رت(?:\\s+(?:ال)?شاشه)?|جرافيك[سز]?|graphics|gpu)", Pattern.CASE_INSENSITIVE);
 
     /**
      * The chat is about ONE product (the one the shop last named) and the customer names no other: «كارت الشاشة فيه مدمج» said with the plain name of a version («الزينترا بوك 14») is the

@@ -282,7 +282,7 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
         String text = JsonPath.read(say(t, ext, "فيه كارت شاشة؟", null), "$.reply");
         assertThat(text).as(text).doesNotContain("مدمج").contains("مش مكتوبة");
         // seen on the final build: «الكارت مدمج مع المعالج، مفيش كارت شاشة منفصل» (no «شاشة» after the first word) and «كرت شاشة منفصل» are the same claim
-        for (String claim : new String[]{"الكارت مدمج مع المعالج يا فندم، مفيش كارت شاشة منفصل.", "ليه كرت شاشة منفصل يا فندم، الكرت مدمج مع المعالج."}) {
+        for (String claim : new String[]{"الكارت مدمج مع المعالج يا فندم، مفيش كارت شاشة منفصل.", "ليه كرت شاشة منفصل يا فندم، الكرت مدمج مع المعالج.", "البيانات بتاعته مش بتذكر كارت شاشة مستقل يا فندم، يعني معالجه كور i5 الجيل 13 فيه جرافيك مدمج (بيكفي شغل، تصفح وأغلب الشغل المكتبي). لو محتاج جيمينج ثقيل قولي وأشوفلك بدائل. تحب تحجز ده ولا تدور على حاجة أقوى؟"}) {
             FakeAiProvider.SCRIPT.clear();
             FakeAiProvider.SCRIPT.add(turns -> Turn.model(claim));
             String said = JsonPath.read(say(t, ext, "فيه كارت شاشة؟", null), "$.reply");
