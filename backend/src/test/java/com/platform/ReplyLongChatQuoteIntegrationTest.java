@@ -281,6 +281,13 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
         FakeAiProvider.SCRIPT.add(turns -> Turn.model(base + " كارت الشاشة فيه مدمج (مش منفصل) يا فندم، وكفاية للشغل بس مش لجيمنج تقيل."));   // with «مش» in the sentence
         String text = JsonPath.read(say(t, ext, "فيه كارت شاشة؟", null), "$.reply");
         assertThat(text).as(text).doesNotContain("مدمج").contains("مش مكتوبة");
+        // seen on the final build: «الكارت مدمج مع المعالج، مفيش كارت شاشة منفصل» (no «شاشة» after the first word) and «كرت شاشة منفصل» are the same claim
+        for (String claim : new String[]{"الكارت مدمج مع المعالج يا فندم، مفيش كارت شاشة منفصل.", "ليه كرت شاشة منفصل يا فندم، الكرت مدمج مع المعالج."}) {
+            FakeAiProvider.SCRIPT.clear();
+            FakeAiProvider.SCRIPT.add(turns -> Turn.model(claim));
+            String said = JsonPath.read(say(t, ext, "فيه كارت شاشة؟", null), "$.reply");
+            assertThat(said).as(said).doesNotContain("مدمج").doesNotContain("منفصل").contains("مش مكتوبة");
+        }
         // asking about the NEW one by name is not touched
         FakeAiProvider.SCRIPT.clear();
         FakeAiProvider.SCRIPT.add(turns -> Turn.model(base + " كارت الشاشة فيه مدمج يا فندم."));
@@ -317,6 +324,33 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
         answer("ok");
         say(t, ext, "إيه الفرق بين الجديد والأوبن بوكس؟", null);
         assertThat(FakeAiProvider.lastSystem).contains("«" + base + "» [").doesNotContain("«" + open + "» [");
+    }
+
+    /** Seen on the final build (scenario D): «لا خليني في الجديد», the shop answered without a product name, then «بكام؟» was answered with the open-box laptop. The newest version word of the last three customer messages still holds. */
+    @Test
+    void aVersionTheCustomerChoseHoldsForTheNextMessageThatSaysNoVersion() throws Exception {
+        Tenant t = onboard("STORE");
+        UUID tenant = tenant(t);
+        String tag = uniq();
+        String base = "لاب توب زينترا " + tag, open = base + " أوبن بوكس";
+        product(t, base, 24999, "فضي", "رمادي");
+        product(t, open, 20999, "فضي");
+        String ext = UUID.randomUUID().toString();
+        answer("أهلا");
+        say(t, ext, "السلام عليكم", null);
+        UUID conv = conv(tenant, ext);
+        seed(conv, "user", "عايز الأوبن بوكس");
+        seed(conv, "assistant", open + " بـ 20999 جنيه، فضي.");
+        seed(conv, "user", "لا خليني في الجديد");
+        seed(conv, "assistant", "الجديد متاح بعدة إصدارات يا فندم.");
+        answer("ok");
+        say(t, ext, "بكام؟", null);
+        assertThat(FakeAiProvider.lastSystem).contains("«" + base + "» [").doesNotContain("«" + open + "» [");
+        seed(conv, "user", "طيب ارجع للأوبن بوكس");
+        seed(conv, "assistant", "تمام يا فندم.");
+        answer("ok");
+        say(t, ext, "بكام؟", null);
+        assertThat(FakeAiProvider.lastSystem).contains("«" + open + "» [");
     }
 
     /** Seen on the final build (scenario B): the first reply was the busy text (it names no product), then «بيجي بأي ألوان؟» about the NEW laptop was answered with the open-box one. The product the customer named last is the chat's product. */

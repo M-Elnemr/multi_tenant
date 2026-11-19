@@ -720,4 +720,15 @@ class FactCheckTest {
         // Qwen, re-exam 2026-11-04: «عندنا مش مياه معدنية» for water the shop sells
         org.assertj.core.api.Assertions.assertThat(kinds(REST, "عايز مياه معدنية صغيرة ٦٠٠ مل", "عندنا مش مياه معدنية، إحنا شاورما سوري ومشويات على الفحم.")).contains("FALSE_DENIAL");
     }
+
+    /** Seen on the final build: «عايز زينترا بوك 14 جديد مش أوبن بوكس» was answered (safe fallback) with the open-box laptop only. An open-box word after «مش» is refused, not asked for. */
+    @Test
+    void anOpenBoxWordAfterNotIsRefusedAndTheNewVersionIsTheOneAskedFor() {
+        var names = java.util.List.of(new FactCheck.Named("new", "لاب توب زينترا بوك 14"), new FactCheck.Named("open", "لاب توب زينترا بوك 14 أوبن بوكس"));
+        assertThat(FactCheck.otherVersion("عايز زينترا بوك 14 جديد مش أوبن بوكس", java.util.List.of("open"), names)).containsExactly("new");
+        assertThat(FactCheck.otherVersion("عايز النسخة الجديدة بدون أوبن بوكس", java.util.List.of("open"), names)).containsExactly("new");
+        assertThat(FactCheck.otherVersion("عايز الأوبن بوكس", java.util.List.of("new"), names)).containsExactly("open");
+        assertThat(FactCheck.otherVersion("إيه الفرق بين الجديد والأوبن بوكس", java.util.List.of("open"), names)).containsExactly("open");
+        assertThat(FactCheck.versionWords("جديد مش أوبن بوكس")).isEqualTo(2);
+    }
 }
