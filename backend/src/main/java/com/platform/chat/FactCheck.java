@@ -1989,6 +1989,25 @@ final class FactCheck {
         return out;
     }
 
+    /** 1 when the message says «أوبن بوكس», 2 when it only says «جديد» (or a form of it), 0 when neither (or both). */
+    static int versionWords(String latest) {
+        if (latest == null) return 0;
+        String ln = light(latest);
+        boolean open = OPEN_BOX_WORDS.matcher(ln).find(), fresh = NEW_VERSION_WORDS.matcher(ln).find();
+        return open && !fresh ? 1 : fresh && !open ? 2 : 0;
+    }
+
+    /** The product is one of a new / open-box pair of the same model (the same name with or without «أوبن بوكس»). */
+    static boolean hasOtherVersion(String slug, List<Named> names) {
+        String n = names.stream().filter(x -> x.slug().equals(slug)).map(x -> light(x.name()).replaceAll("\\s+", " ").trim()).findFirst().orElse("");
+        if (n.isBlank()) return false;
+        if (OPEN_BOX_WORDS.matcher(n).find()) {
+            String base = OPEN_BOX_WORDS.matcher(n).replaceAll(" ").replaceAll("\\s+", " ").trim();
+            return names.stream().anyMatch(x -> light(x.name()).replaceAll("\\s+", " ").trim().equals(base));
+        }
+        return names.stream().anyMatch(x -> { String o = light(x.name()).replaceAll("\\s+", " ").trim(); return o.startsWith(n + " ") && OPEN_BOX_WORDS.matcher(o.substring(n.length())).find(); });
+    }
+
     /** «الجديد», «الاتنين», «الفرق», «compare»: the customer is asking about the other version or both, so the chat's focus product is not the only subject. */
     private static final Pattern BOTH_VERSIONS = Pattern.compile("(?<!\\p{L})(?:و|ف|ب)?(?:ال)?جديد(?:ه|ة)?(?!\\p{L})|(?<!\\p{L})(?:و|ف)?(?:ال)?(?:اتنين|اثنين|التنين)(?!\\p{L})|فرق|مقارن|قارن|compare|difference|(?<![a-z])new(?![a-z])|مقفول|بالعلبه|كلهم|الاتنين", Pattern.CASE_INSENSITIVE);
 

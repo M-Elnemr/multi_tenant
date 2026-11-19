@@ -339,4 +339,31 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
         String system = FakeAiProvider.lastSystem;
         assertThat(system).contains("THE PRODUCT OF THIS CHAT").contains("«" + base + "» [").doesNotContain("«" + open + "» [");
     }
+
+    /** Seen on the final build (long chat, 50 messages of other products in between): «الأوبن بوكس لسه متاح؟» / «والجديد بكام وضمانه؟» lost the laptop and the new one was answered «عندنا الأوبن بوكس بس». */
+    @Test
+    void aVersionWordWithNoProductNameFindsTheLaptopThroughManyMessagesOfOtherProducts() throws Exception {
+        Tenant t = onboard("STORE");
+        UUID tenant = tenant(t);
+        String tag = uniq();
+        String base = "لاب توب زينترا " + tag, open = base + " أوبن بوكس", mouse = "ماوس لاسلكي " + tag;
+        product(t, base, 24999, "فضي", "رمادي");
+        product(t, open, 20999, "فضي");
+        product(t, mouse, 300, "أسود");
+        String ext = UUID.randomUUID().toString();
+        answer("أهلا");
+        say(t, ext, "السلام عليكم", null);
+        UUID conv = conv(tenant, ext);
+        seed(conv, "user", open + " بكام؟");
+        seed(conv, "assistant", open + " بـ 20999 جنيه، فضي، ومتاح منه 5 قطع.");
+        for (int i = 0; i < 25; i++) { seed(conv, "user", mouse + " بكام؟"); seed(conv, "assistant", mouse + " بـ 300 جنيه."); }   // 50 messages about another product
+        FakeAiProvider.SCRIPT.clear();
+        answer(open + " متاح يا فندم بـ 20999 جنيه.");   // the shop's answer names the laptop again
+        say(t, ext, "الأوبن بوكس لسه متاح؟ وضمانه؟", null);
+        assertThat(FakeAiProvider.lastSystem).contains("THE PRODUCT OF THIS CHAT").contains("«" + open + "» [").doesNotContain("«" + mouse + "» [");
+        answer("تمام");
+        say(t, ext, "والجديد بكام وضمانه؟", null);   // the new one of the same model, after the shop's answer named the open-box laptop again
+        String system = FakeAiProvider.lastSystem;
+        assertThat(system).contains("«" + base + "» [").doesNotContain("«" + open + "» [").doesNotContain("«" + mouse + "» [");
+    }
 }

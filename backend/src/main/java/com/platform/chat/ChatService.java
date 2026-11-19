@@ -887,6 +887,16 @@ public class ChatService {
                 if (!named.isEmpty()) { slugs = named; break; }
             }
         }
+        int version = FactCheck.versionWords(latest);
+        if (version != 0 && (slugs.isEmpty() || slugs.stream().noneMatch(sl -> FactCheck.hasOtherVersion(sl, shop.names())))) {
+            // «الأوبن بوكس لسه متاح؟» 50 messages after the laptop, with accessories in between: the newest product of the chat that comes both new and open-box (any age for «أوبن بوكس», the last 30 messages for the plain «الجديد»)
+            List<String> recent = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND id < :u ORDER BY id DESC LIMIT " + (version == 1 ? 120 : 30))
+                    .param("c", conv).param("u", userMsgId).query(String.class).list();
+            search:
+            for (String said : recent)
+                for (String sl : FactCheck.askedSlugs(said, shop.names()))
+                    if (FactCheck.hasOtherVersion(sl, shop.names())) { slugs = List.of(sl); break search; }
+        }
         if (slugs.isEmpty() || slugs.size() > 2) return "";
         slugs = FactCheck.otherVersion(latest, slugs, shop.names());   // «لا خليني في الجديد»: the other version of the product being discussed
         List<String> labels = new ArrayList<>();
