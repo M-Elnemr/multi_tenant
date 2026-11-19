@@ -43,8 +43,9 @@ class AiTelemetryTest {
         BlockingQueue<String> auth = new LinkedBlockingQueue<>();
         HttpServer srv = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         srv.createContext("/api/public/otel/v1/traces", ex -> {
-            got.add(new String(ex.getRequestBody().readAllBytes()));
-            auth.add(String.valueOf(ex.getRequestHeaders().getFirst("Authorization")));
+            String body = new String(ex.getRequestBody().readAllBytes());
+            auth.add(String.valueOf(ex.getRequestHeaders().getFirst("Authorization")));   // the header first: when the body is visible to the test, the header already is (CI failure: auth.poll() was null)
+            got.add(body);
             ex.sendResponseHeaders(200, -1); ex.close();
         });
         srv.start();
