@@ -879,6 +879,14 @@ public class ChatService {
             var named = FactCheck.askedSlugs(said, shop.names());
             if (!named.isEmpty()) { slugs = named; break; }
         }
+        if (slugs.isEmpty()) {   // the shop named none (a busy or generic reply): the product the customer named last
+            List<String> askedBefore = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id < :u ORDER BY id DESC LIMIT 4")
+                    .param("c", conv).param("u", userMsgId).query(String.class).list();
+            for (String said : askedBefore) {
+                var named = FactCheck.askedSlugs(said, shop.names());
+                if (!named.isEmpty()) { slugs = named; break; }
+            }
+        }
         if (slugs.isEmpty() || slugs.size() > 2) return "";
         slugs = FactCheck.otherVersion(latest, slugs, shop.names());   // «لا خليني في الجديد»: the other version of the product being discussed
         List<String> labels = new ArrayList<>();

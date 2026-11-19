@@ -318,4 +318,25 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
         say(t, ext, "إيه الفرق بين الجديد والأوبن بوكس؟", null);
         assertThat(FakeAiProvider.lastSystem).contains("«" + base + "» [").doesNotContain("«" + open + "» [");
     }
+
+    /** Seen on the final build (scenario B): the first reply was the busy text (it names no product), then «بيجي بأي ألوان؟» about the NEW laptop was answered with the open-box one. The product the customer named last is the chat's product. */
+    @Test
+    void whenTheShopNamedNoProductTheProductTheCustomerNamedLastIsTheChatsProduct() throws Exception {
+        Tenant t = onboard("STORE");
+        UUID tenant = tenant(t);
+        String tag = uniq();
+        String base = "لاب توب زينترا " + tag, open = base + " أوبن بوكس";
+        product(t, base, 24999, "فضي", "رمادي");
+        product(t, open, 20999, "فضي");
+        String ext = UUID.randomUUID().toString();
+        answer("أهلا");
+        say(t, ext, "السلام عليكم", null);
+        UUID conv = conv(tenant, ext);
+        seed(conv, "user", "عايز " + base + " جديد");
+        seed(conv, "assistant", "معلش يا فندم، عندنا ضغط دلوقتي 🙏 ابعتلي رسالتك تاني بعد دقيقة وهرد عليك على طول.");
+        answer("فضي ورمادي");
+        say(t, ext, "بيجي بأي ألوان؟", null);
+        String system = FakeAiProvider.lastSystem;
+        assertThat(system).contains("THE PRODUCT OF THIS CHAT").contains("«" + base + "» [").doesNotContain("«" + open + "» [");
+    }
 }
