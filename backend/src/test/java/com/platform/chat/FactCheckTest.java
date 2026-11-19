@@ -757,4 +757,30 @@ class FactCheckTest {
         assertThat(FactCheck.withSiblingWhenComparing("وفرق السعر كام؟", List.of("open"), List.of(nw, ob))).containsExactly("open", "new");
         assertThat(FactCheck.withSiblingWhenComparing("بكام؟", List.of("open"), List.of(nw, ob))).containsExactly("open");
     }
+
+    /** The open-box laptop's «was» price (24,999) is the NEW laptop's price: a reply to a question about the open-box laptop that gives only 24,999 answers with the other version. */
+    @Test
+    void aReplyWithOnlyTheOtherVersionsPriceDoesNotAnswerTheVersionAsked() {
+        FactCheck.Named nw = new FactCheck.Named("new", "لاب توب زينترا بوك 14"), ob = new FactCheck.Named("open", "لاب توب زينترا بوك 14 أوبن بوكس");
+        Map<String, FactCheck.Product> products = Map.of(
+                "new", new FactCheck.Product("new", nw.name(), 0, List.of(new FactCheck.Variant(Map.of("اللون", "فضي"), 24999, 0, 8), new FactCheck.Variant(Map.of("اللون", "رمادي"), 27499, 0, 8))),
+                "open", new FactCheck.Product("open", ob.name(), 24999, List.of(new FactCheck.Variant(Map.of("اللون", "فضي"), 20999, 24999, 3))));
+        FactCheck.Shop shop = new FactCheck.Shop() {
+            public List<FactCheck.Named> names() { return List.of(nw, ob); }
+            public FactCheck.Product product(String s) { return products.get(s); }
+            public List<FactCheck.Named> searchAll(List<String> words) { return List.of(); }
+            public Set<String> served() { return Set.of(); }
+            public List<int[]> hours() { return List.of(); }
+            public String pickup() { return null; }
+            public Set<String> tags() { return Set.of(); }
+            public String facts(String slug) { return null; }
+        };
+        String denial = "أعتذر يا فندم، معلومة الأوبن بوكس اللي قلتها قبل كده مش دقيقة — المتوفر حالياً هو زينترا بوك 14 جديد بالكامل، بسعر يبدأ من 24,999 (فضي أو رمادي).";
+        assertThat(ChatService.otherVersionAnswered("الزينترا بوك 14 الأوبن بوكس متاح؟", denial, shop)).isEqualTo("open");
+        // the right answer says its own price next to the «was» price; a question that compares, or one with no price in the reply, is left alone
+        assertThat(ChatService.otherVersionAnswered("الزينترا بوك 14 الأوبن بوكس متاح؟", "أيوه متاح ✅ بـ 20,999 بدل 24,999", shop)).isNull();
+        assertThat(ChatService.otherVersionAnswered("الزينترا بوك 14 الأوبن بوكس متاح؟", "أيوه متاح ✅ ٣ قطع", shop)).isNull();
+        assertThat(ChatService.otherVersionAnswered("إيه الفرق بين الجديد والأوبن بوكس في زينترا بوك 14؟", denial, shop)).isNull();
+        assertThat(ChatService.otherVersionAnswered("زينترا بوك 14 الجديد بكام؟", "الجديد بـ 24,999", shop)).isNull();
+    }
 }

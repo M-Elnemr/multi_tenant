@@ -2020,6 +2020,12 @@ final class FactCheck {
         return out;
     }
 
+    /** The customer compares or asks for both versions («الفرق», «الاتنين», or «الجديد والأوبن بوكس»). */
+    static boolean comparing(String latest) {
+        if (latest == null) return false;
+        return COMPARE_WORDS.matcher(light(latest)).find() || saysVersion(latest) && versionWords(latest) == 0;
+    }
+
     /** Says new or open-box at all (both included): the customer's message itself decides the version, so earlier messages do not. */
     static boolean saysVersion(String latest) {
         if (latest == null) return false;

@@ -1049,6 +1049,75 @@ public class ChatService {
      * The models did not answer in time. When the customer's message is about a product (named, or the one of this chat), the reply is the shop's own data about it (real prices and what is in stock),
      * never an invented line and never a bare «we are busy»; otherwise the busy text.
      */
+    private static final Pattern PLAIN_PRICE = Pattern.compile("(?<![\\d.])(\\d{4,6})(?![\\d.]*\\s*(?:جيجا|تيرا|وات|مللي|بوصة|قطع|يوم|ايام|أيام|شهور|شهر|سنه|سنة|ssd|gb|tb|hz|mah|mp))", Pattern.CASE_INSENSITIVE);
+    private static final Pattern VERSION_LABEL_BEFORE = Pattern.compile("(?:الجديد[ةه]?|الاوبن\\s*بوكس|الأوبن\\s*بوكس|أوبن\\s*بوكس|اوبن\\s*بوكس|الأصلي|الاصلي|العادي)\\s*(?:[:：\\-–—(]\\s*)?(?:بـ|ب|بسعر|بحوالي)?\\s*$");
+
+    private static Set<Long> plainPrices(String text) {
+        Set<Long> out = new HashSet<>();
+        String d = MoneyGuard.digits(text == null ? "" : text).replaceAll("(?<=\\d)[,٬](?=\\d{3})", "");
+        java.util.regex.Matcher m = PLAIN_PRICE.matcher(d);
+        while (m.find()) { long n = Long.parseLong(m.group(1)); if (n >= 1990 && n <= 2035) continue; out.add(n * 100); }
+        return out;
+    }
+
+    /** The prices of a product; with {@code withBefore} also the price it was before the offer (the open-box laptop's «was» price is the new laptop's price, so it must not count as the open-box's own). */
+    private static Set<Long> pricesOf(FactCheck.Shop shop, String slug, boolean withBefore) {
+        Set<Long> own = new HashSet<>();
+        var product = shop.product(slug);
+        if (product == null) return own;
+        if (withBefore && product.before() > 0) own.add(Math.round(product.before() * 100));
+        for (var v : product.variants()) { own.add(Math.round(v.price() * 100)); if (withBefore && v.before() > 0) own.add(Math.round(v.before() * 100)); }
+        return own;
+    }
+
+    /**
+     * The customer asks about one version of a model that is sold new and open-box (named, or the chat's product), the question is not a comparison, and the reply gives prices of the OTHER version
+     * and none of the asked one: the asked version is answered with the other's data. Returns the asked product's slug, or null.
+     */
+    static String otherVersionAnswered(String last, String answer, FactCheck.Shop shop) {
+        if (answer == null || last == null || FactCheck.comparing(last) || !PRODUCT_QUESTION.matcher(FactCheck.light(last)).find()) return null;
+        var asked = FactCheck.askedSlugs(last, shop.names());
+        if (asked.isEmpty()) { var focus = FOCUS_SLUGS.get(); if (focus != null) asked = focus; }
+        if (asked.size() != 1) return null;
+        String t = asked.get(0);
+        var group = FactCheck.withSiblingWhenComparing("الفرق", List.of(t), shop.names());
+        if (group.size() < 2) return null;
+        var product = shop.product(t);
+        if (product == null || product.variants().stream().noneMatch(v -> v.available() > 0)) return null;
+        Set<Long> own = pricesOf(shop, t, false), other = new HashSet<>();
+        for (String g : group) if (!g.equals(t)) other.addAll(pricesOf(shop, g, false));
+        other.removeAll(own);
+        Set<Long> said = plainPrices(answer);
+        for (var a : MoneyGuard.amountsIn(answer)) if (!a.sum()) said.add(a.cents());
+        if (said.isEmpty() || said.stream().anyMatch(own::contains)) return null;
+        return said.stream().anyMatch(other::contains) ? t : null;
+    }
+
+    /** A price written right after «الجديد» / «الأوبن بوكس» that is a price of none of the chat's products (nor of their other version): the products to answer from, or empty. */
+    private List<String> labelledPriceUnknown(String last, String answer, FactCheck.Shop shop, List<String> touched) {
+        if (answer == null || last == null) return List.of();
+        String d = MoneyGuard.digits(answer).replaceAll("(?<=\\d)[,٬](?=\\d{3})", "");
+        java.util.regex.Matcher m = PLAIN_PRICE.matcher(d);
+        List<Long> labelled = new ArrayList<>();
+        while (m.find()) {
+            long n = Long.parseLong(m.group(1));
+            if (n >= 1990 && n <= 2035) continue;
+            if (VERSION_LABEL_BEFORE.matcher(d.substring(Math.max(0, m.start() - 24), m.start())).find()) labelled.add(n * 100);
+        }
+        if (labelled.isEmpty()) return List.of();
+        var base = new ArrayList<String>(FactCheck.askedSlugs(last, shop.names()));
+        var focus = FOCUS_SLUGS.get();
+        if (focus != null) for (String f : focus) if (!base.contains(f)) base.add(f);
+        for (String t : touched) if (!base.contains(t)) base.add(t);
+        var group = FactCheck.withSiblingWhenComparing("الفرق", base, shop.names());
+        if (group.size() < 2 && base.isEmpty()) return List.of();
+        Set<Long> known = new HashSet<>();
+        for (String g : group) known.addAll(pricesOf(shop, g, true));
+        if (known.isEmpty()) return List.of();
+        for (long l : labelled) if (!known.contains(l)) return group.size() > 2 ? group.subList(0, 2) : group;
+        return List.of();
+    }
+
     private static final java.util.regex.Pattern PRODUCT_QUESTION = java.util.regex.Pattern.compile("بكام|بكم|سعر|متاح|متوفر|موجود|فاضل|لون|مقاس|ضمان|كارت|بطاريه|available|price|how much|in stock|colou?r|size|warranty");
     private String dataOrUnavailable(Ctx ctx, String text, boolean arabic) {
         try {
@@ -1789,6 +1858,20 @@ public class ChatService {
                 events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:FINAL_QUOTE_IGNORED", null, null);
                 ReplyTrace.checkProblems(Set.of("FINAL_QUOTE_IGNORED"));
                 return verifiedReply(ctx, last, quoted.size() > 4 ? quoted.subList(0, 4) : quoted);
+            }
+            String otherVersion = otherVersionAnswered(last, out, shopData);
+            if (otherVersion != null) {   // «الأوبن بوكس متاح؟» answered with the new laptop's price only (or the reverse): the asked version's own data
+                log.warn("Critical gate: the reply answers with the other version's prices instead of {} (conversation {})", otherVersion, ctx.conversationId());
+                events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:FINAL_OTHER_VERSION_ANSWERED", null, null);
+                ReplyTrace.checkProblems(Set.of("FINAL_OTHER_VERSION_ANSWERED"));
+                return verifiedReply(ctx, last, List.of(otherVersion));
+            }
+            var unknownLabelled = labelledPriceUnknown(last, out, shopData, touched);
+            if (!unknownLabelled.isEmpty()) {   // «الجديد ٢٤٩٩ والأوبن بوكس ٢٠٩٩»: a price written after the version it belongs to that no product of the chat has
+                log.warn("Critical gate: a price after a version label is not any real price of the chat's products (conversation {}): {}", ctx.conversationId(), out);
+                events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:FINAL_LABELLED_PRICE_UNKNOWN", null, null);
+                ReplyTrace.checkProblems(Set.of("FINAL_LABELLED_PRICE_UNKNOWN"));
+                return verifiedReply(ctx, last, unknownLabelled);
             }
             if (inventedSize(last, out, shopData) != null) bad.add("INVENTED_SIZE");
             for (var f : FactCheck.check(last, out, shopData, touched)) if (CRITICAL_FACTS.contains(f.kind())) bad.add(f.kind());

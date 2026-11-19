@@ -374,6 +374,69 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
         assertThat(none).as(none).contains("ضغط");
     }
 
+    private String stuckModel(Tenant t, String ext, String customer, String wrong) throws Exception {
+        FakeAiProvider.SCRIPT.clear();
+        for (int i = 0; i < 8; i++) FakeAiProvider.SCRIPT.add(turns -> Turn.model(wrong));   // the model keeps saying it, review and rewrite included
+        return JsonPath.read(say(t, ext, customer, null), "$.reply");
+    }
+
+    /** Seen on the final build (gate 3, the exact wording): «الزينترا بوك 14 الأوبن بوكس متاح؟» was answered «معلومة الأوبن بوكس مش دقيقة، المتوفر الجديد بالكامل بـ 24,999». The asked version's own data goes out. */
+    @Test
+    void aQuestionAboutTheOpenBoxVersionIsNeverAnsweredWithTheNewVersionsPriceOnly() throws Exception {
+        Tenant t = onboard("STORE");
+        UUID tenant = tenant(t);
+        String tag = uniq();
+        String base = "لاب توب زينترا " + tag, open = base + " أوبن بوكس";
+        product(t, base, 24999, "فضي", "رمادي");
+        product(t, open, 20999, "فضي");
+        String ext = UUID.randomUUID().toString();
+        answer("أهلا");
+        say(t, ext, "السلام عليكم", null);
+        UUID conv = conv(tenant, ext);
+        seed(conv, "user", "عندكم لاب توب أوبن بوكس؟");
+        seed(conv, "assistant", open + " بـ 20999 جنيه، فضي.");
+        String reply = stuckModel(t, ext, "زينترا " + tag + " الأوبن بوكس متاح؟", "أعتذر يا فندم، معلومة الأوبن بوكس اللي قلتها قبل كده مش دقيقة — المتوفر حالياً هو " + base + " جديد بالكامل، بسعر يبدأ من 24,999 جنيه.");
+        assertThat(reply).as(reply).contains("20999").doesNotContain("بالكامل");
+    }
+
+    /** Seen on the final build (after 50 messages of other products): «والجديد بكام وضمانه؟» was answered «عندنا النسخة الأوبن بوكس بس» with the open-box price. The new version's own data goes out. */
+    @Test
+    void aQuestionAboutTheNewVersionIsNeverAnsweredWithTheOpenBoxPriceOnly() throws Exception {
+        Tenant t = onboard("STORE");
+        UUID tenant = tenant(t);
+        String tag = uniq();
+        String base = "لاب توب زينترا " + tag, open = base + " أوبن بوكس";
+        product(t, base, 24999, "فضي", "رمادي");
+        product(t, open, 20999, "فضي");
+        String ext = UUID.randomUUID().toString();
+        answer("أهلا");
+        say(t, ext, "السلام عليكم", null);
+        UUID conv = conv(tenant, ext);
+        seed(conv, "user", "الأوبن بوكس لسه متاح؟");
+        seed(conv, "assistant", open + " بـ 20999 جنيه، فضي.");
+        String reply = stuckModel(t, ext, "والجديد بكام وضمانه؟", base + " عندنا حالياً متوفر منه النسخة الأوبن بوكس بس يا فندم، بـ 20999 جنيه.");
+        assertThat(reply).as(reply).contains("24999").doesNotContain("بس يا فندم");
+    }
+
+    /** Seen on the final build: «فرق السعر ٤٠٠ جنيه: الجديد ٢٤٩٩ والأوبن بوكس ٢٠٩٩» (a digit lost from both prices). A price after a version label that no product of the chat has is never sent. */
+    @Test
+    void aPriceAfterAVersionLabelThatNoProductOfTheChatHasIsNeverSent() throws Exception {
+        Tenant t = onboard("STORE");
+        UUID tenant = tenant(t);
+        String tag = uniq();
+        String base = "لاب توب زينترا " + tag, open = base + " أوبن بوكس";
+        product(t, base, 24999, "فضي", "رمادي");
+        product(t, open, 20999, "فضي");
+        String ext = UUID.randomUUID().toString();
+        answer("أهلا");
+        say(t, ext, "السلام عليكم", null);
+        UUID conv = conv(tenant, ext);
+        seed(conv, "user", "إيه الفرق بين الجديد والأوبن بوكس؟");
+        seed(conv, "assistant", base + " بـ 24999 والأوبن بوكس بـ 20999.");
+        String reply = stuckModel(t, ext, "وفرق السعر كام؟", "فرق السعر ٤ آلاف يا فندم: الجديد ٢٤٩٩ والأوبن بوكس ٢٠٩٩. تحب أحجزلك الأوبن بوكس؟");
+        assertThat(reply).as(reply).doesNotContain("٢٤٩٩").doesNotContain("٢٠٩٩").contains("24999").contains("20999");
+    }
+
     /** Seen on the final build (scenario B): the first reply was the busy text (it names no product), then «بيجي بأي ألوان؟» about the NEW laptop was answered with the open-box one. The product the customer named last is the chat's product. */
     @Test
     void whenTheShopNamedNoProductTheProductTheCustomerNamedLastIsTheChatsProduct() throws Exception {
