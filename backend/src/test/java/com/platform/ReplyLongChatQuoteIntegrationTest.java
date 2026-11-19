@@ -275,6 +275,8 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
         UUID conv = conv(tenant, ext);
         seed(conv, "user", open + " بكام؟");
         seed(conv, "assistant", open + " بـ 20999 جنيه، فضي، ومتاح منه 5 قطع.");
+        seed(conv, "user", "بيجي بأي لون؟");
+        seed(conv, "assistant", "بيجي باللون الفضي بس يا فندم، ومتاح منه 5 قطع.");   // the shop's last message names no product: the chat is still about the open-box one
         FakeAiProvider.SCRIPT.clear();
         FakeAiProvider.SCRIPT.add(turns -> Turn.model(base + " كارت الشاشة فيه مدمج (مش منفصل) يا فندم، وكفاية للشغل بس مش لجيمنج تقيل."));   // with «مش» in the sentence
         String text = JsonPath.read(say(t, ext, "فيه كارت شاشة؟", null), "$.reply");

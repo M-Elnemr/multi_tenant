@@ -868,12 +868,17 @@ public class ChatService {
      */
     private String focusBlock(UUID tenantId, UUID conv, long userMsgId, String latest) {
         if (latest == null || latest.length() > 160) return "";
-        String lastShop = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'assistant' AND id < :u ORDER BY id DESC LIMIT 1")
-                .param("c", conv).param("u", userMsgId).query(String.class).optional().orElse("");
-        if (lastShop.isBlank()) return "";
+        List<String> shopSaid = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'assistant' AND id < :u ORDER BY id DESC LIMIT 6")
+                .param("c", conv).param("u", userMsgId).query(String.class).list();
+        if (shopSaid.isEmpty()) return "";
         FactCheck.Shop shop = shopView(tenantId);
         if (!FactCheck.askedSlugs(latest, shop.names()).isEmpty()) return "";
-        var slugs = FactCheck.askedSlugs(lastShop, shop.names());
+        // the newest shop message that names a product (the one right before often names none: «بيجي باللون الفضي بس، ٣ قطع»)
+        List<String> slugs = List.of();
+        for (String said : shopSaid) {
+            var named = FactCheck.askedSlugs(said, shop.names());
+            if (!named.isEmpty()) { slugs = named; break; }
+        }
         if (slugs.isEmpty() || slugs.size() > 2) return "";
         slugs = FactCheck.otherVersion(latest, slugs, shop.names());   // «لا خليني في الجديد»: the other version of the product being discussed
         List<String> labels = new ArrayList<>();
