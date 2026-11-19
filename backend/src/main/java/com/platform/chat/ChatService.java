@@ -190,7 +190,10 @@ public class ChatService {
         return text.replaceAll("(?<![\\p{L}])ه{3,}(?![\\p{L}])\\s*", "").replaceAll("[😂🤣😆😹]", "").replaceAll("[ \\t]{2,}", " ").trim();
     }
 
-    private static boolean messaging(String channel) { return "WHATSAPP".equals(channel) || "FACEBOOK".equals(channel) || "INSTAGRAM".equals(channel); }
+    private static boolean messaging(String channel) { return "WHATSAPP".equals(channel) || "FACEBOOK".equals(channel) || "INSTAGRAM".equals(channel) || SOCIAL_NETWORKS.contains(channel); }
+
+    /** Networks added after the first three (see {@link SocialBridge}); chats there are answered like any messaging channel. */
+    static final List<String> SOCIAL_NETWORKS = List.of("TELEGRAM", "TIKTOK", "X", "SNAPCHAT");
 
     /** {@code mustSay}: a line the customer has to read whatever the model wrote (why no summary could be made, such as the minimum order). */
     /** {@code ragDown[0]}: search by meaning was unavailable while this reply was made (the model was told so, an event was recorded). */
@@ -296,7 +299,7 @@ public class ChatService {
     // ---- settings --------------------------------------------------------------------------------------------
 
     /** The channels the AI auto-reply can answer on: WhatsApp, Messenger (FACEBOOK), Instagram and the shop website. */
-    public static final List<String> AI_CHANNELS = List.of("WHATSAPP", "FACEBOOK", "INSTAGRAM", "WEB");
+    public static final List<String> AI_CHANNELS = List.of("WHATSAPP", "FACEBOOK", "INSTAGRAM", "TELEGRAM", "TIKTOK", "X", "SNAPCHAT", "WEB");
 
     public Map<String, Object> getSettings(UUID tenantId) {
         var r = jdbc.sql("SELECT enabled, tone, max_discount_pct, greeting, agent_name, agent_avatar, array_to_string(channels, ',') AS channels FROM chat.settings WHERE tenant_id = :t").param("t", tenantId).query().listOfRows().stream().findFirst();
@@ -345,7 +348,7 @@ public class ChatService {
         String ch = channels == null ? null : String.join(",", AI_CHANNELS.stream().filter(channels::contains).toList());
         jdbc.sql("""
                 INSERT INTO chat.settings (tenant_id, enabled, tone, max_discount_pct, greeting, channels)
-                VALUES (:t, coalesce(:e, TRUE), coalesce(:tone, 'FRIENDLY'), coalesce(:d, 0), :g, CASE WHEN :setc THEN CAST(string_to_array(:ch, ',') AS varchar(20)[]) ELSE '{WHATSAPP,FACEBOOK,INSTAGRAM,WEB}' END)
+                VALUES (:t, coalesce(:e, TRUE), coalesce(:tone, 'FRIENDLY'), coalesce(:d, 0), :g, CASE WHEN :setc THEN CAST(string_to_array(:ch, ',') AS varchar(20)[]) ELSE '{WHATSAPP,FACEBOOK,INSTAGRAM,TELEGRAM,TIKTOK,X,SNAPCHAT,WEB}' END)
                 ON CONFLICT (tenant_id) DO UPDATE SET enabled = coalesce(:e, chat.settings.enabled), tone = coalesce(:tone, chat.settings.tone),
                   max_discount_pct = coalesce(:d, chat.settings.max_discount_pct), greeting = CASE WHEN :setg THEN :g ELSE chat.settings.greeting END,
                   channels = CASE WHEN :setc THEN CAST(string_to_array(:ch, ',') AS varchar(20)[]) ELSE chat.settings.channels END, updated_at = now()
@@ -5226,7 +5229,7 @@ public class ChatService {
                 replaceNote = "The new order was created, but the old order " + replacesNo + " was already started by the shop and is still open: tell the customer the team will sort it out, and call flag_unanswered about it.";
             }
         }
-        String orderChannel = switch (String.valueOf(ctx.channel())) { case "FACEBOOK", "INSTAGRAM", "WHATSAPP" -> ctx.channel(); default -> "WEBSITE"; };
+        String orderChannel = switch (String.valueOf(ctx.channel())) { case "FACEBOOK", "INSTAGRAM", "WHATSAPP", "TELEGRAM", "TIKTOK", "X", "SNAPCHAT" -> ctx.channel(); default -> "WEBSITE"; };
         jdbc.sql("UPDATE commerce.orders SET channel = :ch WHERE id = :o").param("ch", orderChannel).param("o", res.get("orderId")).update();
         jdbc.sql("UPDATE chat.conversations SET pending = NULL, last_order = :o WHERE id = :c").param("o", String.valueOf(res.get("orderNumber"))).param("c", ctx.conversationId()).update();
         if (ctx.clientId() != null && !pickup) rememberAddress(ctx.clientId(), addr);

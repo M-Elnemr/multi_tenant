@@ -57,6 +57,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/v1/integrations/oauth/*/callback").permitAll()   // platforms send the owner back here; the signed state says who
                 .requestMatchers("/api/v1/open/**").permitAll()   // the marketplace API; its account routes check their own X-Open-Token
                 .requestMatchers("/api/v1/chat/meta/webhook", "/api/v1/chat/meta/callback").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/chat/telegram/webhook").permitAll()   // Telegram repeats our secret in a header; the controller checks it
                 .requestMatchers(HttpMethod.POST, "/api/v1/chat/evolution/webhook/*").permitAll()   // Evolution API calls this from inside our network; the secret in the path proves it
                 .requestMatchers(HttpMethod.GET, "/api/v1/clinic/public/**", "/api/v1/files/*/content").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/lawyer/public/**").permitAll()

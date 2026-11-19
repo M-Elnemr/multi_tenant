@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class ChannelAi {
     private static final Logger log = LoggerFactory.getLogger(ChannelAi.class);
-    private static final List<String> SOCIAL = List.of("WHATSAPP", "FACEBOOK", "INSTAGRAM");
+    private static final List<String> SOCIAL = List.of("WHATSAPP", "FACEBOOK", "INSTAGRAM", "TELEGRAM", "TIKTOK", "X", "SNAPCHAT");
 
     private final AiProvider defaultAi;
     private final AiProvider claude, glm, qwen, deepseek;

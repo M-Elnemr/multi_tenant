@@ -50,6 +50,10 @@ public class ChannelWindow {
                 if (!connected(tenantId, channel)) { w.put("canSend", false); w.put("mode", channel.equals("FACEBOOK") ? "MESSENGER" : "INSTAGRAM"); w.put("reason", "NOT_CONNECTED"); }
                 else timed(w, channel.equals("FACEBOOK") ? "MESSENGER" : "INSTAGRAM", lastCustomerAt);
             }
+            case "TELEGRAM", "TIKTOK", "X", "SNAPCHAT" -> {
+                if (!connected(tenantId, channel)) { w.put("canSend", false); w.put("mode", channel); w.put("reason", "NOT_CONNECTED"); }
+                else timed(w, channel, lastCustomerAt);
+            }
             default -> { w.put("canSend", false); w.put("mode", "OTHER"); w.put("reason", "NOT_SUPPORTED"); }
         }
         return w;

@@ -17,6 +17,8 @@ public class ChatDelivery {
     private final EvolutionService evolution;
     private final MetaChannelService meta;
     private final ProductShare share;
+    @org.springframework.beans.factory.annotation.Autowired @org.springframework.context.annotation.Lazy
+    private SocialBridge social;
 
     public ChatDelivery(EvolutionService evolution, MetaChannelService meta, ProductShare share) {
         this.evolution = evolution;
@@ -56,6 +58,10 @@ public class ChatDelivery {
         if ("FACEBOOK".equals(channel) || "INSTAGRAM".equals(channel)) {
             boolean ok = meta.deliver(tenantId, channel, externalId, text, image ? imageUrl : null, mid -> { if (onMid != null) onMid.accept(mid, text); });   // the platform's id of what went out, so a native reply to it is understood
             return ok ? new Result("SENT", null) : new Result("FAILED", "The message could not be sent: the 24-hour window with this customer is closed or the page is not connected. Copy the message and reply from the page inbox.");
+        }
+        if (ChatService.SOCIAL_NETWORKS.contains(channel)) {
+            boolean ok = social.deliver(tenantId, channel, externalId, text, image ? imageUrl : null, mid -> { if (onMid != null) onMid.accept(mid, text); });
+            return ok ? new Result("SENT", null) : new Result("FAILED", "The message could not be sent: the customer's chat window is closed or the account is not connected. Copy the message and reply from the app.");
         }
         return new Result("SAVED", null);   // the website chat: the message is in the chat, and an open chat window picks it up
     }

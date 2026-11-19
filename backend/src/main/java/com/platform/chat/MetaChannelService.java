@@ -42,6 +42,8 @@ public class MetaChannelService {
     private final ChatService chat;
     @org.springframework.beans.factory.annotation.Autowired @org.springframework.context.annotation.Lazy
     private CommentService comments;
+    @org.springframework.beans.factory.annotation.Autowired @org.springframework.context.annotation.Lazy
+    private SocialBridge social;
     private final LoginThrottle throttle;
     private final AuditService audit;
     private final WhatsAppConfirmService waConfirm;
@@ -576,6 +578,7 @@ public class MetaChannelService {
 
     /** Same, and {@code midSink} receives the platform's id of the message that went out (only when the platform returned one: never made up), so a customer's native reply to it is understood. */
     boolean deliver(UUID tenantId, String platform, String to, String text, String imageUrl, java.util.function.Consumer<String> midSink) {
+        if (social != null && social.handles(platform)) return social.deliver(tenantId, platform, to, text, imageUrl, midSink);   // Telegram, TikTok, X, Snapchat
         try {
             var ch = jdbc.sql("SELECT external_id, token_enc FROM chat.channels WHERE tenant_id = :t AND platform = :p AND status = 'ACTIVE' ORDER BY created_at LIMIT 1").param("t", tenantId).param("p", platform).query().listOfRows().stream().findFirst();
             if (ch.isEmpty()) return false;
