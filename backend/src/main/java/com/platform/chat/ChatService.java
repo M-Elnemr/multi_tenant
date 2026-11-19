@@ -875,6 +875,7 @@ public class ChatService {
         if (!FactCheck.askedSlugs(latest, shop.names()).isEmpty()) return "";
         var slugs = FactCheck.askedSlugs(lastShop, shop.names());
         if (slugs.isEmpty() || slugs.size() > 2) return "";
+        slugs = FactCheck.otherVersion(latest, slugs, shop.names());   // «لا خليني في الجديد»: the other version of the product being discussed
         List<String> labels = new ArrayList<>();
         for (String sl : slugs) shop.names().stream().filter(n -> n.slug().equals(sl)).findFirst().ifPresent(n -> labels.add("«" + n.name() + "» [" + n.slug() + "]"));
         if (labels.isEmpty()) return "";

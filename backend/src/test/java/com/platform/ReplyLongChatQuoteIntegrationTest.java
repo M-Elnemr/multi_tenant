@@ -285,4 +285,35 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
         String newer = JsonPath.read(say(t, ext, "والجديد فيه كارت شاشة؟", null), "$.reply");
         assertThat(newer).as(newer).doesNotContain("مش مكتوبة");
     }
+
+    /** Seen on the deployed build (scenario D): «لا خليني في الجديد» while the chat was about the open-box laptop was answered «الموديل اللي عندنا حالياً هو الأوبن بوكس بس». The other version of the chat's product is the one asked for. */
+    @Test
+    void aSwitchToTheNewOrTheOpenBoxVersionWithNoNameIsAboutTheOtherVersionOfTheChatsProduct() throws Exception {
+        Tenant t = onboard("STORE");
+        UUID tenant = tenant(t);
+        String tag = uniq();
+        String base = "لاب توب زينترا " + tag, open = base + " أوبن بوكس";
+        product(t, base, 24999, "فضي", "رمادي");
+        product(t, open, 20999, "فضي");
+        String ext = UUID.randomUUID().toString();
+        answer("أهلا");
+        say(t, ext, "السلام عليكم", null);
+        UUID conv = conv(tenant, ext);
+        seed(conv, "user", open + " بكام؟");
+        seed(conv, "assistant", open + " بـ 20999 جنيه، فضي، ومتاح منه 5 قطع.");
+        answer("متاح يا فندم");
+        say(t, ext, "لا خليني في الجديد", null);
+        String system = FakeAiProvider.lastSystem;
+        assertThat(system).contains("THE PRODUCT OF THIS CHAT").contains("«" + base + "» [").doesNotContain("«" + open + "» [");
+        // and back: the customer asks about the open-box one without its name while the chat is about the new one
+        seed(conv, "assistant", base + " بـ 24999 جنيه، فضي أو رمادي.");
+        answer("متاح يا فندم");
+        say(t, ext, "والأوبن بوكس متاح؟", null);
+        assertThat(FakeAiProvider.lastSystem).contains("«" + open + "» [");
+        // both words: the product the shop named stays
+        seed(conv, "assistant", base + " بـ 24999 جنيه.");
+        answer("ok");
+        say(t, ext, "إيه الفرق بين الجديد والأوبن بوكس؟", null);
+        assertThat(FakeAiProvider.lastSystem).contains("«" + base + "» [").doesNotContain("«" + open + "» [");
+    }
 }

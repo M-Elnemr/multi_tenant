@@ -1961,6 +1961,34 @@ final class FactCheck {
                 (rest.isBlank() ? note : rest + "\n\n" + note).trim()));
     }
 
+    private static final Pattern OPEN_BOX_WORDS = Pattern.compile("(?:اوبن|open)\\s*(?:بوكس|box)|مفتوحه?\\s+العلبه|مستعمل");
+    private static final Pattern NEW_VERSION_WORDS = Pattern.compile("(?<!\\p{L})(?:و|ف|ب)?(?:ال)?(?:جديد(?:ه|ة)?|new)(?!\\p{L})|مقفول");
+
+    /**
+     * «لا خليني في الجديد» while the chat is about the open-box version of a model, «والأوبن بوكس متاح؟» while it is about the new one: the customer names no product but switches to the other version of the
+     * product being discussed (the same name with or without «أوبن بوكس»). Returns the products the message is about: the sibling of each, or the same list when no switch is asked.
+     */
+    static List<String> otherVersion(String latest, List<String> slugs, List<Named> names) {
+        if (latest == null || slugs.isEmpty()) return slugs;
+        String ln = light(latest);
+        boolean open = OPEN_BOX_WORDS.matcher(ln).find(), fresh = NEW_VERSION_WORDS.matcher(ln).find();
+        if (open == fresh) return slugs;   // neither, or both («الجديد والأوبن بوكس»): the product the shop named stays
+        List<String> out = new ArrayList<>();
+        for (String slug : slugs) {
+            String n = names.stream().filter(x -> x.slug().equals(slug)).map(x -> light(x.name()).trim()).findFirst().orElse("");
+            boolean isOpen = OPEN_BOX_WORDS.matcher(n).find();
+            String pick = null;
+            if (fresh && isOpen) {
+                String base = OPEN_BOX_WORDS.matcher(n).replaceAll(" ").replaceAll("\\s+", " ").trim();
+                for (Named x : names) if (light(x.name()).replaceAll("\\s+", " ").trim().equals(base)) { pick = x.slug(); break; }
+            } else if (open && !isOpen) {
+                for (Named x : names) { String o = light(x.name()).replaceAll("\\s+", " ").trim(); if (o.startsWith(n + " ") && OPEN_BOX_WORDS.matcher(o.substring(n.length())).find()) { pick = x.slug(); break; } }
+            }
+            out.add(pick != null ? pick : slug);
+        }
+        return out;
+    }
+
     /** «الجديد», «الاتنين», «الفرق», «compare»: the customer is asking about the other version or both, so the chat's focus product is not the only subject. */
     private static final Pattern BOTH_VERSIONS = Pattern.compile("(?<!\\p{L})(?:و|ف|ب)?(?:ال)?جديد(?:ه|ة)?(?!\\p{L})|(?<!\\p{L})(?:و|ف)?(?:ال)?(?:اتنين|اثنين|التنين)(?!\\p{L})|فرق|مقارن|قارن|compare|difference|(?<![a-z])new(?![a-z])|مقفول|بالعلبه|كلهم|الاتنين", Pattern.CASE_INSENSITIVE);
 
