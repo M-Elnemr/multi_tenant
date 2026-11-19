@@ -276,7 +276,7 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
         seed(conv, "user", open + " بكام؟");
         seed(conv, "assistant", open + " بـ 20999 جنيه، فضي، ومتاح منه 5 قطع.");
         FakeAiProvider.SCRIPT.clear();
-        FakeAiProvider.SCRIPT.add(turns -> Turn.model(base + " كارت الشاشة فيه مدمج يا فندم، مناسب للشغل والمذاكرة."));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model(base + " كارت الشاشة فيه مدمج (مش منفصل) يا فندم، وكفاية للشغل بس مش لجيمنج تقيل."));   // with «مش» in the sentence
         String text = JsonPath.read(say(t, ext, "فيه كارت شاشة؟", null), "$.reply");
         assertThat(text).as(text).doesNotContain("مدمج").contains("مش مكتوبة");
         // asking about the NEW one by name is not touched

@@ -2020,12 +2020,13 @@ final class FactCheck {
             }
             if (!ownSubject) continue;
             String se = la.substring(sn[0], sn[1]);
-            if (NOT_A_SPEC.matcher(se).find() || NEG_STRICT.matcher(se).find() || DENY.matcher(se).find() || WITHOUT.matcher(se).find() || CONDITIONAL.matcher(se).find()
-                    || OTHER_CHOICES.matcher(se).find() || HOURS_TALK.matcher(se).find() || se.contains("؟") || se.contains("?")) continue;
-            String bad = null;
-            for (String c : specsIn(se)) if (!known.contains(c) && !c.endsWith("|pct")) { bad = c; break; }
+            if (se.contains("؟") || se.contains("?")) continue;
+            // a kind of graphics said with a «مش» next to it («كارت الشاشة مدمج، مش منفصل») is still said
+            String bad = GRAPHICS_CLAIM.matcher(se).find() && !GRAPHICS_CLAIM.matcher(lf).find() ? "graphics" : null;
+            if (bad == null && (NOT_A_SPEC.matcher(se).find() || NEG_STRICT.matcher(se).find() || DENY.matcher(se).find() || WITHOUT.matcher(se).find() || CONDITIONAL.matcher(se).find()
+                    || OTHER_CHOICES.matcher(se).find() || HOURS_TALK.matcher(se).find())) continue;
+            if (bad == null) for (String c : specsIn(se)) if (!known.contains(c) && !c.endsWith("|pct")) { bad = c; break; }
             if (bad == null && WARRANTY.matcher(se).find() && !WARRANTY.matcher(lf).find()) bad = "warranty";
-            if (bad == null && GRAPHICS_CLAIM.matcher(se).find() && !GRAPHICS_CLAIM.matcher(lf).find()) bad = "graphics";
             if (bad != null) { drop.add(sn); if (claim == null) claim = bad; }
         }
         if (drop.isEmpty()) return null;

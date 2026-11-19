@@ -38,6 +38,9 @@ class ChatTextTest {
     @Test
     void askingForTheWhatsappNumberToSendTheCollectionIsAStall() {
         assertThat(ChatService.STALL.matcher("ممكن تبعتلي رقم الواتساب عشان ابعتلك التشكيلة المتاحة؟").find()).isTrue();
+        // seen on the deployed build (open-box scenarios): a promise to look and come back, written with «ة»
+        assertThat(ChatService.STALL.matcher("لاب توب زينترا بوك 14 عندنا في القسم، بس تصبر عليا لحظة أراجع المتاح وأبعتهلك بالتفاصيل.").find()).isTrue();
+        assertThat(ChatService.STALL.matcher("لحظة أراجع المخزون وأرد عليك").find()).isTrue();
     }
 
     @Test
