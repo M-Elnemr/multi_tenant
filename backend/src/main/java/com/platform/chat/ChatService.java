@@ -1439,6 +1439,8 @@ public class ChatService {
     /** The last assistant message before this customer message was the code-written summary (pending order not yet placed). */
     /** The products this reply's tools returned; with none, the one product the previous reply was about («ولو مع التركيب؟» right after the TV's price). */
     private List<String> touchedOrBefore(Ctx ctx, FactCheck.Shop shop) {
+        var focus = FOCUS_SLUGS.get();   // the customer names no product and the shop last named exactly one: that product, whatever else the model searched («فاضل كام منه؟» searched the new laptop and the open-box one)
+        if (focus != null && focus.size() == 1) return focus;
         List<String> touched = ctx.products().stream().map(p -> String.valueOf(p.get("slug"))).distinct().toList();
         if (!touched.isEmpty()) return touched;
         var quoted = REPLY_SLUGS.get();   // the customer replied to a message about exactly one product: that product is what this reply is about, not the latest one of the chat
@@ -1706,6 +1708,15 @@ public class ChatService {
             FactCheck.Shop shopData = shopView(ctx.tenantId());
             List<String> touched = touchedOrBefore(ctx, shopData);
             out = factsFixed(last, out, shopData, touched);
+            var chatFocus = FOCUS_SLUGS.get();
+            if (chatFocus != null && chatFocus.size() == 1) {   // a spec of the chat's product that is in the other version's data, not its own
+                String fixed = FactCheck.focusSpec(last, out, shopData, chatFocus.get(0));
+                if (fixed != null) {
+                    events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:FINAL_FOCUS_SPEC", null, null);
+                    ReplyTrace.checkProblems(Set.of("FINAL_FOCUS_SPEC"));
+                    out = fixed;
+                }
+            }
             List<String> bad = new ArrayList<>();
             if (inventedColors(ctx, out) != null || colourNotInProduct(ctx, out, shopData)) bad.add("INVENTED_COLOR");
             String asked = namedProductIgnored(ctx, last, out, shopData);
@@ -1899,6 +1910,7 @@ public class ChatService {
         if (answer == null || last == null || !DENIES.matcher(answer).find()) return out;
         var view = shopView(ctx.tenantId());
         var asked = FactCheck.askedSlugs(last, view.names());
+        if (asked.isEmpty()) { var focus = FOCUS_SLUGS.get(); if (focus != null) asked = focus; }   // «فاضل كام منه؟»: the product the shop last named is the one asked about
         if (asked.isEmpty()) return out;
         for (String sentence : answer.split("(?<=[.!؟?\\n])")) {
             if (!DENIES.matcher(sentence).find()) continue;

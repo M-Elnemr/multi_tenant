@@ -1961,6 +1961,53 @@ final class FactCheck {
                 (rest.isBlank() ? note : rest + "\n\n" + note).trim()));
     }
 
+    /** «الجديد», «الاتنين», «الفرق», «compare»: the customer is asking about the other version or both, so the chat's focus product is not the only subject. */
+    private static final Pattern BOTH_VERSIONS = Pattern.compile("(?<!\\p{L})(?:و|ف|ب)?(?:ال)?جديد(?:ه|ة)?(?!\\p{L})|(?<!\\p{L})(?:و|ف)?(?:ال)?(?:اتنين|اثنين|التنين)(?!\\p{L})|فرق|مقارن|قارن|compare|difference|(?<![a-z])new(?![a-z])|مقفول|بالعلبه|كلهم|الاتنين", Pattern.CASE_INSENSITIVE);
+
+    /** A graphics claim («كارت الشاشة مدمج», «integrated graphics», «RTX 3050»): a kind of spec with no number that the shop writes for one version of a model and not for another. */
+    private static final Pattern GRAPHICS_CLAIM = Pattern.compile("(?:كارت\\s+(?:ال)?شاشه|جرافيكس|graphics|gpu)[^.\\n]{0,40}?(?:مدمج|مدمجه|integrated|مخصص|dedicated|rtx|gtx|radeon)|(?:مدمج|مدمجه|integrated|مخصص|dedicated|rtx|gtx|radeon)[^.\\n]{0,25}?(?:كارت\\s+(?:ال)?شاشه|جرافيكس|graphics|gpu)", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * The chat is about ONE product (the one the shop last named) and the customer names no other: «كارت الشاشة فيه مدمج» said with the plain name of a version («الزينترا بوك 14») is the
+     * NEW version's graphics when the chat is about its open-box one, whose data has none. A spec (number, warranty or graphics type) of a sentence that names nothing but that product or a shorter form of
+     * its name must be in that product's own data; else the sentence is taken out and the detail is said to be unlisted. Null when fine, when the customer asks about the new one or both, or when unknown.
+     */
+    static String focusSpec(String customer, String answer, Shop shop, String focus) {
+        if (customer == null || answer == null || focus == null || BOTH_VERSIONS.matcher(light(customer)).find()) return null;
+        String facts = shop.facts(focus);
+        if (facts == null) return null;
+        String fname = shop.names().stream().filter(n -> n.slug().equals(focus)).map(n -> light(n.name())).findFirst().orElse(null);
+        if (fname == null || mentions(customer, shop.names()).size() > 0) return null;
+        String lf = light(facts), la = light(answer);
+        Set<String> known = specsIn(lf, true);
+        List<Mention> ms = mentions(answer, shop.names());
+        List<int[]> drop = new ArrayList<>();
+        String claim = null;
+        for (int[] sn : sentences(answer)) {
+            boolean ownSubject = true;
+            for (Mention m : ms) {
+                if (m.start() < sn[0] || m.start() >= sn[1] || m.slug().equals(focus)) continue;
+                String other = shop.names().stream().filter(n -> n.slug().equals(m.slug())).map(n -> light(n.name())).findFirst().orElse("");
+                if (other.isBlank() || !fname.contains(other)) { ownSubject = false; break; }   // a different product: its own data is its business
+            }
+            if (!ownSubject) continue;
+            String se = la.substring(sn[0], sn[1]);
+            if (NOT_A_SPEC.matcher(se).find() || NEG_STRICT.matcher(se).find() || DENY.matcher(se).find() || WITHOUT.matcher(se).find() || CONDITIONAL.matcher(se).find()
+                    || OTHER_CHOICES.matcher(se).find() || HOURS_TALK.matcher(se).find() || se.contains("؟") || se.contains("?")) continue;
+            String bad = null;
+            for (String c : specsIn(se)) if (!known.contains(c) && !c.endsWith("|pct")) { bad = c; break; }
+            if (bad == null && WARRANTY.matcher(se).find() && !WARRANTY.matcher(lf).find()) bad = "warranty";
+            if (bad == null && GRAPHICS_CLAIM.matcher(se).find() && !GRAPHICS_CLAIM.matcher(lf).find()) bad = "graphics";
+            if (bad != null) { drop.add(sn); if (claim == null) claim = bad; }
+        }
+        if (drop.isEmpty()) return null;
+        boolean ar = arabic(answer) || arabic(customer);
+        String name = shop.names().stream().filter(n -> n.slug().equals(focus)).map(Named::name).findFirst().orElse("");
+        String note = ar ? "التفصيلة دي مش مكتوبة في بيانات «" + name + "» عندنا، أقدر أسأل المحل عليها لو تحب 🙏" : "That detail is not in our data for " + name + "; I can ask the shop if you like 🙏";
+        String rest = withoutRanges(answer, drop);
+        return (rest.isBlank() ? note : rest + "\n\n" + note).trim();
+    }
+
     private static void answerLock(String customer, String answer, List<Mention> ms, Shop shop, java.util.function.Function<String, Product> load, List<Problem> out) {
         if (customer == null || out.stream().anyMatch(x -> (x.kind().equals("OPTION_PRICE") || x.kind().equals("OPTION_STOCK")) && x.fixed() != null)) return;   // a wrong fact the other checks already put right
         var asked = mentions(customer, shop.names()).stream().map(Mention::slug).distinct().toList();

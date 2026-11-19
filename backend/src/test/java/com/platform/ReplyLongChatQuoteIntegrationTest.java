@@ -235,4 +235,54 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
         say(t, ext, base + " متاح؟", null);
         assertThat(FakeAiProvider.lastSystem).doesNotContain("THE PRODUCT OF THIS CHAT");
     }
+
+    /** Seen on the deployed build (scenario A, 5 of 5 repeats at least once): «فاضل كام منه؟» after the open-box laptop was priced was answered «الأوبن بوكس مش متاح حالياً — المتوفر هو الجديد». */
+    @Test
+    void aQuestionWithNoProductNameNeverDeniesTheProductTheChatIsAbout() throws Exception {
+        Tenant t = onboard("STORE");
+        UUID tenant = tenant(t);
+        String tag = uniq();
+        String base = "لاب توب زينترا " + tag, open = base + " أوبن بوكس";
+        product(t, base, 24999, "فضي", "رمادي");
+        product(t, open, 20999, "فضي");
+        String ext = UUID.randomUUID().toString();
+        answer("أهلا");
+        say(t, ext, "السلام عليكم", null);
+        UUID conv = conv(tenant, ext);
+        seed(conv, "user", open + " بكام؟");
+        seed(conv, "assistant", open + " بـ 20999 جنيه، فضي، ومتاح منه 5 قطع.");
+        FakeAiProvider.SCRIPT.clear();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("للأسف يا فندم، " + open + " مش متاح حالياً — المتوفر هو الجهاز الجديد: " + base + " فضي أو رمادي من 24999."));
+        for (int i = 0; i < 4; i++) FakeAiProvider.SCRIPT.add(turns -> Turn.model("للأسف يا فندم، " + open + " مش متاح حالياً — المتوفر هو الجهاز الجديد: " + base + " فضي أو رمادي من 24999."));   // the rewrite repeats the denial: the final gate must still not send it
+        String reply = say(t, ext, "فاضل كام منه؟", null);
+        String text = JsonPath.read(reply, "$.reply");
+        assertThat(text).as(text).doesNotContain("مش متاح");
+        assertThat(text).contains(open);
+    }
+
+    /** Seen on the deployed build: «فيه كارت شاشة؟» about the open-box laptop (whose data has no graphics) was answered «مدمج», the NEW laptop's value, said with the plain name of the model. */
+    @Test
+    void aSpecOfTheOpenBoxProductThatOnlyTheNewVersionHasIsNotSaid() throws Exception {
+        Tenant t = onboard("STORE");
+        UUID tenant = tenant(t);
+        String tag = uniq();
+        String base = "لاب توب زينترا " + tag, open = base + " أوبن بوكس";
+        product(t, base, 24999, "فضي", "رمادي");
+        product(t, open, 20999, "فضي");
+        String ext = UUID.randomUUID().toString();
+        answer("أهلا");
+        say(t, ext, "السلام عليكم", null);
+        UUID conv = conv(tenant, ext);
+        seed(conv, "user", open + " بكام؟");
+        seed(conv, "assistant", open + " بـ 20999 جنيه، فضي، ومتاح منه 5 قطع.");
+        FakeAiProvider.SCRIPT.clear();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model(base + " كارت الشاشة فيه مدمج يا فندم، مناسب للشغل والمذاكرة."));
+        String text = JsonPath.read(say(t, ext, "فيه كارت شاشة؟", null), "$.reply");
+        assertThat(text).as(text).doesNotContain("مدمج").contains("مش مكتوبة");
+        // asking about the NEW one by name is not touched
+        FakeAiProvider.SCRIPT.clear();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model(base + " كارت الشاشة فيه مدمج يا فندم."));
+        String newer = JsonPath.read(say(t, ext, "والجديد فيه كارت شاشة؟", null), "$.reply");
+        assertThat(newer).as(newer).doesNotContain("مش مكتوبة");
+    }
 }
