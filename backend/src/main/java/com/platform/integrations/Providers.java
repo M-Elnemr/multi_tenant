@@ -96,6 +96,9 @@ public final class Providers {
                 {"TURBO", "Turbo", "EG"}, {"SHIPA", "Shipa Delivery", "AE"}, {"QUIQUP", "Quiqup", "AE"}, {"ZAJIL", "Zajil", "SA"}, {"SALASA", "Salasa", "SA"}, {"THABIT", "Thabit Logistics", "SA"}, {"OTO", "OTO (multi-carrier)", "SA,AE"}, {"FETCHR", "Fetchr", "SA,AE"}})
             add(new Def(c[0], c[1], CARRIER, List.of(c[2].split(",")), List.of(), false, "SOON", List.of(), "Coming soon.", "قريباً.", ""));
 
+        add(new Def("META_CATALOG", "Facebook & Instagram Shop", STORE_PLATFORM, ALL, List.of(), true, "BETA", List.of("PRODUCTS", "PUSH", "CREATE"),
+                "Connect with Facebook and choose (or create) your product catalog. Your products then appear in the Shop tab of your Page and in Instagram Shopping, and in catalog ads.",
+                "اربط حسابك على فيسبوك واختر كتالوج المنتجات (أو أنشئ واحداً جديداً). تظهر منتجاتك بعدها في تبويب المتجر بصفحتك وفي تسوق إنستجرام وإعلانات الكتالوج.", "https://developers.facebook.com/docs/commerce-platform/catalog"));
         add(new Def("META_ADS", "Meta Ads", ADS, ALL, List.of(), true, "READY", List.of("CAMPAIGNS"),
                 "Connect with Facebook and choose the ad account.", "اربط حسابك على فيسبوك واختر الحساب الإعلاني.", "https://developers.facebook.com/docs/marketing-apis"));
     }

@@ -41,8 +41,15 @@ public class CatalogService {
     private final com.platform.files.FileService files;
     private final TaxonomyService taxonomy;
     private final InventoryService inventory;
+    private final org.springframework.context.ApplicationEventPublisher events;
 
-    public CatalogService(JdbcClient jdbc, EntitlementService ent, AuditService audit, com.platform.files.FileService files, TaxonomyService taxonomy, InventoryService inventory) {
+    /** Tells the sales channels the shop sells on (Meta catalog, Shopify, ...) that this product changed, so the ones set to follow the shop can update it. */
+    public record ProductChanged(UUID tenantId, UUID productId) {}
+
+    private void changed(UUID tenantId, UUID productId) { events.publishEvent(new ProductChanged(tenantId, productId)); }
+
+    public CatalogService(JdbcClient jdbc, EntitlementService ent, AuditService audit, com.platform.files.FileService files, TaxonomyService taxonomy, InventoryService inventory, org.springframework.context.ApplicationEventPublisher events) {
+        this.events = events;
         this.inventory = inventory;
         this.taxonomy = taxonomy;
         this.files = files;
@@ -71,6 +78,7 @@ public class CatalogService {
                 .param("ft", f.get("isFeatured") instanceof Boolean ft ? ft : null).param("so", f.get("sortOrder") instanceof Number so ? so.intValue() : null)
                 .param("i", id).param("t", tenantId).update();
         audit.record(actor, tenantId, "PRODUCT_UPDATED", "product", id, null);
+        changed(tenantId, id);
         return detail(tenantId, id, false);
     }
 
@@ -190,6 +198,7 @@ public class CatalogService {
                 .param("p", productId).param("k", keepO).update();
         jdbc.sql("UPDATE commerce.products SET has_variants = :hv, updated_at = now() WHERE id = :p").param("hv", !options.isEmpty()).param("p", productId).update();
         audit.record(actor, tenantId, "PRODUCT_VARIANTS_UPDATED", "product", productId, "{\"variants\":" + variants.size() + ",\"off\":" + off.size() + "}");
+        changed(tenantId, productId);
         return detail(tenantId, productId, false);
     }
 
@@ -278,6 +287,7 @@ public class CatalogService {
             }
         }
         audit.record(actor, tenantId, "PRODUCT_CREATED", "product", productId, null);
+        changed(tenantId, productId);
         return detail(tenantId, productId, false);
     }
 
@@ -312,6 +322,7 @@ public class CatalogService {
         if (jdbc.sql("UPDATE commerce.product_media SET option_value_id = :v WHERE id = :m AND product_id = :p AND tenant_id = :t").param("v", valueId).param("m", mediaId).param("p", productId).param("t", tenantId).update() == 0)
             throw BusinessException.notFound("MEDIA_NOT_FOUND", "Picture not found");
         audit.record(actor, tenantId, "PRODUCT_UPDATED", "product", productId, null);
+        changed(tenantId, productId);
         return detail(tenantId, productId, false);
     }
 
@@ -324,6 +335,7 @@ public class CatalogService {
         int next = jdbc.sql("SELECT coalesce(max(sort_order), -1) + 1 FROM commerce.product_media WHERE product_id = :p").param("p", productId).query(Integer.class).single();
         insertMedia(tenantId, productId, m, next);
         audit.record(actor, tenantId, "PRODUCT_UPDATED", "product", productId, null);
+        changed(tenantId, productId);
         return detail(tenantId, productId, false);
     }
 
@@ -332,6 +344,7 @@ public class CatalogService {
         requireOwned("commerce.products", productId, tenantId);
         jdbc.sql("DELETE FROM commerce.product_media WHERE id = :m AND product_id = :p AND tenant_id = :t").param("m", mediaId).param("p", productId).param("t", tenantId).update();
         audit.record(actor, tenantId, "PRODUCT_UPDATED", "product", productId, null);
+        changed(tenantId, productId);
         return detail(tenantId, productId, false);
     }
 
@@ -344,6 +357,7 @@ public class CatalogService {
         jdbc.sql("UPDATE commerce.product_media SET sort_order = sort_order + :o WHERE product_id = :p AND tenant_id = :t AND NOT (id = ANY(string_to_array(:ids, ',')::uuid[]))")
                 .param("o", ids.size()).param("p", productId).param("t", tenantId).param("ids", String.join(",", ids.stream().map(UUID::toString).toList())).update();
         audit.record(actor, tenantId, "PRODUCT_UPDATED", "product", productId, null);
+        changed(tenantId, productId);
         return detail(tenantId, productId, false);
     }
 
@@ -526,6 +540,7 @@ public class CatalogService {
                 """).param("n", name).param("d", description).param("sd", shortDescription).param("b", brand).param("c", node == null ? null : node.get("id")).param("au", aud)
                 .param("co", condition == null || condition.isBlank() ? null : condition(condition)).param("s", status).param("i", id).param("t", tenantId).update();
         audit.record(actor, tenantId, "PRODUCT_UPDATED", "product", id, null);
+        changed(tenantId, id);
         return detail(tenantId, id, false);
     }
 
@@ -549,6 +564,7 @@ public class CatalogService {
             throw duplicate(e, sku, bc);
         }
         audit.record(actor, tenantId, "PRODUCT_UPDATED", "product_variant", variantId, null);
+        jdbc.sql("SELECT product_id FROM commerce.product_variants WHERE id = :v").param("v", variantId).query(UUID.class).optional().ifPresent((pid) -> changed(tenantId, pid));
     }
 
     /** A barcode is kept as typed or scanned, without spaces; an empty one means none. */
@@ -594,6 +610,7 @@ public class CatalogService {
         requireOwned("commerce.products", id, tenantId);
         jdbc.sql("UPDATE commerce.products SET status = 'ARCHIVED', updated_at = now() WHERE id = :i AND tenant_id = :t").param("i", id).param("t", tenantId).update();
         audit.record(actor, tenantId, "PRODUCT_ARCHIVED", "product", id, null);
+        changed(tenantId, id);
     }
 
     // ---- reads ---------------------------------------------------------------------------------------

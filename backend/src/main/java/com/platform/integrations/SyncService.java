@@ -96,6 +96,10 @@ public class SyncService {
             switch ((String) job.get("type")) {
                 case "IMPORT_PRODUCTS" -> importProducts(accountId);
                 case "PULL_ORDERS" -> pullOrders(accountId, payload.path("full").asBoolean(false));
+                case "AUTO_PUBLISH" -> {
+                    int left = listings.runAutoPublish(accountId, ListingService.AUTO_DELAY_SECONDS, 20);
+                    if (left > 0) integrations.enqueue((UUID) job.get("tenant_id"), accountId, "AUTO_PUBLISH", Map.of(), 20);
+                }
                 default -> throw new IllegalStateException("Unknown job type");
             }
             jdbc.sql("UPDATE integrations.jobs SET status = 'DONE', finished_at = now(), last_error = NULL WHERE id = :i").param("i", id).update();

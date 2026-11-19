@@ -24,6 +24,7 @@ public class ListingService {
     public record Target(UUID accountId, List<VariantOffer> variants) {}
     public record PublishReq(UUID productId, List<Target> targets) {}
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ListingService.class);
     private final JdbcClient jdbc;
     private final IntegrationService integrations;
     private final AuditService audit;
@@ -158,7 +159,7 @@ public class ListingService {
                 FROM commerce.product_variants v WHERE v.product_id = :p AND v.tenant_id = :t AND v.status = 'ACTIVE' ORDER BY v.created_at
                 """).param("p", productId).param("t", tenantId).query().listOfRows());
         var accounts = Rows.camel(jdbc.sql("""
-                SELECT a.id, a.provider, a.country, a.label, a.status FROM integrations.accounts a WHERE a.tenant_id = :t AND a.kind IN ('MARKETPLACE', 'STORE_PLATFORM') AND a.status <> 'PAUSED' ORDER BY a.created_at
+                SELECT a.id, a.provider, a.country, a.label, a.status, coalesce((a.settings->>'autoPublish')::boolean, false) AS auto_publish FROM integrations.accounts a WHERE a.tenant_id = :t AND a.kind IN ('MARKETPLACE', 'STORE_PLATFORM') AND a.status <> 'PAUSED' ORDER BY a.created_at
                 """).param("t", tenantId).query().listOfRows());
         List<Map<String, Object>> out = new ArrayList<>();
         for (var a : accounts) {
@@ -177,7 +178,7 @@ public class ListingService {
 
     /** Publishes (or updates) the product on each chosen channel with that channel's own price and quantity; one channel failing never stops the others. */
     public List<Map<String, Object>> publish(UUID tenantId, UUID actor, PublishReq req) {
-        var product = jdbc.sql("SELECT id, name, description, brand FROM commerce.products WHERE id = :p AND tenant_id = :t AND status <> 'ARCHIVED'").param("p", req.productId()).param("t", tenantId).query().listOfRows().stream().findFirst()
+        var product = jdbc.sql("SELECT id, name, slug, description, brand FROM commerce.products WHERE id = :p AND tenant_id = :t AND status <> 'ARCHIVED'").param("p", req.productId()).param("t", tenantId).query().listOfRows().stream().findFirst()
                 .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Product not found"));
         var options = jdbc.sql("SELECT name FROM commerce.product_options WHERE product_id = :p ORDER BY sort_order").param("p", req.productId()).query(String.class).list();
         var variantRows = jdbc.sql("SELECT id, sku, barcode, price_minor, compare_at_price_minor, combo_key FROM commerce.product_variants WHERE product_id = :p AND tenant_id = :t AND status = 'ACTIVE'")
@@ -255,7 +256,9 @@ public class ListingService {
             }
         }
         if (!toCreate.isEmpty()) {
-            Ext.ProductDraft draft = new Ext.ProductDraft((String) product.get("name"), (String) product.get("description"), (String) product.get("brand"), optionNames, images, null, toCreate);
+            var host = urls.hosts(List.of(tenantId)).get(tenantId);
+            String link = host == null || product.get("slug") == null ? null : urls.baseUrl(host) + "/products/" + java.net.URLEncoder.encode(String.valueOf(product.get("slug")), java.nio.charset.StandardCharsets.UTF_8);
+            Ext.ProductDraft draft = new Ext.ProductDraft((String) product.get("name"), (String) product.get("description"), (String) product.get("brand"), optionNames, images, null, toCreate, link);
             Ext.Created created = adapter.createProduct(ctx, draft);
             for (var e : byVariantSku.entrySet()) {
                 String extVariant = created.variantIds().get(e.getKey());
@@ -295,6 +298,89 @@ public class ListingService {
             if (u != null) out.add(u);
         }
         return out;
+    }
+
+    // ---- channels that follow the shop ------------------------------------------------------------------------------
+
+    /** Turns "send my new and edited products to this channel by themselves" on or off for one account. */
+    static final int AUTO_DELAY_SECONDS = 45;
+
+    public Map<String, Object> setAutoPublish(UUID tenantId, UUID actor, UUID accountId, boolean enabled) {
+        var account = integrations.row(tenantId, accountId);
+        Providers.Def d = Providers.get((String) account.get("provider"));
+        if (d == null || !(Providers.supports(d, "CREATE") || Providers.supports(d, "PUSH")) || d.kind().equals(Providers.CARRIER) || d.kind().equals(Providers.ADS))
+            throw BusinessException.badRequest("VALIDATION_ERROR", "This account cannot receive products");
+        jdbc.sql("UPDATE integrations.accounts SET settings = jsonb_set(coalesce(settings, '{}'::jsonb), '{autoPublish}', to_jsonb(CAST(:b AS boolean))), updated_at = now() WHERE id = :i AND tenant_id = :t")
+                .param("b", enabled).param("i", accountId).param("t", tenantId).update();
+        if (!enabled) jdbc.sql("DELETE FROM integrations.auto_queue WHERE account_id = :a").param("a", accountId).update();
+        audit.record(actor, tenantId, enabled ? "AUTO_PUBLISH_ON" : "AUTO_PUBLISH_OFF", "integration_account", accountId, null);
+        return Map.of("autoPublish", enabled);
+    }
+
+    /** Queues every active product of the shop for this account (the first send after connecting); they go out in the background, a few at a time. */
+    public Map<String, Object> queueAll(UUID tenantId, UUID actor, UUID accountId) {
+        integrations.row(tenantId, accountId);
+        int n = jdbc.sql("""
+                INSERT INTO integrations.auto_queue (account_id, product_id, tenant_id, queued_at)
+                SELECT :a, p.id, :t, now() - interval '1 hour' FROM commerce.products p WHERE p.tenant_id = :t AND p.status = 'ACTIVE'
+                ON CONFLICT (account_id, product_id) DO UPDATE SET queued_at = LEAST(integrations.auto_queue.queued_at, now() - interval '1 hour')
+                """).param("a", accountId).param("t", tenantId).update();
+        integrations.enqueue(tenantId, accountId, "AUTO_PUBLISH", Map.of());
+        audit.record(actor, tenantId, "PUBLISH_ALL_QUEUED", "integration_account", accountId, "{\"products\":" + n + "}");
+        return Map.of("queued", n);
+    }
+
+    /** A product changed in the shop: every account set to follow the shop gets it queued (a burst of edits becomes one send). */
+    @org.springframework.transaction.event.TransactionalEventListener(phase = org.springframework.transaction.event.TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onProductChanged(com.platform.commerce.CatalogService.ProductChanged e) {
+        try {
+            for (UUID accountId : jdbc.sql("SELECT id FROM integrations.accounts WHERE tenant_id = :t AND status <> 'PAUSED' AND coalesce((settings->>'autoPublish')::boolean, false)").param("t", e.tenantId()).query(UUID.class).list()) {
+                jdbc.sql("INSERT INTO integrations.auto_queue (account_id, product_id, tenant_id) VALUES (:a, :p, :t) ON CONFLICT (account_id, product_id) DO UPDATE SET queued_at = now()")
+                        .param("a", accountId).param("p", e.productId()).param("t", e.tenantId()).update();
+                integrations.enqueue(e.tenantId(), accountId, "AUTO_PUBLISH", Map.of(), AUTO_DELAY_SECONDS);
+            }
+        } catch (RuntimeException ex) {
+            log.warn("Could not queue product {} for the sales channels: {}", e.productId(), ex.getMessage());   // an edit in the shop must never fail because of a channel
+        }
+    }
+
+    /** Sends the queued products whose last edit is old enough; returns how many are still waiting (the job runs again for them). */
+    public int runAutoPublish(UUID accountId, int delaySeconds, int batch) {
+        var account = integrations.rowAny(accountId);
+        UUID tenantId = (UUID) account.get("tenant_id");
+        UUID actor = (UUID) account.get("created_by");
+        List<UUID> due = jdbc.sql("SELECT product_id FROM integrations.auto_queue WHERE account_id = :a AND queued_at <= now() - make_interval(secs => :d) ORDER BY queued_at LIMIT :n")
+                .param("a", accountId).param("d", delaySeconds).param("n", batch).query(UUID.class).list();
+        String firstError = null;
+        for (UUID productId : due) {
+            try {
+                syncProduct(tenantId, actor, account, productId);
+            } catch (HttpGateway.ApiException | BusinessException ex) {
+                if (firstError == null) firstError = ex.getMessage();
+            }
+            jdbc.sql("DELETE FROM integrations.auto_queue WHERE account_id = :a AND product_id = :p").param("a", accountId).param("p", productId).update();
+        }
+        if (firstError != null) integrations.markError(accountId, firstError);
+        return jdbc.sql("SELECT count(*) FROM integrations.auto_queue WHERE account_id = :a").param("a", accountId).query(Integer.class).single();
+    }
+
+    /** One product on one account: an active product is sent (new variants created, the others brought to the shop's price and stock); a hidden or archived one is set to zero stock. */
+    void syncProduct(UUID tenantId, UUID actor, Map<String, Object> account, UUID productId) {
+        UUID accountId = (UUID) account.get("id");
+        String status = jdbc.sql("SELECT status FROM commerce.products WHERE id = :p AND tenant_id = :t").param("p", productId).param("t", tenantId).query(String.class).optional().orElse("ARCHIVED");
+        if (!"ACTIVE".equals(status)) {
+            for (var l : jdbc.sql("SELECT id, account_id, external_product_id, external_variant_id, external_sku, external_ref FROM integrations.listings WHERE account_id = :a AND product_id = :p").param("a", accountId).param("p", productId).query().listOfRows()) {
+                pushOffer(l, null, null, 0);
+                jdbc.sql("UPDATE integrations.listings SET quantity = 0, status = 'SYNCED', last_error = NULL, last_synced_at = now(), updated_at = now() WHERE id = :i").param("i", l.get("id")).update();
+            }
+            return;
+        }
+        if (productImages(tenantId, productId).isEmpty()) return;   // channels need a picture; adding one queues the product again
+        List<VariantOffer> offers = jdbc.sql("SELECT id FROM commerce.product_variants WHERE product_id = :p AND tenant_id = :t AND status = 'ACTIVE'").param("p", productId).param("t", tenantId).query(UUID.class).list()
+                .stream().map((v) -> new VariantOffer(v, null, null, null)).toList();
+        if (offers.isEmpty()) return;
+        var res = publish(tenantId, actor, new PublishReq(productId, List.of(new Target(accountId, offers))));
+        if (!res.isEmpty() && Boolean.FALSE.equals(res.get(0).get("ok"))) throw new HttpGateway.ApiException(422, String.valueOf(res.get(0).get("error")));
     }
 
     // ---- bring channel products into the shop ------------------------------------------------------------------------

@@ -24,7 +24,12 @@ public final class Ext {
     /** A variant of a product the shop wants to publish: the price and quantity are THIS platform's, chosen by the owner. */
     public record VariantDraft(String sku, String barcode, Map<String, String> options, long priceMinor, Long compareAtMinor, int quantity) {}
 
-    public record ProductDraft(String title, String description, String brand, List<String> optionNames, List<String> images, String categoryHint, List<VariantDraft> variants) {}
+    /** {@code link} is the product's page on the shop (catalogs such as Meta's require it); null for platforms that do not. */
+    public record ProductDraft(String title, String description, String brand, List<String> optionNames, List<String> images, String categoryHint, List<VariantDraft> variants, String link) {
+        public ProductDraft(String title, String description, String brand, List<String> optionNames, List<String> images, String categoryHint, List<VariantDraft> variants) {
+            this(title, description, brand, optionNames, images, categoryHint, variants, null);
+        }
+    }
 
     /** What the platform answered when a draft was created: ids for each variant, keyed by sku. */
     public record Created(String productId, Map<String, String> variantIds) {}

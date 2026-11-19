@@ -24,11 +24,14 @@ public class FakeMetaGraph implements MetaGraph {
     public static volatile List<Map<String, Object>> FB_POSTS = List.of(), IG_POSTS = List.of();
 
     /** What Meta says about the message templates, and whether sending a template fails. */
+    /** Whether the person's business owns a product catalog ("770011223", "Main catalog") for the login to find. */
+    public static volatile boolean CATALOGS = false;
+
     public static volatile String TEMPLATE_STATUS = "APPROVED";
     public static volatile boolean FAIL_TEMPLATE_SEND = false;
     public static volatile boolean FAIL_TEXT_SEND = false;
 
-    public static synchronized void reset() { FAIL_CONTEXT_SEND = false; SENT.clear(); TEMPLATE_STATUS = "APPROVED"; FAIL_TEMPLATE_SEND = false; FAIL_TEXT_SEND = false; }
+    public static synchronized void reset() { CATALOGS = false; FAIL_CONTEXT_SEND = false; SENT.clear(); TEMPLATE_STATUS = "APPROVED"; FAIL_TEMPLATE_SEND = false; FAIL_TEXT_SEND = false; }
 
     @Override
     public synchronized Map<String, Object> get(String path, String token) {
@@ -38,7 +41,9 @@ public class FakeMetaGraph implements MetaGraph {
         }
         if (path.startsWith("me/accounts"))
             return Map.of("data", java.util.List.of(Map.of("id", PAGE_ID, "name", "Shop Page", "access_token", "PAGE-TOKEN-0123456789012", "instagram_business_account", Map.of("id", IG_ID, "username", "shop_ig"))));
-        if (path.startsWith("me/businesses")) return Map.of("data", java.util.List.of());
+        if (path.startsWith("me/businesses")) return CATALOGS
+                ? Map.of("data", java.util.List.of(Map.of("id", "990011", "name", "Shop Business", "owned_product_catalogs", Map.of("data", java.util.List.of(Map.of("id", "770011223", "name", "Main catalog", "product_count", 12))))))
+                : Map.of("data", java.util.List.of());
         if (path.startsWith("me/adaccounts")) return Map.of("data", java.util.List.of(Map.of("id", "act_555", "name", "Shop Ads", "currency", "EGP", "account_status", 1)));
         if (path.startsWith("search?type=adinterest")) return Map.of("data", java.util.List.of(Map.of("id", "6003", "name", "Shopping")));
         if (path.contains("/adsets?") || path.contains("/ads?")) return Map.of("data", java.util.List.of(Map.of("id", "child-" + path.split("/")[1].split("\\?")[0].hashCode())));
@@ -60,6 +65,8 @@ public class FakeMetaGraph implements MetaGraph {
     @Override
     public synchronized Map<String, Object> post(String path, String token, Map<String, Object> body) {
         if (path.endsWith("/message_templates")) return Map.of("id", "tpl");
+        if (path.endsWith("/owned_product_catalogs")) { SENT.add(new Sent(path, token, body)); return Map.of("id", "880099001"); }
+        if (path.endsWith("/product_catalogs")) { SENT.add(new Sent(path, token, body)); return Map.of("success", true); }
         if (token != null && token.startsWith("BADPOST")) throw new MetaException("(#200) Requires pages_manage_posts permission");
         if (path.endsWith("/campaigns") || path.endsWith("/adsets") || path.endsWith("/adcreatives") || path.endsWith("/ads") || path.endsWith("/media") || path.endsWith("/media_publish") || path.endsWith("/feed")) {
             SENT.add(new Sent(path, token, body));

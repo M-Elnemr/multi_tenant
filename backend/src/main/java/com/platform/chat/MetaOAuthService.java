@@ -31,7 +31,7 @@ import org.springframework.stereotype.Service;
 public class MetaOAuthService {
     private static final Logger log = LoggerFactory.getLogger(MetaOAuthService.class);
     private static final ObjectMapper JSON = new ObjectMapper();
-    private static final String SCOPES = "pages_show_list,pages_messaging,pages_manage_metadata,pages_read_engagement,pages_read_user_content,pages_manage_engagement,instagram_manage_comments,instagram_basic,instagram_manage_messages,business_management,whatsapp_business_management,whatsapp_business_messaging,pages_manage_posts,instagram_content_publish,ads_management,ads_read";
+    private static final String SCOPES = "pages_show_list,pages_messaging,pages_manage_metadata,pages_read_engagement,pages_read_user_content,pages_manage_engagement,instagram_manage_comments,instagram_basic,instagram_manage_messages,business_management,whatsapp_business_management,whatsapp_business_messaging,pages_manage_posts,instagram_content_publish,ads_management,ads_read,catalog_management";
 
     public record Item(String kind, String id, String name, String token, String linkedId, String detail) {}
 
@@ -40,13 +40,14 @@ public class MetaOAuthService {
     private final TokenCrypto crypto;
     private final MetaChannelService channels;
     private final com.platform.marketing.AdsService ads;
+    private final com.platform.integrations.IntegrationService integrations;
     private final String appId;
     private final String appSecret;
     private final String rootDomain;
     private final String graphVersion;
     private final String configId;   // "Facebook Login for Business" apps choose permissions in a configuration instead of a scope list
 
-    public MetaOAuthService(JdbcClient jdbc, MetaGraph graph, TokenCrypto crypto, MetaChannelService channels, com.platform.marketing.AdsService ads, @Value("${app.meta.app-id:}") String appId,
+    public MetaOAuthService(JdbcClient jdbc, MetaGraph graph, TokenCrypto crypto, MetaChannelService channels, com.platform.marketing.AdsService ads, com.platform.integrations.IntegrationService integrations, @Value("${app.meta.app-id:}") String appId,
                             @Value("${app.meta.app-secret:}") String appSecret, @Value("${app.platform.root-domain}") String rootDomain, @Value("${app.meta.graph-version:v21.0}") String graphVersion,
                             @Value("${app.meta.login-config-id:}") String loginConfigId) {
         this.jdbc = jdbc;
@@ -54,6 +55,7 @@ public class MetaOAuthService {
         this.crypto = crypto;
         this.channels = channels;
         this.ads = ads;
+        this.integrations = integrations;
         this.appId = appId == null || appId.isBlank() ? null : appId.trim();
         this.appSecret = appSecret == null || appSecret.isBlank() ? null : appSecret.trim();
         this.rootDomain = rootDomain;
@@ -121,8 +123,9 @@ public class MetaOAuthService {
                 out.add(new Item("INSTAGRAM", String.valueOf(ig.get("id")), "@" + ig.get("username"), pageToken, String.valueOf(pg.get("id")), String.valueOf(pg.get("name"))));
         }
         try {
-            Map<String, Object> biz = graph.get("me/businesses?fields=id,name,owned_whatsapp_business_accounts{id,name,phone_numbers{id,display_phone_number,verified_name}}&limit=25", userToken);
+            Map<String, Object> biz = graph.get("me/businesses?fields=id,name,owned_whatsapp_business_accounts{id,name,phone_numbers{id,display_phone_number,verified_name}},owned_product_catalogs{id,name,product_count}&limit=25", userToken);
             for (Object b : (List<Object>) biz.getOrDefault("data", List.of())) {
+                catalogsOf((Map<String, Object>) b, userToken, out);
                 Object wabas = ((Map<String, Object>) b).get("owned_whatsapp_business_accounts");
                 if (!(wabas instanceof Map<?, ?> wm)) continue;
                 for (Object w : list(wm.get("data"))) {
@@ -151,6 +154,40 @@ public class MetaOAuthService {
         return out;
     }
 
+    /**
+     * The product catalogs of one business the person can manage, plus "create a new one": a shop with no catalog yet gets one made for it by choosing that line.
+     * The catalog is kept with the person's long-lived token (Meta checks {@code catalog_management} on it), so a login that lacks that permission simply shows no catalogs.
+     */
+    @SuppressWarnings("unchecked")
+    private void catalogsOf(Map<String, Object> business, String userToken, List<Item> out) {
+        String businessId = String.valueOf(business.get("id")), businessName = String.valueOf(business.getOrDefault("name", businessId));
+        if (business.get("owned_product_catalogs") instanceof Map<?, ?> cm)
+            for (Object c : list(cm.get("data"))) {
+                Map<String, Object> cat = (Map<String, Object>) c;
+                out.add(new Item("CATALOG", String.valueOf(cat.get("id")), String.valueOf(cat.getOrDefault("name", cat.get("id"))), userToken, businessId,
+                        businessName + " · " + cat.getOrDefault("product_count", 0)));
+            }
+        out.add(new Item("CATALOG", "new:" + businessId, "NEW_CATALOG", userToken, businessId, businessName));
+    }
+
+    /** Creates the catalog the person asked for (named after the shop) and returns its id. */
+    private String createCatalog(UUID tenantId, String businessId, String token) {
+        String shop = jdbc.sql("SELECT name FROM core.tenants WHERE id = :t").param("t", tenantId).query(String.class).optional().orElse("Shop");
+        Map<String, Object> made = graph.post(businessId + "/owned_product_catalogs", token, Map.of("name", shop + " - elmanassa", "vertical", "commerce"));
+        return String.valueOf(made.get("id"));
+    }
+
+    private Map<String, Object> connectCatalog(UUID tenantId, UUID userId, Item i) {
+        String catalogId = i.id().startsWith("new:") ? createCatalog(tenantId, i.id().substring(4), i.token()) : i.id();
+        String name = "NEW_CATALOG".equals(i.name()) ? null : i.name();
+        String currency = jdbc.sql("SELECT default_currency FROM core.tenants WHERE id = :t").param("t", tenantId).query(String.class).optional().orElse("EGP");
+        String country = "SAR".equals(currency) ? "SA" : "AED".equals(currency) ? "AE" : "EG";
+        Map<String, String> cred = new LinkedHashMap<>();
+        cred.put("catalogId", catalogId);
+        cred.put("accessToken", i.token());
+        return integrations.store(tenantId, userId, com.platform.integrations.Providers.get("META_CATALOG"), country, name, cred);
+    }
+
     // ---- step 3: the owner chooses ---------------------------------------------------------------------------
 
     /** What the owner can pick (never the tokens). */
@@ -172,11 +209,28 @@ public class MetaOAuthService {
         List<Map<String, Object>> done = new ArrayList<>();
         for (Item i : items) {
             if (keys == null || !keys.contains(i.kind() + ":" + i.id())) continue;
-            done.add("ADACCOUNT".equals(i.kind()) ? ads.connectAccount(tenantId, userId, i.id(), i.name(), i.token(), i.linkedId()) : channels.connect(tenantId, userId, i.kind(), i.id(), i.token(), i.linkedId()));
+            done.add("ADACCOUNT".equals(i.kind()) ? ads.connectAccount(tenantId, userId, i.id(), i.name(), i.token(), i.linkedId())
+                    : "CATALOG".equals(i.kind()) ? connectCatalog(tenantId, userId, i) : channels.connect(tenantId, userId, i.kind(), i.id(), i.token(), i.linkedId()));
         }
         if (done.isEmpty()) throw BusinessException.badRequest("VALIDATION_ERROR", "Choose at least one");
+        linkCatalogToPage(items, keys, done);
         jdbc.sql("DELETE FROM chat.oauth_pending WHERE id = :i").param("i", id).update();
         return done;
+    }
+
+    /**
+     * When the owner chose a Page and a catalog in the same login, the catalog is attached to the Page so the Shop tab can use it. Best effort: Meta may ask for a step in
+     * Commerce Manager first (accepting the commerce terms), and that must not fail the connection.
+     */
+    @SuppressWarnings("unchecked")
+    private void linkCatalogToPage(List<Item> items, List<String> keys, List<Map<String, Object>> done) {
+        Item page = items.stream().filter((i) -> "FACEBOOK".equals(i.kind()) && keys.contains("FACEBOOK:" + i.id())).findFirst().orElse(null);
+        if (page == null) return;
+        for (Map<String, Object> d : done) {
+            if (!"META_CATALOG".equals(d.get("provider")) || d.get("externalId") == null) continue;
+            try { graph.post(page.id() + "/product_catalogs", page.token(), Map.of("catalog_id", String.valueOf(d.get("externalId")))); }
+            catch (MetaGraph.MetaException e) { log.info("Catalog {} not attached to page {}: {}", d.get("externalId"), page.id(), e.getMessage()); }
+        }
     }
 
     private List<Item> load(UUID tenantId, UUID userId, UUID id) {

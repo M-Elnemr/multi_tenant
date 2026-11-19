@@ -68,6 +68,18 @@ public class IntegrationsController {
     @PreAuthorize(WRITE)
     public Map<String, Object> patch(@PathVariable UUID id, @RequestBody AccountPatch r, Authentication a) { return integrations.updateCredentials(StoreContext.tenantId(), user(a), id, r.label(), r.credentials()); }
 
+    public record AutoPublishReq(boolean enabled) {}
+
+    /** "Send my new and edited products to this channel by themselves": on/off. Turning it on does not send what is already there (see publish-all). */
+    @PostMapping("/store/integrations/accounts/{id}/auto-publish")
+    @PreAuthorize(WRITE)
+    public Map<String, Object> autoPublish(@PathVariable UUID id, @RequestBody AutoPublishReq r, Authentication a) { return listings.setAutoPublish(StoreContext.tenantId(), user(a), id, r.enabled()); }
+
+    /** Sends every active product of the shop to this channel in the background. */
+    @PostMapping("/store/integrations/accounts/{id}/publish-all")
+    @PreAuthorize(WRITE)
+    public Map<String, Object> publishAll(@PathVariable UUID id, Authentication a) { return listings.queueAll(StoreContext.tenantId(), user(a), id); }
+
     @DeleteMapping("/store/integrations/accounts/{id}")
     @PreAuthorize(WRITE)
     public Map<String, Object> disconnect(@PathVariable UUID id, Authentication a) {

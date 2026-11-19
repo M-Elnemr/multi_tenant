@@ -72,7 +72,7 @@ public class IntegrationService {
         return out;
     }
 
-    private boolean oauthReady(String provider) { return "META_ADS".equals(provider) || oauth.of(provider).ok(); }
+    private boolean oauthReady(String provider) { return "META_ADS".equals(provider) || "META_CATALOG".equals(provider) || oauth.of(provider).ok(); }
 
     /** The screens add "(optional)" themselves from the optional flag: it must not be in the label too. */
     private static String noOptional(String label) { return label.replaceAll("\\s*\\((optional|اختياري)\\)", "").trim(); }
@@ -104,6 +104,8 @@ public class IntegrationService {
         m.put("name", d == null ? m.get("provider") : d.name());
         m.put("can", d == null ? List.of() : d.can());
         m.put("providerStatus", d == null ? "SOON" : d.status());
+        m.put("autoPublish", m.get("settings") instanceof String sj && Boolean.TRUE.equals(Rows.json(sj).get("autoPublish")));
+        m.put("canPublish", d != null && !d.kind().equals(Providers.CARRIER) && !d.kind().equals(Providers.ADS) && (Providers.supports(d, "CREATE") || Providers.supports(d, "PUSH")));
         Object stored = m.get("settings") instanceof String js ? Rows.json(js).get("adminUrl") : null;
         m.put("adminUrl", stored != null ? stored : adminUrl((String) m.get("provider"), (String) m.get("country"), (String) m.get("externalId"), (String) m.get("label")));
         m.remove("settings");
@@ -119,6 +121,7 @@ public class IntegrationService {
             case "SALLA" -> "https://s.salla.sa";
             case "YOUCAN" -> "https://seller-area.youcan.shop";
             case "ZID" -> "https://web.zid.sa";
+            case "META_CATALOG" -> "https://business.facebook.com/commerce";
             case "AYMAKAN" -> "https://aymakan.com";
             case "ARAMEX" -> "https://www.aramex.com";
             case "BOSTA" -> "https://business.bosta.co";
@@ -243,7 +246,7 @@ public class IntegrationService {
     }
 
     public Map<String, Object> rowAny(UUID id) {
-        return jdbc.sql("SELECT id, tenant_id, provider, kind, country, label, external_id, credentials_enc, settings, status FROM integrations.accounts WHERE id = :i").param("i", id)
+        return jdbc.sql("SELECT id, tenant_id, provider, kind, country, label, external_id, credentials_enc, settings, status, created_by FROM integrations.accounts WHERE id = :i").param("i", id)
                 .query().listOfRows().stream().findFirst().orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Account not found"));
     }
 
@@ -271,10 +274,13 @@ public class IntegrationService {
         jdbc.sql("UPDATE integrations.accounts SET status = 'ACTIVE', last_error = NULL, last_sync_at = now(), updated_at = now() WHERE id = :i").param("i", accountId).update();
     }
 
-    public void enqueue(UUID tenantId, UUID accountId, String type, Map<String, Object> payload) {
+    public void enqueue(UUID tenantId, UUID accountId, String type, Map<String, Object> payload) { enqueue(tenantId, accountId, type, payload, 0); }
+
+    /** Same, to run after {@code delaySeconds} (one pending job per account and type, so repeated calls never pile up). */
+    public void enqueue(UUID tenantId, UUID accountId, String type, Map<String, Object> payload, int delaySeconds) {
         try {
-            jdbc.sql("INSERT INTO integrations.jobs (tenant_id, account_id, type, payload) SELECT :t, :a, :ty, CAST(:p AS jsonb) WHERE NOT EXISTS (SELECT 1 FROM integrations.jobs WHERE account_id = :a AND type = :ty AND status = 'PENDING')")
-                    .param("t", tenantId).param("a", accountId).param("ty", type).param("p", HttpGateway.JSON.writeValueAsString(payload)).update();
+            jdbc.sql("INSERT INTO integrations.jobs (tenant_id, account_id, type, payload, next_run_at) SELECT :t, :a, :ty, CAST(:p AS jsonb), now() + make_interval(secs => :d) WHERE NOT EXISTS (SELECT 1 FROM integrations.jobs WHERE account_id = :a AND type = :ty AND status = 'PENDING')")
+                    .param("t", tenantId).param("a", accountId).param("ty", type).param("d", delaySeconds).param("p", HttpGateway.JSON.writeValueAsString(payload)).update();
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             throw new IllegalStateException(e);
         }
