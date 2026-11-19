@@ -111,7 +111,7 @@ export function Composer({ chat, canWrite, onSent, onNote, onTakeover, saved, on
     } catch (e) { toast(e instanceof ApiError ? e.message : t("inbox.assistFailed"), { tone: "error" }); } finally { setAssisting(false); }
   };
 
-  const via = w.mode === "OWN_NUMBER" ? t("inbox.via.OWN_NUMBER") : w.mode === "CLOUD" ? t("inbox.via.CLOUD") : w.mode === "MESSENGER" ? t("inbox.via.MESSENGER") : w.mode === "INSTAGRAM" ? t("inbox.via.INSTAGRAM") : t("inbox.via.WEB");
+  const via = w.mode === "OWN_NUMBER" ? t("inbox.via.OWN_NUMBER") : w.mode === "CLOUD" ? t("inbox.via.CLOUD") : w.mode === "MESSENGER" ? t("inbox.via.MESSENGER") : w.mode === "INSTAGRAM" ? t("inbox.via.INSTAGRAM") : ["TELEGRAM", "TIKTOK", "X", "SNAPCHAT"].includes(w.mode) ? t(`inbox.via.${w.mode}`) : t("inbox.via.WEB");
   const remaining = left(w.endsAt, locale);
 
   if (!canWrite) return <div className="border-t border-line bg-surface px-5 py-4 text-center text-[13px] text-muted">{t("inbox.readOnly")}</div>;

@@ -11,6 +11,7 @@ import { Icon } from "@/components/icons";
 import { ConfirmDialog } from "@/components/overlay";
 import { useToast } from "@/components/toast";
 import { SettingsCard } from "./kit";
+import { TelegramCard } from "./channels/hub";
 
 type Channel = { id: string; platform: string; externalId: string; name?: string; status: string };
 
@@ -31,7 +32,7 @@ function Picker({ pendingId, onDone }: { pendingId: string; onDone: () => void }
         return (
           <label key={key} className="flex cursor-pointer items-center gap-3 rounded-[12px] p-3 text-sm ring-1 ring-line transition hover:ring-line-strong">
             <input type="checkbox" checked={picked.includes(key)} onChange={(e) => setPicked(e.target.checked ? [...picked, key] : picked.filter((k) => k !== key))} />
-            <span className="min-w-0"><span className="font-semibold">{t(`ai.platform.${f.kind}`)}</span> · {f.name}{f.detail ? <span className="text-muted"> ({f.detail})</span> : null}</span>
+            <span className="min-w-0"><span className="font-semibold">{t(`ai.platform.${f.kind}`)}</span> · {f.name === "NEW_CATALOG" ? t("ai.newCatalog") : f.name}{f.detail ? <span className="text-muted"> ({f.detail})</span> : null}</span>
           </label>
         );
       })}
@@ -70,6 +71,7 @@ export function AiChannels({ write, pendingId, metaError }: { write: boolean; pe
           <ErrorText error={start.error} />
         </SettingsCard>
       )}
+      <TelegramCard canManage={write} />
       {!data ? <div className="space-y-2"><Skeleton className="h-16 w-full !rounded-[14px]" /><Skeleton className="h-16 w-full !rounded-[14px]" /></div> : data.length === 0 ? <Empty icon="chat" title={t("ai.noChannels")} /> : (
         <ul className="grid gap-3 sm:grid-cols-2">
           {data.map((c) => (

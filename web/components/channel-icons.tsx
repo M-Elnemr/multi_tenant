@@ -4,7 +4,7 @@
  */
 export type ChannelKey = "WHATSAPP" | "FACEBOOK" | "INSTAGRAM" | "WEB" | "TEST" | string;
 
-export const CHANNEL_COLOR: Record<string, string> = { WHATSAPP: "#25D366", FACEBOOK: "#0084FF", INSTAGRAM: "#E1306C", WEB: "var(--brand)" };
+export const CHANNEL_COLOR: Record<string, string> = { WHATSAPP: "#25D366", FACEBOOK: "#0084FF", INSTAGRAM: "#E1306C", TELEGRAM: "#229ED9", TIKTOK: "#111111", X: "#111111", SNAPCHAT: "#F5C400", WEB: "var(--brand)" };
 
 function Glyph({ channel, className }: { channel: ChannelKey; className?: string }) {
   switch (channel) {
@@ -26,6 +26,14 @@ function Glyph({ channel, className }: { channel: ChannelKey; className?: string
           <rect x="3" y="3" width="18" height="18" rx="5.5" /><circle cx="12" cy="12" r="4.2" /><circle cx="17.4" cy="6.6" r="1.1" fill="currentColor" stroke="none" />
         </svg>
       );
+    case "TELEGRAM":
+      return <svg viewBox="0 0 24 24" className={className} aria-hidden fill="currentColor"><path d="M21.4 3.3 2.9 10.6c-1.1.4-1.1 1.1-.2 1.4l4.7 1.5 1.8 5.6c.2.6.4.8.9.8.4 0 .6-.2.9-.4l2.3-2.2 4.7 3.5c.9.5 1.5.2 1.7-.8l3.1-14.8c.3-1.2-.5-1.8-1.4-1.4ZM9 13.3l9.3-5.9c.4-.3.8-.1.5.2l-7.6 6.9-.3 3.3L9 13.3Z" /></svg>;
+    case "TIKTOK":
+      return <svg viewBox="0 0 24 24" className={className} aria-hidden fill="currentColor"><path d="M14 3v11.2a3.2 3.2 0 1 1-2.6-3.1V8.6A6 6 0 1 0 16.6 14V8.4c1 .7 2.1 1.1 3.4 1.2V6.9c-1.9-.2-3.4-1.5-3.6-3.9H14Z" /></svg>;
+    case "X":
+      return <svg viewBox="0 0 24 24" className={className} aria-hidden fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round"><path d="M4.5 4.5 19.5 19.5M19.5 4.5 4.5 19.5" /></svg>;
+    case "SNAPCHAT":
+      return <svg viewBox="0 0 24 24" className={className} aria-hidden fill="currentColor"><path d="M12 3c3 0 4.7 2.2 4.7 5v2.2c.4.3 1.1.5 1.7.5.3 0 .6.4.1.8-.7.5-1.4.8-1.4 1.3 1.2 2.1 2.4 2.7 3.4 3 .5.1.5.7-.2 1-.8.3-1.7.4-2 .9-.3.8-.9 1-1.7 1-.9 0-1.7-.3-2.4-.2-.9.1-1.5 1.7-2.9 1.7s-2-1.6-2.9-1.7c-.7-.1-1.5.2-2.4.2-.8 0-1.4-.2-1.7-1-.3-.5-1.2-.6-2-.9-.7-.3-.7-.9-.2-1 1-.3 2.2-.9 3.4-3 0-.5-.7-.8-1.4-1.3-.5-.4-.2-.8.1-.8.6 0 1.3-.2 1.7-.5V8c0-2.8 1.7-5 4.7-5Z" /></svg>;
     case "WEB":
       return (
         <svg viewBox="0 0 24 24" className={className} aria-hidden fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">

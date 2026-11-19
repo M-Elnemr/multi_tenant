@@ -9,7 +9,7 @@ export const COUNTRIES: { code: Country; flag: string }[] = [{ code: "EG", flag:
 
 export type Account = {
   id: string; provider: string; kind: string; country: Country; label: string; externalId: string; status: "ACTIVE" | "ERROR" | "PAUSED"; lastSyncAt?: string | null; lastError?: string | null; createdAt: string;
-  listings: number; orders: number; newOrders: number; name: string; can: string[]; providerStatus: string; adminUrl?: string | null; currency: string;
+  listings: number; orders: number; newOrders: number; name: string; can: string[]; providerStatus: string; adminUrl?: string | null; currency: string; autoPublish?: boolean; canPublish?: boolean;
 };
 
 export type CatalogField = { key: string; labelEn: string; labelAr: string; secret: boolean; placeholder: string; multiline: boolean; optional: boolean };
@@ -18,7 +18,7 @@ export type CatalogItem = { id: string; name: string; kind: string; countries: C
 const COLORS: Record<string, string> = {
   AMAZON: "bg-[#232f3e] text-[#ff9900]", NOON: "bg-[#feee00] text-black", SHOPIFY: "bg-[#95bf47] text-white", WOOCOMMERCE: "bg-[#7f54b3] text-white", SALLA: "bg-[#004d5a] text-[#bbf3e8]", YOUCAN: "bg-[#1e66f5] text-white", ZID: "bg-[#5b2d90] text-white", AYMAKAN: "bg-[#f26b21] text-white",
   ARAMEX: "bg-[#e1251b] text-white", BOSTA: "bg-[#e30613] text-white", MYLERZ: "bg-[#0e2a47] text-white", SMSA: "bg-[#6d2077] text-white", NAQEL: "bg-[#00a859] text-white", JT: "bg-[#d71920] text-white", SPL: "bg-[#007a3d] text-white",
-  EMIRATES_POST: "bg-[#c8102e] text-white", TURBO: "bg-[#ff6a00] text-white", SHIPA: "bg-[#2b2d42] text-white", QUIQUP: "bg-[#00b5ad] text-white", ZAJIL: "bg-[#1d3557] text-white", META_ADS: "bg-[#0866ff] text-white",
+  EMIRATES_POST: "bg-[#c8102e] text-white", TURBO: "bg-[#ff6a00] text-white", SHIPA: "bg-[#2b2d42] text-white", QUIQUP: "bg-[#00b5ad] text-white", ZAJIL: "bg-[#1d3557] text-white", META_ADS: "bg-[#0866ff] text-white", META_CATALOG: "bg-[#0866ff] text-white", TELEGRAM: "bg-[#229ED9] text-white", TIKTOK: "bg-[#111111] text-white", X: "bg-[#111111] text-white", SNAPCHAT: "bg-[#F5C400] text-black",
 };
 
 /** The platform's colour and initials as a rounded tile (no external logos). */

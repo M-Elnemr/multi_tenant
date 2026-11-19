@@ -29,7 +29,7 @@ public class ChatInboxService {
     static final int PAUSE_HOURS = 2;
     static final int PAGE = 30;
     private static final Set<String> STATUSES = Set.of("NEEDS_REPLY", "WAITING", "UNHAPPY", "TAKEOVER", "OPEN", "CLOSED");
-    private static final Set<String> CHANNELS = Set.of("WEB", "WHATSAPP", "FACEBOOK", "INSTAGRAM");
+    private static final Set<String> CHANNELS = Set.of("WEB", "WHATSAPP", "FACEBOOK", "INSTAGRAM", "TELEGRAM", "TIKTOK", "X", "SNAPCHAT");
     private static final Set<String> CUSTOMERS = Set.of("NEW", "RETURNING", "WITH_ORDERS", "NO_ORDERS");
 
     static final String NEEDS = "(c.status = 'OPEN' AND c.last_customer_at IS NOT NULL AND c.last_customer_at > coalesce(c.last_reply_at, '-infinity'::timestamptz))";
@@ -538,7 +538,7 @@ public class ChatInboxService {
     }
 
     private String channelName(UUID tenantId, String channel) {
-        if (!"WHATSAPP".equals(channel) && !"FACEBOOK".equals(channel) && !"INSTAGRAM".equals(channel)) return null;
+        if (!"WHATSAPP".equals(channel) && !"FACEBOOK".equals(channel) && !"INSTAGRAM".equals(channel) && !ChatService.SOCIAL_NETWORKS.contains(channel)) return null;
         return jdbc.sql("SELECT name FROM chat.channels WHERE tenant_id = :t AND platform = :p AND status = 'ACTIVE' ORDER BY created_at LIMIT 1").param("t", tenantId).param("p", channel).query(String.class).optional().orElse(null);
     }
 

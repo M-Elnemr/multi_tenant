@@ -16,7 +16,7 @@ export function ConnectForm({ item, country, carrier, onClose, onDone }: { item:
     onDone(r.name ?? item.name);
   });
   const oauth = useAction(async () => {
-    const r = await api<{ url: string }>(`store/integrations/oauth/${item.id}/start`, { body: { country } });
+    const r = item.id.startsWith("META_") ? await api<{ url: string }>("store/ai/meta/start", { body: {} }) : await api<{ url: string }>(`store/integrations/oauth/${item.id}/start`, { body: { country } });
     window.location.assign(r.url);
   });
   const missing = item.fields.some((f) => !f.optional && !(cred[f.key] ?? "").trim());
@@ -32,8 +32,9 @@ export function ConnectForm({ item, country, carrier, onClose, onDone }: { item:
             <ErrorText error={oauth.error} />
           </div>
         )}
-        {item.oauth && !carrier && <p className="text-center text-xs font-semibold uppercase tracking-wider text-slate-400">{t("ch.orPaste")}</p>}
-        <form onSubmit={(e) => { e.preventDefault(); void connect.run(); }} className="space-y-4">
+        {item.oauth && !carrier && item.fields.length > 0 && <p className="text-center text-xs font-semibold uppercase tracking-wider text-slate-400">{t("ch.orPaste")}</p>}
+        {item.fields.length === 0 && <div className="flex justify-end"><Button type="button" variant="secondary" onClick={onClose}>{t("common.cancel")}</Button></div>}
+        {item.fields.length > 0 && <form onSubmit={(e) => { e.preventDefault(); void connect.run(); }} className="space-y-4">
           {item.fields.map((f) => (
             <Field key={f.key} label={`${locale === "ar" ? f.labelAr : f.labelEn}${f.optional ? ` (${t("ch.optional")})` : ""}`}>
               {f.multiline
@@ -48,7 +49,7 @@ export function ConnectForm({ item, country, carrier, onClose, onDone }: { item:
             <a href={item.docsUrl} target="_blank" rel="noreferrer" className="text-sm font-semibold text-brand hover:underline">{t("ch.docs")} ↗</a>
             <div className="flex gap-2"><Button type="button" variant="secondary" onClick={onClose}>{t("common.cancel")}</Button><Button type="submit" loading={connect.loading} disabled={missing}>{t("ch.connectBtn")}</Button></div>
           </div>
-        </form>
+        </form>}
       </div>
     </Modal>
   );

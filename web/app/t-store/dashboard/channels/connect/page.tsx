@@ -3,19 +3,21 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { useApi } from "@/components/hooks";
+import { useApi, useMe } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { Icon } from "@/components/icons";
 import { Badge, Empty, ErrorText, PageHeader } from "@/components/ui";
 import { ConnectForm } from "@/components/dashboard/channels/connect-form";
 import { CountryChips, ProviderMark, type CatalogItem, type Country } from "@/components/dashboard/channels/common";
 import { CardSkeletons, PillTabs } from "@/components/dashboard/marketing/kit";
+import { ConnectHub } from "@/components/dashboard/channels/hub";
 
 type Group = "MARKETPLACE" | "STORE_PLATFORM";
 
 export default function ConnectChannel() {
   const { t, locale } = useI18n();
   const router = useRouter();
+  const me = useMe();
   const [country, setCountry] = useState<Country>("EG");
   const [group, setGroup] = useState<Group | "ALL">("ALL");
   const [open, setOpen] = useState<CatalogItem | null>(null);
@@ -27,6 +29,7 @@ export default function ConnectChannel() {
     <>
       <PageHeader eyebrow={t("ch.title")} title={t("ch.connect")} subtitle={t("ch.connect.sub")}
         actions={<Link href="/dashboard/channels" className="inline-flex h-10 items-center gap-1.5 rounded-[11px] px-3.5 text-[13px] font-semibold text-ink-2 ring-1 ring-line-strong hover:bg-surface"><Icon name="arrow" className="h-4 w-4 rotate-180 rtl:rotate-0" />{t("common.back")}</Link>} />
+      <ConnectHub canManage={me.canWrite("integrations")} />
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <CountryChips value={country} onChange={setCountry} />
         <PillTabs id="connect-group" value={group} onChange={setGroup} tabs={(["ALL", "MARKETPLACE", "STORE_PLATFORM"] as const).map((g) => ({ key: g, label: t(`ch.group.${g}`) }))} />

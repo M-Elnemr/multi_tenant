@@ -33,6 +33,29 @@ function Activity({ id }: { id: string }) {
   );
 }
 
+/** "Send my new and edited products here by themselves" and "send everything I have now": for a platform that can receive products. */
+function AutoPublish({ a, onChanged }: { a: Account; onChanged: () => void }) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const toggle = useAction(async (on: boolean) => {
+    try { await api(`store/integrations/accounts/${a.id}/auto-publish`, { body: { enabled: on } }); toast(on ? t("ch.auto.onToast") : t("ch.auto.offToast")); onChanged(); }
+    catch (e) { toast(errText(e, t("inbox.saveFailed")), { tone: "error" }); }
+  });
+  const sendAll = useAction(async () => {
+    try { const r = await api<{ queued: number }>(`store/integrations/accounts/${a.id}/publish-all`, { body: {} }); toast(t("ch.auto.queued", { n: r.queued })); onChanged(); }
+    catch (e) { toast(errText(e, t("inbox.saveFailed")), { tone: "error" }); }
+  });
+  return (
+    <div className="space-y-3 rounded-[14px] bg-canvas p-4 ring-1 ring-line">
+      <label className="flex cursor-pointer items-start gap-3">
+        <input type="checkbox" className="mt-1 h-5 w-5" checked={!!a.autoPublish} disabled={toggle.loading} onChange={(e) => void toggle.run(e.target.checked)} />
+        <span><span className="font-semibold text-ink">{t("ch.auto.title")}</span><span className="block text-[12.5px] leading-relaxed text-muted">{t("ch.auto.hint")}</span></span>
+      </label>
+      <Button size="sm" variant="secondary" loading={sendAll.loading} onClick={() => void sendAll.run()}><Icon name="box" className="h-4 w-4" />{t("ch.auto.sendAll")}</Button>
+    </div>
+  );
+}
+
 function EditCredentials({ a, onClose, onDone }: { a: Account; onClose: () => void; onDone: () => void }) {
   const { t, locale } = useI18n();
   const cat = useApi<CatalogItem[]>(`store/integrations/catalog?country=${a.country}`);
@@ -97,6 +120,7 @@ export function AccountsView({ accounts, canManage, onChanged, onPick }: { accou
             <Row label={t("ch.synced")}>{a.lastSyncAt ? dateTime(a.lastSyncAt, locale) : t("ch.insights.neverSynced")}</Row>
             <Row label={t("ch.connectedOn")}>{dateTime(a.createdAt, locale)}</Row>
           </dl>
+          {canManage && a.canPublish && <AutoPublish a={a} onChanged={onChanged} />}
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="ink" onClick={() => onPick(a.id)}><Icon name="chart" className="h-4 w-4" />{t("ch.viewInsights")}</Button>
             {canManage && <>
