@@ -1,8 +1,8 @@
 import type { IconName } from "../../icons";
 
-export const SEG_KEYS = ["ALL", "NEW", "REPEAT", "VIP", "AT_RISK", "LAPSED"] as const;
+export const SEG_KEYS = ["ALL", "NEW", "REPEAT", "VIP", "AT_RISK", "LAPSED", "LEADS"] as const;
 export type SegKey = (typeof SEG_KEYS)[number];
-export const SEG_ICON: Record<SegKey, IconName> = { ALL: "users", NEW: "sparkles", REPEAT: "return", VIP: "award", AT_RISK: "alert", LAPSED: "clock" };
+export const SEG_ICON: Record<SegKey, IconName> = { ALL: "users", NEW: "sparkles", REPEAT: "return", VIP: "award", AT_RISK: "alert", LAPSED: "clock", LEADS: "chat" };
 
 export const PLATFORMS = ["WHATSAPP", "FACEBOOK", "INSTAGRAM"] as const;
 export type Platform = (typeof PLATFORMS)[number];

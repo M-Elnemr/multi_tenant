@@ -41,7 +41,7 @@ public class SegmentService {
     @org.springframework.beans.factory.annotation.Value("${app.meta.unofficial.small-send-max:3}") private int smallSendMax = 3;
 
     private static final Logger log = LoggerFactory.getLogger(SegmentService.class);
-    public static final List<String> SEGMENT_ORDER = List.of("ALL", "NEW", "REPEAT", "VIP", "AT_RISK", "LAPSED");
+    public static final List<String> SEGMENT_ORDER = List.of("ALL", "NEW", "REPEAT", "VIP", "AT_RISK", "LAPSED", "LEADS");
     public static final Set<String> KEYS = Set.copyOf(SEGMENT_ORDER);
     public static final List<String> PLATFORMS = List.of("WHATSAPP", "FACEBOOK", "INSTAGRAM");
 

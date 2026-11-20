@@ -219,6 +219,11 @@ class ServiceBookingsIntegrationTest extends IntegrationTestBase {
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("Thanks Mona."));
         say(t, conv2, "ok thanks, 01155555555");
         assertThat(jdbc.sql("SELECT marketing_opt_in FROM commerce.customers WHERE tenant_id = :t AND phone = '+201155555555'").param("t", tid(t)).query(Boolean.class).single()).isFalse();
+        // only the lead who agreed to offers is in the «Leads» audience for the shop's messages; the one who declined is not
+        String seg = body(onHost(t.host(), t.access(), "GET", "/api/v1/store/segments?platforms=WHATSAPP", null).andExpect(status().isOk()));
+        assertThat((List<Integer>) JsonPath.read(seg, "$.segments[?(@.key=='LEADS')].count")).containsExactly(1);
+        String who = body(onHost(t.host(), t.access(), "GET", "/api/v1/store/segments/customers?segments=LEADS&platforms=WHATSAPP", null).andExpect(status().isOk()));
+        assertThat(who).contains("Sara").doesNotContain("Mona");
         // the leads show in the customers screen with where they came from
         assertThat(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/customers", null).andExpect(status().isOk()))).contains("LEAD");
     }
