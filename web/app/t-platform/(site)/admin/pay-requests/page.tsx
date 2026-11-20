@@ -27,7 +27,7 @@ function Row({ r, onDone }: { r: Req; onDone: () => void }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <Link href={`/admin/tenants/${r.tenantId}`} className="flex min-w-0 items-center gap-3">
           <Avatar name={r.tenantName} className="h-11 w-11 text-base" />
-          <div className="min-w-0"><p className="truncate text-lg font-bold text-ink">{r.tenantName}</p><p className="truncate text-xs text-slate-500" dir="ltr">{r.primaryHost} · {r.tenantType === "STORE" ? t("type.store") : t("type.clinic")}</p></div>
+          <div className="min-w-0"><p className="truncate text-lg font-bold text-ink">{r.tenantName}</p><p className="truncate text-xs text-slate-500" dir="ltr">{r.primaryHost} · {r.tenantType === "STORE" ? t("type.store") : r.tenantType === "SERVICE" ? t("type.service") : r.tenantType === "LAWYER" ? t("type.lawyer") : t("type.clinic")}</p></div>
         </Link>
         <div className="flex items-center gap-2"><StatusBadge status={r.tenantStatus} /><StatusBadge status={r.status} /></div>
       </div>

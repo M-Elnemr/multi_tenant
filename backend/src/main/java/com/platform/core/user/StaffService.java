@@ -51,13 +51,19 @@ public class StaffService {
         this.audit = audit;
     }
 
+    /** The base role of an employee whose screens the owner chose: one per kind of business, so a lawyer is never a clinic employee. */
+    static String customStaffRole(String tenantType) {
+        if (com.platform.core.tenant.TenantType.isShopLike(tenantType)) return "STORE_STAFF";
+        return "LAWYER".equals(tenantType) ? "LAWYER_STAFF" : "CLINIC_STAFF";
+    }
+
     @Transactional
     public Invited invite(UUID actor, String firstName, String lastName, String phoneRaw, String email, String role, Map<String, String> access) {
         TenantContext.Current t = TenantContext.require();
         boolean custom = access != null && !access.isEmpty();
         if (custom) {
             access = validAccess(t.type(), access);
-            role = com.platform.core.tenant.TenantType.isShopLike(t.type()) ? "STORE_STAFF" : "CLINIC_STAFF";
+            role = customStaffRole(t.type());
         } else if (role == null || !ASSIGNABLE.getOrDefault(t.type(), Set.of()).contains(role)) {
             throw BusinessException.badRequest("ROLE_NOT_ASSIGNABLE", "Choose a role or the screens this employee can open");
         }
@@ -133,7 +139,7 @@ public class StaffService {
         Map<String, String> clean = validAccess(t.type(), access == null ? Map.of() : access);
         // move off the fixed roles so the chosen screens are exactly what the employee gets
         jdbc.sql("DELETE FROM core.membership_roles WHERE membership_id = :m AND role_id IN (SELECT id FROM core.roles WHERE code NOT IN ('CUSTOMER','PATIENT','GUARDIAN') AND tenant_id IS NULL)").param("m", m.getId()).update();
-        rbac.assignTenantRole(m.getId(), com.platform.core.tenant.TenantType.isShopLike(t.type()) ? "STORE_STAFF" : "CLINIC_STAFF");
+        rbac.assignTenantRole(m.getId(), customStaffRole(t.type()));
         rbac.setScreenAccess(m.getId(), clean);
         audit.record(actor, t.id(), "STAFF_ACCESS_CHANGED", "user", userId, "{\"access\":" + json(clean) + "}");
         return clean;

@@ -144,7 +144,7 @@ public class PayRequestService {
         var rows = jdbc.sql("""
                 SELECT u.id, u.first_name, u.last_name, u.phone, u.email FROM core.user_tenant_memberships m
                 JOIN core.membership_roles mr ON mr.membership_id = m.id JOIN core.roles r ON r.id = mr.role_id JOIN core.users u ON u.id = m.user_id
-                WHERE m.tenant_id = :t AND r.code IN ('STORE_OWNER','CLINIC_OWNER') ORDER BY m.created_at LIMIT 1
+                WHERE m.tenant_id = :t AND r.code IN ('STORE_OWNER','CLINIC_OWNER','LAWYER_OWNER') ORDER BY m.created_at LIMIT 1
                 """).param("t", tenantId).query().listOfRows();
         return rows.isEmpty() ? new LinkedHashMap<>() : Rows.camel(rows.get(0));
     }
