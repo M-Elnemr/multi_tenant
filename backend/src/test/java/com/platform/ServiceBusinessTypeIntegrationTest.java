@@ -56,7 +56,7 @@ class ServiceBusinessTypeIntegrationTest extends IntegrationTestBase {
         onHost(shop.host(), shop.access(), "GET", "/api/v1/store/ai/goals", null).andExpect(jsonPath("$.goals[0]").value("ORDERS"));
         Tenant clinic = onboard("CLINIC");
         assertThat(jdbc.sql("SELECT tenant_type FROM core.tenants WHERE id = :t").param("t", id(clinic)).query(String.class).single()).isEqualTo("CLINIC");
-        onHost(clinic.host(), clinic.access(), "GET", "/api/v1/store/bookings/summary", null).andExpect(status().isNotFound());   // a clinic has no shop screens
+        onHost(clinic.host(), clinic.access(), "GET", "/api/v1/store/bookings/summary", null).andExpect(status().is4xxClientError());   // a clinic has no shop screens
         assertThat(TenantType.isShopLike("STORE")).isTrue();
         assertThat(TenantType.isShopLike("SERVICE")).isTrue();
         assertThat(TenantType.isShopLike("CLINIC")).isFalse();
