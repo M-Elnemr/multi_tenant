@@ -13,6 +13,7 @@ import { wantsEdit } from "@/lib/edit-mode";
 import { EditBar, EditFrame, EditProvider } from "@/components/site-edit";
 import { Icon } from "@/components/icons";
 import { shopLook } from "@/lib/shop-look";
+import { ServiceHome, type SvcConfig } from "@/components/shop/service/service-home";
 import type { CardKind, GridKind } from "@/components/shop/templates/registry";
 import { Categories, Hero, TRUST_ICONS } from "@/components/shop/templates/sections";
 import { Reveal } from "@/components/shop/templates/reveal";
@@ -51,13 +52,17 @@ function Grid({ items, locale, labels, card, grid }: { items: ShopProduct[]; loc
 export default async function StoreHome({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const { t, locale } = await getT();
   const edit = await wantsEdit(searchParams);
-  const [{ profile: prof, look }, cats, home, branches] = await Promise.all([
+  const [{ profile: prof, look, service }, cats, home, branches] = await Promise.all([
     shopLook(),
     backendJson<ShopCategory[]>(`/shop/categories?lang=${locale}`).catch(() => [] as ShopCategory[]),
     backendJson<Home>(`/shop/home?lang=${locale}`).catch(() => ({ featured: [], newest: [], offers: [], bestSellers: [], banners: [] }) as Home),
     backendJson<ShopBranch[]>("/shop/branches").catch(() => [] as ShopBranch[]),
   ]);
   const p = prof ?? undefined;
+  if (service) {   // a service business: the diary and its services come first; products are a secondary shelf
+    const cfg = await backendJson<SvcConfig>("/shop/booking/config").catch(() => ({ services: [] }) as SvcConfig);
+    return <ServiceHome look={service} p={p} cfg={cfg} products={[...home.featured, ...home.bestSellers, ...home.newest].filter((x, i, a) => a.findIndex((y) => y.id === x.id) === i)} branches={branches} t={t} locale={locale} />;
+  }
   const { card, grid } = look;
   const tops = buildTree(cats).filter((c) => c.productCount > 0).slice(0, 12);
   const labels = { outOfStock: t("shop.outOfStock"), off: t("shop.off"), badges: { NEW: t("badge.NEW"), SALE: t("badge.SALE"), BEST_SELLER: t("badge.BEST_SELLER"), LIMITED: t("badge.LIMITED") } };

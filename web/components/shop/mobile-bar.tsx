@@ -8,10 +8,17 @@ import { useI18n } from "../i18n-provider";
 
 /** Thumb-reach navigation on phones: home, all products, offers, cart, account. */
 export function MobileBar() {
-  const { t } = useI18n();
+  const { t, tenantType } = useI18n();
   const path = usePathname();
   const count = useCart().reduce((n, l) => n + l.quantity, 0);
-  const items: { href: string; icon: IconName; label: string; badge?: number }[] = [
+  const svc = tenantType === "SERVICE";
+  const items: { href: string; icon: IconName; label: string; badge?: number }[] = svc ? [
+    { href: "/", icon: "home", label: t("shop.home") },
+    { href: "/book", icon: "calendar", label: t("svh.book") },
+    { href: "/products", icon: "bag", label: t("svh.products") },
+    { href: "/cart", icon: "cart", label: t("nav.cart"), badge: count },
+    { href: "/account", icon: "heart", label: t("nav.account") },
+  ] : [
     { href: "/", icon: "home", label: t("shop.home") },
     { href: "/products", icon: "bag", label: t("shop.allProducts") },
     { href: "/products?onSale=true", icon: "tag", label: t("shop.offers") },

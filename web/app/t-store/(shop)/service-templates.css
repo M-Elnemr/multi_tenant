@@ -1,0 +1,64 @@
+/* Service business website templates (SERVICE only). Presentation only, scoped to .shop[data-template="..."]; the markup is components/shop/service/service-home.tsx.
+   Each design = palette + type + finish here, and its own composition (hero and service card) in templates/service-looks.ts. */
+
+/* 1. LUMIERE - luxury beauty salon: warm blush, serif, arched photo, tall cards */
+.shop[data-template="lumiere"] { --s-bg: #fbf4ef; --s-card: #fffdfb; --s-ink: #2b1b17; --s-mute: #8a7168; --s-line: #eadbd2; --s-soft: #f5e6dc; --brand: #c58a6a; --s-radius: 22px; --s-shadow: 0 20px 50px -30px rgb(120 70 50 / .35); --s-shadow-lg: 0 40px 80px -40px rgb(120 70 50 / .45); }
+.shop[data-template="lumiere"] h1, .shop[data-template="lumiere"] h2, .shop[data-template="lumiere"] h3 { font-family: var(--f-cormorant), var(--f-amiri), serif; font-weight: 600; letter-spacing: -0.005em; }
+.shop[data-template="lumiere"] .sv-arch { border-radius: 999px 999px 24px 24px; }
+.shop[data-template="lumiere"] .s-btn { border-radius: 999px; background: #2b1b17; }
+
+/* 2. BARBERSHOP - bold, dark, gold, loud type, price list */
+.shop[data-template="barbershop"] { --s-bg: #0e0e10; --s-card: #17171a; --s-ink: #f2efe9; --s-mute: #a8a39a; --s-line: #2a2a2e; --s-soft: #1e1e22; --brand: #e8b33a; --s-radius: 6px; --s-shadow: none; --s-shadow-lg: 0 30px 60px -30px #000; }
+.shop[data-template="barbershop"] h1, .shop[data-template="barbershop"] h2, .shop[data-template="barbershop"] h3 { font-family: var(--f-archivo), var(--f-lalezar), sans-serif; text-transform: uppercase; letter-spacing: .02em; font-weight: 400; }
+.shop[data-template="barbershop"] .s-btn { border-radius: 4px; background: var(--brand); color: #111; text-transform: uppercase; letter-spacing: .08em; }
+.shop[data-template="barbershop"] .s-btn-ghost { background: transparent; color: var(--s-ink); border: 1px solid var(--s-ink); }
+.shop[data-template="barbershop"] .sv-menu { border-style: dashed; border-width: 2px; }
+
+/* 3. HOMEFIX - premium home services: deep navy, orange, overlay hero, icon tiles */
+.shop[data-template="homefix"] { --s-bg: #f4f7fb; --s-card: #ffffff; --s-ink: #10263f; --s-mute: #5b6b80; --s-line: #dde5ef; --s-soft: #e8eef6; --brand: #f28c28; --s-radius: 14px; --s-shadow: 0 14px 40px -28px rgb(16 38 63 / .5); --s-shadow-lg: 0 34px 70px -34px rgb(16 38 63 / .6); }
+.shop[data-template="homefix"] h1, .shop[data-template="homefix"] h2, .shop[data-template="homefix"] h3 { font-family: var(--f-tajawal), var(--font-inter-tight), sans-serif; font-weight: 800; }
+.shop[data-template="homefix"] .sv-tile { border-top: 4px solid var(--brand); }
+
+/* 4. FIXIT - appliance repair and technical centre: dark blueprint, cyan, bento */
+.shop[data-template="fixit"] { --s-bg: #0b1220; --s-card: #111a2e; --s-ink: #e6edf7; --s-mute: #8da0bd; --s-line: #1d2a44; --s-soft: #15213a; --brand: #38bdf8; --s-radius: 12px; --s-shadow: none; --s-shadow-lg: 0 30px 70px -30px rgb(56 189 248 / .25); }
+.shop[data-template="fixit"] h1, .shop[data-template="fixit"] h2, .shop[data-template="fixit"] h3 { font-family: var(--f-plex), var(--font-inter-tight), sans-serif; font-weight: 700; }
+.shop[data-template="fixit"] .sv-bento { background-image: linear-gradient(rgb(56 189 248 / .07) 1px, transparent 1px), linear-gradient(90deg, rgb(56 189 248 / .07) 1px, transparent 1px); background-size: 28px 28px; }
+.shop[data-template="fixit"] .s-btn { background: var(--brand); color: #04121f; border-radius: 10px; }
+
+/* 5. AQUA - water filtration: fresh sky blue, rounded, plan cards */
+.shop[data-template="aqua"] { --s-bg: #f0f9ff; --s-card: #ffffff; --s-ink: #0c3a5b; --s-mute: #4f7794; --s-line: #cfe8f6; --s-soft: #def2fd; --brand: #0ea5e9; --s-radius: 26px; --s-shadow: 0 18px 44px -30px rgb(14 165 233 / .6); --s-shadow-lg: 0 40px 80px -40px rgb(14 165 233 / .55); }
+.shop[data-template="aqua"] h1, .shop[data-template="aqua"] h2, .shop[data-template="aqua"] h3 { font-family: var(--f-baloo), var(--f-tajawal), sans-serif; font-weight: 800; }
+.shop[data-template="aqua"] .sv-plan { background: linear-gradient(180deg, #fff, #f0f9ff); }
+.shop[data-template="aqua"] .s-btn { border-radius: 999px; }
+
+/* 6. SPARKLE - cleaning and home care: airy mint, giant type, photo cards */
+.shop[data-template="sparkle"] { --s-bg: #f6fffb; --s-card: #ffffff; --s-ink: #12332b; --s-mute: #5d7f75; --s-line: #d6f0e7; --s-soft: #e1f8f0; --brand: #14b8a6; --s-radius: 20px; --s-shadow: 0 16px 40px -28px rgb(20 184 166 / .5); --s-shadow-lg: 0 36px 70px -36px rgb(20 184 166 / .5); }
+.shop[data-template="sparkle"] h1, .shop[data-template="sparkle"] h2, .shop[data-template="sparkle"] h3 { font-family: var(--f-reem), var(--f-tajawal), sans-serif; font-weight: 600; letter-spacing: -0.02em; }
+.shop[data-template="sparkle"] .s-chip { border-radius: 999px; background: #fff; }
+
+/* 7. GARAGE - car repair and detailing: asphalt black, hazard yellow, rows */
+.shop[data-template="garage"] { --s-bg: #121212; --s-card: #1b1b1b; --s-ink: #f5f5f0; --s-mute: #a3a39a; --s-line: #2c2c2c; --s-soft: #222; --brand: #ffcf00; --s-radius: 4px; --s-shadow: none; --s-shadow-lg: 0 30px 60px -30px #000; }
+.shop[data-template="garage"] h1, .shop[data-template="garage"] h2, .shop[data-template="garage"] h3 { font-family: var(--f-lalezar), var(--f-archivo), sans-serif; text-transform: uppercase; font-weight: 400; letter-spacing: .01em; }
+.shop[data-template="garage"] .s-btn { background: var(--brand); color: #111; border-radius: 2px; text-transform: uppercase; }
+.shop[data-template="garage"] .sv-row { border-inline-start: 5px solid var(--brand); }
+.shop[data-template="garage"] .sv-menu { background-image: repeating-linear-gradient(135deg, transparent 0 14px, rgb(255 207 0 / .05) 14px 28px); }
+
+/* 8. PRO - modern multi-service company: clean white, blue, overlay hero and photo cards */
+.shop[data-template="pro"] { --s-bg: #ffffff; --s-card: #ffffff; --s-ink: #0f172a; --s-mute: #64748b; --s-line: #e2e8f0; --s-soft: #f1f5f9; --brand: #2563eb; --s-radius: 16px; --s-shadow: 0 14px 36px -26px rgb(15 23 42 / .35); --s-shadow-lg: 0 36px 70px -34px rgb(15 23 42 / .45); }
+.shop[data-template="pro"] h1, .shop[data-template="pro"] h2, .shop[data-template="pro"] h3 { font-family: var(--font-inter-tight), var(--f-plex), sans-serif; font-weight: 800; letter-spacing: -0.03em; }
+
+/* 9. SLOT - minimalist, appointment-first: monochrome, violet accent, one huge booking bar */
+.shop[data-template="slot"] { --s-bg: #ffffff; --s-card: #ffffff; --s-ink: #111111; --s-mute: #6b6b6b; --s-line: #ececec; --s-soft: #f6f6f6; --brand: #6d5efc; --s-radius: 12px; --s-shadow: none; --s-shadow-lg: 0 30px 60px -36px rgb(0 0 0 / .3); }
+.shop[data-template="slot"] h1, .shop[data-template="slot"] h2, .shop[data-template="slot"] h3 { font-family: var(--font-inter-tight), var(--f-plex), sans-serif; font-weight: 700; letter-spacing: -0.04em; }
+.shop[data-template="slot"] .sv-bigcta { transition: transform .25s ease, background .25s ease; }
+.shop[data-template="slot"] .sv-bigcta:hover { transform: translateY(-3px); background: var(--brand); }
+
+/* 10. BAZAAR - marketplace-style single business: light grey, red, bento and photo tiles */
+.shop[data-template="bazaar"] { --s-bg: #f4f5f7; --s-card: #ffffff; --s-ink: #14171f; --s-mute: #667085; --s-line: #e4e7ec; --s-soft: #eceff3; --brand: #e11d48; --s-radius: 14px; --s-shadow: 0 10px 28px -22px rgb(20 23 31 / .4); --s-shadow-lg: 0 30px 60px -32px rgb(20 23 31 / .5); }
+.shop[data-template="bazaar"] h1, .shop[data-template="bazaar"] h2, .shop[data-template="bazaar"] h3 { font-family: var(--f-messiri), var(--f-tajawal), sans-serif; font-weight: 700; }
+.shop[data-template="bazaar"] .sv-bento-tile { transition: transform .2s ease, box-shadow .2s ease; }
+.shop[data-template="bazaar"] .sv-bento-tile:hover { transform: translateY(-3px); box-shadow: var(--s-shadow-lg); }
+
+/* shared: dark designs, readable placeholders and touch targets */
+.shop[data-template="barbershop"], .shop[data-template="fixit"], .shop[data-template="garage"] { color-scheme: dark; }
+html[lang="ar"] .shop[data-template] .sv-menu p, html[lang="ar"] .shop[data-template] h1, html[lang="ar"] .shop[data-template] h2 { text-transform: none; }

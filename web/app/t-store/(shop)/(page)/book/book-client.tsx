@@ -18,9 +18,9 @@ type Done = { bookingNumber: string; status: string; serviceName: string; date: 
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 /** The shop's booking page: choose a service, a day and one of the free times, leave a name and a number. The shop confirms (or the time is confirmed at once when the shop chose that). */
-export function BookClient({ cfg }: { cfg: BookConfig }) {
+export function BookClient({ cfg, initial }: { cfg: BookConfig; initial?: string }) {
   const { t, locale } = useI18n();
-  const [svc, setSvc] = useState(cfg.services[0]?.id ?? "");
+  const [svc, setSvc] = useState(initial ?? cfg.services[0]?.id ?? "");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [name, setName] = useState("");

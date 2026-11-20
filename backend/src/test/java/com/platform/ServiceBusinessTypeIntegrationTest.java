@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jayway.jsonpath.JsonPath;
 import com.platform.core.tenant.TenantType;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -70,5 +71,17 @@ class ServiceBusinessTypeIntegrationTest extends IntegrationTestBase {
         onHost(b.host(), b.access(), "GET", "/api/v1/store/services", null).andExpect(jsonPath("$.length()").value(0));
         // a SERVICE business cannot be put on a clinic plan
         assertThat(jdbc.sql("SELECT count(*) FROM billing.subscription_plans WHERE code = 'SERVICE_FREE' AND tenant_type = 'SERVICE'").query(Long.class).single()).isEqualTo(1L);
+    }
+
+    @Test
+    void theTenDesignsBelongToServiceBusinessesOnlyAndTheyKeepTheirOwn() throws Exception {
+        Tenant svc = onboardService();
+        Tenant shop = onboard("STORE");
+        for (String tpl : List.of("lumiere", "barbershop", "homefix", "fixit", "aqua", "sparkle", "garage", "pro", "slot", "bazaar"))
+            onHost(svc.host(), svc.access(), "PATCH", "/api/v1/store/profile", "{\"template\":\"%s\"}".formatted(tpl)).andExpect(status().isOk());
+        onHost(svc.host(), svc.access(), "PATCH", "/api/v1/store/profile", "{\"template\":\"atelier\"}").andExpect(status().isBadRequest());   // a shop design is not for a service business
+        onHost(shop.host(), shop.access(), "PATCH", "/api/v1/store/profile", "{\"template\":\"lumiere\"}").andExpect(status().isBadRequest());   // and a service design is not for a shop
+        onHost(shop.host(), shop.access(), "PATCH", "/api/v1/store/profile", "{\"template\":\"atelier\"}").andExpect(status().isOk());
+        assertThat(jdbc.sql("SELECT template FROM commerce.store_profiles WHERE tenant_id = :t").param("t", id(svc)).query(String.class).single()).isEqualTo("bazaar");
     }
 }

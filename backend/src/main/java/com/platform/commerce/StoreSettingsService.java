@@ -83,6 +83,8 @@ public class StoreSettingsService {
             Map.entry("mapsUrl", "maps_url"), Map.entry("closedMessage", "closed_message"), Map.entry("taxId", "tax_id"), Map.entry("announcement", "announcement"),
             Map.entry("metaPixelId", "meta_pixel_id"), Map.entry("tiktokPixelId", "tiktok_pixel_id"), Map.entry("gaId", "ga_id"));
     /** The ready-made looks of the shop website (see V42). */
+    /** The ten designs only a SERVICE business can choose (a shop never gets them, and a service business never gets the shop designs). */
+    public static final java.util.Set<String> SERVICE_TEMPLATES = java.util.Set.of("lumiere", "barbershop", "homefix", "fixit", "aqua", "sparkle", "garage", "pro", "slot", "bazaar");
     public static final java.util.Set<String> TEMPLATES = java.util.Set.of("original", "atelier", "street", "grove", "midnight", "maison", "feast", "bloom", "oud", "souq");
     private static final Map<String, String> PROFILE_BOOL = Map.of("isOpen", "is_open", "vatIncluded", "vat_included");
     private static final Map<String, String> PROFILE_NUM = Map.of("minOrderMinor", "min_order_minor", "vatPercent", "vat_percent", "returnWindowDays", "return_window_days");
@@ -108,7 +110,8 @@ public class StoreSettingsService {
             q.put(e.getKey(), e.getKey().equals("vatPercent") ? (Object) java.math.BigDecimal.valueOf(v.doubleValue()) : (Object) v.longValue());
         }
         if (f.get("template") instanceof String tpl) {
-            if (!TEMPLATES.contains(tpl)) throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown template");
+            boolean service = "SERVICE".equals(jdbc.sql("SELECT tenant_type FROM core.tenants WHERE id = :t").param("t", tenantId).query(String.class).single());
+            if (!(service ? SERVICE_TEMPLATES : TEMPLATES).contains(tpl)) throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown template");
             set.append("template = :template, "); q.put("template", tpl);
         }
         var json = new com.fasterxml.jackson.databind.ObjectMapper();
