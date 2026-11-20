@@ -84,10 +84,32 @@ public class StoreSettingsService {
             Map.entry("metaPixelId", "meta_pixel_id"), Map.entry("tiktokPixelId", "tiktok_pixel_id"), Map.entry("gaId", "ga_id"));
     /** The ready-made looks of the shop website (see V42). */
     /** The ten designs only a SERVICE business can choose (a shop never gets them, and a service business never gets the shop designs). */
+    /** Ten designs for a shop with very few products. A shop may CHOOSE one only while it has 1 to 3 active products (a product with many variants is still one product). */
+    public static final java.util.Set<String> SMALL_CATALOG_TEMPLATES = java.util.Set.of("solo", "vitrine", "capsule", "monolith", "pedestal", "spotlight", "launch", "signature", "curated", "origin");
+    public static final int SMALL_CATALOG_MAX = 3;
     public static final java.util.Set<String> SERVICE_TEMPLATES = java.util.Set.of("lumiere", "barbershop", "homefix", "fixit", "aqua", "sparkle", "garage", "pro", "slot", "bazaar");
     public static final java.util.Set<String> TEMPLATES = java.util.Set.of("original", "atelier", "street", "grove", "midnight", "maison", "feast", "bloom", "oud", "souq");
     private static final Map<String, String> PROFILE_BOOL = Map.of("isOpen", "is_open", "vatIncluded", "vat_included");
     private static final Map<String, String> PROFILE_NUM = Map.of("minOrderMinor", "min_order_minor", "vatPercent", "vat_percent", "returnWindowDays", "return_window_days");
+
+    /** Sellable products = active products. A product with many variants counts once. */
+    public long activeProductCount(UUID tenantId) {
+        return jdbc.sql("SELECT count(*) FROM commerce.products WHERE tenant_id = :t AND status = 'ACTIVE'").param("t", tenantId).query(Long.class).single();
+    }
+
+    /** What the template picker may offer now: the small-catalog designs only while the shop has 1-3 active products (and the one already published stays whatever the catalog size). */
+    public Map<String, Object> templateOptions(UUID tenantId) {
+        long n = activeProductCount(tenantId);
+        String kind = jdbc.sql("SELECT tenant_type FROM core.tenants WHERE id = :t").param("t", tenantId).query(String.class).single();
+        String current = jdbc.sql("SELECT template FROM commerce.store_profiles WHERE tenant_id = :t").param("t", tenantId).query(String.class).optional().orElse("original");
+        Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("activeProducts", n);
+        m.put("smallCatalogEligible", "STORE".equals(kind) && n >= 1 && n <= SMALL_CATALOG_MAX);
+        m.put("smallCatalogMax", SMALL_CATALOG_MAX);
+        m.put("current", current);
+        m.put("currentIsSmallCatalog", SMALL_CATALOG_TEMPLATES.contains(current));
+        return m;
+    }
 
     /** Edits only the fields that are present in the request (whitelisted columns; values are always bound, never concatenated). */
     @Transactional
@@ -110,8 +132,15 @@ public class StoreSettingsService {
             q.put(e.getKey(), e.getKey().equals("vatPercent") ? (Object) java.math.BigDecimal.valueOf(v.doubleValue()) : (Object) v.longValue());
         }
         if (f.get("template") instanceof String tpl) {
-            boolean service = "SERVICE".equals(jdbc.sql("SELECT tenant_type FROM core.tenants WHERE id = :t").param("t", tenantId).query(String.class).single());
-            if (!(service ? SERVICE_TEMPLATES : TEMPLATES).contains(tpl)) throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown template");
+            String kind = jdbc.sql("SELECT tenant_type FROM core.tenants WHERE id = :t").param("t", tenantId).query(String.class).single();
+            boolean service = "SERVICE".equals(kind);
+            String current = jdbc.sql("SELECT template FROM commerce.store_profiles WHERE tenant_id = :t").param("t", tenantId).query(String.class).optional().orElse("original");
+            if (SMALL_CATALOG_TEMPLATES.contains(tpl)) {
+                if (!"STORE".equals(kind)) throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown template").field("template");
+                long n = activeProductCount(tenantId);
+                if (!tpl.equals(current) && (n < 1 || n > SMALL_CATALOG_MAX))   // keeping the one already published is always fine; choosing a new one needs 1-3 products
+                    throw BusinessException.badRequest("SMALL_CATALOG_ONLY", "This design is for a shop with 1 to " + SMALL_CATALOG_MAX + " products (you have " + n + ")").field("template");
+            } else if (!(service ? SERVICE_TEMPLATES : TEMPLATES).contains(tpl)) throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown template");
             set.append("template = :template, "); q.put("template", tpl);
         }
         var json = new com.fasterxml.jackson.databind.ObjectMapper();

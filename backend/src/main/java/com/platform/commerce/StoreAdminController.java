@@ -306,6 +306,10 @@ public class StoreAdminController {
 
     // ---- settings ---------------------------------------------------------------------------------------------------
 
+    @GetMapping("/template-options")
+    @PreAuthorize("(hasAuthority('settings.manage') or hasAuthority('settings.read'))")
+    public Map<String, Object> templateOptions() { return settings.templateOptions(StoreContext.tenantId()); }
+
     @GetMapping("/profile")
     @PreAuthorize("(hasAuthority('settings.manage') or hasAuthority('settings.read'))")
     public Map<String, Object> profile() { return settings.profile(StoreContext.tenantId()); }
