@@ -29,18 +29,20 @@ public class SocialBridge {
     private final ChatService chat;
     private final LoginThrottle throttle;
     private final ProductShare share;
+    private final ChatTimeline timeline;
     private final Map<String, SocialChannel> networks;
     private final ExecutorService pool;
     private final java.util.concurrent.ScheduledExecutorService holder = Executors.newSingleThreadScheduledExecutor();
     private final InboundBurst burst;
 
-    public SocialBridge(JdbcClient jdbc, TokenCrypto crypto, ChatService chat, LoginThrottle throttle, ProductShare share, List<SocialChannel> channels,
+    public SocialBridge(JdbcClient jdbc, TokenCrypto crypto, ChatService chat, LoginThrottle throttle, ProductShare share, ChatTimeline timeline, List<SocialChannel> channels,
                         @Value("${app.meta.async:true}") boolean async, @Value("${app.chat.burst-ms:5000}") long burstMs) {
         this.jdbc = jdbc;
         this.crypto = crypto;
         this.chat = chat;
         this.throttle = throttle;
         this.share = share;
+        this.timeline = timeline;
         this.networks = new java.util.LinkedHashMap<>();
         for (SocialChannel c : channels) networks.put(c.platform(), c);
         this.pool = async ? Executors.newFixedThreadPool(4) : null;
@@ -82,6 +84,7 @@ public class SocialBridge {
         boolean aiOn = chat.enabled(tenantId, platform);
         if (!aiOn) return;
         String answer;
+        UUID convId = null;
         List<ProductShare.Card> cards = List.of();
         if (text == null || text.isBlank()) {
             answer = "أستطيع قراءة الرسائل النصية فقط، {اكتب|اكتبي} لي ما {تحتاجه|تحتاجيه} 🙏 / I can only read text messages, please type what you need.";
@@ -94,6 +97,7 @@ public class SocialBridge {
                 }, 5, java.util.concurrent.TimeUnit.SECONDS);
                 try {
                     var reply = chat.reply(tenantId, platform, sender, null, text.length() > 1000 ? text.substring(0, 1000) : text, name, in);
+                    convId = reply.conversationId();
                     if (reply.text() == null || reply.text().isBlank()) return;   // the shop team took this chat over: nothing goes out automatically
                     answer = reply.text();
                     cards = share.pick(tenantId, answer, reply.products());
@@ -112,11 +116,17 @@ public class SocialBridge {
                 for (String part : MetaChannelService.chunks(message, net.maxLength())) ReplyTrace.outbound(platform, platform.toLowerCase(), "text", () -> net.send(row, sender, part, null));
         } catch (RuntimeException e) {
             log.warn("Could not send the {} reply: {}", platform, e.getMessage());
+            if (convId != null) timeline.event(tenantId, convId, "DELIVERY_FAILED", null, "{\"platform\":\"" + platform + "\",\"reason\":" + quote(e.getMessage()) + "}");   // the shop sees that the customer did NOT get this reply
         }
         for (var card : cards) {
             try { ReplyTrace.outbound(platform, platform.toLowerCase(), "card", () -> sendCard(net, row, sender, card)); }
             catch (RuntimeException e) { log.warn("Could not send a {} product card: {}", platform, e.getMessage()); }
         }
+    }
+
+    private static String quote(String s) {
+        String t = s == null ? "" : s.length() > 200 ? s.substring(0, 200) : s;
+        return "\"" + t.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ") + "\"";
     }
 
     private String sendCard(SocialChannel net, Map<String, Object> row, String to, ProductShare.Card card) {

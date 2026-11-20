@@ -299,7 +299,7 @@ public class ChatService {
     // ---- settings --------------------------------------------------------------------------------------------
 
     /** The channels the AI auto-reply can answer on: WhatsApp, Messenger (FACEBOOK), Instagram and the shop website. */
-    public static final List<String> AI_CHANNELS = List.of("WHATSAPP", "FACEBOOK", "INSTAGRAM", "TELEGRAM", "X", "WEB");
+    public static final List<String> AI_CHANNELS = List.of("WHATSAPP", "FACEBOOK", "INSTAGRAM", "TELEGRAM", "TIKTOK", "X", "WEB");
 
     public Map<String, Object> getSettings(UUID tenantId) {
         var r = jdbc.sql("SELECT enabled, tone, max_discount_pct, greeting, agent_name, agent_avatar, array_to_string(channels, ',') AS channels FROM chat.settings WHERE tenant_id = :t").param("t", tenantId).query().listOfRows().stream().findFirst();
@@ -348,7 +348,7 @@ public class ChatService {
         String ch = channels == null ? null : String.join(",", AI_CHANNELS.stream().filter(channels::contains).toList());
         jdbc.sql("""
                 INSERT INTO chat.settings (tenant_id, enabled, tone, max_discount_pct, greeting, channels)
-                VALUES (:t, coalesce(:e, TRUE), coalesce(:tone, 'FRIENDLY'), coalesce(:d, 0), :g, CASE WHEN :setc THEN CAST(string_to_array(:ch, ',') AS varchar(20)[]) ELSE '{WHATSAPP,FACEBOOK,INSTAGRAM,TELEGRAM,X,WEB}' END)
+                VALUES (:t, coalesce(:e, TRUE), coalesce(:tone, 'FRIENDLY'), coalesce(:d, 0), :g, CASE WHEN :setc THEN CAST(string_to_array(:ch, ',') AS varchar(20)[]) ELSE '{WHATSAPP,FACEBOOK,INSTAGRAM,TELEGRAM,TIKTOK,X,WEB}' END)
                 ON CONFLICT (tenant_id) DO UPDATE SET enabled = coalesce(:e, chat.settings.enabled), tone = coalesce(:tone, chat.settings.tone),
                   max_discount_pct = coalesce(:d, chat.settings.max_discount_pct), greeting = CASE WHEN :setg THEN :g ELSE chat.settings.greeting END,
                   channels = CASE WHEN :setc THEN CAST(string_to_array(:ch, ',') AS varchar(20)[]) ELSE chat.settings.channels END, updated_at = now()

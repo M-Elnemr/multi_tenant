@@ -96,6 +96,41 @@ export function XCard({ canManage }: { canManage: boolean }) {
   );
 }
 
+type TikTok = { available: boolean; webhookReady: boolean; channel?: { name?: string; status: string; connectionState: string; statusNote?: string | null } | null };
+
+/** TikTok Business Messaging (official API, direct): connect, and see exactly what is missing when the account is authorized but cannot message yet. */
+export function TikTokCard({ canManage }: { canManage: boolean }) {
+  const { t } = useI18n();
+  const { data, reload } = useApi<TikTok>("store/ai/tiktok");
+  const start = useAction(async () => { const r = await api<{ url: string }>("store/ai/tiktok/start", { body: {} }); window.location.assign(r.url); });
+  const recheck = useAction(async () => { await api("store/ai/tiktok/recheck", { body: {} }); await reload(); });
+  const ch = data?.channel;
+  const state = !data ? "loading" : !data.available ? "off" : !ch ? "new" : ch.connectionState;
+  const tone = state === "CONNECTED" ? "green" : state === "new" || state === "loading" ? undefined : state === "off" ? "amber" : "amber";
+  return (
+    <section className="space-y-3 rounded-[18px] bg-surface p-5 ring-1 ring-line">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[#111111] text-white"><ChannelIcon channel="TIKTOK" className="h-6 w-6 [&_svg]:text-white" /></span>
+        <div className="min-w-0 flex-1">
+          <h3 className="flex flex-wrap items-center gap-2 font-display text-[16px] font-semibold text-ink">{t("ai.platform.TIKTOK")} {state !== "loading" && state !== "new" && state !== "off" && <Badge tone={tone}>{t(`hub.tt.state.${state}`)}</Badge>}</h3>
+          <p className="text-[13px] text-muted">{state === "CONNECTED" ? t("hub.tt.on") : t("hub.tt.sub")}</p>
+        </div>
+        {canManage && data?.available && (state === "new" || state === "REAUTH_REQUIRED") && <Button loading={start.loading} onClick={() => void start.run()}>{state === "new" ? t("hub.tt.start") : t("hub.tt.reconnect")}</Button>}
+        {canManage && (state === "APPROVAL_REQUIRED" || state === "RESTRICTED" || state === "UNAVAILABLE" || state === "ERROR") && <Button variant="secondary" loading={recheck.loading} onClick={() => void recheck.run()}>{t("hub.tt.recheck")}</Button>}
+      </div>
+      {state === "off" && <Alert tone="amber">{t("hub.tt.off")}</Alert>}
+      {ch?.statusNote && state !== "CONNECTED" && <Alert tone={state === "RESTRICTED" ? "red" : "amber"}>{ch.statusNote}</Alert>}
+      <details className="group rounded-[12px] bg-canvas ring-1 ring-line">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-[13px] font-semibold text-ink">{t("hub.tt.reqTitle")}<Icon name="chevron" className="h-4 w-4 text-muted transition-transform group-open:rotate-90" /></summary>
+        <ul className="list-disc space-y-1.5 px-4 pb-4 ps-8 text-[12.5px] leading-relaxed text-muted">
+          <li>{t("hub.tt.req1")}</li><li>{t("hub.tt.req2")}</li><li>{t("hub.tt.req3")}</li><li>{t("hub.tt.req4")}</li><li>{t("hub.tt.req5")}</li><li>{t("hub.tt.req6")}</li>
+        </ul>
+      </details>
+      <ErrorText error={start.error ?? recheck.error} />
+    </section>
+  );
+}
+
 /** TikTok and Snapchat take a product feed address: elmanassa's feeds carry the shop's real prices and stock. */
 export function FeedCard() {
   const { t } = useI18n();
@@ -115,7 +150,7 @@ export function FeedCard() {
   );
 }
 
-const SOON = [["TIKTOK", "#111111"], ["SNAPCHAT", "#F5C400"]] as const;
+const SOON = [["SNAPCHAT", "#F5C400"]] as const;
 
 /** Honest status of the networks whose messaging and ads wait for each network's approval of our app. */
 export function SoonCards() {
@@ -143,6 +178,7 @@ export function ConnectHub({ canManage }: { canManage: boolean }) {
       <div><h2 className="font-display text-[18px] font-semibold text-ink">{t("hub.title")}</h2><p className="text-[13.5px] text-muted">{t("hub.sub")}</p></div>
       <FacebookCard canManage={canManage} />
       <div className="grid gap-4 lg:grid-cols-2"><TelegramCard canManage={canManage} /><XCard canManage={canManage} /></div>
+      <TikTokCard canManage={canManage} />
       <FeedCard />
       <SoonCards />
       <div className="pt-2"><h3 className="font-display text-[15px] font-semibold text-ink">{t("hub.stores.title")}</h3><p className="text-[13px] text-muted">{t("hub.stores.sub")} <Link href="/dashboard/marketing" className="font-semibold text-brand hover:underline">{t("hub.ads.link")}</Link></p></div>

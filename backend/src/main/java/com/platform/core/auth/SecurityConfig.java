@@ -60,7 +60,9 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/open/**").permitAll()   // the marketplace API; its account routes check their own X-Open-Token
                 .requestMatchers("/api/v1/chat/meta/webhook", "/api/v1/chat/meta/callback").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/chat/telegram/webhook").permitAll()
-                .requestMatchers("/api/v1/chat/x/webhook", "/api/v1/chat/x/callback").permitAll()   // X: CRC check, signed events, and the login coming back   // Telegram repeats our secret in a header; the controller checks it
+                .requestMatchers("/api/v1/chat/x/webhook", "/api/v1/chat/x/callback").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/chat/tiktok/webhook").permitAll()   // TikTok signs each delivery (Tiktok-Signature); the controller checks it
+                .requestMatchers(HttpMethod.GET, "/api/v1/chat/tiktok/callback").permitAll()   // the owner comes back from TikTok; the signed state says which shop   // X: CRC check, signed events, and the login coming back   // Telegram repeats our secret in a header; the controller checks it
                 .requestMatchers(HttpMethod.POST, "/api/v1/chat/evolution/webhook/*").permitAll()   // Evolution API calls this from inside our network; the secret in the path proves it
                 .requestMatchers(HttpMethod.GET, "/api/v1/clinic/public/**", "/api/v1/files/*/content").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/lawyer/public/**").permitAll()

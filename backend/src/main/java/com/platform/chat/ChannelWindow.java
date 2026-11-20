@@ -50,7 +50,11 @@ public class ChannelWindow {
                 if (!connected(tenantId, channel)) { w.put("canSend", false); w.put("mode", channel.equals("FACEBOOK") ? "MESSENGER" : "INSTAGRAM"); w.put("reason", "NOT_CONNECTED"); }
                 else timed(w, channel.equals("FACEBOOK") ? "MESSENGER" : "INSTAGRAM", lastCustomerAt);
             }
-            case "TELEGRAM", "TIKTOK", "X", "SNAPCHAT" -> {
+            case "TIKTOK" -> {   // 48 hours from the customer's message (and TikTok's message counts, checked again when sending)
+                if (!connected(tenantId, channel)) { w.put("canSend", false); w.put("mode", channel); w.put("reason", "NOT_CONNECTED"); }
+                else timedFor(w, channel, lastCustomerAt, 47);
+            }
+            case "TELEGRAM", "X", "SNAPCHAT" -> {
                 if (!connected(tenantId, channel)) { w.put("canSend", false); w.put("mode", channel); w.put("reason", "NOT_CONNECTED"); }
                 else timed(w, channel, lastCustomerAt);
             }
@@ -62,10 +66,12 @@ public class ChannelWindow {
     /** True when a message can go out right now on that chat (the follow-up job's last check before sending). */
     public boolean canSend(UUID tenantId, String channel, String externalId, Instant lastCustomerAt) { return Boolean.TRUE.equals(of(tenantId, channel, externalId, lastCustomerAt).get("canSend")); }
 
-    private void timed(Map<String, Object> w, String mode, Instant lastCustomerAt) {
+    private void timed(Map<String, Object> w, String mode, Instant lastCustomerAt) { timedFor(w, mode, lastCustomerAt, SEND_HOURS); }
+
+    private void timedFor(Map<String, Object> w, String mode, Instant lastCustomerAt, int hours) {
         w.put("mode", mode);
         if (lastCustomerAt == null) { w.put("canSend", false); w.put("reason", "CLOSED"); return; }
-        Instant ends = lastCustomerAt.plus(SEND_HOURS, ChronoUnit.HOURS);
+        Instant ends = lastCustomerAt.plus(hours, ChronoUnit.HOURS);
         boolean open = Instant.now().isBefore(ends);
         w.put("canSend", open);
         w.put("endsAt", ends.toString());
