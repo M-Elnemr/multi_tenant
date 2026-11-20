@@ -101,19 +101,35 @@ public class ChatController {
         return h;
     }
 
-    /** Message limits of the public chat (30 per 10 minutes per chat, 300 per 10 minutes per address, 300 per day per chat, 20 photo/voice reads per 10 minutes per chat). Off by the owner's decision (2026-11-18); the general 600 requests per minute per address stays. Set app.chat.rate-limit.enabled=true to bring them back. */
+    /**
+     * Public chat limits, three modes ({@code app.chat.rate-limit.mode}; the older {@code app.chat.rate-limit.enabled=true} still means STRICT). OFF is the owner's decision of 2026-11-18 and the default.
+     * ABUSE is the recommended production setting: ceilings no real customer reaches (a person types well under 100 messages in 10 minutes) but that stop a script from spending the shop's points:
+     * per chat 100 / 10 min, per address 1,000 / 10 min (many mobile customers share one carrier address), per shop 4,000 / hour on the public chat, and the same text 6 times in 2 minutes in one chat.
+     * STRICT is the old 30 / 300 / 300-a-day. A refused message is a 429 before any model call, so nothing is charged. The general 600 requests per minute per address always applies.
+     */
     @org.springframework.beans.factory.annotation.Value("${app.chat.rate-limit.enabled:false}")
     private boolean rateLimitEnabled;
+    @org.springframework.beans.factory.annotation.Value("${app.chat.rate-limit.mode:off}")
+    private String rateLimitMode;
 
-    private void messageLimits(String conversationId, HttpServletRequest req) {
-        if (!rateLimitEnabled) return;
-        throttle.check("chat-conv10|" + conversationId, 30, Duration.ofMinutes(10));
-        throttle.check("chat-ip|" + ClientInfo.ip(req), 300, Duration.ofMinutes(10));
-        throttle.check("chat-conv|" + conversationId, 300, Duration.ofDays(1));
+    private String limitMode() { return rateLimitEnabled ? "strict" : rateLimitMode == null ? "off" : rateLimitMode.trim().toLowerCase(java.util.Locale.ROOT); }
+
+    private void messageLimits(UUID tenantId, String conversationId, HttpServletRequest req, String text) {
+        String mode = limitMode();
+        if (mode.equals("strict")) {
+            throttle.check("chat-conv10|" + conversationId, 30, Duration.ofMinutes(10));
+            throttle.check("chat-ip|" + ClientInfo.ip(req), 300, Duration.ofMinutes(10));
+            throttle.check("chat-conv|" + conversationId, 300, Duration.ofDays(1));
+        } else if (mode.equals("abuse")) {
+            throttle.check("chat-conv10|" + conversationId, 100, Duration.ofMinutes(10));
+            throttle.check("chat-ip|" + ClientInfo.ip(req), 1000, Duration.ofMinutes(10));
+            throttle.check("chat-tenant|" + tenantId, 4000, Duration.ofHours(1));
+            if (text != null && !text.isBlank()) throttle.check("chat-dup|" + conversationId + "|" + Integer.toHexString(text.trim().toLowerCase(java.util.Locale.ROOT).hashCode()), 6, Duration.ofMinutes(2));
+        }
     }
 
     private void mediaLimit(String conversationId) {
-        if (rateLimitEnabled) throttle.check("chat-media|" + conversationId, 20, Duration.ofMinutes(10));   // each read is a model call
+        if (!limitMode().equals("off")) throttle.check("chat-media|" + conversationId, 20, Duration.ofMinutes(10));   // each read is a model call
     }
 
     @PostMapping("/api/v1/shop/chat")
@@ -122,7 +138,7 @@ public class ChatController {
         if (r.conversationId() == null || !CONV_ID.matcher(r.conversationId()).matches()) throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid conversation");
         if (!chat.enabled(t, "WEB")) throw new BusinessException(HttpStatus.SERVICE_UNAVAILABLE, "CHAT_DISABLED", "Live chat is not available right now");
         // per chat: nobody types more than 30 messages in 10 minutes; per address a much higher ceiling, because many mobile customers share one carrier address
-        messageLimits(r.conversationId(), req);
+        messageLimits(t, r.conversationId(), req, r.message());
         var in = r.replyToMessageId() == null ? ChatService.ReplyInput.NONE : new ChatService.ReplyInput(List.of(ReplyRef.ofId(r.replyToMessageId())), List.of());
         return view(chat.reply(t, "WEB", r.conversationId(), clientOrNull(a), r.message(), null, in));
     }
@@ -142,7 +158,7 @@ public class ChatController {
         if (kind == null) throw BusinessException.badRequest("VALIDATION_ERROR", "Send a photo or a voice note");
         if (file.getSize() > (kind == MediaReader.Kind.IMAGE ? QwenMediaReader.MAX_IMAGE : QwenMediaReader.MAX_AUDIO)) throw BusinessException.badRequest("VALIDATION_ERROR", "The file is too large");
         if (!media.enabled() || !chat.hasPoints(t)) throw new BusinessException(HttpStatus.SERVICE_UNAVAILABLE, "MEDIA_UNAVAILABLE", "Photos and voice notes are not available right now");
-        messageLimits(conversationId, req);
+        messageLimits(t, conversationId, req, null);
         mediaLimit(conversationId);
         byte[] bytes = file.getBytes();
         String caption = message == null || message.isBlank() ? null : message.trim();

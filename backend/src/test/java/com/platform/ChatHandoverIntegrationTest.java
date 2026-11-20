@@ -100,4 +100,32 @@ class ChatHandoverIntegrationTest extends IntegrationTestBase {
             org.springframework.test.util.ReflectionTestUtils.setField(chatController, "rateLimitEnabled", false);
         }
     }
+
+    /** The recommended production mode: real conversations (long, repeated «تمام», many customers on one address) pass; a script repeating one text or running one chat away is refused with a 429 before any model call. */
+    @Test
+    void abuseModeLetsRealCustomersThroughAndStopsScriptsBeforeAnyModelCall() throws Exception {
+        Tenant t = onboard("STORE");
+        org.springframework.test.util.ReflectionTestUtils.setField(chatController, "rateLimitMode", "abuse");
+        try {
+            String conv = UUID.randomUUID().toString();
+            for (int i = 0; i < 40; i++) {   // a long, real chat with distinct messages: nothing refused
+                FakeAiProvider.SCRIPT.add(turns -> Turn.model("أهلاً"));
+                onHost(t.host(), null, "POST", "/api/v1/shop/chat", "{\"conversationId\":\"%s\",\"message\":\"رسالة %d\"}".formatted(conv, i)).andExpect(status().isOk());
+            }
+            for (int i = 0; i < 3; i++) {   // «تمام» a few times is normal
+                FakeAiProvider.SCRIPT.add(turns -> Turn.model("أهلاً"));
+                onHost(t.host(), null, "POST", "/api/v1/shop/chat", "{\"conversationId\":\"%s\",\"message\":\"تمام\"}".formatted(conv)).andExpect(status().isOk());
+            }
+            int refused = 0, calls = FakeAiProvider.SCRIPT.size();
+            String flood = UUID.randomUUID().toString();
+            for (int i = 0; i < 12; i++) {   // the same text again and again
+                FakeAiProvider.SCRIPT.add(turns -> Turn.model("أهلاً"));
+                if (onHost(t.host(), null, "POST", "/api/v1/shop/chat", "{\"conversationId\":\"%s\",\"message\":\"اشتري الان\"}".formatted(flood)).andReturn().getResponse().getStatus() == 429) refused++;
+            }
+            assertThat(refused).as("the same text beyond 6 in two minutes").isEqualTo(6);
+            assertThat(FakeAiProvider.SCRIPT.size()).as("a refused message never reaches the model").isGreaterThanOrEqualTo(calls + 6);
+        } finally {
+            org.springframework.test.util.ReflectionTestUtils.setField(chatController, "rateLimitMode", "off");
+        }
+    }
 }
