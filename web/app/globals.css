@@ -359,3 +359,8 @@ img { -webkit-user-drag: none; }
 .price-thumb::-moz-range-thumb { pointer-events: auto; width: 20px; height: 20px; border-radius: 999px; background: #fff; border: 2px solid var(--accent, var(--brand)); box-shadow: 0 2px 6px rgb(0 0 0 / .18); cursor: grab; }
 .price-thumb:focus-visible::-webkit-slider-thumb { outline: 3px solid color-mix(in srgb, var(--accent, var(--brand)) 35%, transparent); outline-offset: 2px; }
 .price-thumb::-webkit-slider-runnable-track { background: transparent; }
+
+/* Touch screens: the small native checkboxes and radios (13px) are enlarged so a thumb can hit them (found in the phone-width audit of the dashboard settings). */
+@media (pointer: coarse) {
+  input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; flex-shrink: 0; }
+}

@@ -31,27 +31,27 @@ export function ShopFooter({ p, name, logoUrl, branches, t, poweredLabel, powere
         <div>
           <h3 className="mb-4 text-sm font-extrabold uppercase tracking-wider text-white">{t("footer.shop")}</h3>
           <ul className="space-y-2.5 text-sm text-[#b9b1a6]">
-            <li><Link href="/products" className="hover:text-white">{t("shop.allProducts")}</Link></li>
-            <li><Link href="/products?onSale=true" className="hover:text-white">{t("shop.offers")}</Link></li>
-            <li><Link href="/branches" className="hover:text-white">{t("shop.branches")}</Link></li>
-            {p.bookingEnabled && <li><Link href="/book" className="hover:text-white">{t("book.link")}</Link></li>}
-            <li><Link href="/track" className="hover:text-white">{t("shop.trackOrder")}</Link></li>
-            <li><Link href="/account" className="hover:text-white">{t("nav.account")}</Link></li>
+            <li><Link href="/products" className="inline-flex min-h-[44px] items-center hover:text-white sm:min-h-0">{t("shop.allProducts")}</Link></li>
+            <li><Link href="/products?onSale=true" className="inline-flex min-h-[44px] items-center hover:text-white sm:min-h-0">{t("shop.offers")}</Link></li>
+            <li><Link href="/branches" className="inline-flex min-h-[44px] items-center hover:text-white sm:min-h-0">{t("shop.branches")}</Link></li>
+            {p.bookingEnabled && <li><Link href="/book" className="inline-flex min-h-[44px] items-center hover:text-white sm:min-h-0">{t("book.link")}</Link></li>}
+            <li><Link href="/track" className="inline-flex min-h-[44px] items-center hover:text-white sm:min-h-0">{t("shop.trackOrder")}</Link></li>
+            <li><Link href="/account" className="inline-flex min-h-[44px] items-center hover:text-white sm:min-h-0">{t("nav.account")}</Link></li>
           </ul>
           <h3 className="mb-4 mt-8 text-sm font-extrabold uppercase tracking-wider text-white">{t("footer.help")}</h3>
           <ul className="space-y-2.5 text-sm text-[#b9b1a6]">
-            <li><Link href="/p/shipping" className="hover:text-white">{t("policy.shipping")}</Link></li>
-            <li><Link href="/p/returns" className="hover:text-white">{t("policy.returns")}</Link></li>
-            <li><Link href="/p/privacy" className="hover:text-white">{t("policy.privacy")}</Link></li>
-            <li><Link href="/p/terms" className="hover:text-white">{t("policy.terms")}</Link></li>
+            <li><Link href="/p/shipping" className="inline-flex min-h-[44px] items-center hover:text-white sm:min-h-0">{t("policy.shipping")}</Link></li>
+            <li><Link href="/p/returns" className="inline-flex min-h-[44px] items-center hover:text-white sm:min-h-0">{t("policy.returns")}</Link></li>
+            <li><Link href="/p/privacy" className="inline-flex min-h-[44px] items-center hover:text-white sm:min-h-0">{t("policy.privacy")}</Link></li>
+            <li><Link href="/p/terms" className="inline-flex min-h-[44px] items-center hover:text-white sm:min-h-0">{t("policy.terms")}</Link></li>
           </ul>
         </div>
         <div>
           <h3 className="mb-4 text-sm font-extrabold uppercase tracking-wider text-white">{t("footer.contact")}</h3>
           <ul className="space-y-3 text-sm text-[#b9b1a6]">
             {p.addressText && <li className="flex gap-2"><span>📍</span><span>{p.addressText}{p.mapsUrl && <> · <a href={p.mapsUrl} target="_blank" rel="noopener noreferrer" className="font-semibold text-white underline">{t("shop.openMap")}</a></>}</span></li>}
-            {phones.map((ph) => <li key={ph} className="flex gap-2"><span>📞</span><a href={`tel:${ph}`} dir="ltr" className="hover:text-white">{ph}</a></li>)}
-            {p.supportEmail && <li className="flex gap-2"><span>✉️</span><a href={`mailto:${p.supportEmail}`} className="break-all hover:text-white">{p.supportEmail}</a></li>}
+            {phones.map((ph) => <li key={ph} className="flex gap-2"><span>📞</span><a href={`tel:${ph}`} dir="ltr" className="inline-flex min-h-[44px] items-center hover:text-white sm:min-h-0">{ph}</a></li>)}
+            {p.supportEmail && <li className="flex gap-2"><span>✉️</span><a href={`mailto:${p.supportEmail}`} className="inline-flex min-h-[44px] items-center break-all hover:text-white sm:min-h-0">{p.supportEmail}</a></li>}
           </ul>
         </div>
         <div>

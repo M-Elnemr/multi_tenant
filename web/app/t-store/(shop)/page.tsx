@@ -24,7 +24,7 @@ function Section({ title, eyebrow, href, more, children }: { title: string; eyeb
     <section className="s-container s-sec mt-14 sm:mt-20">
       <Reveal className="s-sec-head mb-6 flex items-end justify-between gap-4">
         <div>{eyebrow && <p className="s-eyebrow mb-1">{eyebrow}</p>}<h2 className="s-section-title">{title}</h2></div>
-        {href && more && <Link href={href} className="s-more group inline-flex shrink-0 items-center gap-1.5 text-sm font-extrabold" style={{ color: "var(--brand)" }}>{more}<Icon name="arrow" className="h-4 w-4 transition-transform group-hover:translate-x-1 flip-rtl rtl:group-hover:-translate-x-1" /></Link>}
+        {href && more && <Link href={href} className="s-more group inline-flex min-h-[44px] shrink-0 items-center gap-1.5 text-sm font-extrabold" style={{ color: "var(--brand)" }}>{more}<Icon name="arrow" className="h-4 w-4 transition-transform group-hover:translate-x-1 flip-rtl rtl:group-hover:-translate-x-1" /></Link>}
       </Reveal>
       {children}
     </section>

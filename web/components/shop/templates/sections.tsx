@@ -85,7 +85,7 @@ export function Hero({ kind, p, slides, featured, cats, offers, t, locale }: Her
             <Reveal className="text-center md:px-6">
               <p className="s-eyebrow mb-4">{t("shop.handpicked")}</p>
               <p className="s-display text-[1.7rem] leading-snug sm:text-[2.2rem]">{blurb ? `“${blurb.slice(0, 140)}${blurb.length > 140 ? "…" : ""}”` : t("shop.editorialLine")}</p>
-              <Link href="/products" className="mt-6 inline-block text-sm font-semibold underline underline-offset-8">{t("shop.viewAll")}</Link>
+              <Link href="/products" className="mt-6 inline-flex min-h-[44px] items-center text-sm font-semibold underline underline-offset-8">{t("shop.viewAll")}</Link>
             </Reveal>
             <Reveal><EditorialFigure x={featured[0]} locale={locale} /></Reveal>
           </div>
