@@ -3,6 +3,7 @@ import "./shop.css";
 import "./templates.css";
 import "./templates-v2.css";
 import "./service-templates.css";
+import "./small-templates.css";
 import { templateFontVars } from "@/components/shop/templates/fonts";
 import { PreviewBar } from "@/components/shop/templates/preview-bar";
 import { PreviewLinks } from "@/components/shop/templates/preview-links";

@@ -1,0 +1,56 @@
+/* Small-catalog designs (a shop with 1-3 products): the product is the page. Presentation only, scoped to .shop[data-template="..."]; markup in components/shop/small/small-home.tsx. */
+
+/* 1. SOLO - one product, centred, white and black */
+.shop[data-template="solo"] { --s-bg: #ffffff; --s-card: #ffffff; --s-ink: #111111; --s-mute: #6e6e6e; --s-line: #ececec; --s-soft: #f5f5f5; --brand: #111111; --s-radius: 4px; --s-shadow: none; --s-shadow-lg: 0 40px 80px -40px rgb(0 0 0 / .35); }
+.shop[data-template="solo"] h1, .shop[data-template="solo"] h2 { font-family: var(--font-inter-tight), var(--f-plex), sans-serif; font-weight: 800; letter-spacing: -0.045em; }
+.shop[data-template="solo"] .s-btn { border-radius: 999px; background: #111; }
+
+/* 2. VITRINE - a shop window: warm paper, a thick frame around the photo */
+.shop[data-template="vitrine"] { --s-bg: #f7f3ee; --s-card: #fffdf9; --s-ink: #25201b; --s-mute: #8a7d6e; --s-line: #e6dccf; --s-soft: #efe6da; --brand: #a78358; --s-radius: 6px; --s-shadow: 0 20px 50px -30px rgb(60 40 20 / .35); --s-shadow-lg: 0 40px 80px -40px rgb(60 40 20 / .45); }
+.shop[data-template="vitrine"] h1, .shop[data-template="vitrine"] h2 { font-family: var(--f-playfair), var(--f-amiri), serif; font-weight: 700; }
+.shop[data-template="vitrine"] .sm-frame { border: 14px solid #fffdf9; outline: 1px solid #d9cbb7; box-shadow: var(--s-shadow-lg); }
+
+/* 3. CAPSULE - up to three rounded cards, soft indigo */
+.shop[data-template="capsule"] { --s-bg: #f4f6ff; --s-card: #ffffff; --s-ink: #17193a; --s-mute: #6c70a0; --s-line: #dfe3fb; --s-soft: #e9ecff; --brand: #5b5bf0; --s-radius: 28px; --s-shadow: 0 18px 44px -28px rgb(91 91 240 / .5); --s-shadow-lg: 0 40px 80px -40px rgb(91 91 240 / .5); }
+.shop[data-template="capsule"] h1, .shop[data-template="capsule"] h2 { font-family: var(--f-baloo), var(--f-tajawal), sans-serif; font-weight: 800; }
+.shop[data-template="capsule"] .sm-capsule { box-shadow: var(--s-shadow); transition: transform .3s ease; }
+.shop[data-template="capsule"] .sm-capsule:hover { transform: translateY(-6px); }
+
+/* 4. MONOLITH - black, huge, mint accent, for tech */
+.shop[data-template="monolith"] { --s-bg: #08090c; --s-card: #101218; --s-ink: #f2f4f8; --s-mute: #8b93a5; --s-line: #1c202b; --s-soft: #141720; --brand: #7cf2d2; --s-radius: 10px; --s-shadow: none; --s-shadow-lg: 0 40px 100px -40px rgb(124 242 210 / .25); color-scheme: dark; }
+.shop[data-template="monolith"] h1, .shop[data-template="monolith"] h2 { font-family: var(--f-plex), var(--font-inter-tight), sans-serif; font-weight: 700; letter-spacing: -0.03em; }
+.shop[data-template="monolith"] .s-btn { background: var(--brand); color: #04120e; }
+.shop[data-template="monolith"] .sm-stage { background: radial-gradient(60% 60% at 50% 40%, rgb(124 242 210 / .18), transparent 70%), #101218; }
+
+/* 5. PEDESTAL - the product on a pedestal under a warm light */
+.shop[data-template="pedestal"] { --s-bg: #fdf2ee; --s-card: #fffaf8; --s-ink: #3a2019; --s-mute: #9a6f63; --s-line: #f1d8cf; --s-soft: #f9e2da; --brand: #e0765a; --s-radius: 24px; --s-shadow: 0 18px 44px -28px rgb(224 118 90 / .5); --s-shadow-lg: 0 40px 80px -40px rgb(224 118 90 / .5); }
+.shop[data-template="pedestal"] h1, .shop[data-template="pedestal"] h2 { font-family: var(--f-cormorant), var(--f-amiri), serif; font-weight: 600; }
+.shop[data-template="pedestal"] .sm-stage { background: radial-gradient(closest-side at 50% 35%, #fff, #f9e2da 70%); border-radius: 50% 50% 24px 24px / 38% 38% 24px 24px; box-shadow: 0 60px 40px -40px rgb(224 118 90 / .45); }
+
+/* 6. SPOTLIGHT - dark split with a yellow accent */
+.shop[data-template="spotlight"] { --s-bg: #111318; --s-card: #181b22; --s-ink: #eef0f5; --s-mute: #9199a9; --s-line: #262a34; --s-soft: #1d2029; --brand: #ffcf3f; --s-radius: 14px; --s-shadow: none; --s-shadow-lg: 0 40px 90px -40px rgb(255 207 63 / .2); color-scheme: dark; }
+.shop[data-template="spotlight"] h1, .shop[data-template="spotlight"] h2 { font-family: var(--f-tajawal), var(--font-inter-tight), sans-serif; font-weight: 800; }
+.shop[data-template="spotlight"] .s-btn { background: var(--brand); color: #1b1500; }
+.shop[data-template="spotlight"] .sm-frame { box-shadow: 0 0 0 1px #2e3340, 0 60px 120px -50px rgb(255 207 63 / .25); }
+
+/* 7. LAUNCH - a new-product launch: loud orange on cream */
+.shop[data-template="launch"] { --s-bg: #fff7ef; --s-card: #ffffff; --s-ink: #2a1608; --s-mute: #8d6a4b; --s-line: #f3ddc7; --s-soft: #ffe9d4; --brand: #ff5a1f; --s-radius: 18px; --s-shadow: 0 18px 44px -28px rgb(255 90 31 / .5); --s-shadow-lg: 0 40px 80px -40px rgb(255 90 31 / .5); }
+.shop[data-template="launch"] h1, .shop[data-template="launch"] h2 { font-family: var(--f-archivo), var(--f-lalezar), sans-serif; font-weight: 400; text-transform: uppercase; letter-spacing: -0.01em; }
+html[lang="ar"] .shop[data-template="launch"] h1, html[lang="ar"] .shop[data-template="launch"] h2 { text-transform: none; font-family: var(--f-lalezar), sans-serif; }
+.shop[data-template="launch"] .s-eyebrow { background: var(--brand); color: #fff; border-radius: 999px; padding: .2rem .8rem; display: inline-block; }
+
+/* 8. SIGNATURE - editorial, quiet, serif, brass line */
+.shop[data-template="signature"] { --s-bg: #fbfaf7; --s-card: #ffffff; --s-ink: #1a1a1a; --s-mute: #77736b; --s-line: #e9e5dc; --s-soft: #f3efe6; --brand: #8b6f47; --s-radius: 2px; --s-shadow: none; --s-shadow-lg: 0 34px 60px -34px rgb(0 0 0 / .3); }
+.shop[data-template="signature"] h1, .shop[data-template="signature"] h2 { font-family: var(--f-playfair), var(--f-amiri), serif; font-weight: 700; letter-spacing: -0.01em; }
+.shop[data-template="signature"] .s-eyebrow { border-bottom: 1px solid var(--brand); padding-bottom: .35rem; display: inline-block; }
+
+/* 9. CURATED - a numbered list of the few things sold, forest green */
+.shop[data-template="curated"] { --s-bg: #f5f5f2; --s-card: #ffffff; --s-ink: #1d2420; --s-mute: #667169; --s-line: #dfe3dc; --s-soft: #e9ede6; --brand: #2f6f55; --s-radius: 10px; --s-shadow: none; --s-shadow-lg: 0 30px 60px -34px rgb(29 36 32 / .35); }
+.shop[data-template="curated"] h1, .shop[data-template="curated"] h2 { font-family: var(--f-messiri), var(--f-tajawal), sans-serif; font-weight: 700; }
+.shop[data-template="curated"] .sm-row { transition: padding .25s ease; }
+.shop[data-template="curated"] .sm-row:hover { padding-inline-start: 1rem; }
+
+/* 10. ORIGIN - story first, olive and sand, for food and natural products */
+.shop[data-template="origin"] { --s-bg: #f6efe4; --s-card: #fffaf0; --s-ink: #2b2a1f; --s-mute: #85805f; --s-line: #e6dcc5; --s-soft: #eee3cb; --brand: #6b7d3c; --s-radius: 20px; --s-shadow: 0 16px 40px -28px rgb(70 70 20 / .45); --s-shadow-lg: 0 40px 80px -40px rgb(70 70 20 / .45); }
+.shop[data-template="origin"] h1, .shop[data-template="origin"] h2 { font-family: var(--f-aref), var(--f-amiri), serif; font-weight: 700; }
+.shop[data-template="origin"] .sm-frame { border-radius: 999px 999px 20px 20px; }
