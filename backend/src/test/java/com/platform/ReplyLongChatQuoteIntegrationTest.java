@@ -285,7 +285,7 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
         String text = JsonPath.read(say(t, ext, "فيه كارت شاشة؟", null), "$.reply");
         assertThat(text).as(text).doesNotContain("مدمج").contains("مش مكتوبة");
         // seen on the final build: «الكارت مدمج مع المعالج، مفيش كارت شاشة منفصل» (no «شاشة» after the first word) and «كرت شاشة منفصل» are the same claim
-        for (String claim : new String[]{"الكارت مدمج مع المعالج يا فندم، مفيش كارت شاشة منفصل.", "ليه كرت شاشة منفصل يا فندم، الكرت مدمج مع المعالج.", "البيانات بتاعته مش بتذكر كارت شاشة مستقل يا فندم، يعني معالجه كور i5 الجيل 13 فيه جرافيك مدمج (بيكفي شغل، تصفح وأغلب الشغل المكتبي). لو محتاج جيمينج ثقيل قولي وأشوفلك بدائل. تحب تحجز ده ولا تدور على حاجة أقوى؟"}) {
+        for (String claim : new String[]{"الكارت مدمج مع المعالج يا فندم، مفيش كارت شاشة منفصل.", "ليه كرت شاشة منفصل يا فندم، الكرت مدمج مع المعالج.", "البيانات بتاعته مش بتذكر كارت شاشة مستقل يا فندم، يعني معالجه كور i5 الجيل 13 فيه جرافيك مدمج (بيكفي شغل، تصفح وأغلب الشغل المكتبي). لو محتاج جيمينج ثقيل قولي وأشوفلك بدائل. تحب تحجز ده ولا تدور على حاجة أقوى؟", "الجهاز مفيش كارت شاشة منفصل يا فندم، لكن معاه كارت فيديو مدمج Intel® Iris® Xe Graphics — بيشتغل كويس في الشغل اليومي والأفلام والسيرفر الخفيف 👌 تحب أحجزهولك؟"}) {
             FakeAiProvider.SCRIPT.clear();
             FakeAiProvider.SCRIPT.add(turns -> Turn.model(claim));
             String said = JsonPath.read(say(t, ext, "فيه كارت شاشة؟", null), "$.reply");
@@ -419,6 +419,27 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
         seed(conv, "assistant", open + " بـ 20999 جنيه، فضي.");
         String reply = stuckModel(t, ext, "والجديد بكام وضمانه؟", base + " عندنا حالياً متوفر منه النسخة الأوبن بوكس بس يا فندم، بـ 20999 جنيه.");
         assertThat(reply).as(reply).contains("24999").doesNotContain("بس يا فندم");
+    }
+
+    /** Seen in the open-box run on 84c6cdd: «فاضل كام من الأوبن بوكس؟» was answered «يبدو إن الرسالة بتاعتك وصلت فاضية»: a reply that says the message was empty, to a message that was not, is never sent. */
+    @Test
+    void aReplyThatSaysTheCustomersMessageWasEmptyIsNeverSent() throws Exception {
+        Tenant t = onboard("STORE");
+        UUID tenant = tenant(t);
+        String tag = uniq();
+        String base = "لاب توب زينترا " + tag, open = base + " أوبن بوكس";
+        product(t, base, 24999, "فضي", "رمادي");
+        productWas(t, open, 20999, 24999, "فضي");
+        String ext = UUID.randomUUID().toString();
+        answer("أهلا");
+        say(t, ext, "السلام عليكم", null);
+        UUID conv = conv(tenant, ext);
+        seed(conv, "user", "الأوبن بوكس لسه متاح؟");
+        seed(conv, "assistant", open + " بـ 20999 جنيه، فضي.");
+        String reply = stuckModel(t, ext, "فاضل كام من الأوبن بوكس؟", "يبدو إن الرسالة بتاعتك وصلت فاضية يا فندم 😊 تحب تعرف حاجة عن الأوبن بوكس؟");
+        assertThat(reply).as(reply).doesNotContain("فاضية").contains("20999");   // the product's own data answers
+        String other = stuckModel(t, UUID.randomUUID().toString(), "كلمني بعد شوية", "رسالتك وصلت فاضية يا فندم");
+        assertThat(other).as(other).doesNotContain("فاضية").contains("توضحلي");
     }
 
     /** Seen in the open-box run on 1948bcf (after 50 messages): «والجديد بكام وضمانه؟» was answered «الأوبن بوكس بـ 20,999 بدل 24,999، وضمانه 6 شهور»: 24,999, the open-box laptop's was-price, is also the new laptop's price and made the answer look like the new one's. */

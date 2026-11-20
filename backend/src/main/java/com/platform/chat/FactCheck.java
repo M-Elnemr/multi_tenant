@@ -2061,6 +2061,14 @@ final class FactCheck {
      * NEW version's graphics when the chat is about its open-box one, whose data has none. A spec (number, warranty or graphics type) of a sentence that names nothing but that product or a shorter form of
      * its name must be in that product's own data; else the sentence is taken out and the detail is said to be unlisted. Null when fine, when the customer asks about the new one or both, or when unknown.
      */
+    /** The part of a sentence before its closing question (cut at the last dash or emoji before it); the whole sentence when it asks nothing; empty for a pure question. */
+    private static String statementPart(String se) {
+        if (!se.contains("؟") && !se.contains("?")) return se;
+        int cut = Math.max(se.lastIndexOf('—'), se.lastIndexOf('–'));
+        for (int i = se.length() - 1; i >= 0; i--) if (Character.isLowSurrogate(se.charAt(i))) { cut = Math.max(cut, i); break; }
+        return cut > 0 ? se.substring(0, cut) : "";
+    }
+
     static String focusSpec(String customer, String answer, Shop shop, String focus) {
         if (customer == null || answer == null || focus == null || BOTH_VERSIONS.matcher(light(customer)).find()) return null;
         String facts = shop.facts(focus);
@@ -2080,8 +2088,8 @@ final class FactCheck {
                 if (other.isBlank() || !fname.contains(other)) { ownSubject = false; break; }   // a different product: its own data is its business
             }
             if (!ownSubject) continue;
-            String se = la.substring(sn[0], sn[1]);
-            if (se.contains("؟") || se.contains("?")) continue;
+            String se = statementPart(la.substring(sn[0], sn[1]));   // «معاه كارت فيديو مدمج Iris Xe — بيشتغل كويس 👌 تحب أحجزهولك؟» is one sentence to the splitter: the question at its end must not hide the claim before it
+            if (se.isBlank()) continue;
             // a kind of graphics said with a «مش» next to it («كارت الشاشة مدمج، مش منفصل») is still said
             String bad = GRAPHICS_CLAIM.matcher(se).find() && !GRAPHICS_CLAIM.matcher(lf).find() ? "graphics" : null;
             if (bad == null && (NOT_A_SPEC.matcher(se).find() || NEG_STRICT.matcher(se).find() || DENY.matcher(se).find() || WITHOUT.matcher(se).find() || CONDITIONAL.matcher(se).find()

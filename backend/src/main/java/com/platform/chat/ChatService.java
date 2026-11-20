@@ -1077,6 +1077,8 @@ public class ChatService {
      * The customer asks about one version of a model that is sold new and open-box (named, or the chat's product), the question is not a comparison, and the reply gives prices of the OTHER version
      * and none of the asked one: the asked version is answered with the other's data. Returns the asked product's slug, or null.
      */
+    private static final Pattern EMPTY_CLAIM = Pattern.compile("(?:الرسال[ةه]|رسالت(?:ك|كم)|رسالة\\s+حضرتك)[^.؟?\\n]{0,30}(?:فاضي[ةه]|فارغ[ةه])|(?:your|the)\\s+message\\s+(?:came|arrived|was|is|seems|looks)[^.?\\n]{0,15}(?:empty|blank)", Pattern.CASE_INSENSITIVE);
+
     private static final Pattern WAS_PRICE = Pattern.compile("(?:بدل(?:اً|ا)?(?:\\s+من)?|كان(?:ت)?|قبل(?:\\s+الخصم)?|instead\\s+of|was)\\s*[\\d٠-٩][\\d٠-٩,٬.]*(?:\\s*(?:جنيه|ج\\.?\\s?م\\.?|EGP|LE))?", Pattern.CASE_INSENSITIVE);
 
     static String otherVersionAnswered(String last, String answer, FactCheck.Shop shop) {
@@ -1834,6 +1836,15 @@ public class ChatService {
             FactCheck.Shop shopData = shopView(ctx.tenantId());
             List<String> touched = touchedOrBefore(ctx, shopData);
             out = factsFixed(last, out, shopData, touched);
+            if (last != null && last.strip().length() >= 3 && EMPTY_CLAIM.matcher(out).find()) {   // «يبدو إن الرسالة بتاعتك وصلت فاضية» to a customer who wrote «فاضل كام من الأوبن بوكس؟»: the message was read, the reply is not about it
+                log.warn("Critical gate: the reply says the customer's message was empty (conversation {})", ctx.conversationId());
+                events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:FINAL_EMPTY_CLAIM", null, null);
+                ReplyTrace.checkProblems(Set.of("FINAL_EMPTY_CLAIM"));
+                var f = FOCUS_SLUGS.get();
+                List<String> about = f != null && !f.isEmpty() ? f : touched;
+                if (!about.isEmpty() && PRODUCT_QUESTION.matcher(FactCheck.light(last)).find()) return verifiedReply(ctx, last, about);
+                return english(out) ? "Sorry, could you tell me again what you need?" : "معلش يا فندم، ممكن توضحلي تاني محتاج إيه؟ 🙏";
+            }
             var chatFocus = FOCUS_SLUGS.get();
             if (chatFocus != null && chatFocus.size() == 1) {   // a spec of the chat's product that is in the other version's data, not its own
                 String fixed = FactCheck.focusSpec(last, out, shopData, chatFocus.get(0));
