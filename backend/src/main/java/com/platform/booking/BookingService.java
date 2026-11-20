@@ -40,10 +40,24 @@ public class BookingService {
     private static final String ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     static final String LIVE = "('PENDING','CONFIRMED')";
 
-    public record ServiceReq(String name, String description, Integer durationMinutes, Integer bufferMinutes, Long priceMinor, Boolean active, Integer sortOrder) {}
+    public record ServiceReq(String name, String description, Integer durationMinutes, Integer bufferMinutes, Long priceMinor, Boolean active, Integer sortOrder,
+                             UUID categoryId, String shortDescription, Long priceBeforeMinor, Integer maxConcurrent, String locationMode, String serviceArea, String instructions, String cancellationPolicy,
+                             UUID imageFileId, List<UUID> gallery, List<Map<String, Object>> requiredFields) {
+        public ServiceReq(String name, String description, Integer durationMinutes, Integer bufferMinutes, Long priceMinor, Boolean active, Integer sortOrder) {
+            this(name, description, durationMinutes, bufferMinutes, priceMinor, active, sortOrder, null, null, null, null, null, null, null, null, null, null, null);
+        }
+    }
+    public record CategoryReq(String name, Integer sortOrder) {}
+    public record AddonReq(String name, Long priceMinor, Integer durationMinutes, Boolean active, Integer sortOrder) {}
+    public record SpecialDayReq(String date, List<Range> ranges) {}
     public record Range(int weekday, String opens, String closes) {}
-    public record SettingsReq(Integer stations, Integer slotStepMinutes, Integer minNoticeMinutes, Integer maxDaysAhead, Boolean autoConfirm) {}
-    public record BookReq(UUID serviceId, String date, String time, String name, String phone, String note, String source, UUID conversationId) {}
+    public record SettingsReq(Integer stations, Integer slotStepMinutes, Integer minNoticeMinutes, Integer maxDaysAhead, Boolean autoConfirm, Integer pendingExpiresMinutes, Integer cancelDeadlineHours) {
+        public SettingsReq(Integer stations, Integer slotStepMinutes, Integer minNoticeMinutes, Integer maxDaysAhead, Boolean autoConfirm) { this(stations, slotStepMinutes, minNoticeMinutes, maxDaysAhead, autoConfirm, null, null); }
+    }
+    public record BookReq(UUID serviceId, String date, String time, String name, String phone, String note, String source, UUID conversationId,
+                          List<UUID> addonIds, Map<String, String> answers, String locationMode, String address) {
+        public BookReq(UUID serviceId, String date, String time, String name, String phone, String note, String source, UUID conversationId) { this(serviceId, date, time, name, phone, note, source, conversationId, null, null, null, null); }
+    }
 
     private final JdbcClient jdbc;
     private final StoreCustomerService customers;
@@ -60,8 +74,25 @@ public class BookingService {
     // ---- services ------------------------------------------------------------------------------------------------
 
     public List<Map<String, Object>> services(UUID tenantId, boolean activeOnly) {
-        return Rows.camel(jdbc.sql("SELECT id, name, description, duration_minutes, buffer_minutes, price_minor, currency, is_active, sort_order FROM commerce.services WHERE tenant_id = :t"
-                + (activeOnly ? " AND is_active" : "") + " ORDER BY sort_order, name").param("t", tenantId).query().listOfRows());
+        var rows = jdbc.sql(SERVICE_COLS + " FROM commerce.services s LEFT JOIN commerce.service_categories c ON c.id = s.category_id WHERE s.tenant_id = :t" + (activeOnly ? " AND s.is_active" : "") + " ORDER BY s.sort_order, s.name")
+                .param("t", tenantId).query().listOfRows();
+        var addons = jdbc.sql("SELECT id, service_id, name, price_minor, duration_minutes, is_active, sort_order FROM commerce.service_addons WHERE tenant_id = :t" + (activeOnly ? " AND is_active" : "") + " ORDER BY sort_order, name").param("t", tenantId).query().listOfRows();
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (var r : rows) out.add(serviceView(r, addons.stream().filter(a -> a.get("service_id").equals(r.get("id"))).toList()));
+        return out;
+    }
+
+    private static final String SERVICE_COLS = "SELECT s.id, s.name, s.description, s.duration_minutes, s.buffer_minutes, s.price_minor, s.currency, s.is_active, s.sort_order, s.category_id, c.name AS category_name, s.short_description, "
+            + "s.price_before_minor, s.max_concurrent, s.location_mode, s.service_area, s.instructions, s.cancellation_policy, s.image_file_id, array_to_string(s.gallery, ',') AS gallery_csv, s.required_fields::text AS required_fields_json";
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper();
+
+    private Map<String, Object> serviceView(Map<String, Object> r, List<Map<String, Object>> addons) {
+        Map<String, Object> m = Rows.camel(r);
+        String g = (String) m.remove("galleryCsv");
+        m.put("gallery", g == null || g.isBlank() ? List.of() : List.of(g.split(",")));
+        try { m.put("requiredFields", JSON.readValue((String) m.remove("requiredFieldsJson"), List.class)); } catch (Exception e) { m.put("requiredFields", List.of()); }
+        m.put("addons", Rows.camel(addons).stream().peek(a -> a.remove("serviceId")).toList());
+        return m;
     }
 
     private static String clean(String s, int max, String field) {
@@ -83,6 +114,7 @@ public class BookingService {
         UUID id = jdbc.sql("INSERT INTO commerce.services (tenant_id, name, description, duration_minutes, buffer_minutes, price_minor, currency, sort_order) VALUES (:t, :n, :d, :du, :b, :p, :c, :so) RETURNING id")
                 .param("t", tenantId).param("n", name).param("d", clean(r.description(), 2000, "description")).param("du", r.durationMinutes()).param("b", buffer).param("p", price).param("c", currency).param("so", r.sortOrder() == null ? 0 : r.sortOrder())
                 .query(UUID.class).single();
+        applyServiceExtras(tenantId, id, r);
         return service(tenantId, id);
     }
 
@@ -98,7 +130,121 @@ public class BookingService {
                   price_minor = coalesce(:p, price_minor), is_active = coalesce(:a, is_active), sort_order = coalesce(:so, sort_order), updated_at = now() WHERE id = :i AND tenant_id = :t
                 """).param("n", r.name() == null ? null : clean(r.name(), 160, "name")).param("d", r.description() == null ? null : clean(r.description(), 2000, "description")).param("du", r.durationMinutes()).param("b", r.bufferMinutes())
                 .param("p", r.priceMinor()).param("a", r.active()).param("so", r.sortOrder()).param("i", id).param("t", tenantId).update();
+        applyServiceExtras(tenantId, id, r);
         return service(tenantId, id);
+    }
+
+    private static final java.util.Set<String> LOCATIONS = java.util.Set.of("SHOP", "HOME", "BOTH");
+    private static final java.util.regex.Pattern FIELD_KEY = java.util.regex.Pattern.compile("[a-z][a-zA-Z0-9]{0,30}");
+
+    /** The v2 fields of a service. Only what the request carries changes: a null leaves the column as it is; an empty string clears a text. */
+    private void applyServiceExtras(UUID tenantId, UUID id, ServiceReq r) {
+        if (r.locationMode() != null && !LOCATIONS.contains(r.locationMode())) throw BusinessException.badRequest("VALIDATION_ERROR", "Location must be SHOP, HOME or BOTH").field("locationMode");
+        if (r.maxConcurrent() != null && (r.maxConcurrent() < 1 || r.maxConcurrent() > 50)) throw BusinessException.badRequest("VALIDATION_ERROR", "Must be between 1 and 50").field("maxConcurrent");
+        if (r.priceBeforeMinor() != null && r.priceBeforeMinor() < 0) throw BusinessException.badRequest("VALIDATION_ERROR", "Price cannot be negative").field("priceBeforeMinor");
+        if (r.categoryId() != null && jdbc.sql("SELECT count(*) FROM commerce.service_categories WHERE id = :c AND tenant_id = :t").param("c", r.categoryId()).param("t", tenantId).query(Long.class).single() == 0)
+            throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown category").field("categoryId");
+        String fields = null;
+        if (r.requiredFields() != null) {
+            if (r.requiredFields().size() > 12) throw BusinessException.badRequest("VALIDATION_ERROR", "Up to 12 questions").field("requiredFields");
+            List<Map<String, Object>> clean = new ArrayList<>();
+            java.util.Set<String> keys = new java.util.HashSet<>();
+            for (var f : r.requiredFields()) {
+                String key = String.valueOf(f.getOrDefault("key", "")), label = clean(String.valueOf(f.getOrDefault("label", "")), 120, "requiredFields");
+                if (!FIELD_KEY.matcher(key).matches() || label.isEmpty() || !keys.add(key)) throw BusinessException.badRequest("VALIDATION_ERROR", "Each question needs a unique key (letters and digits) and a label").field("requiredFields");
+                clean.add(Map.of("key", key, "label", label, "required", !Boolean.FALSE.equals(f.get("required"))));
+            }
+            try { fields = JSON.writeValueAsString(clean); } catch (Exception e) { throw new IllegalStateException(e); }
+        }
+        String gallery = r.gallery() == null ? null : r.gallery().stream().limit(12).map(UUID::toString).collect(java.util.stream.Collectors.joining(","));
+        jdbc.sql("""
+                UPDATE commerce.services SET category_id = coalesce(:cat, category_id), short_description = coalesce(:sd, short_description), price_before_minor = coalesce(:pb, price_before_minor),
+                  max_concurrent = coalesce(:mc, max_concurrent), location_mode = coalesce(:lm, location_mode), service_area = coalesce(:sa, service_area), instructions = coalesce(:ins, instructions),
+                  cancellation_policy = coalesce(:cp, cancellation_policy), image_file_id = coalesce(:img, image_file_id),
+                  gallery = coalesce(CAST(string_to_array(:gal, ',') AS uuid[]), gallery), required_fields = coalesce(CAST(:rf AS jsonb), required_fields), updated_at = now()
+                WHERE id = :i AND tenant_id = :t
+                """).param("cat", r.categoryId()).param("sd", r.shortDescription() == null ? null : clean(r.shortDescription(), 240, "shortDescription")).param("pb", r.priceBeforeMinor()).param("mc", r.maxConcurrent())
+                .param("lm", r.locationMode()).param("sa", r.serviceArea() == null ? null : clean(r.serviceArea(), 1000, "serviceArea")).param("ins", r.instructions() == null ? null : clean(r.instructions(), 2000, "instructions"))
+                .param("cp", r.cancellationPolicy() == null ? null : clean(r.cancellationPolicy(), 2000, "cancellationPolicy")).param("img", r.imageFileId()).param("gal", gallery == null ? null : gallery.isEmpty() ? "" : gallery)
+                .param("rf", fields).param("i", id).param("t", tenantId).update();
+    }
+
+    // ---- categories and add-ons --------------------------------------------------------------------------------------
+
+    public List<Map<String, Object>> categories(UUID tenantId) {
+        return Rows.camel(jdbc.sql("SELECT id, name, sort_order FROM commerce.service_categories WHERE tenant_id = :t ORDER BY sort_order, name").param("t", tenantId).query().listOfRows());
+    }
+
+    @Transactional
+    public Map<String, Object> saveCategory(UUID tenantId, UUID id, CategoryReq r) {
+        String name = clean(r.name(), 120, "name");
+        if (name.isEmpty()) throw BusinessException.badRequest("VALIDATION_ERROR", "Category name is required").field("name");
+        try {
+            if (id == null) id = jdbc.sql("INSERT INTO commerce.service_categories (tenant_id, name, sort_order) VALUES (:t, :n, coalesce(:so, 0)) RETURNING id").param("t", tenantId).param("n", name).param("so", r.sortOrder()).query(UUID.class).single();
+            else if (jdbc.sql("UPDATE commerce.service_categories SET name = :n, sort_order = coalesce(:so, sort_order) WHERE id = :i AND tenant_id = :t").param("n", name).param("so", r.sortOrder()).param("i", id).param("t", tenantId).update() == 0)
+                throw BusinessException.notFound("RESOURCE_NOT_FOUND", "Category not found");
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            throw BusinessException.badRequest("VALIDATION_ERROR", "A category with this name exists").field("name");
+        }
+        UUID cid = id;
+        return categories(tenantId).stream().filter(c -> cid.equals(c.get("id"))).findFirst().orElseThrow();
+    }
+
+    @Transactional
+    public void deleteCategory(UUID tenantId, UUID id) {
+        jdbc.sql("DELETE FROM commerce.service_categories WHERE id = :i AND tenant_id = :t").param("i", id).param("t", tenantId).update();   // its services stay, without a category
+    }
+
+    @Transactional
+    public Map<String, Object> saveAddon(UUID tenantId, UUID serviceId, UUID id, AddonReq r) {
+        service(tenantId, serviceId);
+        String name = r.name() == null ? null : clean(r.name(), 120, "name");
+        if (id == null && (name == null || name.isEmpty())) throw BusinessException.badRequest("VALIDATION_ERROR", "Add-on name is required").field("name");
+        if (r.priceMinor() != null && r.priceMinor() < 0) throw BusinessException.badRequest("VALIDATION_ERROR", "Price cannot be negative").field("priceMinor");
+        check(r.durationMinutes(), 0, 480, "durationMinutes");
+        if (id == null) id = jdbc.sql("INSERT INTO commerce.service_addons (tenant_id, service_id, name, price_minor, duration_minutes, sort_order) VALUES (:t, :s, :n, coalesce(:p, 0), coalesce(:d, 0), coalesce(:so, 0)) RETURNING id")
+                .param("t", tenantId).param("s", serviceId).param("n", name).param("p", r.priceMinor()).param("d", r.durationMinutes()).param("so", r.sortOrder()).query(UUID.class).single();
+        else if (jdbc.sql("UPDATE commerce.service_addons SET name = coalesce(:n, name), price_minor = coalesce(:p, price_minor), duration_minutes = coalesce(:d, duration_minutes), is_active = coalesce(:a, is_active), sort_order = coalesce(:so, sort_order) WHERE id = :i AND service_id = :s AND tenant_id = :t")
+                .param("n", name).param("p", r.priceMinor()).param("d", r.durationMinutes()).param("a", r.active()).param("so", r.sortOrder()).param("i", id).param("s", serviceId).param("t", tenantId).update() == 0)
+            throw BusinessException.notFound("RESOURCE_NOT_FOUND", "Add-on not found");
+        UUID aid = id;
+        return Rows.camel(jdbc.sql("SELECT id, name, price_minor, duration_minutes, is_active, sort_order FROM commerce.service_addons WHERE id = :i").param("i", aid).query().listOfRows().get(0));
+    }
+
+    @Transactional
+    public void deleteAddon(UUID tenantId, UUID serviceId, UUID id) {
+        jdbc.sql("UPDATE commerce.service_addons SET is_active = FALSE WHERE id = :i AND service_id = :s AND tenant_id = :t").param("i", id).param("s", serviceId).param("t", tenantId).update();   // past bookings keep their copy
+    }
+
+    // ---- special days (own hours on one date) and days off over a range ------------------------------------------------
+
+    public List<Map<String, Object>> specialDays(UUID tenantId) {
+        return Rows.camel(jdbc.sql("SELECT day::text AS date, to_char(opens_at, 'HH24:MI') AS opens, to_char(closes_at, 'HH24:MI') AS closes FROM commerce.service_special_days WHERE tenant_id = :t AND day >= current_date - 1 ORDER BY day, opens_at").param("t", tenantId).query().listOfRows());
+    }
+
+    @Transactional
+    public List<Map<String, Object>> saveSpecialDay(UUID tenantId, String date, List<Range> ranges) {
+        LocalDate d = parseDate(date);
+        List<Object[]> clean = new ArrayList<>();
+        for (Range r : ranges == null ? List.<Range>of() : ranges) {
+            LocalTime o = time(r.opens(), "opens"), c = time(r.closes(), "closes");
+            if (!c.isAfter(o)) throw BusinessException.badRequest("VALIDATION_ERROR", "Closing time must be after opening time").field("closes");
+            clean.add(new Object[] {o, c});
+        }
+        clean.sort(java.util.Comparator.comparing(a -> (LocalTime) a[0]));
+        for (int i = 1; i < clean.size(); i++) if (((LocalTime) clean.get(i)[0]).isBefore((LocalTime) clean.get(i - 1)[1])) throw BusinessException.badRequest("VALIDATION_ERROR", "Hours of one day may not overlap").field("ranges");
+        jdbc.sql("DELETE FROM commerce.service_special_days WHERE tenant_id = :t AND day = :d").param("t", tenantId).param("d", d).update();
+        for (Object[] r : clean) jdbc.sql("INSERT INTO commerce.service_special_days (tenant_id, day, opens_at, closes_at) VALUES (:t, :d, :o, :c)").param("t", tenantId).param("d", d).param("o", java.sql.Time.valueOf((LocalTime) r[0])).param("c", java.sql.Time.valueOf((LocalTime) r[1])).update();
+        return specialDays(tenantId);
+    }
+
+    /** A holiday or a vacation: every date from {@code from} to {@code to} (up to 120 days) is closed. */
+    @Transactional
+    public List<Map<String, Object>> addClosureRange(UUID tenantId, String from, String to, String reason) {
+        LocalDate a = parseDate(from), b = to == null || to.isBlank() ? a : parseDate(to);
+        if (b.isBefore(a) || a.plusDays(120).isBefore(b)) throw BusinessException.badRequest("VALIDATION_ERROR", "The closure can be up to 120 days").field("to");
+        for (LocalDate d = a; !d.isAfter(b); d = d.plusDays(1)) addClosure(tenantId, d.toString(), reason);
+        return closures(tenantId);
     }
 
     /** A service that was ever booked is switched off (its history stays); one never booked is deleted. */
@@ -111,8 +257,13 @@ public class BookingService {
     }
 
     public Map<String, Object> service(UUID tenantId, UUID id) {
-        return Rows.camel(jdbc.sql("SELECT id, name, description, duration_minutes, buffer_minutes, price_minor, currency, is_active, sort_order FROM commerce.services WHERE id = :i AND tenant_id = :t").param("i", id).param("t", tenantId)
-                .query().listOfRows().stream().findFirst().orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Service not found")));
+        return serviceOf(tenantId, id);
+    }
+
+    private Map<String, Object> serviceOf(UUID tenantId, UUID id) {
+        var row = jdbc.sql(SERVICE_COLS + " FROM commerce.services s LEFT JOIN commerce.service_categories c ON c.id = s.category_id WHERE s.id = :i AND s.tenant_id = :t").param("i", id).param("t", tenantId).query().listOfRows().stream().findFirst()
+                .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Service not found"));
+        return serviceView(row, jdbc.sql("SELECT id, service_id, name, price_minor, duration_minutes, is_active, sort_order FROM commerce.service_addons WHERE service_id = :i AND is_active ORDER BY sort_order, name").param("i", id).query().listOfRows());
     }
 
     // ---- hours, days off, rules -----------------------------------------------------------------------------------
@@ -160,13 +311,15 @@ public class BookingService {
     }
 
     public Map<String, Object> settings(UUID tenantId) {
-        var row = jdbc.sql("SELECT stations, slot_step_minutes, min_notice_minutes, max_days_ahead, auto_confirm FROM commerce.booking_settings WHERE tenant_id = :t").param("t", tenantId).query().listOfRows().stream().findFirst();
+        var row = jdbc.sql("SELECT stations, slot_step_minutes, min_notice_minutes, max_days_ahead, auto_confirm, pending_expires_minutes, cancel_deadline_hours FROM commerce.booking_settings WHERE tenant_id = :t").param("t", tenantId).query().listOfRows().stream().findFirst();
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("stations", row.map(r -> r.get("stations")).orElse(1));
         m.put("slotStepMinutes", row.map(r -> r.get("slot_step_minutes")).orElse(30));
         m.put("minNoticeMinutes", row.map(r -> r.get("min_notice_minutes")).orElse(120));
         m.put("maxDaysAhead", row.map(r -> r.get("max_days_ahead")).orElse(30));
         m.put("autoConfirm", row.map(r -> r.get("auto_confirm")).orElse(false));
+        m.put("pendingExpiresMinutes", row.map(r -> r.get("pending_expires_minutes")).orElse(null));
+        m.put("cancelDeadlineHours", row.map(r -> r.get("cancel_deadline_hours")).orElse(0));
         m.put("timezone", zone(tenantId).getId());
         return m;
     }
@@ -177,13 +330,16 @@ public class BookingService {
         check(r.slotStepMinutes(), 5, 240, "slotStepMinutes");
         check(r.minNoticeMinutes(), 0, 10080, "minNoticeMinutes");
         check(r.maxDaysAhead(), 1, 365, "maxDaysAhead");
+        check(r.pendingExpiresMinutes(), 5, 10080, "pendingExpiresMinutes");
+        check(r.cancelDeadlineHours(), 0, 720, "cancelDeadlineHours");
         jdbc.sql("""
-                INSERT INTO commerce.booking_settings (tenant_id, stations, slot_step_minutes, min_notice_minutes, max_days_ahead, auto_confirm)
-                VALUES (:t, coalesce(:s, 1), coalesce(:st, 30), coalesce(:mn, 120), coalesce(:md, 30), coalesce(:ac, FALSE))
+                INSERT INTO commerce.booking_settings (tenant_id, stations, slot_step_minutes, min_notice_minutes, max_days_ahead, auto_confirm, pending_expires_minutes, cancel_deadline_hours)
+                VALUES (:t, coalesce(:s, 1), coalesce(:st, 30), coalesce(:mn, 120), coalesce(:md, 30), coalesce(:ac, FALSE), :pe, coalesce(:cd, 0))
                 ON CONFLICT (tenant_id) DO UPDATE SET stations = coalesce(:s, commerce.booking_settings.stations), slot_step_minutes = coalesce(:st, commerce.booking_settings.slot_step_minutes),
                   min_notice_minutes = coalesce(:mn, commerce.booking_settings.min_notice_minutes), max_days_ahead = coalesce(:md, commerce.booking_settings.max_days_ahead),
-                  auto_confirm = coalesce(:ac, commerce.booking_settings.auto_confirm), updated_at = now()
-                """).param("t", tenantId).param("s", r.stations()).param("st", r.slotStepMinutes()).param("mn", r.minNoticeMinutes()).param("md", r.maxDaysAhead()).param("ac", r.autoConfirm()).update();
+                  auto_confirm = coalesce(:ac, commerce.booking_settings.auto_confirm), pending_expires_minutes = coalesce(:pe, commerce.booking_settings.pending_expires_minutes),
+                  cancel_deadline_hours = coalesce(:cd, commerce.booking_settings.cancel_deadline_hours), updated_at = now()
+                """).param("t", tenantId).param("s", r.stations()).param("st", r.slotStepMinutes()).param("mn", r.minNoticeMinutes()).param("md", r.maxDaysAhead()).param("ac", r.autoConfirm()).param("pe", r.pendingExpiresMinutes()).param("cd", r.cancelDeadlineHours()).update();
         return settings(tenantId);
     }
 
@@ -200,16 +356,54 @@ public class BookingService {
     // ---- free times -----------------------------------------------------------------------------------------------
 
     /** The start times (HH:mm, shop time) a customer can still book for this service on this day. {@code enforceRules}: minimum notice and how far ahead (customers); the shop itself may book closer in. */
-    public List<String> slots(UUID tenantId, UUID serviceId, LocalDate date, boolean enforceRules) {
-        return slotTimes(tenantId, service(tenantId, serviceId), date, enforceRules, null).stream().map(t -> t.format(DateTimeFormatter.ofPattern("HH:mm"))).toList();
+    public List<String> slots(UUID tenantId, UUID serviceId, LocalDate date, boolean enforceRules) { return slots(tenantId, serviceId, date, enforceRules, List.of()); }
+
+    public List<String> slots(UUID tenantId, UUID serviceId, LocalDate date, boolean enforceRules, List<UUID> addonIds) {
+        var svc = service(tenantId, serviceId);
+        return slotTimes(tenantId, svc, date, enforceRules, null, extras(tenantId, svc, addonIds).minutes()).stream().map(t -> t.format(DateTimeFormatter.ofPattern("HH:mm"))).toList();
     }
 
-    private List<LocalTime> slotTimes(UUID tenantId, Map<String, Object> svc, LocalDate date, boolean enforceRules, UUID ignoreBooking) {
+    private record Extras(int minutes, long priceMinor, List<Map<String, Object>> items) {}
+
+    /** The add-ons the customer chose, each checked to belong to this service and be on offer; their minutes and price. */
+    private Extras extras(UUID tenantId, Map<String, Object> svc, List<UUID> ids) {
+        if (ids == null || ids.isEmpty()) return new Extras(0, 0, List.of());
+        int minutes = 0;
+        long price = 0;
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (UUID id : new java.util.LinkedHashSet<>(ids)) {
+            var a = jdbc.sql("SELECT id, name, price_minor, duration_minutes FROM commerce.service_addons WHERE id = :i AND tenant_id = :t AND service_id = :s AND is_active").param("i", id).param("t", tenantId).param("s", svc.get("id")).query().listOfRows().stream().findFirst()
+                    .orElseThrow(() -> BusinessException.badRequest("ADDON_UNAVAILABLE", "This extra is not available for this service").field("addonIds"));
+            minutes += ((Number) a.get("duration_minutes")).intValue();
+            price += ((Number) a.get("price_minor")).longValue();
+            items.add(new LinkedHashMap<>(Map.of("id", a.get("id").toString(), "name", a.get("name"), "priceMinor", a.get("price_minor"), "durationMinutes", a.get("duration_minutes"))));
+        }
+        return new Extras(minutes, price, items);
+    }
+
+    /** What this service needs from the customer (its questions): every required one must be answered. */
+    private Map<String, String> answers(Map<String, Object> svc, Map<String, String> given, String locationMode, String address) {
+        Map<String, String> out = new LinkedHashMap<>();
+        for (var f : (List<Map<String, Object>>) svc.get("requiredFields")) {
+            String key = String.valueOf(f.get("key")), v = given == null || given.get(key) == null ? "" : given.get(key).trim();
+            if (v.length() > 500) throw BusinessException.badRequest("VALIDATION_ERROR", "Too long").field(key);
+            if (v.isEmpty() && !Boolean.FALSE.equals(f.get("required"))) throw BusinessException.badRequest("VALIDATION_ERROR", String.valueOf(f.get("label")) + " is required").field(key);
+            if (!v.isEmpty()) out.put(key, v);
+        }
+        return out;
+    }
+
+    private List<LocalTime> slotTimes(UUID tenantId, Map<String, Object> svc, LocalDate date, boolean enforceRules, UUID ignoreBooking) { return slotTimes(tenantId, svc, date, enforceRules, ignoreBooking, 0); }
+
+    /** {@code extraMinutes}: the add-ons the customer chose make the appointment longer, so a time that fits the service alone may not fit with them. */
+    private List<LocalTime> slotTimes(UUID tenantId, Map<String, Object> svc, LocalDate date, boolean enforceRules, UUID ignoreBooking, int extraMinutes) {
         if (!Boolean.TRUE.equals(svc.get("isActive"))) return List.of();
         ZoneId tz = zone(tenantId);
         var st = settings(tenantId);
         int step = ((Number) st.get("slotStepMinutes")).intValue(), stations = ((Number) st.get("stations")).intValue();
-        int dur = ((Number) svc.get("durationMinutes")).intValue(), buf = ((Number) svc.get("bufferMinutes")).intValue();
+        int dur = ((Number) svc.get("durationMinutes")).intValue() + extraMinutes, buf = ((Number) svc.get("bufferMinutes")).intValue();
+        Integer serviceCap = svc.get("maxConcurrent") == null ? null : ((Number) svc.get("maxConcurrent")).intValue();
+        Object pendingExpiry = st.get("pendingExpiresMinutes");
         if (jdbc.sql("SELECT EXISTS (SELECT 1 FROM commerce.service_closures WHERE tenant_id = :t AND closed_on = :d)").param("t", tenantId).param("d", date).query(Boolean.class).single()) return List.of();
         Instant now = Instant.now();
         if (enforceRules) {
@@ -217,11 +411,12 @@ public class BookingService {
             if (date.isBefore(today) || date.isAfter(today.plusDays(((Number) st.get("maxDaysAhead")).longValue()))) return List.of();
         } else if (date.isBefore(LocalDate.now(tz))) return List.of();
         Instant earliest = enforceRules ? now.plus(Duration.ofMinutes(((Number) st.get("minNoticeMinutes")).longValue())) : now;
-        var ranges = jdbc.sql("SELECT opens_at, closes_at FROM commerce.service_hours WHERE tenant_id = :t AND weekday = :w ORDER BY opens_at").param("t", tenantId).param("w", date.getDayOfWeek().getValue()).query().listOfRows();
+        var ranges = jdbc.sql("SELECT opens_at, closes_at FROM commerce.service_special_days WHERE tenant_id = :t AND day = :d ORDER BY opens_at").param("t", tenantId).param("d", date).query().listOfRows();   // a date with its own hours replaces the weekday's
+        if (ranges.isEmpty()) ranges = jdbc.sql("SELECT opens_at, closes_at FROM commerce.service_hours WHERE tenant_id = :t AND weekday = :w ORDER BY opens_at").param("t", tenantId).param("w", date.getDayOfWeek().getValue()).query().listOfRows();
         if (ranges.isEmpty()) return List.of();
         Instant dayStart = date.atStartOfDay(tz).toInstant(), dayEnd = date.plusDays(1).atStartOfDay(tz).toInstant();
-        var busy = jdbc.sql("SELECT starts_at, blocks_until FROM commerce.bookings WHERE tenant_id = :t AND status IN ('PENDING','CONFIRMED') AND starts_at < :e AND blocks_until > :s AND (CAST(:ig AS uuid) IS NULL OR id <> CAST(:ig AS uuid))")
-                .param("t", tenantId).param("s", java.sql.Timestamp.from(dayStart.minus(Duration.ofHours(12)))).param("e", java.sql.Timestamp.from(dayEnd)).param("ig", ignoreBooking).query().listOfRows();
+        var busy = jdbc.sql("SELECT starts_at, blocks_until, service_id FROM commerce.bookings WHERE tenant_id = :t AND (status = 'CONFIRMED' OR (status = 'PENDING' AND (CAST(:pe AS int) IS NULL OR created_at > now() - make_interval(mins => CAST(:pe AS int))))) AND starts_at < :e AND blocks_until > :s AND (CAST(:ig AS uuid) IS NULL OR id <> CAST(:ig AS uuid))")
+                .param("pe", pendingExpiry).param("t", tenantId).param("s", java.sql.Timestamp.from(dayStart.minus(Duration.ofHours(12)))).param("e", java.sql.Timestamp.from(dayEnd)).param("ig", ignoreBooking).query().listOfRows();
         List<LocalTime> out = new ArrayList<>();
         for (var r : ranges) {
             LocalTime opens = ((Time) r.get("opens_at")).toLocalTime(), closes = ((Time) r.get("closes_at")).toLocalTime();
@@ -229,9 +424,9 @@ public class BookingService {
                 Instant start = ZonedDateTime.of(date, t, tz).toInstant();
                 if (start.isBefore(earliest)) continue;
                 Instant blocks = start.plus(Duration.ofMinutes(dur + buf));
-                int overlapping = 0;
-                for (var b : busy) if (((java.sql.Timestamp) b.get("starts_at")).toInstant().isBefore(blocks) && ((java.sql.Timestamp) b.get("blocks_until")).toInstant().isAfter(start)) overlapping++;
-                if (overlapping < stations) out.add(t);
+                int overlapping = 0, sameService = 0;
+                for (var b : busy) if (((java.sql.Timestamp) b.get("starts_at")).toInstant().isBefore(blocks) && ((java.sql.Timestamp) b.get("blocks_until")).toInstant().isAfter(start)) { overlapping++; if (svc.get("id").equals(b.get("service_id"))) sameService++; }
+                if (overlapping < stations && (serviceCap == null || sameService < serviceCap)) out.add(t);
                 if (t.plusMinutes(step).isBefore(t)) break;   // past midnight
             }
         }
@@ -281,24 +476,38 @@ public class BookingService {
         boolean fromCustomer = !"DASHBOARD".equals(r.source());
         if (fromCustomer && jdbc.sql("SELECT count(*) FROM commerce.bookings WHERE tenant_id = :t AND phone = :p AND created_at > now() - interval '1 day' AND status IN ('PENDING','CONFIRMED')").param("t", tenantId).param("p", phone).query(Long.class).single() >= 5)
             throw BusinessException.badRequest("TOO_MANY_BOOKINGS", "This number already has several appointments waiting: please call the shop to change them").field("phone");   // a stray script or a prank cannot fill the shop's day
+        String where = r.locationMode() == null || r.locationMode().isBlank() ? null : r.locationMode();
+        String offered = (String) svc.get("locationMode");
+        if (where == null) where = "BOTH".equals(offered) ? "SHOP" : offered;
+        if (!LOCATIONS.contains(where) || ("SHOP".equals(offered) && !"SHOP".equals(where)) || ("HOME".equals(offered) && !"HOME".equals(where))) throw BusinessException.badRequest("LOCATION_UNAVAILABLE", "This service is not offered there").field("locationMode");
+        String address = r.address() == null ? "" : r.address().trim();
+        Map<String, String> given = answers(svc, r.answers(), where, address);   // the service's own questions first, then the address of a home visit
+        if ("HOME".equals(where) && address.length() < 6) throw BusinessException.badRequest("VALIDATION_ERROR", "The address is required for a home visit").field("address");
+        if (address.length() > 500) throw BusinessException.badRequest("VALIDATION_ERROR", "Too long").field("address");
+        Extras ex = extras(tenantId, svc, r.addonIds());
         jdbc.sql("SELECT pg_advisory_xact_lock(hashtextextended(CAST(:k AS text), 0))").param("k", tenantId + "|booking").query().listOfRows();
-        if (!slotTimes(tenantId, svc, date, fromCustomer, null).contains(t)) throw BusinessException.badRequest("SLOT_TAKEN", "This time is not available any more").field("time");
+        if (!slotTimes(tenantId, svc, date, fromCustomer, null, ex.minutes()).contains(t)) throw BusinessException.badRequest("SLOT_TAKEN", "This time is not available any more").field("time");
         ZoneId tz = zone(tenantId);
         Instant start = ZonedDateTime.of(date, t, tz).toInstant();
-        int dur = ((Number) svc.get("durationMinutes")).intValue(), buf = ((Number) svc.get("bufferMinutes")).intValue();
+        int dur = ((Number) svc.get("durationMinutes")).intValue() + ex.minutes(), buf = ((Number) svc.get("bufferMinutes")).intValue();
         boolean auto = Boolean.TRUE.equals(settings(tenantId).get("autoConfirm")) || !fromCustomer;
         UUID customer = customers.ensureCustomer(tenantId, null, new StoreCustomerService.Contact(name, phone, null, null));
         jdbc.sql("UPDATE commerce.customers SET source = 'BOOKING' WHERE id = :i AND source = 'ORDER' AND NOT EXISTS (SELECT 1 FROM commerce.orders o WHERE o.customer_id = :i)").param("i", customer).update();
         String number = number();
         UUID id = jdbc.sql("""
-                INSERT INTO commerce.bookings (tenant_id, booking_number, service_id, service_name, customer_id, customer_name, phone, starts_at, ends_at, blocks_until, price_minor, currency, status, source, conversation_id, note)
-                VALUES (:t, :n, :s, :sn, :c, :cn, :p, :st, :en, :bl, :pr, :cur, :status, :src, :conv, :note) RETURNING id
+                INSERT INTO commerce.bookings (tenant_id, booking_number, service_id, service_name, customer_id, customer_name, phone, starts_at, ends_at, blocks_until, price_minor, currency, status, source, conversation_id, note, answers, addons, location_mode, address)
+                VALUES (:t, :n, :s, :sn, :c, :cn, :p, :st, :en, :bl, :pr, :cur, :status, :src, :conv, :note, CAST(:ans AS jsonb), CAST(:add AS jsonb), :loc, :addr) RETURNING id
                 """).param("t", tenantId).param("n", number).param("s", r.serviceId()).param("sn", svc.get("name")).param("c", customer).param("cn", name).param("p", phone).param("st", java.sql.Timestamp.from(start))
-                .param("en", java.sql.Timestamp.from(start.plus(Duration.ofMinutes(dur)))).param("bl", java.sql.Timestamp.from(start.plus(Duration.ofMinutes(dur + buf)))).param("pr", svc.get("priceMinor")).param("cur", svc.get("currency"))
+                .param("en", java.sql.Timestamp.from(start.plus(Duration.ofMinutes(dur)))).param("bl", java.sql.Timestamp.from(start.plus(Duration.ofMinutes(dur + buf)))).param("pr", ((Number) svc.get("priceMinor")).longValue() + ex.priceMinor()).param("cur", svc.get("currency"))
                 .param("status", auto ? "CONFIRMED" : "PENDING").param("src", r.source() == null ? "AI_CHAT" : r.source()).param("conv", r.conversationId()).param("note", r.note() == null || r.note().isBlank() ? null : r.note().trim())
+                .param("ans", jsonOf(given)).param("add", jsonOf(ex.items())).param("loc", where).param("addr", address.isEmpty() ? null : address)
                 .query(UUID.class).single();
         if (!auto) notifyOwners(tenantId, id, number, name, (String) svc.get("name"), start, tz);
         return get(tenantId, id);
+    }
+
+    private static String jsonOf(Object o) {
+        try { return JSON.writeValueAsString(o); } catch (Exception e) { throw new IllegalStateException(e); }
     }
 
     public Map<String, Object> get(UUID tenantId, UUID id) {
@@ -306,7 +515,7 @@ public class BookingService {
                 .orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Appointment not found")), zone(tenantId));
     }
 
-    private static final String SELECT = "SELECT b.id, b.booking_number, b.service_id, b.service_name, b.customer_id, b.customer_name, b.phone, b.starts_at, b.ends_at, b.price_minor, b.currency, b.status, b.source, b.note, b.decline_reason, b.created_at, b.conversation_id FROM commerce.bookings b";
+    private static final String SELECT = "SELECT b.id, b.booking_number, b.service_id, b.service_name, b.customer_id, b.customer_name, b.phone, b.starts_at, b.ends_at, b.price_minor, b.currency, b.status, b.source, b.note, b.decline_reason, b.created_at, b.conversation_id, b.answers::text AS answers_json, b.addons::text AS addons_json, b.location_mode, b.address FROM commerce.bookings b";
 
     private Map<String, Object> view(Map<String, Object> r, ZoneId tz) {
         Map<String, Object> m = Rows.camel(r);
@@ -319,6 +528,7 @@ public class BookingService {
         m.put("endTime", e.atZone(tz).toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm")));
         m.put("weekday", zs.getDayOfWeek().getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH));
         m.remove("conversationId");
+        try { m.put("answers", JSON.readValue((String) m.remove("answersJson"), Map.class)); m.put("addons", JSON.readValue((String) m.remove("addonsJson"), List.class)); } catch (Exception ex) { m.put("answers", Map.of()); m.put("addons", List.of()); }
         return m;
     }
 
@@ -362,7 +572,7 @@ public class BookingService {
     // ---- the shop's decisions and changes --------------------------------------------------------------------------
 
     private Map<String, Object> raw(UUID tenantId, UUID id) {
-        return jdbc.sql("SELECT id, booking_number, status, service_id, service_name, customer_name, phone, starts_at, conversation_id FROM commerce.bookings WHERE id = :i AND tenant_id = :t FOR UPDATE").param("i", id).param("t", tenantId)
+        return jdbc.sql("SELECT id, booking_number, status, service_id, service_name, customer_name, phone, starts_at, ends_at, conversation_id FROM commerce.bookings WHERE id = :i AND tenant_id = :t FOR UPDATE").param("i", id).param("t", tenantId)
                 .query().listOfRows().stream().findFirst().orElseThrow(() -> BusinessException.notFound("RESOURCE_NOT_FOUND", "Appointment not found"));
     }
 
@@ -385,11 +595,19 @@ public class BookingService {
         return get(tenantId, id);
     }
 
+    /** A customer cannot cancel or move an appointment that starts sooner than the shop's deadline; the shop itself always can. */
+    private void deadline(UUID tenantId, Map<String, Object> b) {
+        int hours = ((Number) settings(tenantId).get("cancelDeadlineHours")).intValue();
+        if (hours > 0 && ((java.sql.Timestamp) b.get("starts_at")).toInstant().isBefore(Instant.now().plus(Duration.ofHours(hours))))
+            throw BusinessException.badRequest("TOO_LATE_TO_CHANGE", "This appointment starts in less than " + hours + " hours: please call the shop to change it");
+    }
+
     /** By the shop (the customer is told) or by the customer (the shop is told). */
     @Transactional
     public Map<String, Object> cancel(UUID tenantId, UUID id, boolean byCustomer, String reason) {
         var b = raw(tenantId, id);
         if (!List.of("PENDING", "CONFIRMED").contains(b.get("status"))) throw BusinessException.badRequest("INVALID_STATE", "This appointment can no longer be cancelled");
+        if (byCustomer) deadline(tenantId, b);
         jdbc.sql("UPDATE commerce.bookings SET status = 'CANCELLED', decline_reason = :r, updated_at = now() WHERE id = :i").param("r", clean(reason, 300, "reason")).param("i", id).update();
         if (byCustomer) notifyOwnersText(tenantId, "BOOKING_CANCELLED", b, true);
         else tellCustomer(tenantId, b, "CANCELLED", reason);
@@ -413,10 +631,13 @@ public class BookingService {
         LocalDate d = parseDate(date);
         LocalTime t = time(time, "time");
         jdbc.sql("SELECT pg_advisory_xact_lock(hashtextextended(CAST(:k AS text), 0))").param("k", tenantId + "|booking").query().listOfRows();
-        if (!slotTimes(tenantId, svc, d, byCustomer, id).contains(t)) throw BusinessException.badRequest("SLOT_TAKEN", "This time is not available").field("time");
+        int ownMinutes = (int) Duration.between(((java.sql.Timestamp) b.get("starts_at")).toInstant(), ((java.sql.Timestamp) b.get("ends_at")).toInstant()).toMinutes();   // the add-ons of this booking are part of its length
+        int extra = Math.max(0, ownMinutes - ((Number) svc.get("durationMinutes")).intValue());
+        if (byCustomer) deadline(tenantId, b);
+        if (!slotTimes(tenantId, svc, d, byCustomer, id, extra).contains(t)) throw BusinessException.badRequest("SLOT_TAKEN", "This time is not available").field("time");
         ZoneId tz = zone(tenantId);
         Instant start = ZonedDateTime.of(d, t, tz).toInstant();
-        int dur = ((Number) svc.get("durationMinutes")).intValue(), buf = ((Number) svc.get("bufferMinutes")).intValue();
+        int dur = ownMinutes, buf = ((Number) svc.get("bufferMinutes")).intValue();
         boolean auto = Boolean.TRUE.equals(settings(tenantId).get("autoConfirm"));
         String status = byCustomer && !auto ? "PENDING" : (String) b.get("status");
         jdbc.sql("UPDATE commerce.bookings SET starts_at = :s, ends_at = :e, blocks_until = :bl, status = :st, reminder_sent_at = NULL, updated_at = now() WHERE id = :i")
@@ -492,6 +713,18 @@ public class BookingService {
                 jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :m)").param("c", b.get("conversation_id")).param("m", text).update();
         } catch (RuntimeException e) {
             log.info("Could not tell the customer about appointment {}: {}", b.get("booking_number"), e.getMessage());
+        }
+    }
+
+    /** A request nobody answered within the shop's limit stops holding the time: it is declined and the customer is told (only for shops that set a limit). */
+    @Scheduled(fixedDelay = 300_000, initialDelay = 240_000)
+    public void expirePending() {
+        for (var b : jdbc.sql("""
+                UPDATE commerce.bookings b SET status = 'DECLINED', decline_reason = 'No answer in time', updated_at = now()
+                FROM commerce.booking_settings s WHERE s.tenant_id = b.tenant_id AND s.pending_expires_minutes IS NOT NULL AND b.status = 'PENDING' AND b.created_at < now() - make_interval(mins => s.pending_expires_minutes)
+                RETURNING b.id, b.tenant_id, b.booking_number, b.service_name, b.customer_name, b.phone, b.starts_at, b.conversation_id
+                """).query().listOfRows()) {
+            try { tellCustomer((UUID) b.get("tenant_id"), b, "DECLINED", "no answer in time"); } catch (RuntimeException e) { log.info("Expired request {} not announced: {}", b.get("booking_number"), e.getMessage()); }
         }
     }
 

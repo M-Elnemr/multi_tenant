@@ -52,7 +52,48 @@ public class BookingController {
 
     // ---- hours, days off, rules ----
     public record HoursPut(List<BookingService.Range> ranges) {}
-    public record ClosureReq(String date, String reason) {}
+    public record ClosureReq(String date, String to, String reason) {}
+    public record SpecialDayPut(String date, List<BookingService.Range> ranges) {}
+
+    @GetMapping("/service-categories")
+    @PreAuthorize(READ)
+    public List<Map<String, Object>> categories() { return bookings.categories(StoreContext.tenantId()); }
+
+    @PostMapping("/service-categories")
+    @PreAuthorize(WRITE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public Map<String, Object> createCategory(@RequestBody BookingService.CategoryReq r) { return bookings.saveCategory(StoreContext.tenantId(), null, r); }
+
+    @PatchMapping("/service-categories/{id}")
+    @PreAuthorize(WRITE)
+    public Map<String, Object> updateCategory(@PathVariable UUID id, @RequestBody BookingService.CategoryReq r) { return bookings.saveCategory(StoreContext.tenantId(), id, r); }
+
+    @DeleteMapping("/service-categories/{id}")
+    @PreAuthorize(WRITE)
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteCategory(@PathVariable UUID id) { bookings.deleteCategory(StoreContext.tenantId(), id); }
+
+    @PostMapping("/services/{id}/addons")
+    @PreAuthorize(WRITE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public Map<String, Object> createAddon(@PathVariable UUID id, @RequestBody BookingService.AddonReq r) { return bookings.saveAddon(StoreContext.tenantId(), id, null, r); }
+
+    @PatchMapping("/services/{id}/addons/{addonId}")
+    @PreAuthorize(WRITE)
+    public Map<String, Object> updateAddon(@PathVariable UUID id, @PathVariable UUID addonId, @RequestBody BookingService.AddonReq r) { return bookings.saveAddon(StoreContext.tenantId(), id, addonId, r); }
+
+    @DeleteMapping("/services/{id}/addons/{addonId}")
+    @PreAuthorize(WRITE)
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteAddon(@PathVariable UUID id, @PathVariable UUID addonId) { bookings.deleteAddon(StoreContext.tenantId(), id, addonId); }
+
+    @GetMapping("/booking/special-days")
+    @PreAuthorize(READ)
+    public List<Map<String, Object>> specialDays() { return bookings.specialDays(StoreContext.tenantId()); }
+
+    @PutMapping("/booking/special-days")
+    @PreAuthorize(WRITE)
+    public List<Map<String, Object>> saveSpecialDay(@RequestBody SpecialDayPut r) { return bookings.saveSpecialDay(StoreContext.tenantId(), r.date(), r.ranges()); }
 
     @GetMapping("/booking/hours")
     @PreAuthorize(READ)
@@ -68,7 +109,7 @@ public class BookingController {
 
     @PostMapping("/booking/closures")
     @PreAuthorize(WRITE)
-    public List<Map<String, Object>> addClosure(@RequestBody ClosureReq r) { return bookings.addClosure(StoreContext.tenantId(), r.date(), r.reason()); }
+    public List<Map<String, Object>> addClosure(@RequestBody ClosureReq r) { return r.to() == null || r.to().isBlank() ? bookings.addClosure(StoreContext.tenantId(), r.date(), r.reason()) : bookings.addClosureRange(StoreContext.tenantId(), r.date(), r.to(), r.reason()); }
 
     @DeleteMapping("/booking/closures/{date}")
     @PreAuthorize(WRITE)
@@ -85,7 +126,7 @@ public class BookingController {
     /** Free times for the dashboard's own booking form (the shop may book closer in than a customer). */
     @GetMapping("/booking/slots")
     @PreAuthorize(READ)
-    public List<String> slots(@RequestParam UUID serviceId, @RequestParam String date) { return bookings.slots(StoreContext.tenantId(), serviceId, LocalDate.parse(date), false); }
+    public List<String> slots(@RequestParam UUID serviceId, @RequestParam String date, @RequestParam(required = false) List<UUID> addonIds) { return bookings.slots(StoreContext.tenantId(), serviceId, LocalDate.parse(date), false, addonIds == null ? List.of() : addonIds); }
 
     // ---- appointments ----
     public record DeclineReq(String reason) {}
@@ -106,7 +147,7 @@ public class BookingController {
     @PreAuthorize(WRITE)
     @ResponseStatus(HttpStatus.CREATED)
     public Map<String, Object> create(@RequestBody BookingService.BookReq r, Authentication a) {
-        return bookings.book(StoreContext.tenantId(), (UUID) a.getPrincipal(), new BookingService.BookReq(r.serviceId(), r.date(), r.time(), r.name(), r.phone(), r.note(), "DASHBOARD", null));
+        return bookings.book(StoreContext.tenantId(), (UUID) a.getPrincipal(), new BookingService.BookReq(r.serviceId(), r.date(), r.time(), r.name(), r.phone(), r.note(), "DASHBOARD", null, r.addonIds(), r.answers(), r.locationMode(), r.address()));
     }
 
     @PostMapping("/bookings/{id}/confirm")
