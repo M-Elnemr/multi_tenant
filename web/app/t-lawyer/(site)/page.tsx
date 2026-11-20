@@ -6,6 +6,9 @@ import { whatsappLink } from "@/lib/whatsapp";
 import { currentHost } from "@/lib/backend";
 import { resolveHost } from "@/lib/tenant";
 import type { LawyerSite } from "./types";
+import { LawyerHeroVariant } from "./hero-variants";
+import { LAWYER_LOOKS, LAWYER_TEMPLATE_IDS } from "@/lib/lawyer-templates";
+import { siteTemplate } from "@/lib/site-template";
 
 export const dynamic = "force-dynamic";
 
@@ -32,11 +35,13 @@ export default async function LawyerHome() {
   const days = [6, 7, 1, 2, 3, 4, 5].map((w) => ({ w, name: new Intl.DateTimeFormat(intl, { weekday: "long" }).format(new Date(2024, 0, w === 7 ? 7 : w)), rows: p.hours.filter((h) => h.weekday === w) }));
   const fmtTime = (s: string) => new Intl.DateTimeFormat(intl, { hour: "numeric", minute: "2-digit" }).format(new Date(`2024-01-01T${s}`));
   const book = p.bookingEnabled !== false;
+  const kind = LAWYER_LOOKS[(await siteTemplate<string>(p.template, LAWYER_TEMPLATE_IDS, "classic")).id as keyof typeof LAWYER_LOOKS].hero;
   const process = [1, 2, 3].map((i) => ({ n: i, title: t(`lws.step${i}`), text: t(`lws.step${i}d`) }));
 
   return (
     <>
-      {/* hero */}
+      {/* hero: the original composition, or one of the three others (chosen by the design) */}
+      {kind !== "split" ? <LawyerHeroVariant kind={kind} p={p} name={name} stats={stats} book={book} t={t} /> : (
       <section className="lw-hero lw-hero-grain">
         <Scales className="pointer-events-none absolute -bottom-10 h-[420px] w-[420px] opacity-[.06] ltr:-right-16 rtl:-left-16" />
         <div className="lw-container relative grid items-center gap-12 py-16 md:py-24 lg:grid-cols-[1.25fr_1fr]">
@@ -70,6 +75,7 @@ export default async function LawyerHome() {
           </div>
         </div>
       </section>
+      )}
 
       {/* practice areas */}
       {p.practiceAreas.length > 0 && (

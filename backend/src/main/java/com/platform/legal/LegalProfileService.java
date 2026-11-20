@@ -86,7 +86,7 @@ public class LegalProfileService {
     public Map<String, Object> update(UUID tenantId, UUID actor, Map<String, Object> f) {
         var fe = new FieldErrors();
         if (f.containsKey("displayName")) fe.when(!(f.get("displayName") instanceof String s) || s.isBlank(), "displayName", "Write your name as clients should see it");
-        if (f.get("template") instanceof String t) fe.when(!Set.of("classic", "modern", "heritage").contains(t), "template", "Choose one of the designs");
+        if (f.get("template") instanceof String t) fe.when(!Set.of("classic", "modern", "heritage", "chambers", "justice", "marble", "gavel", "minimal", "emerald", "nocturne").contains(t), "template", "Choose one of the designs");
         if (f.get("email") instanceof String e && !e.isBlank()) fe.when(!e.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"), "email", "This email does not look right");
         if (f.get("mapUrl") instanceof String m && !m.isBlank()) fe.when(!m.startsWith("https://"), "mapUrl", "Paste a map link that starts with https://");
         if (f.get("clientAppUrl") instanceof String u && !u.isBlank()) fe.when(!u.startsWith("https://"), "clientAppUrl", "Paste a link that starts with https://");

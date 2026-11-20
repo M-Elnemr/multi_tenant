@@ -1,6 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
+import { LAWYER_LOOKS, LAWYER_TEMPLATE_IDS } from "@/lib/lawyer-templates";
 import { useState, type ReactNode } from "react";
 import { api } from "@/lib/client";
 import { fileUrl } from "@/lib/media";
@@ -17,17 +18,13 @@ import { Button, ErrorText, Field, Input, Loading, PageHeader, Section, Select, 
 type Area = { key: string; title: string; description: string; icon: string };
 type Profile = {
   displayName: string; title: string; headline: string; bio: string; photoUrl?: string | null; coverUrl?: string | null; barNumber: string; barLevel: string; yearsExperience: number;
-  officeAddress: string; officeCity: string; mapUrl: string; phone: string; whatsapp: string; email: string; template: "classic" | "modern" | "heritage";
+  officeAddress: string; officeCity: string; mapUrl: string; phone: string; whatsapp: string; email: string; template: string;
   practiceAreas: Area[]; languages: string[]; education: { title: string; place: string; year: string }[]; achievements: { value: string; label: string }[];
   testimonials: { name: string; text: string; rating: number }[]; faq: { q: string; a: string }[]; social: Record<string, string>;
 };
 type Meta = { practiceAreas: { key: string; nameAr: string; nameEn: string; icon: string }[] };
 
-const TEMPLATES = [
-  { id: "classic", bg: "linear-gradient(135deg,#0b1d3a,#1e3a5f)", accent: "#c9a227" },
-  { id: "modern", bg: "linear-gradient(135deg,#f8fafc,#e2e8f0)", accent: "#0f766e" },
-  { id: "heritage", bg: "linear-gradient(135deg,#2b1d14,#5c3b23)", accent: "#d4a373" },
-] as const;
+const TEMPLATES = LAWYER_TEMPLATE_IDS.map((id) => ({ id, bg: LAWYER_LOOKS[id].bg, accent: LAWYER_LOOKS[id].accent, hero: LAWYER_LOOKS[id].hero }));
 const AREA_ICONS = ["⚖️", "🛡️", "👪", "🏢", "👷", "🏠", "🏛️", "📊", "📜", "✍️", "💡", "🧾", "🤝", "🔨", "📁"];
 
 /** List editor: rows of small inputs with add / remove / move up. */
@@ -79,7 +76,7 @@ export default function Website() {
       <PageHeader eyebrow={<Eyebrow>{t("lw.eb.setup")}</Eyebrow>} title={t("lw.nav.website")} subtitle={t("lw.web.subtitle")} actions={<LinkButton href="/" icon="globe" external>{t("lw.web.view")}</LinkButton>} />
       <fieldset disabled={!write} className="min-w-0 space-y-5">
         <Section title={t("lw.web.design")} icon="palette">
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {TEMPLATES.map((tp) => (
               <button key={tp.id} type="button" onClick={() => set({ template: tp.id })} className={`overflow-hidden rounded-2xl text-start ring-2 transition ${p.template === tp.id ? "ring-[var(--rail-accent)]" : "ring-line hover:ring-line-strong"}`}>
                 <div className="relative h-28 p-4" style={{ background: tp.bg }}>
@@ -87,7 +84,7 @@ export default function Website() {
                   <div className="absolute bottom-3 end-3 h-7 w-16 rounded-lg" style={{ background: tp.accent }} />
                   {p.template === tp.id && <span className="absolute start-3 top-3 grid h-6 w-6 place-items-center rounded-full bg-white text-[#14213d] shadow"><Icon name="check" className="h-4 w-4" /></span>}
                 </div>
-                <div className="bg-surface p-3"><p className="font-semibold text-ink">{t(`lw.tpl.${tp.id}`)}</p><p className="text-xs text-muted">{t(`lw.tpl.${tp.id}.d`)}</p></div>
+                <div className="bg-surface p-3"><p className="font-semibold text-ink">{t(`lw.tpl.${tp.id}`)}</p><p className="text-xs text-muted">{t(`lw.tpl.${tp.id}.d`)}</p><a href={`/?tpl=${tp.id}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="mt-1 inline-flex min-h-11 items-center text-xs font-semibold text-brand hover:underline">{t("lw.tpl.preview")}</a></div>
               </button>
             ))}
           </div>

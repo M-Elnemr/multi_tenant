@@ -65,3 +65,25 @@
 .lw-input:focus { border-color: var(--lw-accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--lw-accent) 18%, transparent); }
 .lw-field-error .lw-input { border-color: #ef4444; box-shadow: 0 0 0 4px rgb(239 68 68 / .12); }
 @media (prefers-reduced-motion: reduce) { .lw-reveal, .lw-lift { animation: none; transition: none; } }
+
+/* ---------- seven more designs (the first three above are unchanged): the page layout is chosen in lib/lawyer-templates.ts, the look here ---------- */
+.lw-emblem { background: color-mix(in srgb, var(--lw-accent) 18%, transparent); border: 2px solid var(--lw-accent); color: var(--lw-accent); }
+.lw-band { background: color-mix(in srgb, var(--lw-hero-ink) 6%, transparent); border: 1px solid color-mix(in srgb, var(--lw-hero-ink) 14%, transparent); }
+
+/* CHAMBERS - barristers' chambers: slate, brass, editorial type */
+.lw[data-tpl="chambers"] { --lw-bg: #f3f1ec; --lw-surface: #fff; --lw-ink: #1c2430; --lw-mute: #5d6672; --lw-line: #ddd8cc; --lw-accent: #b9985a; --lw-accent-ink: #1a1405; --lw-hero: #1c2430; --lw-hero-2: #2f3947; --lw-hero-ink: #f4efe3; --lw-display: var(--f-playfair), var(--f-amiri), serif; --lw-radius: 4px; }
+/* JUSTICE - claret and gold, an emblem, ceremonial */
+.lw[data-tpl="justice"] { --lw-bg: #faf4ef; --lw-surface: #fffdfa; --lw-ink: #2a0d14; --lw-mute: #7a5a60; --lw-line: #ecd9d0; --lw-accent: #c99a3e; --lw-accent-ink: #2a1a00; --lw-hero: #4a0f1c; --lw-hero-2: #7a1f33; --lw-hero-ink: #fbeedd; --lw-display: var(--f-cinzel), var(--f-amiri), serif; --lw-radius: 12px; }
+/* MARBLE - light marble, black ink, a photo band */
+.lw[data-tpl="marble"] { --lw-bg: #f7f6f3; --lw-surface: #fff; --lw-ink: #141414; --lw-mute: #66625c; --lw-line: #e4e1da; --lw-accent: #141414; --lw-accent-ink: #fff; --lw-hero: #f3f1ec; --lw-hero-2: #dedad1; --lw-hero-ink: #141414; --lw-display: var(--f-cormorant), var(--f-amiri), serif; --lw-radius: 2px; }
+/* GAVEL - charcoal with a red accent, sharp */
+.lw[data-tpl="gavel"] { --lw-bg: #f4f4f5; --lw-surface: #fff; --lw-ink: #17181c; --lw-mute: #62656e; --lw-line: #e1e2e6; --lw-accent: #d64545; --lw-accent-ink: #fff; --lw-hero: #17181c; --lw-hero-2: #2b2d34; --lw-hero-ink: #f3f3f5; --lw-display: var(--f-tajawal), var(--font-inter-tight), sans-serif; --lw-radius: 6px; }
+/* MINIMAL - white, one black accent, plenty of air */
+.lw[data-tpl="minimal"] { --lw-bg: #ffffff; --lw-surface: #fff; --lw-ink: #111111; --lw-mute: #6b6b6b; --lw-line: #ececec; --lw-accent: #111111; --lw-accent-ink: #fff; --lw-hero: #ffffff; --lw-hero-2: #f3f3f3; --lw-hero-ink: #111111; --lw-display: var(--font-inter-tight), var(--f-plex), sans-serif; --lw-radius: 14px; }
+/* EMERALD - deep green and gold, editorial */
+.lw[data-tpl="emerald"] { --lw-bg: #f4f7f4; --lw-surface: #fff; --lw-ink: #0c2a24; --lw-mute: #546a63; --lw-line: #d9e3dd; --lw-accent: #c9a93f; --lw-accent-ink: #1a1500; --lw-hero: #0c3a31; --lw-hero-2: #14604f; --lw-hero-ink: #f2f4e4; --lw-display: var(--f-messiri), var(--f-amiri), serif; --lw-radius: 14px; }
+/* NOCTURNE - midnight indigo and lilac, a photo band */
+.lw[data-tpl="nocturne"] { --lw-bg: #f6f5fb; --lw-surface: #fff; --lw-ink: #17143a; --lw-mute: #615e86; --lw-line: #e1def2; --lw-accent: #8a78ff; --lw-accent-ink: #fff; --lw-hero: #120f2b; --lw-hero-2: #2a2160; --lw-hero-ink: #f1efff; --lw-display: var(--f-reem), var(--f-tajawal), sans-serif; --lw-radius: 20px; }
+/* light heroes need a dark closing section like "modern" has */
+.lw[data-tpl="marble"] .lw-dark, .lw[data-tpl="minimal"] .lw-dark { background: #15171a; color: #f2f2f2; }
+.lw[data-tpl="marble"] .lw-day[aria-pressed="true"], .lw[data-tpl="minimal"] .lw-day[aria-pressed="true"] { background: var(--lw-accent); border-color: var(--lw-accent); color: #fff; }

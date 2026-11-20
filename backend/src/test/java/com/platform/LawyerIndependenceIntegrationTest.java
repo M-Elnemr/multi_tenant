@@ -63,4 +63,14 @@ class LawyerIndependenceIntegrationTest extends IntegrationTestBase {
         onHost("platform.test", admin, "GET", "/api/v1/platform/tenants/" + id, null).andExpect(status().isOk())
                 .andExpect(jsonPath("$.owner.phone").isNotEmpty()).andExpect(jsonPath("$.tenantType").value("LAWYER"));
     }
+
+    @Test
+    void aLawOfficeHasExactlyTenDesignsAndNoShopOrServiceDesign() throws Exception {
+        Tenant law = lawyer();
+        List<String> ten = List.of("classic", "modern", "heritage", "chambers", "justice", "marble", "gavel", "minimal", "emerald", "nocturne");
+        for (String tpl : ten) onHost(law.host(), law.access(), "PATCH", "/api/v1/lawyer/profile", "{\"template\":\"%s\"}".formatted(tpl)).andExpect(status().isOk()).andExpect(jsonPath("$.template").value(tpl));
+        assertThat(ten).hasSize(10).doesNotHaveDuplicates();
+        for (String bad : List.of("atelier", "lumiere", "solo", "luxe", "nope")) onHost(law.host(), law.access(), "PATCH", "/api/v1/lawyer/profile", "{\"template\":\"%s\"}".formatted(bad)).andExpect(status().isBadRequest());
+        onHost(law.host(), null, "GET", "/api/v1/lawyer/public/profile", null).andExpect(jsonPath("$.template").value("nocturne"));   // the public site reads the saved design
+    }
 }

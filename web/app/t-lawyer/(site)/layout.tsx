@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { VisitTracker } from "@/components/visit-tracker";
 import { templateFontVars } from "@/components/shop/templates/fonts";
+import { LAWYER_TEMPLATE_IDS } from "@/lib/lawyer-templates";
+import { siteTemplate } from "@/lib/site-template";
 import { backendJson, currentHost } from "@/lib/backend";
 import { getT } from "@/lib/i18n-server";
 import { fileUrl } from "@/lib/media";
@@ -15,13 +17,14 @@ export default async function LawyerSiteLayout({ children }: { children: React.R
   const p = await backendJson<LawyerSite>("/lawyer/public/profile").catch(() => null);
   const logo = info.kind === "TENANT" && (info.branding as { logo_file_id?: string }).logo_file_id;
   const name = p ? `${p.title ? p.title + " " : ""}${p.displayName}` : info.kind === "TENANT" ? info.name : "";
+  const { id: tpl } = await siteTemplate<string>(p?.template, LAWYER_TEMPLATE_IDS, "classic");
   const nav = [
     { href: "/#areas", label: t("lws.nav.areas") }, { href: "/#about", label: t("lws.nav.about") }, { href: "/#services", label: t("lws.nav.services") },
     ...(p?.testimonials.length ? [{ href: "/#reviews", label: t("lws.nav.reviews") }] : []), { href: "/#contact", label: t("lws.nav.contact") },
   ];
   const year = new Date().getFullYear();
   return (
-    <div className={`lw flex min-h-dvh flex-col ${templateFontVars}`} data-tpl={p?.template ?? "classic"}>
+    <div className={`lw flex min-h-dvh flex-col ${templateFontVars}`} data-tpl={tpl}>
       <header className="lw-header">
         <div className="lw-container flex items-center justify-between gap-3 py-3">
           <Link href="/" className="flex min-w-0 items-center gap-3">
