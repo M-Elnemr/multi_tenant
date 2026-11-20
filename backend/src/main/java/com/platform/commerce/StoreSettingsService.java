@@ -151,6 +151,7 @@ public class StoreSettingsService {
         p.remove("taxId"); p.remove("otherCategory");
         var b = jdbc.sql("SELECT logo_file_id, primary_color, secondary_color FROM core.branding WHERE tenant_id = :t").param("t", tenantId).query().listOfRows().stream().findFirst();
         p.put("branding", b.isPresent() ? Rows.camel(b.get()) : Map.of());
+        p.put("bookingEnabled", jdbc.sql("SELECT EXISTS (SELECT 1 FROM commerce.services WHERE tenant_id = :t AND is_active) AND EXISTS (SELECT 1 FROM commerce.service_hours WHERE tenant_id = :t)").param("t", tenantId).query(Boolean.class).single());
         return p;
     }
 

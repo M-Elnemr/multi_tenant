@@ -279,6 +279,8 @@ public class BookingService {
         LocalDate date = parseDate(r.date());
         LocalTime t = time(r.time(), "time");
         boolean fromCustomer = !"DASHBOARD".equals(r.source());
+        if (fromCustomer && jdbc.sql("SELECT count(*) FROM commerce.bookings WHERE tenant_id = :t AND phone = :p AND created_at > now() - interval '1 day' AND status IN ('PENDING','CONFIRMED')").param("t", tenantId).param("p", phone).query(Long.class).single() >= 5)
+            throw BusinessException.badRequest("TOO_MANY_BOOKINGS", "This number already has several appointments waiting: please call the shop to change them").field("phone");   // a stray script or a prank cannot fill the shop's day
         jdbc.sql("SELECT pg_advisory_xact_lock(hashtextextended(CAST(:k AS text), 0))").param("k", tenantId + "|booking").query().listOfRows();
         if (!slotTimes(tenantId, svc, date, fromCustomer, null).contains(t)) throw BusinessException.badRequest("SLOT_TAKEN", "This time is not available any more").field("time");
         ZoneId tz = zone(tenantId);

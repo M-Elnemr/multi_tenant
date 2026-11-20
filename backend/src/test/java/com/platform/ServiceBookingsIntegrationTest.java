@@ -224,6 +224,34 @@ class ServiceBookingsIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void theShopWebsiteBooksWithTheSameRulesAndALimitStopsAFloodFromOneNumber() throws Exception {
+        Tenant t = onboard("STORE");
+        onHost(t.host(), null, "GET", "/api/v1/shop/profile", null).andExpect(jsonPath("$.profile.bookingEnabled").value(false));   // no services yet: no booking page link
+        String svc = shop(t, 1, 0, false);
+        onHost(t.host(), null, "GET", "/api/v1/shop/profile", null).andExpect(jsonPath("$.profile.bookingEnabled").value(true));
+        onHost(t.host(), null, "GET", "/api/v1/shop/booking/config", null).andExpect(status().isOk()).andExpect(jsonPath("$.services[0].name").value("Haircut")).andExpect(jsonPath("$.autoConfirm").value(false));
+        String day = tomorrow(t);
+        List<String> free = JsonPath.read(body(onHost(t.host(), null, "GET", "/api/v1/shop/booking/slots?serviceId=" + svc + "&date=" + day, null).andExpect(status().isOk())), "$");
+        assertThat(free).contains("12:00");
+        String req = "{\"serviceId\":\"%s\",\"date\":\"%s\",\"time\":\"12:00\",\"name\":\"Sara\",\"phone\":\"01012345678\"}".formatted(svc, day);
+        String made = body(onHost(t.host(), null, "POST", "/api/v1/shop/booking", req).andExpect(status().isCreated()).andExpect(jsonPath("$.status").value("PENDING")));
+        String number = JsonPath.read(made, "$.bookingNumber");
+        assertThat(jdbc.sql("SELECT source FROM commerce.bookings WHERE booking_number = :n").param("n", number).query(String.class).single()).isEqualTo("WEBSITE");
+        // the same time again is taken; a wrong phone finds nothing; the right one finds it and can cancel it
+        onHost(t.host(), null, "POST", "/api/v1/shop/booking", req.replace("01012345678", "01155555555")).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("SLOT_TAKEN"));
+        onHost(t.host(), null, "GET", "/api/v1/shop/booking/lookup?number=" + number + "&phone=01099999999", null).andExpect(status().isNotFound());
+        onHost(t.host(), null, "GET", "/api/v1/shop/booking/lookup?number=" + number + "&phone=01012345678", null).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PENDING"));
+        onHost(t.host(), null, "POST", "/api/v1/shop/booking/cancel", "{\"bookingNumber\":\"%s\",\"phone\":\"01012345678\"}".formatted(number)).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("CANCELLED"));
+        // one number cannot fill the shop's day: the sixth waiting request in a day is refused
+        onHost(t.host(), t.access(), "PUT", "/api/v1/store/booking/settings", "{\"stations\":10}").andExpect(status().isOk());
+        for (int i = 0; i < 5; i++) onHost(t.host(), null, "POST", "/api/v1/shop/booking", req.replace("12:00", (10 + i) + ":00").replace("Sara", "Prank")).andExpect(status().isCreated());
+        onHost(t.host(), null, "POST", "/api/v1/shop/booking", req.replace("12:00", "16:00").replace("Sara", "Prank")).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("TOO_MANY_BOOKINGS"));
+        // another shop's host knows nothing of these services
+        Tenant other = onboard("STORE");
+        onHost(other.host(), null, "GET", "/api/v1/shop/booking/slots?serviceId=" + svc + "&date=" + day, null).andExpect(status().isNotFound());
+    }
+
+    @Test
     void anotherShopCannotSeeOrChangeThisShopsAppointmentsOrServices() throws Exception {
         Tenant a = onboard("STORE");
         Tenant b = onboard("STORE");

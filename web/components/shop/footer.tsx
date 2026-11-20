@@ -34,6 +34,7 @@ export function ShopFooter({ p, name, logoUrl, branches, t, poweredLabel, powere
             <li><Link href="/products" className="hover:text-white">{t("shop.allProducts")}</Link></li>
             <li><Link href="/products?onSale=true" className="hover:text-white">{t("shop.offers")}</Link></li>
             <li><Link href="/branches" className="hover:text-white">{t("shop.branches")}</Link></li>
+            {p.bookingEnabled && <li><Link href="/book" className="hover:text-white">{t("book.link")}</Link></li>}
             <li><Link href="/track" className="hover:text-white">{t("shop.trackOrder")}</Link></li>
             <li><Link href="/account" className="hover:text-white">{t("nav.account")}</Link></li>
           </ul>

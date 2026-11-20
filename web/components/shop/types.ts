@@ -26,7 +26,7 @@ export function pathTo(flat: ShopCategory[], slug: string): ShopCategory[] {
 
 export type ShopProfile = {
   storeName: string; shortDescription?: string; about?: string; supportPhone?: string; supportEmail?: string; addressText?: string;
-  whatsapp?: string; extraPhones?: string[]; facebookUrl?: string; instagramUrl?: string; tiktokUrl?: string; websiteUrl?: string; mapsUrl?: string;
+  bookingEnabled?: boolean; whatsapp?: string; extraPhones?: string[]; facebookUrl?: string; instagramUrl?: string; tiktokUrl?: string; websiteUrl?: string; mapsUrl?: string;
   workingHours?: Record<string, { open: string; close: string; closed: boolean }>; isOpen?: boolean; closedMessage?: string; announcement?: string; coverFileId?: string | null;
   minOrderMinor?: number; vatIncluded?: boolean; returnWindowDays?: number; shippingPolicy?: string; returnPolicy?: string; privacyPolicy?: string; termsText?: string;
   metaPixelId?: string; tiktokPixelId?: string; gaId?: string;
