@@ -61,7 +61,25 @@ public class PlatformAdminService {
         return out;
     }
 
-    public Map<String, Object> tenants(String type, String status, String q, String filter, Page page) {
+    /**
+     * Account activity filters, all combinable and all evaluated by the database: subscription period start / end ranges (dates), expiring within N days, points consumption in a window
+     * (default last 30 days) with a minimum and a maximum, sorting and paging. Points consumed = what the wallet really debited for the assistant and messages (billing.wallet_entries, kinds AI and MESSAGE).
+     */
+    public record Activity(String startFrom, String startTo, String endFrom, String endTo, Integer expiringDays, String pointsFrom, String pointsTo, Long minPointsMinor, Long maxPointsMinor, String sort, String dir) {
+        public static final Activity NONE = new Activity(null, null, null, null, null, null, null, null, null, null, null);
+    }
+
+    private static final Map<String, String> SORTS = Map.of("created", "t.created_at", "name", "lower(t.name)", "subscriptionEnd", "s.current_period_end", "subscriptionStart", "s.current_period_start", "points", "w.used", "type", "t.tenant_type");
+
+    private static java.sql.Timestamp day(String v, String field, boolean endExclusive) {
+        if (v == null) return null;
+        try { java.time.LocalDate d = java.time.LocalDate.parse(v); return java.sql.Timestamp.from((endExclusive ? d.plusDays(1) : d).atStartOfDay(java.time.ZoneOffset.UTC).toInstant()); }
+        catch (RuntimeException e) { throw BusinessException.badRequest("VALIDATION_ERROR", "Use a date like 2026-12-31").field(field); }
+    }
+
+    public Map<String, Object> tenants(String type, String status, String q, String filter, Page page) { return tenants(type, status, q, filter, page, Activity.NONE); }
+
+    public Map<String, Object> tenants(String type, String status, String q, String filter, Page page, Activity a) {
         if (type != null) {   // one type or several, comma separated: only known business types
             var wanted = java.util.Arrays.stream(type.split(",")).map(String::trim).filter(x -> !x.isEmpty()).distinct().toList();
             if (wanted.stream().anyMatch(x -> !java.util.Set.of("STORE", "CLINIC", "LAWYER", "SERVICE").contains(x))) throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown business type").field("type");
@@ -73,25 +91,43 @@ public class PlatformAdminService {
         else if ("waiting".equals(filter)) extra = " AND s.status = 'PAST_DUE'";
         else if ("disabled".equals(filter)) extra = " AND t.status = 'SUSPENDED'";
         else if ("pay".equals(filter)) extra = " AND EXISTS (SELECT 1 FROM billing.pay_requests r WHERE r.tenant_id = t.id AND r.status IN ('NEW','CONTACTED'))";
+        if (a.expiringDays() != null) {
+            if (a.expiringDays() < 1 || a.expiringDays() > 365) throw BusinessException.badRequest("VALIDATION_ERROR", "Between 1 and 365 days").field("expiringDays");
+            extra += " AND s.status IN ('TRIALING','ACTIVE') AND s.current_period_end >= now() AND s.current_period_end < now() + make_interval(days => CAST(:xd AS int))";
+        }
+        extra += " AND (CAST(:sf AS timestamptz) IS NULL OR s.current_period_start >= CAST(:sf AS timestamptz)) AND (CAST(:st2 AS timestamptz) IS NULL OR s.current_period_start < CAST(:st2 AS timestamptz))"
+               + " AND (CAST(:ef AS timestamptz) IS NULL OR s.current_period_end >= CAST(:ef AS timestamptz)) AND (CAST(:et AS timestamptz) IS NULL OR s.current_period_end < CAST(:et AS timestamptz))"
+               + " AND (CAST(:minp AS bigint) IS NULL OR w.used >= CAST(:minp AS bigint)) AND (CAST(:maxp AS bigint) IS NULL OR w.used <= CAST(:maxp AS bigint))";
+        java.sql.Timestamp pf = day(a.pointsFrom(), "pointsFrom", false), pt = day(a.pointsTo(), "pointsTo", true);
+        if (pf == null) pf = java.sql.Timestamp.from(java.time.Instant.now().minus(java.time.Duration.ofDays(30)));
+        if (pt == null) pt = java.sql.Timestamp.from(java.time.Instant.now().plus(java.time.Duration.ofDays(1)));
+        String order = SORTS.get(a.sort() == null ? "created" : a.sort());
+        if (order == null) throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown sort").field("sort");
+        String dir = "asc".equalsIgnoreCase(a.dir()) ? "ASC" : "DESC";
         String from = """
                  FROM core.tenants t LEFT JOIN LATERAL (SELECT * FROM billing.tenant_subscriptions x WHERE x.tenant_id = t.id ORDER BY x.created_at DESC LIMIT 1) s ON TRUE
                  LEFT JOIN billing.subscription_plans p ON p.id = s.plan_id
+                 LEFT JOIN LATERAL (SELECT coalesce(sum(-e.amount_minor), 0) AS used FROM billing.wallet_entries e WHERE e.tenant_id = t.id AND e.kind IN ('AI', 'MESSAGE') AND e.amount_minor < 0 AND e.created_at >= :pf AND e.created_at < :pt) w ON TRUE
                  WHERE (CAST(:ty AS varchar) IS NULL OR t.tenant_type = ANY (string_to_array(CAST(:ty AS varchar), ','))) AND (CAST(:st AS varchar) IS NULL OR t.status = CAST(:st AS varchar))
                    AND (CAST(:q AS varchar) IS NULL OR lower(t.name) LIKE CAST(:q AS varchar) OR t.slug LIKE CAST(:q AS varchar)
                         OR EXISTS (SELECT 1 FROM core.user_tenant_memberships m JOIN core.users u ON u.id = m.user_id WHERE m.tenant_id = t.id AND (u.phone LIKE CAST(:q AS varchar) OR lower(u.email) LIKE CAST(:q AS varchar))))
                 """ + extra;
-        long total = jdbc.sql("SELECT count(*)" + from).param("ty", type).param("st", status).param("q", like).query(Long.class).single();
-        var rows = jdbc.sql("""
+        var count = jdbc.sql("SELECT count(*)" + from);
+        var list = jdbc.sql("""
                 SELECT t.id, t.slug, t.name, t.tenant_type, t.status, t.created_at, s.status AS subscription_status, p.code AS plan_code, p.name AS plan_name, p.price_minor,
-                       s.current_period_start, s.current_period_end,
+                       s.current_period_start, s.current_period_end, w.used AS points_used_minor,
                        (SELECT d.host FROM core.tenant_domains d WHERE d.tenant_id = t.id AND d.is_primary) AS primary_host,
                        (SELECT u.first_name || ' ' || coalesce(u.last_name, '') FROM core.user_tenant_memberships m JOIN core.membership_roles mr ON mr.membership_id = m.id
-                          JOIN core.roles r ON r.id = mr.role_id JOIN core.users u ON u.id = m.user_id WHERE m.tenant_id = t.id AND r.code IN ('STORE_OWNER','CLINIC_OWNER') ORDER BY m.created_at LIMIT 1) AS owner_name,
+                          JOIN core.roles r ON r.id = mr.role_id JOIN core.users u ON u.id = m.user_id WHERE m.tenant_id = t.id AND right(r.code, 6) = '_OWNER' ORDER BY m.created_at LIMIT 1) AS owner_name,
                        (SELECT u.phone FROM core.user_tenant_memberships m JOIN core.membership_roles mr ON mr.membership_id = m.id
-                          JOIN core.roles r ON r.id = mr.role_id JOIN core.users u ON u.id = m.user_id WHERE m.tenant_id = t.id AND r.code IN ('STORE_OWNER','CLINIC_OWNER') ORDER BY m.created_at LIMIT 1) AS owner_phone,
+                          JOIN core.roles r ON r.id = mr.role_id JOIN core.users u ON u.id = m.user_id WHERE m.tenant_id = t.id AND right(r.code, 6) = '_OWNER' ORDER BY m.created_at LIMIT 1) AS owner_phone,
                        EXISTS (SELECT 1 FROM billing.pay_requests r WHERE r.tenant_id = t.id AND r.status IN ('NEW','CONTACTED')) AS has_pay_request
-                """ + from + " ORDER BY t.created_at DESC LIMIT :lim OFFSET :off")
-                .param("ty", type).param("st", status).param("q", like).param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows();
+                """ + from + " ORDER BY " + order + " " + dir + " NULLS LAST, t.id LIMIT :lim OFFSET :off");
+        Object[][] params = {{"ty", type}, {"st", status}, {"q", like}, {"xd", a.expiringDays()}, {"sf", day(a.startFrom(), "startFrom", false)}, {"st2", day(a.startTo(), "startTo", true)},
+                {"ef", day(a.endFrom(), "endFrom", false)}, {"et", day(a.endTo(), "endTo", true)}, {"minp", a.minPointsMinor()}, {"maxp", a.maxPointsMinor()}, {"pf", pf}, {"pt", pt}};
+        for (Object[] p : params) { count = count.param((String) p[0], p[1]); list = list.param((String) p[0], p[1]); }
+        long total = count.query(Long.class).single();
+        var rows = list.param("lim", page.pageSize()).param("off", page.offset()).query().listOfRows();
         return page.wrap(Rows.camel(rows), total);
     }
 

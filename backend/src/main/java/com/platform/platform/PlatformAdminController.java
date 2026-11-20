@@ -36,8 +36,12 @@ public class PlatformAdminController {
     @GetMapping("/tenants")
     @PreAuthorize("hasAuthority('platform.tenant.manage')")
     public Map<String, Object> tenants(@RequestParam(required = false) String type, @RequestParam(required = false) String status, @RequestParam(required = false) String q,
-                                       @RequestParam(required = false) String filter, @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize) {
-        return service.tenants(blank(type), blank(status), blank(q), blank(filter), Page.of(page, pageSize));   // the website sends empty values for "no filter"
+                                       @RequestParam(required = false) String filter, @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize,
+                                       @RequestParam(required = false) String startFrom, @RequestParam(required = false) String startTo, @RequestParam(required = false) String endFrom, @RequestParam(required = false) String endTo,
+                                       @RequestParam(required = false) Integer expiringDays, @RequestParam(required = false) String pointsFrom, @RequestParam(required = false) String pointsTo,
+                                       @RequestParam(required = false) Long minPointsMinor, @RequestParam(required = false) Long maxPointsMinor, @RequestParam(required = false) String sort, @RequestParam(required = false) String dir) {
+        return service.tenants(blank(type), blank(status), blank(q), blank(filter), Page.of(page, pageSize),
+                new PlatformAdminService.Activity(blank(startFrom), blank(startTo), blank(endFrom), blank(endTo), expiringDays, blank(pointsFrom), blank(pointsTo), minPointsMinor, maxPointsMinor, blank(sort), blank(dir)));   // the website sends empty values for "no filter"
     }
 
     @GetMapping("/tenants/{id}")
