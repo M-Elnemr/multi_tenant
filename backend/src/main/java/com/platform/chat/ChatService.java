@@ -942,6 +942,16 @@ public class ChatService {
             for (var m : FactCheck.mentions(q.text() == null ? "" : q.text(), names)) {
                 names.stream().filter(x -> x.slug().equals(m.slug())).findFirst().ifPresent(x -> { String label = x.name() + " [" + x.slug() + "]"; if (!products.contains(label)) { products.add(label); productNames.add(x.name()); } });
             }
+            if (products.isEmpty() && q.messageId() != null) {   // «المنتج موجود وسعره ٢٠,٩٩٩…»: the shop's answer does not name the product, the customer's question just before it does
+                var prior = replies.around(tenantId, conv, q.messageId(), 2, 0);
+                for (int i = prior.size() - 1; i >= 0 && products.isEmpty(); i--) {
+                    var pm = prior.get(i);
+                    if (pm.messageId() == null || pm.messageId() >= q.messageId() || pm.text() == null) continue;
+                    for (var m : FactCheck.mentions(pm.text(), names)) {
+                        names.stream().filter(x -> x.slug().equals(m.slug())).findFirst().ifPresent(x -> { String label = x.name() + " [" + x.slug() + "]"; if (!products.contains(label)) { products.add(label); productNames.add(x.name()); } });
+                    }
+                }
+            }
             boolean inside = q.messageId() != null && windowFrom > 0 && q.messageId() >= windowFrom;   // the model already has it as history: labelled, not repeated
             List<MessageReplies.Quoted> around = q.messageId() == null || inside ? List.of() : replies.around(tenantId, conv, q.messageId(), 2, 2);
             extras.quoted(q);
@@ -1132,6 +1142,7 @@ public class ChatService {
         return List.of();
     }
 
+    private static final Pattern WARRANTY = Pattern.compile("(?<![\\p{L}])(?:[وبلف]?ضمان\\p{L}*|[وبلف]?كفال\\p{L}*|warranty|guarantee)(?![\\p{L}])", Pattern.CASE_INSENSITIVE);
     private static final java.util.regex.Pattern QUESTION_ONLY_WEAK = java.util.regex.Pattern.compile("بكام|بكم|سعر|متاح|متوفر|موجود|فاضل|ضمان|available|price|how much|in stock|warranty");
 
     /** A short reply with no number and no statement: only a closing question or a call to order. */
@@ -1939,6 +1950,17 @@ public class ChatService {
         }
     }
 
+    /** The sentence of the product's own text (description, short description, specs) that states its warranty, or null when the shop wrote none. Never made up. */
+    String warrantyLine(UUID tenantId, String slug) {
+        String text = jdbc.sql("SELECT concat_ws('. ', p.description, p.short_description, p.specs::text) FROM commerce.products p WHERE p.tenant_id = :t AND p.slug = :s").param("t", tenantId).param("s", slug).query(String.class).optional().orElse(null);
+        if (text == null) return null;
+        for (String part : text.split("(?<=[.!؟?\\n])|[\"{}]|,\\s")) {
+            String x = part.replaceAll("\\s+", " ").strip();
+            if (x.length() >= 6 && x.length() <= 200 && WARRANTY.matcher(x).find()) return x.replaceAll("^[:,\\s]+|[\\s,:]+$", "");
+        }
+        return null;
+    }
+
     /** A reply made only of the shop's own data about the product(s) in question (real price, the options in stock), or a neutral question when none is known. */
     String verifiedReply(Ctx ctx, String last, List<String> slugs) {
         boolean ar = !english(last);
@@ -1959,6 +1981,15 @@ public class ChatService {
                 String price = v.get("price") == null ? "" : new java.math.BigDecimal(String.valueOf(v.get("price")).replaceAll("[^0-9.]", "")).stripTrailingZeros().toPlainString();
                 b.append("   - ").append(opts.isEmpty() ? (ar ? "متاح" : "available") : opts).append(price.isEmpty() ? "" : " — " + price + (ar ? " جنيه" : " EGP")).append("\n");
             }
+        }
+        if (!b.isEmpty() && last != null && WARRANTY.matcher(FactCheck.light(last)).find()) {   // «والجديد بكام وضمانه؟»: the price list alone left the second half of the question unanswered
+            StringBuilder w = new StringBuilder();
+            for (String slug : slugs.stream().limit(2).toList()) {
+                String line = warrantyLine(ctx.tenantId(), slug);
+                String name = names.stream().filter(n -> n.slug().equals(slug)).map(FactCheck.Named::name).findFirst().orElse(null);
+                if (line != null && name != null) w.append(slugs.size() > 1 ? "• " + name + ": " : "").append(line).append("\n");
+            }
+            if (w.length() > 0) b.append(ar ? "الضمان:\n" : "Warranty:\n").append(w);
         }
         if (b.isEmpty()) return ar ? "قولّي المنتج والمقاس واللون اللي محتاجهم وأقولك المتاح بالظبط 🌸" : "Tell me the product, size and colour you need and I will tell you exactly what is available 🌸";
         return (ar ? "ده المتاح عندنا بالظبط:\n" : "This is exactly what we have:\n") + b + (ar ? "تحب أنهي مقاس أو لون؟" : "Which size or colour would you like?");

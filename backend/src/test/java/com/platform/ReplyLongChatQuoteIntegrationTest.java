@@ -442,6 +442,50 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
         assertThat(other).as(other).doesNotContain("فاضية").contains("توضحلي");
     }
 
+    /** ob_f15: «والجديد بكام وضمانه؟» was answered by the data-only fallback with the price list and no warranty (6 of 8 long chats): the half of the question about the warranty is answered from the product's own text. */
+    @Test
+    void theDataOnlyReplyAlsoAnswersTheWarrantyPartOfTheQuestionFromTheProductsOwnText() throws Exception {
+        Tenant t = onboard("STORE");
+        UUID tenant = tenant(t);
+        String tag = uniq();
+        String base = "لاب توب زينترا " + tag;
+        product(t, base, 24999, "رمادي");
+        jdbc.sql("UPDATE commerce.products SET description = :d WHERE tenant_id = :t AND name = :n").param("d", "شاشة 14 بوصة. ضمان سنة كاملة من الوكيل.").param("t", tenant).param("n", base).update();
+        String ext = UUID.randomUUID().toString();
+        answer("أهلا");
+        say(t, ext, "السلام عليكم", null);
+        UUID conv = conv(tenant, ext);
+        seed(conv, "user", "بكام " + base + "؟");
+        seed(conv, "assistant", base + " بـ 24999 جنيه، رمادي.");
+        String reply = stuckModel(t, ext, "بكام وضمانه؟", "يبدو إن الرسالة بتاعتك وصلت فاضية يا فندم 😊");
+        assertThat(reply).as(reply).contains("24999").contains("ضمان سنة");
+        String none = stuckModel(t, UUID.randomUUID().toString(), base + " بكام وضمانه؟", "رسالتك وصلت فاضية");
+        assertThat(none).as(none).contains("24999");   // a product with no warranty text gets no invented warranty
+    }
+
+    /** ob_f15 (long chats): the customer quoted the shop's answer «سعره 20999 جنيه، فضي» (it does not name the product) and asked «هو السعر ده لسه ساري؟»: the product comes from the question just before that answer. */
+    @Test
+    void aQuotedShopAnswerThatDoesNotNameItsProductTakesTheProductFromTheQuestionBeforeIt() throws Exception {
+        Tenant t = onboard("STORE");
+        UUID tenant = tenant(t);
+        String tag = uniq();
+        String base = "لاب توب زينترا " + tag, open = base + " أوبن بوكس", other = "شنطة جيمنج " + tag;
+        product(t, base, 24999, "فضي");
+        productWas(t, open, 20999, 24999, "فضي");
+        product(t, other, 620, "أسود");
+        String ext = UUID.randomUUID().toString();
+        answer("أهلا");
+        say(t, ext, "السلام عليكم", null);
+        UUID conv = conv(tenant, ext);
+        seed(conv, "user", open + " بكام؟");
+        long quoted = seed(conv, "assistant", "سعره 20999 جنيه، فضي، ومتبقي 3 قطع.");
+        for (int i = 0; i < 40; i++) { seed(conv, "user", "بكام " + other + "؟"); seed(conv, "assistant", other + " بـ 620 جنيه."); }
+        FakeAiProvider.SCRIPT.clear();
+        for (int i = 0; i < 8; i++) FakeAiProvider.SCRIPT.add(turns -> Turn.model("أيوه السعر ساري يا فندم، " + other + " بـ 620 جنيه 😊"));
+        String reply = JsonPath.read(say(t, ext, "هو السعر ده لسه ساري؟", quoted), "$.reply");
+        assertThat(reply).as(reply).contains("20999").doesNotContain("620");
+    }
+
     /** Seen in the open-box run on 6d37a5e (ob_f15, 4 of 173 turns): «الزينترا بوك 14 الأوبن بوكس متاح؟» was answered «يعجبك العرض ده؟ ابعتلي اسمك الأول…»: the statement was cut and only the closing question was sent. */
     @Test
     void aReplyThatIsOnlyAClosingQuestionToAProductQuestionIsAnsweredWithTheProductsData() throws Exception {
