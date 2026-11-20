@@ -87,6 +87,34 @@ public class BookingController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteAddon(@PathVariable UUID id, @PathVariable UUID addonId) { bookings.deleteAddon(StoreContext.tenantId(), id, addonId); }
 
+    public record DayOffReq(String date, String reason) {}
+
+    @GetMapping("/staff")
+    @PreAuthorize(READ)
+    public List<Map<String, Object>> staff() { return bookings.staff(StoreContext.tenantId()); }
+
+    @PostMapping("/staff")
+    @PreAuthorize(WRITE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public Map<String, Object> createStaff(@RequestBody BookingService.StaffReq r) { return bookings.saveStaff(StoreContext.tenantId(), null, r); }
+
+    @PatchMapping("/staff/{id}")
+    @PreAuthorize(WRITE)
+    public Map<String, Object> updateStaff(@PathVariable UUID id, @RequestBody BookingService.StaffReq r) { return bookings.saveStaff(StoreContext.tenantId(), id, r); }
+
+    @DeleteMapping("/staff/{id}")
+    @PreAuthorize(WRITE)
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteStaff(@PathVariable UUID id) { bookings.deleteStaff(StoreContext.tenantId(), id); }
+
+    @PostMapping("/staff/{id}/days-off")
+    @PreAuthorize(WRITE)
+    public Map<String, Object> staffDayOff(@PathVariable UUID id, @RequestBody DayOffReq r) { return bookings.staffDayOff(StoreContext.tenantId(), id, r.date(), r.reason(), false); }
+
+    @DeleteMapping("/staff/{id}/days-off/{date}")
+    @PreAuthorize(WRITE)
+    public Map<String, Object> removeStaffDayOff(@PathVariable UUID id, @PathVariable String date) { return bookings.staffDayOff(StoreContext.tenantId(), id, date, null, true); }
+
     @GetMapping("/booking/special-days")
     @PreAuthorize(READ)
     public List<Map<String, Object>> specialDays() { return bookings.specialDays(StoreContext.tenantId()); }
@@ -126,7 +154,7 @@ public class BookingController {
     /** Free times for the dashboard's own booking form (the shop may book closer in than a customer). */
     @GetMapping("/booking/slots")
     @PreAuthorize(READ)
-    public List<String> slots(@RequestParam UUID serviceId, @RequestParam String date, @RequestParam(required = false) List<UUID> addonIds) { return bookings.slots(StoreContext.tenantId(), serviceId, LocalDate.parse(date), false, addonIds == null ? List.of() : addonIds); }
+    public List<String> slots(@RequestParam UUID serviceId, @RequestParam String date, @RequestParam(required = false) List<UUID> addonIds, @RequestParam(required = false) UUID staffId) { return bookings.slots(StoreContext.tenantId(), serviceId, LocalDate.parse(date), false, addonIds == null ? List.of() : addonIds, staffId); }
 
     // ---- appointments ----
     public record DeclineReq(String reason) {}
@@ -155,7 +183,7 @@ public class BookingController {
     @PreAuthorize(WRITE)
     @ResponseStatus(HttpStatus.CREATED)
     public Map<String, Object> create(@RequestBody BookingService.BookReq r, Authentication a) {
-        return bookings.book(StoreContext.tenantId(), (UUID) a.getPrincipal(), new BookingService.BookReq(r.serviceId(), r.date(), r.time(), r.name(), r.phone(), r.note(), "DASHBOARD", null, r.addonIds(), r.answers(), r.locationMode(), r.address()));
+        return bookings.book(StoreContext.tenantId(), (UUID) a.getPrincipal(), new BookingService.BookReq(r.serviceId(), r.date(), r.time(), r.name(), r.phone(), r.note(), "DASHBOARD", null, r.addonIds(), r.answers(), r.locationMode(), r.address(), r.staffId()));
     }
 
     @PostMapping("/bookings/{id}/confirm")

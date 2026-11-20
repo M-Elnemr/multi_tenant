@@ -23,7 +23,7 @@ public class ShopBookingController {
 
     public ShopBookingController(BookingService bookings) { this.bookings = bookings; }
 
-    public record BookReq(UUID serviceId, String date, String time, String name, String phone, String note, List<UUID> addonIds, Map<String, String> answers, String locationMode, String address) {}
+    public record BookReq(UUID serviceId, String date, String time, String name, String phone, String note, List<UUID> addonIds, Map<String, String> answers, String locationMode, String address, UUID staffId) {}
     public record CancelReq(String bookingNumber, String phone) {}
 
     @GetMapping("/config")
@@ -43,12 +43,12 @@ public class ShopBookingController {
     }
 
     @GetMapping("/slots")
-    public List<String> slots(@RequestParam UUID serviceId, @RequestParam String date, @RequestParam(required = false) List<UUID> addonIds) { return bookings.slots(StoreContext.tenantId(), serviceId, LocalDate.parse(date), true, addonIds == null ? List.of() : addonIds); }
+    public List<String> slots(@RequestParam UUID serviceId, @RequestParam String date, @RequestParam(required = false) List<UUID> addonIds, @RequestParam(required = false) UUID staffId) { return bookings.slots(StoreContext.tenantId(), serviceId, LocalDate.parse(date), true, addonIds == null ? List.of() : addonIds, staffId); }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public Map<String, Object> book(@RequestBody BookReq r) {
-        var b = bookings.book(StoreContext.tenantId(), null, new BookingService.BookReq(r.serviceId(), r.date(), r.time(), r.name(), r.phone(), r.note(), "WEBSITE", null, r.addonIds(), r.answers(), r.locationMode(), r.address()));
+        var b = bookings.book(StoreContext.tenantId(), null, new BookingService.BookReq(r.serviceId(), r.date(), r.time(), r.name(), r.phone(), r.note(), "WEBSITE", null, r.addonIds(), r.answers(), r.locationMode(), r.address(), r.staffId()));
         return Map.of("bookingNumber", b.get("bookingNumber"), "status", b.get("status"), "serviceName", b.get("serviceName"), "date", b.get("date"), "time", b.get("time"), "priceMinor", b.get("priceMinor"), "currency", b.get("currency"));
     }
 
