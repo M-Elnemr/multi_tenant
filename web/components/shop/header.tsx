@@ -100,7 +100,8 @@ function DrawerNode({ node, depth, close }: { node: CategoryNode; depth: number;
 }
 
 export function ShopHeader({ name, logoUrl, announcement, closedMessage, isOpen, categories, audiences = [], variant = "bar" }: { name: string; logoUrl: string | null; announcement?: string; closedMessage?: string; isOpen: boolean; categories: ShopCategory[]; audiences?: string[]; variant?: HeaderKind }) {
-  const { t, locale } = useI18n();
+  const { t, locale, tenantType } = useI18n();
+  const svc = tenantType === "SERVICE";   // a service business opens with its services and a booking button, not a product search
   const [drawer, setDrawer] = useState(false);
   // the overlay header sits transparent on the hero photo and turns solid once the page scrolls
   const [scrolled, setScrolled] = useState(false);
@@ -130,15 +131,16 @@ export function ShopHeader({ name, logoUrl, announcement, closedMessage, isOpen,
         <div className="s-container s-header-row flex items-center gap-2 py-3 sm:gap-3">
           <button onClick={() => setDrawer(true)} aria-label={t("shop.menu")} className="grid h-11 w-11 place-items-center rounded-full transition hover:bg-[var(--s-soft)] lg:hidden"><Icon name="menu" className="h-6 w-6" /></button>
           <Link href="/" className="s-brand min-w-0 flex-1 md:flex-none"><Logo name={name} logoUrl={logoUrl} /></Link>
-          <SearchBox className="s-search mx-2 hidden flex-1 md:block lg:mx-6" />
+          {svc ? <nav aria-label={t("shop.menu")} className="mx-2 hidden flex-1 items-center gap-1 md:flex lg:mx-6"><a href="/#services" className="rounded-full px-4 py-2 text-sm font-extrabold hover:bg-[var(--s-soft)]">{t("svh.services")}</a><Link href="/book" className="rounded-full px-4 py-2 text-sm font-extrabold hover:bg-[var(--s-soft)]">{t("svh.book")}</Link><Link href="/products" className="rounded-full px-4 py-2 text-sm font-extrabold hover:bg-[var(--s-soft)]">{t("svh.products")}</Link></nav>
+            : <SearchBox className="s-search mx-2 hidden flex-1 md:block lg:mx-6" />}
           <div className="ms-auto flex shrink-0 items-center gap-0.5">
             <a href={`/api/lang?l=${locale === "ar" ? "en" : "ar"}`} className="hidden h-11 items-center rounded-full px-3 text-sm font-bold text-[var(--s-mute)] transition hover:bg-[var(--s-soft)] sm:flex">{locale === "ar" ? "EN" : "عربي"}</a>
-            <AccountButton />
-            <CartButton />
+            {svc && <Link href="/book" className="s-btn !min-h-11 !px-4 !py-2 !text-sm">{t("svh.bookNow")}</Link>}
+            <span className={svc ? "contents max-sm:hidden" : "contents"}><AccountButton /><CartButton /></span>   {/* a service business on a phone: the bottom bar has the account and the cart, the brand gets the room */}
           </div>
         </div>
-        <div className="s-search-row s-container pb-3 md:hidden"><SearchBox className="s-search-m" /></div>
-        <nav className="s-nav hidden border-t border-[var(--s-line)] lg:block">
+        {!svc && <div className="s-search-row s-container pb-3 md:hidden"><SearchBox className="s-search-m" /></div>}
+        <nav className={`s-nav hidden border-t border-[var(--s-line)] ${svc ? "" : "lg:block"}`}>
           <div className="s-container flex items-center gap-1 py-1.5">
             <Link href="/products" className="rounded-full px-4 py-2 text-sm font-extrabold" style={{ color: "var(--brand)" }}>{t("shop.allProducts")}</Link>
             {audienceLinks.map((f) => <Link key={f.key} href={`/products?audience=${f.value}`} className="rounded-full bg-[var(--s-soft)] px-3.5 py-1.5 text-sm font-extrabold transition hover:text-[var(--brand)]">{t(`audience.${f.key}`)}</Link>)}

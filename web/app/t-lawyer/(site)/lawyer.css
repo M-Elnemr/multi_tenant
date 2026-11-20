@@ -87,3 +87,13 @@
 /* light heroes need a dark closing section like "modern" has */
 .lw[data-tpl="marble"] .lw-dark, .lw[data-tpl="minimal"] .lw-dark { background: #15171a; color: #f2f2f2; }
 .lw[data-tpl="marble"] .lw-day[aria-pressed="true"], .lw[data-tpl="minimal"] .lw-day[aria-pressed="true"] { background: var(--lw-accent); border-color: var(--lw-accent); color: #fff; }
+
+/* header compositions: bar (default), center (brand centred, menu below on every width), slim (compact, thin rule) */
+.lw[data-header="center"] .lw-header .lw-container { flex-direction: column; gap: .35rem; padding-block: .6rem; }
+.lw[data-header="center"] .lw-header .lw-container > a { justify-content: center; }
+.lw[data-header="center"] .lw-nav { display: flex !important; width: 100%; justify-content: center; overflow-x: auto; scrollbar-width: none; }
+.lw[data-header="center"] .lw-nav a { white-space: nowrap; min-height: 40px; display: inline-flex; align-items: center; }
+.lw[data-header="center"] .lw-header .lw-container > div:last-child { position: absolute; inset-inline-end: 12px; top: 10px; }
+.lw[data-header="slim"] .lw-header { border-bottom: 2px solid var(--lw-accent); }
+.lw[data-header="slim"] .lw-header .lw-container { padding-block: .35rem; }
+.lw[data-header="slim"] .lw-nav a { text-transform: uppercase; letter-spacing: .08em; font-size: .78rem; }

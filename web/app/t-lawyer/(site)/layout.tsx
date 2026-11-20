@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { VisitTracker } from "@/components/visit-tracker";
 import { templateFontVars } from "@/components/shop/templates/fonts";
-import { LAWYER_TEMPLATE_IDS } from "@/lib/lawyer-templates";
+import { LAWYER_LOOKS, LAWYER_TEMPLATE_IDS } from "@/lib/lawyer-templates";
 import { siteTemplate } from "@/lib/site-template";
 import { backendJson, currentHost } from "@/lib/backend";
 import { getT } from "@/lib/i18n-server";
@@ -24,7 +24,7 @@ export default async function LawyerSiteLayout({ children }: { children: React.R
   ];
   const year = new Date().getFullYear();
   return (
-    <div className={`lw flex min-h-dvh flex-col ${templateFontVars}`} data-tpl={tpl}>
+    <div className={`lw flex min-h-dvh flex-col ${templateFontVars}`} data-tpl={tpl} data-header={LAWYER_LOOKS[tpl as keyof typeof LAWYER_LOOKS]?.header ?? "bar"}>
       <header className="lw-header">
         <div className="lw-container flex items-center justify-between gap-3 py-3">
           <Link href="/" className="flex min-w-0 items-center gap-3">

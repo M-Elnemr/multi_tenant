@@ -7,12 +7,12 @@ import { currentHost } from "@/lib/backend";
 import { resolveHost } from "@/lib/tenant";
 import type { LawyerSite } from "./types";
 import { LawyerHeroVariant } from "./hero-variants";
+import { Areas, Process, Reviews, ServiceList } from "./section-variants";
 import { LAWYER_LOOKS, LAWYER_TEMPLATE_IDS } from "@/lib/lawyer-templates";
 import { siteTemplate } from "@/lib/site-template";
 
 export const dynamic = "force-dynamic";
 
-const MODE_ICON = { OFFICE: "🏛", ONLINE: "💻", PHONE: "📞" } as const;
 
 /** A scales-of-justice line drawing used as a watermark in the hero. */
 function Scales({ className }: { className?: string }) {
@@ -35,13 +35,14 @@ export default async function LawyerHome() {
   const days = [6, 7, 1, 2, 3, 4, 5].map((w) => ({ w, name: new Intl.DateTimeFormat(intl, { weekday: "long" }).format(new Date(2024, 0, w === 7 ? 7 : w)), rows: p.hours.filter((h) => h.weekday === w) }));
   const fmtTime = (s: string) => new Intl.DateTimeFormat(intl, { hour: "numeric", minute: "2-digit" }).format(new Date(`2024-01-01T${s}`));
   const book = p.bookingEnabled !== false;
-  const kind = LAWYER_LOOKS[(await siteTemplate<string>(p.template, LAWYER_TEMPLATE_IDS, "classic")).id as keyof typeof LAWYER_LOOKS].hero;
+  const look = LAWYER_LOOKS[(await siteTemplate<string>(p.template, LAWYER_TEMPLATE_IDS, "classic")).id as keyof typeof LAWYER_LOOKS];
+  const kind = look.hero;
   const process = [1, 2, 3].map((i) => ({ n: i, title: t(`lws.step${i}`), text: t(`lws.step${i}d`) }));
 
   return (
     <>
       {/* hero: the original composition, or one of the three others (chosen by the design) */}
-      {kind !== "split" ? <LawyerHeroVariant kind={kind} p={p} name={name} stats={stats} book={book} t={t} /> : (
+      {kind !== "split" ? <LawyerHeroVariant kind={kind} p={p} name={name} stats={stats} book={book} t={t} locale={locale} /> : (
       <section className="lw-hero lw-hero-grain">
         <Scales className="pointer-events-none absolute -bottom-10 h-[420px] w-[420px] opacity-[.06] ltr:-right-16 rtl:-left-16" />
         <div className="lw-container relative grid items-center gap-12 py-16 md:py-24 lg:grid-cols-[1.25fr_1fr]">
@@ -68,7 +69,7 @@ export default async function LawyerHome() {
                 : <div className="relative grid aspect-[4/5] w-full place-items-center rounded-[calc(var(--lw-radius)+8px)] shadow-2xl" style={{ background: "linear-gradient(160deg, color-mix(in srgb, var(--lw-accent) 30%, var(--lw-hero-2)), var(--lw-hero))" }}><Scales className="h-40 w-40" /></div>}
               {p.yearsExperience > 0 && (
                 <div className="absolute -bottom-6 start-6 rounded-2xl px-5 py-3 shadow-xl" style={{ background: "var(--lw-surface)", color: "var(--lw-ink)" }}>
-                  <p className="lw-stat text-3xl">{p.yearsExperience}+</p><p className="text-xs font-bold" style={{ color: "var(--lw-mute)" }}>{t("lws.years")}</p>
+                  <p className="lw-stat text-3xl">{p.yearsExperience.toLocaleString(locale === "ar" ? "ar-EG" : "en-US", { useGrouping: false })}+</p><p className="text-xs font-bold" style={{ color: "var(--lw-mute)" }}>{t("lws.years")}</p>
                 </div>
               )}
             </div>
@@ -82,15 +83,7 @@ export default async function LawyerHome() {
         <section id="areas" className="lw-section scroll-mt-20">
           <div className="lw-container">
             <div className="mx-auto max-w-2xl text-center"><p className="lw-eyebrow justify-center">{t("lws.areasEyebrow")}</p><h2 className="lw-title mt-3">{t("lws.areasTitle")}</h2></div>
-            <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {p.practiceAreas.map((a, i) => (
-                <article key={i} className="lw-card lw-lift lw-reveal p-7" style={{ animationDelay: `${i * 70}ms` }}>
-                  <span className="lw-icon">{a.icon && a.icon.length <= 3 ? a.icon : "⚖️"}</span>
-                  <h3 className="lw-display mt-5 text-xl font-bold">{a.title}</h3>
-                  <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--lw-mute)" }}>{a.description || t("lws.areaDefault")}</p>
-                </article>
-              ))}
-            </div>
+            <Areas kind={look.areas} areas={p.practiceAreas} t={t} locale={locale} />
           </div>
         </section>
       )}
@@ -125,19 +118,7 @@ export default async function LawyerHome() {
           <div className="lw-container">
             <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="lw-eyebrow">{t("lws.servicesEyebrow")}</p><h2 className="lw-title mt-3">{t("lws.servicesTitle")}</h2></div>
               {book && <Link href="/book" className="lw-btn lw-btn-sm">{t("lws.bookCta")}</Link>}</div>
-            <div className="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-              {p.services.map((s) => (
-                <article key={s.id} className="lw-card lw-lift flex flex-col p-7">
-                  <div className="flex items-center justify-between"><span className="text-3xl">{MODE_ICON[s.mode]}</span><span className="rounded-full px-3 py-1 text-xs font-bold" style={{ background: "color-mix(in srgb, var(--lw-accent) 14%, transparent)", color: "var(--lw-accent)" }}>{t("lws.minutes", { n: s.durationMinutes })}</span></div>
-                  <h3 className="lw-display mt-5 text-xl font-bold">{s.name}</h3>
-                  {s.description && <p className="mt-2 flex-1 text-sm leading-relaxed" style={{ color: "var(--lw-mute)" }}>{s.description}</p>}
-                  <div className="mt-6 flex items-center justify-between gap-2 border-t pt-5" style={{ borderColor: "var(--lw-line)" }}>
-                    <span className="lw-display text-2xl font-bold">{s.priceMinor == null ? <span className="text-base" style={{ color: "var(--lw-mute)" }}>{t(`lws.mode.${s.mode}`)}</span> : s.priceMinor === 0 ? t("lws.free") : money(s.priceMinor, currency, locale)}</span>
-                    {book && <Link href={`/book?service=${s.id}`} className="lw-btn lw-btn-sm">{t("lws.book")}</Link>}
-                  </div>
-                </article>
-              ))}
-            </div>
+            <ServiceList kind={look.services} services={p.services} t={t} currency={currency} locale={locale} book={book} />
           </div>
         </section>
       )}
@@ -145,15 +126,7 @@ export default async function LawyerHome() {
       {/* how it works */}
       <section className="lw-section pt-0">
         <div className="lw-container">
-          <div className="lw-card grid gap-8 overflow-hidden p-8 md:grid-cols-3 md:p-12">
-            {process.map((s) => (
-              <div key={s.n} className="relative">
-                <span className="lw-display text-6xl font-bold opacity-15" style={{ color: "var(--lw-accent)" }}>0{s.n}</span>
-                <h3 className="lw-display -mt-6 text-xl font-bold">{s.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--lw-mute)" }}>{s.text}</p>
-              </div>
-            ))}
-          </div>
+          <Process kind={look.process} steps={process} locale={locale} />
         </div>
       </section>
 
@@ -162,15 +135,7 @@ export default async function LawyerHome() {
         <section id="reviews" className="lw-section scroll-mt-20 pt-0">
           <div className="lw-container">
             <div className="mx-auto max-w-2xl text-center"><p className="lw-eyebrow justify-center">{t("lws.reviewsEyebrow")}</p><h2 className="lw-title mt-3">{t("lws.reviewsTitle")}</h2></div>
-            <div className="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-              {p.testimonials.map((r, i) => (
-                <figure key={i} className="lw-card p-7">
-                  <span className="lw-quote">“</span>
-                  <blockquote className="mt-2 leading-relaxed">{r.text}</blockquote>
-                  <figcaption className="mt-5 flex items-center justify-between"><b>{r.name}</b><span className="text-amber-500">{"★".repeat(Math.max(1, Math.min(5, r.rating || 5)))}</span></figcaption>
-                </figure>
-              ))}
-            </div>
+            <Reviews kind={look.reviews} items={p.testimonials} />
           </div>
         </section>
       )}
