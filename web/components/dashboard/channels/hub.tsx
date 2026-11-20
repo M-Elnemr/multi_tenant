@@ -150,22 +150,44 @@ export function FeedCard() {
   );
 }
 
-const SOON = [["SNAPCHAT", "#F5C400"]] as const;
+type Snap = { available: boolean; state: string; note?: string | null; organizationId?: string | null; organizationName?: string | null; organizations?: { id: string; name: string }[]; catalogId?: string | null; feedUrl?: string;
+  lastUpload?: { status: string; totalItems: number; itemsErrored: number } | null };
 
-/** Honest status of the networks whose messaging and ads wait for each network's approval of our app. */
-export function SoonCards() {
+/** Snapchat, only what Snap offers a shop: login, a catalog and a scheduled product feed for ads. Snap has no customer messaging API, and this card says so instead of showing a fake chat connection. */
+export function SnapchatCard({ canManage }: { canManage: boolean }) {
   const { t } = useI18n();
+  const { data, reload } = useApi<Snap>("store/integrations/snapchat");
+  const start = useAction(async () => { const r = await api<{ url: string }>("store/integrations/snapchat/start", { body: {} }); window.location.assign(r.url); });
+  const choose = useAction(async (organizationId: string) => { await api("store/integrations/snapchat/organization", { body: { organizationId } }); await reload(); });
+  const publish = useAction(async () => { await api("store/integrations/snapchat/catalog", { body: {} }); await reload(); });
+  const off = useAction(async () => { await api("store/integrations/snapchat/disconnect", { body: {} }); await reload(); });
+  const state = !data ? "loading" : !data.available ? "off" : data.state;
+  const ready = state === "CONNECTED" && data?.catalogId;
   return (
-    <section className="space-y-3">
-      <div><h3 className="font-display text-[15px] font-semibold text-ink">{t("hub.soon.title")}</h3><p className="text-[13px] text-muted">{t("hub.soon.sub")}</p></div>
-      <ul className="grid gap-3 sm:grid-cols-2">
-        {SOON.map(([k, color]) => (
-          <li key={k} className="flex flex-col gap-2 rounded-[16px] bg-surface p-4 ring-1 ring-line">
-            <div className="flex items-center gap-2.5"><span className="grid h-9 w-9 place-items-center rounded-xl text-white" style={{ background: color }}><ChannelIcon channel={k} className="h-5 w-5 [&_svg]:text-white" /></span><span className="font-semibold text-ink">{t(`ai.platform.${k}`)}</span><Badge tone="amber">{t("ch.soon")}</Badge></div>
-            <p className="text-[12.5px] leading-relaxed text-muted">{t(`hub.soon.${k}`)}</p>
-          </li>
-        ))}
-      </ul>
+    <section className="space-y-3 rounded-[18px] bg-surface p-5 ring-1 ring-line">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[#F5C400] text-black"><ChannelIcon channel="SNAPCHAT" className="h-6 w-6" /></span>
+        <div className="min-w-0 flex-1">
+          <h3 className="flex flex-wrap items-center gap-2 font-display text-[16px] font-semibold text-ink">{t("ai.platform.SNAPCHAT")} {ready ? <Badge tone="green">{t("hub.snap.state.READY")}</Badge> : state !== "loading" && state !== "NOT_CONNECTED" && state !== "off" && <Badge tone="amber">{t(`hub.snap.state.${state}`)}</Badge>}</h3>
+          <p className="text-[13px] text-muted">{t("hub.snap.sub")}</p>
+        </div>
+        {canManage && data?.available && (state === "NOT_CONNECTED" || state === "REAUTH_REQUIRED") && <Button loading={start.loading} onClick={() => void start.run()}>{state === "NOT_CONNECTED" ? t("hub.snap.start") : t("hub.snap.reconnect")}</Button>}
+        {canManage && state === "CONNECTED" && !data?.catalogId && <Button loading={publish.loading} onClick={() => void publish.run()}>{t("hub.snap.publish")}</Button>}
+        {canManage && state !== "NOT_CONNECTED" && state !== "off" && state !== "loading" && <Button variant="ghost" loading={off.loading} onClick={() => void off.run()}>{t("hub.snap.disconnect")}</Button>}
+      </div>
+      <Alert tone="amber">{t("hub.snap.nochat")}</Alert>
+      {state === "off" && <Alert tone="amber">{t("hub.snap.off")}</Alert>}
+      {data?.note && state !== "CONNECTED" && <Alert tone="amber">{data.note}</Alert>}
+      {state === "CHOOSE_ORGANIZATION" && canManage && (
+        <div className="space-y-2"><p className="text-[13px] font-semibold text-ink">{t("hub.snap.choose")}</p>
+          <div className="flex flex-wrap gap-2">{(data?.organizations ?? []).map((o) => <Button key={o.id} variant="secondary" loading={choose.loading} onClick={() => void choose.run(o.id)}>{o.name || o.id}</Button>)}</div></div>
+      )}
+      {state === "CONNECTED" && <p className="text-[13px] text-muted">{t("hub.snap.org")}: <span className="font-semibold text-ink">{data?.organizationName}</span></p>}
+      {ready && data?.feedUrl && (
+        <div className="space-y-1.5"><p className="text-[12.5px] font-semibold text-ink-2">{t("hub.snap.feed")}</p><CopyField value={data.feedUrl} href={data.feedUrl} />
+          {data.lastUpload ? <p className="text-[12.5px] text-muted">{t("hub.snap.upload", { status: data.lastUpload.status, n: String(data.lastUpload.totalItems), e: String(data.lastUpload.itemsErrored) })}</p> : <p className="text-[12.5px] text-muted">{t("hub.snap.noUpload")}</p>}</div>
+      )}
+      <ErrorText error={start.error ?? choose.error ?? publish.error ?? off.error} />
     </section>
   );
 }
@@ -179,8 +201,8 @@ export function ConnectHub({ canManage }: { canManage: boolean }) {
       <FacebookCard canManage={canManage} />
       <div className="grid gap-4 lg:grid-cols-2"><TelegramCard canManage={canManage} /><XCard canManage={canManage} /></div>
       <TikTokCard canManage={canManage} />
+      <SnapchatCard canManage={canManage} />
       <FeedCard />
-      <SoonCards />
       <div className="pt-2"><h3 className="font-display text-[15px] font-semibold text-ink">{t("hub.stores.title")}</h3><p className="text-[13px] text-muted">{t("hub.stores.sub")} <Link href="/dashboard/marketing" className="font-semibold text-brand hover:underline">{t("hub.ads.link")}</Link></p></div>
     </div>
   );
