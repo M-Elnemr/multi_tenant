@@ -73,6 +73,29 @@ export function TelegramCard({ canManage }: { canManage: boolean }) {
   );
 }
 
+/** X: log in with X; the assistant then answers the account's direct messages. Needs the platform's X developer app. */
+export function XCard({ canManage }: { canManage: boolean }) {
+  const { t } = useI18n();
+  const { data } = useApi<{ available: boolean; channel?: { name?: string; status: string } | null }>("store/ai/x");
+  const start = useAction(async () => { const r = await api<{ url: string }>("store/ai/x/start", { body: {} }); window.location.assign(r.url); });
+  const on = data?.channel?.status === "ACTIVE";
+  return (
+    <section className="space-y-3 rounded-[18px] bg-surface p-5 ring-1 ring-line">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[#111111] text-white"><ChannelIcon channel="X" className="h-6 w-6 [&_svg]:text-white" /></span>
+        <div className="min-w-0 flex-1">
+          <h3 className="flex flex-wrap items-center gap-2 font-display text-[16px] font-semibold text-ink">{t("ai.platform.X")} {on && <Badge tone="green">{t("ai.connected")}</Badge>}</h3>
+          <p className="text-[13px] text-muted">{on ? t("hub.x.on", { name: data?.channel?.name ?? "" }) : t("hub.x.sub")}</p>
+        </div>
+        {canManage && data?.available && <Button variant={on ? "secondary" : "primary"} loading={start.loading} onClick={() => void start.run()}>{on ? t("hub.x.again") : t("hub.x.start")}</Button>}
+      </div>
+      {data && !data.available && <Alert tone="amber">{t("hub.x.off")}</Alert>}
+      <p className="text-[12.5px] text-muted">{t("hub.x.cost")}</p>
+      <ErrorText error={start.error} />
+    </section>
+  );
+}
+
 /** TikTok and Snapchat take a product feed address: elmanassa's feeds carry the shop's real prices and stock. */
 export function FeedCard() {
   const { t } = useI18n();
@@ -92,7 +115,7 @@ export function FeedCard() {
   );
 }
 
-const SOON = [["TIKTOK", "#111111"], ["X", "#111111"], ["SNAPCHAT", "#F5C400"]] as const;
+const SOON = [["TIKTOK", "#111111"], ["SNAPCHAT", "#F5C400"]] as const;
 
 /** Honest status of the networks whose messaging and ads wait for each network's approval of our app. */
 export function SoonCards() {
@@ -100,7 +123,7 @@ export function SoonCards() {
   return (
     <section className="space-y-3">
       <div><h3 className="font-display text-[15px] font-semibold text-ink">{t("hub.soon.title")}</h3><p className="text-[13px] text-muted">{t("hub.soon.sub")}</p></div>
-      <ul className="grid gap-3 sm:grid-cols-3">
+      <ul className="grid gap-3 sm:grid-cols-2">
         {SOON.map(([k, color]) => (
           <li key={k} className="flex flex-col gap-2 rounded-[16px] bg-surface p-4 ring-1 ring-line">
             <div className="flex items-center gap-2.5"><span className="grid h-9 w-9 place-items-center rounded-xl text-white" style={{ background: color }}><ChannelIcon channel={k} className="h-5 w-5 [&_svg]:text-white" /></span><span className="font-semibold text-ink">{t(`ai.platform.${k}`)}</span><Badge tone="amber">{t("ch.soon")}</Badge></div>
@@ -119,7 +142,8 @@ export function ConnectHub({ canManage }: { canManage: boolean }) {
     <div className="mb-8 space-y-4">
       <div><h2 className="font-display text-[18px] font-semibold text-ink">{t("hub.title")}</h2><p className="text-[13.5px] text-muted">{t("hub.sub")}</p></div>
       <FacebookCard canManage={canManage} />
-      <div className="grid gap-4 lg:grid-cols-2"><TelegramCard canManage={canManage} /><FeedCard /></div>
+      <div className="grid gap-4 lg:grid-cols-2"><TelegramCard canManage={canManage} /><XCard canManage={canManage} /></div>
+      <FeedCard />
       <SoonCards />
       <div className="pt-2"><h3 className="font-display text-[15px] font-semibold text-ink">{t("hub.stores.title")}</h3><p className="text-[13px] text-muted">{t("hub.stores.sub")} <Link href="/dashboard/marketing" className="font-semibold text-brand hover:underline">{t("hub.ads.link")}</Link></p></div>
     </div>
