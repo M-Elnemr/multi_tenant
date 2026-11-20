@@ -55,7 +55,7 @@ export function Calendar({ canManage, onChanged }: { canManage: boolean; onChang
         <div className="min-w-0 flex-1">
           <p className="flex flex-wrap items-center gap-x-2 text-[14px] font-bold text-ink"><span className="tnum" dir="ltr">{b.time}–{b.endTime}</span><span className="truncate">{b.serviceName}</span></p>
           <p className="truncate text-[13px] text-muted">{b.customerName} · <span dir="ltr">{b.phone}</span></p>
-          <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-faint"><BookingStatus status={b.status} /><span>{t(`bk.src.${b.source}`)}</span><span className="tnum">{money(b.priceMinor, b.currency || currency, locale)}</span>{b.locationMode === "HOME" && <span>🏠 {b.address}</span>}</p>
+          <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-faint"><BookingStatus status={b.status} /><span>{t(`bk.src.${b.source}`)}</span><span className="tnum">{money(b.priceMinor, b.currency || currency, locale)}</span>{b.staffName && <span>👤 {b.staffName}</span>}{b.locationMode === "HOME" && <span>🏠 {b.address}</span>}</p>
         </div>
         {canManage && (b.status === "PENDING" || b.status === "CONFIRMED") && (
           <div className="flex shrink-0 items-center gap-1">

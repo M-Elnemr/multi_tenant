@@ -116,6 +116,8 @@ const SERVICE_ITEMS: NavItem[] = [
   { href: "/dashboard/bookings", label: "nav.bookings", group: "navgrp.diary", screen: "bookings", icon: "calendar", quick: true, rail: "diary", badge: { path: "store/bookings/summary", field: "pending" } },
   { href: "/dashboard/bookings?tab=calendar", label: "nav.svcCalendar", group: "navgrp.diary", screen: "bookings", icon: "calendar", quick: true, rail: "diary" },
   { href: "/dashboard/bookings?tab=services", label: "nav.svcServices", group: "navgrp.diary", screen: "bookings", icon: "briefcase", rail: "diary" },
+  { href: "/dashboard/bookings?tab=team", label: "nav.svcTeam", group: "navgrp.diary", screen: "bookings", icon: "users", rail: "diary" },
+  { href: "/dashboard/bookings?tab=insights", label: "nav.svcInsights", group: "navgrp.diary", screen: "bookings", icon: "chart", rail: "diary" },
   { href: "/dashboard/bookings?tab=hours", label: "nav.svcHours", group: "navgrp.diary", screen: "bookings", icon: "clock", rail: "diary" },
 ];
 const SERVICE_NAV: NavItem[] = [NAV[0], ...SERVICE_ITEMS, ...NAV.slice(1).filter((n) => n.href !== "/dashboard/bookings")];

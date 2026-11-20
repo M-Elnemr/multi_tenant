@@ -7,12 +7,13 @@ export type Service = { id: string; name: string; description?: string | null; d
   categoryId?: string | null; categoryName?: string | null; shortDescription?: string | null; priceBeforeMinor?: number | null; maxConcurrent?: number | null; locationMode?: "SHOP" | "HOME" | "BOTH";
   serviceArea?: string | null; instructions?: string | null; cancellationPolicy?: string | null; imageFileId?: string | null; gallery?: string[];
   requiredFields?: { key: string; label: string; required?: boolean }[]; addons?: Addon[] };
+export type Staff = { id: string; name: string; imageFileId?: string | null; capacity: number; isActive: boolean; serviceIds: string[]; hours: Range[]; daysOff: { date: string; reason?: string | null }[] };
 export type Addon = { id: string; name: string; priceMinor: number; durationMinutes: number; isActive?: boolean };
 export type Category = { id: string; name: string; sortOrder: number };
 export type Booking = {
   id: string; bookingNumber: string; serviceId: string; serviceName: string; customerName: string; phone: string; startsAt: string; date: string; time: string; endTime: string; weekday: string;
   priceMinor: number; currency: string; status: Status; source: "AI_CHAT" | "DASHBOARD" | "WEBSITE"; note?: string | null; declineReason?: string | null;
-  answers?: Record<string, string>; addons?: { id: string; name: string; priceMinor: number; durationMinutes: number }[]; locationMode?: "SHOP" | "HOME" | null; address?: string | null;
+  answers?: Record<string, string>; addons?: { id: string; name: string; priceMinor: number; durationMinutes: number }[]; locationMode?: "SHOP" | "HOME" | null; address?: string | null; staffId?: string | null; staffName?: string | null;
 };
 export type Status = "PENDING" | "CONFIRMED" | "DECLINED" | "CANCELLED" | "COMPLETED" | "NO_SHOW";
 export type Range = { weekday: number; opens: string; closes: string };

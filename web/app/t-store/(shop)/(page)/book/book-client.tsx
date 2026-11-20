@@ -10,7 +10,7 @@ import { PhoneInput } from "@/components/inputs";
 import { ErrorText } from "@/components/ui";
 
 type Addon = { id: string; name: string; priceMinor: number; durationMinutes: number };
-type Svc = { id: string; name: string; description?: string | null; durationMinutes: number; priceMinor: number; currency: string; categoryName?: string | null; shortDescription?: string | null; priceBeforeMinor?: number | null;
+type Svc = { id: string; name: string; description?: string | null; durationMinutes: number; priceMinor: number; currency: string; staff?: { id: string; name: string }[]; categoryName?: string | null; shortDescription?: string | null; priceBeforeMinor?: number | null;
   locationMode?: "SHOP" | "HOME" | "BOTH"; serviceArea?: string | null; instructions?: string | null; cancellationPolicy?: string | null; imageFileId?: string | null; requiredFields?: { key: string; label: string; required?: boolean }[]; addons?: Addon[] };
 export type BookConfig = { services: Svc[]; hours: { weekday: number; opens: string; closes: string }[]; autoConfirm: boolean; maxDaysAhead: number; timezone: string; cancelDeadlineHours?: number };
 type Done = { bookingNumber: string; status: string; serviceName: string; date: string; time: string };
@@ -30,8 +30,9 @@ export function BookClient({ cfg, initial }: { cfg: BookConfig; initial?: string
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [where, setWhere] = useState<"SHOP" | "HOME">("SHOP");
   const [address, setAddress] = useState("");
+  const [staff, setStaff] = useState("");
   const [done, setDone] = useState<Done | null>(null);
-  const slots = useApi<string[]>(svc && date ? `shop/booking/slots?serviceId=${svc}&date=${date}${addons.map((a) => `&addonIds=${a}`).join("")}` : null);
+  const slots = useApi<string[]>(svc && date ? `shop/booking/slots?serviceId=${svc}&date=${date}${addons.map((a) => `&addonIds=${a}`).join("")}${staff ? `&staffId=${staff}` : ""}` : null);
   const today = new Date();
   const max = new Date(today.getTime() + cfg.maxDaysAhead * 86400000);
   const chosen = cfg.services.find((s) => s.id === svc);
@@ -40,8 +41,8 @@ export function BookClient({ cfg, initial }: { cfg: BookConfig; initial?: string
   const extra = (chosen?.addons ?? []).filter((a) => addons.includes(a.id));
   const total = (chosen?.priceMinor ?? 0) + extra.reduce((s, a) => s + a.priceMinor, 0);
   const minutes = (chosen?.durationMinutes ?? 0) + extra.reduce((s, a) => s + a.durationMinutes, 0);
-  const pick = (id: string) => { setSvc(id); setTime(""); setAddons([]); setAnswers({}); setWhere("SHOP"); };
-  const send = useAction(async () => { setDone(await api<Done>("shop/booking", { body: { serviceId: svc, date, time, name: name.trim(), phone, note: note.trim() || undefined, addonIds: addons, answers, locationMode: place, address: place === "HOME" ? address.trim() : undefined } })); });
+  const pick = (id: string) => { setSvc(id); setTime(""); setAddons([]); setAnswers({}); setWhere("SHOP"); setStaff(""); };
+  const send = useAction(async () => { setDone(await api<Done>("shop/booking", { body: { serviceId: svc, date, time, name: name.trim(), phone, note: note.trim() || undefined, addonIds: addons, answers, locationMode: place, address: place === "HOME" ? address.trim() : undefined, staffId: staff || undefined } })); });
   const missing = (chosen?.requiredFields ?? []).some((q) => q.required !== false && !(answers[q.key] ?? "").trim());
   const ready = svc && date && time && name.trim() && phone.replace(/\D/g, "").length >= 9 && !missing && (place !== "HOME" || address.trim().length >= 6);
   if (done) {
@@ -76,6 +77,10 @@ export function BookClient({ cfg, initial }: { cfg: BookConfig; initial?: string
             ))}
           </div>
         </fieldset>
+        {chosen && (chosen.staff ?? []).length > 0 && (
+          <fieldset className="s-card space-y-3 p-5"><legend className="px-1 text-sm font-extrabold">{t("book.staff")}</legend>
+            <div className="flex flex-wrap gap-2">{[{ id: "", name: t("book.anyone") }, ...(chosen.staff ?? [])].map((x) => <button key={x.id || "any"} type="button" aria-pressed={staff === x.id} onClick={() => { setStaff(x.id); setTime(""); }} className={`min-h-11 rounded-full border px-4 text-sm font-bold ${staff === x.id ? "border-[var(--s-accent)] bg-[var(--s-accent)] text-white" : "border-[var(--s-line)]"}`}>{x.name}</button>)}</div></fieldset>
+        )}
         {chosen && ((chosen.addons ?? []).length > 0 || mode === "BOTH") && (
           <fieldset className="s-card space-y-3 p-5">
             <legend className="px-1 text-sm font-extrabold">{t("book.options")}</legend>

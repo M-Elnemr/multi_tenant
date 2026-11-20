@@ -61,7 +61,8 @@ function Inner() {
   const { t } = useI18n();
   const params = useSearchParams();
   const [q, setQ] = useState("");
-  const [type, setType] = useState("");
+  const [types, setTypes] = useState<string[]>([]);
+  const type = types.join(",");
   const [filter, setFilter] = useState(params.get("filter") ?? "");
   const [page, setPage] = useState(1);
   const status = params.get("status") ?? "";
@@ -75,7 +76,10 @@ function Inner() {
           <Tabs value={filter} onChange={(f) => { setFilter(f); setPage(1); }} tabs={[
             { key: "", label: t("admin.filter.all") }, { key: "expiring", label: t("admin.filter.expiring") }, { key: "waiting", label: t("admin.filter.waiting") }, { key: "pay", label: t("admin.filter.pay") }, { key: "disabled", label: t("admin.disabledCount") },
           ]} />
-          <Tabs value={type} onChange={(v) => { setType(v); setPage(1); }} tabs={[{ key: "", label: t("admin.allTypes") }, { key: "STORE", label: t("admin.shops") }, { key: "CLINIC", label: t("admin.clinics") }, { key: "LAWYER", label: t("admin.lawyers") }, { key: "SERVICE", label: t("admin.serviceBusinesses") }]} />
+          <div className="flex flex-wrap gap-2" role="group" aria-label={t("admin.allTypes")}>
+            <button type="button" aria-pressed={types.length === 0} onClick={() => { setTypes([]); setPage(1); }} className={`chip !min-h-11 ${types.length === 0 ? "chip-on" : ""}`}>{t("admin.allTypes")}</button>
+            {([["STORE", "admin.shops"], ["CLINIC", "admin.clinics"], ["LAWYER", "admin.lawyers"], ["SERVICE", "admin.serviceBusinesses"]] as const).map(([k, label]) => <button key={k} type="button" aria-pressed={types.includes(k)} onClick={() => { setTypes(types.includes(k) ? types.filter((x) => x !== k) : [...types, k]); setPage(1); }} className={`chip !min-h-11 ${types.includes(k) ? "chip-on" : ""}`}>{t(label)}</button>)}
+          </div>
         </div>
       </div>
       <ErrorText error={error} />

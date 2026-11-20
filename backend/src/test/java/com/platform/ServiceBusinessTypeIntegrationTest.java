@@ -84,4 +84,23 @@ class ServiceBusinessTypeIntegrationTest extends IntegrationTestBase {
         onHost(shop.host(), shop.access(), "PATCH", "/api/v1/store/profile", "{\"template\":\"atelier\"}").andExpect(status().isOk());
         assertThat(jdbc.sql("SELECT template FROM commerce.store_profiles WHERE tenant_id = :t").param("t", id(svc)).query(String.class).single()).isEqualTo("bazaar");
     }
+
+    @Test
+    void thePlatformAdminListFiltersByOneOrSeveralBusinessTypes() throws Exception {
+        onboardService();
+        onboard("STORE");
+        onboard("CLINIC");
+        Tenant seed = onboard("STORE");
+        UUID user = jdbc.sql("SELECT u.id FROM core.users u WHERE u.phone = :p").param("p", seed.phone()).query(UUID.class).single();
+        jdbc.sql("INSERT INTO core.user_platform_roles (user_id, role_id) SELECT :u, id FROM core.roles WHERE code = 'PLATFORM_OWNER' AND tenant_id IS NULL ON CONFLICT DO NOTHING").param("u", user).update();
+        String platformToken = JsonPath.read(onHost("platform.test", null, "POST", "/api/v1/auth/login", "{\"identifier\":\"%s\",\"password\":\"s3cretPass!\"}".formatted(seed.phone())).andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), "$.accessToken");
+        for (String types : List.of("SERVICE", "STORE,SERVICE", "CLINIC,SERVICE,STORE")) {
+            var body = onHost("platform.test", platformToken, "GET", "/api/v1/platform/tenants?type=" + types + "&pageSize=100", null).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+            List<String> got = JsonPath.read(body, "$.data[*].tenantType");
+            assertThat(got).isNotEmpty();
+            assertThat(java.util.Set.copyOf(got)).isSubsetOf(java.util.Set.of(types.split(",")));
+            if (types.contains("SERVICE")) assertThat(got).contains("SERVICE");
+        }
+        onHost("platform.test", platformToken, "GET", "/api/v1/platform/tenants?type=MOON", null).andExpect(status().isBadRequest());
+    }
 }

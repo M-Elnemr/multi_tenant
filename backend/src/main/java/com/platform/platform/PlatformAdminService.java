@@ -62,6 +62,11 @@ public class PlatformAdminService {
     }
 
     public Map<String, Object> tenants(String type, String status, String q, String filter, Page page) {
+        if (type != null) {   // one type or several, comma separated: only known business types
+            var wanted = java.util.Arrays.stream(type.split(",")).map(String::trim).filter(x -> !x.isEmpty()).distinct().toList();
+            if (wanted.stream().anyMatch(x -> !java.util.Set.of("STORE", "CLINIC", "LAWYER", "SERVICE").contains(x))) throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown business type").field("type");
+            type = wanted.isEmpty() ? null : String.join(",", wanted);
+        }
         String like = q == null || q.isBlank() ? null : "%" + q.trim().toLowerCase() + "%";
         String extra = "";
         if ("expiring".equals(filter)) extra = " AND s.status IN ('TRIALING','ACTIVE') AND s.current_period_end < now() + interval '7 days'";
@@ -71,7 +76,7 @@ public class PlatformAdminService {
         String from = """
                  FROM core.tenants t LEFT JOIN LATERAL (SELECT * FROM billing.tenant_subscriptions x WHERE x.tenant_id = t.id ORDER BY x.created_at DESC LIMIT 1) s ON TRUE
                  LEFT JOIN billing.subscription_plans p ON p.id = s.plan_id
-                 WHERE (CAST(:ty AS varchar) IS NULL OR t.tenant_type = CAST(:ty AS varchar)) AND (CAST(:st AS varchar) IS NULL OR t.status = CAST(:st AS varchar))
+                 WHERE (CAST(:ty AS varchar) IS NULL OR t.tenant_type = ANY (string_to_array(CAST(:ty AS varchar), ','))) AND (CAST(:st AS varchar) IS NULL OR t.status = CAST(:st AS varchar))
                    AND (CAST(:q AS varchar) IS NULL OR lower(t.name) LIKE CAST(:q AS varchar) OR t.slug LIKE CAST(:q AS varchar)
                         OR EXISTS (SELECT 1 FROM core.user_tenant_memberships m JOIN core.users u ON u.id = m.user_id WHERE m.tenant_id = t.id AND (u.phone LIKE CAST(:q AS varchar) OR lower(u.email) LIKE CAST(:q AS varchar))))
                 """ + extra;
