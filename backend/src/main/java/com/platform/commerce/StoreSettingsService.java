@@ -274,6 +274,33 @@ public class StoreSettingsService {
                 .param("t", tenantId).param("a", onlyActive).query().listOfRows());
     }
 
+    /** How the shop hands over products, from its active shipping methods: BOTH, DELIVERY (no pickup), PICKUP (no delivery) or NONE. Appointments are a separate workflow. */
+    public String fulfilmentMode(UUID tenantId) {
+        var m = jdbc.sql("SELECT count(*) FILTER (WHERE type = 'PICKUP') AS pickup, count(*) FILTER (WHERE type <> 'PICKUP') AS delivery FROM commerce.shipping_methods WHERE tenant_id = :t AND is_active").param("t", tenantId).query().singleRow();
+        boolean pickup = ((Number) m.get("pickup")).longValue() > 0, delivery = ((Number) m.get("delivery")).longValue() > 0;
+        return pickup && delivery ? "BOTH" : pickup ? "PICKUP" : delivery ? "DELIVERY" : "NONE";
+    }
+
+    /**
+     * The owner's choice: delivery only, pickup only, or both. It switches the shipping methods on and off (so checkout, the product page and the assistant all follow the same data).
+     * Pickup needs a pickup branch to tell customers where to collect; delivery needs at least one delivery method or zone the owner already made.
+     */
+    @Transactional
+    public Map<String, Object> setFulfilmentMode(UUID tenantId, UUID actor, String mode) {
+        if (!Set.of("BOTH", "DELIVERY", "PICKUP").contains(mode)) throw BusinessException.badRequest("VALIDATION_ERROR", "Choose BOTH, DELIVERY or PICKUP").field("mode");
+        boolean hasDelivery = jdbc.sql("SELECT count(*) FROM commerce.shipping_methods WHERE tenant_id = :t AND type <> 'PICKUP'").param("t", tenantId).query(Long.class).single() > 0;
+        if (!"PICKUP".equals(mode) && !hasDelivery) throw BusinessException.badRequest("ADD_DELIVERY_FIRST", "Add a delivery method or zone first").field("mode");
+        if (!"DELIVERY".equals(mode)) {
+            if (jdbc.sql("SELECT count(*) FROM commerce.branches WHERE tenant_id = :t AND is_active AND is_pickup").param("t", tenantId).query(Long.class).single() == 0)
+                throw BusinessException.badRequest("ADD_PICKUP_BRANCH_FIRST", "Mark a branch as a pickup point first, so customers know where to collect").field("mode");
+            if (jdbc.sql("SELECT count(*) FROM commerce.shipping_methods WHERE tenant_id = :t AND type = 'PICKUP'").param("t", tenantId).query(Long.class).single() == 0)
+                jdbc.sql("INSERT INTO commerce.shipping_methods (tenant_id, type, name, fee_minor, sort_order) VALUES (:t, 'PICKUP', 'Store pickup', 0, 1)").param("t", tenantId).update();
+        }
+        jdbc.sql("UPDATE commerce.shipping_methods SET is_active = (CASE WHEN type = 'PICKUP' THEN :p ELSE :d END) WHERE tenant_id = :t").param("t", tenantId).param("p", !"DELIVERY".equals(mode)).param("d", !"PICKUP".equals(mode)).update();
+        audit.record(actor, tenantId, "SETTINGS_CHANGED", "fulfilment_mode", null, "{\"mode\":\"" + mode + "\"}");
+        return Map.of("mode", fulfilmentMode(tenantId));
+    }
+
     @Transactional
     public Map<String, Object> createShipping(UUID tenantId, UUID actor, String type, String name, long feeMinor, Long freeAboveMinor) {
         if (!Set.of("PICKUP", "FIXED", "FREE_ABOVE", "ZONES").contains(type) || name == null || name.isBlank() || feeMinor < 0)

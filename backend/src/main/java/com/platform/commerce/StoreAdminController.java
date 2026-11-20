@@ -367,6 +367,16 @@ public class StoreAdminController {
         return settings.setPaymentMethod(StoreContext.tenantId(), user(a), r.method(), r.enabled());
     }
 
+    public record FulfilmentRequest(String mode) {}
+
+    @GetMapping("/fulfilment")
+    @PreAuthorize("(hasAuthority('shipping.manage') or hasAuthority('shipping.read'))")
+    public Map<String, Object> fulfilment() { return Map.of("mode", settings.fulfilmentMode(StoreContext.tenantId())); }
+
+    @PutMapping("/fulfilment")
+    @PreAuthorize("hasAuthority('shipping.manage')")
+    public Map<String, Object> setFulfilment(@RequestBody FulfilmentRequest r, Authentication a) { return settings.setFulfilmentMode(StoreContext.tenantId(), user(a), r.mode()); }
+
     @GetMapping("/shipping-methods")
     @PreAuthorize("(hasAuthority('shipping.manage') or hasAuthority('shipping.read'))")
     public List<Map<String, Object>> shipping() { return settings.shippingMethods(StoreContext.tenantId(), false); }

@@ -3663,6 +3663,13 @@ public class ChatService {
         return b.toString();
     }
 
+    /** BOTH, DELIVERY, PICKUP or NONE, from the shop's active shipping methods. */
+    private String fulfilmentOf(UUID tenantId) {
+        var m = jdbc.sql("SELECT count(*) FILTER (WHERE type = 'PICKUP') AS pickup, count(*) FILTER (WHERE type <> 'PICKUP') AS delivery FROM commerce.shipping_methods WHERE tenant_id = :t AND is_active").param("t", tenantId).query().singleRow();
+        boolean pickup = ((Number) m.get("pickup")).longValue() > 0, delivery = ((Number) m.get("delivery")).longValue() > 0;
+        return pickup && delivery ? "BOTH" : pickup ? "PICKUP" : delivery ? "DELIVERY" : "NONE";
+    }
+
     private String shopFacts(UUID tenantId, Map<String, Object> profile) {
         StringBuilder b = new StringBuilder("SHOP FACTS:\n");
         b.append("- Open for orders: ").append(!Boolean.FALSE.equals(profile.get("isOpen"))).append(profile.get("closedMessage") != null ? " (" + profile.get("closedMessage") + ")" : "").append("\n");
@@ -3704,6 +3711,9 @@ public class ChatService {
         if (notBlank(r.get("short_description"))) b.append("- About the shop: ").append(clip(r.get("short_description").toString(), 300)).append("\n");
         if (notBlank(r.get("shipping_policy"))) b.append("- Delivery policy (the shop's words): ").append(clip(r.get("shipping_policy").toString().replaceAll("\\s+", " "), 600)).append("\n");
         if (notBlank(r.get("return_policy"))) b.append("- Return and exchange policy (the shop's words): ").append(clip(r.get("return_policy").toString().replaceAll("\\s+", " "), 600)).append("\n");
+        String handover = fulfilmentOf(tenantId);
+        if ("PICKUP".equals(handover)) b.append("- HANDOVER OF PRODUCTS: PICKUP ONLY. This shop does NOT deliver. Never promise delivery, shipping, a courier or a delivery fee; products are collected from the pickup branch below. (Appointments are separate: a service may still be done at the customer's home when the service says so.)\n");
+        else if ("DELIVERY".equals(handover)) b.append("- HANDOVER OF PRODUCTS: DELIVERY ONLY. This shop does not offer pickup: never tell a customer they can collect an order from the shop.\n");
         // where the shop is: pickup branches (the customer may collect the order there) and the other branches
         for (var br : jdbc.sql("SELECT name, address_line1, area, city, landmark, phone, maps_url, is_pickup FROM commerce.branches WHERE tenant_id = :t AND is_active ORDER BY is_pickup DESC, sort_order LIMIT 5")
                 .param("t", tenantId).query().listOfRows())
@@ -4823,6 +4833,10 @@ public class ChatService {
 
     private Map<String, Object> prepareOrder(Ctx ctx, Map<String, Object> a) {
         UUID tenantId = ctx.tenantId();
+        String handover = fulfilmentOf(tenantId);   // the owner chose delivery only, pickup only or both: an order the shop does not hand over that way is never prepared
+        boolean wantsPickup = Boolean.TRUE.equals(a.get("pickup"));
+        if ("PICKUP".equals(handover) && !wantsPickup) return obj("error", "This shop does NOT deliver: customers collect their order from the shop. Tell the customer so kindly, give the pickup address from the shop data, and prepare the order with pickup = true if they agree.");
+        if ("DELIVERY".equals(handover) && wantsPickup) return obj("error", "This shop does NOT offer pickup: orders are delivered. Ask for the delivery address and governorate instead.");
         List<CheckoutService.Item> items = new ArrayList<>();
         if (!(a.get("items") instanceof List<?> l) || l.isEmpty()) return obj("error", "Choose at least one item (variantId and quantity)");
         for (Object o : l) {
