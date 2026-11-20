@@ -26,6 +26,7 @@ public final class ScreenCatalog {
             "STORE", List.of(
                     new Screen("orders", List.of("order.read"), List.of("order.update_status", "refund.create")),
                     new Screen("customers", List.of("customer.read"), List.of()),
+                    new Screen("bookings", List.of("booking.read"), List.of("booking.manage")),
                     new Screen("products", List.of("product.read"), List.of("product.create", "product.update", "product.delete")),
                     new Screen("inventory", List.of("inventory.read"), List.of("inventory.adjust", "branch.manage")),
                     new Screen("coupons", List.of("coupon.read"), List.of("coupon.manage")),

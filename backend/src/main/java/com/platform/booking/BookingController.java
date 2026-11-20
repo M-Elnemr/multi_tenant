@@ -1,0 +1,135 @@
+package com.platform.booking;
+
+import com.platform.commerce.StoreContext;
+import com.platform.shared.Page;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+
+/** The shop dashboard's services and appointments (permissions booking.read / booking.manage). */
+@RestController
+@RequestMapping("/api/v1/store")
+public class BookingController {
+    private static final String READ = "hasAuthority('booking.read') or hasAuthority('booking.manage')";
+    private static final String WRITE = "hasAuthority('booking.manage')";
+    private final BookingService bookings;
+
+    public BookingController(BookingService bookings) { this.bookings = bookings; }
+
+    // ---- services ----
+    @GetMapping("/services")
+    @PreAuthorize(READ)
+    public List<Map<String, Object>> services() { return bookings.services(StoreContext.tenantId(), false); }
+
+    @PostMapping("/services")
+    @PreAuthorize(WRITE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public Map<String, Object> createService(@RequestBody BookingService.ServiceReq r) { return bookings.createService(StoreContext.tenantId(), r); }
+
+    @PatchMapping("/services/{id}")
+    @PreAuthorize(WRITE)
+    public Map<String, Object> updateService(@PathVariable UUID id, @RequestBody BookingService.ServiceReq r) { return bookings.updateService(StoreContext.tenantId(), id, r); }
+
+    @DeleteMapping("/services/{id}")
+    @PreAuthorize(WRITE)
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteService(@PathVariable UUID id) { bookings.deleteService(StoreContext.tenantId(), id); }
+
+    // ---- hours, days off, rules ----
+    public record HoursPut(List<BookingService.Range> ranges) {}
+    public record ClosureReq(String date, String reason) {}
+
+    @GetMapping("/booking/hours")
+    @PreAuthorize(READ)
+    public List<Map<String, Object>> hours() { return bookings.hours(StoreContext.tenantId()); }
+
+    @PutMapping("/booking/hours")
+    @PreAuthorize(WRITE)
+    public List<Map<String, Object>> saveHours(@RequestBody HoursPut r) { return bookings.saveHours(StoreContext.tenantId(), r.ranges()); }
+
+    @GetMapping("/booking/closures")
+    @PreAuthorize(READ)
+    public List<Map<String, Object>> closures() { return bookings.closures(StoreContext.tenantId()); }
+
+    @PostMapping("/booking/closures")
+    @PreAuthorize(WRITE)
+    public List<Map<String, Object>> addClosure(@RequestBody ClosureReq r) { return bookings.addClosure(StoreContext.tenantId(), r.date(), r.reason()); }
+
+    @DeleteMapping("/booking/closures/{date}")
+    @PreAuthorize(WRITE)
+    public List<Map<String, Object>> removeClosure(@PathVariable String date) { return bookings.removeClosure(StoreContext.tenantId(), date); }
+
+    @GetMapping("/booking/settings")
+    @PreAuthorize(READ)
+    public Map<String, Object> settings() { return bookings.settings(StoreContext.tenantId()); }
+
+    @PutMapping("/booking/settings")
+    @PreAuthorize(WRITE)
+    public Map<String, Object> saveSettings(@RequestBody BookingService.SettingsReq r) { return bookings.saveSettings(StoreContext.tenantId(), r); }
+
+    /** Free times for the dashboard's own booking form (the shop may book closer in than a customer). */
+    @GetMapping("/booking/slots")
+    @PreAuthorize(READ)
+    public List<String> slots(@RequestParam UUID serviceId, @RequestParam String date) { return bookings.slots(StoreContext.tenantId(), serviceId, LocalDate.parse(date), false); }
+
+    // ---- appointments ----
+    public record DeclineReq(String reason) {}
+    public record RescheduleReq(String date, String time) {}
+
+    @GetMapping("/bookings")
+    @PreAuthorize(READ)
+    public Map<String, Object> list(@RequestParam(required = false) String from, @RequestParam(required = false) String to, @RequestParam(required = false) String status,
+                                    @RequestParam(required = false) String q, @RequestParam(required = false) Integer page, @RequestParam(required = false) Integer pageSize) {
+        return bookings.list(StoreContext.tenantId(), from, to, status, q, Page.of(page, pageSize));
+    }
+
+    @GetMapping("/bookings/summary")
+    @PreAuthorize(READ)
+    public Map<String, Object> summary() { return bookings.summary(StoreContext.tenantId()); }
+
+    @PostMapping("/bookings")
+    @PreAuthorize(WRITE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public Map<String, Object> create(@RequestBody BookingService.BookReq r, Authentication a) {
+        return bookings.book(StoreContext.tenantId(), (UUID) a.getPrincipal(), new BookingService.BookReq(r.serviceId(), r.date(), r.time(), r.name(), r.phone(), r.note(), "DASHBOARD", null));
+    }
+
+    @PostMapping("/bookings/{id}/confirm")
+    @PreAuthorize(WRITE)
+    public Map<String, Object> confirm(@PathVariable UUID id) { return bookings.confirm(StoreContext.tenantId(), id); }
+
+    @PostMapping("/bookings/{id}/decline")
+    @PreAuthorize(WRITE)
+    public Map<String, Object> decline(@PathVariable UUID id, @RequestBody(required = false) DeclineReq r) { return bookings.decline(StoreContext.tenantId(), id, r == null ? null : r.reason()); }
+
+    @PostMapping("/bookings/{id}/cancel")
+    @PreAuthorize(WRITE)
+    public Map<String, Object> cancel(@PathVariable UUID id, @RequestBody(required = false) DeclineReq r) { return bookings.cancel(StoreContext.tenantId(), id, false, r == null ? null : r.reason()); }
+
+    @PostMapping("/bookings/{id}/complete")
+    @PreAuthorize(WRITE)
+    public Map<String, Object> complete(@PathVariable UUID id) { return bookings.finish(StoreContext.tenantId(), id, false); }
+
+    @PostMapping("/bookings/{id}/no-show")
+    @PreAuthorize(WRITE)
+    public Map<String, Object> noShow(@PathVariable UUID id) { return bookings.finish(StoreContext.tenantId(), id, true); }
+
+    @PostMapping("/bookings/{id}/reschedule")
+    @PreAuthorize(WRITE)
+    public Map<String, Object> reschedule(@PathVariable UUID id, @RequestBody RescheduleReq r) { return bookings.reschedule(StoreContext.tenantId(), id, r.date(), r.time(), false); }
+}

@@ -21,7 +21,7 @@ import { dateOnly, dateTime, money } from "@/lib/format";
 
 type C = {
   id: string; customerNumber: string; name: string; phone?: string; email?: string; hasAccount: boolean; createdAt: string; ordersCount: number; totalSpentMinor: number; lastOrderAt?: string;
-  address?: { addressLine1?: string; city?: string; district?: string } | null; gender?: "MALE" | "FEMALE" | null; genderSource?: "AI" | "SELF" | "OWNER" | null;
+  address?: { addressLine1?: string; city?: string; district?: string } | null; gender?: "MALE" | "FEMALE" | null; genderSource?: "AI" | "SELF" | "OWNER" | null; source?: "ORDER" | "LEAD" | "BOOKING"; marketingOptIn?: boolean;
 };
 type O = { id: string; orderNumber: string; status: string; totalMinor: number; currency: string; createdAt: string };
 
@@ -61,7 +61,7 @@ export default function Customers() {
                       <Link href={profile(c)} onClick={(e) => e.stopPropagation()} className="group flex min-w-0 items-center gap-3">
                         <Avatar name={c.name || "?"} className="h-9 w-9 text-[13px]" />
                         <span className="min-w-0">
-                          <span className="flex items-center gap-1.5 font-semibold text-ink group-hover:text-brand">{c.name}{c.hasAccount && <Badge tone="blue">Google</Badge>}</span>
+                          <span className="flex items-center gap-1.5 font-semibold text-ink group-hover:text-brand">{c.name}{c.hasAccount && <Badge tone="blue">Google</Badge>}{c.source === "LEAD" && <Badge tone="violet">{t("customers.src.LEAD")}</Badge>}{c.source === "BOOKING" && <Badge tone="blue">{t("customers.src.BOOKING")}</Badge>}</span>
                           <span className="block font-mono text-[11.5px] text-faint">{c.customerNumber}</span>
                         </span>
                       </Link>

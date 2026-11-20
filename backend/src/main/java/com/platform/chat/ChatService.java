@@ -648,7 +648,7 @@ public class ChatService {
         int ragChars = 0;
         if (ragRan) { String rag = productsForMessage(tenantId, text); ragChars = rag.length(); system += rag; }
         ReplyTrace.span("rag", ragStart, "ran", ragRan, "unavailable", ragDown[0]);
-        List<ToolDef> tools = tools();
+        List<ToolDef> tools = toolsFor(tenantId);
         int[] parts = PROMPT_PARTS.get(); PROMPT_PARTS.remove();
         int historyChars = 0; for (Turn t : turns) if (t.text() != null) historyChars += t.text().length();
         if (parts == null) parts = new int[4];
@@ -1173,7 +1173,7 @@ public class ChatService {
         boolean[] ragDown = new boolean[1];
         Ctx ctx = new Ctx(tenantId, conv, channel, externalId, clientId, lastUserMsg, new ArrayList<>(), orderBox, new String[1], new String[1], ragDown);
         String system = systemPrompt(tenantId, conv, clientId, channel, externalId);
-        List<ToolDef> tools = tools();
+        List<ToolDef> tools = toolsFor(tenantId);
         List<AiUsageService.Round> rounds = new ArrayList<>();
         var routed = channelAi.forChannel(channel, nameProbe || "TEST".equals(channel) ? chosenModel(conv) : null);
         String answer = null;
@@ -1388,7 +1388,7 @@ public class ChatService {
         if (answer == null || answer.isBlank()) return answer;
         answer = withoutRepeatedClosedNote(turns, answer);
         // only a real tool call counts as having looked (a model with the catalog in its prompt still skimmed it and answered vaguely)
-        boolean searched = rounds.stream().anyMatch(r -> r.tools().stream().anyMatch(t -> t.equals("search_products") || t.equals("get_product") || t.equals("show_products")));
+        boolean searched = rounds.stream().anyMatch(r -> r.tools().stream().anyMatch(t -> t.equals("search_products") || t.equals("get_product") || t.equals("show_products") || t.equals("list_services") || t.equals("available_slots")));
         String last = lastCustomerText(turns);
         Map<String, String> problems = new LinkedHashMap<>();   // check name -> what the model must fix
         if (WHO_QUESTION.matcher(answer).find()) {
@@ -3403,6 +3403,7 @@ public class ChatService {
         p.append(lean ? LEAN_RULES : SalesPlaybook.TEXT);
         int maxPct = ((Number) s.get("maxDiscountPct")).intValue();
         p.append("MAXIMUM DISCOUNT YOU MAY GIVE: ").append(maxPct).append("%.").append(maxPct == 0 ? " This shop gives NO discounts: never offer, promise or hint at one (not for quantity either); say kindly the price is final and offer value or a cheaper option." : "").append("\n\n");
+        p.append(serviceTools.promptBlock(tenantId, shopGoals.of(tenantId)));   // empty for a shop that kept the defaults
         int partMark = p.length();
         p.append(shopFacts(tenantId, profile));
         int factsChars = p.length() - partMark;
@@ -4055,6 +4056,22 @@ public class ChatService {
     private static Map<String, Object> str(String d) { return obj("type", "STRING", "description", d); }
     private static Map<String, Object> num(String d) { return obj("type", "NUMBER", "description", d); }
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private ServiceTools serviceTools;
+    @org.springframework.beans.factory.annotation.Autowired
+    private ShopGoals shopGoals;
+
+    /** The tools of this shop: the usual ones, plus the appointment and lead tools it switched on, minus the order tools when it switched product orders off. A shop that chose nothing gets the usual list unchanged. */
+    private List<ToolDef> toolsFor(UUID tenantId) {
+        List<ToolDef> all = tools();
+        var goals = shopGoals.of(tenantId);
+        if (shopGoals.isDefault(goals)) return all;
+        List<ToolDef> out = new ArrayList<>(all);
+        if (!goals.contains("ORDERS")) out.removeIf(d -> d.name().equals("prepare_order") || d.name().equals("place_order") || d.name().equals("cancel_order"));
+        out.addAll(serviceTools.defs(goals));
+        return out;
+    }
+
     private List<ToolDef> tools() {
         Map<String, Object> item = obj("type", "OBJECT", "properties", obj("variantId", str("Variant id from search_products or get_product of THIS turn; leave it out when you do not have it and give slug and options instead"),
                 "slug", str("The product's slug from the product list or search_products (instead of variantId)"),
@@ -4149,7 +4166,7 @@ public class ChatService {
                     Map<String, Object> refused = flagGate(ctx, c.args());
                     yield refused != null ? refused : seller.run(c.name(), ctx.tenantId(), ctx.conversationId(), ctx.channel(), ctx.externalId(), c.args());
                 }
-                default -> seller.handles(c.name()) ? seller.run(c.name(), ctx.tenantId(), ctx.conversationId(), ctx.channel(), ctx.externalId(), c.args()) : obj("error", "Unknown tool");
+                default -> serviceTools.handles(c.name()) ? serviceTools.run(c.name(), ctx.tenantId(), ctx.conversationId(), ctx.channel(), ctx.externalId(), c.args()) : seller.handles(c.name()) ? seller.run(c.name(), ctx.tenantId(), ctx.conversationId(), ctx.channel(), ctx.externalId(), c.args()) : obj("error", "Unknown tool");
             };
         } catch (BusinessException e) {
             return obj("error", e.getMessage());

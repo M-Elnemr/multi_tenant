@@ -29,6 +29,7 @@ const NAV: NavItem[] = [
 
   // Customers and messages
   { href: "/dashboard/customers", label: "nav.customers", group: "navgrp.service", screen: "customers", icon: "users", rail: "customers" },
+  { href: "/dashboard/bookings", label: "nav.bookings", group: "navgrp.service", screen: "bookings", icon: "calendar", rail: "customers", quick: true, badge: { path: "store/bookings/summary", field: "pending" } },
   { href: "/dashboard/questions", label: "nav.questions", group: "navgrp.inbox", screen: "ai", icon: "mail", rail: "inbox" },
   { href: "/dashboard/reviews", label: "nav.reviews", group: "navgrp.service", screen: "reviews", icon: "star", rail: "customers" },
 
