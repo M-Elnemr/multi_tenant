@@ -268,4 +268,33 @@ class ServiceModelV2IntegrationTest extends IntegrationTestBase {
         Tenant other = svcTenant();
         onHost(other.host(), other.access(), "GET", "/api/v1/store/bookings/calendar?from=" + d1 + "&to=" + d2, null).andExpect(jsonPath("$.length()").value(0));   // another business sees none of it
     }
+
+    @Test
+    void analyticsKeepServicesAndProductsApartAndCountWhoMadeTheBooking() throws Exception {
+        Tenant t = svcTenant();
+        open(t, 3);
+        String svc = service(t, "{\"name\":\"Cut\",\"durationMinutes\":30,\"priceMinor\":15000}");
+        String d = day(t, 2);
+        String done = JsonPath.read(body(book(t, svc, d, "10:00", null).andExpect(status().isCreated())), "$.id");
+        String missed = JsonPath.read(body(book(t, svc, d, "11:00", null).andExpect(status().isCreated())), "$.id");
+        String gone = JsonPath.read(body(book(t, svc, d, "12:00", null).andExpect(status().isCreated())), "$.id");
+        jdbc.sql("UPDATE commerce.bookings SET starts_at = starts_at - interval '3 days', ends_at = ends_at - interval '3 days', blocks_until = blocks_until - interval '3 days' WHERE tenant_id = :t").param("t", tid(t)).update();   // they happened
+        onHost(t.host(), t.access(), "POST", "/api/v1/store/bookings/" + done + "/complete", "{}").andExpect(status().isOk());
+        onHost(t.host(), t.access(), "POST", "/api/v1/store/bookings/" + missed + "/no-show", "{}").andExpect(status().isOk());
+        onHost(t.host(), t.access(), "POST", "/api/v1/store/bookings/" + gone + "/cancel", "{}").andExpect(status().isOk());
+        jdbc.sql("UPDATE commerce.bookings SET source = 'AI_CHAT' WHERE id = CAST(:i AS uuid)").param("i", missed).update();
+        String res = body(onHost(t.host(), t.access(), "GET", "/api/v1/store/bookings/analytics?from=" + day(t, -10) + "&to=" + day(t, 0), null).andExpect(status().isOk()));
+        assertThat(JsonPath.<Integer>read(res, "$.totalAppointments")).isEqualTo(3);
+        assertThat(JsonPath.<Integer>read(res, "$.completed")).isEqualTo(1);
+        assertThat(JsonPath.<Integer>read(res, "$.noShow")).isEqualTo(1);
+        assertThat(JsonPath.<Integer>read(res, "$.cancelled")).isEqualTo(1);
+        assertThat(JsonPath.<Integer>read(res, "$.serviceRevenueMinor")).isEqualTo(15000);   // only the completed one earned
+        assertThat(JsonPath.<Integer>read(res, "$.byAssistant")).isEqualTo(1);
+        assertThat(JsonPath.<Integer>read(res, "$.byOwner")).isEqualTo(2);
+        assertThat(JsonPath.<Double>read(res, "$.noShowRate")).isEqualTo(50.0);
+        assertThat(JsonPath.<Integer>read(res, "$.productRevenueMinor")).isZero();          // no product was sold: services are not mixed into it
+        onHost(t.host(), t.access(), "GET", "/api/v1/store/bookings/analytics?from=" + day(t, -900) + "&to=" + day(t, 0), null).andExpect(status().isBadRequest());
+        Tenant other = svcTenant();
+        assertThat(JsonPath.<Integer>read(body(onHost(other.host(), other.access(), "GET", "/api/v1/store/bookings/analytics?from=" + day(t, -10) + "&to=" + day(t, 0), null)), "$.totalAppointments")).isZero();
+    }
 }

@@ -532,6 +532,41 @@ public class BookingService {
         return m;
     }
 
+    /**
+     * What the business did between two dates, with services and products kept apart (a service is not an order): appointments by status, how they were made (the assistant, the website, the owner),
+     * service revenue = completed appointments only, product revenue = orders that count as sales, and how many customers the assistant turned into an appointment.
+     */
+    public Map<String, Object> analytics(UUID tenantId, String from, String to) {
+        ZoneId tz = zone(tenantId);
+        LocalDate a = parseDate(from), b = parseDate(to);
+        if (b.isBefore(a) || a.plusDays(366).isBefore(b)) throw BusinessException.badRequest("VALIDATION_ERROR", "Ask for up to a year at a time").field("to");
+        var f = java.sql.Timestamp.from(a.atStartOfDay(tz).toInstant());
+        var e = java.sql.Timestamp.from(b.plusDays(1).atStartOfDay(tz).toInstant());
+        var r = jdbc.sql("""
+                SELECT count(*) AS total,
+                       count(*) FILTER (WHERE status = 'COMPLETED') AS completed, count(*) FILTER (WHERE status IN ('CANCELLED','DECLINED')) AS cancelled, count(*) FILTER (WHERE status = 'NO_SHOW') AS no_show,
+                       count(*) FILTER (WHERE status IN ('PENDING','CONFIRMED')) AS open,
+                       count(*) FILTER (WHERE source = 'AI_CHAT') AS by_assistant, count(*) FILTER (WHERE source = 'WEBSITE') AS by_website, count(*) FILTER (WHERE source = 'DASHBOARD') AS by_owner,
+                       coalesce(sum(price_minor) FILTER (WHERE status = 'COMPLETED'), 0) AS service_revenue_minor
+                FROM commerce.bookings WHERE tenant_id = :t AND starts_at >= :f AND starts_at < :e
+                """).param("t", tenantId).param("f", f).param("e", e).query().singleRow();
+        var o = jdbc.sql("SELECT count(*) AS orders, coalesce(sum(total_minor), 0) AS revenue FROM commerce.orders WHERE tenant_id = :t AND created_at >= :f AND created_at < :e AND status NOT IN ('PENDING','CANCELLED','RETURNED','REFUNDED')")
+                .param("t", tenantId).param("f", f).param("e", e).query().singleRow();
+        long chats = jdbc.sql("SELECT count(*) FROM chat.conversations WHERE tenant_id = :t AND created_at >= :f AND created_at < :e").param("t", tenantId).param("f", f).param("e", e).query(Long.class).single();
+        long total = ((Number) r.get("total")).longValue(), ai = ((Number) r.get("by_assistant")).longValue();
+        long finished = ((Number) r.get("completed")).longValue() + ((Number) r.get("no_show")).longValue();
+        Map<String, Object> m = new LinkedHashMap<>(Rows.camel(r));
+        m.put("productOrders", ((Number) o.get("orders")).longValue());
+        m.put("productRevenueMinor", ((Number) o.get("revenue")).longValue());
+        m.put("noShowRate", finished == 0 ? null : Math.round(1000.0 * ((Number) r.get("no_show")).longValue() / finished) / 10.0);
+        m.put("assistantConversion", chats == 0 ? null : Math.round(1000.0 * ai / chats) / 10.0);   // appointments the assistant made, per chat that started in the range
+        m.put("chats", chats);
+        m.put("from", a.toString());
+        m.put("to", b.toString());
+        m.put("totalAppointments", total);
+        return m;
+    }
+
     /** Every appointment that still matters (not declined or cancelled) from one date to another, for the calendar: up to 1,500 so a month of a busy business fits. */
     public List<Map<String, Object>> calendar(UUID tenantId, String from, String to) {
         ZoneId tz = zone(tenantId);
