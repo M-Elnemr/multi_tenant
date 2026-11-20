@@ -1,5 +1,6 @@
 "use client";
 
+import { FulfilmentCard } from "@/components/dashboard/fulfilment-card";
 import { shipName } from "@/lib/ship-name";
 import { useEffect, useState } from "react";
 import { useNavTitle, useSection } from "@/components/dashboard/section";
@@ -110,6 +111,7 @@ export default function StoreSettings() {
         {show("look") && can("settings.manage") && <section id="branding"><BrandingCard /></section>}
         {show("look") && can("settings.manage") && <section id="templates"><TemplatePicker /></section>}
         {show("marketing") && can("copilot.use") && <section id="whatsapp-report"><WaReportCard /></section>}
+        {show("sales") && (can("shipping.manage") || can("shipping.read")) && <section id="fulfilment"><FulfilmentCard /></section>}
         {show("sales") && can("settings.manage") && <section id="cod-guard"><CodGuardCard /></section>}
         {show("sales") && can("settings.manage") && <section id="market"><MarketCard /></section>}
         {show("sales") && methods.data && (
