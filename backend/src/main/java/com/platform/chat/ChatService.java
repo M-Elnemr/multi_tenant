@@ -1132,6 +1132,24 @@ public class ChatService {
         return List.of();
     }
 
+    private static final java.util.regex.Pattern QUESTION_ONLY_WEAK = java.util.regex.Pattern.compile("بكام|بكم|سعر|متاح|متوفر|موجود|فاضل|ضمان|available|price|how much|in stock|warranty");
+
+    /** A short reply with no number and no statement: only a closing question or a call to order. */
+    public static boolean questionOnly(String out) {
+        if (out == null) return false;
+        String t = out.strip();
+        if (t.length() > 220 || t.matches("(?s).*[0-9٠-٩].*")) return false;
+        String[] sentences = t.split("(?<=[.!؟?\\n])\\s*");
+        int statements = 0;
+        for (String x : sentences) {
+            String y = x.strip();
+            if (y.length() < 4) continue;
+            boolean ask = y.contains("؟") || y.contains("?") || y.matches("(?s).*(?:ابعتلي|ابعت لي|قولي|send me|let me know).*") || y.matches("(?s).*(?:أحجزهولك|احجزهولك|أرصهولك|أرصّهولك|book it).*");
+            if (!ask) statements++;
+        }
+        return statements == 0;
+    }
+
     private static final java.util.regex.Pattern PRODUCT_QUESTION = java.util.regex.Pattern.compile("بكام|بكم|سعر|متاح|متوفر|موجود|فاضل|لون|مقاس|ضمان|كارت|بطاريه|available|price|how much|in stock|colou?r|size|warranty");
     private String dataOrUnavailable(Ctx ctx, String text, boolean arabic) {
         try {
@@ -1850,6 +1868,16 @@ public class ChatService {
                 List<String> about = f != null && !f.isEmpty() ? f : touched;
                 if (!about.isEmpty() && PRODUCT_QUESTION.matcher(FactCheck.light(last)).find()) return verifiedReply(ctx, last, about);
                 return english(out) ? "Sorry, could you tell me again what you need?" : "معلش يا فندم، ممكن توضحلي تاني محتاج إيه؟ 🙏";
+            }
+            if (last != null && QUESTION_ONLY_WEAK.matcher(FactCheck.light(last)).find() && questionOnly(out)) {   // «يعجبك العرض ده؟ ابعتلي اسمك…» to «الأوبن بوكس متاح؟»: a guard cut the statement and only the closing question is left
+                var f2 = FOCUS_SLUGS.get();
+                List<String> about2 = f2 != null && !f2.isEmpty() ? f2 : touched;
+                if (!about2.isEmpty()) {
+                    log.warn("Critical gate: the reply is only a closing question to a product question (conversation {})", ctx.conversationId());
+                    events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:FINAL_QUESTION_ONLY", null, null);
+                    ReplyTrace.checkProblems(Set.of("FINAL_QUESTION_ONLY"));
+                    return verifiedReply(ctx, last, about2);
+                }
             }
             var chatFocus = FOCUS_SLUGS.get();
             if (chatFocus != null && chatFocus.size() == 1) {   // a spec of the chat's product that is in the other version's data, not its own

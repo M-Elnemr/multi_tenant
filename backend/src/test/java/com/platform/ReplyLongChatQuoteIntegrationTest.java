@@ -442,6 +442,28 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
         assertThat(other).as(other).doesNotContain("فاضية").contains("توضحلي");
     }
 
+    /** Seen in the open-box run on 6d37a5e (ob_f15, 4 of 173 turns): «الزينترا بوك 14 الأوبن بوكس متاح؟» was answered «يعجبك العرض ده؟ ابعتلي اسمك الأول…»: the statement was cut and only the closing question was sent. */
+    @Test
+    void aReplyThatIsOnlyAClosingQuestionToAProductQuestionIsAnsweredWithTheProductsData() throws Exception {
+        Tenant t = onboard("STORE");
+        UUID tenant = tenant(t);
+        String tag = uniq();
+        String base = "لاب توب زينترا " + tag, open = base + " أوبن بوكس";
+        product(t, base, 24999, "فضي", "رمادي");
+        productWas(t, open, 20999, 24999, "فضي");
+        String ext = UUID.randomUUID().toString();
+        answer("أهلا");
+        say(t, ext, "السلام عليكم", null);
+        UUID conv = conv(tenant, ext);
+        seed(conv, "user", "عايز لاب توب زينترا");
+        seed(conv, "assistant", open + " بـ 20999 جنيه، فضي.");
+        String reply = stuckModel(t, ext, "الأوبن بوكس متاح؟", "يعجبك العرض ده؟ لو حابب أحجزهولك، ابعتلي اسمك الأول ورقم الواتساب 👍");
+        assertThat(reply).as(reply).contains("20999");
+        assertThat(com.platform.chat.ChatService.questionOnly("تحب أحجزهولك؟ ابعتلي اسمك ورقمك")).isTrue();
+        assertThat(com.platform.chat.ChatService.questionOnly("الأوبن بوكس بـ 20999 جنيه. تحب أحجزهولك؟")).isFalse();
+        assertThat(com.platform.chat.ChatService.questionOnly("متاح بلون فضي. تحب أحجزهولك؟")).isFalse();
+    }
+
     /** Seen in the open-box run on 1948bcf (after 50 messages): «والجديد بكام وضمانه؟» was answered «الأوبن بوكس بـ 20,999 بدل 24,999، وضمانه 6 شهور»: 24,999, the open-box laptop's was-price, is also the new laptop's price and made the answer look like the new one's. */
     @Test
     void anOpenBoxAnswerWhoseWasPriceIsTheNewPriceDoesNotAnswerAQuestionAboutTheNewVersion() throws Exception {
