@@ -9,9 +9,10 @@ import { useNavTitle, useSection } from "@/components/dashboard/section";
 import { Appointments, NewBooking } from "@/components/dashboard/bookings/appointments";
 import type { Service } from "@/components/dashboard/bookings/common";
 import { HoursAndRules } from "@/components/dashboard/bookings/hours";
+import { Calendar } from "@/components/dashboard/bookings/calendar";
 import { Services } from "@/components/dashboard/bookings/services";
 
-type Tab = "appointments" | "services" | "hours";
+type Tab = "appointments" | "calendar" | "services" | "hours";
 
 export default function BookingsPage() {
   return <Suspense fallback={<Loading />}><Bookings /></Suspense>;
@@ -23,7 +24,7 @@ function Bookings() {
   const me = useMe();
   const canManage = me.canWrite("bookings");
   const title = useNavTitle(t("nav.bookings"));
-  const [tab, setTab] = useSection<Tab>(["appointments", "services", "hours"], "appointments");
+  const [tab, setTab] = useSection<Tab>(["appointments", "calendar", "services", "hours"], "appointments");
   const [newOpen, setNewOpen] = useState(false);
   const services = useApi<Service[]>("store/services");
   const summary = useApi<{ pending: number; next24: number; upcoming: number }>("store/bookings/summary");
@@ -38,7 +39,8 @@ function Bookings() {
           { label: t("bk.kpi.next24"), value: <span className="tnum">{summary.data?.next24 ?? 0}</span>, icon: "calendar", tone: "brand" },
           { label: t("bk.kpi.upcoming"), value: <span className="tnum">{summary.data?.upcoming ?? 0}</span>, icon: "check", tone: "green" },
         ]} />
-        <Tabs tabs={[{ key: "appointments" as Tab, label: t("bk.tab.appointments") }, { key: "services" as Tab, label: t("bk.tab.services") }, { key: "hours" as Tab, label: t("bk.tab.hours") }]} value={tab} onChange={setTab} />
+        <Tabs tabs={[{ key: "appointments" as Tab, label: t("bk.tab.appointments") }, { key: "calendar" as Tab, label: t("cal.tab") }, { key: "services" as Tab, label: t("bk.tab.services") }, { key: "hours" as Tab, label: t("bk.tab.hours") }]} value={tab} onChange={setTab} />
+        {tab === "calendar" && <Calendar key={v} canManage={canManage} onChanged={() => void summary.reload()} />}
         {tab === "appointments" && <Appointments key={v} canManage={canManage} services={services.data ?? []} onChanged={() => void summary.reload()} />}
         {tab === "services" && <Services services={services.data ?? []} canManage={canManage} onChanged={() => { void services.reload(); setV(v + 1); }} />}
         {tab === "hours" && <HoursAndRules canManage={canManage} />}

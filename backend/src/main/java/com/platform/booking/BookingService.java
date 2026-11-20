@@ -532,6 +532,16 @@ public class BookingService {
         return m;
     }
 
+    /** Every appointment that still matters (not declined or cancelled) from one date to another, for the calendar: up to 1,500 so a month of a busy business fits. */
+    public List<Map<String, Object>> calendar(UUID tenantId, String from, String to) {
+        ZoneId tz = zone(tenantId);
+        LocalDate a = parseDate(from), b = parseDate(to);
+        if (b.isBefore(a) || a.plusDays(45).isBefore(b)) throw BusinessException.badRequest("VALIDATION_ERROR", "Ask for up to 45 days at a time").field("to");
+        var rows = jdbc.sql(SELECT + " WHERE b.tenant_id = :t AND b.starts_at >= :f AND b.starts_at < :to AND b.status IN ('PENDING','CONFIRMED','COMPLETED','NO_SHOW') ORDER BY b.starts_at LIMIT 1500")
+                .param("t", tenantId).param("f", java.sql.Timestamp.from(a.atStartOfDay(tz).toInstant())).param("to", java.sql.Timestamp.from(b.plusDays(1).atStartOfDay(tz).toInstant())).query().listOfRows();
+        return rows.stream().map(r -> view(r, tz)).toList();
+    }
+
     public Map<String, Object> list(UUID tenantId, String from, String to, String status, String q, Page page) {
         ZoneId tz = zone(tenantId);
         Instant f = from == null || from.isBlank() ? Instant.now().minus(Duration.ofDays(1)) : parseDate(from).atStartOfDay(tz).toInstant();

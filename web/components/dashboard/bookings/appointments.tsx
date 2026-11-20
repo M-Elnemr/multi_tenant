@@ -53,7 +53,7 @@ export function NewBooking({ open, onClose, services, onDone }: { open: boolean;
   );
 }
 
-function Decide({ b, mode, onClose, onDone }: { b: Booking | null; mode: "decline" | "cancel" | "reschedule"; onClose: () => void; onDone: () => void }) {
+export function Decide({ b, mode, onClose, onDone }: { b: Booking | null; mode: "decline" | "cancel" | "reschedule"; onClose: () => void; onDone: () => void }) {
   const { t } = useI18n();
   const toast = useToast();
   const [reason, setReason] = useState("");

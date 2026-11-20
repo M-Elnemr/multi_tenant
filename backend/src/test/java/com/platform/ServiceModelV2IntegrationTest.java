@@ -250,4 +250,22 @@ class ServiceModelV2IntegrationTest extends IntegrationTestBase {
         say(t, other, "غير الميعاد " + number);
         assertThat(jdbc.sql("SELECT to_char(starts_at AT TIME ZONE 'Africa/Cairo', 'HH24:MI') FROM commerce.bookings WHERE booking_number = :n").param("n", number).query(String.class).single()).isEqualTo("12:00");
     }
+
+    @Test
+    void theCalendarListsWhatStillMattersInARangeAndRefusesAnUnreasonableOne() throws Exception {
+        Tenant t = svcTenant();
+        open(t, 2);
+        String svc = service(t, "{\"name\":\"Cut\",\"durationMinutes\":60,\"priceMinor\":15000}");
+        String d1 = day(t, 2), d2 = day(t, 9);
+        String keep = JsonPath.read(body(book(t, svc, d1, "10:00", null).andExpect(status().isCreated())), "$.id");
+        String drop = JsonPath.read(body(book(t, svc, d1, "12:00", null).andExpect(status().isCreated())), "$.id");
+        book(t, svc, d2, "10:00", null).andExpect(status().isCreated());
+        onHost(t.host(), t.access(), "POST", "/api/v1/store/bookings/" + drop + "/cancel", "{}").andExpect(status().isOk());
+        String week = body(onHost(t.host(), t.access(), "GET", "/api/v1/store/bookings/calendar?from=" + d1 + "&to=" + day(t, 8), null).andExpect(status().isOk()));
+        assertThat(JsonPath.<List<String>>read(week, "$[*].id")).containsExactly(keep);   // the cancelled one and the next week's are not in this week
+        assertThat(JsonPath.<List<String>>read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/bookings/calendar?from=" + d1 + "&to=" + d2, null)), "$[*].date")).containsExactly(d1, d2);
+        onHost(t.host(), t.access(), "GET", "/api/v1/store/bookings/calendar?from=" + d1 + "&to=" + day(t, 120), null).andExpect(status().isBadRequest());
+        Tenant other = svcTenant();
+        onHost(other.host(), other.access(), "GET", "/api/v1/store/bookings/calendar?from=" + d1 + "&to=" + d2, null).andExpect(jsonPath("$.length()").value(0));   // another business sees none of it
+    }
 }

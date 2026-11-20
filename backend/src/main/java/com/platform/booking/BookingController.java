@@ -139,6 +139,10 @@ public class BookingController {
         return bookings.list(StoreContext.tenantId(), from, to, status, q, Page.of(page, pageSize));
     }
 
+    @GetMapping("/bookings/calendar")
+    @PreAuthorize(READ)
+    public List<Map<String, Object>> calendar(@RequestParam String from, @RequestParam String to) { return bookings.calendar(StoreContext.tenantId(), from, to); }
+
     @GetMapping("/bookings/summary")
     @PreAuthorize(READ)
     public Map<String, Object> summary() { return bookings.summary(StoreContext.tenantId()); }
