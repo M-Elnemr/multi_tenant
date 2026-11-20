@@ -121,7 +121,7 @@ export function Composer({ chat, canWrite, onSent, onNote, onTakeover, saved, on
       {/* who answers now */}
       <div className={`mb-2 flex items-center gap-2 rounded-[11px] px-3 py-2 text-[12.5px] ${ai ? "bg-[linear-gradient(135deg,rgb(124_92_255/.08),rgb(34_211_238/.08))] text-violet-800" : chat.takeover ? "bg-violet-600/10 text-violet-800" : "bg-slate-100 text-slate-700"}`}>
         <Icon name={ai ? "sparkles" : "users"} className="h-4 w-4 shrink-0" />
-        <span className="min-w-0 flex-1 font-medium">{ai ? t("inbox.mode.ai") : chat.takeover ? t("inbox.mode.you") : chat.aiChannelOn ? t("inbox.mode.paused") : t("inbox.mode.off")}</span>
+        <span className="min-w-0 flex-1 font-medium">{ai ? t("inbox.mode.ai") : chat.takeover ? t("inbox.mode.you") : chat.frustrationPaused ? t("inbox.mode.frustration") : chat.aiChannelOn ? t("inbox.mode.paused") : t("inbox.mode.off")}</span>
         {ai && <button type="button" onClick={onTakeover} className="shrink-0 rounded-[8px] bg-violet-600 px-2.5 py-1 text-[12px] font-semibold text-white transition hover:bg-violet-700">{t("inbox.takeover")}</button>}
       </div>
 

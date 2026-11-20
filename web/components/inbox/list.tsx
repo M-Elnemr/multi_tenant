@@ -56,6 +56,7 @@ export function ConversationList(props: {
     { key: "NEEDS_REPLY", label: t("inbox.st.NEEDS_REPLY"), n: counts?.needsReply, status: "NEEDS_REPLY" },
     { key: "WAITING", label: t("inbox.st.WAITING"), n: counts?.waiting, status: "WAITING" },
     { key: "UNHAPPY", label: t("inbox.st.UNHAPPY"), n: counts?.unhappy, status: "UNHAPPY" },
+    { key: "FRUSTRATED", label: t("inbox.st.FRUSTRATED"), n: counts?.frustrated, status: "FRUSTRATED" },
     { key: "TAKEOVER", label: t("inbox.st.TAKEOVER"), status: "TAKEOVER" },
   ];
   const quickOn = (k: string, s?: Status) => (s ? filters.status.length === 1 && filters.status[0] === s : filters.status.length === 0);
@@ -156,7 +157,7 @@ export function ConversationList(props: {
                       {(tags.length > 0 || !r.aiActive) && (
                         <span className="mt-1.5 flex flex-wrap items-center gap-1">
                           {tags.map((s) => <StatusTag key={s} status={s} label={t(`inbox.st.${s}`)} size="xs" />)}
-                          {!r.takeover && !r.aiActive && <AiPill active={false} label={t("inbox.aiPaused")} size="xs" />}
+                          {!r.takeover && !r.aiActive && <AiPill active={false} label={r.frustrationPaused ? t("inbox.aiPausedFrustration") : t("inbox.aiPaused")} size="xs" />}
                         </span>
                       )}
                     </span>

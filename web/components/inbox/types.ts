@@ -1,13 +1,13 @@
 /** Shapes of the inbox API (backend: ChatInboxService / FollowUpService / CommentService). */
 
-export type Status = "NEEDS_REPLY" | "WAITING" | "UNHAPPY" | "TAKEOVER" | "OPEN" | "CLOSED";
+export type Status = "NEEDS_REPLY" | "WAITING" | "UNHAPPY" | "FRUSTRATED" | "TAKEOVER" | "OPEN" | "CLOSED";
 export type Channel = "WEB" | "WHATSAPP" | "FACEBOOK" | "INSTAGRAM" | "TELEGRAM" | "TIKTOK" | "X" | "SNAPCHAT";
 
 export type ChatRow = {
   id: string; channel: Channel; customerName?: string | null; customerPhone?: string | null; customerId?: string | null; ordersCount: number;
   lastMessage?: string | null; lastFromCustomer: boolean; lastByOwner: boolean; lastKind?: string | null; updatedAt: string; lastCustomerAt?: string | null; lastReplyAt?: string | null; createdAt: string;
   status: "OPEN" | "CLOSED"; needsHuman: boolean; needsHumanReason?: string | null; takeover: boolean; takeoverAt?: string | null; aiPaused: boolean; aiPausedUntil?: string | null;
-  aiActive: boolean; aiChannelOn: boolean; unhappy: boolean; unhappyReason?: string | null; unhappySource?: string | null; unread: boolean; unreadCount: number;
+  aiActive: boolean; aiChannelOn: boolean; frustrationPaused?: boolean; frustrationReason?: string | null; aiPausedReason?: "TAKEOVER" | "FRUSTRATION" | "TIMED" | null; unhappy: boolean; unhappyReason?: string | null; unhappySource?: string | null; unread: boolean; unreadCount: number;
   statuses: Status[]; priority: "HIGH" | "MEDIUM" | "LOW"; lastOrder?: string | null;
 };
 
@@ -36,6 +36,6 @@ export type Filters = { status: Status[]; ai: ("ACTIVE" | "PAUSED")[]; channel: 
 
 export const EMPTY: Filters = { status: [], ai: [], channel: [], since: "", customer: [], q: "", sort: "newest" };
 
-export type Counts = { needsHuman: number; needsReply: number; unread: number; unhappy: number; waiting: number; unrepliedComments: number };
+export type Counts = { needsHuman: number; needsReply: number; unread: number; unhappy: number; frustrated?: number; waiting: number; unrepliedComments: number };
 
 export type SavedReply = { id: string; title: string; body: string };

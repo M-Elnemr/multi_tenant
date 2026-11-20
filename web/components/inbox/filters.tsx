@@ -7,7 +7,7 @@ import { STATUS_STYLE } from "./bits";
 import type { Channel, Filters, Status } from "./types";
 import { EMPTY } from "./types";
 
-const STATUSES: Status[] = ["NEEDS_REPLY", "WAITING", "UNHAPPY", "TAKEOVER", "OPEN", "CLOSED"];
+const STATUSES: Status[] = ["NEEDS_REPLY", "WAITING", "UNHAPPY", "FRUSTRATED", "TAKEOVER", "OPEN", "CLOSED"];
 const CHANNELS: Channel[] = ["WHATSAPP", "INSTAGRAM", "FACEBOOK", "TELEGRAM", "TIKTOK", "X", "SNAPCHAT", "WEB"];
 const TIMES = ["30m", "1h", "today", "7d"] as const;
 const CUSTOMERS = ["NEW", "RETURNING", "WITH_ORDERS", "NO_ORDERS"] as const;

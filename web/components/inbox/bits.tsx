@@ -9,6 +9,7 @@ export const STATUS_STYLE: Record<Status, { cls: string; icon: string; dot: stri
   NEEDS_REPLY: { cls: "bg-amber-50 text-amber-800 ring-amber-600/15", icon: "clock", dot: "#f59e0b" },
   WAITING: { cls: "bg-sky-50 text-sky-800 ring-sky-600/15", icon: "send", dot: "#0ea5e9" },
   UNHAPPY: { cls: "bg-rose-50 text-rose-700 ring-rose-600/15", icon: "alert", dot: "#f43f5e" },
+  FRUSTRATED: { cls: "bg-orange-50 text-orange-800 ring-orange-600/20", icon: "alert", dot: "#f97316" },
   TAKEOVER: { cls: "bg-violet-50 text-violet-700 ring-violet-600/15", icon: "users", dot: "#7c3aed" },
   OPEN: { cls: "bg-emerald-50 text-emerald-700 ring-emerald-600/15", icon: "dot", dot: "#10b981" },
   CLOSED: { cls: "bg-slate-100 text-slate-600 ring-slate-500/15", icon: "check", dot: "#94a3b8" },

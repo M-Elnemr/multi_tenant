@@ -101,7 +101,7 @@ export function Thread({ chat, onBack, panelOpen, onTogglePanel, actions, canWri
         <div className="flex shrink-0 items-center gap-1">
           {actions.prev && <IconBtn icon="chevron" label={t("inbox.prev")} onClick={actions.prev} className="rotate-180 rtl:rotate-0" hide />}
           {actions.next && <IconBtn icon="chevron" label={t("inbox.next")} onClick={actions.next} className="rtl:rotate-180" hide />}
-          {canWrite && (chat.takeover
+          {canWrite && (chat.takeover || chat.frustrationPaused
             ? <button type="button" onClick={actions.resume} className="inline-flex h-9 items-center gap-1.5 rounded-[10px] bg-[linear-gradient(135deg,#7c5cff,#22d3ee)] px-3 text-[12.5px] font-semibold text-white shadow-[0_6px_16px_-6px_rgb(124_92_255/.6)] transition hover:brightness-110"><Icon name="sparkles" className="h-4 w-4" /><span className="hidden sm:inline">{t("inbox.resume")}</span></button>
             : <button type="button" onClick={actions.takeover} className="inline-flex h-9 items-center gap-1.5 rounded-[10px] bg-ink px-3 text-[12.5px] font-semibold text-surface transition hover:bg-ink-2"><Icon name="users" className="h-4 w-4" /><span className="hidden sm:inline">{t("inbox.takeover")}</span></button>)}
           {canWrite && (
@@ -116,6 +116,15 @@ export function Thread({ chat, onBack, panelOpen, onTogglePanel, actions, canWri
           <IconBtn icon="layout" label={panelOpen ? t("inbox.hideDetails") : t("inbox.showDetails")} onClick={onTogglePanel} active={panelOpen} />
         </div>
       </div>
+
+      {/* the assistant was stopped because the customer is upset: why, and the way back */}
+      {chat.frustrationPaused && (
+        <div role="status" className="flex flex-wrap items-center gap-2 border-b border-orange-200 bg-orange-50 px-5 py-2.5 text-[12.5px] text-orange-900">
+          <Icon name="alert" className="h-4 w-4 shrink-0" />
+          <span className="min-w-0 flex-1"><span className="font-semibold">{t("inbox.frustrationBanner")}</span>{chat.frustrationReason && <span className="text-orange-800/80"> · {chat.frustrationReason}</span>}</span>
+          {canWrite && <button type="button" onClick={actions.resume} className="shrink-0 rounded-[8px] bg-orange-600 px-2.5 py-1 font-semibold text-white transition hover:bg-orange-700">{t("inbox.resumeAi")}</button>}
+        </div>
+      )}
 
       {/* unhappy banner */}
       <AnimatePresence initial={false}>
@@ -203,7 +212,7 @@ function Bubble({ m, prev, reduce, locale, t, dir, flash, onReply, onJump }: { m
 
 function EventPill({ e, locale, t }: { e: ChatEvent; locale: string; t: (k: string, p?: Record<string, string | number>) => string }) {
   const time = new Date(e.createdAt).toLocaleTimeString(locale === "ar" ? "ar-EG" : "en-GB", { hour: "numeric", minute: "2-digit" });
-  const icon = e.kind === "TAKEOVER" ? "users" : e.kind === "RESUME" ? "sparkles" : e.kind.startsWith("UNHAPPY") ? "alert" : e.kind.startsWith("FOLLOWUP") ? "clock" : e.kind === "CLOSED" ? "check" : "dot";
+  const icon = e.kind === "FRUSTRATION_HANDOVER" ? "alert" : e.kind === "TAKEOVER" ? "users" : e.kind === "RESUME" ? "sparkles" : e.kind.startsWith("UNHAPPY") ? "alert" : e.kind.startsWith("FOLLOWUP") ? "clock" : e.kind === "CLOSED" ? "check" : "dot";
   let meta: { step?: number } = {};
   try { meta = e.meta ? JSON.parse(e.meta) : {}; } catch { /* plain */ }
   return (

@@ -6,6 +6,7 @@ import { api } from "@/lib/client";
 import { ChatPanel } from "@/components/shop/live-chat";
 import { AiChannels } from "@/components/dashboard/ai-channels";
 import { AiGoals } from "@/components/dashboard/ai-goals";
+import { AiFrustration } from "@/components/dashboard/ai-frustration";
 import { AiWhatsApp } from "@/components/dashboard/ai-whatsapp";
 import { PointsWallet } from "@/components/dashboard/points-wallet";
 import { AiLessons } from "@/components/dashboard/ai-lessons";
@@ -64,7 +65,7 @@ function AiAssistant() {
       {tab === "lessons" && <div className="max-w-3xl"><AiLessons key={teach?.n ?? 0} base="store/ai/lessons" title={t("ai.teachTitle")} canWrite={write} prefill={teach} /><p className="mt-4 text-xs text-muted">{t("ai.platformLessons")}</p><Unanswered canWrite={write} /></div>}
       {tab === "channels" && <AiChannels write={write} pendingId={pendingId} metaError={metaError} />}
       {tab === "whatsapp" && <AiWhatsApp write={write} />}
-      {tab === "settings" && <div className="space-y-5"><AiGoals write={write} /><SettingsForm write={write} /></div>}
+      {tab === "settings" && <div className="space-y-5"><AiGoals write={write} /><AiFrustration write={write} /><SettingsForm write={write} /></div>}
     </>
   );
 }

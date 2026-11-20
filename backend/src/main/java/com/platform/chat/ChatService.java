@@ -599,6 +599,11 @@ public class ChatService {
         }
         // the shop team took this chat over: the assistant stays quiet until they hand it back (or two hours pass without them writing)
         if (!"TEST".equals(channel) && paused(conv)) return pausedReply(conv, text);
+        // a customer who is genuinely upset: when the shop chose to hand such chats over, it happens here, before any model call and before the wallet is touched
+        if (!"TEST".equals(channel)) {
+            var handed = frustration.handle(tenantId, conv, channel, english(text));
+            if (handed != null) return new Reply(conv, handed.text(), null, List.of());
+        }
         // the AI answers only while the shop has points: 1 EGP per conversation (each block of 10 AI replies)
         if (!"TEST".equals(channel) && !chargeTurn(tenantId, conv)) {
             flagForHuman(tenantId, conv, channel, "NO_POINTS", text, null);
@@ -624,6 +629,7 @@ public class ChatService {
         PromptExtras extras = new PromptExtras();
         EXTRAS.set(extras);
         try { String rc = replyContextBlock(tenantId, conv, userMsgId, refs, text, windowFrom, extras); system += rc; extras.blocks.append(rc); } catch (RuntimeException e) { log.warn("Reply context skipped: {}", e.toString()); }
+        if (!"TEST".equals(channel)) try { String fz = frustration.toneBlock(tenantId, conv); if (!fz.isEmpty()) { system += fz; extras.blocks.append(fz); } } catch (RuntimeException e) { log.warn("Frustration block skipped: {}", e.toString()); }
         if (refs.isEmpty()) try { String fb = focusBlock(tenantId, conv, userMsgId, text); system += fb; extras.blocks.append(fb); } catch (RuntimeException e) { log.warn("Focus block skipped: {}", e.toString()); }
         ReplyTimeline.span("replyContext", ReplyTimeline.since(replyStart));
         long memStart = System.nanoTime();
@@ -950,7 +956,7 @@ public class ChatService {
     // ---- hand-over to the shop team ----------------------------------------------------------------------------------------
 
     private boolean paused(UUID conv) {
-        return jdbc.sql("SELECT takeover OR coalesce(ai_paused_until > now(), FALSE) FROM chat.conversations WHERE id = :c").param("c", conv).query(Boolean.class).optional().orElse(false);
+        return jdbc.sql("SELECT takeover OR frustration_paused OR coalesce(ai_paused_until > now(), FALSE) FROM chat.conversations WHERE id = :c").param("c", conv).query(Boolean.class).optional().orElse(false);
     }
 
     /**
@@ -959,7 +965,7 @@ public class ChatService {
      */
     boolean stillAiTurn(UUID conv, long sinceMessageId) {
         return jdbc.sql("""
-                SELECT NOT (c.takeover OR coalesce(c.ai_paused_until > now(), FALSE))
+                SELECT NOT (c.takeover OR c.frustration_paused OR coalesce(c.ai_paused_until > now(), FALSE))
                    AND NOT EXISTS (SELECT 1 FROM chat.messages m WHERE m.conversation_id = c.id AND m.by_owner AND m.id > :m)
                 FROM chat.conversations c WHERE c.id = :c
                 """).param("c", conv).param("m", sinceMessageId).query(Boolean.class).optional().orElse(false);
@@ -967,7 +973,7 @@ public class ChatService {
 
     /** True while a person handles the chat (takeover or a timed pause): the channel senders check it once more right before sending. */
     public boolean humanHandles(UUID tenantId, String channel, String externalId) {
-        return jdbc.sql("SELECT coalesce(bool_or(takeover OR coalesce(ai_paused_until > now(), FALSE)), FALSE) FROM chat.conversations WHERE tenant_id = :t AND channel = :ch AND external_id = :e")
+        return jdbc.sql("SELECT coalesce(bool_or(takeover OR frustration_paused OR coalesce(ai_paused_until > now(), FALSE)), FALSE) FROM chat.conversations WHERE tenant_id = :t AND channel = :ch AND external_id = :e")
                 .param("t", tenantId).param("ch", channel).param("e", externalId).query(Boolean.class).single();
     }
 
@@ -988,7 +994,7 @@ public class ChatService {
     private Reply pausedReply(UUID conv, String text) {
         jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();
         // a person took the chat over on purpose: they answer themself, the AI does not even send its «someone will reply» note
-        if (jdbc.sql("SELECT takeover FROM chat.conversations WHERE id = :c").param("c", conv).query(Boolean.class).optional().orElse(false)) return new Reply(conv, "", null, List.of());
+        if (jdbc.sql("SELECT takeover OR frustration_paused FROM chat.conversations WHERE id = :c").param("c", conv).query(Boolean.class).optional().orElse(false)) return new Reply(conv, "", null, List.of());   // a person took it over, or the customer was handed to the team: no automatic reply at all
         boolean told = jdbc.sql("SELECT count(*) > 0 FROM chat.messages WHERE conversation_id = :c AND role = 'assistant' AND content IN (:a, :e) AND created_at > (SELECT coalesce(max(created_at), 'epoch') FROM chat.messages WHERE conversation_id = :c AND by_owner)")
                 .param("c", conv).param("a", PAUSED_AR).param("e", PAUSED_EN).query(Boolean.class).single();
         if (told) return new Reply(conv, "", null, List.of());
@@ -4067,6 +4073,8 @@ public class ChatService {
     private static Map<String, Object> str(String d) { return obj("type", "STRING", "description", d); }
     private static Map<String, Object> num(String d) { return obj("type", "NUMBER", "description", d); }
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private FrustrationService frustration;
     @org.springframework.beans.factory.annotation.Autowired
     private ServiceTools serviceTools;
     @org.springframework.beans.factory.annotation.Autowired

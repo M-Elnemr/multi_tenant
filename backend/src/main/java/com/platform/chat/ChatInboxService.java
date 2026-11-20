@@ -28,13 +28,13 @@ import org.springframework.stereotype.Service;
 public class ChatInboxService {
     static final int PAUSE_HOURS = 2;
     static final int PAGE = 30;
-    private static final Set<String> STATUSES = Set.of("NEEDS_REPLY", "WAITING", "UNHAPPY", "TAKEOVER", "OPEN", "CLOSED");
+    private static final Set<String> STATUSES = Set.of("NEEDS_REPLY", "WAITING", "UNHAPPY", "FRUSTRATED", "TAKEOVER", "OPEN", "CLOSED");
     private static final Set<String> CHANNELS = Set.of("WEB", "WHATSAPP", "FACEBOOK", "INSTAGRAM", "TELEGRAM", "TIKTOK", "X", "SNAPCHAT");
     private static final Set<String> CUSTOMERS = Set.of("NEW", "RETURNING", "WITH_ORDERS", "NO_ORDERS");
 
     static final String NEEDS = "(c.status = 'OPEN' AND c.last_customer_at IS NOT NULL AND c.last_customer_at > coalesce(c.last_reply_at, '-infinity'::timestamptz))";
     static final String WAITING = "(c.status = 'OPEN' AND c.last_reply_at IS NOT NULL AND c.last_reply_at >= coalesce(c.last_customer_at, '-infinity'::timestamptz) AND c.last_reply_at <= now() - interval '30 minutes')";
-    static final String PAUSED = "(c.takeover OR coalesce(c.ai_paused_until > now(), FALSE))";
+    static final String PAUSED = "(c.takeover OR c.frustration_paused OR coalesce(c.ai_paused_until > now(), FALSE))";
     static final String UNREAD = "(c.last_customer_at IS NOT NULL AND c.last_customer_at > coalesce(c.owner_read_at, '-infinity'::timestamptz))";
 
     private final JdbcClient jdbc;
@@ -91,6 +91,7 @@ public class ChatInboxService {
             case "NEEDS_REPLY" -> NEEDS;
             case "WAITING" -> WAITING;
             case "UNHAPPY" -> "c.unhappy";
+            case "FRUSTRATED" -> "c.frustration_paused";
             case "TAKEOVER" -> "c.takeover";
             case "OPEN" -> "c.status = 'OPEN'";
             default -> "c.status = 'CLOSED'";
@@ -175,7 +176,7 @@ public class ChatInboxService {
     /** Counts for the menu badge and the inbox tabs. {@code count} stays the old "needs you" number for the mobile app. */
     public Map<String, Object> counts(UUID tenantId) {
         var r = jdbc.sql("SELECT count(*) FILTER (WHERE c.needs_human) AS needs_human, count(*) FILTER (WHERE " + NEEDS + ") AS needs_reply, count(*) FILTER (WHERE " + UNREAD + ") AS unread,"
-                + " count(*) FILTER (WHERE c.unhappy AND c.status = 'OPEN') AS unhappy, count(*) FILTER (WHERE " + WAITING + ") AS waiting"
+                + " count(*) FILTER (WHERE c.unhappy AND c.status = 'OPEN') AS unhappy, count(*) FILTER (WHERE c.frustration_paused AND c.status = 'OPEN') AS frustrated, count(*) FILTER (WHERE " + WAITING + ") AS waiting"
                 + " FROM chat.conversations c WHERE c.tenant_id = :t AND c.channel <> 'TEST' AND (c.imported_at IS NULL OR EXISTS (SELECT 1 FROM chat.messages m WHERE m.conversation_id = c.id))").param("t", tenantId).query().singleRow();
         long comments = jdbc.sql("SELECT count(*) FROM chat.social_comments WHERE tenant_id = :t AND status = 'UNREPLIED'").param("t", tenantId).query(Long.class).single();
         Map<String, Object> m = new LinkedHashMap<>(Rows.camel(r));
@@ -299,7 +300,7 @@ public class ChatInboxService {
     /** The AI answers this chat again (from the customer's next message; nothing is sent now). */
     public Map<String, Object> resume(UUID tenantId, UUID actor, UUID id) {
         row(tenantId, id);
-        jdbc.sql("UPDATE chat.conversations SET takeover = FALSE, takeover_by = NULL, takeover_at = NULL, ai_paused_until = NULL, needs_human = FALSE WHERE id = :c").param("c", id).update();
+        jdbc.sql("UPDATE chat.conversations SET takeover = FALSE, takeover_by = NULL, takeover_at = NULL, ai_paused_until = NULL, needs_human = FALSE, frustration_paused = FALSE WHERE id = :c").param("c", id).update();
         timeline.event(tenantId, id, "RESUME", actor, null);
         audit.record(actor, tenantId, "CHAT_AI_RESUMED", "conversation", id, null);
         return get(tenantId, id);
@@ -514,6 +515,10 @@ public class ChatInboxService {
         boolean channelOn = aiOnByChannel.computeIfAbsent(channel, ch -> chat.enabled(tenantId, ch));
         m.put("takeover", takeover);
         m.put("takeoverAt", r.get("takeover_at"));
+        boolean frustrationPaused = Boolean.TRUE.equals(r.get("frustration_paused"));
+        m.put("frustrationPaused", frustrationPaused);
+        m.put("frustrationReason", frustrationPaused ? r.get("frustration_reason") : null);
+        m.put("aiPausedReason", takeover ? "TAKEOVER" : frustrationPaused ? "FRUSTRATION" : paused ? "TIMED" : null);   // why the assistant is quiet in this chat
         m.put("aiPaused", paused);
         Object until = r.get("ai_paused_until");
         m.put("aiPausedUntil", paused && !takeover ? until : null);
@@ -529,6 +534,7 @@ public class ChatInboxService {
         if (Boolean.TRUE.equals(r.get("needs_reply"))) statuses.add("NEEDS_REPLY");
         if (Boolean.TRUE.equals(r.get("waiting"))) statuses.add("WAITING");
         if (Boolean.TRUE.equals(r.get("unhappy"))) statuses.add("UNHAPPY");
+        if (frustrationPaused) statuses.add("FRUSTRATED");
         if (takeover) statuses.add("TAKEOVER");
         statuses.add(String.valueOf(r.get("status")));
         m.put("statuses", statuses);
