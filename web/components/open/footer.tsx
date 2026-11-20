@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Translate } from "@/lib/i18n";
 
 export function OpenFooter({ t, rootDomain }: { t: Translate; rootDomain: string }) {
-  const col = "grid content-start gap-2.5 text-sm text-white/70";
+  const col = "grid content-start text-sm text-white/70 [&>p]:mb-1";
   return (
     <footer className="mt-14 bg-[var(--o-navy)] pb-4 text-white">
       <div className="border-b border-white/10">
@@ -19,15 +19,15 @@ export function OpenFooter({ t, rootDomain }: { t: Translate; rootDomain: string
         </div>
         <nav className={col} aria-label={t("open.footer.shop")}>
           <p className="text-sm font-extrabold text-white">{t("open.footer.shop")}</p>
-          <Link href="/search" className="hover:text-white">{t("open.allProducts")}</Link>
-          <Link href="/shops" className="hover:text-white">{t("open.allShops")}</Link>
-          <Link href="/search?onSale=true&sort=discount" className="hover:text-white">{t("open.deals")}</Link>
+          <Link href="/search" className="flex min-h-11 items-center hover:text-white">{t("open.allProducts")}</Link>
+          <Link href="/shops" className="flex min-h-11 items-center hover:text-white">{t("open.allShops")}</Link>
+          <Link href="/search?onSale=true&sort=discount" className="flex min-h-11 items-center hover:text-white">{t("open.deals")}</Link>
         </nav>
         <nav className={col} aria-label={t("open.footer.help")}>
           <p className="text-sm font-extrabold text-white">{t("open.footer.help")}</p>
-          <Link href="/orders" className="hover:text-white">{t("open.trackOrder")}</Link>
-          <Link href="/account" className="hover:text-white">{t("nav.account")}</Link>
-          <a href={`https://${rootDomain}`} className="hover:text-white">{t("open.sellWithUs")}</a>
+          <Link href="/orders" className="flex min-h-11 items-center hover:text-white">{t("open.trackOrder")}</Link>
+          <Link href="/account" className="flex min-h-11 items-center hover:text-white">{t("nav.account")}</Link>
+          <a href={`https://${rootDomain}`} className="flex min-h-11 items-center hover:text-white">{t("open.sellWithUs")}</a>
         </nav>
       </div>
       <p className="o-container text-xs text-white/40">© {new Date().getFullYear()} {t("brand.name")}</p>

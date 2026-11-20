@@ -104,3 +104,9 @@
 .open .o-stars { color: #f5a524; letter-spacing: .04em; }
 .open img { -webkit-user-drag: none; }
 @media (prefers-reduced-motion: reduce) { .open *, .open *::before, .open *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; } }
+
+/* Touch screens: every button, chip and field is at least a thumb tall (44px). */
+@media (pointer: coarse) {
+  .open .o-btn-sm, .open .o-chip { min-height: 2.75rem; }
+  .open .o-input { min-height: 3rem; font-size: 16px; }   /* 16px stops iOS from zooming the page when a field is focused */
+}

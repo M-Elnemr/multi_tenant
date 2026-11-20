@@ -14,7 +14,7 @@ export function ProductRail({ title, href, linkLabel, products, eyebrow }: { tit
           {eyebrow && <p className="text-xs font-extrabold uppercase tracking-[.14em] text-[var(--o-accent)]">{eyebrow}</p>}
           <h2 className="o-title">{title}</h2>
         </div>
-        {href && <Link href={href} className="o-link flex shrink-0 items-center gap-1">{linkLabel}<Icon name="arrow" className="h-4 w-4 rtl:rotate-180" /></Link>}
+        {href && <Link href={href} className="o-link -my-3 flex min-h-11 shrink-0 items-center gap-1">{linkLabel}<Icon name="arrow" className="h-4 w-4 rtl:rotate-180" /></Link>}
       </div>
       <div className="o-rail">
         {products.map((p) => <div key={p.id} className="w-[10.5rem] sm:w-[12.5rem] lg:w-[14rem]"><OpenProductCard p={p} /></div>)}

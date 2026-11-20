@@ -63,8 +63,8 @@ export function OpenHero({ slides }: { slides: HeroSlide[] }) {
           <>
             <button type="button" aria-label="previous" onClick={() => go(i - 1)} className="absolute start-3 top-1/2 hidden h-11 w-11 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-[var(--o-navy)] shadow-lg transition hover:scale-110 md:grid"><Icon name="arrow" className="h-5 w-5 rotate-180 rtl:rotate-0" /></button>
             <button type="button" aria-label="next" onClick={() => go(i + 1)} className="absolute end-3 top-1/2 hidden h-11 w-11 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-[var(--o-navy)] shadow-lg transition hover:scale-110 md:grid"><Icon name="arrow" className="h-5 w-5 rtl:rotate-180" /></button>
-            <div className="absolute inset-x-0 bottom-3 flex justify-center gap-1.5">
-              {slides.map((s, n) => <button key={s.id} type="button" aria-label={`${n + 1}`} onClick={() => go(n)} className={`h-1.5 rounded-full transition-all ${n === i ? "w-7 bg-white" : "w-1.5 bg-white/50"}`} />)}
+            <div className="absolute inset-x-0 bottom-1 flex justify-center">
+              {slides.map((s, n) => <button key={s.id} type="button" aria-label={`${n + 1}`} aria-current={n === i} onClick={() => go(n)} className="grid h-6 min-w-6 place-items-center"><span className={`block h-1.5 rounded-full transition-all ${n === i ? "w-7 bg-white" : "w-1.5 bg-white/50"}`} /></button>)}
             </div>
           </>
         )}

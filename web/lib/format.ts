@@ -16,10 +16,11 @@ export function num(n: number, locale: Locale): string {
   return stable(new Intl.NumberFormat(intl(locale)).format(n));
 }
 
-/** Money is stored as integer minor units (piastres): 19999 -> 199.99 */
+/** Money is stored as integer minor units (piastres): 19999 -> 199.99. A whole amount drops the ",00" (450 EGP, not 450.00 EGP): shorter and easier to read on a phone. */
 export function money(minor: number | null | undefined, currency: string, locale: Locale): string {
   if (minor === null || minor === undefined) return "-";
-  return stable(new Intl.NumberFormat(intl(locale), { style: "currency", currency, minimumFractionDigits: 2 }).format(minor / 100));
+  const whole = Math.abs(minor) % 100 === 0;
+  return stable(new Intl.NumberFormat(intl(locale), { style: "currency", currency, minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: 2 }).format(minor / 100));
 }
 
 export function dateTime(iso: string | null | undefined, locale: Locale, timeZone = "Africa/Cairo"): string {
