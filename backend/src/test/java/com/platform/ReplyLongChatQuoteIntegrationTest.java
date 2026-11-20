@@ -32,13 +32,16 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
 
     UUID tenant(Tenant t) { return jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", t.slug()).query(UUID.class).single(); }
 
-    void product(Tenant t, String name, int price, String... colours) throws Exception {
+    void product(Tenant t, String name, int price, String... colours) throws Exception { productWas(t, name, price, 0, colours); }
+
+    /** Same, with a was-price (the shop's «before» price) on every variant when {@code was} is more than 0. */
+    void productWas(Tenant t, String name, int price, int was, String... colours) throws Exception {
         String branch = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
         StringBuilder values = new StringBuilder(), variants = new StringBuilder();
         for (int i = 0; i < colours.length; i++) {
             if (i > 0) { values.append(','); variants.append(','); }
             values.append('"').append(colours[i]).append('"');
-            variants.append("{\"sku\":\"S-%s\",\"priceMinor\":%d,\"optionValues\":{\"اللون\":\"%s\"},\"stock\":[{\"branchId\":\"%s\",\"quantity\":5}]}".formatted(uniq(), (price + i * 10) * 100, colours[i], branch));
+            variants.append("{\"sku\":\"S-%s\",\"priceMinor\":%d,%s\"optionValues\":{\"اللون\":\"%s\"},\"stock\":[{\"branchId\":\"%s\",\"quantity\":5}]}".formatted(uniq(), (price + i * 10) * 100, was > 0 ? "\"compareAtPriceMinor\":" + (was * 100) + "," : "", colours[i], branch));
         }
         onHost(t.host(), t.access(), "POST", "/api/v1/store/products", "{\"taxonomySlug\":\"handbags\",\"audience\":\"WOMEN\",\"name\":\"%s\",\"options\":[{\"name\":\"اللون\",\"values\":[%s]}],\"variants\":[%s]}".formatted(name, values, variants)).andExpect(status().isCreated());
     }
@@ -416,6 +419,40 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
         seed(conv, "assistant", open + " بـ 20999 جنيه، فضي.");
         String reply = stuckModel(t, ext, "والجديد بكام وضمانه؟", base + " عندنا حالياً متوفر منه النسخة الأوبن بوكس بس يا فندم، بـ 20999 جنيه.");
         assertThat(reply).as(reply).contains("24999").doesNotContain("بس يا فندم");
+    }
+
+    /** Seen in the open-box run on 1948bcf (after 50 messages): «والجديد بكام وضمانه؟» was answered «الأوبن بوكس بـ 20,999 بدل 24,999، وضمانه 6 شهور»: 24,999, the open-box laptop's was-price, is also the new laptop's price and made the answer look like the new one's. */
+    @Test
+    void anOpenBoxAnswerWhoseWasPriceIsTheNewPriceDoesNotAnswerAQuestionAboutTheNewVersion() throws Exception {
+        Tenant t = onboard("STORE");
+        UUID tenant = tenant(t);
+        String tag = uniq();
+        String base = "لاب توب زينترا " + tag, open = base + " أوبن بوكس";
+        product(t, base, 24999, "فضي", "رمادي");
+        productWas(t, open, 20999, 24999, "فضي");
+        String ext = UUID.randomUUID().toString();
+        answer("أهلا");
+        say(t, ext, "السلام عليكم", null);
+        UUID conv = conv(tenant, ext);
+        seed(conv, "user", "الأوبن بوكس لسه متاح؟ وضمانه؟");
+        seed(conv, "assistant", open + " بـ 20999 جنيه، فضي.");
+        String reply = stuckModel(t, ext, "والجديد بكام وضمانه؟", "متاح يا فندم ✅ " + open + " بـ 20,999 جنيه بدل 24,999، فضي.");
+        assertThat(reply).as(reply).contains("24999").doesNotContain("20999");
+    }
+
+    /** Seen in the open-box run on 1948bcf: «عايز لاب توب زينترا بوك 14 جديد» was answered «مش شايفه عندي في المتجر» in one call with no search (the denial wording «مش شايفه» was not recognised). */
+    @Test
+    void aDenialWordedMashShayfIsNotSentForAProductTheShopHasInStock() throws Exception {
+        Tenant t = onboard("STORE");
+        String tag = uniq();
+        String base = "لاب توب زينترا " + tag;
+        product(t, base, 24999, "فضي", "رمادي");
+        for (String wording : new String[]{" تحديداً مش شايفه عندي في المتجر حالياً، بس عندنا تشكيلة لاب توبات كويسة.", " مش لاقيه عندنا دلوقتي يا فندم، بس عندنا غيره.", " ماعنديش منه حالياً يا فندم."}) {
+            String ext = UUID.randomUUID().toString();
+            answer("أهلا");
+            String reply = stuckModel(t, ext, "عايز " + base + " جديد", base + wording);
+            assertThat(reply).as(reply).contains("24999").doesNotContain("مش شايفه").doesNotContain("مش لاقيه").doesNotContain("ماعنديش");
+        }
     }
 
     /** Seen on the final build: «فرق السعر ٤٠٠ جنيه: الجديد ٢٤٩٩ والأوبن بوكس ٢٠٩٩» (a digit lost from both prices). A price after a version label that no product of the chat has is never sent. */

@@ -69,7 +69,7 @@ class AiPointsIntegrationTest extends IntegrationTestBase {
     void theOwnerPicksTheChannelsTheAiAnswersOn() throws Exception {
         Tenant t = onboard("STORE");
         onHost(t.host(), t.access(), "GET", "/api/v1/store/ai/settings", null).andExpect(status().isOk())
-                .andExpect(jsonPath("$.channels.length()").value(4)).andExpect(jsonPath("$.pointsMinor").value(10_000)).andExpect(jsonPath("$.conversationPriceMinor").value(100)).andExpect(jsonPath("$.conversationReplies").value(10));
+                .andExpect(jsonPath("$.channels.length()").value(6)).andExpect(jsonPath("$.pointsMinor").value(10_000)).andExpect(jsonPath("$.conversationPriceMinor").value(100)).andExpect(jsonPath("$.conversationReplies").value(10));
         onHost(t.host(), t.access(), "PUT", "/api/v1/store/ai/settings", "{\"channels\":[\"NOPE\"]}").andExpect(status().isBadRequest());
         onHost(t.host(), t.access(), "PUT", "/api/v1/store/ai/settings", "{\"channels\":[\"WHATSAPP\",\"INSTAGRAM\"]}").andExpect(status().isOk())
                 .andExpect(jsonPath("$.channels.length()").value(2)).andExpect(jsonPath("$.channels[0]").value("WHATSAPP"));

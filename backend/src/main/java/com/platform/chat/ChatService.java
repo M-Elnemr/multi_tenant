@@ -299,7 +299,7 @@ public class ChatService {
     // ---- settings --------------------------------------------------------------------------------------------
 
     /** The channels the AI auto-reply can answer on: WhatsApp, Messenger (FACEBOOK), Instagram and the shop website. */
-    public static final List<String> AI_CHANNELS = List.of("WHATSAPP", "FACEBOOK", "INSTAGRAM", "TELEGRAM", "TIKTOK", "X", "SNAPCHAT", "WEB");
+    public static final List<String> AI_CHANNELS = List.of("WHATSAPP", "FACEBOOK", "INSTAGRAM", "TELEGRAM", "X", "WEB");
 
     public Map<String, Object> getSettings(UUID tenantId) {
         var r = jdbc.sql("SELECT enabled, tone, max_discount_pct, greeting, agent_name, agent_avatar, array_to_string(channels, ',') AS channels FROM chat.settings WHERE tenant_id = :t").param("t", tenantId).query().listOfRows().stream().findFirst();
@@ -348,7 +348,7 @@ public class ChatService {
         String ch = channels == null ? null : String.join(",", AI_CHANNELS.stream().filter(channels::contains).toList());
         jdbc.sql("""
                 INSERT INTO chat.settings (tenant_id, enabled, tone, max_discount_pct, greeting, channels)
-                VALUES (:t, coalesce(:e, TRUE), coalesce(:tone, 'FRIENDLY'), coalesce(:d, 0), :g, CASE WHEN :setc THEN CAST(string_to_array(:ch, ',') AS varchar(20)[]) ELSE '{WHATSAPP,FACEBOOK,INSTAGRAM,TELEGRAM,TIKTOK,X,SNAPCHAT,WEB}' END)
+                VALUES (:t, coalesce(:e, TRUE), coalesce(:tone, 'FRIENDLY'), coalesce(:d, 0), :g, CASE WHEN :setc THEN CAST(string_to_array(:ch, ',') AS varchar(20)[]) ELSE '{WHATSAPP,FACEBOOK,INSTAGRAM,TELEGRAM,X,WEB}' END)
                 ON CONFLICT (tenant_id) DO UPDATE SET enabled = coalesce(:e, chat.settings.enabled), tone = coalesce(:tone, chat.settings.tone),
                   max_discount_pct = coalesce(:d, chat.settings.max_discount_pct), greeting = CASE WHEN :setg THEN :g ELSE chat.settings.greeting END,
                   channels = CASE WHEN :setc THEN CAST(string_to_array(:ch, ',') AS varchar(20)[]) ELSE chat.settings.channels END, updated_at = now()
@@ -1077,6 +1077,8 @@ public class ChatService {
      * The customer asks about one version of a model that is sold new and open-box (named, or the chat's product), the question is not a comparison, and the reply gives prices of the OTHER version
      * and none of the asked one: the asked version is answered with the other's data. Returns the asked product's slug, or null.
      */
+    private static final Pattern WAS_PRICE = Pattern.compile("(?:بدل(?:اً|ا)?(?:\\s+من)?|كان(?:ت)?|قبل(?:\\s+الخصم)?|instead\\s+of|was)\\s*[\\d٠-٩][\\d٠-٩,٬.]*(?:\\s*(?:جنيه|ج\\.?\\s?م\\.?|EGP|LE))?", Pattern.CASE_INSENSITIVE);
+
     static String otherVersionAnswered(String last, String answer, FactCheck.Shop shop) {
         if (answer == null || last == null || FactCheck.comparing(last) || !PRODUCT_QUESTION.matcher(FactCheck.light(last)).find()) return null;
         var asked = FactCheck.askedSlugs(last, shop.names());
@@ -1090,8 +1092,9 @@ public class ChatService {
         Set<Long> own = pricesOf(shop, t, false), other = new HashSet<>();
         for (String g : group) if (!g.equals(t)) other.addAll(pricesOf(shop, g, false));
         other.removeAll(own);
-        Set<Long> said = plainPrices(answer);
-        for (var a : MoneyGuard.amountsIn(answer)) if (!a.sum()) said.add(a.cents());
+        String given = WAS_PRICE.matcher(answer).replaceAll(" ");   // «20,999 بدل 24,999»: the open-box laptop's was-price is the new laptop's price, and does not answer for the new one
+        Set<Long> said = plainPrices(given);
+        for (var a : MoneyGuard.amountsIn(given)) if (!a.sum()) said.add(a.cents());
         if (said.isEmpty() || said.stream().anyMatch(own::contains)) return null;
         return said.stream().anyMatch(other::contains) ? t : null;
     }
@@ -1366,7 +1369,7 @@ public class ChatService {
 
     private static final Pattern WHO_QUESTION = Pattern.compile("(?:ليك|ليكي|لحضرتك|لنفسك)\\s+(?:ولا|و\\s*لا)\\s+(?:لحد|ل\\s*حد)|(?:بتطلب|بتشتري|بتدور)\\s+(?:ل|لـ)?\\s*(?:حد|نفسك)|ليك\\s+ولا\\s+هدية|هدية\\s+(?:لحد|ل\\s*حد)|(?:لنفسك|ليكي|ليك|نفسك)\\s+(?:ولا|و\\s*لا)\\s+(?:لحد|ل\\s*حد)\\s*(?:تاني|تانية)?|(?:for you|for yourself)\\s+or\\s+(?:someone|a gift)", Pattern.CASE_INSENSITIVE);
     private static final Pattern FOR_ME = Pattern.compile("(?<![\\p{L}])(?:ليا|ليّا|لنفسي|عشاني|علشاني|لي انا|ليه انا|for me|for myself)(?![\\p{L}])", Pattern.CASE_INSENSITIVE);
-    private static final Pattern NOT_HAVE = Pattern.compile("(?:مفيش\\s+(?:لبس|ملابس|منتج|منتجات|حاجة|حاجه|حاجات|موديل|موديلات|أنواع|انواع|أصناف|اصناف|صنف|اختيارات|خيارات)|عندنا\\s+مفيش|مش\\s+(?:موجود|موجوده|موجودة|متوفر|متوفره|متوفرة|متاح|متاحه|متاحة)|(?:ما|م)\\s*عندناش|مش\\s+عندنا|مفيش\\s+عندنا|مش\\s+عندهم|we\\s+(?:don't|do not)\\s+have|not\\s+available)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern NOT_HAVE = Pattern.compile("(?:مفيش\\s+(?:لبس|ملابس|منتج|منتجات|حاجة|حاجه|حاجات|موديل|موديلات|أنواع|انواع|أصناف|اصناف|صنف|اختيارات|خيارات)|عندنا\\s+مفيش|مش\\s+(?:موجود|موجوده|موجودة|متوفر|متوفره|متوفرة|متاح|متاحه|متاحة)|(?:ما|م)\\s*عندناش|مش\\s+عندنا|مفيش\\s+عندنا|مش\\s+عندهم|(?:ما|م)\\s*عنديش|مش\\s+عندي|مفيش\\s+عندي|مش\\s+(?:شايف|لاقي|ظاهر)(?:ه|ها|ة|ين)?(?![\\p{L}])|(?:ما|م)\\s*(?:لقيت|لاقيت)(?:ه|ها)?ش?(?![\\p{L}])|we\\s+(?:don't|do not)\\s+have|not\\s+available)", Pattern.CASE_INSENSITIVE);
     private static final java.util.List<String> EXAMPLE_LINES = examples();
     private static final Pattern ONLY_OPTIONS = Pattern.compile("(?:الألوان|الالوان|المقاسات|اللون)\\s+(?:المتاحة|المتاحه|المتوفرة|المتوفره|الموجودة|الموجوده)[^.؟?!\\n]{0,40}(?:فقط|بس)|(?:لونه|لونها|متاح|متاحة|متوفر|موجود)\\s+[^.؟?!\\n]{0,15}(?:بس|فقط)|(?:بقطعة|بقطعه)\\s+واحدة|معنديش\\s+معلومات\\s+(?:دقيقة\\s+)?عن\\s+(?:المقاسات|الألوان|المخزون)");
 
