@@ -23,6 +23,26 @@ function Price({ x, locale }: { x: ShopProduct; locale: Locale }) { return <span
 function Showcase({ look, shown, t, locale, name, blurb }: { look: SmallLook; shown: ShopProduct[]; t: T; locale: Locale; name: string; blurb: string }) {
   const main = shown[0];
   if (!main) return <section className="s-container pt-12 text-center"><h1 className="s-display text-4xl font-extrabold">{name}</h1><p className="mt-4 text-[var(--s-mute)]">{t("shop.empty")}</p></section>;
+  const photo = (cls: string) => (pic(main) ? <img src={pic(main)!} alt="" className={cls} /> : <div className={`bg-brand-gradient ${cls}`} />);
+  if (look.stage === "poster") return (   /* the photo fills the first screen, the name and the price sit on it */
+    <section className="s-container pt-4 sm:pt-8"><div className="sm-stage relative isolate min-h-[34rem] overflow-hidden rounded-[var(--s-radius)] sm:min-h-[40rem]">
+      {photo("absolute inset-0 -z-10 h-full w-full object-cover")}<div className="absolute inset-0 -z-10 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
+      <div className="flex min-h-[inherit] flex-col justify-end p-6 text-white sm:p-12"><p className="s-eyebrow mb-3 !text-white/70">{name}</p><h1 className="s-display max-w-[14ch] text-[2.8rem] font-extrabold leading-[1] sm:text-[5.5rem]">{main.name}</h1>
+        {blurb && <p className="mt-4 max-w-lg text-white/80">{blurb}</p>}<div className="mt-6 flex flex-wrap items-center gap-5"><span className="text-3xl"><Price x={main} locale={locale} /></span><Buy x={main} t={t} /></div></div></div></section>
+  );
+  if (look.stage === "orbit") return (   /* a round product on a soft disc, the text beside it on wide screens */
+    <section className="s-container pt-8 sm:pt-14"><div className="grid items-center gap-6 lg:grid-cols-[1fr_1fr] lg:gap-16">
+      <div className="relative mx-auto aspect-square w-[min(88vw,30rem)]"><span className="absolute inset-[6%] rounded-full" style={{ background: "radial-gradient(closest-side, #fff, color-mix(in srgb, var(--brand) 22%, #fff))" }} />{photo("sm-orbit relative h-full w-full rounded-full object-cover shadow-[0_40px_80px_-30px_rgb(0_0_0/.45)]")}
+        {main.offer && <span className="absolute end-2 top-6 grid h-20 w-20 place-items-center rounded-full bg-[var(--brand)] text-center text-sm font-extrabold text-white">{t("shop.off")}</span>}</div>
+      <div className="text-center lg:text-start"><p className="s-eyebrow mb-3">{name}</p><h1 className="s-display text-[2.4rem] font-extrabold leading-[1.04] sm:text-[4rem]">{main.name}</h1>{blurb && <p className="mt-4 text-[var(--s-mute)]">{blurb}</p>}
+        <p className="mt-6 text-3xl"><Price x={main} locale={locale} /></p><div className="mt-6 flex justify-center lg:justify-start"><Buy x={main} t={t} /></div></div>
+    </div></section>
+  );
+  if (look.stage === "banner") return (   /* a wide picture first, then the name, the text and the price in three columns */
+    <section className="s-container pt-6 sm:pt-10"><div className="sm-frame aspect-[4/3] overflow-hidden rounded-[var(--s-radius)] bg-[var(--s-soft)] sm:aspect-[21/9]">{photo("s-kenburns h-full w-full object-cover")}</div>
+      <div className="mt-8 grid gap-6 border-b border-[var(--s-line)] pb-8 md:grid-cols-[1.2fr_1fr_auto] md:items-end"><div><p className="s-eyebrow mb-2">{name}</p><h1 className="s-display text-[2.2rem] font-extrabold leading-[1.05] sm:text-5xl">{main.name}</h1></div>
+        <p className="text-[var(--s-mute)]">{blurb}</p><div className="flex items-center gap-5 md:flex-col md:items-end md:gap-3"><span className="text-2xl"><Price x={main} locale={locale} /></span><Buy x={main} t={t} /></div></div></section>
+  );
   if (look.stage === "trio") return (
     <section className="s-container pt-8 sm:pt-14"><div className="mb-8 text-center"><h1 className="s-display text-[2.4rem] font-extrabold sm:text-6xl">{name}</h1>{blurb && <p className="mx-auto mt-3 max-w-xl text-[var(--s-mute)]">{blurb}</p>}</div>
       <ul className={`grid gap-4 ${shown.length === 1 ? "mx-auto max-w-md" : shown.length === 2 ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}>{shown.map((x) => (
@@ -57,7 +77,7 @@ export function SmallCatalogHome({ look, p, products, branches, t, locale }: Pro
   const name = p?.storeName ?? "";
   const blurb = p?.shortDescription || p?.about || "";
   const shown = products.slice(0, 3);
-  const rest = products.slice(look.stage === "story" || look.stage === "split" || look.stage === "stage" ? 1 : 3);
+  const rest = products.slice(["story", "split", "stage", "poster", "orbit", "banner"].includes(look.stage) ? 1 : 3);
   const labels = { outOfStock: t("shop.outOfStock"), off: t("shop.off"), badges: { NEW: t("badge.NEW"), SALE: t("badge.SALE"), BEST_SELLER: t("badge.BEST_SELLER"), LIMITED: t("badge.LIMITED") } };
   return (
     <div data-small-home>
