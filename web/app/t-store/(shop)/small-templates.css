@@ -3,7 +3,7 @@
 /* 1. SOLO - one product, centred, white and black */
 .shop[data-template="solo"] { --s-bg: #ffffff; --s-card: #ffffff; --s-ink: #111111; --s-mute: #6e6e6e; --s-line: #ececec; --s-soft: #f5f5f5; --brand: #111111; --s-radius: 4px; --s-shadow: none; --s-shadow-lg: 0 40px 80px -40px rgb(0 0 0 / .35); }
 .shop[data-template="solo"] h1, .shop[data-template="solo"] h2 { font-family: var(--font-inter-tight), var(--f-plex), sans-serif; font-weight: 800; letter-spacing: -0.045em; }
-.shop[data-template="solo"] .s-btn { border-radius: 999px; background: #111; }
+.shop[data-template="solo"] .s-btn:not(.s-btn-ghost) { border-radius: 999px; background: #111; }
 
 /* 2. VITRINE - a shop window: warm paper, a thick frame around the photo */
 .shop[data-template="vitrine"] { --s-bg: #f7f3ee; --s-card: #fffdf9; --s-ink: #25201b; --s-mute: #8a7d6e; --s-line: #e6dccf; --s-soft: #efe6da; --brand: #a78358; --s-radius: 6px; --s-shadow: 0 20px 50px -30px rgb(60 40 20 / .35); --s-shadow-lg: 0 40px 80px -40px rgb(60 40 20 / .45); }
@@ -19,7 +19,7 @@
 /* 4. MONOLITH - black, huge, mint accent, for tech */
 .shop[data-template="monolith"] { --s-bg: #08090c; --s-card: #101218; --s-ink: #f2f4f8; --s-mute: #8b93a5; --s-line: #1c202b; --s-soft: #141720; --brand: #7cf2d2; --s-radius: 10px; --s-shadow: none; --s-shadow-lg: 0 40px 100px -40px rgb(124 242 210 / .25); color-scheme: dark; }
 .shop[data-template="monolith"] h1, .shop[data-template="monolith"] h2 { font-family: var(--f-plex), var(--font-inter-tight), sans-serif; font-weight: 700; letter-spacing: -0.03em; }
-.shop[data-template="monolith"] .s-btn { background: var(--brand); color: #04120e; }
+.shop[data-template="monolith"] .s-btn:not(.s-btn-ghost) { background: var(--brand); color: #04120e; }
 .shop[data-template="monolith"] .sm-stage { background: radial-gradient(60% 60% at 50% 40%, rgb(124 242 210 / .18), transparent 70%), #101218; }
 
 /* 5. PEDESTAL - the product on a pedestal under a warm light */
@@ -30,7 +30,7 @@
 /* 6. SPOTLIGHT - dark split with a yellow accent */
 .shop[data-template="spotlight"] { --s-bg: #111318; --s-card: #181b22; --s-ink: #eef0f5; --s-mute: #9199a9; --s-line: #262a34; --s-soft: #1d2029; --brand: #ffcf3f; --s-radius: 14px; --s-shadow: none; --s-shadow-lg: 0 40px 90px -40px rgb(255 207 63 / .2); color-scheme: dark; }
 .shop[data-template="spotlight"] h1, .shop[data-template="spotlight"] h2 { font-family: var(--f-tajawal), var(--font-inter-tight), sans-serif; font-weight: 800; }
-.shop[data-template="spotlight"] .s-btn { background: var(--brand); color: #1b1500; }
+.shop[data-template="spotlight"] .s-btn:not(.s-btn-ghost) { background: var(--brand); color: #1b1500; }
 .shop[data-template="spotlight"] .sm-frame { box-shadow: 0 0 0 1px #2e3340, 0 60px 120px -50px rgb(255 207 63 / .25); }
 
 /* 7. LAUNCH - a new-product launch: loud orange on cream */

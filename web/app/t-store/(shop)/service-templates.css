@@ -5,12 +5,12 @@
 .shop[data-template="lumiere"] { --s-bg: #fbf4ef; --s-card: #fffdfb; --s-ink: #2b1b17; --s-mute: #8a7168; --s-line: #eadbd2; --s-soft: #f5e6dc; --brand: #c58a6a; --s-radius: 22px; --s-shadow: 0 20px 50px -30px rgb(120 70 50 / .35); --s-shadow-lg: 0 40px 80px -40px rgb(120 70 50 / .45); }
 .shop[data-template="lumiere"] h1, .shop[data-template="lumiere"] h2, .shop[data-template="lumiere"] h3 { font-family: var(--f-cormorant), var(--f-amiri), serif; font-weight: 600; letter-spacing: -0.005em; }
 .shop[data-template="lumiere"] .sv-arch { border-radius: 999px 999px 24px 24px; }
-.shop[data-template="lumiere"] .s-btn { border-radius: 999px; background: #2b1b17; }
+.shop[data-template="lumiere"] .s-btn:not(.s-btn-ghost) { border-radius: 999px; background: #2b1b17; }
 
 /* 2. BARBERSHOP - bold, dark, gold, loud type, price list */
 .shop[data-template="barbershop"] { --s-bg: #0e0e10; --s-card: #17171a; --s-ink: #f2efe9; --s-mute: #a8a39a; --s-line: #2a2a2e; --s-soft: #1e1e22; --brand: #e8b33a; --s-radius: 6px; --s-shadow: none; --s-shadow-lg: 0 30px 60px -30px #000; }
 .shop[data-template="barbershop"] h1, .shop[data-template="barbershop"] h2, .shop[data-template="barbershop"] h3 { font-family: var(--f-archivo), var(--f-lalezar), sans-serif; text-transform: uppercase; letter-spacing: .02em; font-weight: 400; }
-.shop[data-template="barbershop"] .s-btn { border-radius: 4px; background: var(--brand); color: #111; text-transform: uppercase; letter-spacing: .08em; }
+.shop[data-template="barbershop"] .s-btn:not(.s-btn-ghost) { border-radius: 4px; background: var(--brand); color: #111; text-transform: uppercase; letter-spacing: .08em; }
 .shop[data-template="barbershop"] .s-btn-ghost { background: transparent; color: var(--s-ink); border: 1px solid var(--s-ink); }
 .shop[data-template="barbershop"] .sv-menu { border-style: dashed; border-width: 2px; }
 
@@ -23,7 +23,7 @@
 .shop[data-template="fixit"] { --s-bg: #0b1220; --s-card: #111a2e; --s-ink: #e6edf7; --s-mute: #8da0bd; --s-line: #1d2a44; --s-soft: #15213a; --brand: #38bdf8; --s-radius: 12px; --s-shadow: none; --s-shadow-lg: 0 30px 70px -30px rgb(56 189 248 / .25); }
 .shop[data-template="fixit"] h1, .shop[data-template="fixit"] h2, .shop[data-template="fixit"] h3 { font-family: var(--f-plex), var(--font-inter-tight), sans-serif; font-weight: 700; }
 .shop[data-template="fixit"] .sv-bento { background-image: linear-gradient(rgb(56 189 248 / .07) 1px, transparent 1px), linear-gradient(90deg, rgb(56 189 248 / .07) 1px, transparent 1px); background-size: 28px 28px; }
-.shop[data-template="fixit"] .s-btn { background: var(--brand); color: #04121f; border-radius: 10px; }
+.shop[data-template="fixit"] .s-btn:not(.s-btn-ghost) { background: var(--brand); color: #04121f; border-radius: 10px; }
 
 /* 5. AQUA - water filtration: fresh sky blue, rounded, plan cards */
 .shop[data-template="aqua"] { --s-bg: #f0f9ff; --s-card: #ffffff; --s-ink: #0c3a5b; --s-mute: #4f7794; --s-line: #cfe8f6; --s-soft: #def2fd; --brand: #0ea5e9; --s-radius: 26px; --s-shadow: 0 18px 44px -30px rgb(14 165 233 / .6); --s-shadow-lg: 0 40px 80px -40px rgb(14 165 233 / .55); }
@@ -39,7 +39,7 @@
 /* 7. GARAGE - car repair and detailing: asphalt black, hazard yellow, rows */
 .shop[data-template="garage"] { --s-bg: #121212; --s-card: #1b1b1b; --s-ink: #f5f5f0; --s-mute: #a3a39a; --s-line: #2c2c2c; --s-soft: #222; --brand: #ffcf00; --s-radius: 4px; --s-shadow: none; --s-shadow-lg: 0 30px 60px -30px #000; }
 .shop[data-template="garage"] h1, .shop[data-template="garage"] h2, .shop[data-template="garage"] h3 { font-family: var(--f-lalezar), var(--f-archivo), sans-serif; text-transform: uppercase; font-weight: 400; letter-spacing: .01em; }
-.shop[data-template="garage"] .s-btn { background: var(--brand); color: #111; border-radius: 2px; text-transform: uppercase; }
+.shop[data-template="garage"] .s-btn:not(.s-btn-ghost) { background: var(--brand); color: #111; border-radius: 2px; text-transform: uppercase; }
 .shop[data-template="garage"] .sv-row { border-inline-start: 5px solid var(--brand); }
 .shop[data-template="garage"] .sv-menu { background-image: repeating-linear-gradient(135deg, transparent 0 14px, rgb(255 207 0 / .05) 14px 28px); }
 

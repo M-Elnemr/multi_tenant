@@ -105,7 +105,7 @@ function Hero({ look, p, cfg, t, locale }: Pick<Props, "look" | "p" | "cfg" | "t
   return (
     <section className="s-container pt-6 sm:pt-12"><div className="grid items-center gap-8 lg:grid-cols-[1.05fr_1fr] lg:gap-14">
       <div className="s-reveal order-2 lg:order-1"><p className="s-eyebrow mb-4">{t("svh.welcome")}</p><h1 className="s-display max-w-[14ch] text-[2.6rem] font-extrabold leading-[1.02] sm:text-[4.2rem]">{name}</h1><p className="mt-5 max-w-lg text-lg text-[var(--s-mute)]">{blurb}</p>{cta}</div>
-      <div className="order-1 lg:order-2"><div className="sv-arch relative aspect-[4/5] overflow-hidden rounded-[var(--s-radius)] bg-[var(--s-soft)]">{cover ? <img src={cover} alt="" className="s-kenburns h-full w-full object-cover" /> : <div className="bg-brand-gradient h-full w-full" />}</div></div>
+      <div className="order-1 lg:order-2"><div className="sv-arch relative aspect-[4/5] overflow-hidden rounded-[var(--s-radius)] bg-[var(--s-soft)]">{cover ? <img src={cover} alt="" className="s-kenburns h-full w-full object-cover" /> : <Placeholder name={name} />}</div></div>
     </div></section>
   );
 }
@@ -150,6 +150,17 @@ export function ServiceHome({ look, p, cfg, products, branches, t, locale }: Pro
         </Section>
       )}
       {p?.whatsapp && <section className="s-container mt-14"><a href={whatsappLink(p.whatsapp, `${p.storeName} 👋`)} target="_blank" rel="noopener noreferrer" className="s-btn !bg-emerald-500 !shadow-none"><Icon name="chat" className="h-4 w-4" />{t("shop.chatWithUs")}</a></section>}
+    </div>
+  );
+}
+
+/** No cover photo yet: a designed fallback (the brand colours, soft light and the business initial) instead of a bare gradient. */
+function Placeholder({ name }: { name: string }) {
+  return (
+    <div className="bg-brand-gradient relative grid h-full w-full place-items-center overflow-hidden" aria-hidden>
+      <span className="absolute -top-1/4 start-[-20%] h-3/4 w-3/4 rounded-full bg-white/20 blur-3xl" />
+      <span className="absolute -bottom-1/4 end-[-20%] h-2/3 w-2/3 rounded-full bg-black/15 blur-3xl" />
+      <span className="s-display relative text-[9rem] font-extrabold leading-none text-white/85 drop-shadow-[0_10px_30px_rgb(0_0_0/.25)]">{Array.from(name.trim())[0] ?? ""}</span>
     </div>
   );
 }
