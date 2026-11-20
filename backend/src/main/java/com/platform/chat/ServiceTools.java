@@ -64,9 +64,8 @@ public class ServiceTools {
                     obj("type", "OBJECT", "properties", obj("bookingNumber", str("The appointment number"), "phone", str("The customer's mobile number"), "date", str("YYYY-MM-DD"), "time", str("HH:mm")), "required", List.of("bookingNumber", "date", "time"))));
         }
         if (goals.contains("LEADS"))
-            out.add(new ToolDef("save_lead", "Save this customer in the shop's customer list. Call it with the first name as soon as you know it, and again with the phone number once they give it. interest: what they asked about, in a few words. wantsOffers: true only when they agreed to receive offers and news from the shop.",
-                    obj("type", "OBJECT", "properties", obj("name", str("The customer's first name"), "phone", str("Their mobile number (only when they gave it)"), "interest", str("What they are interested in, a few words"),
-                            "wantsOffers", obj("type", "BOOLEAN", "description", "True only if they agreed to receive offers")))));
+            out.add(new ToolDef("save_lead", "Save this customer in the shop's customer list so the shop's customer service can contact them. Call it with the first name as soon as you know it, and again with the phone number once they give it. interest: what they asked about or need, in a few words.",
+                    obj("type", "OBJECT", "properties", obj("name", str("The customer's first name"), "phone", str("Their WhatsApp / mobile number (only when they gave it)"), "interest", str("What they are interested in or need, a few words")))));
         return out;
     }
 
@@ -81,8 +80,9 @@ public class ServiceTools {
         if (goals.contains("LEADS")) p.append("""
                 - LEADS (strict): the owner wants every interested customer saved as a customer to message later.
                   NAME FIRST: in your FIRST reply of a chat, when you do not know their name yet (see WHAT YOU REMEMBER and the chat), answer what they asked and then ask their first name once, in one short warm question («اسم حضرتك إيه؟», «أقدر أعرف اسم حضرتك؟»). Never hold an answer back for it. Use the name afterwards, not in every message. If they skip it, carry on and ask once more later at most. Call save_lead with the name as soon as you have it.
-                  PHONE AFTER THEY ARE SATISFIED: ask for their WhatsApp number only after they are satisfied: they got a clear answer about a product or a service, or they ask to order or to book, or they say thanks or ok. Say why in one short sentence («عشان نبعتلك التفاصيل والعروض الجديدة»). Never in the first messages, never before answering, and if they decline do not ask again. Then call save_lead with name, phone, interest (what they asked about, a few words) and wantsOffers (true only if they agreed to receive offers: ask it in the same sentence).
+                  PHONE AFTER THEY ARE SATISFIED: ask for their WhatsApp number only after they are satisfied: they got a clear answer about a product or a service, or they ask to order or to book, or they say thanks or ok. Say why in one short, natural sentence: customer service will contact them on it («محتاج رقم الواتساب بتاع حضرتك عشان خدمة العملاء تتواصل معاك», «ممكن رقمك على الواتساب عشان فريق خدمة العملاء يكلمك؟»). Do not ask about offers or marketing. Never in the first messages, never before answering, and if they decline do not ask again. Then call save_lead with name, phone and interest (what they asked about or need, a few words).
                   When you collect name and phone for an order or an appointment, call save_lead as soon as you have both, before preparing the order or booking. Never ask for card numbers, passwords or an address that is not needed.
+                  IF COLLECTING IS ALL THIS SHOP ASKS OF YOU (no orders, no appointments): be a helpful, smart first point of contact: answer what you can from the shop's data, find out gently what the customer needs and how urgent it is, get the name early and the number once they are satisfied, then tell them customer service will contact them. Never promise a price, a time, availability or an outcome the shop's data does not state: customer service will confirm those.
                 """);
         if (goals.contains("BOOKINGS")) {
             p.append("""
@@ -215,7 +215,6 @@ public class ServiceTools {
 
     private Map<String, Object> saveLead(UUID tenantId, UUID conv, String channel, String externalId, Map<String, Object> a) {
         String name = text(a.get("name")), phone = text(a.get("phone")), interest = text(a.get("interest"));
-        boolean offers = Boolean.TRUE.equals(a.get("wantsOffers")) || "true".equalsIgnoreCase(String.valueOf(a.get("wantsOffers")));
         if ((name == null || name.isBlank()) && (phone == null || phone.isBlank())) return obj("error", "Give at least the name or the phone number");
         if (phone == null || phone.isBlank()) {   // WhatsApp already knows the number: the chat itself is the contact
             if ("WHATSAPP".equals(channel) && name != null) phone = externalId;
@@ -228,7 +227,7 @@ public class ServiceTools {
         jdbc.sql("UPDATE commerce.customers SET source = 'LEAD' WHERE id = :i AND source = 'ORDER' AND NOT EXISTS (SELECT 1 FROM commerce.orders o WHERE o.customer_id = :i)").param("i", id).update();
         if (interest != null && !interest.isBlank())
             jdbc.sql("UPDATE commerce.customers SET notes = left(coalesce(notes || E'\\n', '') || to_char(now(), 'YYYY-MM-DD') || ': ' || :n, 2000) WHERE id = :i AND coalesce(notes, '') NOT LIKE '%' || :n || '%'").param("n", interest.length() > 160 ? interest.substring(0, 160) : interest).param("i", id).update();
-        if (offers) jdbc.sql("UPDATE commerce.customers SET marketing_opt_in = TRUE WHERE id = :i").param("i", id).update();
-        return obj("saved", "customer", "wantsOffers", offers);
+        jdbc.sql("UPDATE commerce.customers SET marketing_opt_in = TRUE WHERE id = :i AND source = 'LEAD'").param("i", id).update();   // a lead is the shop's to message; whoever writes STOP is still left alone
+        return obj("saved", "customer");
     }
 }

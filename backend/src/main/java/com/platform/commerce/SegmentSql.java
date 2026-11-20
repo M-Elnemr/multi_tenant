@@ -17,10 +17,10 @@ public final class SegmentSql {
                      FALSE AS lead
               FROM commerce.orders WHERE tenant_id = :t GROUP BY customer_phone_snapshot
               UNION ALL
-              -- people who asked or booked through the assistant, never ordered, and agreed to receive offers: the shop's leads
+              -- people who asked or booked through the assistant and never ordered: the shop's leads (anyone who wrote STOP is marked opted out and is left alone)
               SELECT cu.phone, cu.name, 0, 0, 0::bigint, NULL::timestamptz, NULL::uuid, cu.gender, cu.broadcast_opt_out_at IS NOT NULL, TRUE
               FROM commerce.customers cu
-              WHERE cu.tenant_id = :t AND cu.source IN ('LEAD', 'BOOKING') AND cu.marketing_opt_in AND cu.phone IS NOT NULL
+              WHERE cu.tenant_id = :t AND cu.source IN ('LEAD', 'BOOKING') AND cu.phone IS NOT NULL
                 AND NOT EXISTS (SELECT 1 FROM commerce.orders o WHERE o.tenant_id = :t AND o.customer_phone_snapshot = cu.phone)
             ), s AS (
               SELECT c.*, CASE

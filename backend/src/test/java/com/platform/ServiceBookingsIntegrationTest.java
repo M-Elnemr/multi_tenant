@@ -180,7 +180,7 @@ class ServiceBookingsIntegrationTest extends IntegrationTestBase {
         goals(t, "[\"LEADS\",\"BOOKINGS\"]");
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("Hello"));
         say(t, UUID.randomUUID().toString(), "what do you offer here please");
-        assertThat(FakeAiProvider.lastSystem).contains("WHAT THIS SHOP WANTS YOU TO DO").contains("NAME FIRST").contains("PHONE AFTER THEY ARE SATISFIED").contains("APPOINTMENTS").contains("Haircut").contains("OPENING HOURS").contains("PRODUCT ORDERS ARE OFF");
+        assertThat(FakeAiProvider.lastSystem).contains("WHAT THIS SHOP WANTS YOU TO DO").contains("NAME FIRST").contains("PHONE AFTER THEY ARE SATISFIED").contains("customer service will contact").doesNotContain("wantsOffers").contains("APPOINTMENTS").contains("Haircut").contains("OPENING HOURS").contains("PRODUCT ORDERS ARE OFF");
         assertThat(FakeAiProvider.lastTools().stream().map(d -> d.name()).toList()).contains("save_lead", "book_appointment", "available_slots", "list_services").doesNotContain("prepare_order", "place_order", "cancel_order");
         // orders stay on next to the others: the order tools remain
         goals(t, "[\"ORDERS\",\"LEADS\"]");
@@ -203,7 +203,7 @@ class ServiceBookingsIntegrationTest extends IntegrationTestBase {
         // a name alone is not a contact: no customer yet, but the chat knows the name
         assertThat(jdbc.sql("SELECT count(*) FROM commerce.customers WHERE tenant_id = :t").param("t", tid(t)).query(Long.class).single()).isZero();
         assertThat(jdbc.sql("SELECT display_name FROM chat.conversations WHERE external_id = :e").param("e", conv).query(String.class).single()).isEqualTo("Sara");
-        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("save_lead", Map.of("name", "Sara", "phone", "٠١٠١٢٣٤٥٦٧٨", "interest", "summer dresses", "wantsOffers", true)));
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("save_lead", Map.of("name", "Sara", "phone", "٠١٠١٢٣٤٥٦٧٨", "interest", "summer dresses")));
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("Thank you!"));
         say(t, conv, "thanks, my number is 01012345678");
         var c = jdbc.sql("SELECT name, phone, source, marketing_opt_in, notes FROM commerce.customers WHERE tenant_id = :t").param("t", tid(t)).query().singleRow();
@@ -212,18 +212,20 @@ class ServiceBookingsIntegrationTest extends IntegrationTestBase {
         assertThat(c.get("source")).isEqualTo("LEAD");
         assertThat(c.get("marketing_opt_in")).isEqualTo(true);
         assertThat((String) c.get("notes")).contains("summer dresses");
-        // a customer who declined offers is saved without the offers mark, and a bad number is refused
+        // a bad number is refused and the right one saved; every lead is the shop's to message later
         String conv2 = UUID.randomUUID().toString();
-        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("save_lead", Map.of("name", "Mona", "phone", "123", "wantsOffers", false)));
-        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("save_lead", Map.of("name", "Mona", "phone", "01155555555", "wantsOffers", false)));
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("save_lead", Map.of("name", "Mona", "phone", "123")));
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("save_lead", Map.of("name", "Mona", "phone", "01155555555")));
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("Thanks Mona."));
         say(t, conv2, "ok thanks, 01155555555");
-        assertThat(jdbc.sql("SELECT marketing_opt_in FROM commerce.customers WHERE tenant_id = :t AND phone = '+201155555555'").param("t", tid(t)).query(Boolean.class).single()).isFalse();
-        // only the lead who agreed to offers is in the «Leads» audience for the shop's messages; the one who declined is not
+        assertThat(jdbc.sql("SELECT source FROM commerce.customers WHERE tenant_id = :t AND phone = '+201155555555'").param("t", tid(t)).query(String.class).single()).isEqualTo("LEAD");
+        // both leads are in the «Leads» audience for the shop's messages; someone who wrote STOP is not
         String seg = body(onHost(t.host(), t.access(), "GET", "/api/v1/store/segments?platforms=WHATSAPP", null).andExpect(status().isOk()));
-        assertThat((List<Integer>) JsonPath.read(seg, "$.segments[?(@.key=='LEADS')].count")).containsExactly(1);
+        assertThat((List<Integer>) JsonPath.read(seg, "$.segments[?(@.key=='LEADS')].count")).containsExactly(2);
+        jdbc.sql("UPDATE commerce.customers SET broadcast_opt_out_at = now() WHERE tenant_id = :t AND phone = '+201155555555'").param("t", tid(t)).update();
+        assertThat((List<Integer>) JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/segments?platforms=WHATSAPP", null)), "$.segments[?(@.key=='LEADS')].count")).as("a lead who asked to stop is not offered").hasSize(1);
         String who = body(onHost(t.host(), t.access(), "GET", "/api/v1/store/segments/customers?segments=LEADS&platforms=WHATSAPP", null).andExpect(status().isOk()));
-        assertThat(who).contains("Sara").doesNotContain("Mona");
+        assertThat(who).contains("Sara");
         // the leads show in the customers screen with where they came from
         assertThat(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/customers", null).andExpect(status().isOk()))).contains("LEAD");
     }
