@@ -52,9 +52,9 @@ public class ServiceTools {
             out.add(new ToolDef("list_services", "The shop's services with their ids, duration and price, the opening hours, and today's date in the shop's timezone. Use it when the customer asks what the shop offers or what a service costs.",
                     obj("type", "OBJECT", "properties", obj())));
             out.add(new ToolDef("available_slots", "Free appointment times for a service. With a date (YYYY-MM-DD) it returns that day's free start times; without one it returns the next days that have free times. Also tells today's date: call it whenever the customer says a relative day (today, tomorrow, Friday). Offer only times it returns.",
-                    obj("type", "OBJECT", "properties", obj("serviceId", str("Service id from list_services or the SERVICES list"), "date", str("YYYY-MM-DD, optional")), "required", List.of("serviceId"))));
+                    obj("type", "OBJECT", "properties", obj("serviceId", str("Service id from list_services or the SERVICES list"), "date", str("YYYY-MM-DD, optional"), "addonIds", obj("type", "ARRAY", "description", "Ids of the extras (add-ons) the customer chose for this service, from list_services; leave out when none", "items", obj("type", "STRING"))), "required", List.of("serviceId"))));
             out.add(new ToolDef("book_appointment", "Create the appointment request AFTER the customer confirmed the service, day, time and their phone number in this chat. Needs a free time from available_slots of this turn or a recent one. Say the request is registered; it is confirmed only if the result says CONFIRMED.",
-                    obj("type", "OBJECT", "properties", obj("serviceId", str("Service id"), "date", str("YYYY-MM-DD"), "time", str("HH:mm, 24 hours, one of the free times"), "name", str("The customer's first name"), "phone", str("The customer's mobile number"), "note", str("What the customer asked for, in their words (optional)")),
+                    obj("type", "OBJECT", "properties", obj("serviceId", str("Service id"), "date", str("YYYY-MM-DD"), "time", str("HH:mm, 24 hours, one of the free times"), "name", str("The customer's first name"), "phone", str("The customer's mobile number"), "note", str("What the customer asked for, in their words (optional)"), "addonIds", obj("type", "ARRAY", "description", "Ids of the extras (add-ons) the customer chose for this service, from list_services; leave out when none", "items", obj("type", "STRING")), "answers", obj("type", "OBJECT", "description", "The customer's answers to the service's questions (the service's questions list in list_services / SERVICES): key to answer"), "locationMode", str("SHOP or HOME, only for a service offered in both"), "address", str("The customer's address, only for a home visit")),
                             "required", List.of("serviceId", "date", "time", "name", "phone"))));
             out.add(new ToolDef("my_bookings", "The customer's upcoming appointments. Use it when they ask when their appointment is or whether it is confirmed. The phone is optional when the chat already knows it.",
                     obj("type", "OBJECT", "properties", obj("phone", str("The customer's mobile number, optional")))));
@@ -97,7 +97,7 @@ public class ServiceTools {
                 for (var s : services) {
                     String desc = s.get("description") == null ? "" : String.valueOf(s.get("description")).replaceAll("\\s+", " ").trim();
                     p.append("- ").append(s.get("name")).append(" [").append(s.get("id")).append("] - ").append(s.get("durationMinutes")).append(" min - ").append(major(((Number) s.get("priceMinor")).longValue())).append(' ').append(s.get("currency"))
-                            .append(desc.isEmpty() ? "" : " - " + (desc.length() > 120 ? desc.substring(0, 120) : desc)).append('\n');
+                            .append(desc.isEmpty() ? "" : " - " + (desc.length() > 120 ? desc.substring(0, 120) : desc)).append(serviceExtras(s)).append('\n');
                 }
             }
             var hours = bookings.hours(tenantId);
@@ -110,6 +110,22 @@ public class ServiceTools {
         return p.toString();
     }
 
+    /** What a service adds to the conversation: where it is done, the questions to ask, the extras on offer. */
+    @SuppressWarnings("unchecked")
+    private static String serviceExtras(Map<String, Object> s) {
+        StringBuilder b = new StringBuilder();
+        String where = String.valueOf(s.get("locationMode"));
+        b.append(" - ").append("HOME".equals(where) ? "done at the customer's home (ask for the address)" : "BOTH".equals(where) ? "at the shop or at the customer's home (ask which; the address for a home visit)" : "done at the shop");
+        if (s.get("serviceArea") != null && !String.valueOf(s.get("serviceArea")).isBlank()) b.append(" - area: ").append(String.valueOf(s.get("serviceArea")).replaceAll("\\s+", " "));
+        var q = (List<Map<String, Object>>) s.get("requiredFields");
+        if (!q.isEmpty()) { b.append(" - ASK BEFORE BOOKING (answers go in answers{key}): "); for (var f : q) b.append(f.get("label")).append(" [").append(f.get("key")).append(Boolean.FALSE.equals(f.get("required")) ? ", optional" : "").append("]; "); }
+        var ex = (List<Map<String, Object>>) s.get("addons");
+        if (!ex.isEmpty()) { b.append(" - EXTRAS you may offer (ids for addonIds): "); for (var a : ex) b.append(a.get("name")).append(" [").append(a.get("id")).append("] +").append(major(((Number) a.get("priceMinor")).longValue())).append(" and ").append(a.get("durationMinutes")).append(" min; "); }
+        if (s.get("priceBeforeMinor") != null) b.append(" - was ").append(major(((Number) s.get("priceBeforeMinor")).longValue()));
+        if (s.get("instructions") != null && !String.valueOf(s.get("instructions")).isBlank()) b.append(" - tell the customer: ").append(String.valueOf(s.get("instructions")).replaceAll("\\s+", " "));
+        return b.toString();
+    }
+
     private static String major(long minor) { return BigDecimal.valueOf(minor, 2).stripTrailingZeros().toPlainString(); }
 
     // ---- running a tool -------------------------------------------------------------------------------------------
@@ -118,7 +134,7 @@ public class ServiceTools {
         try {
             return switch (tool) {
                 case "list_services" -> listServices(tenantId);
-                case "available_slots" -> slots(tenantId, uuid(a.get("serviceId")), text(a.get("date")));
+                case "available_slots" -> slots(tenantId, uuid(a.get("serviceId")), text(a.get("date")), ids(a.get("addonIds")));
                 case "book_appointment" -> book(tenantId, conversationId, channel, externalId, a);
                 case "my_bookings" -> mine(tenantId, conversationId, channel, externalId, text(a.get("phone")));
                 case "cancel_booking" -> {
@@ -156,20 +172,44 @@ public class ServiceTools {
     private Map<String, Object> listServices(UUID tenantId) {
         Map<String, Object> m = today(tenantId);
         List<Map<String, Object>> list = new ArrayList<>();
-        for (var s : bookings.services(tenantId, true)) list.add(obj("id", s.get("id"), "name", s.get("name"), "description", s.get("description"), "durationMinutes", s.get("durationMinutes"), "price", major(((Number) s.get("priceMinor")).longValue()), "currency", s.get("currency")));
+        for (var s : bookings.services(tenantId, true)) list.add(obj("id", s.get("id"), "name", s.get("name"), "description", s.get("description"), "durationMinutes", s.get("durationMinutes"), "price", major(((Number) s.get("priceMinor")).longValue()), "currency", s.get("currency"),
+                "category", s.get("categoryName"), "shortDescription", s.get("shortDescription"), "priceBefore", s.get("priceBeforeMinor") == null ? null : major(((Number) s.get("priceBeforeMinor")).longValue()),
+                "location", s.get("locationMode"), "serviceArea", s.get("serviceArea"), "instructions", s.get("instructions"), "cancellationPolicy", s.get("cancellationPolicy"),
+                "questions", s.get("requiredFields"), "extras", extrasOf(s)));
         m.put("services", list);
         m.put("openingHours", bookings.hours(tenantId));
         m.put("shopConfirmsEachRequest", !Boolean.TRUE.equals(bookings.settings(tenantId).get("autoConfirm")));
         return m;
     }
 
-    private Map<String, Object> slots(UUID tenantId, UUID serviceId, String date) {
+    @SuppressWarnings("unchecked")
+    private static List<UUID> ids(Object o) {
+        List<UUID> out = new ArrayList<>();
+        if (o instanceof List<?> l) for (Object x : l) { try { out.add(UUID.fromString(String.valueOf(x).trim())); } catch (RuntimeException e) { throw BusinessException.badRequest("VALIDATION_ERROR", "addonIds must be ids from list_services"); } }
+        return out;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, String> answers(Object o) {
+        Map<String, String> out = new LinkedHashMap<>();
+        if (o instanceof Map<?, ?> m) m.forEach((k, v) -> { if (k != null && v != null) out.put(String.valueOf(k), String.valueOf(v)); });
+        return out;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> extrasOf(Map<String, Object> service) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (var a : (List<Map<String, Object>>) service.get("addons")) out.add(obj("id", a.get("id"), "name", a.get("name"), "price", major(((Number) a.get("priceMinor")).longValue()), "extraMinutes", a.get("durationMinutes")));
+        return out;
+    }
+
+    private Map<String, Object> slots(UUID tenantId, UUID serviceId, String date, List<UUID> addonIds) {
         Map<String, Object> m = today(tenantId);
         bookings.service(tenantId, serviceId);
         if (date == null || date.isBlank()) { m.put("nextDays", bookings.nextDays(tenantId, serviceId, 5)); return m; }
         LocalDate d;
         try { d = LocalDate.parse(PhoneNormalizer.latinDigits(date)); } catch (RuntimeException e) { return obj("error", "date must be YYYY-MM-DD"); }
-        var times = bookings.slots(tenantId, serviceId, d, true);
+        var times = bookings.slots(tenantId, serviceId, d, true, addonIds);
         m.put("date", d.toString());
         m.put("weekday", d.getDayOfWeek().getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH));
         m.put("freeTimes", times);
@@ -185,13 +225,13 @@ public class ServiceTools {
 
     private Map<String, Object> shown(Map<String, Object> b) {
         return obj("bookingNumber", b.get("bookingNumber"), "service", b.get("serviceName"), "date", b.get("date"), "time", b.get("time"), "weekday", b.get("weekday"), "status", b.get("status"),
-                "price", major(((Number) b.get("priceMinor")).longValue()), "currency", b.get("currency"));
+                "price", major(((Number) b.get("priceMinor")).longValue()), "currency", b.get("currency"), "extras", b.get("addons"));
     }
 
     private Map<String, Object> book(UUID tenantId, UUID conv, String channel, String externalId, Map<String, Object> a) {
         String phone = text(a.get("phone"));
         if (phone == null || phone.isBlank()) phone = phoneOf(conv, channel, externalId, null);
-        var b = bookings.book(tenantId, null, new BookingService.BookReq(uuid(a.get("serviceId")), text(a.get("date")), text(a.get("time")), text(a.get("name")), phone, text(a.get("note")), "AI_CHAT", conv));
+        var b = bookings.book(tenantId, null, new BookingService.BookReq(uuid(a.get("serviceId")), text(a.get("date")), text(a.get("time")), text(a.get("name")), phone, text(a.get("note")), "AI_CHAT", conv, ids(a.get("addonIds")), answers(a.get("answers")), text(a.get("locationMode")), text(a.get("address"))));
         rememberContact(conv, text(a.get("name")), phone);
         Map<String, Object> m = shown(b);
         m.put("needsShopConfirmation", "PENDING".equals(b.get("status")));
