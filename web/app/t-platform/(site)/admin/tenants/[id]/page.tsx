@@ -61,7 +61,7 @@ export default function TenantDetail({ params }: { params: Promise<{ id: string 
   const purge = useAction(async () => { await api(`platform/tenants/${id}`, { method: "DELETE", body: { confirmSlug: typed } }); router.replace("/admin/tenants"); });
   if (loading && !data) return <Loading />;
   if (!data) return <ErrorText error={error} />;
-  const store = data.tenantType === "STORE";
+  const store = data.tenantType === "STORE" || data.tenantType === "SERVICE";
   const plans = store ? ["STORE_STANDARD", "STORE_PRO", "STORE_STANDARD_YEARLY", "STORE_PRO_YEARLY"] : ["CLINIC_PRO", "CLINIC_PRO_YEARLY"];
   const chosen = planCode || data.subscription.planCode?.replace("_FREE", store ? "_STANDARD" : "_PRO") || plans[0];
   const o = data.owner;

@@ -14,7 +14,7 @@ import { Icon, type IconName } from "@/components/icons";
 import { LogoMark } from "@/components/brand";
 import { trackStep } from "@/components/visit-tracker";
 
-type Type = "STORE" | "CLINIC" | "LAWYER";
+type Type = "STORE" | "CLINIC" | "LAWYER" | "SERVICE";
 
 function slugify(s: string) {
   return s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
@@ -28,6 +28,7 @@ const pwScore = (p: string) => (p.length < 8 ? 0 : (p.length >= 12 ? 1 : 0) + (/
 const THEME: Record<Type, { pane: string; accent: string; btn: string; ring: string; icon: IconName }> = {
   STORE: { pane: "bg-[#07090d] text-white", accent: "#7c5cff", btn: "bg-[#0d1117] text-white hover:bg-black", ring: "focus-within:ring-[#7c5cff]/30", icon: "bag" },
   CLINIC: { pane: "bg-[#0f3d3a] text-[#f3efe6]", accent: "#0f5e57", btn: "bg-[#0f5e57] text-white hover:bg-[#0c4c46]", ring: "focus-within:ring-[#0f5e57]/30", icon: "stethoscope" },
+  SERVICE: { pane: "bg-[#1b1233] text-[#f4efff]", accent: "#e0457b", btn: "bg-[#e0457b] text-white hover:bg-[#c93a6c]", ring: "focus-within:ring-[#e0457b]/30", icon: "calendar" },
   LAWYER: { pane: "bg-[#14213d] text-[#f5efe0]", accent: "#b08d57", btn: "bg-[#14213d] text-white hover:bg-[#0e182d]", ring: "focus-within:ring-[#b08d57]/30", icon: "scale" },
 };
 
@@ -48,7 +49,7 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
   const [rand] = useState(() => Math.random().toString(36).slice(2, 6));
   const [suffix, setSuffix] = useState("");
   const base = slugify(name);
-  const auto = (base.length >= 3 ? base : `${type === "CLINIC" ? "clinic" : type === "LAWYER" ? "law" : "shop"}-${rand}`) + (suffix ? `-${suffix}` : "");
+  const auto = (base.length >= 3 ? base : `${type === "CLINIC" ? "clinic" : type === "LAWYER" ? "law" : type === "SERVICE" ? "service" : "shop"}-${rand}`) + (suffix ? `-${suffix}` : "");
   const slug = manualSlug ?? auto;
   const [check, setCheck] = useState<{ slug: string; state: "ok" | "taken" | "invalid" }>({ slug: "", state: "ok" });
   const [owner, setOwner] = useState({ phone: "", password: "" });
@@ -142,7 +143,7 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
 
   const topBar = (
     <div className="flex items-center justify-between gap-3 px-5 py-4 sm:px-8">
-      <Link href={type === "CLINIC" ? "/tabib" : type === "LAWYER" ? "/mohami" : "/"} className="flex items-center gap-2"><LogoMark className="h-8 w-8" /><span className="font-display font-bold">{t("brand.name")}</span></Link>
+      <Link href={type === "CLINIC" ? "/tabib" : type === "LAWYER" ? "/mohami" : type === "SERVICE" ? "/services" : "/"} className="flex items-center gap-2"><LogoMark className="h-8 w-8" /><span className="font-display font-bold">{t("brand.name")}</span></Link>
       <div className="flex items-center gap-1 text-sm">
         <a href={`/api/lang?l=${locale === "ar" ? "en" : "ar"}`} className="rounded-full px-3 py-1.5 font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900">{locale === "ar" ? "EN" : "عربي"}</a>
         {!done && <Link href="/login" className="rounded-full px-3 py-1.5 font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900">{t("nav.login")}</Link>}
@@ -152,7 +153,7 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
 
   // ---------- choose the kind of business ----------
   if (!type) {
-    const opts: [Type, string, string, IconName][] = [["STORE", "type.store", "register.storeDesc", "bag"], ["CLINIC", "type.clinic", "register.clinicDesc", "stethoscope"], ["LAWYER", "type.lawyer", "register.lawyerDesc", "scale"]];
+    const opts: [Type, string, string, IconName][] = [["STORE", "type.store", "register.storeDesc", "bag"], ["CLINIC", "type.clinic", "register.clinicDesc", "stethoscope"], ["LAWYER", "type.lawyer", "register.lawyerDesc", "scale"], ["SERVICE", "type.service", "register.serviceDesc", "calendar"]];
     return (
       <div className="min-h-dvh bg-[#f6f6f3]">
         {topBar}
@@ -177,8 +178,8 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
   }
 
   const host = `${slug}.${rootDomain}`;
-  const gets = type === "STORE" ? ["reg2.getStore1", "reg2.getStore2", "reg2.getStore3", "reg2.getStore4"] : type === "CLINIC" ? ["reg2.getClinic1", "reg2.getClinic2", "reg2.getClinic3", "reg2.getHosting4"] : ["reg2.getLawyer1", "reg2.getLawyer2", "reg2.getLawyer3", "reg2.getHosting4"];
-  const bill = type === "STORE" ? ["reg2.billStore1", "reg2.billStore2", "reg2.billStore3", "reg2.billStore4"] : ["reg2.billHosting1", "reg2.billHosting2", "reg2.billHosting3"];
+  const gets = type === "SERVICE" ? ["reg2.getService1", "reg2.getService2", "reg2.getService3", "reg2.getService4"] : type === "STORE" ? ["reg2.getStore1", "reg2.getStore2", "reg2.getStore3", "reg2.getStore4"] : type === "CLINIC" ? ["reg2.getClinic1", "reg2.getClinic2", "reg2.getClinic3", "reg2.getHosting4"] : ["reg2.getLawyer1", "reg2.getLawyer2", "reg2.getLawyer3", "reg2.getHosting4"];
+  const bill = type === "STORE" || type === "SERVICE" ? ["reg2.billStore1", "reg2.billStore2", "reg2.billStore3", "reg2.billStore4"] : ["reg2.billHosting1", "reg2.billHosting2", "reg2.billHosting3"];
 
   return (
     <div className="grid min-h-dvh lg:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)]">
@@ -204,14 +205,14 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
               ) : step === 1 ? (
                 <motion.form key="s1" custom={dirn} variants={slide} initial="initial" animate="animate" exit="exit" onFocus={onStart}
                   onSubmit={(e) => { e.preventDefault(); if (step1ok) go(2); }}>
-                  <h1 className="font-display text-3xl font-bold tracking-tight">{type === "STORE" ? t("reg2.s1Store") : type === "LAWYER" ? t("reg2.s1Lawyer") : t("reg2.s1Clinic")}</h1>
+                  <h1 className="font-display text-3xl font-bold tracking-tight">{type === "SERVICE" ? t("reg2.s1Service") : type === "STORE" ? t("reg2.s1Store") : type === "LAWYER" ? t("reg2.s1Lawyer") : t("reg2.s1Clinic")}</h1>
                   <p className="mt-2 text-slate-500">{t("reg2.s1Hint")}</p>
                   <div className={`mt-6 rounded-2xl ring-4 ring-transparent transition ${th.ring}`}>
-                    <Input value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} autoComplete="organization" autoFocus className="!h-14 !rounded-2xl !text-lg" aria-label={type === "STORE" ? t("register.storeName") : type === "LAWYER" ? t("register.lawyerName") : t("register.clinicName")} />
+                    <Input value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} autoComplete="organization" autoFocus className="!h-14 !rounded-2xl !text-lg" aria-label={type === "SERVICE" ? t("register.serviceName") : type === "STORE" ? t("register.storeName") : type === "LAWYER" ? t("register.lawyerName") : t("register.clinicName")} />
                   </div>
                   <div className="mt-8">
-                    <p className="font-semibold">{type === "STORE" ? t("reg2.whatSell") : type === "LAWYER" ? t("reg2.whatPractice") : t("reg2.whatSpecialty")}</p>
-                    <p className="mb-3 mt-1 text-sm text-slate-500">{type === "STORE" ? t("reg2.whatHint") : t("reg2.whatHintPro")}</p>
+                    <p className="font-semibold">{type === "SERVICE" ? t("reg2.whatService") : type === "STORE" ? t("reg2.whatSell") : type === "LAWYER" ? t("reg2.whatPractice") : t("reg2.whatSpecialty")}</p>
+                    <p className="mb-3 mt-1 text-sm text-slate-500">{type === "STORE" || type === "SERVICE" ? t("reg2.whatHint") : t("reg2.whatHintPro")}</p>
                     {catOptions.data ? <CategoryPicker key={type} options={catOptions.data} value={cats} onChange={setCats} other={otherCat} onOther={setOtherCat} /> : <div className="skeleton h-40 rounded-xl" />}
                   </div>
                   <button type="submit" disabled={!step1ok} className={`mt-8 flex h-13 w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-base font-bold transition active:scale-[.98] disabled:opacity-40 ${th.btn}`}>
@@ -266,7 +267,7 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
                     <button type="button" onClick={() => go(1)} className="h-13 rounded-2xl border border-black/10 bg-white px-5 font-semibold text-slate-700 transition hover:bg-slate-50">{t("reg2.back")}</button>
                     <button type="submit" disabled={create.loading} className={`flex h-13 flex-1 items-center justify-center gap-2 rounded-2xl py-3.5 text-base font-bold transition active:scale-[.98] disabled:opacity-60 ${th.btn}`}>
                       {create.loading ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : <Icon name="sparkles" className="h-5 w-5" />}
-                      {type === "STORE" ? t("reg2.createStore") : type === "LAWYER" ? t("reg2.createLawyer") : t("reg2.createClinic")}
+                      {type === "SERVICE" ? t("reg2.createService") : type === "STORE" ? t("reg2.createStore") : type === "LAWYER" ? t("reg2.createLawyer") : t("reg2.createClinic")}
                     </button>
                   </div>
                   <p className="text-center text-xs text-slate-500">{t("register.reassure")} · <Link href="/privacy" className="underline">{t("reg2.terms")}</Link></p>
@@ -282,7 +283,7 @@ export function RegisterWizard({ rootDomain, initialType }: { rootDomain: string
         <div className="pointer-events-none absolute inset-0" style={{ background: `radial-gradient(60% 50% at 70% 20%, ${th.accent}55, transparent 70%)` }} aria-hidden />
         <div className="relative mx-auto w-full max-w-md px-10 py-16">
           <p className="mb-4 text-xs font-bold uppercase tracking-widest opacity-60">{t("reg2.previewLabel")}</p>
-          <Preview type={type} name={name.trim() || (type === "STORE" ? t("reg2.previewName") : type === "LAWYER" ? t("reg2.previewLawyer") : t("reg2.previewClinic"))} host={host} accent={th.accent} cats={cats} options={catOptions.data ?? []} locale={locale} />
+          <Preview type={type} name={name.trim() || (type === "SERVICE" ? t("reg2.previewService") : type === "STORE" ? t("reg2.previewName") : type === "LAWYER" ? t("reg2.previewLawyer") : t("reg2.previewClinic"))} host={host} accent={th.accent} cats={cats} options={catOptions.data ?? []} locale={locale} />
           <p className="mb-4 mt-12 text-sm font-bold opacity-80">{t("reg2.getTitle")}</p>
           <ul className="space-y-3">
             {gets.map((g, i) => (

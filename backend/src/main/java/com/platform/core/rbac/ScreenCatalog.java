@@ -22,8 +22,7 @@ public final class ScreenCatalog {
     private static final Screen DOMAINS = new Screen("domains", List.of("domain.read"), List.of("domain.manage"));
     private static final Screen BILLING = new Screen("billing", List.of("billing.read"), List.of("billing.manage"));
 
-    private static final Map<String, List<Screen>> BY_TYPE = Map.of(
-            "STORE", List.of(
+    private static final List<Screen> SHOP = List.of(
                     new Screen("orders", List.of("order.read"), List.of("order.update_status", "refund.create")),
                     new Screen("customers", List.of("customer.read"), List.of()),
                     new Screen("bookings", List.of("booking.read"), List.of("booking.manage")),
@@ -37,7 +36,14 @@ public final class ScreenCatalog {
                     new Screen("shipping", List.of("carrier.read"), List.of("carrier.manage"), List.of("order.read")),
                     REPORTS,
                     new Screen("settings", List.of("settings.read", "shipping.read"), List.of("settings.manage", "shipping.manage")),
-                    DOMAINS, BILLING),
+                    DOMAINS, BILLING);
+
+    /** A service business: the same screens, with appointments (bookings) first. */
+    private static final List<Screen> SERVICE = java.util.stream.Stream.concat(SHOP.stream().filter(x -> x.key().equals("bookings")), SHOP.stream().filter(x -> !x.key().equals("bookings"))).toList();
+
+    private static final Map<String, List<Screen>> BY_TYPE = Map.of(
+            "STORE", SHOP,
+            "SERVICE", SERVICE,
             "CLINIC", List.of(
                     new Screen("appointments", List.of("appointment.read"), List.of("appointment.manage")),
                     new Screen("patients", List.of("patient.read"), List.of("patient.create", "patient.update", "patient.export")),

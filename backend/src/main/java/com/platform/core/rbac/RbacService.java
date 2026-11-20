@@ -95,7 +95,7 @@ public class RbacService {
                 """).param("c", supportRole(tenantType)).query(String.class).list().stream().collect(Collectors.toSet());
     }
 
-    public String supportRole(String tenantType) { return "STORE".equals(tenantType) ? "STORE_OWNER" : "LAWYER".equals(tenantType) ? "LAWYER_OWNER" : "CLINIC_OWNER"; }
+    public String supportRole(String tenantType) { return com.platform.core.tenant.TenantType.isShopLike(tenantType) ? "STORE_OWNER" : "LAWYER".equals(tenantType) ? "LAWYER_OWNER" : "CLINIC_OWNER"; }
 
     public boolean hasSupportAccess(UUID userId) { return platformPermissionCodes(userId).contains("platform.support.access"); }
 }

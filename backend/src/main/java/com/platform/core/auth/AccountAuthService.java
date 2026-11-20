@@ -65,7 +65,7 @@ public class AccountAuthService {
             return jdbc.sql("SELECT count(*) FROM legal.clients WHERE id = :u AND tenant_id = :t AND portal_enabled").param("u", s.id()).param("t", t.id()).query(Long.class).single() > 0;
         }
         if ("CLIENT".equals(s.type())) {
-            if (!"STORE".equals(t.type())) return false;
+            if (!com.platform.core.tenant.TenantType.isShopLike(t.type())) return false;
             return jdbc.sql("SELECT count(*) FROM commerce.client_accounts WHERE id = :u AND status = 'ACTIVE'").param("u", s.id()).query(Long.class).single() > 0;
         }
         return false;
@@ -143,7 +143,7 @@ public class AccountAuthService {
     @Transactional
     public TokenResponse clientGoogle(String credential, TenantContext.Current tenant, String ip, String ua) {
         requireOpen(tenant);
-        if (tenant != null && !"STORE".equals(tenant.type())) throw BusinessException.notFound("TENANT_NOT_FOUND", "Not available here");   // a shop client signs in on a shop, or once on the platform host for every shop
+        if (tenant != null && !com.platform.core.tenant.TenantType.isShopLike(tenant.type())) throw BusinessException.notFound("TENANT_NOT_FOUND", "Not available here");   // a shop client signs in on a shop, or once on the platform host for every shop
         UUID id = clientAccountFromGoogle(credential, ip);
         return issue("CLIENT", id, ip, ua);
     }
@@ -230,7 +230,7 @@ public class AccountAuthService {
     @Transactional
     public TokenResponse clientPhoneLogin(String phone, String password, TenantContext.Current tenant, String ip, String ua) {
         requireOpen(tenant);
-        if (tenant != null && !"STORE".equals(tenant.type())) throw BusinessException.notFound("TENANT_NOT_FOUND", "Not available here");
+        if (tenant != null && !com.platform.core.tenant.TenantType.isShopLike(tenant.type())) throw BusinessException.notFound("TENANT_NOT_FOUND", "Not available here");
         String p;
         try { p = PhoneNormalizer.normalize(phone); } catch (BusinessException e) { throw BusinessException.unauthorized("INVALID_CREDENTIALS", "Wrong phone or password"); }
         throttle.check("client-login|" + p, 8, Duration.ofMinutes(10));

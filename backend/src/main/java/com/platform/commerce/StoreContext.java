@@ -14,7 +14,7 @@ public final class StoreContext {
     /** For admin/read endpoints: any lifecycle state except unknown host / wrong type. */
     public static UUID tenantId() {
         TenantContext.Current c = TenantContext.require();
-        if (!"STORE".equals(c.type())) throw BusinessException.notFound("TENANT_NOT_FOUND", "No store for this host");
+        if (!com.platform.core.tenant.TenantType.isShopLike(c.type())) throw BusinessException.notFound("TENANT_NOT_FOUND", "No store for this host");
         return c.id();
     }
 

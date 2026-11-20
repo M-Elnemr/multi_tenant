@@ -108,6 +108,22 @@ const RAILS: RailSection[] = [
   { key: "settings", label: "rail.settings", icon: "settings" },
 ];
 
+/**
+ * A service business (salon, barber, repair, cleaning...) runs on the same screens, but its menu starts with the diary: appointments, the services it sells, its working hours, then customers,
+ * the assistant, products and orders (secondary), marketing, reports and settings.
+ */
+const SERVICE_ITEMS: NavItem[] = [
+  { href: "/dashboard/bookings", label: "nav.bookings", group: "navgrp.diary", screen: "bookings", icon: "calendar", quick: true, rail: "diary", badge: { path: "store/bookings/summary", field: "pending" } },
+  { href: "/dashboard/bookings?tab=services", label: "nav.svcServices", group: "navgrp.diary", screen: "bookings", icon: "briefcase", rail: "diary" },
+  { href: "/dashboard/bookings?tab=hours", label: "nav.svcHours", group: "navgrp.diary", screen: "bookings", icon: "clock", rail: "diary" },
+];
+const SERVICE_NAV: NavItem[] = [NAV[0], ...SERVICE_ITEMS, ...NAV.slice(1).filter((n) => n.href !== "/dashboard/bookings")];
+const SERVICE_RAILS: RailSection[] = [
+  { key: "home", label: "rail.home", icon: "dashboard" },
+  { key: "diary", label: "rail.diary", icon: "calendar" },
+  ...RAILS.filter((r) => r.key !== "home"),
+];
+
 export default function StoreDashboardLayout({ children }: { children: React.ReactNode }) {
-  return <DashboardShell nav={NAV} rails={RAILS} fullBleed={["/dashboard/inbox"]}>{children}</DashboardShell>;
+  return <DashboardShell nav={NAV} rails={RAILS} serviceNav={SERVICE_NAV} serviceRails={SERVICE_RAILS} fullBleed={["/dashboard/inbox"]}>{children}</DashboardShell>;
 }

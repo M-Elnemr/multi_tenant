@@ -8,5 +8,5 @@ export const metadata: Metadata = { title: "Start free · ابدأ مجانًا"
 export default async function Register({ searchParams }: { searchParams: Promise<{ type?: string }> }) {
   const { type } = await searchParams;
   const info = await resolveHost(await currentHost());
-  return <RegisterWizard rootDomain={info.kind === "PLATFORM" ? info.rootDomain : ""} initialType={type === "CLINIC" ? "CLINIC" : type === "STORE" ? "STORE" : type === "LAWYER" ? "LAWYER" : null} />;
+  return <RegisterWizard rootDomain={info.kind === "PLATFORM" ? info.rootDomain : ""} initialType={type === "CLINIC" ? "CLINIC" : type === "STORE" ? "STORE" : type === "LAWYER" ? "LAWYER" : type === "SERVICE" ? "SERVICE" : null} />;
 }

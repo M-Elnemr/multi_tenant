@@ -11,7 +11,7 @@ export type HostInfo =
       id: string;
       slug: string;
       name: string;
-      type: "STORE" | "CLINIC" | "LAWYER";
+      type: "STORE" | "CLINIC" | "LAWYER" | "SERVICE";
       status: string;
       locale: string;
       currency: string;

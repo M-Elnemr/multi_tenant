@@ -48,7 +48,7 @@ public class BillingService {
     @EventListener
     public void onTenantCreated(TenantCreatedEvent e) {
         String planCode = e.type().name() + "_FREE";
-        boolean store = "STORE".equals(e.type().name());   // shops have no subscription: free forever, they pay with points
+        boolean store = com.platform.core.tenant.TenantType.isShopLike(e.type().name());   // shops have no subscription: free forever, they pay with points
         Instant end = store ? Instant.now().plus(36_500, ChronoUnit.DAYS) : Instant.now().plus(props.trialDays(), ChronoUnit.DAYS);
         jdbc.sql("""
                 INSERT INTO billing.tenant_subscriptions (tenant_id, plan_id, status, current_period_end)
@@ -342,7 +342,7 @@ public class BillingService {
         out.put("pendingPlanCode", sub.get("pending_plan_code"));
         out.put("graceEnd", graceEnd.toString());
         out.put("daysLeft", Math.max(daysLeft, 0));
-        out.put("trial", !"STORE".equals(sub.get("tenant_type")) && ("TRIALING".equals(subStatus) || String.valueOf(sub.get("plan_code")).endsWith("_FREE")));
+        out.put("trial", !com.platform.core.tenant.TenantType.isShopLike(String.valueOf(sub.get("tenant_type"))) && ("TRIALING".equals(subStatus) || String.valueOf(sub.get("plan_code")).endsWith("_FREE")));
         return out;
     }
 

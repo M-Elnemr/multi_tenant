@@ -8,6 +8,7 @@ import { Icon, type IconName } from "@/components/icons";
 import { AnimatedNumber, AreaChart, AttentionRow, Avatar, BarChart, Delta, DonutChart, Empty, ErrorText, KpiStrip, Loading, Section, SectionLink, ShareBars, Sparkline, StatusBadge, Segmented, STATUS_TONE, TONE_HEX } from "@/components/ui";
 import { AiSellerCard, InboxPreview } from "@/components/dashboard/home-ai";
 import { PageHeader } from "@/components/ui";
+import { ServiceOverview } from "@/components/dashboard/service-home";
 import { dateTime, money, num } from "@/lib/format";
 import { governorateName } from "@/lib/governorates";
 
@@ -18,7 +19,7 @@ type Channel = { id: string; platform: string; name?: string; status: string };
 
 const pct = (a: number, b: number) => (b > 0 ? ((a - b) / b) * 100 : null);
 
-export default function StoreOverview() {
+function StoreOverview() {
   const { t, locale, currency, timezone } = useI18n();
   const { me, can, canSee } = useMe();
   const summary = useApi<Summary>(can("report.read") ? "store/reports/summary" : null);
@@ -244,4 +245,10 @@ function RecentOrders({ orders }: { orders: Order[] }) {
       )}
     </Section>
   );
+}
+
+/** A shop sees its sales and stock; a service business sees today's diary. */
+export default function DashboardHome() {
+  const { tenantType } = useI18n();
+  return tenantType === "SERVICE" ? <ServiceOverview /> : <StoreOverview />;
 }

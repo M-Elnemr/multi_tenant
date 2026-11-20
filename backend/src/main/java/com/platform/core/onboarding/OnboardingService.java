@@ -150,7 +150,7 @@ public class OnboardingService {
         m.setUserId(owner.getId());
         m.setTenantId(t.getId());
         m = memberships.saveAndFlush(m);
-        rbac.assignTenantRole(m.getId(), switch (c.type()) { case STORE -> "STORE_OWNER"; case CLINIC -> "CLINIC_OWNER"; case LAWYER -> "LAWYER_OWNER"; });
+        rbac.assignTenantRole(m.getId(), switch (c.type()) { case STORE, SERVICE -> "STORE_OWNER"; case CLINIC -> "CLINIC_OWNER"; case LAWYER -> "LAWYER_OWNER"; });
         if (c.type() == TenantType.CLINIC) rbac.assignTenantRole(m.getId(), "DOCTOR");
 
         TenantDomain d = domains.createSubdomain(t.getId(), slug);

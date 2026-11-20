@@ -33,7 +33,7 @@ function TenantCard({ r }: { r: Row }) {
           <div className="flex items-center gap-2"><p className="truncate font-bold text-ink">{r.name}</p>{r.hasPayRequest && <span title={t("admin.filter.pay")} className="rounded-full bg-amber-100 p-1 text-amber-700"><Icon name="wallet" className="h-3.5 w-3.5" /></span>}</div>
           <p className="truncate text-xs text-slate-500" dir="ltr">{r.primaryHost}</p>
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600"><Icon name={r.tenantType === "STORE" ? "bag" : "stethoscope"} className="h-3 w-3" />{r.tenantType === "STORE" ? t("type.store") : t("type.clinic")}</span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600"><Icon name={r.tenantType === "STORE" ? "bag" : r.tenantType === "SERVICE" ? "calendar" : r.tenantType === "LAWYER" ? "scale" : "stethoscope"} className="h-3 w-3" />{r.tenantType === "STORE" ? t("type.store") : r.tenantType === "SERVICE" ? t("type.service") : r.tenantType === "LAWYER" ? t("type.lawyer") : t("type.clinic")}</span>
             <StatusBadge status={r.status} />
             {r.subscriptionStatus && t(`status.${r.subscriptionStatus}`) !== t(`status.${r.status}`) && <StatusBadge status={r.subscriptionStatus} />}
           </div>
@@ -75,7 +75,7 @@ function Inner() {
           <Tabs value={filter} onChange={(f) => { setFilter(f); setPage(1); }} tabs={[
             { key: "", label: t("admin.filter.all") }, { key: "expiring", label: t("admin.filter.expiring") }, { key: "waiting", label: t("admin.filter.waiting") }, { key: "pay", label: t("admin.filter.pay") }, { key: "disabled", label: t("admin.disabledCount") },
           ]} />
-          <Tabs value={type} onChange={(v) => { setType(v); setPage(1); }} tabs={[{ key: "", label: t("admin.allTypes") }, { key: "STORE", label: t("admin.shops") }, { key: "CLINIC", label: t("admin.clinics") }]} />
+          <Tabs value={type} onChange={(v) => { setType(v); setPage(1); }} tabs={[{ key: "", label: t("admin.allTypes") }, { key: "STORE", label: t("admin.shops") }, { key: "CLINIC", label: t("admin.clinics") }, { key: "LAWYER", label: t("admin.lawyers") }, { key: "SERVICE", label: t("admin.serviceBusinesses") }]} />
         </div>
       </div>
       <ErrorText error={error} />

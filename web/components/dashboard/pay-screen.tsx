@@ -68,7 +68,7 @@ function Inner() {
         </div>
       )}
       <div className="mb-4"><Alert tone="blue">{t("pay.notice")}</Alert></div>
-      {s?.tenantType && <div className="mb-4"><AppBenefits kind={s.tenantType as "STORE" | "CLINIC" | "LAWYER"} compact /></div>}
+      {s?.tenantType && <div className="mb-4"><AppBenefits kind={s.tenantType as "STORE" | "CLINIC" | "LAWYER" | "SERVICE"} compact /></div>}
 
       {open && !editing ? (
         <div className="space-y-3 rounded-[18px] bg-surface p-6 text-center ring-1 ring-line">

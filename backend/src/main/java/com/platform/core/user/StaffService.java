@@ -23,7 +23,8 @@ public class StaffService {
     private static final Map<String, Set<String>> ASSIGNABLE = Map.of(
             "STORE", Set.of("STORE_ADMIN", "STORE_MANAGER", "INVENTORY_MANAGER", "ORDER_MANAGER", "CUSTOMER_SUPPORT", "REPORT_VIEWER"),
             "CLINIC", Set.of("DOCTOR", "CLINIC_ADMIN", "RECEPTIONIST", "NURSE", "LAB_COORDINATOR", "ACCOUNTANT", "REPORT_VIEWER"),
-            "LAWYER", Set.of("ASSOCIATE", "LEGAL_SECRETARY", "ACCOUNTANT", "REPORT_VIEWER"));
+            "LAWYER", Set.of("ASSOCIATE", "LEGAL_SECRETARY", "ACCOUNTANT", "REPORT_VIEWER"),
+            "SERVICE", Set.of("STORE_ADMIN", "STORE_MANAGER", "INVENTORY_MANAGER", "ORDER_MANAGER", "CUSTOMER_SUPPORT", "REPORT_VIEWER"));
 
     public record Invited(UUID userId, UUID membershipId, String activationPin, boolean needsActivation) {}
 
@@ -56,7 +57,7 @@ public class StaffService {
         boolean custom = access != null && !access.isEmpty();
         if (custom) {
             access = validAccess(t.type(), access);
-            role = "STORE".equals(t.type()) ? "STORE_STAFF" : "CLINIC_STAFF";
+            role = com.platform.core.tenant.TenantType.isShopLike(t.type()) ? "STORE_STAFF" : "CLINIC_STAFF";
         } else if (role == null || !ASSIGNABLE.getOrDefault(t.type(), Set.of()).contains(role)) {
             throw BusinessException.badRequest("ROLE_NOT_ASSIGNABLE", "Choose a role or the screens this employee can open");
         }
@@ -132,7 +133,7 @@ public class StaffService {
         Map<String, String> clean = validAccess(t.type(), access == null ? Map.of() : access);
         // move off the fixed roles so the chosen screens are exactly what the employee gets
         jdbc.sql("DELETE FROM core.membership_roles WHERE membership_id = :m AND role_id IN (SELECT id FROM core.roles WHERE code NOT IN ('CUSTOMER','PATIENT','GUARDIAN') AND tenant_id IS NULL)").param("m", m.getId()).update();
-        rbac.assignTenantRole(m.getId(), "STORE".equals(t.type()) ? "STORE_STAFF" : "CLINIC_STAFF");
+        rbac.assignTenantRole(m.getId(), com.platform.core.tenant.TenantType.isShopLike(t.type()) ? "STORE_STAFF" : "CLINIC_STAFF");
         rbac.setScreenAccess(m.getId(), clean);
         audit.record(actor, t.id(), "STAFF_ACCESS_CHANGED", "user", userId, "{\"access\":" + json(clean) + "}");
         return clean;

@@ -79,9 +79,11 @@ function useBadges(items: NavItem[]) {
 }
 
 /** The dashboard of shop owners, doctors and lawyers: an icon rail with one icon per section, the section's items next to it, a header, and a phone tab bar. */
-export function DashboardShell(props: { nav: NavItem[]; rails: RailSection[]; fullBleed?: string[]; children: React.ReactNode }) {
+export function DashboardShell({ serviceNav, serviceRails, ...props }: { nav: NavItem[]; rails: RailSection[]; serviceNav?: NavItem[]; serviceRails?: RailSection[]; fullBleed?: string[]; children: React.ReactNode }) {
+  const { tenantType } = useI18n();
+  const svc = tenantType === "SERVICE" && serviceNav && serviceRails;
   // the menu reads `?tab=` to light the right item, which needs a suspense boundary in the app router
-  return <Suspense fallback={<div className="p-6"><Loading /></div>}><ToastProvider><Shell {...props} /></ToastProvider></Suspense>;
+  return <Suspense fallback={<div className="p-6"><Loading /></div>}><ToastProvider><Shell {...props} nav={svc ? serviceNav : props.nav} rails={svc ? serviceRails : props.rails} /></ToastProvider></Suspense>;
 }
 
 function Shell({ nav, rails, fullBleed = [], children }: { nav: NavItem[]; rails: RailSection[]; fullBleed?: string[]; children: React.ReactNode }) {

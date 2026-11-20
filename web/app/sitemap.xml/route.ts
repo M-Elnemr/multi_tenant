@@ -14,7 +14,7 @@ export async function GET(req: Request) {
   const urls: string[] = [`${base}/`, `${base}/products`];
   // the platform site: the shop landing ("/"; "/shop" points its canonical there), the doctors landing, pricing and sign-up
   if (info.kind === "PLATFORM") urls.splice(1, 1, `${base}/tabib`, `${base}/mohami`, `${base}/pricing`, `${base}/register`);
-  if (info.kind === "TENANT" && info.type === "STORE") {
+  if (info.kind === "TENANT" && (info.type === "STORE" || info.type === "SERVICE")) {
     const cats = await backendJson<Cat[]>("/shop/categories").catch(() => [] as Cat[]);
     for (const c of cats) urls.push(`${base}/c/${encodeURIComponent(c.slug)}`);
     for (let page = 1; page <= 10; page++) {

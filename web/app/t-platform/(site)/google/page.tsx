@@ -13,7 +13,7 @@ export default async function GoogleSignIn({ searchParams }: { searchParams: Pro
     const u = new URL(ret ?? "");
     if ((u.protocol === "https:" || u.protocol === "http:") && !u.username && !u.password) {
       const info = await resolveHost(u.host);
-      if ((info.kind === "TENANT" && info.type === "STORE") || info.kind === "OPEN") origin = u.origin;   // a shop, or the Open Store marketplace
+      if ((info.kind === "TENANT" && (info.type === "STORE" || info.type === "SERVICE")) || info.kind === "OPEN") origin = u.origin;   // a shop, or the Open Store marketplace
     }
   } catch { /* not a URL */ }
   return (

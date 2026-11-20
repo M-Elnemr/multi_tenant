@@ -48,7 +48,7 @@ export async function proxy(request: NextRequest) {
   if (info.kind === "TENANT" && tpl) reqHeaders.set("x-site-tpl", tpl);
   if (info.kind === "TENANT" && preview) reqHeaders.set("x-site-preview", "1");
 
-  const prefix = info.kind === "PLATFORM" ? "/t-platform" : info.kind === "OPEN" ? "/t-open" : info.type === "STORE" ? "/t-store" : info.type === "LAWYER" ? "/t-lawyer" : "/t-clinic";
+  const prefix = info.kind === "PLATFORM" ? "/t-platform" : info.kind === "OPEN" ? "/t-open" : info.type === "STORE" || info.type === "SERVICE" ? "/t-store" : info.type === "LAWYER" ? "/t-lawyer" : "/t-clinic";
   const url = request.nextUrl.clone();
   url.pathname = staffLogin ? `${prefix}/staff-login` : pathname === "/" ? prefix : prefix + pathname;
   const res = NextResponse.rewrite(url, { request: { headers: reqHeaders } });

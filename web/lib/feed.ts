@@ -7,7 +7,7 @@ export type Feed = { shop: string; description: string; url: string; currency: s
 /** The shop's product feed, or null for a host that is not a store. Shared by the Google, Facebook and AI-assistant feeds. */
 export async function loadFeed(): Promise<Feed | null> {
   const info = await resolveHost(await currentHost());
-  if (info.kind !== "TENANT" || info.type !== "STORE") return null;
+  if (info.kind !== "TENANT" || info.type !== "STORE" && info.type !== "SERVICE") return null;
   return backendJson<Feed>("/shop/feed").catch(() => null);
 }
 
