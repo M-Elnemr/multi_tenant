@@ -80,6 +80,14 @@ function Rules({ canManage }: { canManage: boolean }) {
         </Field>
         <Field label={t("bk.rules.ahead")} hint={t("bk.rules.aheadHint")}><Input type="number" min={1} max={365} dir="ltr" disabled={!canManage} value={v.maxDaysAhead} onChange={(e) => setF({ ...f, maxDaysAhead: Number(e.target.value) })} /></Field>
       </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label={t("bk.rules.expire")} hint={t("bk.rules.expireHint")}>
+          <Select disabled={!canManage || v.autoConfirm} value={v.pendingExpiresMinutes ?? 0} onChange={(e) => setF({ ...f, pendingExpiresMinutes: Number(e.target.value) || undefined })}>{[[0, t("bk.rules.never")], [60, "1h"], [180, "3h"], [720, "12h"], [1440, "24h"]].map(([m, l]) => <option key={String(m)} value={Number(m)}>{String(l)}</option>)}</Select>
+        </Field>
+        <Field label={t("bk.rules.deadline")} hint={t("bk.rules.deadlineHint")}>
+          <Select disabled={!canManage} value={v.cancelDeadlineHours ?? 0} onChange={(e) => setF({ ...f, cancelDeadlineHours: Number(e.target.value) })}>{[0, 2, 6, 12, 24, 48].map((h) => <option key={h} value={h}>{h === 0 ? t("bk.rules.anytime") : `${h}h`}</option>)}</Select>
+        </Field>
+      </div>
       <div className="flex items-start justify-between gap-4 rounded-[12px] bg-canvas p-3 ring-1 ring-line">
         <span><span className="block text-sm font-semibold text-ink-2">{t("bk.rules.auto")}</span><span className="block text-[12.5px] text-muted">{t("bk.rules.autoHint")}</span></span>
         <Switch checked={v.autoConfirm} disabled={!canManage} onChange={(x) => setF({ ...f, autoConfirm: x })} label={t("bk.rules.auto")} />
@@ -95,15 +103,17 @@ function DaysOff({ canManage }: { canManage: boolean }) {
   const toast = useToast();
   const { data, reload } = useApi<{ date: string; reason?: string }[]>("store/booking/closures");
   const [date, setDate] = useState("");
+  const [to, setTo] = useState("");
   const [reason, setReason] = useState("");
-  const add = useAction(async () => { await api("store/booking/closures", { body: { date, reason } }); setDate(""); setReason(""); toast(t("common.saved")); await reload(); });
+  const add = useAction(async () => { await api("store/booking/closures", { body: { date, to: to || undefined, reason } }); setDate(""); setTo(""); setReason(""); toast(t("common.saved")); await reload(); });
   const remove = useAction(async (d: string) => { await api(`store/booking/closures/${d}`, { method: "DELETE" }); await reload(); });
   return (
     <section className="space-y-3 rounded-[18px] bg-surface p-4 ring-1 ring-line sm:p-5">
       <div><h3 className="font-display text-[15px] font-semibold text-ink">{t("bk.off.title")}</h3><p className="text-[13px] text-muted">{t("bk.off.sub")}</p></div>
       {canManage && (
         <form className="flex flex-wrap items-end gap-2" onSubmit={(e) => { e.preventDefault(); if (date) void add.run(); }}>
-          <Field label={t("bk.date")} className="w-44"><Input type="date" dir="ltr" min={new Date().toISOString().slice(0, 10)} value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+          <Field label={t("bk.off.from")} className="w-44"><Input type="date" dir="ltr" min={new Date().toISOString().slice(0, 10)} value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+          <Field label={`${t("bk.off.to")} (${t("ch.optional")})`} hint={t("bk.off.toHint")} className="w-44"><Input type="date" dir="ltr" min={date || new Date().toISOString().slice(0, 10)} value={to} onChange={(e) => setTo(e.target.value)} /></Field>
           <Field label={`${t("bk.reason")} (${t("ch.optional")})`} className="min-w-0 flex-1"><Input value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
           <Button type="submit" variant="secondary" loading={add.loading} disabled={!date}>{t("bk.off.add")}</Button>
         </form>
@@ -118,6 +128,42 @@ function DaysOff({ canManage }: { canManage: boolean }) {
   );
 }
 
+/** A date with its own hours (a short Friday, Ramadan hours): it replaces that weekday's hours on that date only. */
+function SpecialDays({ canManage }: { canManage: boolean }) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const { data, reload } = useApi<{ date: string; opens: string; closes: string }[]>("store/booking/special-days");
+  const [date, setDate] = useState("");
+  const [ranges, setRanges] = useState([{ opens: "12:00", closes: "16:00" }]);
+  const save = useAction(async () => { await api("store/booking/special-days", { method: "PUT", body: { date, ranges } }); setDate(""); setRanges([{ opens: "12:00", closes: "16:00" }]); toast(t("common.saved")); await reload(); });
+  const clear = useAction(async (d: string) => { await api("store/booking/special-days", { method: "PUT", body: { date: d, ranges: [] } }); await reload(); });
+  const days = Array.from(new Set((data ?? []).map((x) => x.date)));
+  return (
+    <section className="space-y-3 rounded-[18px] bg-surface p-4 ring-1 ring-line sm:p-5">
+      <div><h3 className="font-display text-[15px] font-semibold text-ink">{t("bk.special.title")}</h3><p className="text-[13px] text-muted">{t("bk.special.sub")}</p></div>
+      {canManage && (
+        <div className="space-y-2">
+          <Field label={t("bk.date")} className="w-44"><Input type="date" dir="ltr" min={new Date().toISOString().slice(0, 10)} value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+          {ranges.map((r, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <Input type="time" dir="ltr" className="!w-28" value={r.opens} onChange={(e) => setRanges(ranges.map((x, j) => (j === i ? { ...x, opens: e.target.value } : x)))} /><span className="text-muted">–</span>
+              <Input type="time" dir="ltr" className="!w-28" value={r.closes} onChange={(e) => setRanges(ranges.map((x, j) => (j === i ? { ...x, closes: e.target.value } : x)))} />
+              {ranges.length > 1 && <button type="button" aria-label={t("common.remove")} onClick={() => setRanges(ranges.filter((_, j) => j !== i))} className="grid h-9 w-9 place-items-center rounded-full text-red-600 hover:bg-red-50">✕</button>}
+            </div>
+          ))}
+          <div className="flex items-center gap-3"><button type="button" onClick={() => setRanges([...ranges, { opens: "17:00", closes: "21:00" }])} className="text-[12.5px] font-semibold text-brand hover:underline">+ {t("bk.hours.addBreak")}</button><Button variant="secondary" loading={save.loading} disabled={!date} onClick={() => void save.run()}>{t("bk.special.add")}</Button></div>
+        </div>
+      )}
+      <ErrorText error={save.error ?? clear.error} />
+      {days.length > 0 && (
+        <ul className="space-y-1.5">
+          {days.map((d) => <li key={d} className="flex items-center gap-2 rounded-[10px] bg-canvas px-3 py-2 text-[13px]"><span className="tnum font-semibold text-ink" dir="ltr">{d}</span><span className="min-w-0 flex-1 truncate tnum text-muted" dir="ltr">{(data ?? []).filter((x) => x.date === d).map((x) => `${x.opens}–${x.closes}`).join("  ·  ")}</span>{canManage && <button type="button" aria-label={t("common.remove")} onClick={() => void clear.run(d)} className="grid h-9 w-9 place-items-center rounded-full text-red-600 hover:bg-red-50">✕</button>}</li>)}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 export function HoursAndRules({ canManage }: { canManage: boolean }) {
-  return <div className="space-y-5"><Weekly canManage={canManage} /><Rules canManage={canManage} /><DaysOff canManage={canManage} /></div>;
+  return <div className="space-y-5"><Weekly canManage={canManage} /><SpecialDays canManage={canManage} /><Rules canManage={canManage} /><DaysOff canManage={canManage} /></div>;
 }

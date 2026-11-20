@@ -16,7 +16,7 @@ export type Booking = {
 };
 export type Status = "PENDING" | "CONFIRMED" | "DECLINED" | "CANCELLED" | "COMPLETED" | "NO_SHOW";
 export type Range = { weekday: number; opens: string; closes: string };
-export type Settings = { stations: number; slotStepMinutes: number; minNoticeMinutes: number; maxDaysAhead: number; autoConfirm: boolean; timezone: string };
+export type Settings = { stations: number; slotStepMinutes: number; minNoticeMinutes: number; maxDaysAhead: number; autoConfirm: boolean; timezone: string; pendingExpiresMinutes?: number | null; cancelDeadlineHours?: number };
 
 const TONE: Record<Status, "amber" | "green" | "red" | "slate" | "blue" | "violet"> = { PENDING: "amber", CONFIRMED: "green", DECLINED: "red", CANCELLED: "slate", COMPLETED: "blue", NO_SHOW: "violet" };
 
