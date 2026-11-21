@@ -87,7 +87,7 @@ public class ChatService {
     /** The product(s) of the chat when the customer's message names none (the product the shop named last). */
     static final ThreadLocal<List<String>> FOCUS_SLUGS = new ThreadLocal<>();
     /** The «you left out a product the customer asked for» guard of prepare_order speaks once per reply (a model that insists is not looped). */
-    private static final ThreadLocal<Boolean> BASKET_GUARD_SPOKE = ThreadLocal.withInitial(() -> false);
+    private static final ThreadLocal<Boolean> BASKET_GUARD_SPOKE = ThreadLocal.withInitial(() -> false), DROP_GUARD_SPOKE = ThreadLocal.withInitial(() -> false);
     private static final Pattern BASKET_DROP_WORDS = Pattern.compile("بدل|شيل|امسح|الغ|مش عايز|مش عاوز|مش محتاج|غيرت رايي|غيرت رأيي|بلاش|instead|remove|cancel|forget");
 
     /**
@@ -722,6 +722,7 @@ public class ChatService {
         AiBudget.start(REPLY_BUDGET_MS);
         AiBudget.forTenant(tenantId);
         BASKET_GUARD_SPOKE.set(false);
+        DROP_GUARD_SPOKE.set(false);
         FactCheck.earlier(earlierCustomer(turns));   // the colour and size chosen earlier in the chat are what a later «عايز ١٣ قطعه» is about
         try {
             // the customer sent every order detail for the one thing they chose, and asked nothing: code makes the summary at once (the same locks, they still confirm it), instead
@@ -4870,31 +4871,69 @@ public class ChatService {
         return t.matches("\\d{1,6}") ? Integer.valueOf(t) : null;
     }
 
-    /** The products the customer asked to BUY in separate messages of this order («عايز X») that the prepared items leave out, as «name» labels; null when none (or when a later message replaced or dropped anything). */
-    private String requestedButMissing(Ctx ctx, List<CheckoutService.Item> items) {
+    /** What the customer asked for across the messages of this order: the products still wanted (in order of asking) and the products they replaced or removed. */
+    private record Basket(java.util.LinkedHashSet<String> wanted, Set<String> dropped) {}
+
+    private Basket basketOf(Ctx ctx, FactCheck.Shop view) {
+        List<String> msgs = customerMsgsOfThisOrder(ctx);
+        var wanted = new java.util.LinkedHashSet<String>();
+        Set<String> dropped = new HashSet<>();
+        for (String m : msgs) {
+            String lm = FactCheck.light(m);
+            boolean drop = BASKET_DROP_WORDS.matcher(lm).find(), request = REQUEST_INTENT.matcher(lm).find();
+            var named = FactCheck.askedSlugs(m, view.names());
+            String one = named.size() == 1 ? named.get(0) : null;
+            if (drop) {
+                if (one != null && !request) { wanted.remove(one); dropped.add(one); }                    // «شيل X»: that product
+                else {                                                                                       // «لا بدلها عايز Y» / «شيلها»: the product asked for last, before this message
+                    String last = null;
+                    for (String w : wanted) last = w;
+                    if (last != null && (request ? one == null || !one.equals(last) : true)) { wanted.remove(last); dropped.add(last); }
+                }
+            }
+            if (request && one != null) { dropped.remove(one); wanted.add(one); }                           // asked (again): wanted
+        }
+        return new Basket(wanted, dropped);
+    }
+
+    private String slugOfVariant(UUID variantId) {
+        return jdbc.sql("SELECT p.slug FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE v.id = :v").param("v", variantId).query(String.class).optional().orElse(null);
+    }
+
+    private String labelOf(FactCheck.Shop view, java.util.Collection<String> slugs) {
+        List<String> labels = new ArrayList<>();
+        for (String slug : slugs) view.names().stream().filter(n -> n.slug().equals(slug)).findFirst().ifPresent(n -> labels.add("«" + n.name() + "»"));
+        return labels.isEmpty() ? null : String.join(" and ", labels);
+    }
+
+    /**
+     * I-010: the products the customer asked to BUY in separate messages of this order («عايز X») that the prepared items leave out, as «name» labels (null when none); and the opposite:
+     * a product the customer replaced («لا بدلها عايز Y») or removed that the items still carry. Each is sent back once per reply so the model fixes the list with its own verified variants.
+     */
+    private String basketProblem(Ctx ctx, List<CheckoutService.Item> items) {
         try {
-            List<String> msgs = customerMsgsOfThisOrder(ctx);
-            if (msgs.size() < 2) return null;
+            if (customerMsgsOfThisOrder(ctx).size() < 2) return null;
             FactCheck.Shop view = shopView(ctx.tenantId());
+            Basket basket = basketOf(ctx, view);
             Set<String> have = new HashSet<>();
-            for (var it : items) jdbc.sql("SELECT p.slug FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE v.id = :v").param("v", it.variantId()).query(String.class).optional().ifPresent(have::add);
-            for (UUID v : java.util.Objects.requireNonNullElse(pendingVariants(ctx.conversationId()), List.<UUID>of())) jdbc.sql("SELECT p.slug FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE v.id = :v").param("v", v).query(String.class).optional().ifPresent(have::add);
-            Map<String, Integer> requestedAt = new LinkedHashMap<>();
-            for (int i = 0; i < msgs.size(); i++) {
-                String m = msgs.get(i), lm = FactCheck.light(m);
-                if (BASKET_DROP_WORDS.matcher(lm).find()) { requestedAt.clear(); continue; }   // anything said after a replacement or a removal is judged afresh
-                if (!REQUEST_INTENT.matcher(lm).find()) continue;
-                var named = FactCheck.askedSlugs(m, view.names());
-                if (named.size() == 1) requestedAt.putIfAbsent(named.get(0), i);
+            for (var it : items) { String sl = slugOfVariant(it.variantId()); if (sl != null) have.add(sl); }
+            if (!Boolean.TRUE.equals(DROP_GUARD_SPOKE.get())) {
+                List<String> still = basket.dropped().stream().filter(have::contains).toList();
+                if (!still.isEmpty()) { DROP_GUARD_SPOKE.set(true); return "DROPPED:" + labelOf(view, still); }
             }
-            List<String> labels = new ArrayList<>();
-            for (String slug : requestedAt.keySet()) {
-                if (have.contains(slug)) continue;
-                var product = view.product(slug);
-                if (product == null || product.variants().stream().noneMatch(v -> v.available() > 0)) continue;   // gone: nothing to add
-                view.names().stream().filter(n -> n.slug().equals(slug)).findFirst().ifPresent(n -> labels.add("«" + n.name() + "»"));
+            if (!Boolean.TRUE.equals(BASKET_GUARD_SPOKE.get())) {
+                Set<String> inPending = new HashSet<>();
+                for (UUID v : java.util.Objects.requireNonNullElse(pendingVariants(ctx.conversationId()), List.<UUID>of())) { String sl = slugOfVariant(v); if (sl != null) inPending.add(sl); }
+                List<String> missing = new ArrayList<>();
+                for (String slug : basket.wanted()) {
+                    if (have.contains(slug) || inPending.contains(slug)) continue;
+                    var product = view.product(slug);
+                    if (product == null || product.variants().stream().noneMatch(v -> v.available() > 0)) continue;   // gone: nothing to add
+                    missing.add(slug);
+                }
+                if (!missing.isEmpty()) { BASKET_GUARD_SPOKE.set(true); return "MISSING:" + labelOf(view, missing); }
             }
-            return labels.isEmpty() ? null : String.join(" and ", labels);
+            return null;
         } catch (RuntimeException e) {
             log.warn("basket guard skipped: {}", e.toString());
             return null;
@@ -4921,14 +4960,11 @@ public class ChatService {
             if (q == null || q < 1 || q > 50) return obj("error", "Quantity must be a whole number between 1 and 50");
             items.add(new CheckoutService.Item(vid, q, m.get("note") == null ? null : String.valueOf(m.get("note"))));
         }
-        // I-010: «عايز X» and later, in another message, «عايز Y»: the customer wants both. An order prepared without X (not replaced or dropped by a later message) is sent back once, so the model adds X with
-        // its own verified variant or asks whether X is still wanted. Code never adds an item itself.
-        if (!Boolean.TRUE.equals(BASKET_GUARD_SPOKE.get())) {
-            String missing = requestedButMissing(ctx, items);
-            if (missing != null) {
-                BASKET_GUARD_SPOKE.set(true);
-                return obj("error", "The customer also asked for " + missing + " earlier in this chat and has not dropped or replaced it: include it in the items (ask for its missing option if it has one), or ask the customer whether they still want it. Do not leave it out silently.");
-            }
+        // I-010: products asked for in separate messages must all be in the order, and products the customer replaced or removed must not be (see basketProblem)
+        String basket = basketProblem(ctx, items);
+        if (basket != null) {
+            if (basket.startsWith("DROPPED:")) return obj("error", "The customer replaced or removed " + basket.substring(8) + " earlier in this chat: take it out of the items (it is not part of this order) unless they asked for it again.");
+            return obj("error", "The customer also asked for " + basket.substring(8) + " earlier in this chat and has not dropped or replaced it: include it in the items (ask for its missing option if it has one), or ask the customer whether they still want it. Do not leave it out silently.");
         }
         // every option the customer has to choose (size, color, spice, bread...) must come from them: an item whose option they never mentioned is sent back so the model asks
         // Western digits first: «١٢٨ جيجا» is the option «128 جيجا»

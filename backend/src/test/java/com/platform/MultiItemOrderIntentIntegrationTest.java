@@ -114,4 +114,57 @@ class MultiItemOrderIntentIntegrationTest extends IntegrationTestBase {
         assertThat(FakeAiProvider.RESULTS.get(0).result().get("error")).isNotNull();
         assertThat(FakeAiProvider.RESULTS.get(1).result().get("error")).as(String.valueOf(FakeAiProvider.RESULTS)).isNull();
     }
+
+    /** «لا بدلها عايز Y»: the order carrying both X and Y is sent back for X; with Y alone it goes through; a request in the same message as the replacement is still a request. */
+    @Test
+    void aReplacedProductIsTakenOutOfTheOrderAndTheReplacementIsKept() throws Exception {
+        Shop s = shop();
+        String ext = "mi5-" + uniq();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام يا فندم"));
+        say(s, ext, "عايز " + s.a());
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام يا فندم"));
+        say(s, ext, "لا بدلها عايز " + s.b());
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", order(List.of(item(s.va()), item(s.vb())))));   // both: the replaced one is still there
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", order(List.of(item(s.vb())))));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ده الملخص"));
+        String reply = say(s, ext, "محمود 01120224441 القاهرة مدينة نصر كاش");
+        assertThat(String.valueOf(FakeAiProvider.RESULTS.get(0).result().get("error"))).as(String.valueOf(FakeAiProvider.RESULTS)).contains(s.a());
+        assertThat(FakeAiProvider.RESULTS.get(1).result().get("error")).as(String.valueOf(FakeAiProvider.RESULTS)).isNull();
+        assertThat(reply).contains(s.b()).doesNotContain(s.a());
+    }
+
+    /** The replacement is asked in the same message as the word «بدل»: an order that kept the old product and forgot the new one is sent back for the new one too. */
+    @Test
+    void theRequestInAReplacementMessageIsNotForgotten() throws Exception {
+        Shop s = shop();
+        String ext = "mi6-" + uniq();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام يا فندم"));
+        say(s, ext, "عايز " + s.a());
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام يا فندم"));
+        say(s, ext, "لا بدلها عايز " + s.b());
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", order(List.of(item(s.vc())))));   // neither of the two
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", order(List.of(item(s.vb())))));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ده الملخص"));
+        say(s, ext, "محمود 01120224441 القاهرة مدينة نصر كاش");
+        assertThat(String.valueOf(FakeAiProvider.RESULTS.get(0).result().get("error"))).as(String.valueOf(FakeAiProvider.RESULTS)).contains(s.b());
+    }
+
+    /** «شيل X» by name after two requests: an order still carrying X is sent back; a product removed by name is never forced back. */
+    @Test
+    void aProductRemovedByNameIsTakenOutAndNeverForcedBack() throws Exception {
+        Shop s = shop();
+        String ext = "mi7-" + uniq();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام يا فندم"));
+        say(s, ext, "عايز " + s.a());
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام يا فندم"));
+        say(s, ext, "عايز " + s.b());
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام يا فندم"));
+        say(s, ext, "شيل " + s.a());
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", order(List.of(item(s.va()), item(s.vb())))));
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", order(List.of(item(s.vb())))));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ده الملخص"));
+        say(s, ext, "محمود 01120224441 القاهرة مدينة نصر كاش");
+        assertThat(String.valueOf(FakeAiProvider.RESULTS.get(0).result().get("error"))).as(String.valueOf(FakeAiProvider.RESULTS)).contains(s.a());
+        assertThat(FakeAiProvider.RESULTS.get(1).result().get("error")).as(String.valueOf(FakeAiProvider.RESULTS)).isNull();
+    }
 }
