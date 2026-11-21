@@ -167,4 +167,19 @@ class MultiItemOrderIntentIntegrationTest extends IntegrationTestBase {
         assertThat(String.valueOf(FakeAiProvider.RESULTS.get(0).result().get("error"))).as(String.valueOf(FakeAiProvider.RESULTS)).contains(s.a());
         assertThat(FakeAiProvider.RESULTS.get(1).result().get("error")).as(String.valueOf(FakeAiProvider.RESULTS)).isNull();
     }
+
+    /** «كبير بدل عادي» (an option) and «شيل البصل» (an ingredient) are about the product, never a replacement or a removal of it. */
+    @Test
+    void anOptionChangeOrAnIngredientRemovalNeverDropsTheProduct() throws Exception {
+        Shop s = shop();
+        String ext = "mi8-" + uniq();
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام يا فندم"));
+        say(s, ext, "عايز " + s.a());
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام يا فندم"));
+        say(s, ext, "خليها كبير بدل عادي وشيل البصل");
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", order(List.of(item(s.va())))));
+        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ده الملخص"));
+        say(s, ext, "محمود 01120224441 القاهرة مدينة نصر كاش");
+        assertThat(FakeAiProvider.RESULTS.get(0).result().get("error")).as(String.valueOf(FakeAiProvider.RESULTS)).isNull();
+    }
 }

@@ -88,7 +88,7 @@ public class ChatService {
     static final ThreadLocal<List<String>> FOCUS_SLUGS = new ThreadLocal<>();
     /** The «you left out a product the customer asked for» guard of prepare_order speaks once per reply (a model that insists is not looped). */
     private static final ThreadLocal<Boolean> BASKET_GUARD_SPOKE = ThreadLocal.withInitial(() -> false), DROP_GUARD_SPOKE = ThreadLocal.withInitial(() -> false);
-    private static final Pattern BASKET_DROP_WORDS = Pattern.compile("بدل|شيل|امسح|الغ|مش عايز|مش عاوز|مش محتاج|غيرت رايي|غيرت رأيي|بلاش|instead|remove|cancel|forget");
+    private static final Pattern BASKET_DROP_WORDS = Pattern.compile("(?<!\\p{L})(?:شيل|شيلها|امسح|الغي|الغ|بلاش|مش عايز|مش عاوز|مش محتاج|ماعدتش عايز|غيرت رايي|غيرت رأيي)(?!\\p{L})|remove|forget about"), BASKET_REPLACE_WORDS = Pattern.compile("(?<!\\p{L})بدل(?:ها|ه|هم)(?!\\p{L})");
 
     /**
      * What the reply context and the earlier-messages digest added to the prompt of this reply, so the money check can tell it from shop data: an amount in an OLD quoted message of the shop or
@@ -4880,16 +4880,15 @@ public class ChatService {
         Set<String> dropped = new HashSet<>();
         for (String m : msgs) {
             String lm = FactCheck.light(m);
-            boolean drop = BASKET_DROP_WORDS.matcher(lm).find(), request = REQUEST_INTENT.matcher(lm).find();
+            boolean drop = BASKET_DROP_WORDS.matcher(lm).find(), replace = BASKET_REPLACE_WORDS.matcher(lm).find(), request = REQUEST_INTENT.matcher(lm).find();
             var named = FactCheck.askedSlugs(m, view.names());
             String one = named.size() == 1 ? named.get(0) : null;
-            if (drop) {
-                if (one != null && !request) { wanted.remove(one); dropped.add(one); }                    // «شيل X»: that product
-                else {                                                                                       // «لا بدلها عايز Y» / «شيلها»: the product asked for last, before this message
-                    String last = null;
-                    for (String w : wanted) last = w;
-                    if (last != null && (request ? one == null || !one.equals(last) : true)) { wanted.remove(last); dropped.add(last); }
-                }
+            // only what is certain: «شيل X» names the product removed; «لا بدلها عايز Y» replaces the product asked for last by another one. «شيل البصل», «كبير بدل عادي» (an option) and «بدون» never touch the list.
+            if (drop && one != null && !request) { wanted.remove(one); dropped.add(one); }
+            else if (replace && request && one != null) {
+                String last = null;
+                for (String w : wanted) last = w;
+                if (last != null && !last.equals(one)) { wanted.remove(last); dropped.add(last); }
             }
             if (request && one != null) { dropped.remove(one); wanted.add(one); }                           // asked (again): wanted
         }
