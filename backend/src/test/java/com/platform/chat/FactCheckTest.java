@@ -782,5 +782,8 @@ class FactCheckTest {
         assertThat(ChatService.otherVersionAnswered("الزينترا بوك 14 الأوبن بوكس متاح؟", "أيوه متاح ✅ ٣ قطع", shop)).isNull();
         assertThat(ChatService.otherVersionAnswered("إيه الفرق بين الجديد والأوبن بوكس في زينترا بوك 14؟", denial, shop)).isNull();
         assertThat(ChatService.otherVersionAnswered("زينترا بوك 14 الجديد بكام؟", "الجديد بـ 24,999", shop)).isNull();
+        // I-020: «عايز … أوبن بوكس» is a request, not a question word, and still must not be answered with the new laptop's price
+        assertThat(ChatService.otherVersionAnswered("عايز زينترا بوك 14 أوبن بوكس", "تمام يا فندم، زينترا بوك 14 بـ 24,999 فضي أو رمادي", shop)).isEqualTo("open");
+        assertThat(ChatService.otherVersionAnswered("عايز زينترا بوك 14 أوبن بوكس", "الأوبن بوكس بـ 20,999 بدل 24,999", shop)).isNull();
     }
 }
