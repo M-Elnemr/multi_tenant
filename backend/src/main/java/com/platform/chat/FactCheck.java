@@ -1934,24 +1934,30 @@ final class FactCheck {
     private static void specLock(String customer, String answer, List<Mention> ms, String only, Shop shop, List<Problem> out) {
         String la = light(answer);
         List<int[]> drop = new ArrayList<>();
-        String about = null, claim = null;
+        String about = null, claim = null, warrantyAbout = null;
         for (int[] sn : sentences(answer)) {
             List<Mention> here = ms.stream().filter(m -> m.start() >= sn[0] && m.start() < sn[1]).toList();
             String slug = here.size() == 1 ? here.get(0).slug() : here.isEmpty() ? (lastBefore(ms, sn[0], only) != null ? lastBefore(ms, sn[0], only) : only) : null;
             if (slug == null) continue;
-            String se = la.substring(sn[0], sn[1]);
-            int label = versionLabel(se);   // «- الجديد: 24,999 جنيه، بضمان سنة» next to the open-box line: the line is about the other version of the product the text named last
-            if (label != 0) slug = otherVersion(label == 2 ? "جديد" : "أوبن بوكس", List.of(slug), shop.names()).get(0);
-            String facts = shop.facts(slug);
-            if (facts == null) continue;
-            if (NOT_A_SPEC.matcher(se).find() || NEG_STRICT.matcher(se).find() || DENY.matcher(se).find() || WITHOUT.matcher(se).find() || CONDITIONAL.matcher(se).find()
-                    || OTHER_CHOICES.matcher(se).find() || HOURS_TALK.matcher(se).find() || se.contains("؟") || se.contains("?")) continue;   // a no, another product offered, the opening hours
-            String lf = light(facts);
-            Set<String> known = specsIn(lf, true);
-            String bad = null;
-            for (String c : specsIn(se)) if (!known.contains(c) && !c.endsWith("|pct")) { bad = c; break; }
-            if (bad == null && WARRANTY.matcher(se).find() && !WARRANTY.matcher(lf).find()) bad = "warranty";
-            if (bad != null) { drop.add(sn); if (about == null) { about = slug; claim = bad; } }
+            // a sentence may carry a claim, an emoji and then a closing question («الضمان شهر… 📝 عايز أحجزلك؟»): each part is judged on its own, so the question mark does not hide the claim
+            for (int[] sub : emojiSplit(answer, sn)) {
+                String se = la.substring(sub[0], sub[1]);
+                String subSlug = slug;
+                int label = versionLabel(se);   // «- الجديد: 24,999 جنيه، بضمان سنة» next to the open-box line: the line is about the other version of the product the text named last
+                if (label != 0) subSlug = otherVersion(label == 2 ? "جديد" : "أوبن بوكس", List.of(slug), shop.names()).get(0);
+                String facts = shop.facts(subSlug);
+                if (facts == null) continue;
+                // a parenthesis is an aside («الضمان شهر … (مش الكسر أو المية)»): its «not» does not make the claim in front of it a denial (live I-036: a wrong warranty period went out because of it)
+                String seMain = se.replaceAll("\\([^)]*\\)", " ");
+                if (NOT_A_SPEC.matcher(seMain).find() || NEG_STRICT.matcher(seMain).find() || DENY.matcher(seMain).find() || WITHOUT.matcher(seMain).find() || CONDITIONAL.matcher(seMain).find()
+                        || OTHER_CHOICES.matcher(seMain).find() || HOURS_TALK.matcher(seMain).find() || se.contains("؟") || se.contains("?")) continue;   // a no, another product offered, the opening hours
+                String lf = light(facts);
+                Set<String> known = specsIn(lf, true);
+                String bad = null;
+                for (String c : specsIn(se)) if (!known.contains(c) && !c.endsWith("|pct")) { bad = c; break; }
+                if (bad == null && WARRANTY.matcher(se).find() && !WARRANTY.matcher(lf).find()) bad = "warranty";
+                if (bad != null) { drop.add(sub); if (about == null) { about = subSlug; claim = bad; } if (WARRANTY.matcher(se).find()) warrantyAbout = subSlug; }
+            }
         }
         if (drop.isEmpty()) return;
         boolean ar = arabic(answer) || customer != null && arabic(customer);
@@ -1959,8 +1965,37 @@ final class FactCheck {
         String name = shop.names().stream().filter(n -> n.slug().equals(aboutSlug)).map(Named::name).findFirst().orElse("");
         String note = ar ? "التفصيلة دي مش مكتوبة في بيانات «" + name + "» عندنا، أقدر أسأل المحل عليها لو تحب 🙏" : "That detail is not in our data for " + name + "; I can ask the shop if you like 🙏";
         String rest = withoutRanges(answer, drop);
+        final String warrantySlug = warrantyAbout;
+        String warranty = warrantySlug == null ? null : warrantySegment(shop.facts(warrantySlug));
+        if (warranty != null) {   // the shop wrote the warranty: say it, instead of «not in our data»
+            String wname = shop.names().stream().filter(n -> n.slug().equals(warrantySlug)).map(Named::name).findFirst().orElse("");
+            note = ar ? "الضمان بحسب بيانات «" + wname + "»: " + warranty : "Warranty per the data of " + wname + ": " + warranty;
+        }
         out.add(new Problem("SPEC_UNKNOWN", "You stated a detail of «" + name + "» (" + claim + ") that the shop's data does not have. Never guess a spec, a number or a warranty: say only what get_product or shop_knowledge gives, or offer to ask the shop.",
                 (rest.isBlank() ? note : rest + "\n\n" + note).trim()));
+    }
+
+    /** The part of the product's own text that states its warranty («الضمان: ٦ شهور (…)»), or null. */
+    private static String warrantySegment(String facts) {
+        if (facts == null) return null;
+        for (String part : facts.split("[•\\n]|(?<=[.!؟?])\\s")) {
+            String x = part.replaceAll("\\s+", " ").strip();
+            if (x.length() >= 5 && x.length() <= 220 && WARRANTY.matcher(light(x)).find()) return x.replaceAll("^[:,\\s]+|[\\s,:]+$", "");
+        }
+        return null;
+    }
+
+    /** A sentence cut after each emoji (a symbol character), so a claim and the question after its emoji are two parts; a sentence with no emoji comes back whole. */
+    private static List<int[]> emojiSplit(String text, int[] sn) {
+        List<int[]> out = new ArrayList<>();
+        int s = sn[0];
+        for (int i = sn[0]; i < sn[1]; ) {
+            int cp = text.codePointAt(i), n = Character.charCount(cp);
+            if (Character.getType(cp) == Character.OTHER_SYMBOL && i + n < sn[1]) { out.add(new int[]{s, i + n}); s = i + n; }
+            i += n;
+        }
+        if (s < sn[1]) out.add(new int[]{s, sn[1]});
+        return out;
     }
 
     private static final Pattern OPEN_BOX_WORDS = Pattern.compile("(?:اوبن|open)\\s*(?:بوكس|box)|مفتوحه?\\s+العلبه|مستعمل");

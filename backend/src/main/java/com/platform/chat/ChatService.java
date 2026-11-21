@@ -905,7 +905,9 @@ public class ChatService {
         }
         if (version != 0 && (slugs.isEmpty() || slugs.stream().noneMatch(sl -> FactCheck.hasOtherVersion(sl, shop.names())))) {
             // «الأوبن بوكس لسه متاح؟» 50 messages after the laptop, with accessories in between: the newest product of the chat that comes both new and open-box (any age for «أوبن بوكس», the last 30 messages for the plain «الجديد»)
-            List<String> recent = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND id < :u ORDER BY id DESC LIMIT " + (version == 1 ? 120 : 30))
+            // «والجديد بكام وضمانه؟» right after «الأوبن بوكس لسه متاح؟» in a chat of 50 accessories: the customer is still talking about the versions of that laptop, so the look-back is as long as for «أوبن بوكس» (I-039)
+            boolean versionTalk = version == 1 || jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND id < :u ORDER BY id DESC LIMIT 6").param("c", conv).param("u", userMsgId).query(String.class).list().stream().anyMatch(m -> FactCheck.versionWords(m) != 0);
+            List<String> recent = jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND id < :u ORDER BY id DESC LIMIT " + (versionTalk ? 120 : 30))
                     .param("c", conv).param("u", userMsgId).query(String.class).list();
             search:
             for (String said : recent)
@@ -1162,6 +1164,8 @@ public class ChatService {
     }
 
     /** «عايز زينترا بوك 14 أوبن بوكس»: a request for a product is a question about it too (its price and availability are what the reply must state). */
+    /** «فاضل كام؟» / «كام قطعة؟»: the customer asks how many are left, so a data reply states the count. */
+    private static final java.util.regex.Pattern QUANTITY_QUESTION = java.util.regex.Pattern.compile("فاضل كام|فاضلين كام|باقي كام|متبقي كام|كام قطعه|كام قطعة|كام واحد|الكميه|الكمية|كام حته|how many|left in stock|in stock");
     private static final java.util.regex.Pattern REQUEST_INTENT = java.util.regex.Pattern.compile("عايز|عاوز|محتاج|ابغى|أبغى|اشتري|هاخد|ممكن اطلب|want|need|looking for|interested in|i.d like");
     private static final java.util.regex.Pattern PRODUCT_QUESTION = java.util.regex.Pattern.compile("بكام|بكم|سعر|متاح|متوفر|موجود|فاضل|لون|مقاس|ضمان|كارت|بطاريه|available|price|how much|in stock|colou?r|size|warranty");
     private String dataOrUnavailable(Ctx ctx, String text, boolean arabic) {
@@ -1910,6 +1914,13 @@ public class ChatService {
                 ReplyTrace.checkProblems(Set.of("FINAL_NAMED_PRODUCT_IGNORED"));
                 return verifiedReply(ctx, last, List.of(asked));
             }
+            String focusAsked = focusIgnored(last, out, shopData);
+            if (focusAsked != null) {   // «فاضل كام من الأوبن بوكس؟» answered about another product: the customer's message names none and the chat's product is known (I-037)
+                log.warn("Critical gate: the reply is about another product than the chat's product {} (conversation {})", focusAsked, ctx.conversationId());
+                events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:FINAL_FOCUS_IGNORED", null, null);
+                ReplyTrace.checkProblems(Set.of("FINAL_FOCUS_IGNORED"));
+                return verifiedReply(ctx, last, List.of(focusAsked));
+            }
             if (mixedOptionPrices(last, out, shopData)) {
                 var named = FactCheck.mentions(last, shopData.names()).stream().map(FactCheck.Mention::slug).distinct().toList();
                 events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:FINAL_MIXED_OPTION_PRICES", null, null);
@@ -1981,7 +1992,8 @@ public class ChatService {
                 if (shown++ >= 8) break;
                 String opts = java.util.Arrays.stream(String.valueOf(v.get("options")).split(",\\s*")).map(o -> o.contains(":") ? o.substring(o.indexOf(':') + 1).trim() : o.trim()).filter(o -> !o.isBlank() && !"null".equals(o)).collect(java.util.stream.Collectors.joining(" / "));
                 String price = v.get("price") == null ? "" : new java.math.BigDecimal(String.valueOf(v.get("price")).replaceAll("[^0-9.]", "")).stripTrailingZeros().toPlainString();
-                b.append("   - ").append(opts.isEmpty() ? (ar ? "متاح" : "available") : opts).append(price.isEmpty() ? "" : " — " + price + (ar ? " جنيه" : " EGP")).append("\n");
+                String left = QUANTITY_QUESTION.matcher(FactCheck.light(last)).find() && v.get("available") != null && String.valueOf(v.get("available")).matches("\\d+") ? (ar ? " — متاح منه " + v.get("available") + " قطعة" : " — " + v.get("available") + " left") : "";
+                b.append("   - ").append(opts.isEmpty() ? (ar ? "متاح" : "available") : opts).append(price.isEmpty() ? "" : " — " + price + (ar ? " جنيه" : " EGP")).append(left).append("\n");
             }
         }
         if (!b.isEmpty() && last != null && WARRANTY.matcher(FactCheck.light(last)).find()) {   // «والجديد بكام وضمانه؟»: the price list alone left the second half of the question unanswered
@@ -2009,12 +2021,30 @@ public class ChatService {
      * that belong to none of those products (a phone's prices for the quoted phone case, a backpack's for a list of power banks), or names another product and not the quoted one when there is
      * exactly one. Returns the quoted slugs, or an empty list.
      */
+    /**
+     * The chat's product is known (the customer's message names no product and FOCUS_SLUGS holds exactly one), the customer asks about it (price, stock, colours, warranty, details) and the reply
+     * names other products and not that one: the model answered about the latest product of the chat. Returns the chat's product, or null when the reply is fine.
+     */
+    private String focusIgnored(String last, String answer, FactCheck.Shop shop) {
+        var focus = FOCUS_SLUGS.get();
+        if (focus == null || focus.size() != 1 || answer == null || last == null) return null;
+        if (!FactCheck.mentions(last, shop.names()).isEmpty()) return null;
+        if (!PRODUCT_QUESTION.matcher(FactCheck.light(last)).find() && !QUANTITY_QUESTION.matcher(FactCheck.light(last)).find()) return null;
+        var said = FactCheck.mentions(NOTE_NAMING_A_PRODUCT.matcher(answer).replaceAll(""), shop.names()).stream().map(FactCheck.Mention::slug).distinct().toList();
+        if (said.isEmpty()) return null;
+        var group = FactCheck.withSiblingWhenComparing("الفرق", focus, shop.names());   // the other version of the same model is the same subject
+        if (said.stream().anyMatch(group::contains)) return null;
+        var product = shop.product(focus.get(0));
+        if (product == null || product.variants().stream().noneMatch(v -> v.available() > 0)) return null;
+        return focus.get(0);
+    }
+
     private List<String> quoteIgnored(String last, String answer, FactCheck.Shop shop) {
         var slugs = REPLY_SLUGS.get();
         if (slugs == null || slugs.isEmpty() || answer == null || last == null) return List.of();
         if (!FactCheck.mentions(last, shop.names()).isEmpty()) return List.of();   // they named a product themselves: that is what they mean
         var said = FactCheck.mentions(answer, shop.names()).stream().map(FactCheck.Mention::slug).distinct().toList();
-        if (slugs.size() == 1 && !said.isEmpty() && !said.contains(slugs.get(0))) return slugs;
+        if (!said.isEmpty() && said.stream().noneMatch(slugs::contains)) return slugs;   // it names other products and none of the quoted ones
         // the reply talks about a quoted product, alone: it is about it. A reply that lists SEVERAL products (the chat's earlier prices) must still carry the quoted product's own price (I-034: «الأسعار لسه سارية: …» listed the fillers and not the tablet that was quoted)
         if (said.size() <= 1 && said.stream().anyMatch(slugs::contains)) return List.of();
         Set<Long> quotedPrices = new HashSet<>();
@@ -2025,6 +2055,8 @@ public class ChatService {
             for (var v : product.variants()) { quotedPrices.add(Math.round(v.price() * 100)); if (v.before() > 0) quotedPrices.add(Math.round(v.before() * 100)); }
         }
         if (quotedPrices.isEmpty()) return List.of();
+        // «السعر ده لسه ساري؟» answered «نعم 👍 تحب أجهزلك الأزرق ولا الوردي؟»: it confirms a price it never states and offers options of another product (I-038)
+        if (said.isEmpty() && MoneyGuard.amountsIn(answer).isEmpty() && PRODUCT_QUESTION.matcher(FactCheck.light(last)).find()) return slugs;
         boolean foreign = false;
         for (var a : MoneyGuard.amountsIn(answer)) {
             if (a.sum()) continue;
