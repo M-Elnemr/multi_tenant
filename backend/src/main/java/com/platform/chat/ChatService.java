@@ -1461,104 +1461,159 @@ public class ChatService {
         boolean searched = rounds.stream().anyMatch(r -> r.tools().stream().anyMatch(t -> t.equals("search_products") || t.equals("get_product") || t.equals("show_products") || t.equals("list_services") || t.equals("available_slots")));
         String last = lastCustomerText(turns);
         Map<String, String> problems = new LinkedHashMap<>();   // check name -> what the model must fix
+        ReplyTrace.Laps lap = ReplyTrace.laps();   // time of each check below, one by one (measurement only)
         if (WHO_QUESTION.matcher(answer).find()) {
             if (FOR_ME.matcher(last).find()) problems.put("WHO_ASKED", "The customer already said it is for themself: never ask who it is for; recommend for them.");
             else if (!searched) problems.put("WHO_BEFORE_SEARCH", "You asked who it is for before searching: call search_products now; ask only if the results are for several groups (men, women, kids) and nothing tells.");
         }
+        lap.mark("WHO_ASKED");
         if (!searched && !NOT_HAVE.matcher(answer).find() && !ONLY_OPTIONS.matcher(answer).find() && productFacts(answer) && !alreadySaid(answer, turns))
             problems.put("UNCHECKED_FACTS", "You described which colors, sizes or items are available without checking in this turn: call search_products (or get_product) now and answer only from the result.");
+        lap.mark("UNCHECKED_FACTS");
         if (!searched && !NOT_HAVE.matcher(answer).find() && ONLY_OPTIONS.matcher(answer).find()) problems.put("UNCHECKED_OPTIONS", "You stated which colors, sizes or quantities exist without checking in this turn: call search_products or get_product and answer from allOptions and inStockOptions.");
+        lap.mark("UNCHECKED_OPTIONS");
         String deniedSold = deniesSoldProduct(ctx, last, answer);
+        lap.mark("deniesSoldProduct");
         if (deniedSold != null) problems.put("DENIED_EXISTING_PRODUCT", deniedSold);
+        lap.mark("DENIED_EXISTING_PRODUCT");
         if (!searched && NOT_HAVE.matcher(answer).find()) problems.put("UNSEARCHED_DENIAL", "You said we do not have something without searching in this turn: call search_products for exactly what the customer asked (also by color and size) and answer from the result.");
+        lap.mark("UNSEARCHED_DENIAL");
         String norm = FastAnswers.norm(answer);
+        lap.mark("norm");
         if (BROKEN_RUN.matcher(answer).find())
             problems.put("BROKEN_TEXT", "Your reply broke off into a run of repeated letters («لجماااا…») or into another script (Chinese, Cyrillic...): write the whole reply again in the customer's language, short and complete.");
+        lap.mark("BROKEN_TEXT");
         if (EXAMPLE_LINES.stream().anyMatch(norm::contains)) problems.put("COPIED_EXAMPLE", "You copied an example sentence from your instructions word for word; it may not fit. Answer THIS customer's message in your own words.");
+        lap.mark("COPIED_EXAMPLE");
         if (english(last) && arabicShare(answer) > 0.5) problems.put("LANGUAGE", "The customer writes English: reply in English.");
         else if (!english(last) && arabicShare(last) > 0.6 && arabicShare(answer) < 0.2) problems.put("LANGUAGE", "The customer writes Arabic: reply in Egyptian Arabic.");
+        lap.mark("LANGUAGE");
         var asked = QUANTITY.matcher(MoneyGuard.digits(last));
+        lap.mark("quantity_read");
         if (asked.find() && Integer.parseInt(asked.group(1)) >= 5 && MoneyGuard.digits(answer).contains(asked.group(1)) && PROMISE.matcher(answer).find() && !LIMIT_WORDS.matcher(answer).find() && !isOptionCount(ctx.tenantId(), asked.group(1)))
             problems.put("STOCK_QUANTITY", "The customer asked for " + asked.group(1) + " pieces: check the stock count of that exact option (in ALL PRODUCTS or the search result) and never promise more than is in stock; if fewer are available, say how many.");
+        lap.mark("STOCK_QUANTITY");
         if (PHONE_DOUBT.matcher(answer).find() && customerGaveMobile(turns))
             problems.put("PHONE_DOUBT", "The mobile number the customer wrote is valid: never say it is wrong or count its digits; if needed, ask only «الرقم ده عليه واتساب؟».");
+        lap.mark("PHONE_DOUBT");
         if (!searched && vagueAboutProducts(ctx.tenantId(), last, answer))
             problems.put("VAGUE", "The customer asked about a kind of product and your reply names none: call search_products and name the real products with their price, colors and sizes (or say honestly we do not have it).");
+        lap.mark("VAGUE");
         String unrelated = cardsUnrelated(ctx, last);
+        lap.mark("cardsUnrelated");
         if (unrelated != null) problems.put("UNRELATED_CARDS", unrelated);
+        lap.mark("UNRELATED_CARDS");
         boolean lookedUp = rounds.stream().anyMatch(r -> r.tools().stream().anyMatch(t -> t.equals("get_product") || t.equals("shop_knowledge")));   // a search lists products; their specs are read with get_product or shop_knowledge
+        lap.mark("lookedUp");
         if (NO_INFO.matcher(answer).find() && !lookedUp)
             problems.put("NO_INFO", "You said there is no information without looking: call get_product for that product and answer from its details (ingredients, calories, material, size guide...); say it is not listed only if get_product has nothing.");
+        lap.mark("NO_INFO");
         if (ORDER_CLAIM.matcher(FastAnswers.norm(answer)).find() && ctx.order()[0] == null && !hasOrderOnFile(ctx))
             problems.put("ORDER_CLAIM", "You said the order is recorded, but no order exists yet: an order exists only after the customer confirms the summary from prepare_order. Call prepare_order with the details you have (or ask for what is missing) and never say it is recorded before.");
+        lap.mark("ORDER_CLAIM");
         String colorProblem = inventedColors(ctx, answer);
+        lap.mark("inventedColors");
         if (colorProblem != null) problems.put("INVENTED_COLOR", colorProblem);
+        lap.mark("INVENTED_COLOR");
         if (PICTURE_ONLY.matcher(answer).find() && !MoneyGuard.digits(answer).matches("(?s).*\\d.*"))
             problems.put("PICTURE_ONLY", "Do not just point at the pictures: name the products in words with their price and the colors/sizes that matter (and any size advice asked for), then one short question.");
+        lap.mark("PICTURE_ONLY");
         if (CLOSED_STOP.matcher(answer).find())
             problems.put("CLOSED_STOP", "Being outside opening hours does not stop you: answer the customer's question now and keep selling; only mention once that the order is prepared when the shop opens.");
+        lap.mark("CLOSED_STOP");
         String hoursProblem = hoursAnswerWrong(ctx.tenantId(), last, answer);
+        lap.mark("hoursAnswerWrong");
         if (hoursProblem != null) problems.put("HOURS_WRONG", hoursProblem);
+        lap.mark("HOURS_WRONG");
         if (CARD_OFFER.matcher(answer).find() && !cardAccepted(ctx.tenantId()))
             problems.put("CARD_OFFER", "This shop takes cash on delivery only: never offer card, Visa or wallet payment.");
+        lap.mark("CARD_OFFER");
         boolean falseCancel = CANCEL_CLAIM.matcher(answer).find() && !orderCancelled(ctx);
+        lap.mark("falseCancel");
         if (falseCancel) problems.put("CANCEL_CLAIM", "You told the customer the order is cancelled, but it is NOT cancelled: only cancel_order cancels. Ask kindly why they want to cancel, then call cancel_order with the reason (or noReason=true if they will not say), and tell them only what the tool answered.");
+        lap.mark("CANCEL_CLAIM");
         if (PRICE_ASKED.matcher(FastAnswers.norm(last)).find() && !MoneyGuard.digits(answer).matches("(?s).*\\d{2,}.*") && !NOT_HAVE.matcher(answer).find())
             problems.put("PRICE_MISSING", "The customer asked the price: give the real price (by option when the price changes by option) from search_products or get_product, in this message.");
+        lap.mark("PRICE_MISSING");
         if (!ctx.products().isEmpty() && answer.length() < 90 && !MoneyGuard.digits(answer).matches("(?s).*\\d{2,}.*") && relatedProducts(ctx.tenantId(), last).size() > 0
                 && FactCheck.mentions(answer, shopView(ctx.tenantId()).names()).isEmpty())
             problems.put("THIN_REPLY", "You found products but the reply names none: name the best 2-3 with their prices and the options that matter, then one short question.");
+        lap.mark("THIN_REPLY");
         if (settings.publicProfile(ctx.tenantId()).get("minOrderMinor") instanceof Number mo && wrongMinimum(answer, mo.longValue() / 100))
             problems.put("MINIMUM_WRONG", "The shop's minimum order is " + (mo.longValue() / 100) + ": say that exact amount (and the order's total so far from prepare_order) or do not mention the minimum.");
+        lap.mark("MINIMUM_WRONG");
         if (TOOL_TALK.matcher(answer).find())
             problems.put("TOOL_TALK", "Never talk about your tools, the system, the catalog data or searches to the customer («أداة البحث», «النظام», «الكتالوج مش راجع»): answer like a person in the shop, from what the search found (search again with fewer words if it found nothing).");
+        lap.mark("TOOL_TALK");
         if (OFFER_TO_SHOW.matcher(answer).find() && FactCheck.mentions(answer, shopView(ctx.tenantId()).names()).isEmpty() && !MoneyGuard.digits(answer).matches("(?s).*\\d{2,}.*")
                 && last.trim().split("\\s+").length >= 3 && ctx.summary()[0] == null)
             problems.put("OFFER_INSTEAD_OF_SHOWING", "The customer already told you what they want: do not ask whether to show it. Call search_products with their need now and name the best 2-4 products "
                     + "with their prices in this message (or say honestly we do not have it), then one short question.");
+        lap.mark("OFFER_INSTEAD_OF_SHOWING");
         if (STALL.matcher(answer).find())
             problems.put("STALL", lookedUp || searched
                     ? "You already looked it up: give the answer from that result now. Never tell the customer you will check, confirm, send something or get back to them later."
                     : "Do not tell the customer you will check or confirm later: look it up now (search_products or get_product) and answer in this message.");
         else if (FactCheck.UNSURE.matcher(FactCheck.light(answer)).find())
             problems.put("STALL", "Never tell the customer you cannot confirm or have no data («مفيش تأكيد», «مش قادر أتأكد», «مش لاقي بيانات»): the shop's data has the price and the stock of every option; read it (get_product) and answer plainly in this message.");
+        lap.mark("STALL");
         boolean prepared = rounds.stream().anyMatch(r -> r.tools().contains("prepare_order"));
+        lap.mark("prepared");
         if (!prepared && ADD_IT.matcher(FastAnswers.norm(last)).matches() && !OPTION_ASK.matcher(FastAnswers.norm(answer)).find())
             problems.put("ADD_WITHOUT_OPTIONS", "The customer wants to order the product you just talked about: ask in one message for every option they have not chosen yet (size, colour, bread, spice...), exactly as the product has them; ask for the delivery details only after that.");
+        lap.mark("ADD_WITHOUT_OPTIONS");
         if (ADD_IT.matcher(FastAnswers.norm(last)).matches() && GUEST.matcher(FastAnswers.norm(answer)).find())
             problems.put("ADD_READ_AS_GUEST", "«ضيفه» means \"add it to my order\" (the product you just talked about), not a guest: ask for the options they did not choose yet, then add it.");
+        lap.mark("ADD_READ_AS_GUEST");
         if (!prepared && ctx.summary()[0] == null && CHANGE_WORDS.matcher(FastAnswers.norm(last)).find() && summaryWasShown(ctx))
             problems.put("CHANGE_NOT_APPLIED", "The customer changed the order you just summarised: call prepare_order now with the complete changed list (and the same details), so they get the updated summary. Never only say you will change it.");
         else if (!prepared && ctx.summary()[0] == null && ctx.order()[0] == null && changeAfterDetails(ctx, last, answer))
             problems.put("CHANGE_NOT_APPLIED", "The customer already gave their name, address and phone, and now changes or adds to the order: call prepare_order now with the complete list as it is now "
                     + "(every item they still want, with the new quantity or option) and the same details, so they get the real summary (or the minimum order note). Ask only for an option still not chosen.");
+        lap.mark("CHANGE_NOT_APPLIED");
         if (!prepared && ctx.summary()[0] == null && looksLikeSummary(answer))
             problems.put("FAKE_SUMMARY", "Never write an order summary or ask to confirm the order yourself: call prepare_order with the items and details, and the customer gets the real summary from it (ask only for what is missing).");
+        lap.mark("FAKE_SUMMARY");
         if (detailsGivenNoSummary(ctx, turns, rounds, last, answer))
             problems.put("NO_SUMMARY", "The customer has just given their name, address and phone: call prepare_order now with the items they chose and these details, so they get the order summary (ask only for something really missing, such as a size or color).");
+        lap.mark("NO_SUMMARY");
         // the facts of the reply against the shop's own data (prices of options, stock, what we sell, delivery areas, hours, discounts)
         FactCheck.Shop shopData = shopView(ctx.tenantId());
+        lap.mark("shopView");
         List<String> touched = touchedOrBefore(ctx, shopData);
+        lap.mark("touchedOrBefore");
         List<FactCheck.Problem> facts = List.of();
+        lap.mark("facts_init");
         try { facts = FactCheck.check(last, answer, shopData, touched); } catch (RuntimeException e) {
             log.warn("Fact check skipped", e);
             events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK_ERROR", String.valueOf(e), null);   // a check that broke is seen on the AI health page, never silent
         }
+        lap.mark("FACT_CHECK");
         for (var f : facts) {
             if (f.kind().equals("CHECK_ERROR")) { log.warn("Fact check error: {}", f.note()); events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK_ERROR", f.note(), null); continue; }
             problems.putIfAbsent(f.kind(), f.note());
         }
+        lap.mark("fact_problems");
         String noSize = inventedSize(last, answer, shopData);
+        lap.mark("inventedSize");
         if (noSize != null) problems.put("INVENTED_SIZE", noSize);
+        lap.mark("INVENTED_SIZE");
         String switched = switchedProduct(ctx, shopData, last, answer);
+        lap.mark("switchedProduct");
         if (switched != null) problems.put("SWITCHED_PRODUCT", switched);
+        lap.mark("SWITCHED_PRODUCT");
         String askedSlug = namedProductIgnored(ctx, last, answer, shopData);
+        lap.mark("namedProductIgnored");
         if (askedSlug != null) problems.put("NAMED_PRODUCT_IGNORED", "The customer asked for «" + displayName(shopData, askedSlug) + "», which the shop has in stock, and your reply does not talk about it: call get_product " + askedSlug
                 + " and answer about exactly that product (never say it is only sold in another category or only new; it is its own product with its own price).");
+        lap.mark("NAMED_PRODUCT_IGNORED");
         if (mixedOptionPrices(last, answer, shopData)) problems.put("MIXED_OPTION_PRICES", "A line gives option prices (sizes) that no single product has: the prices of two products were mixed. Give each product's own prices from get_product, product by product.");
+        lap.mark("MIXED_OPTION_PRICES");
         var quotedSlugs = quoteIgnored(last, answer, shopData);
+        lap.mark("quoteIgnored");
         if (!quotedSlugs.isEmpty()) problems.put("QUOTE_IGNORED", "The customer is replying to your earlier message about «" + quotedSlugs.stream().map(x -> displayName(shopData, x)).collect(java.util.stream.Collectors.joining("» / «")) + "» (see THE PRODUCT THIS MESSAGE IS ABOUT) and their message names no other product: "
                 + "answer about THAT product (get_product " + quotedSlugs.get(0) + ") with its own price, and not about another one.");
+        lap.mark("QUOTE_IGNORED");
         if (problems.isEmpty()) return answer;
         for (String kind : problems.keySet()) events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:" + kind, problems.get(kind), null);
         ReplyTrace.checkProblems(problems.keySet());

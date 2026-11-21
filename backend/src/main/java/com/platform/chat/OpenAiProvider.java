@@ -41,6 +41,32 @@ public class OpenAiProvider implements AiProvider {
     /** Calls to one service (by address and key) share one limit, however many providers point at it: Hive allows GLM 5 calls a second for the whole account. */
     private static final Map<String, Throttle> THROTTLES = new java.util.concurrent.ConcurrentHashMap<>();
 
+    /** HTTP requests to each provider code that are on their way right now (sent, no final answer yet): measurement only, written to the trace as the load at the moment a request was sent. */
+    private static final Map<String, java.util.concurrent.atomic.AtomicInteger> INFLIGHT = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private int enter() { return INFLIGHT.computeIfAbsent(code, k -> new java.util.concurrent.atomic.AtomicInteger()).incrementAndGet(); }
+
+    private void leave() { java.util.concurrent.atomic.AtomicInteger a = INFLIGHT.get(code); if (a != null) a.decrementAndGet(); }
+
+    /** The provider's own request id, the protocol and our id of the key of one exchange: what is needed to find that request on the provider's side. Never a secret. */
+    static ReplyTrace.RequestMeta metaOf(HttpResponse<?> r, String keyId, int inflight) {
+        String id = r.headers().firstValue("x-request-id").orElse("");
+        return new ReplyTrace.RequestMeta(id, r.version() == HttpClient.Version.HTTP_2 ? "2" : "1.1", keyId == null ? "" : keyId, inflight);
+    }
+
+    /**
+     * Why one of the two requests of a hedge ended without an answer. A request that WE cancelled (the other one had failed too, or the time was up) is {@code CANCELLED}, whatever exception the
+     * client then reports: measured on 2026-11-21, 768 of 804 twin failures labelled CONNECTION lasted exactly until our own cancellation. A timeout of its own and a real connection failure keep their names.
+     */
+    static String hedgeFailure(Throwable ex, boolean weCancelled) {
+        int depth = 0;
+        for (Throwable t = ex; t != null && depth < 8; t = t.getCause() == t ? null : t.getCause(), depth++) {
+            if (t instanceof java.util.concurrent.CancellationException) return "CANCELLED";
+            if (t instanceof java.net.http.HttpTimeoutException) return ProviderFailure.TIMEOUT;
+        }
+        return weCancelled ? "CANCELLED" : ProviderFailure.CONNECTION;
+    }
+
     /**
      * Under its own model code. {@code maxTokensField} sends the limit as {@code max_tokens}
      * (what those services read) instead of {@code max_completion_tokens}; {@code extraBody} is a JSON object merged into every request, e.g. a setting that switches thinking off.
@@ -223,18 +249,28 @@ public class OpenAiProvider implements AiProvider {
     private HttpResponse<String> send(String body, HiveKeyPool.Lease lease, long timeoutMs, ReplyTrace.Call call) throws Exception {
         HttpRequest req = request(body, lease, timeoutMs);
         boolean waiting = AiBudget.remainingMs() != Long.MAX_VALUE;
-        if (!waiting || timeoutMs < HEDGE_MS + 3_000) return http.send(req, HttpResponse.BodyHandlers.ofString());
+        call.key(lease.id());
+        if (!waiting || timeoutMs < HEDGE_MS + 3_000) {
+            call.inflight(enter());
+            try { HttpResponse<String> r = http.send(req, HttpResponse.BodyHandlers.ofString()); call.meta(metaOf(r, lease.id(), 0)); return r; }
+            finally { leave(); }
+        }
         long firstStart = System.nanoTime();
+        int firstInflight = enter();
+        call.inflight(firstInflight);
         var first = http.sendAsync(req, HttpResponse.BodyHandlers.ofString());
+        first.whenComplete((r, ex) -> leave());
         try {
-            return unwrap(() -> first.get(HEDGE_MS, java.util.concurrent.TimeUnit.MILLISECONDS));
+            HttpResponse<String> early = unwrap(() -> first.get(HEDGE_MS, java.util.concurrent.TimeUnit.MILLISECONDS));
+            call.meta(metaOf(early, lease.id(), 0));
+            return early;
         } catch (java.util.concurrent.TimeoutException slow) {
             log.info("{} call unanswered after {} ms: sending it a second time", code, HEDGE_MS);
             ChatService.evalHedge();
         }
         if (!AiBudget.takeHedge()) {   // this reply has used its one twin: wait for the first call to the end of its time
             call.hedgeRefused(HEDGE_MS);
-            try { return unwrap(() -> first.get(Math.max(1_000, timeoutMs - HEDGE_MS + 1_000), java.util.concurrent.TimeUnit.MILLISECONDS)); }
+            try { HttpResponse<String> late = unwrap(() -> first.get(Math.max(1_000, timeoutMs - HEDGE_MS + 1_000), java.util.concurrent.TimeUnit.MILLISECONDS)); call.meta(metaOf(late, lease.id(), 0)); return late; }
             catch (Exception noAnswer) { first.cancel(true); throw noAnswer; }   // gave up on it: do not leave it running behind the retry
         }
         HiveKeyPool.Lease other = pool != null ? pool.acquire(lease.id()) : lease;   // the twin goes over another key when there is one: it is not held back by the first key's limit
@@ -242,21 +278,26 @@ public class OpenAiProvider implements AiProvider {
         if (throttle != null) throttle.acquire();
         call.hedgeLaunched(HEDGE_MS);
         long twinStart = System.nanoTime();
+        int twinInflight = enter();
         var second = http.sendAsync(other == lease ? req : request(body, other, timeoutMs), HttpResponse.BodyHandlers.ofString());
+        second.whenComplete((r, ex) -> leave());
         var winner = new java.util.concurrent.CompletableFuture<HttpResponse<String>>();
+        var weCancelled = new java.util.concurrent.atomic.AtomicBoolean();
         var finished = new java.util.concurrent.atomic.AtomicInteger();
         var won = new java.util.concurrent.atomic.AtomicBoolean();
         java.util.UUID tenant = AiBudget.tenant();   // the other thread has no reply budget
         java.util.function.BiFunction<HiveKeyPool.Lease, String, java.util.function.BiConsumer<HttpResponse<String>, Throwable>> doneFor = (l, which) -> (r, ex) -> {
             long begun = "first".equals(which) ? firstStart : twinStart;
+            int n = "first".equals(which) ? firstInflight : twinInflight;
             if (pool != null && (ex != null || r.statusCode() / 100 != 2)) pool.failed(l, ex != null ? 0 : r.statusCode());
+            ReplyTrace.RequestMeta meta = r != null ? metaOf(r, l.id(), n) : new ReplyTrace.RequestMeta("", "none", l.id(), n);
             if (ex == null && r.statusCode() / 100 == 2) {
                 boolean first_ = won.compareAndSet(false, true);
-                if (first_) winner.complete(r);   // the first good answer
+                if (first_) { call.meta(meta); winner.complete(r); }   // the first good answer (its identity is set before the caller can read it)
                 else lostTwin(tenant, r);   // the slower twin also answered: the service billed it, so it is recorded
-                call.hedgeRequest(which, begun, r.statusCode(), null, first_, usageOf(r));
+                call.hedgeRequest(which, begun, r.statusCode(), null, first_, usageOf(r), meta);
             } else {
-                call.hedgeRequest(which, begun, ex != null ? 0 : r.statusCode(), ex == null ? ProviderFailure.ofStatus(r.statusCode()) : ex instanceof java.util.concurrent.CancellationException ? "CANCELLED" : ex.getCause() instanceof java.net.http.HttpTimeoutException || ex instanceof java.net.http.HttpTimeoutException ? ProviderFailure.TIMEOUT : ProviderFailure.CONNECTION, false, null);
+                call.hedgeRequest(which, begun, ex != null ? 0 : r.statusCode(), ex == null ? ProviderFailure.ofStatus(r.statusCode()) : hedgeFailure(ex, weCancelled.get()), false, null, meta);
                 if (finished.incrementAndGet() == 2) { if (ex != null) winner.completeExceptionally(ex); else winner.complete(r); }   // both failed: the last failure
             }
         };
@@ -265,6 +306,7 @@ public class OpenAiProvider implements AiProvider {
         try {
             return unwrap(() -> winner.get(Math.max(1_000, timeoutMs - HEDGE_MS + 1_000), java.util.concurrent.TimeUnit.MILLISECONDS));
         } catch (Exception noAnswer) {
+            weCancelled.set(true);   // so the two requests that end because of this are told apart from real connection failures
             first.cancel(true);   // nothing answered in time: stop both
             second.cancel(true);
             throw noAnswer;
