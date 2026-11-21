@@ -1856,10 +1856,34 @@ public class ChatService {
                 + "If the order is below the minimum order value, tell them the minimum and ask what they want to add; never add an item for them.";
     }
 
+    /**
+     * A request («عايز جراب جلد قلاب أسود») that names a product with words of its name left out: the product whose text holds all the request's content words (then its first three), when exactly one
+     * does. Null for anything less certain («عايز تيشيرت أسود» fits many, «عايز أطلب» names nothing). Live: three separate requests became a one-product summary because two of them were not recognised.
+     */
+    private static final Set<String> REQUEST_FILLER = Set.of("عايز", "عاوز", "محتاج", "هاخد", "ابغي", "ابغى", "اطلب", "ممكن", "لو", "سمحت", "كمان", "وبعدين", "عايزه", "عايزة", "عاوزه", "عاوزة", "want", "need", "i", "a", "an", "the");
+
+    String partialRequest(FactCheck.Shop shop, String msg) {
+        String l = FactCheck.light(msg);
+        if (l == null || !REQUEST_INTENT.matcher(l).find()) return null;
+        List<String> words = new ArrayList<>();
+        for (String w : l.split("[^\\p{L}\\p{N}.]+")) if (w.length() >= 2 && !REQUEST_FILLER.contains(w) && !w.matches("[\\d.]+")) words.add(w);
+        if (words.isEmpty()) return null;
+        for (int n : new int[]{Math.min(words.size(), 5), Math.min(words.size(), 3)}) {
+            List<FactCheck.Named> hits = shop.searchAll(words.subList(0, n));
+            if (hits.size() == 1) return hits.get(0).slug();
+            if (!hits.isEmpty()) return null;   // several: ambiguous
+        }
+        return null;
+    }
+
     private List<String> chosenInChat(Ctx ctx, FactCheck.Shop shop) {
         Set<String> out = new java.util.LinkedHashSet<>();
         for (String m : jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u ORDER BY id").param("c", ctx.conversationId()).param("u", ctx.userMsgId()).query(String.class).list())
-            for (var mn : FactCheck.mentions(m, shop.names())) out.add(mn.slug());
+            {
+                var named = FactCheck.mentions(m, shop.names());
+                for (var mn : named) out.add(mn.slug());
+                if (named.isEmpty()) { String partial = partialRequest(shop, m); if (partial != null) out.add(partial); }   // «عايز جراب جلد قلاب أسود» names the case with two words of its name left out
+            }
         return new ArrayList<>(out);
     }
 
@@ -4911,7 +4935,7 @@ public class ChatService {
             String lm = FactCheck.light(m);
             boolean drop = BASKET_DROP_WORDS.matcher(lm).find(), replace = BASKET_REPLACE_WORDS.matcher(lm).find(), request = REQUEST_INTENT.matcher(lm).find();
             var named = FactCheck.askedSlugs(m, view.names());
-            String one = named.size() == 1 ? named.get(0) : null;
+            String one = named.size() == 1 ? named.get(0) : named.isEmpty() ? partialRequest(view, m) : null;
             // only what is certain: «شيل X» names the product removed; «لا بدلها عايز Y» replaces the product asked for last by another one. «شيل البصل», «كبير بدل عادي» (an option) and «بدون» never touch the list.
             if (drop && one != null && !request) { wanted.remove(one); dropped.add(one); }
             else if (replace && request && one != null) {
