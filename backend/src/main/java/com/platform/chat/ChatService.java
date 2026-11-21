@@ -2015,7 +2015,8 @@ public class ChatService {
         if (!FactCheck.mentions(last, shop.names()).isEmpty()) return List.of();   // they named a product themselves: that is what they mean
         var said = FactCheck.mentions(answer, shop.names()).stream().map(FactCheck.Mention::slug).distinct().toList();
         if (slugs.size() == 1 && !said.isEmpty() && !said.contains(slugs.get(0))) return slugs;
-        if (said.stream().anyMatch(slugs::contains)) return List.of();   // the reply does talk about a quoted product
+        // the reply talks about a quoted product, alone: it is about it. A reply that lists SEVERAL products (the chat's earlier prices) must still carry the quoted product's own price (I-034: «الأسعار لسه سارية: …» listed the fillers and not the tablet that was quoted)
+        if (said.size() <= 1 && said.stream().anyMatch(slugs::contains)) return List.of();
         Set<Long> quotedPrices = new HashSet<>();
         for (String slug : slugs) {
             var product = shop.product(slug);

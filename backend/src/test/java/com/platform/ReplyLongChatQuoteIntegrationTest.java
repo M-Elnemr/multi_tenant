@@ -164,7 +164,7 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
         product(t, bankA, 599, "أبيض");
         product(t, bankB, 899, "أبيض");
         product(t, bag, 999, "رمادي");
-        for (int variant = 0; variant < 2; variant++) {
+        for (int variant = 0; variant < 3; variant++) {
             String ext = UUID.randomUUID().toString();
             answer("أهلا");
             say(t, ext, "السلام عليكم", null);
@@ -176,6 +176,10 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
                 seed(conv, "user", caseName + " بكام؟");
                 quoted = seed(conv, "assistant", caseName + " بـ 349 جنيه يا فندم");
                 wrong = "أيوه يا فندم، السعر لسه ساري: بـ 14999 جنيه ومتاح. تحب أحجزلك؟";
+            } else if (variant == 2) {   // I-034: the reply lists several earlier products with their prices and names the quoted one without its price
+                seed(conv, "user", phone + " بكام؟");
+                quoted = seed(conv, "assistant", phone + " بـ 14999 جنيه يا فندم");
+                wrong = "أيوه يا فندم، الأسعار لسه سارية زي ما ذكرت لك: " + caseName + " بـ 349 جنيه، و" + bag + " بـ 999 جنيه، و" + bankA + " بـ 599 جنيه. وبالنسبة لـ " + phone + " متاح برضو. تحب أحجزلك؟";
             } else {              // a quoted list of two products; the reply prices a third one
                 seed(conv, "user", "عندكم باور بانك؟");
                 quoted = seed(conv, "assistant", bankA + " بـ 599 جنيه، و" + bankB + " بـ 899 جنيه. تحب أنهي واحد؟");
@@ -184,6 +188,7 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
             for (int i = 0; i < 3; i++) { String w = wrong; FakeAiProvider.SCRIPT.add(turns -> Turn.model(w)); }
             String reply = JsonPath.read(say(t, ext, "هو السعر ده لسه ساري؟", quoted), "$.reply");
             if (variant == 0) assertThat(reply).as("variant 0").contains("349").doesNotContain("14999");
+            else if (variant == 2) assertThat(reply).as("variant 2").contains("14999");
             else assertThat(reply).as("variant 1").contains("599").contains("899").doesNotContain("999 جنيه");
         }
     }
