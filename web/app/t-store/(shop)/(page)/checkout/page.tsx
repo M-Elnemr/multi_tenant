@@ -1,5 +1,6 @@
 "use client";
 
+import { savedRef } from "@/components/shop/affiliate-ref";
 import { shipName } from "@/lib/ship-name";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -68,7 +69,7 @@ export default function Checkout() {
   const zone = zonesMode ? profile.data?.shippingZones.find((z) => z.governorateCodes.includes(addr.governorateCode)) : undefined;
 
   const items = useMemo(() => lines.map((l) => ({ variantId: l.variantId, quantity: l.quantity, note: l.note || undefined })), [lines]);
-  const body = { items, shippingMethodId: shippingId, paymentMethod: "CASH_ON_DELIVERY", whatsappConsent: waConsent || undefined, couponCode: coupon.trim() || undefined, notes: notes || undefined,
+  const body = { items, shippingMethodId: shippingId, paymentMethod: "CASH_ON_DELIVERY", whatsappConsent: waConsent || undefined, ref: savedRef() ?? undefined, couponCode: coupon.trim() || undefined, notes: notes || undefined,
     address: needsAddress ? addr : { recipientName: addr.recipientName, phone: addr.phone, phone2: addr.phone2 } };
 
   const quoteAction = useAction(async () => { setQuote(await api<Quote>("shop/cart/quote", { body })); });

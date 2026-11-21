@@ -1,3 +1,4 @@
+import { AffiliateRef } from "@/components/shop/affiliate-ref";
 import { VisitTracker } from "@/components/visit-tracker";
 import "./shop.css";
 import "./templates.css";
@@ -41,6 +42,7 @@ export default async function ShopLayout({ children }: { children: React.ReactNo
       {look.previewing && !look.inFrame && <PreviewBar label={t("tpl.previewing", { name: t(`tpl.${look.template}`) })} exit={t("tpl.exitPreview")} />}
       {look.inFrame && <PreviewLinks tpl={look.template} />}
       <SwRegister />
+      <AffiliateRef />
       <ShopHeader name={storeName} logoUrl={logoUrl} announcement={p.announcement} closedMessage={p.closedMessage} isOpen={p.isOpen !== false} categories={categories} audiences={audiences} variant={look.look.header} />
       {!look.inFrame && <VisitTracker />}
       <main className="flex-1 pb-chrome">{children}</main>

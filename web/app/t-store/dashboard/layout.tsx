@@ -44,6 +44,7 @@ const NAV: NavItem[] = [
   { href: "/dashboard/marketing?tab=posts", label: "nav.posts", group: "navgrp.marketing", screen: "marketing", icon: "trending", rail: "marketing" },
   { href: "/dashboard/growth?tab=segments", label: "nav.segments", group: "navgrp.marketing", perm: "growth.manage", icon: "users", rail: "marketing" },
   { href: "/dashboard/carts", label: "nav.carts", group: "navgrp.marketing", perm: ["cart.read", "cart.manage"], icon: "bag", rail: "marketing" },
+  { href: "/dashboard/affiliate", label: "nav.affiliate", group: "navgrp.marketing", perm: "affiliate.manage", icon: "users", rail: "marketing" },
 
   // Reports
   { href: "/dashboard/reports?tab=overview", label: "nav.reports", group: "navgrp.reports", perm: "report.read", icon: "chart", rail: "reports" },

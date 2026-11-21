@@ -38,8 +38,9 @@ public class CheckoutService {
     public record AddressReq(String recipientName, String phone, String addressLine1, String addressLine2, String city,
                              String state, String district, String postalCode,
                              String governorateCode, String area, String landmark, String phone2) {}
-    public record CheckoutReq(List<Item> items, UUID shippingMethodId, AddressReq address, String paymentMethod, String couponCode, String notes, Boolean whatsappConsent) {
-        public CheckoutReq(List<Item> items, UUID shippingMethodId, AddressReq address, String paymentMethod, String couponCode, String notes) { this(items, shippingMethodId, address, paymentMethod, couponCode, notes, null); }
+    public record CheckoutReq(List<Item> items, UUID shippingMethodId, AddressReq address, String paymentMethod, String couponCode, String notes, Boolean whatsappConsent, String ref) {
+        public CheckoutReq(List<Item> items, UUID shippingMethodId, AddressReq address, String paymentMethod, String couponCode, String notes) { this(items, shippingMethodId, address, paymentMethod, couponCode, notes, null, null); }
+        public CheckoutReq(List<Item> items, UUID shippingMethodId, AddressReq address, String paymentMethod, String couponCode, String notes, Boolean whatsappConsent) { this(items, shippingMethodId, address, paymentMethod, couponCode, notes, whatsappConsent, null); }
     }
 
     private final JdbcClient jdbc;
@@ -54,6 +55,8 @@ public class CheckoutService {
     private final CodRiskService codRisk;
     private final CartRecoveryService carts;
     private final OfferService offers;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.platform.affiliate.AffiliateService affiliate;   // the shop's marketer program: credits the marketer whose link brought the order
 
     public CheckoutService(JdbcClient jdbc, InventoryService inventory, EntitlementService ent, List<PaymentProvider> providers,
                            StoreCustomerService customers, ApplicationEventPublisher events, com.platform.shared.PaymentPolicy policy,
@@ -89,7 +92,7 @@ public class CheckoutService {
             Map<String, Object> prior = existingByKey(tenantId, key);
             if (prior != null) return prior;
         }
-        if (r.paymentMethod() == null || r.paymentMethod().isBlank()) r = new CheckoutReq(r.items(), r.shippingMethodId(), r.address(), "CASH_ON_DELIVERY", r.couponCode(), r.notes(), r.whatsappConsent());
+        if (r.paymentMethod() == null || r.paymentMethod().isBlank()) r = new CheckoutReq(r.items(), r.shippingMethodId(), r.address(), "CASH_ON_DELIVERY", r.couponCode(), r.notes(), r.whatsappConsent(), r.ref());
         // userId is the signed-in client, or null for a guest. Either way we need who is buying and how to reach them.
         if (r.address() == null || blank(r.address().recipientName()) || blank(r.address().phone()))
             throw BusinessException.badRequest("CONTACT_REQUIRED", "Your name and mobile number are required");
@@ -170,6 +173,7 @@ public class CheckoutService {
         // an explicit tick on the checkout page is the customer's agreement to WhatsApp messages about this order and the shop's offers (never assumed)
         if (Boolean.TRUE.equals(r.whatsappConsent()))
             jdbc.sql("UPDATE commerce.orders SET whatsapp_number = :p, whatsapp_opt_in_at = now() WHERE id = :o AND whatsapp_number IS NULL").param("p", phone).param("o", orderId).update();
+        if (affiliate != null) affiliate.attribute(tenantId, orderId, r.ref());
         events.publishEvent(new OrderEvents.OrderCreated(tenantId, orderId, userId, number));
         return summary(Map.of("id", orderId, "order_number", number, "status", card ? "PENDING" : "REQUESTED", "payment_status", "UNPAID",
                 "total_minor", q.total(), "currency", q.currency()), checkoutUrl, false);
