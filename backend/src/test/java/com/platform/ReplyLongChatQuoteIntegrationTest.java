@@ -164,7 +164,7 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
         product(t, bankA, 599, "أبيض");
         product(t, bankB, 899, "أبيض");
         product(t, bag, 999, "رمادي");
-        for (int variant = 0; variant < 3; variant++) {
+        for (int variant = 0; variant < 4; variant++) {
             String ext = UUID.randomUUID().toString();
             answer("أهلا");
             say(t, ext, "السلام عليكم", null);
@@ -176,6 +176,10 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
                 seed(conv, "user", caseName + " بكام؟");
                 quoted = seed(conv, "assistant", caseName + " بـ 349 جنيه يا فندم");
                 wrong = "أيوه يا فندم، السعر لسه ساري: بـ 14999 جنيه ومتاح. تحب أحجزلك؟";
+            } else if (variant == 3) {   // I-034 (open-box run): the reply confirms «still valid» with no product and no price, and offers options of something else
+                seed(conv, "user", phone + " بكام؟");
+                quoted = seed(conv, "assistant", phone + " بـ 14999 جنيه يا فندم");
+                wrong = "نعم يا فندم السعر ده لسه ساري 👍 تحب أجهزلك لون أزرق ولا وردي؟";
             } else if (variant == 2) {   // I-034: the reply lists several earlier products with their prices and names the quoted one without its price
                 seed(conv, "user", phone + " بكام؟");
                 quoted = seed(conv, "assistant", phone + " بـ 14999 جنيه يا فندم");
@@ -188,7 +192,7 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
             for (int i = 0; i < 3; i++) { String w = wrong; FakeAiProvider.SCRIPT.add(turns -> Turn.model(w)); }
             String reply = JsonPath.read(say(t, ext, "هو السعر ده لسه ساري؟", quoted), "$.reply");
             if (variant == 0) assertThat(reply).as("variant 0").contains("349").doesNotContain("14999");
-            else if (variant == 2) assertThat(reply).as("variant 2").contains("14999");
+            else if (variant == 2 || variant == 3) assertThat(reply).as("variant " + variant).contains("14999");
             else assertThat(reply).as("variant 1").contains("599").contains("899").doesNotContain("999 جنيه");
         }
     }
@@ -612,5 +616,25 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
         say(t, ext, "والجديد بكام وضمانه؟", null);   // the new one of the same model, after the shop's answer named the open-box laptop again
         String system = FakeAiProvider.lastSystem;
         assertThat(system).contains("«" + base + "» [").doesNotContain("«" + open + "» [").doesNotContain("«" + mouse + "» [");
+    }
+
+    /** A warranty period that is not the one in the product's own text is a made-up fact, even when the reply names no product (the chat's product is the one checked). Seen in production: «الضمان شهر» for a 6-month open-box warranty. */
+    @Test
+    void aWrongWarrantyPeriodForTheChatsProductIsNeverSent() throws Exception {
+        Tenant t = onboard("STORE");
+        UUID tenant = tenant(t);
+        String tag = uniq(), watch = "ساعة ذكية " + tag;
+        String branch = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
+        onHost(t.host(), t.access(), "POST", "/api/v1/store/products", "{\"taxonomySlug\":\"handbags\",\"audience\":\"WOMEN\",\"name\":\"%s\",\"description\":\"%s. الضمان ٦ شهور من المحل.\",\"variants\":[{\"sku\":\"W-%s\",\"priceMinor\":120000,\"stock\":[{\"branchId\":\"%s\",\"quantity\":5}]}]}".formatted(watch, watch, uniq(), branch)).andExpect(status().isCreated());
+        String ext = UUID.randomUUID().toString();
+        answer("أهلا");
+        say(t, ext, "السلام عليكم", null);
+        FakeAiProvider.SCRIPT.clear();
+        UUID conv = conv(tenant, ext);
+        seed(conv, "user", watch + " بكام؟");
+        seed(conv, "assistant", watch + " بـ 1200 جنيه يا فندم");
+        for (int i = 0; i < 3; i++) FakeAiProvider.SCRIPT.add(turns -> Turn.model("الضمان شهر يا فندم وبيشمل عيوب الصناعة بس 📝"));
+        String reply = JsonPath.read(say(t, ext, "الضمان قد إيه؟", null), "$.reply");
+        assertThat(reply).as(reply).doesNotContain("الضمان شهر يا فندم");
     }
 }
