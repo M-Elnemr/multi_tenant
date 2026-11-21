@@ -1,4 +1,5 @@
 name: Backend - test and push image
+# 2026-11-21: re-run for 10a3599 (the previous two image builds failed in "gradlew bootJar" inside Docker after 16 s; the same Dockerfile built successfully on the production server from the same commit)
 
 on:
   push:
