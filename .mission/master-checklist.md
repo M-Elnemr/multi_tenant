@@ -1,0 +1,9 @@
+
+---
+## AUTONOMOUS RUN started 2026-11-21 (owner asleep; instruction: finish everything, no pauses)
+Decisions (defaults, changeable): shops stay free; platform never holds affiliate funds; commissions are shop obligations; shops pay marketers directly and record payment; a withdrawal request = request for the shop to pay an approved balance (never claims a transfer happened); no gateway, no platform fee; shop-configured rates with frozen snapshots; commission base = discounted products, shipping excluded.
+Marketer identity: own account (phone + password) on the platform host, own opaque session token in an httpOnly cookie (same pattern as the POS terminal token), no change to the staff/patient/client JWT system.
+Marketplace eligibility: a shop is listed only when it opted in (`listed`) and its program is enabled; a marketer applies per shop; the shop approves (or auto-approve if enabled); blocked marketers are blocked per shop and can be blocked globally by the platform.
+Ratings: only after a real relationship (at least one approved or paid commission); 1-5 stars + comment; one per pair and direction; shop and marketer can each rate the other.
+Fraud flags (computed, never auto-punish): SELF_REFERRAL (marketer phone = customer phone, or customer address same as the marketer's), DUPLICATE_CUSTOMER (same customer credited 3+ times to one marketer in 30 days), BURST (10+ orders in an hour), HIGH_REVERSAL (50%+ of 5+ commissions reversed), CLICK_FLOOD (300+ visits in an hour), SHARED_ADDRESS (3+ phones to one address). Flags are reviewed by the platform admin (dismiss / confirm / block marketer).
+Order of work: (1) affiliate phase 2 backend+tests, (2) affiliate UI marketer app + shop screens + admin screens, (3) AI certification items (I-034, I-020..22, quotes, personas, wallet reconciliation, read-only), (4) integrations reconcile (documented, mock-vs-real table), (5) deploy each verified block, (6) final-completion-report.md.

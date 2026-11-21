@@ -8,8 +8,9 @@ import { useI18n } from "@/components/i18n-provider";
 import { useToast } from "@/components/toast";
 import { Alert, Badge, Button, Card, Empty, ErrorText, Field, Input, KpiStrip, PageHeader, Section, Table, Textarea } from "@/components/ui";
 import { errText } from "@/components/dashboard/marketing/kit";
+import { Applications, DisputesReviews, Messages, Offers, Payouts, useL } from "@/components/dashboard/affiliate-extra";
 
-type Program = { enabled: boolean; percent: number; windowDays: number; holdDays: number; minPayoutMinor: number; terms: string };
+type Program = { enabled: boolean; percent: number; windowDays: number; holdDays: number; minPayoutMinor: number; terms: string; listed: boolean; autoApprove: boolean; pitch: string };
 type Partner = { id: string; name: string; phone?: string; code: string; percent: number | null; status: "ACTIVE" | "PAUSED"; visits: number; orders: number; salesMinor: number; pendingMinor: number; owedMinor: number; paidMinor: number };
 type Summary = { orders: number; salesMinor: number; pendingMinor: number; owedMinor: number; paidMinor: number; reversedMinor: number; partners: number; visits: number };
 type Overview = { program: Program; summary: Summary; partners: Partner[] };
@@ -22,6 +23,9 @@ export default function AffiliatePage() {
   const toast = useToast();
   const ov = useApi<Overview>("store/affiliate");
   const [status, setStatus] = useState("");
+  const L = useL();
+  const [tab, setTab] = useState<"home" | "applications" | "offers" | "payouts" | "messages" | "disputes">("home");
+  const badges = useApi<{ applications: number; payouts: number; messages: number; disputes: number }>("store/affiliate/badges");
   const list = useApi<Commission[]>(`store/affiliate/commissions?limit=100${status ? `&status=${status}` : ""}`);
   const d = ov.data;
   const [form, setForm] = useState<Program | null>(null);
@@ -57,9 +61,18 @@ export default function AffiliatePage() {
             { label: t("aff.kOrders"), value: String(d.summary.orders) }, { label: t("aff.kSales"), value: m(d.summary.salesMinor) },
             { label: t("aff.kPending"), value: m(d.summary.pendingMinor), hint: t("aff.kPendingHint") }, { label: t("aff.kOwed"), value: m(d.summary.owedMinor), hint: t("aff.kOwedHint") }, { label: t("aff.kPaid"), value: m(d.summary.paidMinor) },
           ]} className="mb-6" />
-          {prog && (
+          <div className="mb-5 flex gap-2 overflow-x-auto pb-1">{([["home", L("المسوّقون", "Marketers"), 0], ["applications", L("الطلبات", "Applications"), badges.data?.applications ?? 0], ["offers", L("العروض", "Offers"), 0], ["payouts", L("السحب", "Payouts"), badges.data?.payouts ?? 0], ["messages", L("الرسائل", "Messages"), badges.data?.messages ?? 0], ["disputes", L("نزاعات وتقييمات", "Disputes & reviews"), badges.data?.disputes ?? 0]] as const).map(([k, lab, n]) => <button key={k} onClick={() => setTab(k)} className={`min-h-11 shrink-0 rounded-full px-4 text-sm font-bold ${tab === k ? "bg-ink text-white" : "bg-soft text-muted"}`}>{lab}{n > 0 ? <span className="ms-2 rounded-full bg-rose-500 px-1.5 text-xs text-white">{n}</span> : null}</button>)}</div>
+          {tab === "applications" && <Applications />}
+          {tab === "offers" && <Offers partners={d.partners.map((p) => ({ id: p.id, name: p.name }))} />}
+          {tab === "payouts" && <Payouts />}
+          {tab === "messages" && <Messages />}
+          {tab === "disputes" && <DisputesReviews />}
+          {tab === "home" && prog && (
             <Section title={t("aff.program")} subtitle={t("aff.programHint")} className="mb-6">
               <label className="mb-4 flex min-h-11 items-center gap-3 font-semibold"><input type="checkbox" className="h-5 w-5" checked={prog.enabled} onChange={(e) => setForm({ ...prog, enabled: e.target.checked })} />{t("aff.enable")}</label>
+              <label className="mb-2 flex min-h-11 items-center gap-3 font-semibold"><input type="checkbox" className="h-5 w-5" checked={prog.listed} onChange={(e) => setForm({ ...prog, listed: e.target.checked })} />{L("اظهر في سوق المسوّقين (يقدر أي مسوّق يقدّم)", "List my shop in the marketer marketplace (any marketer can apply)")}</label>
+              <label className="mb-4 flex min-h-11 items-center gap-3 font-semibold"><input type="checkbox" className="h-5 w-5" checked={prog.autoApprove} onChange={(e) => setForm({ ...prog, autoApprove: e.target.checked })} />{L("اقبل المسوّقين تلقائياً", "Approve marketers automatically")}</label>
+              <Field label={L("سطر تعريفي في السوق", "One line shown in the marketplace")} className="mb-4"><Input value={prog.pitch ?? ""} maxLength={300} onChange={(e) => setForm({ ...prog, pitch: e.target.value })} /></Field>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <Field label={t("aff.percent")} hint={t("aff.percentHint")}><Input type="number" min={0} max={50} step="0.5" value={prog.percent} onChange={(e) => setForm({ ...prog, percent: Number(e.target.value) })} /></Field>
                 <Field label={t("aff.window")} hint={t("aff.windowHint")}><Input type="number" min={1} max={365} value={prog.windowDays} onChange={(e) => setForm({ ...prog, windowDays: Number(e.target.value) })} /></Field>
@@ -70,7 +83,7 @@ export default function AffiliatePage() {
               <div className="mt-4 flex items-center gap-3"><Button loading={save.loading} disabled={!form} onClick={() => void save.run()}>{t("aff.save")}</Button><span className="text-sm text-muted">{t("aff.noMoney")}</span></div>
             </Section>
           )}
-          <Section title={t("aff.partners")} className="mb-6">
+          {tab === "home" && <><Section title={t("aff.partners")} className="mb-6">
             <div className="mb-4 grid gap-3 sm:grid-cols-[1.4fr_1fr_.7fr_auto] sm:items-end">
               <Field label={t("aff.name")}><Input value={name} onChange={(e) => setName(e.target.value)} maxLength={160} /></Field>
               <Field label={t("aff.phone")}><Input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" dir="ltr" /></Field>
@@ -104,7 +117,7 @@ export default function AffiliatePage() {
               </Table>
             )}
           </Section>
-          <Card className="mt-6 p-4"><Alert tone="blue">{t("aff.legal")}</Alert></Card>
+          <Card className="mt-6 p-4"><Alert tone="blue">{t("aff.legal")}</Alert></Card></>}
         </>
       )}
     </>

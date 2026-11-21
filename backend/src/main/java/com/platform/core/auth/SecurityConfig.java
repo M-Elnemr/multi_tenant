@@ -43,7 +43,8 @@ public class SecurityConfig {
                               MembershipRepository memberships, RbacService rbac, AccountAuthService accounts,
                               @Value("${app.ratelimit.enabled:true}") boolean rateLimitEnabled,
                               com.platform.shared.RateLimitStore rateLimitStore, org.springframework.jdbc.core.simple.JdbcClient jdbc,
-                              com.platform.commerce.PosDeviceService posDevices) throws Exception {
+                              com.platform.commerce.PosDeviceService posDevices,
+                              com.platform.affiliate.MarketerAccounts marketerAccounts) throws Exception {
         http.csrf(c -> c.disable())
             .cors(Customizer -> {})
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -55,7 +56,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/v1/shop/profile", "/api/v1/shop/categories", "/api/v1/shop/products", "/api/v1/shop/products/*", "/api/v1/shop/products/*/related", "/api/v1/shop/products/facets", "/api/v1/shop/search/suggest", "/api/v1/shop/home", "/api/v1/shop/branches", "/api/v1/shop/chat/config", "/api/v1/shop/chat/history", "/api/v1/shop/products/*/together", "/api/v1/shop/feed", "/api/v1/shop/blog", "/api/v1/shop/blog/*", "/api/v1/shop/experiments/active", "/api/v1/shop/offers").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/shop/booking/config", "/api/v1/shop/booking/slots", "/api/v1/shop/booking/lookup").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/shop/booking", "/api/v1/shop/booking/cancel").permitAll()
-                .requestMatchers(HttpMethod.POST, "/api/v1/shop/affiliate/visit").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/shop/affiliate/visit", "/api/v1/marketer/register", "/api/v1/marketer/login", "/api/v1/marketer/logout").permitAll()
+                .requestMatchers("/api/v1/marketer/**").hasAuthority("ROLE_MARKETER")
                 .requestMatchers(HttpMethod.POST, "/api/v1/shop/cart/quote", "/api/v1/shop/checkout", "/api/v1/shop/track", "/api/v1/shop/track/return", "/api/v1/shop/webhooks/*", "/api/v1/shop/chat", "/api/v1/shop/chat/media", "/api/v1/shop/carts/snapshot", "/api/v1/shop/experiments/*/event").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/integrations/oauth/*/callback").permitAll()   // platforms send the owner back here; the signed state says who
                 .requestMatchers("/api/v1/open/**").permitAll()   // the marketplace API; its account routes check their own X-Open-Token
@@ -94,7 +96,8 @@ public class SecurityConfig {
             .addFilterAfter(new JwtAuthFilter(jwt, memberships, rbac, accounts), TenantResolutionFilter.class)
             .addFilterAfter(new ApiKeyFilter(jdbc), JwtAuthFilter.class)
             .addFilterAfter(new PosDeviceFilter(posDevices), ApiKeyFilter.class)
-            .addFilterAfter(new RequestContextFilter(), PosDeviceFilter.class)
+            .addFilterAfter(new MarketerAuthFilter(marketerAccounts), PosDeviceFilter.class)
+            .addFilterAfter(new RequestContextFilter(), MarketerAuthFilter.class)
             .addFilterAfter(new com.platform.shared.IdempotencyFilter(jdbc), RequestContextFilter.class);
         return http.build();
     }

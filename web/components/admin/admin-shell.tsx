@@ -30,6 +30,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     { href: "/admin/tenants", label: "admin.tenants", icon: "home" },
     { href: "/admin/pay-requests", label: "admin.payRequests", icon: "wallet", badge: overview.data?.newPayRequests },
     { href: "/admin/domains", label: "admin.domains", icon: "globe" },
+    { href: "/admin/affiliate", label: "admin.affiliate", icon: "users" },
     { href: "/admin/notifications", label: "nav.notifications", icon: "bell", badge: unread.data?.count },
     { href: "/admin/taxonomy", label: "admin.taxonomy", icon: "tag" },
     { href: "/admin/visitors", label: "admin.visitors", icon: "users" },

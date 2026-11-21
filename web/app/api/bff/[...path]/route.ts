@@ -10,6 +10,8 @@ const FORWARD_HEADERS = ["content-type", "idempotency-key"];
 /** A till terminal's own token lives in this httpOnly cookie; it is sent to the API only on the terminal's endpoints (its data and its sync). */
 const DEVICE_COOKIE = "pos_device";
 const DEVICE_PATHS = /^store\/pos\/(terminal|sync)\//;
+/** A marketer's own session token (separate from staff, patient and client sign-in) lives in this httpOnly cookie and is sent only on the marketer endpoints. */
+const MARKETER_COOKIE = "mk_session";
 
 async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
   const { path } = await ctx.params;
@@ -50,6 +52,9 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
     if (v) headers.set(h, v);
   }
   if (session.accessToken) headers.set("Authorization", `Bearer ${session.accessToken}`);
+  const marketer = upstreamPath.startsWith("marketer/");
+  const marketerToken = req.cookies.get(MARKETER_COOKIE)?.value;
+  if (marketer && marketerToken) headers.set("X-Marketer-Token", marketerToken);
   const deviceToken = req.cookies.get(DEVICE_COOKIE)?.value;
   if (terminal && deviceToken) headers.set("X-Pos-Device", deviceToken);
 
@@ -106,6 +111,11 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
   if (upstreamPath === "auth/logout") {
     session.destroy();
   }
+  let marketerTokenToSet: string | null = null;
+  if ((upstreamPath === "marketer/login" || upstreamPath === "marketer/register") && upstream.ok && data && typeof data.token === "string") {
+    marketerTokenToSet = data.token;
+    data = { account: data.account };
+  }
   if (upstream.status === 401 && session.accessToken && upstreamPath !== "auth/login" && !terminal) {
     // token no longer valid server-side: drop the cookie so the UI sends the visitor to log in
     session.destroy();
@@ -115,6 +125,9 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
     const secure = process.env.NODE_ENV === "production" && process.env.SESSION_SECURE !== "false";
     res.cookies.set(DEVICE_COOKIE, deviceTokenToSet, { httpOnly: true, secure, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 365 * 5 });
   }
+  const secureCookie = process.env.NODE_ENV === "production" && process.env.SESSION_SECURE !== "false";
+  if (marketerTokenToSet) res.cookies.set(MARKETER_COOKIE, marketerTokenToSet, { httpOnly: true, secure: secureCookie, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 30 });
+  if (upstreamPath === "marketer/logout" || (marketer && upstream.status === 401)) res.cookies.set(MARKETER_COOKIE, "", { httpOnly: true, secure: secureCookie, sameSite: "lax", path: "/", maxAge: 0 });
   return res;
 }
 

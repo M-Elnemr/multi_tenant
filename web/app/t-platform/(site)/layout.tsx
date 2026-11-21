@@ -25,6 +25,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
           <nav className="flex items-center gap-5 text-sm text-slate-500">
             <Link href="/pricing" className="hover:text-slate-900">{t("nav.pricing")}</Link>
             <PlatformFooterLinks className="hover:text-slate-900" />
+            <Link href="/marketer" className="hover:text-slate-900">{locale === "ar" ? "المسوّقون" : "Marketers"}</Link>
             <Link href="/privacy" className="hover:text-slate-900">{t("nav.privacy")}</Link>
             <Link href="/delete-account" className="hover:text-slate-900">{t("nav.deleteAccount")}</Link>
           </nav>
