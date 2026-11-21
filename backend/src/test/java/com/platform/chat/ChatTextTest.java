@@ -354,6 +354,12 @@ class ChatTextTest {
         org.assertj.core.api.Assertions.assertThat(ChatService.FAKE_SUMMARY.matcher(FastAnswers.norm("تمام يا فندم هاني، الطلب جاهز للتأكيد:")).find()).isTrue();
         org.assertj.core.api.Assertions.assertThat(ChatService.FAKE_SUMMARY.matcher(FastAnswers.norm("ملخص الأوردر الجديد:\n• وجبة بروستد\nأأكد التعديل؟ اكتب «تمام» 👌")).find()).isTrue();
         org.assertj.core.api.Assertions.assertThat(ChatService.ORDER_CLAIM.matcher("أهلاً بحضرتك 🙌 سجلت: ٣ زنجر حار وبطاطس كبير").find()).isTrue();
+        // F16: false denials of products the shop sells, and a false «registered» claim
+        for (String denial : new String[]{"للأسف مش مت عندنا يا فندم", "ده مش من مشروباتنا", "ده مش من منتجاتنا", "مش من أصنافنا", "مش بنبيعه عندنا"})
+            org.assertj.core.api.Assertions.assertThat(ChatService.NOT_HAVE.matcher(denial).find()).as(denial).isTrue();
+        org.assertj.core.api.Assertions.assertThat(ChatService.NOT_HAVE.matcher("عندنا ليمون بالنعناع بـ 45 جنيه").find()).isFalse();
+        org.assertj.core.api.Assertions.assertThat(ChatService.ORDER_CLAIM.matcher("حاضر يا فندم، سجلتلك سلطة فتوش بـ 55 جنيه").find()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(ChatService.ORDER_CLAIM.matcher("سجلتلك ملاحظة إنك عايز من غير بصل").find()).isFalse();
         org.assertj.core.api.Assertions.assertThat(ChatService.withoutDraftApology("آسف جداً يا فندم على الغلط السابق 🙏\n\nعندنا خيارات نباتية ممتازة")).startsWith("عندنا");
     }
 
