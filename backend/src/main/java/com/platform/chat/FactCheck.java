@@ -68,6 +68,66 @@ final class FactCheck {
 
     record Problem(String kind, String note, String fixed) {}
 
+    private static final Pattern AMOUNT_WITH_CURRENCY = Pattern.compile("(\\d{1,3}(?:[,٬]\\d{3})+|\\d+(?:\\.\\d+)?)(?=\\s*(?:جنيه|ج(?!\\p{L})|جم(?!\\p{L})|egp|le(?![a-z])|pounds?))");
+    private static final Set<String> GENERIC_OPTION_WORDS = Set.of("مقاس", "مقاسي", "size");
+
+    /**
+     * POSITIVE confirmation, from the shop's own data, that a reply which described a product without a tool call in this turn is right (used only to skip a rewrite that exists to make the model look):
+     * it names one to three products the shop sells; every amount said in pounds is a price of one of them; every other number is one of their option values; every colour or size word is an
+     * option of them that is in stock. At least one claim must have been checked. Anything it cannot check (a number of unknown meaning, a colour the products do not have, an unknown product)
+     * answers false, so the reply is rewritten exactly as before. Finding nothing wrong is not enough: something must have been verified.
+     */
+    static boolean confirmsGrounded(String answer, Shop shop) {
+        if (answer == null || answer.isBlank() || shop == null) return false;
+        Set<String> slugs = new java.util.LinkedHashSet<>();
+        for (Mention m : mentions(answer, shop.names())) slugs.add(m.slug());
+        if (slugs.isEmpty() || slugs.size() > 3) return false;
+        Set<Double> prices = new java.util.HashSet<>();
+        Set<String> allValues = new java.util.HashSet<>(), inStockValues = new java.util.HashSet<>();
+        for (String slug : slugs) {
+            Product p = shop.product(slug);
+            if (p == null || p.variants().isEmpty()) return false;
+            if (p.before() > 0) prices.add(p.before());
+            for (Variant v : p.variants()) {
+                prices.add(v.price());
+                if (v.before() > 0) prices.add(v.before());
+                for (String value : v.options().values()) {
+                    String key = bare(light(value).trim());
+                    allValues.add(key);
+                    if (v.available() > 0) inStockValues.add(key);
+                }
+            }
+        }
+        String l = light(answer);
+        int verified = 0;
+        var am = AMOUNT_WITH_CURRENCY.matcher(l);
+        StringBuilder rest = new StringBuilder();
+        int last = 0;
+        while (am.find()) {
+            double amount;
+            try { amount = Double.parseDouble(am.group(1).replace(",", "").replace("٬", "")); } catch (NumberFormatException e) { return false; }
+            if (prices.stream().noneMatch(pr -> Math.abs(pr - amount) < 0.5)) return false;
+            verified++;
+            rest.append(l, last, am.start()).append(' ');
+            last = am.end();
+        }
+        rest.append(l.substring(last));
+        for (String tok : rest.toString().split("[^\\p{L}\\p{N}\\u200C]+")) {
+            if (tok.isBlank()) continue;
+            if (tok.matches("\\d+")) {
+                if (!allValues.contains(tok)) return false;   // a number that is neither a price nor an option value: meaning unknown
+                verified++;
+                continue;
+            }
+            String ow = ChatService.optionWord(tok);
+            if (ow == null || GENERIC_OPTION_WORDS.contains(ow)) continue;
+            if (!inStockValues.contains(bare(ow))) return false;   // a colour or size these products do not have in stock
+            verified++;
+        }
+        return verified > 0;
+    }
+
+
     // ---- text helpers --------------------------------------------------------------------------------------------------
 
     /** Lower case, Western digits, one alef, no diacritics; the same length as the input, so positions map back to the original text. */

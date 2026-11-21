@@ -231,6 +231,14 @@ public class ChatService {
      */
     @org.springframework.beans.factory.annotation.Value("${app.ai.review.mode:conditional}")
     private String reviewMode = "conditional";
+
+    /**
+     * app.ai.rules.skip-unchecked-rewrite (default false, an experiment): a reply whose ONLY rule hits are UNCHECKED_FACTS / UNCHECKED_OPTIONS (it described colours or sizes without a tool call in
+     * this turn) is kept, with no rewrite, when the deterministic fact check ran cleanly AND {@link FactCheck#confirmsGrounded} confirms its prices and options from the shop's data.
+     */
+    @org.springframework.beans.factory.annotation.Value("${app.ai.rules.skip-unchecked-rewrite:false}")
+    private boolean skipUncheckedRewrite;
+
     /** The review mode every shop runs on: "conditional" when configured so, otherwise (also for an unknown value) "always". */
     String effectiveReviewMode() {
         return reviewMode != null && "conditional".equals(reviewMode.trim().toLowerCase(java.util.Locale.ROOT)) ? "conditional" : "always";
@@ -1450,6 +1458,8 @@ public class ChatService {
         return out;
     }
 
+    private static final Set<String> UNCHECKED_ONLY = Set.of("UNCHECKED_FACTS", "UNCHECKED_OPTIONS");
+
     /**
      * Checks no prompt can guarantee, in code, for every model: a "who is it for?" question or a "we do not have it" before the shop was searched in this turn (or after the customer said it is
      * for them), an example sentence of the playbook copied word for word, and a reply in Arabic to a customer who writes English. One rewrite with what is wrong; the reply that comes back is used.
@@ -1583,14 +1593,16 @@ public class ChatService {
         List<String> touched = touchedOrBefore(ctx, shopData);
         lap.mark("touchedOrBefore");
         List<FactCheck.Problem> facts = List.of();
+        boolean factCheckRan = true;   // false when the fact check threw or reported an error: then nothing is skipped
         lap.mark("facts_init");
         try { facts = FactCheck.check(last, answer, shopData, touched); } catch (RuntimeException e) {
+            factCheckRan = false;
             log.warn("Fact check skipped", e);
             events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK_ERROR", String.valueOf(e), null);   // a check that broke is seen on the AI health page, never silent
         }
         lap.mark("FACT_CHECK");
         for (var f : facts) {
-            if (f.kind().equals("CHECK_ERROR")) { log.warn("Fact check error: {}", f.note()); events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK_ERROR", f.note(), null); continue; }
+            if (f.kind().equals("CHECK_ERROR")) { factCheckRan = false; log.warn("Fact check error: {}", f.note()); events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK_ERROR", f.note(), null); continue; }
             problems.putIfAbsent(f.kind(), f.note());
         }
         lap.mark("fact_problems");
@@ -1615,6 +1627,10 @@ public class ChatService {
                 + "answer about THAT product (get_product " + quotedSlugs.get(0) + ") with its own price, and not about another one.");
         lap.mark("QUOTE_IGNORED");
         if (problems.isEmpty()) return answer;
+        if (skipUncheckedRewrite && factCheckRan && UNCHECKED_ONLY.containsAll(problems.keySet()) && ctx.summary()[0] == null && FactCheck.confirmsGrounded(answer, shopData)) {
+            events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:REWRITE_SKIPPED", String.join("+", problems.keySet()), null);   // the reply is kept: its facts were confirmed from the shop's data
+            return answer;
+        }
         for (String kind : problems.keySet()) events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:" + kind, problems.get(kind), null);
         ReplyTrace.checkProblems(problems.keySet());
         boolean phoneDoubt = PHONE_DOUBT.matcher(answer).find() && customerGaveMobile(turns);
