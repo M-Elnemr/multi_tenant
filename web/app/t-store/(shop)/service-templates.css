@@ -62,3 +62,8 @@
 /* shared: dark designs, readable placeholders and touch targets */
 .shop[data-template="barbershop"], .shop[data-template="fixit"], .shop[data-template="garage"] { color-scheme: dark; }
 html[lang="ar"] .shop[data-template] .sv-menu p, html[lang="ar"] .shop[data-template] h1, html[lang="ar"] .shop[data-template] h2 { text-transform: none; }
+
+/* dark designs: the ghost button is an outline on the dark surface (it used to be a white pill with white text) */
+.shop[data-template="fixit"] .s-btn-ghost, .shop[data-template="garage"] .s-btn-ghost, .shop[data-template="pro"] .s-btn-ghost { background: transparent; color: var(--s-ink); border: 1px solid var(--s-line); box-shadow: none; }
+.shop[data-template="fixit"] .s-btn-ghost { border-color: var(--brand); }
+.shop[data-template="garage"] .s-btn-ghost { border-color: var(--s-ink); }

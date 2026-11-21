@@ -54,3 +54,5 @@ html[lang="ar"] .shop[data-template="launch"] h1, html[lang="ar"] .shop[data-tem
 .shop[data-template="origin"] { --s-bg: #f6efe4; --s-card: #fffaf0; --s-ink: #2b2a1f; --s-mute: #85805f; --s-line: #e6dcc5; --s-soft: #eee3cb; --brand: #6b7d3c; --s-radius: 20px; --s-shadow: 0 16px 40px -28px rgb(70 70 20 / .45); --s-shadow-lg: 0 40px 80px -40px rgb(70 70 20 / .45); }
 .shop[data-template="origin"] h1, .shop[data-template="origin"] h2 { font-family: var(--f-aref), var(--f-amiri), serif; font-weight: 700; }
 .shop[data-template="origin"] .sm-frame { border-radius: 999px 999px 20px 20px; }
+
+.shop[data-template="monolith"] .s-btn-ghost, .shop[data-template="spotlight"] .s-btn-ghost { background: transparent; color: var(--s-ink); border: 1px solid var(--s-line); box-shadow: none; }
