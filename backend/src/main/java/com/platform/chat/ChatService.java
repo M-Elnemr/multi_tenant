@@ -86,6 +86,9 @@ public class ChatService {
     static final ThreadLocal<List<String>> REPLY_SLUGS = new ThreadLocal<>();
     /** The product(s) of the chat when the customer's message names none (the product the shop named last). */
     static final ThreadLocal<List<String>> FOCUS_SLUGS = new ThreadLocal<>();
+    /** The «you left out a product the customer asked for» guard of prepare_order speaks once per reply (a model that insists is not looped). */
+    private static final ThreadLocal<Boolean> BASKET_GUARD_SPOKE = ThreadLocal.withInitial(() -> false);
+    private static final Pattern BASKET_DROP_WORDS = Pattern.compile("بدل|شيل|امسح|الغ|مش عايز|مش عاوز|مش محتاج|غيرت رايي|غيرت رأيي|بلاش|instead|remove|cancel|forget");
 
     /**
      * What the reply context and the earlier-messages digest added to the prompt of this reply, so the money check can tell it from shop data: an amount in an OLD quoted message of the shop or
@@ -718,6 +721,7 @@ public class ChatService {
         String fallbackWhy = null;
         AiBudget.start(REPLY_BUDGET_MS);
         AiBudget.forTenant(tenantId);
+        BASKET_GUARD_SPOKE.set(false);
         FactCheck.earlier(earlierCustomer(turns));   // the colour and size chosen earlier in the chat are what a later «عايز ١٣ قطعه» is about
         try {
             // the customer sent every order detail for the one thing they chose, and asked nothing: code makes the summary at once (the same locks, they still confirm it), instead
@@ -4866,6 +4870,37 @@ public class ChatService {
         return t.matches("\\d{1,6}") ? Integer.valueOf(t) : null;
     }
 
+    /** The products the customer asked to BUY in separate messages of this order («عايز X») that the prepared items leave out, as «name» labels; null when none (or when a later message replaced or dropped anything). */
+    private String requestedButMissing(Ctx ctx, List<CheckoutService.Item> items) {
+        try {
+            List<String> msgs = customerMsgsOfThisOrder(ctx);
+            if (msgs.size() < 2) return null;
+            FactCheck.Shop view = shopView(ctx.tenantId());
+            Set<String> have = new HashSet<>();
+            for (var it : items) jdbc.sql("SELECT p.slug FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE v.id = :v").param("v", it.variantId()).query(String.class).optional().ifPresent(have::add);
+            for (UUID v : java.util.Objects.requireNonNullElse(pendingVariants(ctx.conversationId()), List.<UUID>of())) jdbc.sql("SELECT p.slug FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE v.id = :v").param("v", v).query(String.class).optional().ifPresent(have::add);
+            Map<String, Integer> requestedAt = new LinkedHashMap<>();
+            for (int i = 0; i < msgs.size(); i++) {
+                String m = msgs.get(i), lm = FactCheck.light(m);
+                if (BASKET_DROP_WORDS.matcher(lm).find()) { requestedAt.clear(); continue; }   // anything said after a replacement or a removal is judged afresh
+                if (!REQUEST_INTENT.matcher(lm).find()) continue;
+                var named = FactCheck.askedSlugs(m, view.names());
+                if (named.size() == 1) requestedAt.putIfAbsent(named.get(0), i);
+            }
+            List<String> labels = new ArrayList<>();
+            for (String slug : requestedAt.keySet()) {
+                if (have.contains(slug)) continue;
+                var product = view.product(slug);
+                if (product == null || product.variants().stream().noneMatch(v -> v.available() > 0)) continue;   // gone: nothing to add
+                view.names().stream().filter(n -> n.slug().equals(slug)).findFirst().ifPresent(n -> labels.add("«" + n.name() + "»"));
+            }
+            return labels.isEmpty() ? null : String.join(" and ", labels);
+        } catch (RuntimeException e) {
+            log.warn("basket guard skipped: {}", e.toString());
+            return null;
+        }
+    }
+
     private Map<String, Object> prepareOrder(Ctx ctx, Map<String, Object> a) {
         UUID tenantId = ctx.tenantId();
         String handover = fulfilmentOf(tenantId);   // the owner chose delivery only, pickup only or both: an order the shop does not hand over that way is never prepared
@@ -4885,6 +4920,15 @@ public class ChatService {
             Integer q = wholeQuantity(m.get("quantity"));
             if (q == null || q < 1 || q > 50) return obj("error", "Quantity must be a whole number between 1 and 50");
             items.add(new CheckoutService.Item(vid, q, m.get("note") == null ? null : String.valueOf(m.get("note"))));
+        }
+        // I-010: «عايز X» and later, in another message, «عايز Y»: the customer wants both. An order prepared without X (not replaced or dropped by a later message) is sent back once, so the model adds X with
+        // its own verified variant or asks whether X is still wanted. Code never adds an item itself.
+        if (!Boolean.TRUE.equals(BASKET_GUARD_SPOKE.get())) {
+            String missing = requestedButMissing(ctx, items);
+            if (missing != null) {
+                BASKET_GUARD_SPOKE.set(true);
+                return obj("error", "The customer also asked for " + missing + " earlier in this chat and has not dropped or replaced it: include it in the items (ask for its missing option if it has one), or ask the customer whether they still want it. Do not leave it out silently.");
+            }
         }
         // every option the customer has to choose (size, color, spice, bread...) must come from them: an item whose option they never mentioned is sent back so the model asks
         // Western digits first: «١٢٨ جيجا» is the option «128 جيجا»
