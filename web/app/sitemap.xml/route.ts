@@ -11,7 +11,9 @@ export async function GET(req: Request) {
   const info = await resolveHost(host);
   const proto = req.headers.get("x-forwarded-proto") ?? (/^(localhost|127\.)/.test(host) ? "http" : "https");
   const base = `${proto}://${host}`;
-  const urls: string[] = [`${base}/`, `${base}/products`];
+  // a clinic or a lawyer has no product pages: the home page and the booking page only
+  const professional = info.kind === "TENANT" && (info.type === "CLINIC" || info.type === "LAWYER");
+  const urls: string[] = professional ? [`${base}/`, `${base}/book`] : [`${base}/`, `${base}/products`];
   // the platform site: the shop landing ("/"; "/shop" points its canonical there), the doctors landing, pricing and sign-up
   if (info.kind === "PLATFORM") urls.splice(1, 1, `${base}/tabib`, `${base}/mohami`, `${base}/pricing`, `${base}/register`);
   if (info.kind === "TENANT" && info.type === "STORE") {
