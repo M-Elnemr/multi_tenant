@@ -1098,7 +1098,7 @@ public class ChatService {
     private static final Pattern WAS_PRICE = Pattern.compile("(?:بدل(?:اً|ا)?(?:\\s+من)?|كان(?:ت)?|قبل(?:\\s+الخصم)?|instead\\s+of|was)\\s*[\\d٠-٩][\\d٠-٩,٬.]*(?:\\s*(?:جنيه|ج\\.?\\s?م\\.?|EGP|LE))?", Pattern.CASE_INSENSITIVE);
 
     static String otherVersionAnswered(String last, String answer, FactCheck.Shop shop) {
-        if (answer == null || last == null || FactCheck.comparing(last) || !PRODUCT_QUESTION.matcher(FactCheck.light(last)).find()) return null;
+        if (answer == null || last == null || FactCheck.comparing(last) || !(PRODUCT_QUESTION.matcher(FactCheck.light(last)).find() || REQUEST_INTENT.matcher(FactCheck.light(last)).find())) return null;
         var asked = FactCheck.askedSlugs(last, shop.names());
         if (asked.isEmpty()) { var focus = FOCUS_SLUGS.get(); if (focus != null) asked = focus; }
         if (asked.size() != 1) return null;
@@ -1161,6 +1161,8 @@ public class ChatService {
         return statements == 0;
     }
 
+    /** «عايز زينترا بوك 14 أوبن بوكس»: a request for a product is a question about it too (its price and availability are what the reply must state). */
+    private static final java.util.regex.Pattern REQUEST_INTENT = java.util.regex.Pattern.compile("عايز|عاوز|محتاج|ابغى|أبغى|اشتري|هاخد|ممكن اطلب|want|need|looking for|interested in|i.d like");
     private static final java.util.regex.Pattern PRODUCT_QUESTION = java.util.regex.Pattern.compile("بكام|بكم|سعر|متاح|متوفر|موجود|فاضل|لون|مقاس|ضمان|كارت|بطاريه|available|price|how much|in stock|colou?r|size|warranty");
     private String dataOrUnavailable(Ctx ctx, String text, boolean arabic) {
         try {
