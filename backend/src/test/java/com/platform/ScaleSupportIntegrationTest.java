@@ -66,7 +66,9 @@ class ScaleSupportIntegrationTest extends IntegrationTestBase {
         assertThat(jdbc.sql("SELECT count(*) FROM notifications.notifications WHERE tenant_id = :t AND title = 'old read'").param("t", tenant).query(Long.class).single()).isZero();
         assertThat(jdbc.sql("SELECT count(*) FROM notifications.notifications WHERE tenant_id = :t AND title IN ('old unread','fresh')").param("t", tenant).query(Long.class).single()).isEqualTo(2);
         assertThat(jdbc.sql("SELECT count(*) FROM core.idempotency_keys WHERE key = :k").param("k", "old-" + tag).query(Long.class).single()).isZero();
-        assertThat(jdbc.sql("SELECT count(*) FROM core.tenants").query(Long.class).single()).isEqualTo(ordersBefore);   // business data untouched
+        // business data untouched: retention removed no tenant. (The table is shared with other test runs, so it is compared as "not fewer", and this test's own shop is checked by name.)
+        assertThat(jdbc.sql("SELECT count(*) FROM core.tenants").query(Long.class).single()).isGreaterThanOrEqualTo(ordersBefore);
+        assertThat(jdbc.sql("SELECT count(*) FROM core.tenants WHERE id = :t").param("t", tenant).query(Long.class).single()).isEqualTo(1L);
     }
 
     @Test
