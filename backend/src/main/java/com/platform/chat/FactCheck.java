@@ -2104,6 +2104,9 @@ final class FactCheck {
         return cut > 0 ? se.substring(0, cut) : "";
     }
 
+    private static final Pattern GRAPHICS_ASK = Pattern.compile("كارت\\s*(?:ال)?شاش[هة]|كرت\\s*(?:ال)?شاش[هة]|جرافيك|graphics?|gpu|كارت\\s*فيديو");
+    private static final Pattern INTEGRATED_OR_DEDICATED = Pattern.compile("(?<!\\p{L})(?:م)?دمج(?:ه|ة)?(?!\\p{L})|مدمج|منفصل|dedicated|integrated");
+
     static String focusSpec(String customer, String answer, Shop shop, String focus) {
         if (customer == null || answer == null || focus == null || BOTH_VERSIONS.matcher(light(customer)).find()) return null;
         String facts = shop.facts(focus);
@@ -2126,7 +2129,8 @@ final class FactCheck {
             String se = statementPart(la.substring(sn[0], sn[1]));   // «معاه كارت فيديو مدمج Iris Xe — بيشتغل كويس 👌 تحب أحجزهولك؟» is one sentence to the splitter: the question at its end must not hide the claim before it
             if (se.isBlank()) continue;
             // a kind of graphics said with a «مش» next to it («كارت الشاشة مدمج، مش منفصل») is still said
-            String bad = GRAPHICS_CLAIM.matcher(se).find() && !GRAPHICS_CLAIM.matcher(lf).find() ? "graphics" : null;
+            boolean askedGraphics = GRAPHICS_ASK.matcher(light(customer)).find();   // «فيه كارت شاشة؟» answered «الشاشة مدمجة»: integrated or dedicated is a graphics claim whatever the words around it
+            String bad = (GRAPHICS_CLAIM.matcher(se).find() || askedGraphics && INTEGRATED_OR_DEDICATED.matcher(se).find()) && !GRAPHICS_CLAIM.matcher(lf).find() ? "graphics" : null;
             if (bad == null && (NOT_A_SPEC.matcher(se).find() || NEG_STRICT.matcher(se).find() || DENY.matcher(se).find() || WITHOUT.matcher(se).find() || CONDITIONAL.matcher(se).find()
                     || OTHER_CHOICES.matcher(se).find() || HOURS_TALK.matcher(se).find())) continue;
             if (bad == null) for (String c : specsIn(se)) if (!known.contains(c) && !c.endsWith("|pct")) { bad = c; break; }

@@ -129,4 +129,22 @@ class OpenBoxLongChatReplayIntegrationTest extends IntegrationTestBase {
         String reply = asked(s, "الضمان قد إيه؟", null, "open", "الضمان شهر يا فندم لأن الجهاز أوبن بوكس، وبيشمل عيوب الصناعة بس (مش الكسر أو المية) 📝 السعر ده تخفيض خرافي، عايز أحجزلك واحد قبل ما يخلص الـ ٣ المتبقية؟");
         assertThat(reply).as(reply).doesNotContain("الضمان شهر يا فندم").contains("٦ شهور");
     }
+
+    /** Live open-box run (ob_f20): «فيه كارت شاشة؟» about the open-box laptop, whose data says nothing about graphics, was answered «الشاشة مدمجة في الجهاز» (a screen, and «integrated» is the NEW laptop's graphics value). */
+    @Test
+    void theGraphicsCardQuestionOfTheOpenBoxIsNeverAnsweredWithTheNewVersionsValueOrAScreen() throws Exception {
+        Shop s = longChat(0);
+        String reply = asked(s, "فيه كارت شاشة؟", null, "", "الشاشة مدمجة في الجهاز، مش منفصلة — شاشة 14 بوصة FHD IPS بيضا تفتح وتقفل مع الليب توب 📺 لو عايز توصيل أو تفاصيل تانية قولي وأنا معاك!");
+        assertThat(reply).as(reply).doesNotContain("مدمجة");
+    }
+
+    /** Live open-box run (ob_f20): the NEW laptop's warranty was answered with an invented «accessories 6 months» (the open-box laptop's period leaking into the new one). */
+    @Test
+    void anInventedAccessoriesWarrantyOfTheNewLaptopIsNeverSent() throws Exception {
+        Shop s = longChat(0);
+        seed(s.conv(), "user", "عايز لاب توب زينترا بوك 14 جديد");
+        seed(s.conv(), "assistant", "تمام يا فندم، لاب توب زينترا بوك 14 متاح جديد بـ 24999 جنيه، فضي أو رمادي.");
+        String reply = asked(s, "والضمان بتاعه؟", null, "", "الضمان سنة من الوكيل يا فندم على عيوب الصناعة، والإكسسوارات اللي جواه (الشاحن مثلاً) ليها 6 شهور. لو حصل حاجة، تبعنا الجهاز أو تجي بيه فرع المهندسين ونتابعك. تحب نحجزلك واحدة؟");
+        assertThat(reply).as(reply).doesNotContain("6 شهور").doesNotContain("٦ شهور");
+    }
 }

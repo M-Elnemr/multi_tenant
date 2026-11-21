@@ -86,6 +86,8 @@ public class ChatService {
     static final ThreadLocal<List<String>> REPLY_SLUGS = new ThreadLocal<>();
     /** The product(s) of the chat when the customer's message names none (the product the shop named last). */
     static final ThreadLocal<List<String>> FOCUS_SLUGS = new ThreadLocal<>();
+    /** The customer replied to a picture or file of the SHOP whose content we cannot tell (no caption, not one we stored): no product can be named for it, so a reply that picks one is a guess. */
+    private static final ThreadLocal<Boolean> QUOTE_UNKNOWN = ThreadLocal.withInitial(() -> false);
     /** The «you left out a product the customer asked for» guard of prepare_order speaks once per reply (a model that insists is not looped). */
     private static final ThreadLocal<Boolean> BASKET_GUARD_SPOKE = ThreadLocal.withInitial(() -> false), DROP_GUARD_SPOKE = ThreadLocal.withInitial(() -> false);
     private static final Pattern BASKET_DROP_WORDS = Pattern.compile("(?<!\\p{L})(?:شيل|شيلها|امسح|الغي|الغ|بلاش|مش عايز|مش عاوز|مش محتاج|ماعدتش عايز|غيرت رايي|غيرت رأيي)(?!\\p{L})|remove|forget about"), BASKET_REPLACE_WORDS = Pattern.compile("(?<!\\p{L})بدل(?:ها|ه|هم)(?!\\p{L})");
@@ -929,7 +931,17 @@ public class ChatService {
                 + "If the shop sells other versions of the same model (new, open-box, another year), each is a different product with its own price, stock, colours and warranty: never answer for one with the other's data, never say the one being discussed is missing or only comes new, and say plainly when a detail is not in its own data.";
     }
 
+    /** «اخر بنطلون» / «الأخير» (LAST) or «اول واحد» / «الأول» (FIRST) said about a quoted list; null when the words are about something else («اخر سعر», «اخر عرض», «اول مرة»). */
+    static String quotedPosition(String text) {
+        String t = FactCheck.light(text);
+        if (t == null || t.isBlank()) return null;
+        if (java.util.regex.Pattern.compile("(?<!\\p{L})(?:ال)?[اأإآ]خر(?:ي|ه|ة)?\\s+(?!سعر|عرض|موعد|مره|مرة|طلب|اوردر|أوردر|رساله|رسالة|خصم|تحديث)\\p{L}+|(?<!\\p{L})الاخير(?:ه|ة)?(?!\\p{L})").matcher(t).find()) return "LAST";
+        if (java.util.regex.Pattern.compile("(?<!\\p{L})(?:ال)?[اأإ]ول(?:ي|ى|ه|ة)?\\s+(?!مره|مرة|ما|مع|حاجه|حاجة|طلب|اوردر|أوردر|رساله|رسالة|خصم)\\p{L}+|(?<!\\p{L})الاول(?:ي|ى|ه|ة)?(?!\\p{L})").matcher(t).find()) return "FIRST";
+        return null;
+    }
+
     private String replyContextBlock(UUID tenantId, UUID conv, long userMsgId, List<ReplyRef> refs, String latest, long windowFrom, PromptExtras extras) {
+        QUOTE_UNKNOWN.set(false);
         if (replies == null) return "";
         List<MessageReplies.LineQuote> found = new ArrayList<>();
         boolean missing = false;
@@ -959,6 +971,16 @@ public class ChatService {
                     }
                 }
             }
+            // «اخر بنطلون هنا مقاساته ايه» replying to a list of four trousers: «the last» is the last one OF THAT MESSAGE, not the last product the assistant talked about (live WhatsApp report)
+            if (products.size() >= 2 && FactCheck.mentions(latest, names).isEmpty()) {
+                String pos = quotedPosition(latest);
+                if (pos != null) {
+                    String keep = "LAST".equals(pos) ? products.get(products.size() - 1) : products.get(0);
+                    products.clear(); products.add(keep);
+                    productNames.clear(); productNames.add(keep.substring(0, keep.lastIndexOf(" [")));
+                }
+            }
+            if (products.isEmpty() && ("attachment".equals(q.kind()) || "image".equals(q.kind())) && (q.text() == null || q.text().isBlank()) && !"customer".equals(q.sender())) QUOTE_UNKNOWN.set(true);
             boolean inside = q.messageId() != null && windowFrom > 0 && q.messageId() >= windowFrom;   // the model already has it as history: labelled, not repeated
             List<MessageReplies.Quoted> around = q.messageId() == null || inside ? List.of() : replies.around(tenantId, conv, q.messageId(), 2, 2);
             extras.quoted(q);
@@ -1931,6 +1953,13 @@ public class ChatService {
                 events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:FINAL_MIXED_OPTION_PRICES", null, null);
                 ReplyTrace.checkProblems(Set.of("FINAL_MIXED_OPTION_PRICES"));
                 return verifiedReply(ctx, last, named.isEmpty() ? touched : named);
+            }
+            if (Boolean.TRUE.equals(QUOTE_UNKNOWN.get()) && last != null && FactCheck.mentions(last, shopData.names()).isEmpty() && PRODUCT_QUESTION.matcher(FactCheck.light(last)).find()
+                    && (!FactCheck.mentions(out, shopData.names()).isEmpty() || !MoneyGuard.amountsIn(out).isEmpty())) {   // a reply to a picture we cannot identify: ask, never guess a product
+                log.warn("Critical gate: the customer replied to a picture of unknown content and the reply picked a product (conversation {})", ctx.conversationId());
+                events.record(ctx.tenantId(), ctx.conversationId(), ctx.channel(), routed.code(), "CHECK:FINAL_QUOTE_UNKNOWN_PICTURE", null, null);
+                ReplyTrace.checkProblems(Set.of("FINAL_QUOTE_UNKNOWN_PICTURE"));
+                return english(last) ? "Which product do you mean? Send me its name or its link and I will give you the details right away 🌸" : "تقصد أنهي منتج بالظبط يا فندم؟ ابعتلي اسمه أو لينكه وأقولك تفاصيله على طول 🌸";
             }
             var quoted = quoteIgnored(last, out, shopData);
             if (!quoted.isEmpty()) {   // answered about another product than the one the customer replied to: the quoted product's own data, from the shop

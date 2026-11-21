@@ -354,6 +354,13 @@ class ChatTextTest {
         org.assertj.core.api.Assertions.assertThat(ChatService.FAKE_SUMMARY.matcher(FastAnswers.norm("تمام يا فندم هاني، الطلب جاهز للتأكيد:")).find()).isTrue();
         org.assertj.core.api.Assertions.assertThat(ChatService.FAKE_SUMMARY.matcher(FastAnswers.norm("ملخص الأوردر الجديد:\n• وجبة بروستد\nأأكد التعديل؟ اكتب «تمام» 👌")).find()).isTrue();
         org.assertj.core.api.Assertions.assertThat(ChatService.ORDER_CLAIM.matcher("أهلاً بحضرتك 🙌 سجلت: ٣ زنجر حار وبطاطس كبير").find()).isTrue();
+        // WhatsApp: «the last» / «the first» of a quoted list, and the words that only look like it
+        org.assertj.core.api.Assertions.assertThat(ChatService.quotedPosition("اخر بنطلون هنا مقاساته ايه")).isEqualTo("LAST");
+        org.assertj.core.api.Assertions.assertThat(ChatService.quotedPosition("الأخير ده بكام؟")).isEqualTo("LAST");
+        org.assertj.core.api.Assertions.assertThat(ChatService.quotedPosition("اول واحد متاح؟")).isEqualTo("FIRST");
+        org.assertj.core.api.Assertions.assertThat(ChatService.quotedPosition("الاول بكام")).isEqualTo("FIRST");
+        for (String other : new String[]{"اخر سعر لو سمحت", "اخر عرض عندكم ايه", "اول مرة اطلب", "ابعتلي الصورة", "بكام ده؟"})
+            org.assertj.core.api.Assertions.assertThat(ChatService.quotedPosition(other)).as(other).isNull();
         // F16: false denials of products the shop sells, and a false «registered» claim
         for (String denial : new String[]{"للأسف مش مت عندنا يا فندم", "ده مش من مشروباتنا", "ده مش من منتجاتنا", "مش من أصنافنا", "مش بنبيعه عندنا"})
             org.assertj.core.api.Assertions.assertThat(ChatService.NOT_HAVE.matcher(denial).find()).as(denial).isTrue();
