@@ -342,7 +342,9 @@ public class EvolutionService {
         if (msg.has("reactionMessage") || msg.has("protocolMessage") || msg.has("pollUpdateMessage")) return;   // a reaction (❤️ on a message), an edit or a poll vote is not a message to answer
         String text = msg.hasNonNull("conversation") ? msg.path("conversation").asText() : msg.path("extendedTextMessage").hasNonNull("text") ? msg.path("extendedTextMessage").path("text").asText() : null;
         String name = m.path("pushName").asText(""), burstKey = tenantId + "|" + sender;
-        var meta = new ChatService.InboundMeta(id, replyOf(msg, jid));
+        ReplyRef quoted = replyOf(m, jid);
+        if (quoted == null && m.toString().contains("contextInfo")) log.info("WhatsApp message with a contextInfo but no quote found; payload keys: {}", shape(m, "", 0, new java.util.ArrayList<>()));   // key names only
+        var meta = new ChatService.InboundMeta(id, quoted);
         // a photo or voice note is read into text (a few seconds); what the customer sends meanwhile waits for it, so «بكام ده؟» is answered with the photo, in order
         MediaReader.Kind kind = msg.has("imageMessage") ? MediaReader.Kind.IMAGE : msg.has("audioMessage") ? MediaReader.Kind.AUDIO : null;
         if ((text == null || text.isBlank()) && kind != null && media.enabled() && chat.enabled(tenantId, "WHATSAPP") && chat.hasPoints(tenantId) && mediaAllowed(burstKey)) {
@@ -362,12 +364,37 @@ public class EvolutionService {
     }
 
     /**
+     * The contextInfo that carries the quoted message's id, wherever the payload keeps it: on the message type itself (extendedTextMessage, an image or video with a caption), inside a wrapper
+     * (ephemeralMessage, viewOnceMessage, documentWithCaptionMessage, editedMessage) or at the top of the event data. A contextInfo nested INSIDE a quotedMessage is that message's own quote, never ours.
+     */
+    static JsonNode findContext(JsonNode n, int depth) {
+        if (n == null || !n.isObject() || depth > 6) return null;
+        if (n.path("contextInfo").path("stanzaId").isTextual()) return n.path("contextInfo");
+        for (var f : n.properties()) {
+            if (f.getKey().equals("quotedMessage") || f.getKey().equals("contextInfo")) continue;
+            JsonNode found = findContext(f.getValue(), depth + 1);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    /** Only the key names of a payload (never a value), to see where a quote sits when none was found. */
+    static String shape(JsonNode n, String path, int depth, List<String> out) {
+        if (n == null || !n.isObject() || depth > 5 || out.size() > 60) return "";
+        for (var f : n.properties()) {
+            String p = path.isEmpty() ? f.getKey() : path + "." + f.getKey();
+            out.add(p);
+            shape(f.getValue(), p, depth + 1, out);
+        }
+        return String.join(",", out);
+    }
+
+    /**
      * The message a customer quoted on their own number's WhatsApp: {@code contextInfo.stanzaId} is its id and {@code quotedMessage} carries its content, so unlike the Cloud API the text arrives
      * with the reply. Who wrote it: our own message (found by its id when the reply is resolved) or the customer's: {@code participant} is the quoted message's author.
      */
     static ReplyRef replyOf(JsonNode msg, String customerJid) {
-        JsonNode ctx = null;
-        for (var f : msg.properties()) if (f.getValue().isObject() && f.getValue().path("contextInfo").path("stanzaId").isTextual()) { ctx = f.getValue().path("contextInfo"); break; }
+        JsonNode ctx = findContext(msg, 0);
         if (ctx == null) return null;
         String stanza = ctx.path("stanzaId").asText("");
         JsonNode q = ctx.path("quotedMessage");
