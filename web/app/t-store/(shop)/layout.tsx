@@ -20,6 +20,9 @@ import { WhatsAppFloat } from "@/components/shop/whatsapp-float";
 import { backendJson, currentHost } from "@/lib/backend";
 import { getT } from "@/lib/i18n-server";
 import { resolveHost } from "@/lib/tenant";
+import { vnFontVars } from "@/components/shop/service/vn-fonts";   // DR-E
+import { vnDesign } from "@/components/shop/service/vn-registry";   // DR-E
+import { vnData } from "@/components/shop/service/vn-core/data";   // DR-E
 
 /** The storefront shell. It deliberately shows the shop's own logo, name and colour, so a visitor sees the shop, not the platform behind it. */
 export default async function ShopLayout({ children }: { children: React.ReactNode }) {
@@ -37,19 +40,21 @@ export default async function ShopLayout({ children }: { children: React.ReactNo
   const storeName = p.storeName || name;
   const logoId = p.branding?.logoFileId ?? (info.kind === "TENANT" ? (info.branding as { logo_file_id?: string }).logo_file_id : undefined);
   const logoUrl = logoId ? `/api/bff/files/${logoId}/content?variant=thumb` : null;
+  const vn = look.service ? vnDesign(look.template) : undefined;   // DR-E: a vn-* design brings its own header and footer
+  const vd = vn ? await vnData() : null;
   return (
-    <div className={`shop flex min-h-dvh flex-col ${templateFontVars}`} data-template={look.template} data-header={look.look.header} data-dark={look.look.dark ? "" : undefined}>
+    <div className={`shop flex min-h-dvh flex-col ${templateFontVars} ${vnFontVars}`} data-template={look.template} data-header={look.look.header} data-dark={look.look.dark ? "" : undefined}>
       {look.previewing && !look.inFrame && <PreviewBar label={t("tpl.previewing", { name: t(`tpl.${look.template}`) })} exit={t("tpl.exitPreview")} />}
       {look.inFrame && <PreviewLinks tpl={look.template} />}
       <SwRegister />
       <AffiliateRef />
-      <ShopHeader name={storeName} logoUrl={logoUrl} announcement={p.announcement} closedMessage={p.closedMessage} isOpen={p.isOpen !== false} categories={categories} audiences={audiences} variant={look.look.header} />
+      {vn && vd ? <vn.Header name={storeName} logoUrl={logoUrl} announcement={p.announcement} closedMessage={p.closedMessage} isOpen={p.isOpen !== false} hasProducts={vd.products.length > 0} hasBooking={vd.cfg.services.length > 0} /> : <ShopHeader name={storeName} logoUrl={logoUrl} announcement={p.announcement} closedMessage={p.closedMessage} isOpen={p.isOpen !== false} categories={categories} audiences={audiences} variant={look.look.header} />}
       {!look.inFrame && <VisitTracker />}
       <main className="flex-1 pb-chrome">{children}</main>
-      <ShopFooter p={p} name={storeName} logoUrl={logoUrl} branches={branches} t={t} poweredLabel={info.kind === "TENANT" && info.whiteLabel ? "" : t("brand.powered")} poweredName={t("brand.name")} />
+      {vn && vd ? <vn.Footer name={storeName} logoUrl={logoUrl} isOpen={p.isOpen !== false} hasProducts={vd.products.length > 0} hasBooking={vd.cfg.services.length > 0} data={vd} poweredLabel={info.kind === "TENANT" && info.whiteLabel ? "" : t("brand.powered")} poweredName={t("brand.name")} /> : <ShopFooter p={p} name={storeName} logoUrl={logoUrl} branches={branches} t={t} poweredLabel={info.kind === "TENANT" && info.whiteLabel ? "" : t("brand.powered")} poweredName={t("brand.name")} />}
       {!look.inFrame && <WhatsAppFloat phone={p.whatsapp} storeName={storeName} label={t("shop.chatWithUs")} />}
       {!look.inFrame && <LiveChat />}
-      <MobileBar />
+      {!vn && <MobileBar />}
       {!look.inFrame && <MarketingTags metaPixelId={p.metaPixelId} tiktokPixelId={p.tiktokPixelId} gaId={p.gaId} />}
     </div>
   );

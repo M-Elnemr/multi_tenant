@@ -13,6 +13,8 @@ import { wantsEdit } from "@/lib/edit-mode";
 import { EditBar, EditFrame, EditProvider } from "@/components/site-edit";
 import { Icon } from "@/components/icons";
 import { shopLook } from "@/lib/shop-look";
+import { vnDesign } from "@/components/shop/service/vn-registry";   // DR-E
+import { vnData } from "@/components/shop/service/vn-core/data";   // DR-E
 import { ServiceHome, type SvcConfig } from "@/components/shop/service/service-home";
 import { SmallCatalogHome } from "@/components/shop/small/small-home";
 import type { CardKind, GridKind } from "@/components/shop/templates/registry";
@@ -53,7 +55,7 @@ function Grid({ items, locale, labels, card, grid }: { items: ShopProduct[]; loc
 export default async function StoreHome({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const { t, locale } = await getT();
   const edit = await wantsEdit(searchParams);
-  const [{ profile: prof, look, service, small }, cats, home, branches] = await Promise.all([
+  const [{ profile: prof, look, service, small, template }, cats, home, branches] = await Promise.all([
     shopLook(),
     backendJson<ShopCategory[]>(`/shop/categories?lang=${locale}`).catch(() => [] as ShopCategory[]),
     backendJson<Home>(`/shop/home?lang=${locale}`).catch(() => ({ featured: [], newest: [], offers: [], bestSellers: [], banners: [] }) as Home),
@@ -62,6 +64,10 @@ export default async function StoreHome({ searchParams }: { searchParams?: Promi
   const p = prof ?? undefined;
   if (small) {   // a shop with very few products: the product is the page
     return <SmallCatalogHome look={small} p={p} products={[...home.featured, ...home.bestSellers, ...home.newest].filter((x, i, a) => a.findIndex((y) => y.id === x.id) === i)} branches={branches} t={t} locale={locale} />;
+  }
+  if (service) {   // DR-E: a vn-* design renders its own home
+    const vn = vnDesign(template);
+    if (vn) return <vn.Home {...(await vnData())} />;
   }
   if (service) {   // a service business: the diary and its services come first; products are a secondary shelf
     const cfg = await backendJson<SvcConfig>("/shop/booking/config").catch(() => ({ services: [] }) as SvcConfig);
