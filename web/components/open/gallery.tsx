@@ -28,8 +28,6 @@ function GalleryView({ images, name, badge }: { images: Img[]; name: string; bad
   const { t } = useI18n();
   const [i, setI] = useState(0);
   const [zoom, setZoom] = useState(false);
-  if (images.length === 0) return <div className="o-frame relative aspect-square overflow-hidden rounded-3xl"><Monogram name={name} /></div>;
-  const cur = images[i];
   useEffect(() => {
     if (!zoom) return;
     const onKey = (e: KeyboardEvent) => {
@@ -40,6 +38,8 @@ function GalleryView({ images, name, badge }: { images: Img[]; name: string; bad
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [zoom, images.length]);
+  if (images.length === 0) return <div className="o-frame relative aspect-square overflow-hidden rounded-3xl"><Monogram name={name} /></div>;
+  const cur = images[i];
   const step = (d: number) => setI((n) => (n + d + images.length) % images.length);
   return (
     <div className="flex flex-col-reverse gap-3 md:flex-row">
