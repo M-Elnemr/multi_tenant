@@ -17,6 +17,8 @@ export function PreviewLinks({ tpl }: { tpl: string }) {
       e.stopPropagation();
       url.searchParams.set("tpl", tpl);
       url.searchParams.set("preview", "1");
+      const theme = new URLSearchParams(location.search).get("theme");   // the editor's colour draft follows the visitor through the site
+      if (theme) url.searchParams.set("theme", theme);
       location.assign(url.toString());
     };
     window.addEventListener("click", on, true);

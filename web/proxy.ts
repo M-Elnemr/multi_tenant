@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { resolveHost } from "@/lib/tenant";
 import { SESSION_COOKIE } from "@/lib/session";
+import { decodeThemeParam, encodeThemeParam } from "@/lib/theme-param";
 
 /**
  * Host-based routing: one deployment serves the platform site, every store and every clinic.
@@ -37,7 +38,7 @@ export async function proxy(request: NextRequest) {
   // "&preview=1"). The choice rides along in a session cookie so the owner can click through the whole site; "?tpl=off" ends it. The server renders the
   // previewed template for real (layout and sections), it is read from the x-site-tpl request header (validated again where it is used).
   const reqHeaders = new Headers(request.headers);
-  reqHeaders.delete("x-site-tpl"); reqHeaders.delete("x-site-preview");   // never trust these from the visitor
+  reqHeaders.delete("x-site-tpl"); reqHeaders.delete("x-site-preview"); reqHeaders.delete("x-site-theme");   // never trust these from the visitor
   const qTpl = request.nextUrl.searchParams.get("tpl");
   const qPreview = request.nextUrl.searchParams.get("preview") === "1";
   const cookieTpl = request.cookies.get(TPL_COOKIE)?.value;
@@ -47,6 +48,12 @@ export async function proxy(request: NextRequest) {
   const preview = qPreview;
   if (info.kind === "TENANT" && tpl) reqHeaders.set("x-site-tpl", tpl);
   if (info.kind === "TENANT" && preview) reqHeaders.set("x-site-preview", "1");
+  // Colour draft from the editor: only inside the preview frame, re-validated (whitelisted tokens, hex only) and re-serialised, never passed through raw.
+  const qTheme = request.nextUrl.searchParams.get("theme");
+  if (info.kind === "TENANT" && preview && qTheme) {
+    if (qTheme === "off") reqHeaders.set("x-site-theme", "off");
+    else { const clean = encodeThemeParam(decodeThemeParam(qTheme)); if (clean) reqHeaders.set("x-site-theme", clean); }
+  }
 
   const prefix = info.kind === "PLATFORM" ? "/t-platform" : info.kind === "OPEN" ? "/t-open" : info.type === "STORE" || info.type === "SERVICE" ? "/t-store" : info.type === "LAWYER" ? "/t-lawyer" : "/t-clinic";
   const url = request.nextUrl.clone();

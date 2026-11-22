@@ -6,7 +6,9 @@ import { siteTemplate } from "@/lib/site-template";
 import { backendJson, currentHost } from "@/lib/backend";
 import { getT } from "@/lib/i18n-server";
 import { fileUrl } from "@/lib/media";
+import { PreviewLinks } from "@/components/shop/templates/preview-links";
 import { resolveHost } from "@/lib/tenant";
+import { SiteThemeStyle, type WithSiteTheme } from "@/lib/site-theme";
 import { whatsappLink } from "@/lib/whatsapp";
 import type { LawyerSite } from "./types";
 import "./lawyer.css";
@@ -17,7 +19,7 @@ export default async function LawyerSiteLayout({ children }: { children: React.R
   const p = await backendJson<LawyerSite>("/lawyer/public/profile").catch(() => null);
   const logo = info.kind === "TENANT" && (info.branding as { logo_file_id?: string }).logo_file_id;
   const name = p ? `${p.title ? p.title + " " : ""}${p.displayName}` : info.kind === "TENANT" ? info.name : "";
-  const { id: tpl } = await siteTemplate<string>(p?.template, LAWYER_TEMPLATE_IDS, "classic");
+  const { id: tpl, inFrame } = await siteTemplate<string>(p?.template, LAWYER_TEMPLATE_IDS, "classic");
   const nav = [
     { href: "/#areas", label: t("lws.nav.areas") }, { href: "/#about", label: t("lws.nav.about") }, { href: "/#services", label: t("lws.nav.services") },
     ...(p?.testimonials.length ? [{ href: "/#reviews", label: t("lws.nav.reviews") }] : []), { href: "/#contact", label: t("lws.nav.contact") },
@@ -25,6 +27,8 @@ export default async function LawyerSiteLayout({ children }: { children: React.R
   const year = new Date().getFullYear();
   return (
     <div className={`lw flex min-h-dvh flex-col ${templateFontVars}`} data-tpl={tpl} data-header={LAWYER_LOOKS[tpl as keyof typeof LAWYER_LOOKS]?.header ?? "bar"}>
+      {inFrame && <PreviewLinks tpl={tpl} />}
+      <SiteThemeStyle theme={(p as WithSiteTheme | null)?.siteTheme} />
       <header className="lw-header">
         <div className="lw-container flex items-center justify-between gap-3 py-3">
           <Link href="/" className="flex min-w-0 items-center gap-3">
