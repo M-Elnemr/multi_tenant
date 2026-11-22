@@ -160,7 +160,7 @@ export default function ThemeEditor() {
         </div>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
+      <div className="grid gap-5 2xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
         <div className="space-y-5">
           <Segmented value={mode} onChange={setMode} tabs={[{ key: "simple", label: t("te.simple") }, { key: "advanced", label: t("te.advanced") }]} />
 
@@ -225,7 +225,7 @@ export default function ThemeEditor() {
           <p className="text-xs text-muted">{t("te.saveNote")}</p>
         </div>
 
-        <div className="min-w-0 space-y-3">
+        <div className="order-first min-w-0 space-y-3 2xl:order-none">
           <div className="flex flex-wrap items-center gap-2">
             <Segmented size="sm" value={device} onChange={setDevice} tabs={[{ key: "desktop", label: t("gal.desktop") }, { key: "mobile", label: t("gal.phone") }]} />
             <Segmented size="sm" value={lang} onChange={setLang} tabs={[{ key: "ar", label: "AR" }, { key: "en", label: "EN" }]} />
