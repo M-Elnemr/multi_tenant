@@ -8,7 +8,7 @@
   background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 16px; line-height: 1.65; min-block-size: 100dvh; display: flex; flex-direction: column;
 }
 .lg *, .lg *::before, .lg *::after { box-sizing: border-box; }
-.lg a { color: inherit; text-decoration: none; }
+:where(.lg a) { color: inherit; text-decoration: none; }
 .lg h1, .lg h2, .lg h3 { font-family: var(--serif); font-weight: 500; line-height: 1.05; letter-spacing: -.02em; margin: 0; }
 .lg:lang(ar) h1, .lg:lang(ar) h2, .lg:lang(ar) h3 { line-height: 1.3; letter-spacing: 0; font-weight: 600; }
 .lg p { margin: 0; }
@@ -88,7 +88,7 @@
 .lg-stats > div:not(:first-child) { padding-inline-start: 22px; }
 .lg-stats > div:last-child { border-inline-end: 0; }
 .lg-stats b { font-family: var(--serif); font-size: clamp(2.2rem, 5vw, 3.6rem); font-weight: 400; line-height: 1; display: block; }
-.lg-stats span { color: var(--text2); font-size: .85rem; }
+.lg-stats > div > span { color: var(--text2); font-size: .85rem; }
 @media (min-width: 1000px) {
   .lg-hero-grid { grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 64px; }
   .lg-hero-photo { display: block; }
@@ -137,7 +137,7 @@
 
 /* quotes */
 .lg-quotes { display: grid; gap: 0; border-block-start: 2px solid var(--text); }
-@media (min-width: 900px) { .lg-quotes { grid-template-columns: 1fr 1fr; } .lg-quotes blockquote:nth-child(odd) { border-inline-end: 1px solid var(--line); padding-inline-end: 40px; } .lg-quotes blockquote:nth-child(even) { padding-inline-start: 40px; } }
+@media (min-width: 900px) { .lg-quotes { grid-template-columns: 1fr 1fr; } .lg-quotes > :nth-child(odd) blockquote { border-inline-end: 1px solid var(--line); padding-inline-end: 40px; } .lg-quotes > :nth-child(even) blockquote { padding-inline-start: 40px; } }
 .lg-quotes blockquote { margin: 0; padding-block: 36px; border-block-end: 1px solid var(--line); }
 .lg-quotes q { quotes: none; font-family: var(--serif); font-size: clamp(1.3rem, 2.4vw, 1.8rem); line-height: 1.4; display: block; overflow-wrap: anywhere; }
 .lg-quotes cite { display: flex; gap: 12px; margin-block-start: 22px; font-style: normal; font-size: .85rem; color: var(--text2); align-items: center; }
