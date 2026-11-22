@@ -193,6 +193,9 @@
 .cn-done .cn-cta-row { justify-content: center; }
 .cn-disabled { max-inline-size: 38rem; }
 
+.cn-nav a, .cn-btn, .cn-lang, .cn-signin { white-space: nowrap; }
+@media (max-width: 1279px) { .cn-medtech .mt-status { display: none; } }
+
 /* containment: grid children may shrink (the day strip scrolls inside its card), nothing may widen the page */
 .cn { overflow-x: clip; }
 .cn-book-grid > *, .cn-profile > *, .cn-about > *, .cn-contact-grid > *, .cn-footer-grid > *, .cn-header-row { min-inline-size: 0; }

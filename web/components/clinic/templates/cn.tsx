@@ -5,18 +5,26 @@ import { cnCtx } from "./shared/ctx";
 import type { CnId } from "./shared/ids";
 import type { Ctx } from "./shared/kit";
 import { PageHead, PrimaryAction, SecondaryAction } from "./shared/parts";
+import { AtelierHome } from "./cn-atelier/home";
+import { AtelierShell } from "./cn-atelier/shell";
+import { BoutiqueHome } from "./cn-boutique/home";
+import { BoutiqueShell } from "./cn-boutique/shell";
+import { FamilyHome } from "./cn-family/home";
+import { FamilyShell } from "./cn-family/shell";
 import { InstituteHome } from "./cn-institute/home";
 import { InstituteShell } from "./cn-institute/shell";
+import { MedtechHome } from "./cn-medtech/home";
+import { MedtechShell } from "./cn-medtech/shell";
 
 type Shell = (p: { c: Ctx; children: React.ReactNode }) => React.ReactNode;
 type Home = (p: { c: Ctx }) => React.ReactNode;
 
 /** Each template's own shell (header, footer, chrome) and home composition. Inner pages and booking are shared and skinned by CSS. */
 export const CN_SHELL: Record<CnId, Shell> = {
-  "cn-institute": InstituteShell, "cn-boutique": InstituteShell, "cn-medtech": InstituteShell, "cn-family": InstituteShell, "cn-atelier": InstituteShell,
+  "cn-institute": InstituteShell, "cn-boutique": BoutiqueShell, "cn-medtech": MedtechShell, "cn-family": FamilyShell, "cn-atelier": AtelierShell,
 };
 export const CN_HOME: Record<CnId, Home> = {
-  "cn-institute": InstituteHome, "cn-boutique": InstituteHome, "cn-medtech": InstituteHome, "cn-family": InstituteHome, "cn-atelier": InstituteHome,
+  "cn-institute": InstituteHome, "cn-boutique": BoutiqueHome, "cn-medtech": MedtechHome, "cn-family": FamilyHome, "cn-atelier": AtelierHome,
 };
 
 /** For the inner routes: the cn context, or (site on one of the original templates, which have no inner pages) back to the matching home section. */

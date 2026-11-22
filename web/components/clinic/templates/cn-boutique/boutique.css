@@ -1,0 +1,54 @@
+/* cn-boutique: editorial and personal. Warm paper, ink, terracotta; serif display; hairlines instead of boxes; one large portrait. */
+.cn-boutique {
+  --bg: var(--c-bg, #f3eee6); --bg2: var(--c-bg-2, #eae2d5); --surface: var(--c-surface, #faf7f2);
+  --ink: var(--c-text, #26211c); --ink2: var(--c-text-2, #5f554b);
+  --pri: var(--c-primary, #26211c); --acc: var(--c-accent, #9b4a36);
+  --btn: var(--c-btn-bg, #26211c); --btn-ink: var(--c-btn-text, #faf7f2);
+  --line: var(--c-border, #d9cfbf);
+  --r: 0px; --rl: 0px; --maxw: 72rem;
+  --ff-d: var(--f-cormorant), var(--f-amiri), Georgia, serif; --ff-b: var(--f-tajawal), system-ui, sans-serif; --fw-d: 500;
+  --foot-bg: var(--c-bg-2, #eae2d5);
+}
+[dir="rtl"] .cn-boutique { --ff-d: var(--f-amiri), var(--f-cormorant), serif; --fw-d: 700; }
+.cn-boutique .cn-h1 { font-size: clamp(2.3rem, 6vw, 4.4rem); font-weight: 500; line-height: 1.08; }
+.cn-boutique .cn-h2 { font-size: clamp(1.8rem, 4vw, 2.8rem); }
+.cn-boutique .cn-btn { border-radius: 0; letter-spacing: .06em; text-transform: uppercase; font-size: .85rem; }
+[dir="rtl"] .cn-boutique .cn-btn { letter-spacing: 0; text-transform: none; font-size: .95rem; }
+.cn-boutique .cn-header { position: sticky; inset-block-start: 0; z-index: 30; background: color-mix(in srgb, var(--bg) 94%, transparent); backdrop-filter: blur(8px); border-block-end: 1px solid var(--line); }
+.cn-boutique .bq-mast { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; min-block-size: 5rem; gap: 1rem; }
+.cn-boutique .bq-side { display: flex; align-items: center; gap: .5rem; }
+.cn-boutique .bq-side-end { justify-content: flex-end; }
+.cn-boutique .cn-brand-name { font-size: 1.5rem; font-weight: 600; }
+.cn-boutique .cn-nav a { font-size: .86rem; letter-spacing: .08em; text-transform: uppercase; color: var(--ink); }
+[dir="rtl"] .cn-boutique .cn-nav a { letter-spacing: 0; text-transform: none; font-size: .95rem; }
+@media (max-width: 999px) { .cn-boutique .bq-mast { grid-template-columns: auto 1fr auto; } .cn-boutique .cn-brand { justify-self: center; } .cn-boutique .cn-brand-name { max-inline-size: 11rem; } .cn-boutique .cn-tools .cn-lang { display: inline-block; } }
+@media (max-width: 639px) { .cn-boutique .cn-brand-name { max-inline-size: 8rem; font-size: 1.15rem; } .cn-boutique .cn-tools .cn-lang { padding-inline: .3rem; } }
+
+.cn-boutique .bq-hero-grid { display: grid; grid-template-columns: 1fr; gap: 2.5rem; padding-block: clamp(2rem, 6vw, 5rem); align-items: end; }
+@media (min-width: 900px) { .cn-boutique .bq-hero-grid { grid-template-columns: 1.15fr 1fr; gap: 5rem; } }
+.cn-boutique .bq-hero-img { inline-size: 100%; aspect-ratio: 4 / 5; object-fit: cover; object-position: center 18%; }
+.cn-boutique .bq-hero .cn-ph { aspect-ratio: 4 / 5; font-size: 5rem; }
+.cn-boutique .bq-hero .cn-lead { font-family: var(--ff-d); font-size: 1.3rem; font-style: italic; }
+.cn-boutique .bq-status { margin-block-start: 1.6rem; padding-block-start: 1.2rem; border-block-start: 1px solid var(--line); }
+.cn-boutique .bq-pull { font-family: var(--ff-d); font-size: clamp(1.3rem, 2.6vw, 1.8rem); line-height: 1.5; margin: 1rem 0; }
+.cn-boutique .bq-lead-grid { display: block; }
+.cn-boutique .bq-lead-copy { max-inline-size: 46rem; margin-inline: auto; text-align: center; }
+.cn-boutique .bq-lead-copy .cn-cta-row { justify-content: center; }
+.cn-boutique .bq-story { text-align: center; }
+.cn-boutique .bq-menu { list-style: none; margin: 0; padding: 0; border-block-start: 1px solid var(--ink); }
+.cn-boutique .bq-menu li { display: grid; grid-template-columns: 3rem 1fr auto; gap: 1.2rem; align-items: baseline; padding-block: 1.4rem; border-block-end: 1px solid var(--line); }
+.cn-boutique .bq-menu b { font-family: var(--ff-d); color: var(--acc); font-size: 1.2rem; font-weight: 500; }
+.cn-boutique .bq-menu p { margin: .2rem 0; max-inline-size: 38rem; }
+.cn-boutique .cn-doc, .cn-boutique .cn-card, .cn-boutique .cn-spec, .cn-boutique .cn-contact li, .cn-boutique .cn-faq details { border-radius: 0; background: transparent; }
+.cn-boutique .cn-doc { border: 0; border-block-start: 1px solid var(--ink); }
+.cn-boutique .cn-doc-photo { aspect-ratio: 4 / 5; margin-block-start: 1rem; }
+.cn-boutique .cn-doc-body { padding-inline: 0; }
+.cn-boutique .cn-doc:hover { box-shadow: none; transform: none; }
+.cn-boutique .cn-svc-list { border-block-start: 1px solid var(--ink); }
+.cn-boutique .cn-pagehead { background: var(--bg); text-align: center; }
+.cn-boutique .cn-pagehead .cn-lead { margin-inline: auto; }
+.cn-boutique .cn-footer { border-block-start: 1px solid var(--ink); }
+.cn-boutique .cn-contact li > svg, .cn-boutique .cn-spec-ic { color: var(--acc); }
+.cn-boutique .cn-spec-ic { background: none; border: 1px solid var(--line); border-radius: 50%; }
+.cn-boutique .cn-stats div, .cn-boutique .cn-facts div { border-radius: 0; background: transparent; }
+.cn-boutique .cn-days button, .cn-boutique .cn-slots button, .cn-boutique .cn-field select, .cn-boutique .cn-field textarea { border-radius: 0; }

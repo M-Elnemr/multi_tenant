@@ -56,6 +56,9 @@
   "cn.ctaBook": ["Book your visit online", "احجز زيارتك أونلاين"],
   "cn.ctaCall": ["Call us to book your visit", "اتصل بنا لحجز زيارتك"],
 
+  "cn.mt.quick": ["Book in a minute", "احجز في دقيقة"],
+  "cn.mt.from": ["Visits from {price}", "الكشف يبدأ من {price}"],
+
   "cn.book.title": ["Book an appointment", "احجز موعدًا"],
   "cn.book.lead": ["Choose the service, the doctor and a time that suits you.", "اختر الخدمة والطبيب والوقت المناسب لك."],
   "cn.book.offTitle": ["Online booking is not open right now", "الحجز الإلكتروني غير متاح حاليًا"],
