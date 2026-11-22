@@ -48,7 +48,7 @@ export default async function ShopLayout({ children }: { children: React.ReactNo
       {look.inFrame && <PreviewLinks tpl={look.template} />}
       <SwRegister />
       <AffiliateRef />
-      {vn && vd ? <vn.Header name={storeName} logoUrl={logoUrl} announcement={p.announcement} closedMessage={p.closedMessage} isOpen={p.isOpen !== false} hasProducts={vd.products.length > 0} hasBooking={vd.cfg.services.length > 0} /> : <ShopHeader name={storeName} logoUrl={logoUrl} announcement={p.announcement} closedMessage={p.closedMessage} isOpen={p.isOpen !== false} categories={categories} audiences={audiences} variant={look.look.header} />}
+      {vn && vd ? <vn.Header name={storeName} logoUrl={logoUrl} announcement={p.announcement} closedMessage={p.closedMessage} isOpen={p.isOpen !== false} hasProducts={vd.products.length > 0} hasBooking={vd.cfg.services.length > 0} phone={p.supportPhone || p.whatsapp} whatsapp={p.whatsapp} /> : <ShopHeader name={storeName} logoUrl={logoUrl} announcement={p.announcement} closedMessage={p.closedMessage} isOpen={p.isOpen !== false} categories={categories} audiences={audiences} variant={look.look.header} />}
       {!look.inFrame && <VisitTracker />}
       <main className="flex-1 pb-chrome">{children}</main>
       {vn && vd ? <vn.Footer name={storeName} logoUrl={logoUrl} isOpen={p.isOpen !== false} hasProducts={vd.products.length > 0} hasBooking={vd.cfg.services.length > 0} data={vd} poweredLabel={info.kind === "TENANT" && info.whiteLabel ? "" : t("brand.powered")} poweredName={t("brand.name")} /> : <ShopFooter p={p} name={storeName} logoUrl={logoUrl} branches={branches} t={t} poweredLabel={info.kind === "TENANT" && info.whiteLabel ? "" : t("brand.powered")} poweredName={t("brand.name")} />}
