@@ -1,73 +1,43 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { motion, useReducedMotion } from "motion/react";
 import { Icon } from "../icons";
+import { OImg } from "./media";
 
-export type HeroSlide = { id: string; eyebrow: string; title: string; sub: string; cta: string; href: string; from: string; to: string; image?: string | null; emoji?: string };
+export type HeroTile = { src?: string | null; name: string; href: string };
 
-/** Auto-advancing banner carousel that is also a native swipeable scroller (scroll-snap), so it feels right with a thumb and with a mouse. */
-export function OpenHero({ slides }: { slides: HeroSlide[] }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [i, setI] = useState(0);
-  const [paused, setPaused] = useState(false);
-
-  const go = useCallback((n: number) => {
-    const el = ref.current;
-    if (!el) return;
-    const idx = (n + slides.length) % slides.length;
-    const rtl = getComputedStyle(el).direction === "rtl";
-    el.scrollTo({ left: (rtl ? -1 : 1) * idx * el.clientWidth, behavior: "smooth" });
-    setI(idx);
-  }, [slides.length]);
-
-  useEffect(() => {
-    if (paused || slides.length < 2) return;
-    const id = setInterval(() => go(i + 1), 5500);
-    return () => clearInterval(id);
-  }, [i, paused, go, slides.length]);
-
-  const onScroll = () => {
-    const el = ref.current;
-    if (!el) return;
-    const idx = Math.round(Math.abs(el.scrollLeft) / el.clientWidth);
-    if (idx !== i) setI(idx);
-  };
-
+/** The home hero: an editorial headline with two actions, and up to three real products as arched frames on the other side. No carousel, nothing auto-plays. */
+export function OpenHero({ eyebrow, title, sub, cta, href, secondary, tiles }: { eyebrow: string; title: string; sub: string; cta: string; href: string; secondary: { label: string; href: string }; tiles: HeroTile[] }) {
+  const reduce = useReducedMotion();
+  const rise = (i: number) => (reduce ? {} : { initial: { opacity: 0, y: 18 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.6, delay: 0.08 * i, ease: [0.22, 1, 0.36, 1] as const } });
+  const pop = (i: number) => (reduce ? {} : { initial: { opacity: 0, y: 30, scale: 0.97 }, animate: { opacity: 1, y: 0, scale: 1 }, transition: { duration: 0.8, delay: 0.15 + 0.1 * i, ease: [0.22, 1, 0.36, 1] as const } });
+  const shown = tiles.slice(0, 3);
   return (
-    <div className="o-hero o-container mt-3 md:mt-5" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onTouchStart={() => setPaused(true)}>
-      <div className="relative overflow-hidden rounded-[26px]">
-        <div ref={ref} onScroll={onScroll} className="o-slides">
-          {slides.map((s) => (
-            <Link key={s.id} href={s.href} className="o-slide o-grain flex items-center text-white" style={{ background: `linear-gradient(120deg, ${s.from}, ${s.to})` }}>
-              <div className="relative z-[1] flex w-full items-center justify-between gap-4 px-6 py-8 md:px-14">
-                <div className="max-w-[26rem] md:max-w-xl">
-                  <p className="mb-2 inline-block rounded-full bg-white/15 px-3 py-1 text-[11px] font-extrabold uppercase tracking-[.14em] backdrop-blur md:text-xs">{s.eyebrow}</p>
-                  <h2 className="text-[1.65rem] font-black leading-[1.15] md:text-5xl">{s.title}</h2>
-                  <p className="mt-2 line-clamp-2 text-sm text-white/85 md:mt-3 md:text-lg">{s.sub}</p>
-                  <span className="mt-4 inline-flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-extrabold text-[var(--o-navy)] shadow-lg transition group-hover:scale-105 md:mt-6 md:px-7 md:py-3">{s.cta}<Icon name="arrow" className="h-4 w-4 rtl:rotate-180" /></span>
-                </div>
-                <div className="relative hidden shrink-0 sm:block">
-                  {s.image ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={s.image} alt="" width={340} height={340} className="h-44 w-44 rotate-3 rounded-[2rem] border-4 border-white/70 object-cover shadow-2xl md:h-72 md:w-72" />
-                  ) : (
-                    <span className="grid h-40 w-40 place-items-center text-8xl drop-shadow-2xl md:h-64 md:w-64 md:text-[10rem]">{s.emoji ?? "🛍️"}</span>
-                  )}
-                </div>
-              </div>
-            </Link>
-          ))}
-        </div>
-        {slides.length > 1 && (
-          <>
-            <button type="button" aria-label="previous" onClick={() => go(i - 1)} className="absolute start-3 top-1/2 hidden h-11 w-11 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-[var(--o-navy)] shadow-lg transition hover:scale-110 md:grid"><Icon name="arrow" className="h-5 w-5 rotate-180 rtl:rotate-0" /></button>
-            <button type="button" aria-label="next" onClick={() => go(i + 1)} className="absolute end-3 top-1/2 hidden h-11 w-11 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-[var(--o-navy)] shadow-lg transition hover:scale-110 md:grid"><Icon name="arrow" className="h-5 w-5 rtl:rotate-180" /></button>
-            <div className="absolute inset-x-0 bottom-1 flex justify-center">
-              {slides.map((s, n) => <button key={s.id} type="button" aria-label={`${n + 1}`} aria-current={n === i} onClick={() => go(n)} className="grid h-6 min-w-6 place-items-center"><span className={`block h-1.5 rounded-full transition-all ${n === i ? "w-7 bg-white" : "w-1.5 bg-white/50"}`} /></button>)}
+    <div className="o-container mt-3 md:mt-6">
+      <div className="o-hero-bg relative overflow-hidden rounded-[28px] md:rounded-[36px]">
+        <div className="grid items-center gap-8 px-5 py-9 md:grid-cols-[1.05fr_1fr] md:gap-10 md:px-14 md:py-16">
+          <div className="min-w-0">
+            <motion.p {...rise(0)} className="o-eyebrow">{eyebrow}</motion.p>
+            <motion.h1 {...rise(1)} className="o-display o-h1 mt-3 max-w-[16ch] text-balance">{title}</motion.h1>
+            <motion.p {...rise(2)} className="mt-4 max-w-md text-[15px] leading-relaxed text-[var(--o-ink-2)] md:text-lg">{sub}</motion.p>
+            <motion.div {...rise(3)} className="mt-7 flex flex-wrap items-center gap-3">
+              <Link href={href} className="o-btn o-btn-dark">{cta}<Icon name="arrow" className="h-4 w-4 rtl:rotate-180" /></Link>
+              <Link href={secondary.href} className="o-btn o-btn-ghost">{secondary.label}</Link>
+            </motion.div>
+          </div>
+          {shown.length > 0 && (
+            <div className="relative mx-auto grid w-full max-w-md grid-cols-3 items-end gap-2.5 md:max-w-none md:gap-4" aria-hidden={false}>
+              {shown.map((t, i) => (
+                <motion.div key={t.href} {...pop(i)} className={i === 1 ? "pb-0" : "pb-6 md:pb-10"}>
+                  <Link href={t.href} className={`o-frame o-arch block shadow-[var(--o-shadow-lg)] ${i === 1 ? "aspect-[3/4.4]" : "aspect-[3/4]"}`} aria-label={t.name}>
+                    <OImg src={t.src} alt={t.name} name={t.name} eager={i === 1} className="transition duration-700 hover:scale-105" />
+                  </Link>
+                </motion.div>
+              ))}
             </div>
-          </>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

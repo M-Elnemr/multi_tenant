@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { OpenHero, type HeroSlide } from "@/components/open/hero";
+import { OpenHero } from "@/components/open/hero";
 import { OpenProductCard } from "@/components/open/product-card";
-import { CategoryTiles, ProductRail, ShopCard } from "@/components/open/sections";
-import { Icon } from "@/components/icons";
+import { Rail } from "@/components/open/rail";
+import { CategoryTiles, ProductRail, SectionHead, ShopCard } from "@/components/open/sections";
+import { Icon, type IconName } from "@/components/icons";
 import { getT } from "@/lib/i18n-server";
 import { num, openJson, pickName, type OpenHome } from "@/lib/open";
 
@@ -11,32 +12,38 @@ export const dynamic = "force-dynamic";
 export default async function OpenHomePage() {
   const { t, locale } = await getT();
   const home = await openJson<OpenHome>("/home");
-  const topDeal = home.deals[0];
   const maxOff = Math.max(0, ...home.deals.map((d) => Math.round(num(d.discountPct))));
   const rows = home.categoryRows;
-
-  const slides: HeroSlide[] = [
-    { id: "welcome", eyebrow: t("open.hero.eyebrow"), title: t("open.hero.title"), sub: t("open.hero.sub", { shops: home.stats.shops, products: home.stats.products }), cta: t("open.hero.cta"), href: "/search", from: "#0d1535", to: "#2b3bd6", image: home.featured[0]?.image?.medium ?? home.trending[0]?.image?.medium ?? null, emoji: "🛍️" },
+  const pool = home.featured.length >= 3 ? home.featured : [...home.featured, ...home.trending];
+  const tiles = pool.slice(0, 3).map((p) => ({ src: p.image?.medium ?? null, name: p.name, href: `/p/${p.shop.slug}/${p.slug}` }));
+  const pillars: { icon: IconName; title: string; sub: string }[] = [
+    { icon: "wallet", title: t("open.trust.cod"), sub: t("open.trust.codSub") },
+    { icon: "bag", title: t("open.trust.shops"), sub: t("open.trust.shopsSub") },
+    { icon: "navigate", title: t("open.trust.track"), sub: t("open.trust.trackSub") },
   ];
-  if (topDeal) slides.push({ id: "deals", eyebrow: t("open.deals"), title: maxOff > 0 ? t("open.hero.dealsTitle", { pct: maxOff }) : t("open.deals"), sub: t("open.hero.dealsSub"), cta: t("open.hero.dealsCta"), href: "/search?onSale=true&sort=discount", from: "#c2210a", to: "#ff7a2f", image: topDeal.image?.medium ?? null, emoji: "🔥" });
-  rows.slice(0, 2).forEach((r, i) => slides.push({ id: `cat-${r.slug}`, eyebrow: t("open.hero.catEyebrow"), title: pickName(r, locale), sub: t("open.hero.catSub", { n: r.n }), cta: t("open.hero.catCta"), href: `/c/${r.slug}`, from: i ? "#0b6b5c" : "#5b21b6", to: i ? "#18a58c" : "#c026d3", image: r.products[0]?.image?.medium ?? null, emoji: r.icon ?? "🛍️" }));
 
   return (
     <>
-      <OpenHero slides={slides} />
+      <OpenHero eyebrow={t("open.hero.eyebrow")} title={t("open.hero.title")} sub={t("open.hero.sub", { shops: home.stats.shops, products: home.stats.products })} cta={t("open.hero.cta")} href="/search" secondary={{ label: t("open.allShops"), href: "/shops" }} tiles={tiles} />
+
+      <ul className="o-container mt-5 grid gap-3 sm:grid-cols-3">
+        {pillars.map((p) => (
+          <li key={p.title} className="flex items-center gap-3 rounded-2xl px-1 py-1.5">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-[var(--o-line-2)] text-[var(--o-accent)]"><Icon name={p.icon} className="h-5 w-5" /></span>
+            <span className="min-w-0"><b className="block text-sm">{p.title}</b><span className="block text-xs text-[var(--o-mute)]">{p.sub}</span></span>
+          </li>
+        ))}
+      </ul>
+
       <CategoryTiles categories={home.categories} locale={locale} />
 
       {home.deals.length > 0 && (
-        <section className="o-container mt-8 md:mt-12">
-          <div className="o-card overflow-hidden !border-0 bg-gradient-to-br from-[#ffefe8] via-white to-[#fff6dc] p-4 md:p-6">
-            <div className="mb-3 flex items-end justify-between gap-3">
-              <div>
-                <p className="text-xs font-extrabold uppercase tracking-[.14em] text-[var(--o-accent)]">🔥 {t("open.deals")}</p>
-                <h2 className="o-title">{t("open.dealsTitle")}</h2>
-              </div>
-              <Link href="/search?onSale=true&sort=discount" className="o-link flex items-center gap-1">{t("open.seeAll")}<Icon name="arrow" className="h-4 w-4 rtl:rotate-180" /></Link>
+        <section className="o-section">
+          <div className="bg-[var(--o-soft)] py-8 md:py-12">
+            <div className="o-container">
+              <SectionHead eyebrow={maxOff > 0 ? t("open.hero.dealsTitle", { pct: maxOff }) : t("open.deals")} title={t("open.dealsTitle")} href="/search?onSale=true&sort=discount" linkLabel={t("open.seeAll")} />
+              <Rail>{home.deals.map((p) => <div key={p.id} className="w-[10.75rem] sm:w-[13rem] lg:w-[14.5rem]"><OpenProductCard p={p} /></div>)}</Rail>
             </div>
-            <div className="o-rail">{home.deals.map((p) => <div key={p.id} className="w-[10.5rem] sm:w-[12.5rem] lg:w-[14rem]"><OpenProductCard p={p} /></div>)}</div>
           </div>
         </section>
       )}
@@ -44,25 +51,27 @@ export default async function OpenHomePage() {
       <ProductRail eyebrow={t("open.trending")} title={t("open.trendingTitle")} href="/search?sort=popular" linkLabel={t("open.seeAll")} products={home.trending} />
 
       {home.shops.length > 0 && (
-        <section className="o-container mt-8 md:mt-12">
-          <div className="mb-3 flex items-end justify-between gap-3">
-            <div><p className="text-xs font-extrabold uppercase tracking-[.14em] text-[var(--o-accent)]">{t("open.shopsEyebrow")}</p><h2 className="o-title">{t("open.shopsTitle")}</h2></div>
-            <Link href="/shops" className="o-link flex items-center gap-1">{t("open.allShops")}<Icon name="arrow" className="h-4 w-4 rtl:rotate-180" /></Link>
-          </div>
-          <div className="o-rail">{home.shops.map((s) => <div key={s.id} className="w-[14rem] md:w-[16rem]"><ShopCard s={s} locale={locale} productsLabel={t("open.productsCount")} /></div>)}</div>
+        <section className="o-container o-section">
+          <SectionHead eyebrow={t("open.shopsEyebrow")} title={t("open.shopsTitle")} href="/shops" linkLabel={t("open.allShops")} />
+          <Rail>{home.shops.map((s) => <div key={s.id} className="w-[15rem] md:w-[17rem]"><ShopCard s={s} locale={locale} productsLabel={t("open.productsCount")} /></div>)}</Rail>
         </section>
       )}
 
       <ProductRail eyebrow={t("open.new")} title={t("open.newTitle")} href="/search?sort=newest" linkLabel={t("open.seeAll")} products={home.newArrivals} />
 
       {rows.map((r) => (
-        <ProductRail key={r.slug} eyebrow={r.icon ?? undefined} title={pickName(r, locale)} href={`/c/${r.slug}`} linkLabel={t("open.seeAll")} products={r.products} />
+        <ProductRail key={r.slug} eyebrow={t("open.hero.catEyebrow")} title={pickName(r, locale)} href={`/c/${r.slug}`} linkLabel={t("open.seeAll")} products={r.products} />
       ))}
 
       <ProductRail eyebrow={t("open.topRated")} title={t("open.topRatedTitle")} href="/search?sort=rating" linkLabel={t("open.seeAll")} products={home.topRated} />
 
       {home.stats.products === 0 && (
-        <div className="o-container mt-16 text-center"><p className="text-5xl">🏬</p><h2 className="o-title mt-3">{t("open.empty.title")}</h2><p className="o-mute mt-1">{t("open.empty.body")}</p></div>
+        <div className="o-container o-section text-center">
+          <span className="mx-auto grid h-16 w-16 place-items-center rounded-full border border-[var(--o-line-2)] text-[var(--o-mute)]"><Icon name="bag" className="h-7 w-7" /></span>
+          <h2 className="o-title o-display mt-4">{t("open.empty.title")}</h2>
+          <p className="o-mute mx-auto mt-1 max-w-sm">{t("open.empty.body")}</p>
+          <Link href="/shops" className="o-btn o-btn-ghost mt-5">{t("open.allShops")}</Link>
+        </div>
       )}
     </>
   );
