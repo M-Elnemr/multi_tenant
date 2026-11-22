@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { api } from "@/lib/client";
 import { Page, useAction, useApi } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
-import { Button, Empty, ErrorText, Input, Loading, PageHeader, StatusBadge } from "@/components/ui";
+import { Button, Empty, ErrorText, Input, Loading, PageHeader, StatusBadge, Tabs } from "@/components/ui";
+import { AdminSearch } from "@/components/admin/kit";
 import { dateTime, money } from "@/lib/format";
 
 type Topup = { id: string; tenantId: string; tenantName: string; amountMinor: number; phone?: string; note?: string; status: string; adminNote?: string; createdAt: string; balanceMinor: number };
@@ -15,9 +17,9 @@ function Row({ r, onDone }: { r: Topup; onDone: () => void }) {
   const [note, setNote] = useState("");
   const act = useAction(async (approve: boolean) => { await api(`platform/wallet/topups/${r.id}`, { body: { approve, adminNote: note || undefined } }); onDone(); });
   return (
-    <div className={`space-y-2 rounded-xl bg-white p-4 shadow-card ${r.status === "PENDING" ? "ring-2 ring-amber-300/70" : ""}`}>
-      <div className="flex flex-wrap items-center justify-between gap-2"><p className="font-bold">{r.tenantName}</p><StatusBadge status={r.status} /></div>
-      <p className="text-sm">{money(r.amountMinor, "EGP", locale)} · {t("wa.balanceNow")}: {money(r.balanceMinor, "EGP", locale)} · <span className="text-xs text-slate-400">{dateTime(r.createdAt, locale)}</span></p>
+    <div className={`space-y-2 rounded-[14px] bg-surface p-4 shadow-card ${r.status === "PENDING" ? "ring-2 ring-amber-400/60" : ""}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2"><Link href={`/admin/tenants/${r.tenantId}`} className="font-bold text-ink hover:text-brand">{r.tenantName}</Link><StatusBadge status={r.status} /></div>
+      <p className="tnum text-sm text-ink-2">{money(r.amountMinor, "EGP", locale)} · {t("wa.balanceNow")}: {money(r.balanceMinor, "EGP", locale)} · <span className="text-xs text-muted">{dateTime(r.createdAt, locale)}</span></p>
       {r.phone && <a className="text-sm font-semibold text-brand" dir="ltr" href={`tel:${r.phone}`}>{r.phone}</a>}
       {r.status === "PENDING" && (
         <div className="flex flex-wrap items-center gap-2">
@@ -42,13 +44,13 @@ export default function AdminWallet() {
   return (
     <>
       <PageHeader title={t("wa.adminTitle")} />
-      <div className="mb-3 flex gap-2">{["PENDING", "APPROVED", "REJECTED"].map((s) => <button key={s} onClick={() => setStatus(s)} className={`rounded-full border px-3 py-1.5 text-sm font-semibold ${status === s ? "border-brand bg-brand-soft text-brand" : ""}`}>{t(`status.${s}`)}</button>)}</div>
+      <div className="mb-3"><Tabs value={status} onChange={setStatus} tabs={["PENDING", "APPROVED", "REJECTED"].map((s) => ({ key: s, label: t(`status.${s}`) }))} /></div>
       {topups.loading && !topups.data ? <Loading /> : topups.data?.data.length === 0 ? <Empty>{t("wa.noTopups")}</Empty> : <div className="space-y-3">{topups.data?.data.map((r) => <Row key={r.id} r={r} onDone={() => { void topups.reload(); void balances.reload(); }} />)}</div>}
 
-      <h2 className="mb-2 mt-8 text-lg font-bold">{t("wa.balances")}</h2>
-      <Input className="mb-3 max-w-xs" placeholder={t("common.search")} value={q} onChange={(e) => setQ(e.target.value)} />
-      <ul className="mb-4 space-y-1 text-sm">{balances.data?.map((b) => <li key={b.tenantId} className="flex items-center justify-between rounded-lg bg-white px-3 py-2 shadow-card"><button type="button" className="text-start font-semibold hover:text-brand" onClick={() => setAdj({ ...adj, tenantId: b.tenantId })}>{b.tenantName}</button><span>{money(b.balanceMinor, "EGP", locale)}</span></li>)}</ul>
-      <form onSubmit={(e) => { e.preventDefault(); void adjust.run(); }} className="max-w-xl space-y-2 rounded-xl border bg-white p-4">
+      <h2 className="mb-2 mt-8 text-lg font-bold text-ink">{t("wa.balances")}</h2>
+      <div className="mb-3 max-w-xs"><AdminSearch placeholder={t("common.search")} value={q} onChange={setQ} /></div>
+      <ul className="mb-6 divide-y divide-line overflow-hidden rounded-[14px] bg-surface text-sm shadow-card">{balances.data?.map((b) => <li key={b.tenantId} className="flex items-center justify-between px-4 py-2.5"><button type="button" className="text-start font-medium text-ink-2 hover:text-brand" onClick={() => setAdj({ ...adj, tenantId: b.tenantId })}>{b.tenantName}</button><span className="tnum font-semibold text-ink">{money(b.balanceMinor, "EGP", locale)}</span></li>)}</ul>
+      <form onSubmit={(e) => { e.preventDefault(); void adjust.run(); }} className="max-w-xl space-y-2 rounded-[14px] bg-surface p-4 shadow-card">
         <h3 className="font-semibold">{t("wa.adjust")}</h3>
         <Input placeholder="tenant id" dir="ltr" value={adj.tenantId} onChange={(e) => setAdj({ ...adj, tenantId: e.target.value })} />
         <Input type="number" placeholder={t("wa.adjustAmount")} value={adj.egp} onChange={(e) => setAdj({ ...adj, egp: Number(e.target.value) })} />

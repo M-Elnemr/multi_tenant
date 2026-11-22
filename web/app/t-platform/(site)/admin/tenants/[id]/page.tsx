@@ -89,7 +89,7 @@ export default function TenantDetail({ params }: { params: Promise<{ id: string 
           {can("platform.support.access") && <Button loading={support.loading} onClick={() => support.run()}><Icon name="shield" className="h-4 w-4" />{t("admin.openSupport")}</Button>}
           {data.status !== "SUSPENDED" ? <Button variant="secondary" loading={setStatus.loading} onClick={() => setStatus.run("SUSPENDED")}>{t("admin.disable")}</Button> : <Button loading={setStatus.loading} onClick={() => setStatus.run("ACTIVE")}>{t("admin.enable")}</Button>}
         </div>
-        {(setStatus.error || support.error) && <div className="w-full"><ErrorText error={setStatus.error ?? support.error} /></div>}
+        {!!(setStatus.error || support.error) &&<div className="w-full"><ErrorText error={setStatus.error ?? support.error} /></div>}
       </header>
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">

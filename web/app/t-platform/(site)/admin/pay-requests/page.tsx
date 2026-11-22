@@ -8,9 +8,8 @@ import { Page, useAction, useApi } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
 import { planLabel } from "@/components/dashboard/pay-screen";
 import { Avatar, Button, Empty, ErrorText, Input, Loading, PageHeader, Pager, Tabs, StatusBadge } from "@/components/ui";
-import { Icon } from "@/components/icons";
 import { dateTime, money } from "@/lib/format";
-import { whatsappLink } from "@/lib/whatsapp";
+import { ContactButtons, Fact, TypeTag } from "@/components/admin/kit";
 
 type Req = {
   id: string; tenantId: string; planCode: string; amountMinor: number; timing?: string; creditMinor?: number; currency: string; phone: string; note?: string; status: string; adminNote?: string; createdAt: string;
@@ -23,28 +22,28 @@ function Row({ r, onDone }: { r: Req; onDone: () => void }) {
   const act = useAction(async (status: string) => { await api(`platform/pay-requests/${r.id}`, { body: { status, adminNote: note || undefined, activate: true } }); onDone(); });
   const open = r.status === "NEW" || r.status === "CONTACTED";
   return (
-    <div className={`space-y-3 rounded-2xl bg-white p-5 shadow-card ${r.status === "NEW" ? "ring-2 ring-amber-300/70" : ""}`}>
+    <div className={`space-y-3 rounded-[14px] bg-surface p-4 shadow-card sm:p-5 ${r.status === "NEW" ? "ring-2 ring-amber-400/60" : ""}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <Link href={`/admin/tenants/${r.tenantId}`} className="flex min-w-0 items-center gap-3">
           <Avatar name={r.tenantName} className="h-11 w-11 text-base" />
-          <div className="min-w-0"><p className="truncate text-lg font-bold text-ink">{r.tenantName}</p><p className="truncate text-xs text-slate-500" dir="ltr">{r.primaryHost} · {r.tenantType === "STORE" ? t("type.store") : r.tenantType === "SERVICE" ? t("type.service") : r.tenantType === "LAWYER" ? t("type.lawyer") : t("type.clinic")}</p></div>
+          <div className="min-w-0"><p className="truncate text-base font-bold text-ink">{r.tenantName}</p><p className="flex items-center gap-2 truncate text-xs text-muted"><span dir="ltr" className="truncate">{r.primaryHost}</span><TypeTag type={r.tenantType} /></p></div>
         </Link>
         <div className="flex items-center gap-2"><StatusBadge status={r.tenantStatus} /><StatusBadge status={r.status} /></div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">{t("admin.requestedPlan")}</p><p className="font-bold">{planLabel(t, r.planCode)}</p><p className="text-sm text-slate-600">{money(r.amountMinor, r.currency, locale)} · <span className="text-xs text-slate-400">{dateTime(r.createdAt, locale)}</span></p>
-          {r.timing === "NEXT_PERIOD" ? <p className="mt-1 text-xs font-semibold text-sky-700">{t("admin.nextPeriodNote")}</p> : (r.creditMinor ?? 0) > 0 && <p className="mt-1 text-xs font-semibold text-sky-700">{t("admin.upgradeNowNote", { credit: money(r.creditMinor ?? 0, r.currency, locale) })}</p>}</div>
-        <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3">
-          <div className="min-w-0"><p className="text-xs text-slate-500">{t("admin.contact")}</p><a className="text-lg font-extrabold text-brand" dir="ltr" href={`tel:${r.phone}`}>{localPhone(r.phone)}</a></div>
-          <div className="flex shrink-0 gap-2">
-            <a href={`tel:${r.phone}`} aria-label={t("admin.call")} className="flex h-10 w-10 items-center justify-center rounded-full bg-brand text-white"><Icon name="phone" className="h-5 w-5" /></a>
-            <a href={whatsappLink(r.phone, r.tenantName)} target="_blank" rel="noopener noreferrer" aria-label={t("admin.whatsapp")} className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500 text-white"><Icon name="chat" className="h-5 w-5" /></a>
-          </div>
+        <div className="rounded-[12px] bg-surface-2 p-3.5">
+          <dl><Fact label={t("admin.requestedPlan")}>{planLabel(t, r.planCode)}</Fact></dl>
+          <p className="tnum mt-1 text-sm text-ink-2">{money(r.amountMinor, r.currency, locale)} · <span className="text-xs text-muted">{dateTime(r.createdAt, locale)}</span></p>
+          {r.timing === "NEXT_PERIOD" ? <p className="mt-1 text-xs font-semibold text-sky-700 dark:text-sky-300">{t("admin.nextPeriodNote")}</p> : (r.creditMinor ?? 0) > 0 && <p className="mt-1 text-xs font-semibold text-sky-700 dark:text-sky-300">{t("admin.upgradeNowNote", { credit: money(r.creditMinor ?? 0, r.currency, locale) })}</p>}
+        </div>
+        <div className="flex items-center justify-between gap-3 rounded-[12px] bg-surface-2 p-3.5">
+          <div className="min-w-0"><p className="text-[11.5px] font-medium text-muted">{t("admin.contact")}</p><a className="tnum text-lg font-bold text-brand" dir="ltr" href={`tel:${r.phone}`}>{localPhone(r.phone)}</a></div>
+          <ContactButtons phone={r.phone} name={r.tenantName} size="md" />
         </div>
       </div>
-      {r.note && <p className="rounded-lg bg-sky-50 p-3 text-sm text-sky-900">“{r.note}”</p>}
+      {r.note && <p className="rounded-[10px] bg-sky-50 p-3 text-sm text-sky-900 dark:bg-sky-500/10 dark:text-sky-200">“{r.note}”</p>}
       {open && (
-        <div className="space-y-2 border-t border-slate-100 pt-3">
+        <div className="space-y-2 border-t border-line pt-3">
           <Input placeholder={t("admin.note")} value={note} onChange={(e) => setNote(e.target.value)} />
           <ErrorText error={act.error} />
           <div className="flex flex-wrap gap-2">
@@ -56,7 +55,7 @@ function Row({ r, onDone }: { r: Req; onDone: () => void }) {
           </div>
         </div>
       )}
-      {!open && r.adminNote && <p className="text-xs text-slate-500">{t("admin.note")}: {r.adminNote}</p>}
+      {!open && r.adminNote && <p className="text-xs text-muted">{t("admin.note")}: {r.adminNote}</p>}
     </div>
   );
 }

@@ -29,15 +29,15 @@ export default function AdminNotifications() {
           {data?.data.map((n) => {
             const tenantId = tenantOf(n);
             return (
-              <li key={n.id} className={`flex items-start gap-3 rounded-2xl bg-white p-4 shadow-card ${n.readAt ? "opacity-80" : "ring-1 ring-brand/40"}`}>
-                <span className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${n.notificationType === "PAY_REQUEST" ? "bg-amber-100 text-amber-700" : "bg-brand-soft text-brand"}`}><Icon name={n.notificationType === "PAY_REQUEST" ? "wallet" : "bell"} className="h-5 w-5" /></span>
+              <li key={n.id} className={`flex items-start gap-3 rounded-[14px] bg-surface p-4 shadow-card ${n.readAt ? "opacity-75" : "ring-1 ring-brand/40"}`}>
+                <span className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] ${n.notificationType === "PAY_REQUEST" ? "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300" : "bg-brand-soft text-brand"}`}><Icon name={n.notificationType === "PAY_REQUEST" ? "wallet" : "bell"} className="h-5 w-5" /></span>
                 <div className="min-w-0 flex-1">
                   <p className="font-bold text-ink">{n.title}</p>
-                  <p className="text-sm text-slate-600">{n.body}</p>
-                  <p className="mt-1 text-xs text-slate-400">{dateTime(n.createdAt, locale)}</p>
+                  <p className="text-sm text-ink-2">{n.body}</p>
+                  <p className="tnum mt-1 text-xs text-muted">{dateTime(n.createdAt, locale)}</p>
                   <div className="mt-2 flex flex-wrap gap-4">
-                    {n.notificationType === "PAY_REQUEST" && <Link href="/admin/pay-requests" onClick={() => !n.readAt && read.run(n.id)} className="text-sm font-semibold text-brand underline">{t("admin.payRequests")}</Link>}
-                    {tenantId && <Link href={`/admin/tenants/${tenantId}`} className="text-sm font-semibold text-brand underline">{t("admin.tenants")}</Link>}
+                    {n.notificationType === "PAY_REQUEST" && <Link href="/admin/pay-requests" onClick={() => !n.readAt && read.run(n.id)} className="text-sm font-semibold text-brand underline-offset-4 hover:underline">{t("admin.payRequests")}</Link>}
+                    {tenantId && <Link href={`/admin/tenants/${tenantId}`} className="text-sm font-semibold text-brand underline-offset-4 hover:underline">{t("admin.tenants")}</Link>}
                   </div>
                 </div>
                 {!n.readAt && <Button size="sm" variant="ghost" onClick={() => read.run(n.id)}>{t("notif.markRead")}</Button>}
