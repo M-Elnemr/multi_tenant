@@ -44,7 +44,7 @@ export default function Taxonomy() {
           <h2 className="font-semibold">📬 {t("admin.requests")} ({reqs.data!.length})</h2>
           <ul className="divide-y text-sm">{reqs.data!.map((r) => (
             <li key={r.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-              <div><p className="font-semibold">{r.name}</p><p className="text-xs text-slate-500">{r.shopName} · {dateOnly(r.createdAt, locale)}{r.note && ` · ${r.note}`}</p></div>
+              <div><p className="font-semibold">{r.name}</p><p className="text-xs text-muted">{r.shopName} · {dateOnly(r.createdAt, locale)}{r.note && ` · ${r.note}`}</p></div>
               <Button size="sm" onClick={() => setDecide({ req: r, parentId: r.parentId, nameAr: r.name, nameEn: "", note: "" })}>{t("admin.review")}</Button>
             </li>
           ))}</ul>
@@ -55,7 +55,7 @@ export default function Taxonomy() {
         {shown.map((n) => (
           <div key={n.id} className="flex flex-wrap items-center gap-3 px-4 py-2.5 text-sm" style={{ paddingInlineStart: 16 + (n.level - 1) * 24 }}>
             <span className="w-6 text-center">{n.icon ?? (n.level > 1 ? "└" : "")}</span>
-            <div className="min-w-0 flex-1"><p className="font-semibold">{n.nameAr} <span className="font-normal text-slate-500">· {n.nameEn}</span> {n.isHidden && <Badge tone="slate">{t("common.hidden")}</Badge>} {!n.isActive && <Badge tone="red">{t("status.INACTIVE")}</Badge>}</p><p className="font-mono text-xs text-slate-400">{n.slug} · {n.ownProducts}</p></div>
+            <div className="min-w-0 flex-1"><p className="font-semibold">{n.nameAr} <span className="font-normal text-muted">· {n.nameEn}</span> {n.isHidden && <Badge tone="slate">{t("common.hidden")}</Badge>} {!n.isActive && <Badge tone="red">{t("status.INACTIVE")}</Badge>}</p><p className="font-mono text-xs text-faint">{n.slug} · {n.ownProducts}</p></div>
             <div className="flex gap-1">
               {n.level < 3 && <Button size="sm" variant="ghost" onClick={() => setEdit({ parentId: n.id, nameAr: "", nameEn: "" })}>+ {t("admin.subcategory")}</Button>}
               <Button size="sm" variant="secondary" onClick={() => setEdit({ id: n.id, parentId: n.parentId, nameAr: n.nameAr, nameEn: n.nameEn })}>{t("common.edit")}</Button>
@@ -67,7 +67,7 @@ export default function Taxonomy() {
       <Modal open={!!edit} onClose={() => setEdit(null)} title={edit?.id ? t("categories.edit") : t("admin.newCategory")}>
         {edit && (
           <form onSubmit={(e) => { e.preventDefault(); void save.run(); }} className="space-y-4">
-            {!edit.id && <p className="text-sm text-slate-500">{edit.parentId ? `${t("categories.parent")}: ${byId.get(edit.parentId)?.nameAr}` : t("categories.topLevel")}</p>}
+            {!edit.id && <p className="text-sm text-muted">{edit.parentId ? `${t("categories.parent")}: ${byId.get(edit.parentId)?.nameAr}` : t("categories.topLevel")}</p>}
             <Field label={t("admin.nameAr")}><Input value={edit.nameAr} onChange={(e) => setEdit({ ...edit, nameAr: e.target.value })} required /></Field>
             <Field label={t("admin.nameEn")}><Input dir="ltr" value={edit.nameEn} onChange={(e) => setEdit({ ...edit, nameEn: e.target.value })} required /></Field>
             <ErrorText error={save.error} />

@@ -90,18 +90,18 @@ export function TrainRoom() {
             <Select value={model} onChange={(e) => setModel(e.target.value)}>{MODELS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select>
           </Field>
         </div>
-        <div className="flex h-[30rem] flex-col overflow-hidden rounded-2xl border bg-white">
+        <div className="flex h-[30rem] flex-col overflow-hidden rounded-2xl border bg-surface">
           <div className="flex-1 space-y-3 overflow-y-auto p-3">
-            {!shopId && <p className="text-sm text-slate-500">{t("train.pickShopFirst")}</p>}
+            {!shopId && <p className="text-sm text-muted">{t("train.pickShopFirst")}</p>}
             {msgs.map((m, i) => (
               <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                <div className={`max-w-[85%] space-y-1 rounded-2xl px-3 py-2 text-sm ${m.role === "user" ? "bg-brand text-white" : "bg-slate-100 text-slate-800"}`}>
+                <div className={`max-w-[85%] space-y-1 rounded-2xl px-3 py-2 text-sm ${m.role === "user" ? "bg-brand text-white" : "bg-surface-2 text-ink"}`}>
                   <p className="whitespace-pre-wrap">{m.content}</p>
                   {m.role === "assistant" && <button type="button" className="text-xs font-semibold text-brand underline" onClick={() => { setTeachAt(i); setDraft(null); setSaved(false); setRemark(""); }}>{t("train.teach")}</button>}
                 </div>
               </div>
             ))}
-            {send.loading && <p className="text-xs text-slate-500">…</p>}
+            {send.loading && <p className="text-xs text-muted">…</p>}
             <div ref={endRef} />
           </div>
           <form className="flex gap-2 border-t p-2" onSubmit={(e) => { e.preventDefault(); void send.run(text); }}>
@@ -115,9 +115,9 @@ export function TrainRoom() {
 
       <div className="space-y-4">
         {teachAt !== null && (
-          <section className="space-y-3 rounded-xl border bg-white p-4 text-sm">
+          <section className="space-y-3 rounded-xl border bg-surface p-4 text-sm">
             <h3 className="font-semibold">{t("train.teachTitle")}</h3>
-            <p className="rounded-lg bg-slate-50 p-2 text-slate-700">🤖 {msgs[teachAt]?.content}</p>
+            <p className="rounded-lg bg-surface-2 p-2 text-ink">🤖 {msgs[teachAt]?.content}</p>
             <Field label={t("train.remark")} hint={t("train.remarkHint")}><Textarea rows={2} maxLength={800} value={remark} onChange={(e) => setRemark(e.target.value)} /></Field>
             <Button type="button" variant="secondary" loading={write.loading} disabled={!remark.trim()} onClick={() => void write.run()}>{t("train.writeLesson")}</Button>
             {draft && (
@@ -177,11 +177,11 @@ function EvalPanel({ shopId, model }: { shopId: string; model: string }) {
   const failed = (run?.results ?? []).filter((r) => r.checks.some((c) => !c.pass) || r.passed < r.of);
 
   return (
-    <section className="space-y-3 rounded-xl border bg-white p-4 text-sm">
+    <section className="space-y-3 rounded-xl border bg-surface p-4 text-sm">
       <h3 className="font-semibold">{t("train.evalTitle")}</h3>
-      <p className="text-slate-600">{t("train.evalHint")}</p>
+      <p className="text-muted">{t("train.evalHint")}</p>
       <Button type="button" variant="secondary" loading={running} disabled={running} onClick={() => void start.run()}>{t("train.evalRun")}</Button>
-      {run?.status === "RUNNING" && <p className="text-slate-500">{t("train.evalRunning", { done: run.done, total: run.total })}</p>}
+      {run?.status === "RUNNING" && <p className="text-muted">{t("train.evalRunning", { done: run.done, total: run.total })}</p>}
       {run?.status === "FAILED" && <Alert tone="red">{run.error}</Alert>}
       {run?.summary && (
         <div className="space-y-2">
@@ -199,15 +199,15 @@ function EvalPanel({ shopId, model }: { shopId: string; model: string }) {
           <div className="mt-2 space-y-3">
             {failed.map((r) => (
               <div key={r.id} className="space-y-1 border-t pt-2">
-                <p className="text-xs font-semibold text-slate-500">#{r.id} · {r.category} · {r.passed}/{r.of}</p>
+                <p className="text-xs font-semibold text-muted">#{r.id} · {r.category} · {r.passed}/{r.of}</p>
                 {r.transcript.map((x, i) => (
                   <div key={i} className="space-y-0.5">
                     <p className="whitespace-pre-wrap">👤 {x.customer}</p>
-                    <p className="whitespace-pre-wrap text-slate-700">🤖 {x.seller}</p>
+                    <p className="whitespace-pre-wrap text-ink">🤖 {x.seller}</p>
                   </div>
                 ))}
                 {r.checks.filter((c) => !c.pass).map((c, i) => <p key={i} className="text-xs text-rose-700">✗ {c.expect} — {c.why}</p>)}
-                {r.note && <p className="text-xs text-slate-500">{r.note}</p>}
+                {r.note && <p className="text-xs text-muted">{r.note}</p>}
               </div>
             ))}
           </div>

@@ -61,7 +61,7 @@ export default function AiUsage() {
   const time = (iso: string) => new Date(iso).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Cairo" });
   const mediaStats = (m: Media) => (
     <Section title={t("aiu.media.title")}>
-      <p className="mb-3 text-xs text-slate-500">{t("aiu.media.hint", { p: String(m.prices.asrPerSecond) })}</p>
+      <p className="mb-3 text-xs text-muted">{t("aiu.media.hint", { p: String(m.prices.asrPerSecond) })}</p>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {([["aiu.media.today", m.day], ["aiu.media.month", m.month]] as [string, MediaSums][]).flatMap(([label, x]) => [
           <Stat key={`${label}-i`} label={`${t("aiu.media.images")} · ${t(label)}`} value={n(x.images)} icon="file" hint={usd(x.imageCostUsd)} />,
@@ -124,16 +124,16 @@ export default function AiUsage() {
                 const r = d.byModel.find((x) => x.model === m.key);
                 const tokens = r ? total(r) : 0;
                 return (
-                  <button type="button" key={m.key} onClick={() => { setModel(m.key); setConvId(null); }} className={`rounded-2xl border p-4 text-start transition ${model === m.key ? "border-brand bg-brand-soft" : "border-slate-200 hover:border-brand/50"}`}>
+                  <button type="button" key={m.key} onClick={() => { setModel(m.key); setConvId(null); }} className={`rounded-2xl border p-4 text-start transition ${model === m.key ? "border-brand bg-brand-soft" : "border-line hover:border-brand/50"}`}>
                     <p className="text-base font-bold text-ink">{m.label}</p>
-                    <p className="mt-1 text-2xl font-extrabold tabular-nums text-ink">{n(tokens)} <span className="text-sm font-medium text-slate-500">{t("aiu.tokens")}</span></p>
-                    <p className="text-xs text-slate-500">{r ? `${n(r.input)} ${t("aiu.in")} · ${n(r.output)} ${t("aiu.out")} · ${n(r.requests)} ${t("aiu.requests")} · ${n(r.instant)} ${t("aiu.instant")} · ${t("aiu.cacheHit")} ${pct(r.cached, r.input)}` : t("aiu.none")}</p>
+                    <p className="mt-1 text-2xl font-extrabold tabular-nums text-ink">{n(tokens)} <span className="text-sm font-medium text-muted">{t("aiu.tokens")}</span></p>
+                    <p className="text-xs text-muted">{r ? `${n(r.input)} ${t("aiu.in")} · ${n(r.output)} ${t("aiu.out")} · ${n(r.requests)} ${t("aiu.requests")} · ${n(r.instant)} ${t("aiu.instant")} · ${t("aiu.cacheHit")} ${pct(r.cached, r.input)}` : t("aiu.none")}</p>
                     <p className="mt-1 text-lg font-bold text-red-600">{usd(r ? cost(r) : 0)}</p>
                   </button>
                 );
               })}
             </div>
-            {model !== "all" && <p className="mt-3 text-xs text-slate-500">{t("aiu.filtered", { m: MODELS.find((x) => x.key === model)?.label ?? model })}</p>}
+            {model !== "all" && <p className="mt-3 text-xs text-muted">{t("aiu.filtered", { m: MODELS.find((x) => x.key === model)?.label ?? model })}</p>}
           </Card>
 
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
@@ -162,8 +162,8 @@ export default function AiUsage() {
 
           <Card>
             <p className="mb-1 text-sm font-semibold text-ink">{t("aiu.prices")}</p>
-            <p className="text-xs text-slate-500" dir="ltr">{Object.entries(d.prices.models).map(([m, x]) => `${m}: ${x.input} in · ${x.output} out · ${x.cached} cached · ${x.cacheWrite} cache write`).join("   |   ")} ($/1M)</p>
-            <p className="mt-1 text-xs text-slate-500">{t("aiu.pricesHint")}</p>
+            <p className="text-xs text-muted" dir="ltr">{Object.entries(d.prices.models).map(([m, x]) => `${m}: ${x.input} in · ${x.output} out · ${x.cached} cached · ${x.cacheWrite} cache write`).join("   |   ")} ($/1M)</p>
+            <p className="mt-1 text-xs text-muted">{t("aiu.pricesHint")}</p>
           </Card>
 
           <div className="grid gap-6 lg:grid-cols-2">
@@ -175,11 +175,11 @@ export default function AiUsage() {
                   </div>
                 ))}
               </div>
-              <div className="mt-1 flex justify-between text-[10px] text-slate-400" dir="ltr"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>
+              <div className="mt-1 flex justify-between text-[10px] text-faint" dir="ltr"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>
             </Section>
             <Section title={t("aiu.last30")}>
               <AreaChart points={d.series.map((s) => ({ label: s.day, value: total(s) }))} format={n} />
-              {d.series.length < 2 && <p className="text-sm text-slate-500">{t("aiu.notEnoughDays")}</p>}
+              {d.series.length < 2 && <p className="text-sm text-muted">{t("aiu.notEnoughDays")}</p>}
             </Section>
           </div>
 
@@ -198,9 +198,9 @@ export default function AiUsage() {
               ))}
             </Table>
           ))}
-          {tab === "steps" && <><p className="text-xs text-slate-500">{t("aiu.stepsHint")}</p>{d.byStep.length ? stepTable(d.byStep) : <Empty>{t("aiu.none")}</Empty>}</>}
+          {tab === "steps" && <><p className="text-xs text-muted">{t("aiu.stepsHint")}</p>{d.byStep.length ? stepTable(d.byStep) : <Empty>{t("aiu.none")}</Empty>}</>}
           {tab === "features" && (d.byFeature.length ? featureTable(d.byFeature) : <Empty>{t("aiu.none")}</Empty>)}
-          {tab === "models" && <><p className="text-xs text-slate-500">{t("aiu.modelsHint")}</p>{modelTable(d.byModel)}</>}
+          {tab === "models" && <><p className="text-xs text-muted">{t("aiu.modelsHint")}</p>{modelTable(d.byModel)}</>}
           {tab === "channels" && (d.byChannel.length === 0 ? <Empty>{t("aiu.none")}</Empty> : (
             <Table head={[t("aiu.channel"), t("aiu.requests"), t("aiu.instant"), t("aiu.input"), t("aiu.output"), t("aiu.cached"), t("aiu.cost")]}>
               {d.byChannel.map((c) => <tr key={c.channel}><Td>{c.channel}</Td><Td>{n(c.requests)}</Td><Td>{n(c.instant)}</Td><Td>{n(c.input)}</Td><Td>{n(c.output)}</Td><Td>{pct(c.cached, c.input)}</Td><Td>{usd(cost(c))}</Td></tr>)}
@@ -252,12 +252,12 @@ export default function AiUsage() {
         <ErrorText error={conv.error} />
         {!conv.data ? <Loading /> : (
           <div className="space-y-3">
-            <p className="text-xs text-slate-500">{conv.data.channel ?? ""} · {n(conv.data.replies.reduce((s, r) => s + r.input + r.output, 0))} {t("aiu.tokens")}</p>
+            <p className="text-xs text-muted">{conv.data.channel ?? ""} · {n(conv.data.replies.reduce((s, r) => s + r.input + r.output, 0))} {t("aiu.tokens")}</p>
             {conv.data.replies.map((r) => (
-              <div key={r.id} className="rounded-xl border border-slate-100 p-3">
+              <div key={r.id} className="rounded-xl border border-line p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="min-w-0 truncate text-sm font-semibold text-ink">{r.preview ?? "—"}</p>
-                  <div className="flex items-center gap-2 text-xs text-slate-500">
+                  <div className="flex items-center gap-2 text-xs text-muted">
                     <span>{time(r.createdAt)}</span>{r.model && <Badge>{r.model}</Badge>}{r.fallback && <Badge tone="amber">{t("aiu.fallback")}</Badge>}{r.instant ? <Badge tone="green">{t("aiu.instantBadge")}</Badge> : <Badge>{n(r.input + r.output)} {t("aiu.tokens")}</Badge>}
                     {!r.instant && <span>{usd(cost(r))}</span>}
                   </div>
@@ -265,10 +265,10 @@ export default function AiUsage() {
                 {r.calls.length > 0 && (
                   <ul className="mt-2 space-y-1 text-xs" dir="ltr">
                     {r.calls.map((c, i) => (
-                      <li key={i} className="flex flex-wrap items-center gap-x-3 rounded-lg bg-slate-50 px-2.5 py-1.5">
-                        <span className="font-semibold text-slate-500">#{i + 1}</span>
+                      <li key={i} className="flex flex-wrap items-center gap-x-3 rounded-lg bg-surface-2 px-2.5 py-1.5">
+                        <span className="font-semibold text-muted">#{i + 1}</span>
                         <span className="font-mono">{c.tools.length ? c.tools.join(", ") : t("aiu.finalAnswer")}</span>
-                        <span className="ms-auto text-slate-500">{n(c.in)} {t("aiu.in")} ({n(c.cached)} {t("aiu.cached")}) · {n(c.out)} {t("aiu.out")}</span>
+                        <span className="ms-auto text-muted">{n(c.in)} {t("aiu.in")} ({n(c.cached)} {t("aiu.cached")}) · {n(c.out)} {t("aiu.out")}</span>
                       </li>
                     ))}
                   </ul>

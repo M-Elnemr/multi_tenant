@@ -38,13 +38,13 @@ export default function PlatformWhatsApp() {
       <Card className="max-w-2xl space-y-4">
         {!d.available && <Alert tone="amber">{t("evo.unavailable")}</Alert>}
         <div className="flex items-center justify-between gap-2"><span className="font-medium">{t("pwa.number")}</span>{d.enabled && <Badge tone={connected ? "green" : "amber"}>{connected ? t("evo.connected") : t("evo.waiting")}</Badge>}</div>
-        <p className="text-sm text-slate-600">{t("pwa.what")}</p>
+        <p className="text-sm text-muted">{t("pwa.what")}</p>
         <Alert tone="amber">{t("pwa.warn")}</Alert>
         {!d.enabled && d.available && <><ErrorText error={enable.error} /><Button loading={enable.loading} onClick={() => void enable.run()}>{t("pwa.link")}</Button></>}
         {d.enabled && !connected && (
           <div className="space-y-3">
             <ol className="list-decimal space-y-1 ps-5 text-sm"><li>{t("evo.s1")}</li><li>{t("evo.s2")}</li><li>{t("evo.s3")}</li></ol>
-            {qr?.qr ? <img src={qr.qr} alt="QR" className="h-56 w-56 rounded-xl border bg-white p-2" /> : <p className="text-sm text-slate-500">{t("evo.qrLoading")}</p>}
+            {qr?.qr ? <img src={qr.qr} alt="QR" className="h-56 w-56 rounded-xl border bg-surface p-2" /> : <p className="text-sm text-muted">{t("evo.qrLoading")}</p>}
           </div>
         )}
         {connected && (

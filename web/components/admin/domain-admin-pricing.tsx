@@ -59,28 +59,28 @@ export function DomainAdminPricing() {
   return (
     <>
       <ErrorText error={error} />
-      <p className="mb-4 text-sm text-slate-600">{t("domainBuy.pricingHint")}</p>
+      <p className="mb-4 text-sm text-muted">{t("domainBuy.pricingHint")}</p>
       {edit.length === 0 ? <Empty>{t("domainBuy.noRules")}</Empty> : (
         <div className="space-y-3">
           {edit.map((r, i) => (
-            <div key={i} className="grid grid-cols-2 gap-3 rounded-xl bg-white p-4 shadow-card sm:grid-cols-5">
-              <label className="space-y-1 text-xs font-semibold text-slate-600">{t("domainBuy.colTld")}
+            <div key={i} className="grid grid-cols-2 gap-3 rounded-xl bg-surface p-4 shadow-card sm:grid-cols-5">
+              <label className="space-y-1 text-xs font-semibold text-muted">{t("domainBuy.colTld")}
                 <Input dir="ltr" value={r.tld} placeholder={t("domainBuy.tldPlaceholder")} onChange={(e) => update(i, { tld: e.target.value })} />
               </label>
-              <label className="space-y-1 text-xs font-semibold text-slate-600">{t("domainBuy.colMarkupKind")}
+              <label className="space-y-1 text-xs font-semibold text-muted">{t("domainBuy.colMarkupKind")}
                 <Select value={r.markupKind} onChange={(e) => update(i, { markupKind: e.target.value as EditRow["markupKind"] })}>
                   <option value="FIXED">{t("domainBuy.markupFixed")}</option>
                   <option value="PERCENT">{t("domainBuy.markupPercent")}</option>
                 </Select>
               </label>
-              <label className="space-y-1 text-xs font-semibold text-slate-600">{t("domainBuy.colMarkupValue")}
+              <label className="space-y-1 text-xs font-semibold text-muted">{t("domainBuy.colMarkupValue")}
                 <Input dir="ltr" type="number" value={r.markupValueText} onChange={(e) => update(i, { markupValueText: e.target.value })} />
               </label>
-              <label className="space-y-1 text-xs font-semibold text-slate-600">{t("domainBuy.colCurrency")}
+              <label className="space-y-1 text-xs font-semibold text-muted">{t("domainBuy.colCurrency")}
                 <Input dir="ltr" value={r.currency} onChange={(e) => update(i, { currency: e.target.value })} />
               </label>
               <div className="flex items-end gap-2">
-                <label className="flex-1 space-y-1 text-xs font-semibold text-slate-600">{t("domainBuy.colPromo")}
+                <label className="flex-1 space-y-1 text-xs font-semibold text-muted">{t("domainBuy.colPromo")}
                   <Input dir="ltr" type="number" value={r.promoText} onChange={(e) => update(i, { promoText: e.target.value })} />
                 </label>
                 <Button type="button" variant="ghost" size="sm" onClick={() => removeRow(i)}>{t("common.remove")}</Button>

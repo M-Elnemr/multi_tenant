@@ -78,27 +78,27 @@ export default function AiConfigPage() {
           </div>
 
           <Section title={t("aic.keys")} subtitle={t("aic.keys.hint")} action={<Button size="sm" onClick={() => setAdding(true)}>{t("aic.keys.add")}</Button>}>
-            <p className="mb-3 text-sm font-semibold text-slate-700">{t("aic.keys.rate", { n: c.activeKeys, r: c.requestsPerSecond })}</p>
-            {c.keys.length === 0 ? <p className="text-sm text-slate-500">{t("aic.keys.none")}</p> : (
-              <ul className="divide-y divide-slate-100 rounded-[18px] border border-slate-200 bg-white">
+            <p className="mb-3 text-sm font-semibold text-ink">{t("aic.keys.rate", { n: c.activeKeys, r: c.requestsPerSecond })}</p>
+            {c.keys.length === 0 ? <p className="text-sm text-muted">{t("aic.keys.none")}</p> : (
+              <ul className="divide-y divide-line rounded-[18px] border border-line bg-surface">
                 {c.keys.map((k) => (
                   <li key={k.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
                     <div className="min-w-0 flex-1">
-                      <p className="flex flex-wrap items-center gap-2 text-sm font-bold text-slate-900">
-                        {k.label} <span dir="ltr" className="font-mono text-xs font-medium text-slate-500">••••{k.last4}</span>
+                      <p className="flex flex-wrap items-center gap-2 text-sm font-bold text-ink">
+                        {k.label} <span dir="ltr" className="font-mono text-xs font-medium text-muted">••••{k.last4}</span>
                         {k.fromEnvironment && <Badge tone="slate">{t("aic.keys.env")}</Badge>}
                         {k.restingSeconds > 0 && <Badge tone="amber">{t("aic.keys.resting", { s: k.restingSeconds })}</Badge>}
                       </p>
-                      <p className="mt-0.5 text-xs text-slate-500">
+                      <p className="mt-0.5 text-xs text-muted">
                         {t("aic.keys.requests")}: <span className="tnum">{k.requests}</span> · {t("aic.keys.failures")}: <span className="tnum">{k.failures}</span>{k.lastStatus ? ` · ${k.lastStatus}` : ""}
                         {k.fromEnvironment ? ` · ${t("aic.keys.envHint")}` : ""}
                       </p>
-                      {tests[k.id] && <p className="mt-0.5 text-xs font-semibold text-slate-700">{tests[k.id]}</p>}
+                      {tests[k.id] && <p className="mt-0.5 text-xs font-semibold text-ink">{tests[k.id]}</p>}
                     </div>
                     <Button size="sm" variant="secondary" onClick={() => test(k)}>{t("aic.keys.test")}</Button>
                     {!k.fromEnvironment && (
                       <>
-                        <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                        <label className="flex items-center gap-2 text-sm font-medium text-ink">
                           <input type="checkbox" checked={k.enabled} onChange={() => toggle(k)} className="h-4 w-4 accent-[var(--brand)]" /> {t("aic.keys.enabled")}
                         </label>
                         <Button size="sm" variant="danger" onClick={() => setRemoving(k)}>{t("common.delete")}</Button>
@@ -133,22 +133,22 @@ function ChoiceCard({ title, hint, choice, onPick, busy, note, describe }: { tit
   const { t } = useI18n();
   return (
     <Card className="p-5">
-      <h2 className="text-[15px] font-bold text-slate-900">{title}</h2>
-      <p className="mt-0.5 text-xs text-slate-500">{hint}</p>
+      <h2 className="text-[15px] font-bold text-ink">{title}</h2>
+      <p className="mt-0.5 text-xs text-muted">{hint}</p>
       <div role="radiogroup" aria-label={title} className="mt-3 space-y-2">
         {choice.options.map((o) => {
           const on = o.code === choice.selected;
           return (
             <button key={o.code} type="button" role="radio" aria-checked={on} disabled={busy} onClick={() => !on && onPick(o.code)}
-              className={`flex w-full items-center gap-3 rounded-[14px] border px-3.5 py-3 text-start transition ${on ? "border-[var(--brand)] bg-[color-mix(in_srgb,var(--brand)_8%,white)]" : "border-slate-200 bg-white hover:border-slate-300"} disabled:opacity-60`}>
-              <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border-2 ${on ? "border-[var(--brand)]" : "border-slate-300"}`}>{on && <span className="h-2.5 w-2.5 rounded-full bg-[var(--brand)]" />}</span>
-              <span className="min-w-0 flex-1 text-sm font-semibold text-slate-900">{describe ? describe(o) : o.label}</span>
+              className={`flex w-full items-center gap-3 rounded-[14px] border px-3.5 py-3 text-start transition ${on ? "border-[var(--brand)] bg-[color-mix(in_srgb,var(--brand)_8%,white)]" : "border-line bg-surface hover:border-line-strong"} disabled:opacity-60`}>
+              <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border-2 ${on ? "border-[var(--brand)]" : "border-line-strong"}`}>{on && <span className="h-2.5 w-2.5 rounded-full bg-[var(--brand)]" />}</span>
+              <span className="min-w-0 flex-1 text-sm font-semibold text-ink">{describe ? describe(o) : o.label}</span>
               {o.default && <Badge tone="green">{t("aic.default")}</Badge>}
             </button>
           );
         })}
       </div>
-      {note && <p className="mt-2 text-xs text-slate-500">{note}</p>}
+      {note && <p className="mt-2 text-xs text-muted">{note}</p>}
       {!choice.isDefault && <button type="button" disabled={busy} onClick={() => onPick("default")} className="mt-3 text-xs font-semibold text-[var(--brand)] hover:underline">{t("aic.reset")}</button>}
     </Card>
   );

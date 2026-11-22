@@ -33,7 +33,7 @@ function TopList({ title, rows }: { title: string; rows?: Count[] }) {
   const { t } = useI18n();
   return (
     <Section title={title}>
-      {!rows?.length ? <p className="text-sm text-slate-500">{t("vis.none")}</p> : (
+      {!rows?.length ? <p className="text-sm text-muted">{t("vis.none")}</p> : (
         <ul className="space-y-1.5 text-sm">
           {rows.map((r) => <li key={r.name} className="flex items-center justify-between gap-3"><span className="truncate" dir="ltr">{r.name}</span><span className="shrink-0 font-semibold tabular-nums">{r.views}</span></li>)}
         </ul>
@@ -59,7 +59,7 @@ function Timeline({ id, onClose }: { id: string | null; onClose: () => void }) {
       {loading && !data ? <Loading /> : (
         <div className="space-y-4">
           <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
-            {facts.map(([k, v]) => <div key={k} className="flex justify-between gap-3 border-b border-slate-100 py-1"><dt className="text-slate-500">{k}</dt><dd className="truncate font-medium" dir="ltr">{v || t("vis.unknown")}</dd></div>)}
+            {facts.map(([k, v]) => <div key={k} className="flex justify-between gap-3 border-b border-line py-1"><dt className="text-muted">{k}</dt><dd className="truncate font-medium" dir="ltr">{v || t("vis.unknown")}</dd></div>)}
           </dl>
           <Table head={[t("admin.when"), t("vis.site"), t("vis.page"), t("vis.timeSpent")]}>
             {data?.views.map((v) => (
@@ -91,8 +91,8 @@ export default function Visitors() {
       <PageHeader title={t("admin.visitors")} subtitle={t("vis.sub")} />
       <div className="mb-4 grid gap-2 sm:grid-cols-4">
         <DateRangePicker value={{ from, to }} onChange={(r) => { setFrom(r.from ?? ""); setTo(r.to ?? ""); setPage(1); }} />
-        <label className="text-xs text-slate-500">{t("vis.filterPath")}<Input value={path} onChange={(e) => { setPath(e.target.value); setPage(1); }} placeholder="/products" dir="ltr" /></label>
-        <label className="text-xs text-slate-500">{t("vis.device")}
+        <label className="text-xs text-muted">{t("vis.filterPath")}<Input value={path} onChange={(e) => { setPath(e.target.value); setPage(1); }} placeholder="/products" dir="ltr" /></label>
+        <label className="text-xs text-muted">{t("vis.device")}
           <Select value={device} onChange={(e) => { setDevice(e.target.value); setPage(1); }}><option value="">-</option><option value="desktop">desktop</option><option value="mobile">mobile</option><option value="tablet">tablet</option></Select>
         </label>
       </div>

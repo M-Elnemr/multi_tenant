@@ -75,7 +75,7 @@ export default function AiHealth() {
                   {d.backups.map((b, i) => (
                     <div key={i} className="flex items-center justify-between gap-2 border-b pb-1 last:border-0">
                       <span>{b.kind === "BACKUP" ? t("aih.backup") : t("aih.restore")} · {dateTime(b.createdAt, locale)}</span>
-                      <span className="flex items-center gap-1.5">{b.sizeBytes ? <span className="text-xs text-slate-500">{(b.sizeBytes / 1048576).toFixed(1)} MB</span> : null}<Badge tone={b.ok ? "green" : "red"}>{b.ok ? "OK" : "FAILED"}</Badge></span>
+                      <span className="flex items-center gap-1.5">{b.sizeBytes ? <span className="text-xs text-muted">{(b.sizeBytes / 1048576).toFixed(1)} MB</span> : null}<Badge tone={b.ok ? "green" : "red"}>{b.ok ? "OK" : "FAILED"}</Badge></span>
                     </div>
                   ))}
                 </Card>
@@ -83,7 +83,7 @@ export default function AiHealth() {
             </Section>
           </div>
           <Section title={t("aih.slowest")}>
-            <p className="mb-2 text-xs text-slate-500">{t("aih.slowestHint")}</p>
+            <p className="mb-2 text-xs text-muted">{t("aih.slowestHint")}</p>
             {!d.slowest || d.slowest.length === 0 ? <Empty>{t("aih.none")}</Empty> : (
               <Table head={[t("aih.when"), t("aih.shop"), t("aih.model"), t("aih.time"), t("aih.steps")]}>
                 {d.slowest.map((r, i) => <tr key={i}><Td>{dateTime(r.createdAt, locale)}</Td><Td>{r.shop}</Td><Td>{r.model ?? "–"}</Td>
@@ -124,9 +124,9 @@ function KnowledgeSection() {
         <Card className="space-y-3">
           <p className="text-sm">
             {d.enabled ? <Badge tone="green">{t("aih.rag.on")}</Badge> : <Badge tone="red">{t("aih.rag.off")}</Badge>}{" "}
-            <span className="text-xs text-slate-500">{d.model}</span>
+            <span className="text-xs text-muted">{d.model}</span>
           </p>
-          <p className="text-xs text-slate-500">{t("aih.rag.hint")}</p>
+          <p className="text-xs text-muted">{t("aih.rag.hint")}</p>
           {d.shops.length === 0 ? <Empty>{t("aih.none")}</Empty> : (
             <Table head={[t("aih.shop"), t("aih.rag.selling"), t("aih.rag.embedded"), t("aih.rag.texts"), t("aih.rag.updated"), ""]}>
               {d.shops.map((s) => (

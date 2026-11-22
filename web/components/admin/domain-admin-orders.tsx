@@ -63,7 +63,7 @@ export function DomainAdminOrders() {
                 <tr key={r.id}>
                   <Td>
                     <Link href={`/admin/tenants/${r.tenantId}`} className="font-semibold text-brand hover:underline">{r.tenantName}</Link>
-                    <p className="text-xs text-slate-500" dir="ltr">{r.slug}</p>
+                    <p className="text-xs text-muted" dir="ltr">{r.slug}</p>
                   </Td>
                   <Td className="font-mono text-xs"><span dir="ltr">{r.domain}</span></Td>
                   <Td><StatusBadge status={r.status} /></Td>
