@@ -110,7 +110,9 @@
 .wl-arch:hover .wl-arch-img { transform: scale(1.04); }
 .wl-arch-ph { width: 100%; height: 100%; display: grid; place-items: center; background: linear-gradient(160deg, var(--wl-bg2), var(--wl-accent2)); }
 .wl-arch-ph span { font-family: var(--wl-serif); font-size: 7rem; color: color-mix(in srgb, var(--wl-surface) 80%, transparent); }
-.wl-arch-d { width: 100%; }
+.wl-arch-d { width: 100%; max-width: 360px; margin-inline: auto; }
+.wl-grid-few .wl-card-pic { max-height: 420px; }
+@media (max-width: 599px) { .wl-card-pic { max-height: 360px; } }
 .wl-orn { position: absolute; inset-inline-start: -18px; bottom: 40px; width: 96px; height: 96px; border: 1px solid var(--wl-accent2); border-radius: 50%; z-index: -1; }
 @keyframes wl-rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
 .wl-rise { opacity: 0; animation: wl-rise .9s var(--wl-ease) forwards; }

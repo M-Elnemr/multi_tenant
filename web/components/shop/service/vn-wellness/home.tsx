@@ -61,7 +61,7 @@ export function WellnessHome(d: VnData) {
       {offers.length > 0 && (
         <section className="wl-sec wl-wrap">
           <Reveal className="wl-head"><p className="wl-kicker">{t("shop.limitedTime")}</p><h2 className="wl-h2">{t("svh.offers")}</h2></Reveal>
-          <div className="wl-grid">{offers.map((s, i) => <ArchCard key={s.id} s={s} t={t} locale={locale} i={i} />)}</div>
+          <div className={offers.length < 3 ? "wl-grid wl-grid-few" : "wl-grid"}>{offers.map((s, i) => <ArchCard key={s.id} s={s} t={t} locale={locale} i={i} />)}</div>
         </section>
       )}
 

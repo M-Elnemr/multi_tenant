@@ -23,7 +23,7 @@ export function WellnessFooter({ name, hasProducts, hasBooking, data, poweredLab
           </ul></nav>
           <div><h3>{t("vn.wl.visitTitle")}</h3><ul>
             {today && <li><span>{t("vn.today")}:&nbsp;<bdi dir="ltr" className="tnum">{today}</bdi></span></li>}
-            {p?.whatsapp && <li><a href={whatsappLink(p.whatsapp, `${p.storeName} 👋`)} target="_blank" rel="noopener noreferrer" dir="ltr">{p.whatsapp}</a></li>}
+            {p?.whatsapp && !phones.includes(p.whatsapp) && <li><a href={whatsappLink(p.whatsapp, `${p.storeName} 👋`)} target="_blank" rel="noopener noreferrer" dir="ltr">{p.whatsapp}</a></li>}
             {phones.map((x) => <li key={x}><a href={`tel:${x}`} dir="ltr">{x}</a></li>)}
             {p?.addressText && <li><span>{p.addressText}</span></li>}
           </ul></div>
