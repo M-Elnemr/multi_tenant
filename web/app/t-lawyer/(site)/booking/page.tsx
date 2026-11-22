@@ -1,8 +1,11 @@
 import { Suspense } from "react";
 import { getT } from "@/lib/i18n-server";
 import { TrackBooking } from "./track";
+import { renderLnPage } from "@/components/lawyer/templates/render"; // DR-B
 
 export default async function BookingTrack() {
+  const ln = await renderLnPage("track"); // DR-B
+  if (ln) return ln;
   const { t } = await getT();
   return (
     <section className="lw-section">

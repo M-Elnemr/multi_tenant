@@ -41,7 +41,7 @@ export async function proxy(request: NextRequest) {
   const qTpl = request.nextUrl.searchParams.get("tpl");
   const qPreview = request.nextUrl.searchParams.get("preview") === "1";
   const cookieTpl = request.cookies.get(TPL_COOKIE)?.value;
-  const valid = (v?: string | null) => !!v && /^[a-z]{2,16}$/.test(v);
+  const valid = (v?: string | null) => !!v && /^[a-z][a-z-]{1,15}$/.test(v); // DR-B: ids like ln-global contain a hyphen
   const tpl = qTpl === "off" ? null : valid(qTpl) ? qTpl : !qPreview && valid(cookieTpl) ? cookieTpl! : null;
   // inside the gallery's iframes ("&preview=1") nothing is remembered: the frame's links carry ?tpl= themselves (see PreviewLinks)
   const preview = qPreview;

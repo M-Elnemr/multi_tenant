@@ -1,0 +1,14 @@
+/* Route-level loading and error states: neutral on purpose (they sit inside whichever template's header/footer, so they borrow its colours with currentColor). */
+.lnx-state { max-inline-size: 640px; margin-inline: auto; padding-block: 72px; padding-inline: 20px; text-align: center; }
+.lnx-state h2 { font-size: 1.5rem; font-weight: 700; margin: 0 0 8px; }
+.lnx-state p { margin: 0 0 20px; opacity: .75; line-height: 1.7; }
+.lnx-state button { cursor: pointer; font: inherit; font-weight: 700; padding-block: 12px; padding-inline: 24px; border: 1.5px solid currentColor; background: transparent; color: inherit; border-radius: 999px; }
+.lnx-state button:focus-visible { outline: 3px solid currentColor; outline-offset: 3px; }
+.lnx-skel { max-inline-size: 1100px; margin-inline: auto; padding-block: 56px; padding-inline: 20px; display: grid; gap: 16px; }
+.lnx-skel i { display: block; block-size: 18px; border-radius: 6px; background: currentColor; opacity: .08; animation: lnx-pulse 1.4s ease-in-out infinite; }
+.lnx-skel i:nth-child(1) { inline-size: 34%; block-size: 34px; }
+.lnx-skel i:nth-child(2) { inline-size: 70%; }
+.lnx-skel i:nth-child(3) { inline-size: 56%; }
+.lnx-skel i:nth-child(4) { block-size: 160px; margin-block-start: 12px; }
+@keyframes lnx-pulse { 50% { opacity: .15; } }
+@media (prefers-reduced-motion: reduce) { .lnx-skel i { animation: none; } }

@@ -10,8 +10,13 @@ import { resolveHost } from "@/lib/tenant";
 import { whatsappLink } from "@/lib/whatsapp";
 import type { LawyerSite } from "./types";
 import "./lawyer.css";
+import { buildLnCtx } from "@/components/lawyer/templates/shared/ctx"; // DR-B
+import { LN_TEMPLATES } from "@/components/lawyer/templates/registry"; // DR-B
 
 export default async function LawyerSiteLayout({ children }: { children: React.ReactNode }) {
+  // DR-B: the five new templates bring their own header, footer and fonts
+  const ln = await buildLnCtx();
+  if (ln?.isLn) { const T = LN_TEMPLATES[ln.id]; return <T.Shell ctx={ln}>{children}</T.Shell>; }
   const { t, locale } = await getT();
   const info = await resolveHost(await currentHost());
   const p = await backendJson<LawyerSite>("/lawyer/public/profile").catch(() => null);
