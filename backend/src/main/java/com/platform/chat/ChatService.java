@@ -1985,7 +1985,7 @@ public class ChatService {
     String criticalGate(Ctx ctx, ChannelAi.Routed routed, String last, String answer) {
         if (answer == null || answer.isBlank()) return answer;
         try {
-            String out = withoutSoldDenials(ctx, last, answer);
+            String out = withoutSoldDenials(ctx, last, NameAsk.repair(answer));   // «اتحرشت باسم حضرتك؟» (the model garbled the sentence it is given) becomes «أتشرف باسم حضرتك؟»
             String tail = out.stripTrailing();
             if (tail.endsWith(":") || tail.endsWith("：")) {   // «المتاح عندنا:» and then nothing: the list never arrived, the data is added by code
                 int nl = tail.lastIndexOf('\n');
