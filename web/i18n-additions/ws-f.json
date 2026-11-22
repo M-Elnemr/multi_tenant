@@ -11,7 +11,9 @@
     "open.home": "Home",
     "open.breadcrumb": "Breadcrumb",
     "open.qty.less": "Decrease quantity",
-    "open.qty.more": "Increase quantity"
+    "open.qty.more": "Increase quantity",
+    "open.cart.remove": "Remove item",
+    "open.checkout.steps": "Checkout progress"
   },
   "ar": {
     "open.rail.prev": "السابق",
@@ -25,6 +27,8 @@
     "open.home": "الرئيسية",
     "open.breadcrumb": "مسار التصفح",
     "open.qty.less": "تقليل الكمية",
-    "open.qty.more": "زيادة الكمية"
+    "open.qty.more": "زيادة الكمية",
+    "open.cart.remove": "إزالة المنتج",
+    "open.checkout.steps": "خطوات إتمام الطلب"
   }
 }
