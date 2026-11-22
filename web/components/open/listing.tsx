@@ -5,6 +5,7 @@ import { GOVERNORATES } from "@/lib/governorates";
 import { FiltersButton, FiltersSidebar, SortSelect } from "./filters";
 import { ProductGrid } from "./product-card";
 import { Icon } from "../icons";
+import { OEmpty } from "./empty";
 
 type SP = Record<string, string | string[] | undefined>;
 const KEYS = ["q", "category", "shop", "minPrice", "maxPrice", "brand", "inStock", "onSale", "freeShipping", "minRating", "audience", "color", "size", "condition", "governorate", "sort", "page"];
@@ -41,7 +42,7 @@ export async function OpenListing({ searchParams, basePath, fixed = {}, title, h
       case "onSale": return t("open.f.onSale");
       case "inStock": return t("open.f.inStock");
       case "freeShipping": return t("open.f.freeShipping");
-      case "minRating": return `${v}★ ${t("open.f.andUp")}`;
+      case "minRating": return `${v}+ ${t("open.f.andUp")}`;
       case "governorate": { const g = GOVERNORATES.find((x) => x.code === v); return g ? `${t("open.f.deliverTo")}: ${locale === "ar" ? g.ar : g.en}` : v; }
       default: return v.split(",").join(" · ");
     }
@@ -52,13 +53,26 @@ export async function OpenListing({ searchParams, basePath, fixed = {}, title, h
   return (
     <div className="o-container pt-5 md:pt-8">
       {header}
+      {facets.trail.length > 0 && !fixed.shop && (
+        <nav aria-label={t("open.breadcrumb")} className="o-mute mb-3 flex flex-wrap items-center gap-1 text-[13px]">
+          <Link href="/" className="hover:text-[var(--o-accent)]">{t("open.home")}</Link>
+          {facets.trail.map((c, i) => (
+            <span key={c.slug} className="flex items-center gap-1"><Icon name="chevron" className="h-3 w-3 rtl:rotate-180" />{i === facets.trail.length - 1 ? <span className="font-bold text-[var(--o-ink)]" aria-current="page">{locale === "ar" ? c.nameAr : c.nameEn || c.nameAr}</span> : <Link href={`/c/${c.slug}`} className="hover:text-[var(--o-accent)]">{locale === "ar" ? c.nameAr : c.nameEn || c.nameAr}</Link>}</span>
+          ))}
+        </nav>
+      )}
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-black md:text-3xl">{heading}</h1>
+          <h1 className="o-h1">{heading}</h1>
           <p className="o-mute mt-0.5 text-sm">{t("open.resultsCount", { n: list.meta.total })}</p>
         </div>
         <div className="flex items-center gap-2"><FiltersButton facets={facets} fixed={fixed} basePath={basePath} activeCount={activeKeys.length + (!fixed.shop && first(searchParams.shop) ? 1 : 0)} total={list.meta.total} /><SortSelect basePath={basePath} /></div>
       </div>
+      {!fixed.shop && facets.categories.length > 0 && (
+        <div className="o-scroll-hide mb-4 flex gap-2 overflow-x-auto pb-1" aria-label={t("open.f.categories")}>
+          {facets.categories.slice(0, 14).map((c) => <Link key={c.slug} href={`/c/${c.slug}`} className="o-chip shrink-0">{locale === "ar" ? c.nameAr : c.nameEn || c.nameAr}<span className="o-num text-[11px] opacity-60">{c.n}</span></Link>)}
+        </div>
+      )}
       {(activeKeys.length > 0 || (!fixed.shop && first(searchParams.shop))) && (
         <div className="mb-4 flex flex-wrap gap-2">
           {activeKeys.map((k) => chip(labelFor(k), k))}
@@ -69,7 +83,7 @@ export async function OpenListing({ searchParams, basePath, fixed = {}, title, h
         <FiltersSidebar facets={facets} fixed={fixed} basePath={basePath} activeCount={activeKeys.length + (!fixed.shop && first(searchParams.shop) ? 1 : 0)} />
         <div className="min-w-0 flex-1">
           {list.data.length === 0 ? (
-            <div className="o-card px-6 py-16 text-center"><p className="text-5xl">🔎</p><h2 className="o-title mt-3">{t("open.noResults")}</h2><p className="o-mute mt-1">{t("open.noResultsHint")}</p><Link href="/search" className="o-btn mt-5">{t("open.clearSearch")}</Link></div>
+            <OEmpty icon="search" title={t("open.noResults")} body={t("open.noResultsHint")} href="/search" cta={t("open.clearSearch")} />
           ) : (
             <ProductGrid products={list.data} />
           )}

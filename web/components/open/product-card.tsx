@@ -46,7 +46,7 @@ export function OpenProductCard({ p, className = "" }: { p: OpenProduct; classNa
           {p.compareAtMinor ? <span className="o-num text-xs text-[var(--o-faint)] line-through">{money(p.compareAtMinor, p.currency, locale)}</span> : null}
         </div>
         <div className="flex min-h-[1.25rem] flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-          {rating > 0 && <span className="flex items-center gap-1 font-bold"><span className="o-stars">★</span><span className="o-num">{rating.toFixed(1)}</span><span className="o-num font-medium text-[var(--o-mute)]">({p.ratingCount})</span></span>}
+          {rating > 0 && <span className="flex items-center gap-1 font-bold"><Icon name="star" className="o-stars h-3.5 w-3.5 fill-current" /><span className="o-num">{rating.toFixed(1)}</span><span className="o-num font-medium text-[var(--o-mute)]">({p.ratingCount})</span></span>}
           {p.freeShipping && <span className="flex items-center gap-1 font-semibold text-[var(--o-green)]"><Icon name="truck" className="h-3.5 w-3.5" />{t("open.freeShipping")}</span>}
         </div>
       </div>

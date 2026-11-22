@@ -6,6 +6,8 @@ import { OpenChosenProvider, OpenGallery } from "@/components/open/gallery";
 import { WishButton } from "@/components/open/product-card";
 import { ProductRail } from "@/components/open/sections";
 import { Icon } from "@/components/icons";
+import { Stars } from "@/components/open/stars";
+import { Monogram } from "@/components/open/media";
 import { BackendError } from "@/lib/backend";
 import { money } from "@/lib/format";
 import { getT } from "@/lib/i18n-server";
@@ -55,7 +57,7 @@ export default async function OpenProductPage({ params }: { params: Promise<{ sh
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
       <nav className="mb-2 flex flex-wrap items-center gap-x-1.5 text-xs font-semibold text-[var(--o-mute)]" aria-label="breadcrumb">
         <Link href="/" className="inline-flex min-h-9 items-center hover:text-[var(--o-accent)]">{t("shop.home")}</Link>
-        {p.taxonomy.map((c) => <span key={c.slug} className="flex items-center gap-1.5"><span>/</span><Link href={`/c/${c.slug}`} className="inline-flex min-h-9 items-center hover:text-[var(--o-accent)]">{nm(c)}</Link></span>)}
+        {p.taxonomy.map((c) => <span key={c.slug} className="flex items-center gap-1.5"><Icon name="chevron" className="h-3 w-3 rtl:rotate-180" /><Link href={`/c/${c.slug}`} className="inline-flex min-h-9 items-center hover:text-[var(--o-accent)]">{nm(c)}</Link></span>)}
       </nav>
 
       <OpenChosenProvider>
@@ -66,12 +68,12 @@ export default async function OpenProductPage({ params }: { params: Promise<{ sh
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               {p.brand && <p className="text-xs font-extrabold uppercase tracking-wider text-[var(--o-accent)]">{p.brand}</p>}
-              <h1 className="mt-1 text-2xl font-black leading-tight md:text-3xl">{p.name}</h1>
+              <h1 className="o-h1 mt-1">{p.name}</h1>
             </div>
             <WishButton p={{ id: p.id, shopId: p.shopId, name: p.name, slug: p.slug, currency: p.currency, minPriceMinor: lowest, image: p.images[0] ?? null, shop: p.shop }} className="shrink-0 !bg-[var(--o-soft)]" />
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-            {p.reviews.count > 0 ? <a href="#reviews" className="flex items-center gap-1 font-bold"><span className="o-stars">{"★".repeat(Math.round(rating))}</span>{rating.toFixed(1)}<span className="font-medium text-[var(--o-mute)]">({p.reviews.count})</span></a> : <span className="o-mute">{t("open.noReviewsYet")}</span>}
+            {p.reviews.count > 0 ? <a href="#reviews" className="flex items-center gap-1 font-bold"><Stars value={rating} />{rating.toFixed(1)}<span className="font-medium text-[var(--o-mute)]">({p.reviews.count})</span></a> : <span className="o-mute">{t("open.noReviewsYet")}</span>}
             <span className="text-[var(--o-mute)]">{t("open.soldBy")} <Link href={`/shop/${p.shop.slug}`} className="font-extrabold text-[var(--o-ink)] hover:text-[var(--o-accent)]">{p.shop.name}</Link></span>
           </div>
           {p.shortDescription && <p className="mt-3 text-[15px] leading-relaxed text-[var(--o-mute)]">{p.shortDescription}</p>}
@@ -86,9 +88,9 @@ export default async function OpenProductPage({ params }: { params: Promise<{ sh
           <Link href={`/shop/${p.shop.slug}`} className="o-card mt-4 flex items-center gap-3 p-4 transition hover:shadow-[var(--o-shadow-lg)]">
             <span className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-2xl bg-[var(--o-soft)] text-xl font-black">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              {p.shop.logoUrl ? <img src={p.shop.logoUrl} alt="" width={48} height={48} className="h-full w-full object-cover" /> : p.shop.name.slice(0, 1)}
+              {p.shop.logoUrl ? <img src={p.shop.logoUrl} alt="" width={48} height={48} className="h-full w-full object-cover" /> : <Monogram name={p.shop.name} />}
             </span>
-            <span className="min-w-0 flex-1"><span className="block truncate font-extrabold">{p.shop.name}</span><span className="o-mute text-xs">{p.shop.productCount} {t("open.productsCount")}{num(p.shop.rating) > 0 ? ` · ★ ${num(p.shop.rating).toFixed(1)}` : ""}</span></span>
+            <span className="min-w-0 flex-1"><span className="block truncate font-extrabold">{p.shop.name}</span><span className="o-mute text-xs">{p.shop.productCount} {t("open.productsCount")}{num(p.shop.rating) > 0 ? ` · ${num(p.shop.rating).toFixed(1)} / 5` : ""}</span></span>
             <span className="o-link">{t("open.visitShop")}</span>
           </Link>
         </div>
@@ -96,7 +98,7 @@ export default async function OpenProductPage({ params }: { params: Promise<{ sh
       </OpenChosenProvider>
 
       <section className="o-card mt-8 p-5 md:p-8">
-        <h2 className="o-title">{t("open.details")}</h2>
+        <h2 className="o-h1 !text-2xl">{t("open.details")}</h2>
         {p.description && <div className="mt-3 max-w-3xl whitespace-pre-line text-[15px] leading-8">{p.description}</div>}
         {p.specs && p.specs.length > 0 && (
           <dl className="mt-5 grid max-w-3xl divide-y divide-[var(--o-line)] overflow-hidden rounded-2xl border border-[var(--o-line)] text-sm">
@@ -108,14 +110,14 @@ export default async function OpenProductPage({ params }: { params: Promise<{ sh
 
       <section id="reviews" className="o-card mt-6 scroll-mt-32 p-5 md:p-8">
         <div className="flex flex-wrap items-center gap-4">
-          <h2 className="o-title">{t("open.reviews")}</h2>
-          {p.reviews.count > 0 && <p className="flex items-center gap-2"><span className="text-3xl font-black">{rating.toFixed(1)}</span><span><span className="o-stars block">{"★".repeat(Math.round(rating))}</span><span className="o-mute text-xs">{t("open.basedOn", { n: p.reviews.count })}</span></span></p>}
+          <h2 className="o-h1 !text-2xl">{t("open.reviews")}</h2>
+          {p.reviews.count > 0 && <p className="flex items-center gap-2"><span className="text-3xl font-black">{rating.toFixed(1)}</span><span><Stars value={rating} className="h-3.5 w-3.5" /><span className="o-mute text-xs">{t("open.basedOn", { n: p.reviews.count })}</span></span></p>}
         </div>
         {p.reviews.reviews.length === 0 ? <p className="o-mute mt-3">{t("open.noReviewsHint")}</p> : (
           <ul className="mt-4 grid gap-4 md:grid-cols-2">
             {p.reviews.reviews.map((r, i) => (
               <li key={i} className="rounded-2xl bg-[var(--o-soft)] p-4">
-                <p className="flex items-center justify-between"><span className="font-extrabold">{r.firstName}</span><span className="o-stars text-sm">{"★".repeat(r.rating)}{"☆".repeat(5 - r.rating)}</span></p>
+                <p className="flex items-center justify-between"><span className="font-extrabold">{r.firstName}</span><Stars value={r.rating} className="h-3.5 w-3.5" /></p>
                 {r.reviewText && <p className="mt-1.5 text-sm leading-7">{r.reviewText}</p>}
               </li>
             ))}

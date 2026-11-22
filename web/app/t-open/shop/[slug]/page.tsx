@@ -34,7 +34,7 @@ export default async function ShopPage({ params, searchParams }: { params: Promi
         <div className="min-w-0 flex-1 pt-2">
           <h1 className="text-2xl font-black md:text-3xl">{shop.name}</h1>
           <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[var(--o-mute)]">
-            {rating > 0 && <span className="flex items-center gap-1 font-bold text-[var(--o-ink)]"><span className="o-stars">★</span>{rating.toFixed(1)} <span className="font-medium text-[var(--o-mute)]">({shop.ratingCount})</span></span>}
+            {rating > 0 && <span className="flex items-center gap-1 font-bold text-[var(--o-ink)]"><Icon name="star" className="o-stars h-3.5 w-3.5 fill-current" />{rating.toFixed(1)} <span className="font-medium text-[var(--o-mute)]">({shop.ratingCount})</span></span>}
             <span>{shop.productCount} {t("open.productsCount")}</span>
             {shop.isOpen === false && <span className="font-bold text-[var(--o-red)]">{shop.closedMessage || t("open.shopClosed")}</span>}
           </p>

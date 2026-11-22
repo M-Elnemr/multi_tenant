@@ -7,7 +7,11 @@
     "open.search.recent": "Recent searches",
     "open.search.clearRecent": "Clear",
     "open.search.searching": "Searching...",
-    "open.search.noMatch": "No quick matches for \"{q}\". Press Enter to search everything."
+    "open.search.noMatch": "No quick matches for \"{q}\". Press Enter to search everything.",
+    "open.home": "Home",
+    "open.breadcrumb": "Breadcrumb",
+    "open.qty.less": "Decrease quantity",
+    "open.qty.more": "Increase quantity"
   },
   "ar": {
     "open.rail.prev": "السابق",
@@ -17,6 +21,10 @@
     "open.search.recent": "عمليات البحث الأخيرة",
     "open.search.clearRecent": "مسح",
     "open.search.searching": "جاري البحث...",
-    "open.search.noMatch": "مفيش نتائج سريعة لـ \"{q}\". اضغط Enter للبحث في كل المنتجات."
+    "open.search.noMatch": "مفيش نتائج سريعة لـ \"{q}\". اضغط Enter للبحث في كل المنتجات.",
+    "open.home": "الرئيسية",
+    "open.breadcrumb": "مسار التصفح",
+    "open.qty.less": "تقليل الكمية",
+    "open.qty.more": "زيادة الكمية"
   }
 }

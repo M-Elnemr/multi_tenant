@@ -1,8 +1,9 @@
 "use client";
 
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { picturesFor } from "@/lib/color-media";
 import { Icon } from "../icons";
+import { Monogram } from "./media";
 import { useI18n } from "../i18n-provider";
 
 type Img = { id?: string; thumb: string; medium: string; original: string; alt?: string | null; optionValue?: string | null };
@@ -27,22 +28,32 @@ function GalleryView({ images, name, badge }: { images: Img[]; name: string; bad
   const { t } = useI18n();
   const [i, setI] = useState(0);
   const [zoom, setZoom] = useState(false);
-  if (images.length === 0) return <div className="grid aspect-square place-items-center rounded-3xl bg-[var(--o-soft)] text-7xl opacity-40">🛍️</div>;
+  if (images.length === 0) return <div className="o-frame relative aspect-square overflow-hidden rounded-3xl"><Monogram name={name} /></div>;
   const cur = images[i];
+  useEffect(() => {
+    if (!zoom) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setZoom(false);
+      else if (e.key === "ArrowRight") setI((n) => (n + (document.dir === "rtl" ? -1 : 1) + images.length) % images.length);
+      else if (e.key === "ArrowLeft") setI((n) => (n + (document.dir === "rtl" ? 1 : -1) + images.length) % images.length);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [zoom, images.length]);
   const step = (d: number) => setI((n) => (n + d + images.length) % images.length);
   return (
     <div className="flex flex-col-reverse gap-3 md:flex-row">
       {images.length > 1 && (
         <div className="o-scroll-hide flex gap-2 overflow-x-auto md:max-h-[34rem] md:w-[4.6rem] md:flex-col md:overflow-y-auto md:overflow-x-visible">
           {images.map((im, n) => (
-            <button key={im.id ?? n} type="button" onClick={() => setI(n)} aria-label={`${n + 1}`} className={`h-16 w-16 shrink-0 overflow-hidden rounded-xl border-2 bg-[var(--o-soft)] transition md:h-[4.4rem] md:w-[4.4rem] ${n === i ? "border-[var(--o-accent)]" : "border-transparent opacity-70 hover:opacity-100"}`}>
+            <button key={im.id ?? n} type="button" onClick={() => setI(n)} aria-label={`${n + 1} / ${images.length}`} aria-current={n === i} className={`h-16 w-16 shrink-0 overflow-hidden rounded-xl border-2 bg-[var(--o-soft)] transition md:h-[4.4rem] md:w-[4.4rem] ${n === i ? "border-[var(--o-accent)]" : "border-transparent opacity-70 hover:opacity-100"}`}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={im.thumb} alt="" width={70} height={70} className="h-full w-full object-cover" loading="lazy" />
             </button>
           ))}
         </div>
       )}
-      <div className="relative min-w-0 flex-1 overflow-hidden rounded-3xl bg-white shadow-[var(--o-shadow)]">
+      <div className="relative min-w-0 flex-1 overflow-hidden rounded-3xl border border-[var(--o-line)] bg-white">
         <button type="button" onClick={() => setZoom(true)} className="block aspect-square w-full cursor-zoom-in" aria-label={t("open.zoom")}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img key={cur.medium} src={cur.medium} alt={cur.alt || name} width={720} height={720} fetchPriority="high" className="o-pop h-full w-full object-contain" />
@@ -50,8 +61,8 @@ function GalleryView({ images, name, badge }: { images: Img[]; name: string; bad
         <div className="absolute start-3 top-3 flex flex-col items-start gap-1.5">{badge}</div>
         {images.length > 1 && (
           <>
-            <button type="button" onClick={() => step(-1)} aria-label="previous" className="absolute start-2 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-white/90 shadow-lg transition hover:scale-110"><Icon name="arrow" className="h-5 w-5 rotate-180 rtl:rotate-0" /></button>
-            <button type="button" onClick={() => step(1)} aria-label="next" className="absolute end-2 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-white/90 shadow-lg transition hover:scale-110"><Icon name="arrow" className="h-5 w-5 rtl:rotate-180" /></button>
+            <button type="button" onClick={() => step(-1)} aria-label={t("open.rail.prev")} className="absolute start-2 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-white/90 shadow-lg transition hover:scale-110"><Icon name="arrow" className="h-5 w-5 rotate-180 rtl:rotate-0" /></button>
+            <button type="button" onClick={() => step(1)} aria-label={t("open.rail.next")} className="absolute end-2 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-white/90 shadow-lg transition hover:scale-110"><Icon name="arrow" className="h-5 w-5 rtl:rotate-180" /></button>
             <span className="absolute bottom-3 end-3 rounded-full bg-black/55 px-2.5 py-1 text-xs font-bold text-white backdrop-blur">{i + 1} / {images.length}</span>
           </>
         )}

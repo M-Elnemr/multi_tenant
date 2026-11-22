@@ -68,7 +68,7 @@ export function ShopCard({ s, productsLabel }: { s: OpenShop; locale?: Locale; p
         </span>
         <p className="mt-3 line-clamp-1 text-[15px] font-bold">{s.name}</p>
         <p className="mt-1 flex items-center gap-2 text-xs text-[var(--o-mute)]">
-          {rating > 0 && <span className="flex items-center gap-1 font-bold text-[var(--o-ink)]"><span className="o-stars">★</span><span className="o-num">{rating.toFixed(1)}</span></span>}
+          {rating > 0 && <span className="flex items-center gap-1 font-bold text-[var(--o-ink)]"><Icon name="star" className="o-stars h-3.5 w-3.5 fill-current" /><span className="o-num">{rating.toFixed(1)}</span></span>}
           <span className="o-num">{s.productCount} {productsLabel}</span>
         </p>
         {s.shortDescription && <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-[var(--o-mute)]">{s.shortDescription}</p>}
