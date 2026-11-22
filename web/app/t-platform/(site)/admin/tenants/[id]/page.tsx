@@ -1,7 +1,9 @@
 "use client";
 
 import { localPhone } from "@/lib/phone";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { ContactButtons, Fact, PeriodBar, TypeTag, useTypeLabel } from "@/components/admin/kit";
 import { use, useState } from "react";
 import { api } from "@/lib/client";
 import { useAction, useApi, useMe } from "@/components/hooks";
@@ -12,7 +14,6 @@ import { PhoneInput } from "@/components/inputs";
 import { Icon, type IconName } from "@/components/icons";
 import { Avatar } from "@/components/ui";
 import { dateOnly, dateTime, money } from "@/lib/format";
-import { whatsappLink } from "@/lib/whatsapp";
 
 type Detail = {
   id: string; slug: string; name: string; tenantType: string; status: string; createdAt: string; staffCount: number;
@@ -28,7 +29,7 @@ type Detail = {
 const daysTo = (iso?: string) => (iso ? Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000) : null);
 
 function H({ icon, children }: { icon: IconName; children: React.ReactNode }) {
-  return <h2 className="mb-3 flex items-center gap-2 font-bold text-ink"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-soft text-brand"><Icon name={icon} className="h-4 w-4" /></span>{children}</h2>;
+  return <h2 className="mb-3 flex items-center gap-2 font-bold text-ink"><span className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-brand-soft text-brand"><Icon name={icon} className="h-4 w-4" /></span>{children}</h2>;
 }
 
 export default function TenantDetail({ params }: { params: Promise<{ id: string }> }) {
@@ -66,101 +67,107 @@ export default function TenantDetail({ params }: { params: Promise<{ id: string 
   const chosen = planCode || data.subscription.planCode?.replace("_FREE", store ? "_STANDARD" : "_PRO") || plans[0];
   const o = data.owner;
   const left = daysTo(data.subscription.currentPeriodEnd);
+  const typeLabel = useTypeLabel();
+  const sub = data.subscription;
   return (
     <>
-      <div className="mb-6 overflow-hidden rounded-3xl bg-white shadow-card">
-        <div className="bg-brand-gradient h-20 sm:h-24" />
-        <div className="-mt-10 flex flex-wrap items-end justify-between gap-4 px-5 pb-5 sm:px-7">
-          <div className="flex items-end gap-4">
-            <Avatar name={data.name} className="h-20 w-20 text-2xl ring-4 ring-white" />
-            <div className="pb-1">
-              <h1 className="text-xl font-extrabold text-ink sm:text-2xl">{data.name}</h1>
-              <p className="text-sm text-slate-500" dir="ltr">{data.domains.find((d) => d.primary)?.host ?? data.slug}</p>
-              <div className="mt-1.5 flex flex-wrap items-center gap-2"><StatusBadge status={data.status} /><span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600"><Icon name={store ? "bag" : "stethoscope"} className="h-3 w-3" />{store ? t("type.store") : t("type.clinic")}</span></div>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {can("platform.support.access") && <Button loading={support.loading} onClick={() => support.run()}><Icon name="shield" className="h-4 w-4" />{t("admin.openSupport")}</Button>}
-            {data.status !== "SUSPENDED" ? <Button variant="danger" loading={setStatus.loading} onClick={() => setStatus.run("SUSPENDED")}>{t("admin.disable")}</Button> : <Button loading={setStatus.loading} onClick={() => setStatus.run("ACTIVE")}>{t("admin.enable")}</Button>}
+      <nav aria-label="breadcrumb" className="mb-3 flex items-center gap-1.5 text-[12.5px] text-muted">
+        <Link href="/admin/tenants" className="font-medium hover:text-ink">{t("admin.tenants")}</Link>
+        <Icon name="chevron" className="h-3 w-3 flip-rtl" />
+        <span className="truncate text-ink-2">{data.name}</span>
+      </nav>
+      <header className="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-[14px] bg-surface p-4 shadow-card sm:p-5">
+        <div className="flex min-w-0 items-center gap-3.5">
+          <Avatar name={data.name} className="h-14 w-14 text-lg" />
+          <div className="min-w-0">
+            <h1 className="truncate text-xl font-bold text-ink">{data.name}</h1>
+            <p className="truncate text-[13px] text-muted" dir="ltr">{data.domains.find((d) => d.primary)?.host ?? data.slug}</p>
+            <div className="mt-1.5 flex flex-wrap items-center gap-2.5"><StatusBadge status={data.status} /><TypeTag type={data.tenantType} /><span className="sr-only">{typeLabel(data.tenantType)}</span></div>
           </div>
         </div>
-        <div className="px-5 pb-4 sm:px-7"><ErrorText error={setStatus.error ?? support.error} /></div>
-      </div>
+        <div className="flex flex-wrap gap-2">
+          {can("platform.support.access") && <Button loading={support.loading} onClick={() => support.run()}><Icon name="shield" className="h-4 w-4" />{t("admin.openSupport")}</Button>}
+          {data.status !== "SUSPENDED" ? <Button variant="secondary" loading={setStatus.loading} onClick={() => setStatus.run("SUSPENDED")}>{t("admin.disable")}</Button> : <Button loading={setStatus.loading} onClick={() => setStatus.run("ACTIVE")}>{t("admin.enable")}</Button>}
+        </div>
+        {(setStatus.error || support.error) && <div className="w-full"><ErrorText error={setStatus.error ?? support.error} /></div>}
+      </header>
 
-      <div className="grid gap-5 lg:grid-cols-2">
-        <Card>
-          <H icon="users">{t("admin.owner")}</H>
-          <p className="font-semibold">{`${o.firstName ?? ""} ${o.lastName ?? ""}`.trim() || "-"}</p>
-          {o.phone && (
-            <div className="mt-2 flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3">
-              <a className="text-lg font-extrabold text-brand" dir="ltr" href={`tel:${o.phone}`}>{localPhone(o.phone)}</a>
-              <div className="flex gap-2">
-                <a href={`tel:${o.phone}`} aria-label={t("admin.call")} className="flex h-10 w-10 items-center justify-center rounded-full bg-brand text-white"><Icon name="phone" className="h-5 w-5" /></a>
-                <a href={whatsappLink(o.phone)} target="_blank" rel="noopener noreferrer" aria-label={t("admin.whatsapp")} className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500 text-white"><Icon name="chat" className="h-5 w-5" /></a>
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <div className="min-w-0 space-y-5">
+          <Card>
+            <H icon="billing">{t("admin.subscription")}</H>
+            <div className="flex items-center justify-between gap-3">
+              <div><p className="text-xl font-bold text-ink">{planLabel(t, sub.planCode)}</p><p className="tnum text-sm text-muted">{money(sub.priceMinor, "EGP", locale)}</p></div>
+              {sub.status && <StatusBadge status={sub.status} />}
+            </div>
+            <dl className="mt-4 grid grid-cols-2 gap-4 rounded-[12px] bg-surface-2 p-4">
+              <Fact label={t("admin.subscribedSince")}>{dateOnly(sub.currentPeriodStart ?? sub.createdAt, locale)}</Fact>
+              <Fact label={t("admin.endsOn")}>{dateOnly(sub.currentPeriodEnd, locale)}</Fact>
+            </dl>
+            <PeriodBar start={sub.currentPeriodStart} end={sub.currentPeriodEnd} className="mt-3" />
+            <div className="mt-5 border-t border-line pt-4">
+              <p className="mb-2 text-sm font-semibold text-ink">{t("admin.changePlan")}</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Select value={chosen} onChange={(e) => setPlanCode(e.target.value)}>{plans.map((p) => <option key={p} value={p}>{planLabel(t, p)}</option>)}</Select>
+                <Input type="number" min={1} max={3650} value={days} onChange={(e) => setDays(e.target.value)} placeholder={left !== null && left > 0 ? t("admin.daysKeep", { days: String(left) }) : t("admin.days")} dir="ltr" />
               </div>
+              <ErrorText error={changePlan.error} />
+              <Button className="mt-3" loading={changePlan.loading} onClick={() => changePlan.run()}>{t("admin.apply")}</Button>
             </div>
-          )}
-          {o.email && <p className="mt-2 flex items-center gap-2 text-sm text-slate-600" dir="ltr"><Icon name="mail" className="h-4 w-4 text-slate-400" /><a className="text-brand" href={`mailto:${o.email}`}>{o.email}</a></p>}
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button variant="secondary" size="sm" loading={resetPw.loading} onClick={() => resetPw.run()}>{t("admin.resetPassword")}</Button>
-            <Button variant="secondary" size="sm" onClick={() => { setOwnerPhone(localPhone(o.phone)); setOwnerEmail(o.email ?? ""); setModal("owner"); }}>{t("admin.editOwner")}</Button>
-            <Button variant="secondary" size="sm" onClick={() => { setNewName(data.name); setNewSlug(data.slug); setModal("rename"); }}>{t("admin.editBusiness")}</Button>
-          </div>
-          <ErrorText error={resetPw.error} />
-          <p className="mt-4 text-xs text-slate-500">{t("admin.signedUp")}: {dateOnly(data.createdAt, locale)} · {t("admin.staff")}: <b>{data.staffCount}</b></p>
-        </Card>
-
-        <Card>
-          <H icon="billing">{t("admin.subscription")}</H>
-          <div className="flex items-center justify-between gap-3">
-            <div><p className="text-xl font-extrabold text-ink">{planLabel(t, data.subscription.planCode)}</p><p className="text-sm text-slate-500">{money(data.subscription.priceMinor, "EGP", locale)}</p></div>
-            {data.subscription.status && <StatusBadge status={data.subscription.status} />}
-          </div>
-          <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-            <div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">{t("admin.subscribedSince")}</p><p className="font-semibold">{dateOnly(data.subscription.currentPeriodStart ?? data.subscription.createdAt, locale)}</p></div>
-            <div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">{t("admin.endsOn")}</p><p className="font-semibold">{dateOnly(data.subscription.currentPeriodEnd, locale)}</p>{left !== null && <p className={`text-xs font-bold ${left <= 0 ? "text-red-600" : left <= 7 ? "text-amber-700" : "text-emerald-700"}`}>{left <= 0 ? t("admin.expired") : t("admin.daysLeft", { n: left })}</p>}</div>
-          </div>
-          <div className="mt-4 border-t border-slate-100 pt-4">
-            <p className="mb-2 text-sm font-semibold">{t("admin.changePlan")}</p>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <Select value={chosen} onChange={(e) => setPlanCode(e.target.value)}>{plans.map((p) => <option key={p} value={p}>{planLabel(t, p)}</option>)}</Select>
-              <Input type="number" min={1} max={3650} value={days} onChange={(e) => setDays(e.target.value)} placeholder={left !== null && left > 0 ? t("admin.daysKeep", { days: String(left) }) : t("admin.days")} dir="ltr" />
-            </div>
-            <ErrorText error={changePlan.error} />
-            <Button className="mt-3" loading={changePlan.loading} onClick={() => changePlan.run()}>{t("admin.apply")}</Button>
-          </div>
-        </Card>
-
-        <Card>
-          <H icon="wallet">{t("admin.payRequests")}</H>
-          {data.payRequests.length === 0 ? <p className="text-sm text-slate-500">{t("admin.noRequests")}</p> : (
-            <ul className="space-y-2">{data.payRequests.map((r) => (
-              <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 p-3 text-sm"><span className="font-semibold">{planLabel(t, r.planCode)} · {money(r.amountMinor, r.currency, locale)}</span><span className="flex items-center gap-2"><StatusBadge status={r.status} /><span className="text-xs text-slate-500">{dateTime(r.createdAt, locale)}</span></span></li>
-            ))}</ul>
-          )}
-        </Card>
-
-        <Card>
-          <H icon="globe">{t("admin.domains")}</H>
-          <ul className="space-y-1.5 text-sm" dir="ltr">{data.domains.map((d) => <li key={d.host} className="flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${d.verified ? "bg-emerald-500" : "bg-amber-500"}`} />{d.host}{d.primary && <span className="rounded bg-brand-soft px-1.5 text-[10px] font-bold text-brand">PRIMARY</span>}</li>)}</ul>
-          <h3 className="mb-2 mt-5 text-sm font-bold text-ink">{t("admin.usage")}</h3>
-          {data.usage.length === 0 ? <p className="text-sm text-slate-500">-</p> : data.usage.map((u) => <p key={u.metric + u.period} className="text-sm text-slate-600">{u.metric} ({u.period}): <b>{u.value}</b></p>)}
-        </Card>
-
-        <Card className="lg:col-span-2">
-          <H icon="clock">{t("admin.history")}</H>
-          <ol className="relative space-y-3 border-s-2 border-slate-100 ps-4">
-            {data.events.map((e, i) => <li key={i} className="relative text-sm"><span className="absolute -start-[1.4rem] top-1.5 h-2.5 w-2.5 rounded-full bg-brand" /><span className="font-mono text-xs font-semibold text-slate-700">{e.eventType}</span> <span className="text-slate-400">· {dateTime(e.createdAt, locale)}</span></li>)}
-          </ol>
-        </Card>
-
-        {can("platform.tenant.purge") && (
-          <Card className="border border-red-200 bg-red-50/40 lg:col-span-2">
-            <H icon="alert">{t("admin.dangerZone")}</H>
-            <p className="mb-3 text-sm text-slate-600">{t("admin.dangerBody")}</p>
-            <Button variant="danger" onClick={() => { setTyped(""); setConfirmOpen(true); }}>{t("admin.deleteNow")}</Button>
           </Card>
-        )}
+
+          <Card>
+            <H icon="wallet">{t("admin.payRequests")}</H>
+            {data.payRequests.length === 0 ? <p className="text-sm text-muted">{t("admin.noRequests")}</p> : (
+              <ul className="divide-y divide-line">{data.payRequests.map((r) => (
+                <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm first:pt-0 last:pb-0"><span className="tnum font-semibold text-ink">{planLabel(t, r.planCode)} · {money(r.amountMinor, r.currency, locale)}</span><span className="flex items-center gap-2"><StatusBadge status={r.status} /><span className="tnum text-xs text-muted">{dateTime(r.createdAt, locale)}</span></span></li>
+              ))}</ul>
+            )}
+          </Card>
+
+          <Card>
+            <H icon="clock">{t("admin.history")}</H>
+            <ol className="relative max-h-80 space-y-3 overflow-y-auto border-s-2 border-line ps-4">
+              {data.events.map((e, i) => <li key={i} className="relative text-sm"><span className="absolute -start-[1.4rem] top-1.5 h-2.5 w-2.5 rounded-full bg-brand" /><span className="font-mono text-xs font-semibold text-ink-2">{e.eventType}</span> <span className="tnum text-faint">· {dateTime(e.createdAt, locale)}</span></li>)}
+            </ol>
+          </Card>
+        </div>
+
+        <div className="min-w-0 space-y-5">
+          <Card>
+            <H icon="users">{t("admin.owner")}</H>
+            <p className="font-semibold text-ink">{`${o.firstName ?? ""} ${o.lastName ?? ""}`.trim() || "-"}</p>
+            {o.phone && (
+              <div className="mt-2 flex items-center justify-between gap-3 rounded-[12px] bg-surface-2 p-3">
+                <a className="tnum text-lg font-bold text-brand" dir="ltr" href={`tel:${o.phone}`}>{localPhone(o.phone)}</a>
+                <ContactButtons phone={o.phone} name={data.name} size="md" />
+              </div>
+            )}
+            {o.email && <p className="mt-2 flex items-center gap-2 text-sm text-muted" dir="ltr"><Icon name="mail" className="h-4 w-4 text-faint" /><a className="truncate text-brand" href={`mailto:${o.email}`}>{o.email}</a></p>}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button variant="secondary" size="sm" loading={resetPw.loading} onClick={() => resetPw.run()}>{t("admin.resetPassword")}</Button>
+              <Button variant="secondary" size="sm" onClick={() => { setOwnerPhone(localPhone(o.phone)); setOwnerEmail(o.email ?? ""); setModal("owner"); }}>{t("admin.editOwner")}</Button>
+              <Button variant="secondary" size="sm" onClick={() => { setNewName(data.name); setNewSlug(data.slug); setModal("rename"); }}>{t("admin.editBusiness")}</Button>
+            </div>
+            <ErrorText error={resetPw.error} />
+            <p className="mt-4 text-xs text-muted">{t("admin.signedUp")}: {dateOnly(data.createdAt, locale)} · {t("admin.staff")}: <b className="tnum">{data.staffCount}</b></p>
+          </Card>
+
+          <Card>
+            <H icon="globe">{t("admin.domains")}</H>
+            <ul className="space-y-1.5 text-sm text-ink-2" dir="ltr">{data.domains.map((d) => <li key={d.host} className="flex items-center gap-2"><span className={`h-2 w-2 shrink-0 rounded-full ${d.verified ? "bg-emerald-500" : "bg-amber-500"}`} /><span className="min-w-0 truncate">{d.host}</span>{d.primary && <span className="rounded bg-brand-soft px-1.5 text-[10px] font-bold text-brand">PRIMARY</span>}</li>)}</ul>
+            <h3 className="mb-2 mt-5 text-sm font-bold text-ink">{t("admin.usage")}</h3>
+            {data.usage.length === 0 ? <p className="text-sm text-muted">-</p> : data.usage.map((u) => <p key={u.metric + u.period} className="text-sm text-muted">{u.metric} ({u.period}): <b className="tnum text-ink">{u.value}</b></p>)}
+          </Card>
+
+          {can("platform.tenant.purge") && (
+            <Card className="border border-red-200 dark:border-red-500/30">
+              <H icon="alert">{t("admin.dangerZone")}</H>
+              <p className="mb-3 text-sm text-muted">{t("admin.dangerBody")}</p>
+              <Button variant="danger" onClick={() => { setTyped(""); setConfirmOpen(true); }}>{t("admin.deleteNow")}</Button>
+            </Card>
+          )}
+        </div>
       </div>
       <Modal open={modal === "pin"} onClose={() => setModal("")} title={t("admin.resetPassword")}>
         <div className="space-y-3"><Alert tone="green">{t("admin.resetPin", { pin })}</Alert><p className="text-center font-mono text-3xl font-bold tracking-widest" dir="ltr">{pin}</p></div>
