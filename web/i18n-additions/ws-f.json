@@ -13,7 +13,11 @@
     "open.qty.less": "Decrease quantity",
     "open.qty.more": "Increase quantity",
     "open.cart.remove": "Remove item",
-    "open.checkout.steps": "Checkout progress"
+    "open.checkout.steps": "Checkout progress",
+    "open.shopsHeading": "Shops worth knowing",
+    "open.error.title": "Something went wrong",
+    "open.error.body": "We could not load this page. Check your connection and try again.",
+    "open.error.retry": "Try again"
   },
   "ar": {
     "open.rail.prev": "السابق",
@@ -29,6 +33,10 @@
     "open.qty.less": "تقليل الكمية",
     "open.qty.more": "زيادة الكمية",
     "open.cart.remove": "إزالة المنتج",
-    "open.checkout.steps": "خطوات إتمام الطلب"
+    "open.checkout.steps": "خطوات إتمام الطلب",
+    "open.shopsHeading": "محلات تستاهل تعرفها",
+    "open.error.title": "حصلت مشكلة",
+    "open.error.body": "مقدرناش نحمّل الصفحة. اتأكد من الاتصال وحاول تاني.",
+    "open.error.retry": "حاول تاني"
   }
 }
