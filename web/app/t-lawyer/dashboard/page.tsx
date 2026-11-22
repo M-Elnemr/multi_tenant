@@ -68,7 +68,7 @@ export default function LawyerHome() {
               <span className="pointer-events-none absolute inset-x-0 bottom-0 h-px" style={{ background: `linear-gradient(90deg, transparent, ${BRASS}, transparent)` }} aria-hidden />
               <div className="min-w-0">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: "#d9b97f" }}>{t("lw.home.today")}</p>
-                <p className="mt-1 truncate font-display text-[19px] font-semibold">{new Intl.DateTimeFormat(intl, { weekday: "long", day: "numeric", month: "long" }).format(today)}</p>
+                <p className="mt-1 font-display text-[17px] font-semibold leading-snug sm:text-[19px]">{new Intl.DateTimeFormat(intl, { weekday: "long", day: "numeric", month: "long" }).format(today)}</p>
               </div>
               <div className="flex shrink-0 items-center gap-3">
                 {hearingsToday > 0 && <span className="hidden rounded-full px-2.5 py-1 text-[11.5px] font-semibold sm:inline" style={{ background: "rgb(217 185 127 / .16)", color: "#e6c993" }}>{t("lw.home.hearingsN", { n: hearingsToday })}</span>}
