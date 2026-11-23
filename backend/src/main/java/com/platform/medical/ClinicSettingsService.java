@@ -43,7 +43,7 @@ public class ClinicSettingsService {
     }
 
     /** Website designs a clinic can pick; must match the CHECK in V79 and web/components/clinic/templates.ts. */
-    public static final java.util.Set<String> TEMPLATES = java.util.Set.of("clear", "luxe", "persona", "dental", "derma", "center");
+    public static final java.util.Set<String> TEMPLATES = java.util.Set.of("clear", "luxe", "persona", "dental", "derma", "center", "cn-institute", "cn-boutique", "cn-medtech", "cn-family", "cn-atelier");
 
     private static final Map<String, String> IDENTITY_TEXT = Map.ofEntries(
             Map.entry("tagline", "tagline"), Map.entry("whatsapp", "whatsapp"), Map.entry("facebookUrl", "facebook_url"), Map.entry("instagramUrl", "instagram_url"),
@@ -53,7 +53,7 @@ public class ClinicSettingsService {
     /** The website-facing identity of the clinic: contact channels, hours, cover/gallery, announcement, insurance, FAQs. */
     Map<String, Object> identity(UUID tenantId) {
         Map<String, Object> m = Rows.camel(jdbc.sql("SELECT tagline, whatsapp, extra_phones::text AS extra_phones, facebook_url, instagram_url, tiktok_url, website_url, maps_url, working_hours::text AS working_hours, "
-                + "cover_file_id, gallery::text AS gallery, announcement, is_open, closed_message, insurance::text AS insurance, faqs::text AS faqs, established_year, site_layout::text AS site_layout, template FROM medical.clinic_profiles WHERE tenant_id = :t")
+                + "cover_file_id, gallery::text AS gallery, announcement, is_open, closed_message, insurance::text AS insurance, faqs::text AS faqs, established_year, site_layout::text AS site_layout, template, site_theme::text AS site_theme FROM medical.clinic_profiles WHERE tenant_id = :t")
                 .param("t", tenantId).query().singleRow());
         m.put("extraPhones", Rows.jsonList(m.get("extraPhones")));
         m.put("workingHours", Rows.json(m.get("workingHours")));
@@ -61,10 +61,12 @@ public class ClinicSettingsService {
         m.put("insurance", Rows.jsonList(m.get("insurance")));
         m.put("faqs", Rows.jsonList(m.get("faqs")));
         m.put("siteLayout", Rows.json(m.remove("siteLayout")));
+        m.put("siteTheme", com.platform.shared.SiteThemes.read(m.remove("siteTheme")));   // null = the design's own colours
         return m;
     }
 
-    private void updateIdentity(UUID tenantId, Map<String, Object> f) {
+    /** @return true when the request carried a siteTheme (set, replaced or cleared). */
+    private boolean updateIdentity(UUID tenantId, Map<String, Object> f) {
         StringBuilder set = new StringBuilder();
         var q = new java.util.LinkedHashMap<String, Object>();
         for (var e : IDENTITY_TEXT.entrySet()) if (f.get(e.getKey()) instanceof String v) {
@@ -77,6 +79,13 @@ public class ClinicSettingsService {
         if (f.get("template") instanceof String tpl) {
             if (!TEMPLATES.contains(tpl)) throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown template");
             set.append("template = :template, "); q.put("template", tpl);
+        }
+        boolean themeChanged = f.containsKey("siteTheme");
+        if (themeChanged) {
+            var fe = new com.platform.shared.FieldErrors();
+            String themeJson = com.platform.shared.SiteThemes.clean(f.get("siteTheme"), fe);
+            fe.throwIfAny();
+            set.append("site_theme = CAST(:siteTheme AS jsonb), "); q.put("siteTheme", themeJson);
         }
         if (f.containsKey("establishedYear")) {
             Object y = f.get("establishedYear");
@@ -114,10 +123,11 @@ public class ClinicSettingsService {
                 set.append("site_layout = CAST(:siteLayout AS jsonb), "); q.put("siteLayout", json.writeValueAsString(SiteLayout.clean(m, SiteLayout.CLINIC)));
             }
         } catch (com.fasterxml.jackson.core.JsonProcessingException | IllegalArgumentException e) { throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid value"); }
-        if (q.isEmpty()) return;
+        if (q.isEmpty()) return false;
         var st = jdbc.sql("UPDATE medical.clinic_profiles SET " + set + "updated_at = now() WHERE tenant_id = :t").param("t", tenantId);
         for (var e : q.entrySet()) st = st.param(e.getKey(), e.getValue());
         st.update();
+        return themeChanged;
     }
 
     @Transactional
@@ -133,8 +143,9 @@ public class ClinicSettingsService {
                 .param("addressText", str(f, "addressText")).param("bookingEnabled", bool(f, "bookingEnabled")).param("takeNewPatients", bool(f, "takeNewPatients"))
                 .param("requiresConfirmation", bool(f, "requiresConfirmation")).param("minNotice", num(f, "minimumBookingNoticeMinutes")).param("maxDays", num(f, "maximumDaysAhead"))
                 .param("cancelHours", num(f, "cancellationWindowHours")).param("cardEnabled", bool(f, "cardEnabled")).param("cashEnabled", bool(f, "cashEnabled")).update();
-        updateIdentity(tenantId, f);
+        boolean themeChanged = updateIdentity(tenantId, f);
         audit.record(actor, tenantId, "SETTINGS_CHANGED", "clinic_profile", null, null);
+        if (themeChanged) audit.record(actor, tenantId, "SITE_THEME_CHANGED", "clinic_profile", null, null);
         return profile(tenantId);
     }
 

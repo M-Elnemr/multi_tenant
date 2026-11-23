@@ -1,0 +1,14 @@
+{
+  "vn.st.book": ["Book", "احجز"],
+  "vn.st.nav.sessions": ["Sessions", "الجلسات"],
+  "vn.st.nav.shop": ["Shop", "المتجر"],
+  "vn.st.nav.contact": ["Contact", "تواصل"],
+  "vn.st.eyebrow": ["By appointment", "بالمواعيد"],
+  "vn.st.heroDefault": ["Pick a day, pick a time, and it is yours.", "اختار اليوم، اختار الوقت، والميعاد بتاعك."],
+  "vn.st.thisWeek": ["This week", "الأسبوع ده"],
+  "vn.st.todayShort": ["Today", "النهارده"],
+  "vn.st.fullCalendar": ["Full calendar", "التقويم كامل"],
+  "vn.st.sessions": ["Sessions", "الجلسات"],
+  "vn.st.pickDay": ["Pick a day", "اختار يوم"],
+  "vn.st.ctaTitle": ["Find your time.", "لاقي وقتك."]
+}

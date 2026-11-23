@@ -6,6 +6,7 @@ import { useAction, useApi } from "../hooks";
 import { useT } from "../i18n-provider";
 import { ImageUploader } from "../uploader";
 import { Alert, Button, Card, ErrorText, Field, Input, Select } from "../ui";
+import ThemeEditor from "./theme-editor";
 
 type B = { primaryColor: string; secondaryColor: string; logoFileId?: string; locale: string };
 
@@ -19,6 +20,7 @@ export default function BrandingCard() {
   const save = useAction(async () => { if (!f) return; await api("tenant/branding", { method: "PATCH", body: { primaryColor: f.primaryColor, secondaryColor: f.secondaryColor, logoFileId: f.logoFileId, locale: f.locale } }); setSaved(true); await reload(); });
   if (!f) return null;
   return (
+    <div className="space-y-5">
     <Card className="space-y-4">
       <h2 className="font-medium">{t("settings.branding")}</h2>
       <div className="grid gap-4 sm:grid-cols-3">
@@ -37,5 +39,7 @@ export default function BrandingCard() {
       {saved && <Alert tone="green">{t("common.saved")}</Alert>}
       <Button loading={save.loading} onClick={() => { setSaved(false); void save.run(); }}>{t("common.save")}</Button>
     </Card>
+    <ThemeEditor />
+    </div>
   );
 }

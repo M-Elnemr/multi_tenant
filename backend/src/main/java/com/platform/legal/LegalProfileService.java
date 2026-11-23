@@ -52,7 +52,7 @@ public class LegalProfileService {
     public Map<String, Object> profile(UUID tenantId) {
         var r = jdbc.sql("""
                 SELECT p.*, p.practice_areas::text AS pa, p.languages::text AS la, p.education::text AS ed, p.achievements::text AS ac, p.testimonials::text AS te, p.faq::text AS fq,
-                       p.social::text AS so, p.site_layout::text AS sl, b.primary_color, b.secondary_color, b.font_family
+                       p.social::text AS so, p.site_layout::text AS sl, p.site_theme::text AS st, b.primary_color, b.secondary_color, b.font_family
                 FROM legal.profiles p LEFT JOIN core.branding b ON b.tenant_id = p.tenant_id WHERE p.tenant_id = :t
                 """).param("t", tenantId).query().listOfRows().stream().findFirst()
                 .orElseThrow(() -> BusinessException.notFound("TENANT_NOT_FOUND", "No lawyer profile"));
@@ -68,6 +68,7 @@ public class LegalProfileService {
         out.put("faq", Rows.jsonList(r.get("fq")));
         out.put("social", Rows.json(r.get("so")));
         out.put("siteLayout", r.get("sl") == null ? null : Rows.jsonList(r.get("sl")));
+        out.put("siteTheme", com.platform.shared.SiteThemes.read(r.get("st")));   // null = the design's own colours
         out.put("primaryColor", r.get("primary_color"));
         out.put("secondaryColor", r.get("secondary_color"));
         return out;
@@ -86,7 +87,7 @@ public class LegalProfileService {
     public Map<String, Object> update(UUID tenantId, UUID actor, Map<String, Object> f) {
         var fe = new FieldErrors();
         if (f.containsKey("displayName")) fe.when(!(f.get("displayName") instanceof String s) || s.isBlank(), "displayName", "Write your name as clients should see it");
-        if (f.get("template") instanceof String t) fe.when(!Set.of("classic", "modern", "heritage", "chambers", "justice", "marble", "gavel", "minimal", "emerald", "nocturne").contains(t), "template", "Choose one of the designs");
+        if (f.get("template") instanceof String t) fe.when(!Set.of("classic", "modern", "heritage", "chambers", "justice", "marble", "gavel", "minimal", "emerald", "nocturne", "ln-global", "ln-boutique", "ln-advisory", "ln-digital", "ln-heritage").contains(t), "template", "Choose one of the designs");
         if (f.get("email") instanceof String e && !e.isBlank()) fe.when(!e.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"), "email", "This email does not look right");
         if (f.get("mapUrl") instanceof String m && !m.isBlank()) fe.when(!m.startsWith("https://"), "mapUrl", "Paste a map link that starts with https://");
         if (f.get("clientAppUrl") instanceof String u && !u.isBlank()) fe.when(!u.startsWith("https://"), "clientAppUrl", "Paste a link that starts with https://");
@@ -99,6 +100,9 @@ public class LegalProfileService {
         if (f.get("reminderDaysBefore") instanceof Number n) fe.when(n.intValue() < 0 || n.intValue() > 30, "reminderDaysBefore", "Use 0 to 30 days");
         if (f.get("social") instanceof Map<?, ?> so) for (var e : so.entrySet())
             if (e.getValue() instanceof String u && !u.isBlank()) fe.when(!u.startsWith("https://"), "social." + e.getKey(), "Links must start with https://");
+        String themeJson = null;
+        boolean themeChanged = f.containsKey("siteTheme");
+        if (themeChanged) themeJson = com.platform.shared.SiteThemes.clean(f.get("siteTheme"), fe);
         fe.throwIfAny();
         List<String> sets = new ArrayList<>();
         Map<String, Object> params = new LinkedHashMap<>();
@@ -106,6 +110,7 @@ public class LegalProfileService {
         NUM.forEach((k, col) -> { if (f.containsKey(k)) { sets.add(col + " = :" + k); params.put(k, f.get(k) instanceof Number n ? n.intValue() : null); } });
         BOOL.forEach((k, col) -> { if (f.get(k) instanceof Boolean b) { sets.add(col + " = :" + k); params.put(k, b); } });
         JSON_COL.forEach((k, col) -> { if (f.containsKey(k)) { sets.add(col + " = CAST(:" + k + " AS jsonb)"); params.put(k, f.get(k) == null ? ("siteLayout".equals(k) ? null : "social".equals(k) ? "{}" : "[]") : Json.write(f.get(k))); } });
+        if (themeChanged) { sets.add("site_theme = CAST(:siteTheme AS jsonb)"); params.put("siteTheme", themeJson); }
         // NOT NULL text columns: an empty value is '' (pictures may be cleared to NULL)
         for (String k : TEXT.keySet()) if (params.containsKey(k) && params.get(k) == null && !Set.of("photoUrl", "coverUrl", "logoUrl").contains(k)) params.put(k, "");
         for (String k : List.of("yearsExperience", "slotMinutes", "bufferMinutes", "minNoticeHours", "maxDaysAhead", "reminderDaysBefore")) if (params.containsKey(k) && params.get(k) == null) { sets.removeIf(s -> s.endsWith(":" + k)); params.remove(k); }
@@ -116,6 +121,7 @@ public class LegalProfileService {
         }
         if (f.containsKey("displayName")) jdbc.sql("UPDATE core.tenants SET name = :n WHERE id = :t").param("n", ((String) f.get("displayName")).trim()).param("t", tenantId).update();
         audit.record(actor, tenantId, "LAWYER_PROFILE_UPDATED", "tenant", tenantId, null);
+        if (themeChanged) audit.record(actor, tenantId, "SITE_THEME_CHANGED", "tenant", tenantId, null);
         return profile(tenantId);
     }
 

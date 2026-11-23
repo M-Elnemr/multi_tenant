@@ -10,6 +10,8 @@ import { LawyerHeroVariant } from "./hero-variants";
 import { Areas, Process, Reviews, ServiceList } from "./section-variants";
 import { LAWYER_LOOKS, LAWYER_TEMPLATE_IDS } from "@/lib/lawyer-templates";
 import { siteTemplate } from "@/lib/site-template";
+import { buildLnCtx } from "@/components/lawyer/templates/shared/ctx"; // DR-B
+import { LN_TEMPLATES } from "@/components/lawyer/templates/registry"; // DR-B
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +26,9 @@ function Scales({ className }: { className?: string }) {
 }
 
 export default async function LawyerHome() {
+  // DR-B: the five new templates compose their own home page
+  const ln = await buildLnCtx();
+  if (ln?.isLn) { const T = LN_TEMPLATES[ln.id]; return <T.Home ctx={ln} />; }
   const { t, locale } = await getT();
   const info = await resolveHost(await currentHost());
   const currency = info.kind === "TENANT" ? info.currency : "EGP";

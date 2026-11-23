@@ -59,7 +59,7 @@ export function ClinicHero({ kind, p, t, locale, logoId, hrefBook }: { kind: Cli
     return (
       <section className="c-hero-full relative isolate overflow-hidden">
         {cover ? <ParallaxBg className="absolute inset-0 -z-10"><img src={cover} alt="" className="h-full w-full object-cover" /></ParallaxBg> : <div className="absolute inset-0 -z-10 bg-[var(--c-ink)]" />}
-        <div className="absolute inset-0 -z-10 bg-gradient-to-b from-[rgb(8_14_22/.55)] via-[rgb(8_14_22/.62)] to-[var(--c-bg)]" />
+        <div className="absolute inset-0 -z-10 bg-gradient-to-b from-[rgb(8_14_22/.55)] via-[rgb(8_14_22/.62)] to-[var(--cl-bg)]" />
         <div className="c-container flex min-h-[86svh] flex-col items-center justify-center py-24 text-center text-white">
           <Rise><p className="c-hair mb-6 text-[11px] uppercase tracking-[0.45em] text-[var(--gold,#c8a96a)]">{t("csite.privateCare")}</p></Rise>
           <Rise delay={100}><h1 className="c-display text-balance text-[2.8rem] leading-[1.02] sm:text-[5.2rem]">{p.clinicName}</h1></Rise>
