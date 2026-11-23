@@ -28,6 +28,22 @@ class InboundBurstTest {
     }
 
     @Test
+    void noWaitingWindowStartsEachLineAtOnceOnTheWorker() throws Exception {   // the owner's setting: CHAT_BURST_MS=0, a timer-and-worker burst with a zero window
+        var worker = Executors.newFixedThreadPool(2);
+        try {
+            InboundBurst b = new InboundBurst(timers, worker, 0, 15_000);
+            long start = System.nanoTime();
+            b.add("c1", "السلام عليكم", fired::add);
+            for (int i = 0; i < 40 && fired.isEmpty(); i++) Thread.sleep(10);
+            assertThat(fired).as("answered without any quiet window").containsExactly("السلام عليكم");
+            assertThat((System.nanoTime() - start) / 1_000_000).as("no waiting: well under a second").isLessThan(400);
+            b.add("c1", "عايز جاكيت", fired::add);   // a later line is its own turn (the conversation gate decides what to do with an answer in progress)
+            for (int i = 0; i < 40 && fired.size() < 2; i++) Thread.sleep(10);
+            assertThat(fired).containsExactly("السلام عليكم", "عايز جاكيت");
+        } finally { worker.shutdownNow(); }
+    }
+
+    @Test
     void aSlowTyperIsNotHeldPastTheCeiling() throws Exception {
         InboundBurst b = new InboundBurst(timers, Runnable::run, 200, 300);
         b.add("c", "one", fired::add);

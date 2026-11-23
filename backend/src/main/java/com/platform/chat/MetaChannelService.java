@@ -60,7 +60,7 @@ public class MetaChannelService {
     private final MediaReader media;
 
     public MetaChannelService(JdbcClient jdbc, MetaGraph graph, TokenCrypto crypto, ChatService chat, LoginThrottle throttle, AuditService audit, WhatsAppConfirmService waConfirm, WaReportService waReport, ProductShare share, com.platform.commerce.GenderService genders, MediaReader media,
-                              @Value("${app.meta.app-secret:}") String appSecret, @Value("${app.meta.verify-token:}") String verifyToken, @Value("${app.meta.async:true}") boolean async, @Value("${app.chat.burst-ms:5000}") long burstMs,
+                              @Value("${app.meta.app-secret:}") String appSecret, @Value("${app.meta.verify-token:}") String verifyToken, @Value("${app.meta.async:true}") boolean async, @Value("${app.chat.burst-ms:0}") long burstMs,
                               @Value("${app.chat.burst-max-ms:15000}") long burstMaxMs, ConversationGate gate) {
         this.gate = gate;
         this.jdbc = jdbc;

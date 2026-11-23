@@ -37,7 +37,7 @@ public class SocialBridge {
     private final ConversationGate gate;
 
     public SocialBridge(JdbcClient jdbc, TokenCrypto crypto, ChatService chat, LoginThrottle throttle, ProductShare share, ChatTimeline timeline, List<SocialChannel> channels,
-                        @Value("${app.meta.async:true}") boolean async, @Value("${app.chat.burst-ms:5000}") long burstMs,
+                        @Value("${app.meta.async:true}") boolean async, @Value("${app.chat.burst-ms:0}") long burstMs,
                         @Value("${app.chat.burst-max-ms:15000}") long burstMaxMs, ConversationGate gate) {
         this.gate = gate;
         this.jdbc = jdbc;

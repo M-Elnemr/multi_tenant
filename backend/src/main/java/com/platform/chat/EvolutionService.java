@@ -50,7 +50,7 @@ public class EvolutionService {
 
     public EvolutionService(JdbcClient jdbc, EvolutionApi api, @Lazy ChatService chat, @Lazy WhatsAppConfirmService waConfirm, LoginThrottle throttle, AuditService audit, com.platform.commerce.GenderService genders, ProductShare share, MediaReader media,
                             @Value("${app.evolution.base-url:}") String baseUrl, @Value("${app.evolution.webhook-secret:}") String secret, @Value("${app.evolution.backend-url:http://backend:8080}") String backendUrl,
-                            @Value("${app.evolution.typing-delay-ms:1500}") int typingDelayMs, @Value("${app.evolution.async:true}") boolean async, @Value("${app.chat.burst-ms:5000}") long burstMs,
+                            @Value("${app.evolution.typing-delay-ms:1500}") int typingDelayMs, @Value("${app.evolution.async:true}") boolean async, @Value("${app.chat.burst-ms:0}") long burstMs,
                             @Value("${app.chat.burst-max-ms:15000}") long burstMaxMs, ConversationGate gate) {
         this.gate = gate;
         this.jdbc = jdbc;
