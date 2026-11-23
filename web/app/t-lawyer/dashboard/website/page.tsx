@@ -2,6 +2,7 @@
 "use client";
 
 import { LAWYER_LOOKS, LAWYER_TEMPLATE_IDS } from "@/lib/lawyer-templates";
+import { TemplateGallery, type GalleryLook } from "@/components/dashboard/template-gallery";
 import { useState, type ReactNode } from "react";
 import { api } from "@/lib/client";
 import { fileUrl } from "@/lib/media";
@@ -24,7 +25,7 @@ type Profile = {
 };
 type Meta = { practiceAreas: { key: string; nameAr: string; nameEn: string; icon: string }[] };
 
-const TEMPLATES = LAWYER_TEMPLATE_IDS.map((id) => ({ id, bg: LAWYER_LOOKS[id].bg, accent: LAWYER_LOOKS[id].accent, hero: LAWYER_LOOKS[id].hero }));
+const GALLERY_LOOKS: Record<string, GalleryLook> = Object.fromEntries(LAWYER_TEMPLATE_IDS.map((id) => [id, { categories: [], swatch: [LAWYER_LOOKS[id].bg, "#111111", LAWYER_LOOKS[id].accent] }]));
 const AREA_ICONS = ["⚖️", "🛡️", "👪", "🏢", "👷", "🏠", "🏛️", "📊", "📜", "✍️", "💡", "🧾", "🤝", "🔨", "📁"];
 
 /** List editor: rows of small inputs with add / remove / move up. */
@@ -62,7 +63,7 @@ export default function Website() {
     try {
       await api("lawyer/profile", { method: "PATCH", body: {
         displayName: p.displayName, title: p.title, headline: p.headline, bio: p.bio, photoUrl: p.photoUrl ?? null, coverUrl: p.coverUrl ?? null, barNumber: p.barNumber, barLevel: p.barLevel, yearsExperience: Number(p.yearsExperience) || 0,
-        officeAddress: p.officeAddress, officeCity: p.officeCity, mapUrl: p.mapUrl, phone: p.phone, whatsapp: p.whatsapp, email: p.email, template: p.template,
+        officeAddress: p.officeAddress, officeCity: p.officeCity, mapUrl: p.mapUrl, phone: p.phone, whatsapp: p.whatsapp, email: p.email,
         practiceAreas: p.practiceAreas, languages: p.languages, education: p.education, achievements: p.achievements, testimonials: p.testimonials, faq: p.faq, social: p.social,
       } });
     } catch (e) { if (!fe.fromError(e)) throw e; return; }
@@ -76,18 +77,7 @@ export default function Website() {
       <PageHeader eyebrow={<Eyebrow>{t("lw.eb.setup")}</Eyebrow>} title={t("lw.nav.website")} subtitle={t("lw.web.subtitle")} actions={<LinkButton href="/" icon="globe" external>{t("lw.web.view")}</LinkButton>} />
       <fieldset disabled={!write} className="min-w-0 space-y-5">
         <Section title={t("lw.web.design")} icon="palette">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {TEMPLATES.map((tp) => (
-              <button key={tp.id} type="button" onClick={() => set({ template: tp.id })} className={`overflow-hidden rounded-2xl text-start ring-2 transition ${p.template === tp.id ? "ring-[var(--rail-accent)]" : "ring-line hover:ring-line-strong"}`}>
-                <div className="relative h-28 p-4" style={{ background: tp.bg }}>
-                  <div className="h-2 w-16 rounded-full" style={{ background: tp.accent }} /><div className="mt-3 h-3 w-32 rounded-full bg-white/70" /><div className="mt-2 h-2 w-24 rounded-full bg-white/40" />
-                  <div className="absolute bottom-3 end-3 h-7 w-16 rounded-lg" style={{ background: tp.accent }} />
-                  {p.template === tp.id && <span className="absolute start-3 top-3 grid h-6 w-6 place-items-center rounded-full bg-white text-[#14213d] shadow"><Icon name="check" className="h-4 w-4" /></span>}
-                </div>
-                <div className="bg-surface p-3"><p className="font-semibold text-ink">{t(`lw.tpl.${tp.id}`)}</p><p className="text-xs text-muted">{t(`lw.tpl.${tp.id}.d`)}</p><a href={`/?tpl=${tp.id}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="mt-1 inline-flex min-h-11 items-center text-xs font-semibold text-brand hover:underline">{t("lw.tpl.preview")}</a></div>
-              </button>
-            ))}
-          </div>
+          <TemplateGallery ids={LAWYER_TEMPLATE_IDS} looks={GALLERY_LOOKS} profilePath="lawyer/profile" prefix="lw.tpl" fallback="classic" categoryKey="galcat" kinds={["lawyer"]} />
         </Section>
 
         <Section title={t("lw.web.identity")} icon="doctor">
