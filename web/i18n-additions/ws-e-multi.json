@@ -1,0 +1,18 @@
+{
+  "vn.mu.search": ["Search services", "ابحث عن خدمة"],
+  "vn.mu.go": ["Search", "بحث"],
+  "vn.mu.all": ["All services", "كل الخدمات"],
+  "vn.mu.book": ["Book", "احجز"],
+  "vn.mu.heroDefault": ["Everything in one place. Search, choose a category, and book a time.", "كل حاجة في مكان واحد. دوّر، اختار القسم، واحجز ميعاد."],
+  "vn.mu.servicesCount": ["services", "خدمة"],
+  "vn.mu.categoriesCount": ["categories", "قسم"],
+  "vn.mu.browse": ["Browse by category", "تصفّح بالقسم"],
+  "vn.mu.results": ["results", "نتيجة"],
+  "vn.mu.sort": ["Sort by", "الترتيب"],
+  "vn.mu.sort.default": ["Default", "الافتراضي"],
+  "vn.mu.sort.price": ["Price: low to high", "السعر: من الأقل"],
+  "vn.mu.sort.price-desc": ["Price: high to low", "السعر: من الأعلى"],
+  "vn.mu.sort.name": ["Name", "الاسم"],
+  "vn.mu.none": ["Nothing matches your search.", "مفيش حاجة مطابقة لبحثك."],
+  "vn.mu.about": ["About this service", "عن الخدمة"]
+}

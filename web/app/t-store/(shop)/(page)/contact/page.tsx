@@ -3,9 +3,15 @@ import type { ShopProfile } from "@/components/shop/types";
 import { backendJson } from "@/lib/backend";
 import { getT } from "@/lib/i18n-server";
 import { whatsappLink } from "@/lib/whatsapp";
+import { shopLook } from "@/lib/shop-look";   // DR-E
+import { vnDesign } from "@/components/shop/service/vn-registry";   // DR-E
+import { vnData } from "@/components/shop/service/vn-core/data";   // DR-E
 import { SocialLinks, hasSocial } from "@/components/social-icons";
 
 export default async function Contact() {
+  const lk = await shopLook();   // DR-E: a vn-* design has its own contact page
+  const vn = lk.service ? vnDesign(lk.template) : undefined;
+  if (vn) return <vn.Contact {...(await vnData())} />;
   const { t } = await getT();
   const p = (await backendJson<{ profile: ShopProfile }>("/shop/profile").catch(() => null))?.profile;
   if (!p) return null;
