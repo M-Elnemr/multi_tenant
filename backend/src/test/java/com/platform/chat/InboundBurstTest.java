@@ -61,4 +61,42 @@ class InboundBurstTest {
     void offMeansEveryLineGoesStraightOn() {
         assertThat(new InboundBurst(timers, Runnable::run, 0, 0).enabled()).isFalse();
     }
+
+    @Test
+    void typingExtendsTheQuietWindowButNeverPastTheCeiling() throws Exception {
+        InboundBurst b = new InboundBurst(timers, Runnable::run, 200, 500);
+        b.add("c", "one", fired::add);
+        Thread.sleep(120);
+        b.touch("c");   // the customer is still typing: the window starts again
+        Thread.sleep(120);
+        b.touch("c");
+        Thread.sleep(120);
+        assertThat(fired).as("still waiting, the window keeps restarting").isEmpty();
+        for (int i = 0; i < 6; i++) { b.touch("c"); Thread.sleep(100); }   // typing forever: the ceiling (500 ms after the first line) answers anyway
+        assertThat(fired).containsExactly("one");
+        b.touch("nobody");   // nothing waiting: nothing happens
+    }
+
+    @Test
+    void waitingIsTrueFromTheFirstLineUntilTheHandlerHasFinished() throws Exception {
+        java.util.concurrent.CountDownLatch inHandler = new java.util.concurrent.CountDownLatch(1), release = new java.util.concurrent.CountDownLatch(1);
+        InboundBurst b = new InboundBurst(timers, java.util.concurrent.Executors.newSingleThreadExecutor(), 100, 1000);
+        assertThat(b.waiting("c")).isFalse();
+        b.add("c", "hi", t -> { inHandler.countDown(); try { release.await(); } catch (InterruptedException ignored) { } fired.add(t); });
+        assertThat(b.waiting("c")).as("waiting for the quiet window").isTrue();
+        assertThat(inHandler.await(2, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        assertThat(b.waiting("c")).as("flushed but the reply is still being written").isTrue();
+        release.countDown();
+        for (int i = 0; i < 50 && b.waiting("c"); i++) Thread.sleep(20);
+        assertThat(b.waiting("c")).isFalse();
+        assertThat(fired).containsExactly("hi");
+    }
+
+    @Test
+    void theCeilingIsConfigurable() throws Exception {
+        InboundBurst b = new InboundBurst(timers, Runnable::run, 300, 100);   // a ceiling below the window never makes the window shorter than asked for
+        b.add("c", "x", fired::add);
+        Thread.sleep(500);
+        assertThat(fired).containsExactly("x");
+    }
 }

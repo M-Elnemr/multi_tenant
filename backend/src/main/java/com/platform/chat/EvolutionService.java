@@ -45,11 +45,14 @@ public class EvolutionService {
     private final ExecutorService pool;
     private final java.util.concurrent.ScheduledExecutorService timers = Executors.newSingleThreadScheduledExecutor();
     private final InboundBurst burst;
+    private final ConversationGate gate;
     private final MediaReader media;
 
     public EvolutionService(JdbcClient jdbc, EvolutionApi api, @Lazy ChatService chat, @Lazy WhatsAppConfirmService waConfirm, LoginThrottle throttle, AuditService audit, com.platform.commerce.GenderService genders, ProductShare share, MediaReader media,
                             @Value("${app.evolution.base-url:}") String baseUrl, @Value("${app.evolution.webhook-secret:}") String secret, @Value("${app.evolution.backend-url:http://backend:8080}") String backendUrl,
-                            @Value("${app.evolution.typing-delay-ms:1500}") int typingDelayMs, @Value("${app.evolution.async:true}") boolean async, @Value("${app.chat.burst-ms:5000}") long burstMs) {
+                            @Value("${app.evolution.typing-delay-ms:1500}") int typingDelayMs, @Value("${app.evolution.async:true}") boolean async, @Value("${app.chat.burst-ms:5000}") long burstMs,
+                            @Value("${app.chat.burst-max-ms:15000}") long burstMaxMs, ConversationGate gate) {
+        this.gate = gate;
         this.jdbc = jdbc;
         this.api = api;
         this.chat = chat;
@@ -64,9 +67,15 @@ public class EvolutionService {
         this.backendUrl = backendUrl == null ? "" : backendUrl.trim().replaceAll("/+$", "");
         this.typingDelayMs = Math.max(0, typingDelayMs);
         this.pool = async ? Executors.newFixedThreadPool(2) : null;
-        this.burst = pool == null ? new InboundBurst(timers, Runnable::run, 0, 0) : new InboundBurst(timers, pool, burstMs, 15_000);
+        this.burst = pool == null ? new InboundBurst(timers, Runnable::run, 0, 0) : new InboundBurst(timers, pool, burstMs, burstMaxMs);
         ReplyMetrics.pool("evolution", pool);   // measurement only: how busy the 2 workers are and how many replies wait for one
         ReplyMetrics.gauge("elmanassa.burst.pending", burst, InboundBurst::pendingBursts, "pool", "evolution");
+    }
+
+    /** How long the customer sees «typing…» before the message arrives: about 25 ms a character like a person typing, at most 3 s; the configured delay is the least (0 = off). */
+    private int typingDelay(String text) {
+        if (typingDelayMs <= 0) return 0;
+        return Math.max(typingDelayMs, (int) Math.min(3000, (text == null ? 0 : text.length()) * 25L));
     }
 
     /** True when this server runs an Evolution API; without one the switch in Settings is hidden. */
@@ -259,8 +268,8 @@ public class EvolutionService {
             try { throttle.check("evo-out|" + tenantId, 20, Duration.ofMinutes(1)); } catch (BusinessException e) { return Delivery.DEFERRED; }
             String n = number.replaceAll("\\D", ""), inst = row(tenantId).get("instance").toString();
             Map<String, Object> res;
-            if (imageUrl != null && !imageUrl.isBlank()) res = api.call("POST", "/message/sendMedia/" + inst, Map.of("number", n, "mediatype", "image", "media", imageUrl, "caption", text == null ? "" : text, "delay", typingDelayMs));
-            else res = api.call("POST", "/message/sendText/" + inst, Map.of("number", n, "text", text, "delay", typingDelayMs));
+            if (imageUrl != null && !imageUrl.isBlank()) res = api.call("POST", "/message/sendMedia/" + inst, Map.of("number", n, "mediatype", "image", "media", imageUrl, "caption", text == null ? "" : text, "delay", typingDelay(text)));
+            else res = api.call("POST", "/message/sendText/" + inst, Map.of("number", n, "text", text, "delay", typingDelay(text)));
             if (midSink != null) midSink.accept(keyId(res));
             return Delivery.SENT;
         } catch (RuntimeException e) {
@@ -286,7 +295,7 @@ public class EvolutionService {
             if (!connected(tenantId) || text == null || text.isBlank()) return null;
             throttle.check("evo-out|" + tenantId, 20, Duration.ofMinutes(1));   // a person does not send faster; a ban is likelier when a number does
             String n = number.replaceAll("\\D", "");
-            String id = keyId(api.call("POST", "/message/sendText/" + row(tenantId).get("instance"), Map.of("number", n, "text", text, "delay", typingDelayMs)));
+            String id = keyId(api.call("POST", "/message/sendText/" + row(tenantId).get("instance"), Map.of("number", n, "text", text, "delay", typingDelay(text))));
             return id == null ? "" : id;   // "" = sent, the gateway gave no id (never stored as one)
         } catch (RuntimeException e) {
             log.warn("Unofficial WhatsApp send failed: {}", e.getMessage());
@@ -351,7 +360,7 @@ public class EvolutionService {
             JsonNode part = msg.path(kind == MediaReader.Kind.IMAGE ? "imageMessage" : "audioMessage");
             var ref = new MediaReader.Media(kind, () -> mediaBytes(tenantId, m, kind), part.path("mimetype").asText(null), part.path("caption").asText(null));
             if (burst.enabled()) {
-                var release = burst.hold(burstKey, meta, (joined, metas) -> respond(tenantId, sender, joined, name, ChatService.input(metas)));
+                var release = burst.hold(burstKey, meta, (joined, metas) -> gate.run("evo|" + burstKey, joined, metas, (j, m2, carried) -> respond(tenantId, sender, j, name, ChatService.input(m2).withCarried(carried))));
                 String read = null;
                 try { read = media.read(tenantId, "WHATSAPP", ref); } finally { release.accept(read); }
                 return;
@@ -359,7 +368,7 @@ public class EvolutionService {
             text = media.read(tenantId, "WHATSAPP", ref);
         }
         // a customer's quick lines are joined and answered once (see InboundBurst); empty messages go straight on
-        if (burst.enabled() && text != null && !text.isBlank()) { burst.add(burstKey, text, meta, (joined, metas) -> respond(tenantId, sender, joined, name, ChatService.input(metas))); return; }
+        if (burst.enabled() && text != null && !text.isBlank()) { burst.add(burstKey, text, meta, (joined, metas) -> gate.run("evo|" + burstKey, joined, metas, (j, m2, carried) -> respond(tenantId, sender, j, name, ChatService.input(m2).withCarried(carried)))); return; }
         respond(tenantId, sender, text, name, ChatService.input(List.of(meta)));
     }
 

@@ -49,9 +49,12 @@ public class ChatService {
     }
 
     /** What came with a customer message about the message it answers: the reply references, and the platform's ids of the message itself (a burst has several). */
-    public record ReplyInput(List<ReplyRef> refs, List<String> mids) {
+    public record ReplyInput(List<ReplyRef> refs, List<String> mids, String carried, Long storedId) {   // DR-B: carried = earlier unanswered lines (stored already); storedId = the customer's newest line when it was stored before the reply (the website)
         public static final ReplyInput NONE = new ReplyInput(List.of(), List.of());
         public ReplyInput { refs = refs == null ? List.of() : refs; mids = mids == null ? List.of() : mids; }
+        public ReplyInput(List<ReplyRef> refs, List<String> mids) { this(refs, mids, null, null); }
+        ReplyInput withCarried(String c) { return new ReplyInput(refs, mids, c == null || c.isBlank() ? null : c, storedId); }
+        ReplyInput withStored(long id) { return new ReplyInput(refs, mids, carried, id); }
     }
 
     /** What one inbound line carries: the platform's id of the line and the message it answers (null when it answers none). */
@@ -576,14 +579,43 @@ public class ChatService {
         ReplyTimeline.begin(channel);
         boolean failed = false;
         try { return replyTimed(tenantId, channel, externalId, clientId, message, displayName, in == null ? ReplyInput.NONE : in); }
+        catch (ConversationGate.Superseded s) { ConversationGate.markDiscarded(); return new Reply(null, "", null, List.of()); }   // DR-B: a newer burst of this conversation answers all the lines; nothing is saved or sent
         catch (RuntimeException | Error e) { failed = true; throw e; }
         finally { ReplyTimeline.finish(channel, externalId, failed); REPLY_PRODUCTS.remove(); REPLY_SLUGS.remove(); FOCUS_SLUGS.remove(); EXTRAS.remove(); }
     }
 
-    private Reply replyTimed(UUID tenantId, String channel, String externalId, UUID clientId, String message, String displayName, ReplyInput in) {
+    /** A customer line saved on arrival (the website answers a burst of lines once, later): the conversation and the stored message id. */
+    public record StoredLine(UUID conversationId, long messageId) {}
+
+    /**
+     * DR-B: saves one customer line right away (with its facts and its reply reference), without answering. The website then answers the burst with {@link ReplyInput#withStored} so the
+     * lines are not saved twice. A reference that is not of this chat and shop is refused before anything is saved.
+     */
+    public StoredLine storeLine(UUID tenantId, String channel, String externalId, UUID clientId, String message, ReplyInput in) {
         String text = message == null ? "" : message.trim();
         if (text.isEmpty()) throw BusinessException.badRequest("VALIDATION_ERROR", "Write a message");
         if (text.length() > 1000) throw BusinessException.badRequest("VALIDATION_ERROR", "The message is too long");
+        if (in == null) in = ReplyInput.NONE;
+        UUID conv = conversation(tenantId, channel, externalId, clientId);
+        List<ReplyRef> refs = in.refs().stream().filter(r -> r != null && !r.empty()).toList();
+        if (replies != null) for (ReplyRef r : refs) replies.resolve(tenantId, conv, r, true);
+        long id = jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'user', :x) RETURNING id").param("c", conv).param("x", text).query(Long.class).single();
+        if (memoryFacts != null) memoryFacts.record(tenantId, conv, id, text);
+        if (replies != null) {
+            try {
+                if (!refs.isEmpty()) replies.attachAll(tenantId, conv, id, refs);
+                for (String mid : in.mids()) replies.recordMid(tenantId, conv, id, mid, null);
+            } catch (RuntimeException e) { log.warn("Reply reference not saved: {}", e.toString()); }
+        }
+        return new StoredLine(conv, id);
+    }
+
+    private Reply replyTimed(UUID tenantId, String channel, String externalId, UUID clientId, String message, String displayName, ReplyInput in) {
+        String rowText = message == null ? "" : message.trim();
+        if (rowText.isEmpty()) throw BusinessException.badRequest("VALIDATION_ERROR", "Write a message");
+        if (rowText.length() > 1000) throw BusinessException.badRequest("VALIDATION_ERROR", "The message is too long");
+        String joinedText = in.carried() == null ? rowText : in.carried() + "\n" + rowText;   // DR-B: every unanswered line is what the reply answers; only rowText is a new row
+        String text = joinedText.length() > 1000 ? joinedText.substring(0, 1000) : joinedText;
         long contextStart = System.nanoTime();
         UUID conv = conversation(tenantId, channel, externalId, clientId);
         AiTelemetry.beginReply(tenantId, conv, ReplyTrace.currentHexId());   // one id for the trace row, the Langfuse spans and the log lines
@@ -596,10 +628,11 @@ public class ChatService {
         if (said != null) jdbc.sql("UPDATE chat.conversations SET gender = :g WHERE id = :c").param("g", said).param("c", conv).update();
         List<ReplyRef> refs = in.refs().stream().filter(r -> r != null && !r.empty()).toList();
         boolean fromClient = "WEB".equals(channel) || "TEST".equals(channel);   // a website client names a message by our id: it must be of this chat and this shop (the channels' own ids are looked up, never trusted)
-        if (replies != null && fromClient) for (ReplyRef r : refs) replies.resolve(tenantId, conv, r, true);   // throws before anything is saved
-        long userMsgId = jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'user', :x) RETURNING id").param("c", conv).param("x", text).query(Long.class).single();
-        if (memoryFacts != null) memoryFacts.record(tenantId, conv, userMsgId, text);   // what the customer states (budget, size, colours, conditions) is remembered with its source, by code
-        if (replies != null) {
+        boolean stored = in.storedId() != null;   // DR-B: the website stored each line (and its reference and facts) when it arrived; the reply answers them
+        if (replies != null && fromClient && !stored) for (ReplyRef r : refs) replies.resolve(tenantId, conv, r, true);   // throws before anything is saved
+        long userMsgId = stored ? in.storedId() : jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'user', :x) RETURNING id").param("c", conv).param("x", rowText).query(Long.class).single();
+        if (memoryFacts != null && !stored) memoryFacts.record(tenantId, conv, userMsgId, rowText);   // what the customer states (budget, size, colours, conditions) is remembered with its source, by code
+        if (replies != null && !stored) {
             try {
                 if (!refs.isEmpty()) replies.attachAll(tenantId, conv, userMsgId, refs);   // every line of a burst keeps its own reference
                 for (String mid : in.mids()) replies.recordMid(tenantId, conv, userMsgId, mid, null);
@@ -627,7 +660,12 @@ public class ChatService {
         long windowFrom = 0;   // the oldest message the model is given as history
         for (var m : jdbc.sql("SELECT id, role, content FROM (SELECT id, role, content FROM chat.messages WHERE conversation_id = :c ORDER BY id DESC LIMIT :n) x ORDER BY id").param("c", conv).param("n", Math.max(4, Math.min(historyMessages, 40))).query().listOfRows()) {
             if (windowFrom == 0) windowFrom = ((Number) m.get("id")).longValue();
-            turns.add("user".equals(m.get("role")) ? Turn.user((String) m.get("content")) : Turn.model((String) m.get("content")));
+            boolean userRow = "user".equals(m.get("role"));
+            if (userRow && !turns.isEmpty() && "user".equals(turns.get(turns.size() - 1).role()) && turns.get(turns.size() - 1).text() != null) {   // DR-B: lines the model has not answered yet are ONE user turn, like a burst on the messaging channels
+                turns.set(turns.size() - 1, Turn.user(turns.get(turns.size() - 1).text() + "\n" + m.get("content")));
+                continue;
+            }
+            turns.add(userRow ? Turn.user((String) m.get("content")) : Turn.model((String) m.get("content")));
         }
 
         @SuppressWarnings("unchecked") Map<String, Object>[] orderBox = new Map[1];
@@ -845,6 +883,11 @@ public class ChatService {
         ctx.products().removeIf(p -> !seenCards.add(p.get("slug")));   // one card per product
         String replyWords = FastAnswers.norm(answer);
         if (!messaging(channel)) ctx.products().removeIf(p -> !Boolean.TRUE.equals(p.get("send")) && !replyWords.contains(FastAnswers.norm(String.valueOf(p.get("name")))));   // the website shows cards only for what the reply is about
+        if (ConversationGate.shouldAbort() && !madeChanges(ctx, rounds)) {   // DR-B: more lines arrived while this reply was being written and it has not been saved or sent: it is dropped, the next generation answers every line once
+            log.info("Reply dropped: a newer burst of conversation {} is waiting", conv);
+            ConversationGate.markDiscarded();
+            return new Reply(conv, "", null, List.of());
+        }
         if (!"TEST".equals(channel) && !stillAiTurn(conv, userMsgId)) {   // a person took over while the model was thinking: their word wins, the AI's answer is dropped
             log.info("AI answer dropped: the team took conversation {} over during the reply", conv);
             return new Reply(conv, "", orderBox[0], List.of());
@@ -3324,6 +3367,7 @@ public class ChatService {
     private String modelLoop(Ctx ctx, ChannelAi.Routed routed, String system, List<Turn> turns, List<ToolDef> tools, List<AiUsageService.Round> rounds, MoneyGuard.Allowed allowed) {
         boolean retried = false;
         for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
+            if (ConversationGate.shouldAbort() && !madeChanges(ctx, rounds)) throw new ConversationGate.Superseded();   // DR-B: a newer burst is waiting: no more provider calls for a reply that will be dropped
             long callStart = System.nanoTime();
             Turn t = routed.next(system, turns, tools);
             ReplyTimeline.llm(routed.code(), ReplyTimeline.since(callStart));

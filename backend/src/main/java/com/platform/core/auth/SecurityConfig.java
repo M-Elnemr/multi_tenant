@@ -58,7 +58,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/v1/shop/booking", "/api/v1/shop/booking/cancel").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/shop/affiliate/visit", "/api/v1/marketer/register", "/api/v1/marketer/login", "/api/v1/marketer/logout").permitAll()
                 .requestMatchers("/api/v1/marketer/**").hasAuthority("ROLE_MARKETER")
-                .requestMatchers(HttpMethod.POST, "/api/v1/shop/cart/quote", "/api/v1/shop/checkout", "/api/v1/shop/track", "/api/v1/shop/track/return", "/api/v1/shop/webhooks/*", "/api/v1/shop/chat", "/api/v1/shop/chat/media", "/api/v1/shop/carts/snapshot", "/api/v1/shop/experiments/*/event").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/shop/cart/quote", "/api/v1/shop/checkout", "/api/v1/shop/track", "/api/v1/shop/track/return", "/api/v1/shop/webhooks/*", "/api/v1/shop/chat", "/api/v1/shop/chat/media", "/api/v1/shop/chat/typing", "/api/v1/shop/carts/snapshot", "/api/v1/shop/experiments/*/event").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/integrations/oauth/*/callback").permitAll()   // platforms send the owner back here; the signed state says who
                 .requestMatchers("/api/v1/open/**").permitAll()   // the marketplace API; its account routes check their own X-Open-Token
                 .requestMatchers("/api/v1/chat/meta/webhook", "/api/v1/chat/meta/callback").permitAll()

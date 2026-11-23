@@ -35,8 +35,10 @@ public class ChatController {
 
     private final AiReadinessService readiness;
     private final MediaReader media;
+    private final WebBurst webBurst;
 
-    public ChatController(ChatService chat, LoginThrottle throttle, AiEvalService eval, AiReadinessService readiness, MediaReader media) {
+    public ChatController(ChatService chat, LoginThrottle throttle, AiEvalService eval, AiReadinessService readiness, MediaReader media, WebBurst webBurst) {
+        this.webBurst = webBurst;
         this.media = media;
         this.readiness = readiness;
         this.chat = chat;
@@ -89,10 +91,28 @@ public class ChatController {
     }
 
     @GetMapping("/api/v1/shop/chat/history")
-    public List<Map<String, Object>> history(@RequestParam String conversationId, @RequestParam(required = false) Long around) {
+    public Object history(@RequestParam String conversationId, @RequestParam(required = false) Long around, @RequestParam(required = false) Boolean state, jakarta.servlet.http.HttpServletResponse res) {
+        UUID tenant = StoreContext.tenantId();
+        boolean pending = CONV_ID.matcher(conversationId).matches() && webBurst.pending(tenant, conversationId);   // DR-B: the assistant has not answered the latest lines yet
+        res.setHeader("X-Chat-Pending", pending ? "1" : "0");
+        List<Map<String, Object>> h = historyRows(tenant, conversationId, around);
+        if (Boolean.TRUE.equals(state)) { Map<String, Object> m = new LinkedHashMap<>(); m.put("messages", h); m.put("pending", pending); return m; }   // the widget's form; the plain list stays for older callers
+        return h;
+    }
+
+    /** The customer is typing (the widget's heartbeat, about every 2 seconds): the assistant's wait for the end of the burst is extended. Cheap, in memory, never fails the page. */
+    @PostMapping("/api/v1/shop/chat/typing")
+    public Map<String, Object> typing(@RequestBody Map<String, String> r) {
+        UUID t = StoreContext.openTenantId();
+        String c = r == null ? null : r.get("conversationId");
+        if (c != null && CONV_ID.matcher(c).matches()) webBurst.typing(t, c);
+        return Map.of("ok", true);
+    }
+
+    private List<Map<String, Object>> historyRows(UUID tenant, String conversationId, Long around) {
         if (!CONV_ID.matcher(conversationId).matches()) return List.of();
-        if (around != null) return chat.historyAround(StoreContext.tenantId(), "WEB", conversationId, around, 15, 25);   // the page around an old message the customer is jumping to (a quote)
-        var h = new java.util.ArrayList<>(chat.history(StoreContext.tenantId(), "WEB", conversationId));
+        if (around != null) return chat.historyAround(tenant, "WEB", conversationId, around, 15, 25);   // the page around an old message the customer is jumping to (a quote)
+        var h = new java.util.ArrayList<>(chat.history(tenant, "WEB", conversationId));
         if (!h.isEmpty() && "assistant".equals(h.get(h.size() - 1).get("role")) && h.get(h.size() - 1).get("content") instanceof String c) {   // the buttons of the question still waiting for its answer
             var last = new java.util.LinkedHashMap<>(h.get(h.size() - 1));
             last.put("buttons", ReplyButtons.asMaps(ReplyButtons.pick(c)));
@@ -140,6 +160,16 @@ public class ChatController {
         // per chat: nobody types more than 30 messages in 10 minutes; per address a much higher ceiling, because many mobile customers share one carrier address
         messageLimits(t, r.conversationId(), req, r.message());
         var in = r.replyToMessageId() == null ? ChatService.ReplyInput.NONE : new ChatService.ReplyInput(List.of(ReplyRef.ofId(r.replyToMessageId())), List.of());
+        if (webBurst.enabled() && r.message() != null && !r.message().isBlank()) {   // DR-B: the line is saved now, the assistant answers the burst once
+            var stored = chat.storeLine(t, "WEB", r.conversationId(), clientOrNull(a), r.message(), in);
+            webBurst.add(t, r.conversationId(), clientOrNull(a), stored.messageId(), in.refs().isEmpty() ? null : in.refs().get(0), r.message().trim());
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("conversationId", stored.conversationId());
+            m.put("messageId", stored.messageId());
+            m.put("userMessageId", stored.messageId());
+            m.put("pending", true);
+            return m;
+        }
         return view(chat.reply(t, "WEB", r.conversationId(), clientOrNull(a), r.message(), null, in));
     }
 
@@ -162,7 +192,28 @@ public class ChatController {
         mediaLimit(conversationId);
         byte[] bytes = file.getBytes();
         String caption = message == null || message.isBlank() ? null : message.trim();
-        String heard = media.read(t, "WEB", new MediaReader.Media(kind, () -> bytes, type, caption));
+        // DR-B: the burst waits while the file is read (like the messaging channels), so «بكام ده؟» typed right after the photo is answered together with it
+        var heldMeta = webBurst.enabled() ? new WebBurst.Meta(0, null) : null;
+        java.util.function.Consumer<String> release = heldMeta == null ? null : webBurst.hold(t, conversationId, clientOrNull(a), heldMeta);
+        String heard;
+        try { heard = media.read(t, "WEB", new MediaReader.Media(kind, () -> bytes, type, caption)); }
+        catch (RuntimeException e) { if (release != null) release.accept(null); throw e; }
+        if (heard != null && heard.length() > 1000) heard = heard.substring(0, 1000);
+        if (release != null && heard != null && !heard.isBlank()) {
+            try {
+                var stored = chat.storeLine(t, "WEB", conversationId, clientOrNull(a), heard, ChatService.ReplyInput.NONE);
+                heldMeta.id = stored.messageId();
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("conversationId", stored.conversationId());
+                m.put("messageId", stored.messageId());
+                m.put("userMessageId", stored.messageId());
+                m.put("pending", true);
+                m.put("heard", heard);
+                release.accept(heard);
+                return m;
+            } catch (RuntimeException e) { release.accept(null); throw e; }
+        }
+        if (release != null) release.accept(null);
         if (heard == null || heard.isBlank()) {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("conversationId", conversationId);

@@ -37,6 +37,7 @@ final class InboundBurst {
     private final Executor worker;
     private final long windowMs, maxMs;
     private final Map<String, Entry> pending = new HashMap<>();
+    private final Map<String, Integer> flying = new HashMap<>();   // flushed bursts whose handler has not finished (queued for a worker or running)
 
     InboundBurst(ScheduledExecutorService timers, Executor worker, long windowMs, long maxMs) {
         this.timers = timers; this.worker = worker; this.windowMs = windowMs; this.maxMs = Math.max(windowMs, maxMs);
@@ -46,6 +47,17 @@ final class InboundBurst {
 
     /** How many customers' bursts are waiting for their quiet window right now (a gauge). */
     int pendingBursts() { synchronized (this) { return pending.size(); } }
+
+    /** Is a burst of this conversation waiting for its quiet window (or for a photo being read), or being answered by its handler right now? */
+    boolean waiting(String key) { synchronized (this) { return pending.containsKey(key) || flying.containsKey(key); } }
+
+    /** The customer is typing (the website's heartbeat): the quiet window of a waiting burst restarts, still never past the ceiling. Nothing waiting: nothing to do. */
+    synchronized void touch(String key) {
+        Entry e = pending.get(key);
+        if (e == null || e.waiting > 0) return;
+        if (e.timer != null) e.timer.cancel(false);
+        restart(key, e);
+    }
 
     /** Adds one message of the conversation {@code key}; {@code fire} (the one passed with the burst's first message) runs once with all the text. */
     synchronized void add(String key, String text, Consumer<String> fire) { add(key, text, null, (t, metas) -> fire.accept(t)); }
@@ -103,6 +115,7 @@ final class InboundBurst {
         synchronized (this) {
             if (pending.get(key) != entry || entry.waiting > 0) return;   // already flushed by a later timer, or a photo is still being read
             pending.remove(key);
+            flying.merge(key, 1, Integer::sum);
             for (String part : entry.parts) {
                 if (part == null || part.isBlank() || all.length() >= MAX_CHARS) continue;
                 if (all.length() > 0) all.append('\n');
@@ -117,7 +130,8 @@ final class InboundBurst {
         var timing = new ReplyTrace.Inbound(entry.firstNano, entry.lastNano, flushNano, flushNano, lines);
         worker.execute(() -> {
             ReplyTrace.inboundStart(timing);
-            try { entry.fire.accept(all.toString(), metas); } finally { ReplyTrace.inboundEnd(); }
+            try { entry.fire.accept(all.toString(), metas); }
+            finally { ReplyTrace.inboundEnd(); synchronized (InboundBurst.this) { flying.merge(key, -1, (a, b) -> a + b == 0 ? null : a + b); } }
         });
     }
 }
