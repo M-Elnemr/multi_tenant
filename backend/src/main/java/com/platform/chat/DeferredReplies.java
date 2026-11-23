@@ -64,12 +64,14 @@ public class DeferredReplies {
         this.delivery = (t, c, e, text, products) -> this.chatDelivery.getObject().send(t, c, e, text, products);
     }
 
-    boolean enabled() { return enabled; }
+    public boolean enabled() { return enabled; }
 
-    void enabled(boolean on) { this.enabled = on; }
+    public void enabled(boolean on) { this.enabled = on; }
 
     /** Replaces how answers reach messaging channels (tests). */
     public void delivery(ReplyDelivery d) { this.delivery = d; }
+
+    public ReplyDelivery delivery() { return delivery; }
 
     /** Keeps an unanswered turn for retry. The first retry runs 15 seconds from now. */
     public void defer(UUID tenantId, UUID conversationId, String channel, String externalId, UUID clientId, long userMessageId, String text, String displayName, String why) {
