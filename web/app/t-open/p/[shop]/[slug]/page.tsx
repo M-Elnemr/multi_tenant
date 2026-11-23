@@ -57,7 +57,7 @@ export default async function OpenProductPage({ params }: { params: Promise<{ sh
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
       <nav className="mb-2 flex flex-wrap items-center gap-x-1.5 text-xs font-semibold text-[var(--o-mute)]" aria-label="breadcrumb">
         <Link href="/" className="inline-flex min-h-9 items-center hover:text-[var(--o-accent)]">{t("shop.home")}</Link>
-        {p.taxonomy.map((c) => <span key={c.slug} className="flex items-center gap-1.5"><Icon name="chevron" className="h-3 w-3 rtl:rotate-180" /><Link href={`/c/${c.slug}`} className="inline-flex min-h-9 items-center hover:text-[var(--o-accent)]">{nm(c)}</Link></span>)}
+        {p.taxonomy.map((c, i) => <span key={`${c.slug}-${i}`} className="flex items-center gap-1.5"><Icon name="chevron" className="h-3 w-3 rtl:rotate-180" /><Link href={`/c/${c.slug}`} className="inline-flex min-h-9 items-center hover:text-[var(--o-accent)]">{nm(c)}</Link></span>)}
       </nav>
 
       <OpenChosenProvider>

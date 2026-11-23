@@ -63,7 +63,7 @@ export function OpenSearch({ className = "" }: { className?: string }) {
   const remember = (v: string) => { if (v) writeRecent([v, ...readRecent().filter((x) => x !== v)]); };
   const submit = (v: string) => { setOpen(false); remember(v); router.push(v ? `/search?q=${encodeURIComponent(v)}` : "/search"); };
   const onKey = (e: React.KeyboardEvent) => {
-    if (e.key === "Escape") { setOpen(false); return; }
+    if (e.key === "Escape") { setOpen(false); setCursor(-1); return; }
     if (!open || rows.length === 0) return;
     if (e.key === "ArrowDown") { e.preventDefault(); setCursor((c) => (c + 1) % rows.length); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setCursor((c) => (c <= 0 ? rows.length - 1 : c - 1)); }
@@ -95,7 +95,7 @@ export function OpenSearch({ className = "" }: { className?: string }) {
     <div ref={box} className={`relative ${className}`}>
       <form onSubmit={(e) => { e.preventDefault(); submit(term); }} role="search" className="flex items-center overflow-hidden rounded-full border border-[var(--o-line-2)] bg-white transition focus-within:border-[var(--o-ink)] focus-within:shadow-[0_0_0_4px_rgb(23_19_14/.08)]">
         <span className="ps-4 text-[var(--o-mute)]"><Icon name="search" className="h-[18px] w-[18px]" /></span>
-        <input value={q} onChange={(e) => { setQ(e.target.value); setOpen(true); }} onFocus={() => { setRecent(readRecent()); setOpen(true); }} onKeyDown={onKey}
+        <input value={q} onChange={(e) => { setQ(e.target.value); setCursor(-1); setOpen(true); }} onFocus={() => { setRecent(readRecent()); setOpen(true); }} onKeyDown={onKey}
           placeholder={t("open.searchPlaceholder")} aria-label={t("open.searchPlaceholder")} role="combobox" aria-expanded={showPanel} aria-controls={listId} aria-autocomplete="list" autoComplete="off" enterKeyHint="search"
           className="min-h-11 min-w-0 flex-1 bg-transparent px-3 py-2.5 text-[15px] text-[var(--o-ink)] outline-none placeholder:text-[var(--o-faint)]" />
         {q && <button type="button" onClick={() => { setQ(""); setRes(null); }} aria-label={t("open.search.clear")} className="grid h-9 w-9 place-items-center rounded-full text-[var(--o-mute)] hover:bg-[var(--o-soft)]"><Icon name="close" className="h-4 w-4" /></button>}

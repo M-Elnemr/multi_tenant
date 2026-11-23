@@ -2,7 +2,7 @@
 // Run: node server.mjs   (port 8080)    Web: API_BASE_URL=http://localhost:8080 npm run dev, open http://open.localhost:3000
 import http from "node:http";
 
-const PORT = 8080;
+const PORT = Number(process.env.PORT || 8080);
 const palette = ["#e8d5c4", "#cfd8dc", "#d7e3d0", "#f1d9c9", "#d9d3ea", "#f3e6b8", "#c9dde6", "#ead0d6"];
 const svg = (i) => {
   const c = palette[i % palette.length], d = palette[(i + 3) % palette.length];
