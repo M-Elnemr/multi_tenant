@@ -36,7 +36,7 @@ public class SocialBridge {
     private final InboundBurst burst;
 
     public SocialBridge(JdbcClient jdbc, TokenCrypto crypto, ChatService chat, LoginThrottle throttle, ProductShare share, ChatTimeline timeline, List<SocialChannel> channels,
-                        @Value("${app.meta.async:true}") boolean async, @Value("${app.chat.burst-ms:5000}") long burstMs) {
+                        @Value("${app.meta.async:true}") boolean async, @Value("${app.chat.burst-ms:0}") long burstMs) {
         this.jdbc = jdbc;
         this.crypto = crypto;
         this.chat = chat;
