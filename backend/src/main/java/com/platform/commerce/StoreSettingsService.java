@@ -35,12 +35,13 @@ public class StoreSettingsService {
     public Map<String, Object> profile(UUID tenantId) {
         Map<String, Object> p = new java.util.LinkedHashMap<>(Rows.camel(jdbc.sql("SELECT store_name, short_description, about, support_phone, support_email, address_text, shipping_policy, return_policy, privacy_policy, terms_text, other_category, "
                 + "whatsapp, extra_phones::text AS extra_phones, facebook_url, instagram_url, tiktok_url, website_url, maps_url, working_hours::text AS working_hours, "
-                + "is_open, closed_message, min_order_minor, tax_id, vat_included, vat_percent, cover_file_id, announcement, return_window_days, meta_pixel_id, tiktok_pixel_id, ga_id, site_layout::text AS site_layout, trust_tiles::text AS trust_tiles, template "
+                + "is_open, closed_message, min_order_minor, tax_id, vat_included, vat_percent, cover_file_id, announcement, return_window_days, meta_pixel_id, tiktok_pixel_id, ga_id, site_layout::text AS site_layout, trust_tiles::text AS trust_tiles, template, site_theme::text AS site_theme "
                 + "FROM commerce.store_profiles WHERE tenant_id = :t")
                 .param("t", tenantId).query().singleRow()));
         p.put("extraPhones", Rows.jsonList(p.get("extraPhones")));
         p.put("workingHours", Rows.json(p.get("workingHours")));
         p.put("siteLayout", Rows.json(p.remove("siteLayout")));
+        p.put("siteTheme", com.platform.shared.SiteThemes.read(p.remove("siteTheme")));   // null = the design's own colours
         p.put("trustTiles", Rows.jsonList(p.remove("trustTiles")));
         p.put("categories", Rows.camel(jdbc.sql("SELECT c.code, c.name_ar, c.name_en FROM commerce.store_category_links l JOIN commerce.store_categories c ON c.id = l.category_id WHERE l.tenant_id = :t ORDER BY c.sort_order").param("t", tenantId).query().listOfRows()));
         return p;
@@ -143,6 +144,13 @@ public class StoreSettingsService {
             } else if (!(service ? SERVICE_TEMPLATES : TEMPLATES).contains(tpl)) throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown template");
             set.append("template = :template, "); q.put("template", tpl);
         }
+        boolean themeChanged = f.containsKey("siteTheme");
+        if (themeChanged) {
+            var fe = new com.platform.shared.FieldErrors();
+            String themeJson = com.platform.shared.SiteThemes.clean(f.get("siteTheme"), fe);
+            fe.throwIfAny();
+            set.append("site_theme = CAST(:siteTheme AS jsonb), "); q.put("siteTheme", themeJson);
+        }
         var json = new com.fasterxml.jackson.databind.ObjectMapper();
         try {
             if (f.get("extraPhones") instanceof List<?> l) {
@@ -174,6 +182,7 @@ public class StoreSettingsService {
             st.update();
         }
         audit.record(actor, tenantId, "SETTINGS_CHANGED", "store_profile", null, null);
+        if (themeChanged) audit.record(actor, tenantId, "SITE_THEME_CHANGED", "store_profile", null, null);
         return profile(tenantId);
     }
 

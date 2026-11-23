@@ -10,6 +10,7 @@ import { type ClinicSite } from "@/lib/clinic-site";
 import { fileUrl } from "@/lib/media";
 import { getT } from "@/lib/i18n-server";
 import { resolveHost } from "@/lib/tenant";
+import { SiteThemeStyle, type WithSiteTheme } from "@/lib/site-theme";
 import { ScrollHeader, ScrollProgress } from "@/components/clinic/motion";
 import "./clinic.css";
 import "./clinic-templates.css";
@@ -39,6 +40,7 @@ export default async function ClinicSiteLayout({ children }: { children: React.R
   const tpl = await siteTemplate(p?.template, CLINIC_TEMPLATE_IDS, "clear");
   return (
     <div className={`clinic flex min-h-dvh flex-col ${templateFontVars}`} data-template={tpl.id} data-dark={clinicLookOf(tpl.id).dark ? "" : undefined}>
+      <SiteThemeStyle theme={(p as WithSiteTheme | null)?.siteTheme} />
       {tpl.previewing && !tpl.inFrame && <PreviewBar label={t("tpl.previewing", { name: t(`ctpl.${tpl.id}`) })} exit={t("tpl.exitPreview")} />}
       {tpl.inFrame && <PreviewLinks tpl={tpl.id} />}
       {p && <Announcement p={p} t={t} />}

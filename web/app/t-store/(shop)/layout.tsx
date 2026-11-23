@@ -20,6 +20,7 @@ import { WhatsAppFloat } from "@/components/shop/whatsapp-float";
 import { backendJson, currentHost } from "@/lib/backend";
 import { getT } from "@/lib/i18n-server";
 import { resolveHost } from "@/lib/tenant";
+import { SiteThemeStyle, type WithSiteTheme } from "@/lib/site-theme";
 
 /** The storefront shell. It deliberately shows the shop's own logo, name and colour, so a visitor sees the shop, not the platform behind it. */
 export default async function ShopLayout({ children }: { children: React.ReactNode }) {
@@ -39,6 +40,7 @@ export default async function ShopLayout({ children }: { children: React.ReactNo
   const logoUrl = logoId ? `/api/bff/files/${logoId}/content?variant=thumb` : null;
   return (
     <div className={`shop flex min-h-dvh flex-col ${templateFontVars}`} data-template={look.template} data-header={look.look.header} data-dark={look.look.dark ? "" : undefined}>
+      <SiteThemeStyle theme={(look.profile as WithSiteTheme | null)?.siteTheme} />
       {look.previewing && !look.inFrame && <PreviewBar label={t("tpl.previewing", { name: t(`tpl.${look.template}`) })} exit={t("tpl.exitPreview")} />}
       {look.inFrame && <PreviewLinks tpl={look.template} />}
       <SwRegister />
