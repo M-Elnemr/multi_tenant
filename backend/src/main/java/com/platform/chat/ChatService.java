@@ -694,10 +694,14 @@ public class ChatService {
 
         List<Turn> turns = new ArrayList<>();
         long windowFrom = 0;   // the oldest message the model is given as history
-        for (var m : jdbc.sql("SELECT id, role, content FROM (SELECT id, role, content FROM chat.messages WHERE conversation_id = :c ORDER BY id DESC LIMIT :n) x ORDER BY id").param("c", conv).param("n", Math.max(4, Math.min(historyMessages, 40))).query().listOfRows()) {
+        java.time.Instant prevAt = null;
+        for (var m : jdbc.sql("SELECT id, role, content, created_at FROM (SELECT id, role, content, created_at FROM chat.messages WHERE conversation_id = :c ORDER BY id DESC LIMIT :n) x ORDER BY id").param("c", conv).param("n", Math.max(4, Math.min(historyMessages, 40))).query().listOfRows()) {
             if (windowFrom == 0) windowFrom = ((Number) m.get("id")).longValue();
             boolean userRow = "user".equals(m.get("role"));
-            if (userRow && !turns.isEmpty() && "user".equals(turns.get(turns.size() - 1).role()) && turns.get(turns.size() - 1).text() != null) {   // DR-B: lines the model has not answered yet are ONE user turn, like a burst on the messaging channels
+            java.time.Instant at = m.get("created_at") instanceof java.sql.Timestamp ts ? ts.toInstant() : m.get("created_at") instanceof java.time.OffsetDateTime odt ? odt.toInstant() : null;
+            boolean sameBurst = prevAt == null || at == null || java.time.Duration.between(prevAt, at).abs().getSeconds() <= 60;   // DR-B: only lines written together are one turn: an older pile (a chat the shop team took over and resumed later) stays separate
+            prevAt = at;
+            if (userRow && sameBurst && !turns.isEmpty() && "user".equals(turns.get(turns.size() - 1).role()) && turns.get(turns.size() - 1).text() != null) {   // DR-B: lines the model has not answered yet are ONE user turn, like a burst on the messaging channels
                 turns.set(turns.size() - 1, Turn.user(turns.get(turns.size() - 1).text() + "\n" + m.get("content")));
                 continue;
             }
@@ -883,13 +887,16 @@ public class ChatService {
                     log.warn("AI unavailable on the fallback too: {}", e2.getMessage());
                     if (EVAL.get() != null) EVAL.get().failure(routed.code(), e2.getMessage());
                     events.record(tenantId, conv, channel, routed.code(), "ERROR", e2.describe(), null);
-                    if (canDefer) allFailed = true;   // DR-R: no busy text: the turn is kept and retried in the background
-                    else answer = dataOrUnavailable(ctx, text, arabicChat);
+                    String dataAnswer = canDefer ? dataReplyOrNull(ctx, text) : null;   // DR-R: the shop's own data about the asked product is a real answer: no deferral then
+                    if (canDefer && dataAnswer == null) allFailed = true;   // DR-R: no busy text: the turn is kept and retried in the background
+                    else answer = dataAnswer != null ? dataAnswer : dataOrUnavailable(ctx, text, arabicChat);
                     ReplyTrace.note("ai_unavailable", true);
                 }
             } else {
                 events.record(tenantId, conv, channel, routed.code(), "ERROR", e.describe(), null);
-                if (canDefer) allFailed = true;   // DR-R: no busy text: the turn is kept and retried in the background
+                String dataAnswer = canDefer ? dataReplyOrNull(ctx, text) : null;   // DR-R: the shop's own data about the asked product is a real answer: no deferral then
+                if (canDefer && dataAnswer == null) allFailed = true;   // DR-R: no busy text: the turn is kept and retried in the background
+                else if (dataAnswer != null) answer = dataAnswer;
                 else answer = routed.showsErrors() ? "⚠️ " + routed.label() + ": " + e.getMessage() : dataOrUnavailable(ctx, text, arabicChat);
                 ReplyTrace.note("ai_unavailable", true);
             }
@@ -1304,7 +1311,8 @@ public class ChatService {
     private static final java.util.regex.Pattern QUANTITY_QUESTION = java.util.regex.Pattern.compile("فاضل كام|فاضلين كام|باقي كام|متبقي كام|كام قطعه|كام قطعة|كام واحد|الكميه|الكمية|كام حته|how many|left in stock|in stock");
     private static final java.util.regex.Pattern REQUEST_INTENT = java.util.regex.Pattern.compile("عايز|عاوز|محتاج|ابغى|أبغى|اشتري|هاخد|ممكن اطلب|want|need|looking for|interested in|i.d like");
     private static final java.util.regex.Pattern PRODUCT_QUESTION = java.util.regex.Pattern.compile("بكام|بكم|سعر|متاح|متوفر|موجود|فاضل|لون|مقاس|ضمان|كارت|بطاريه|available|price|how much|in stock|colou?r|size|warranty");
-    private String dataOrUnavailable(Ctx ctx, String text, boolean arabic) {
+    /** The shop's own data about the product the customer asked about (price, stock), or null when the message names no product or the data does not answer it. Used instead of the busy text, and before a turn is deferred. */
+    private String dataReplyOrNull(Ctx ctx, String text) {
         try {
             var names = shopView(ctx.tenantId()).names();
             var slugs = FactCheck.askedSlugs(text, names);
@@ -1317,7 +1325,12 @@ public class ChatService {
                 }
             }
         } catch (RuntimeException e) { log.warn("Data reply instead of the busy text skipped", e); }
-        return unavailableText(arabic);
+        return null;
+    }
+
+    private String dataOrUnavailable(Ctx ctx, String text, boolean arabic) {
+        String data = dataReplyOrNull(ctx, text);
+        return data != null ? data : unavailableText(arabic);
     }
 
     private static String unavailableText(boolean arabic) {

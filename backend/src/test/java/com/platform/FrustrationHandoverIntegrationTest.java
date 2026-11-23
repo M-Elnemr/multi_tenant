@@ -95,10 +95,10 @@ class FrustrationHandoverIntegrationTest extends IntegrationTestBase {
         onHost(t.host(), t.access(), "GET", "/api/v1/store/chat/conversations?page=true&status=FRUSTRATED", null).andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(1)).andExpect(jsonPath("$.data[0].frustrationPaused").value(true));
         onHost(t.host(), t.access(), "GET", "/api/v1/store/chat/conversations/counts", null).andExpect(jsonPath("$.frustrated").value(1));
         FakeAiProvider.SCRIPT.clear();
-        script("mark" + conv, "Welcome back, thank you for your patience.");
+        script("mark" + conv, "أهلاً بيك تاني يا فندم، شكراً على صبرك.");   // Arabic: the customer writes Arabic, so the language rule wants an Arabic reply
         onHost(t.host(), t.access(), "POST", "/api/v1/store/chat/conversations/" + id + "/resume", null).andExpect(status().isOk());
         assertThat(chat(conv).get("frustration_paused")).isEqualTo(false);
-        assertThat(say(t, conv, "ايه الأسعار عندكم mark" + conv)).contains("Welcome back");   // the assistant answers again, from the customer's next message
+        assertThat(say(t, conv, "ايه الأسعار عندكم mark" + conv)).contains("أهلاً بيك تاني");   // the assistant answers again, from the customer's next message
     }
 
     @Test

@@ -383,7 +383,9 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
         FakeAiProvider.SCRIPT.clear();
         for (int i = 0; i < 6; i++) FakeAiProvider.SCRIPT.add(turns -> { throw new com.platform.chat.AiProvider.AiUnavailableException("TIMEOUT", "TIMEOUT", null); });
         String none = JsonPath.read(say(t, ext, "إزاي أدفع؟", null), "$.reply");
-        assertThat(none).as(none).contains("ضغط");
+        assertThat(none).as("DR-R: a question with no product the shop data can answer is never answered with the busy text: it is kept and retried in the background").isEmpty();
+        assertThat(jdbc.sql("SELECT count(*) FROM chat.deferred_replies d JOIN chat.conversations c ON c.id = d.conversation_id WHERE c.external_id = :e AND d.status = 'PENDING'").param("e", ext).query(Long.class).single())
+                .as("the turn is waiting for its background retry").isEqualTo(1L);
     }
 
     private String stuckModel(Tenant t, String ext, String customer, String wrong) throws Exception {
