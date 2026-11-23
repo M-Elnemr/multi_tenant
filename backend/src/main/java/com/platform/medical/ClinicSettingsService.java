@@ -43,7 +43,7 @@ public class ClinicSettingsService {
     }
 
     /** Website designs a clinic can pick; must match the CHECK in V79 and web/components/clinic/templates.ts. */
-    public static final java.util.Set<String> TEMPLATES = java.util.Set.of("clear", "luxe", "persona", "dental", "derma", "center");
+    public static final java.util.Set<String> TEMPLATES = java.util.Set.of("clear", "luxe", "persona", "dental", "derma", "center", "cn-institute", "cn-boutique", "cn-medtech", "cn-family", "cn-atelier");
 
     private static final Map<String, String> IDENTITY_TEXT = Map.ofEntries(
             Map.entry("tagline", "tagline"), Map.entry("whatsapp", "whatsapp"), Map.entry("facebookUrl", "facebook_url"), Map.entry("instagramUrl", "instagram_url"),

@@ -86,10 +86,10 @@ public class StoreSettingsService {
     /** The ready-made looks of the shop website (see V42). */
     /** The ten designs only a SERVICE business can choose (a shop never gets them, and a service business never gets the shop designs). */
     /** Ten designs for a shop with very few products. A shop may CHOOSE one only while it has 1 to 3 active products (a product with many variants is still one product). */
-    public static final java.util.Set<String> SMALL_CATALOG_TEMPLATES = java.util.Set.of("solo", "vitrine", "capsule", "monolith", "pedestal", "spotlight", "launch", "signature", "curated", "origin");
+    public static final java.util.Set<String> SMALL_CATALOG_TEMPLATES = java.util.Set.of("solo", "vitrine", "capsule", "monolith", "pedestal", "spotlight", "launch", "signature", "curated", "origin", "pn-flagship", "pn-showcase", "pn-trio", "pn-launch", "pn-brand");
     public static final int SMALL_CATALOG_MAX = 3;
-    public static final java.util.Set<String> SERVICE_TEMPLATES = java.util.Set.of("lumiere", "barbershop", "homefix", "fixit", "aqua", "sparkle", "garage", "pro", "slot", "bazaar");
-    public static final java.util.Set<String> TEMPLATES = java.util.Set.of("original", "atelier", "street", "grove", "midnight", "maison", "feast", "bloom", "oud", "souq");
+    public static final java.util.Set<String> SERVICE_TEMPLATES = java.util.Set.of("lumiere", "barbershop", "homefix", "fixit", "aqua", "sparkle", "garage", "pro", "slot", "bazaar", "vn-wellness", "vn-homepro", "vn-repair", "vn-studio", "vn-multi");
+    public static final java.util.Set<String> TEMPLATES = java.util.Set.of("original", "atelier", "street", "grove", "midnight", "maison", "feast", "bloom", "oud", "souq", "sn-editorial", "sn-market", "sn-minimal", "sn-bold", "sn-lifestyle");
     private static final Map<String, String> PROFILE_BOOL = Map.of("isOpen", "is_open", "vatIncluded", "vat_included");
     private static final Map<String, String> PROFILE_NUM = Map.of("minOrderMinor", "min_order_minor", "vatPercent", "vat_percent", "returnWindowDays", "return_window_days");
 
