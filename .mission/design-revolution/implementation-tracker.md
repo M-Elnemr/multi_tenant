@@ -15,3 +15,15 @@ MERGED into design-revolution-v2 (tsc + eslint + check-i18n clean after merge): 
 Backend: V113 site_theme, V114 template CHECKs + id sets for all 25 ids; rollback docs/rollback/V114_design_revolution_templates_rollback.sql. Focused tests passed (SiteTheme, ClinicIdentity, LawyerIntegration) via ./gradlew with DB_USERNAME=elnemr. Full suite NOT yet run.
 NOT merged yet: C large shop (sn-market done, 4 pending), F Open Store, I /services landing (in progress), G dashboard, H admin (paused, partial).
 Known gaps: clinic/lawyer/small inner pages share markup per kind; nothing run against the real backend or in production; no real-theme visual QA on the new templates yet.
+
+## Integration status update (2026-11-23, later)
+ALL workstream branches now merged into design-revolution-v2: J, A, B, E, D, I (code only), G (2 small fixes only), H (partial), F, C (squashed; its 74 MB of screenshots kept out of the repo, copies in the session scratchpad).
+Gates on the merged tree: `tsc` clean, `eslint --quiet` clean (after fixing an impure Date.now in admin PeriodBar), `check-i18n` ok (6726 keys per language), `next build` OK (after fixing Source Serif 4 weight option in ln-advisory). Full backend suite: running (log in the scratchpad backend-full.log).
+Template count in code: clinic 5, lawyer 5, large shop 5, small shop 5, service 5 = 25, all registered, ids in V114 + backend sets.
+HONEST STATUS BY AREA
+- Templates: built; verified only on local mock backends with headless Chrome. Distinct inner pages: service (partly shared booking/contact), large shop (own cart/product/listing each), lawyer (only ln-global), clinic (shared inner pages, CSS skins), small shop (homes distinct; other pages token re-skin).
+- Colour editor: working end to end for STORE (save, reload, isolation); clinic/lawyer editor and logo extraction not browser-tested; the old templates do not read the --c-* tokens (retired designs ignore theme by design).
+- Open Store: restyled, UI only (service gap documented).
+- Dashboard (G): NOT redesigned beyond 2 phone fixes. Admin (H): shell, overview, tenants, detail, wallet, audit, pay-requests, notifications; other admin pages only token-swapped, several never opened in a browser.
+- /services landing: redesigned; illustrations are hand-built, not real UI screenshots.
+NOT DONE: real-theme visual QA across the 25 templates, second pass on shared inner pages, full dashboard redesign, backup, deploy, production verification.
