@@ -17,9 +17,10 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.ResultActions;
 
 /** The website chat answers a burst of lines once: lines are saved on arrival, the assistant waits for the quiet window, reads them together, replies once; the history shows pending, then the reply. */
-@TestPropertySource(properties = { "app.chat.web-burst=true", "app.chat.burst-ms=700", "app.chat.burst-max-ms=4000" })
+@TestPropertySource(properties = { "app.chat.web-burst=true", "app.chat.web-burst-ms=700", "app.chat.burst-max-ms=4000" })
 class WebChatBurstIntegrationTest extends IntegrationTestBase {
     static final JsonMapper JSON = JsonMapper.builder().build();
+    @org.springframework.beans.factory.annotation.Autowired org.springframework.jdbc.core.simple.JdbcClient jdbc;
 
     @BeforeEach
     void clean() { FakeAiProvider.reset(); }
@@ -99,6 +100,7 @@ class WebChatBurstIntegrationTest extends IntegrationTestBase {
         assertThat(second).hasSize(1);
         assertThat(second.get(0)).contains("عايز جاكيت").contains("وهتوصلي بكره");
         assertThat(roles(done, "user")).as("no customer line lost or saved twice").hasSize(2);
+        assertThat(jdbc.sql("SELECT ai_msgs FROM chat.conversations WHERE external_id = :e").param("e", conv).query(Integer.class).single()).as("the dropped attempt and its rerun are ONE customer turn: counted (and charged) once").isEqualTo(1);
     }
 
     @Test

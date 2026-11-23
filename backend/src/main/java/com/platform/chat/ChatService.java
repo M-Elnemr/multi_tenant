@@ -687,7 +687,7 @@ public class ChatService {
             if (handed != null) return new Reply(conv, handed.text(), null, List.of());
         }
         // the AI answers only while the shop has points: 1 EGP per conversation (each block of 10 AI replies)
-        if (!"TEST".equals(channel) && retryRun == null && !chargeTurn(tenantId, conv)) {
+        if (!"TEST".equals(channel) && retryRun == null && in.carried() == null && !chargeTurn(tenantId, conv)) {   // DR-B: carried = the earlier attempt of this same turn was dropped for a newer line; it already counted the turn
             flagForHuman(tenantId, conv, channel, "NO_POINTS", text, null);
             return pausedReply(conv, text);
         }
