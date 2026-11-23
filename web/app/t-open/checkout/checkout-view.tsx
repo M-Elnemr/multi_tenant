@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/components/icons";
-import { OEmpty } from "@/components/open/empty";
 import { useI18n } from "@/components/i18n-provider";
 import { money } from "@/lib/format";
 import { GOVERNORATES } from "@/lib/governorates";
@@ -93,7 +92,7 @@ export function CheckoutView() {
 
   if (!mounted) return <div className="o-container pt-8"><div className="o-skel h-8 w-48" /><div className="o-skel mt-5 h-96" /></div>;
   if (lines.length === 0) {
-    return <div className="o-container pt-10 md:pt-16"><OEmpty icon="cart" title={t("open.cart.empty")} href="/" cta={t("open.cart.startShopping")} /></div>;
+    return <div className="o-container pt-16 text-center"><p className="text-6xl">🛒</p><h1 className="mt-4 text-2xl font-black">{t("open.cart.empty")}</h1><Link href="/" className="o-btn mt-6">{t("open.cart.startShopping")}</Link></div>;
   }
   const field = (k: keyof Form, label: string, props: React.InputHTMLAttributes<HTMLInputElement> = {}, bad = false) => (
     <div>
@@ -104,16 +103,7 @@ export function CheckoutView() {
 
   return (
     <form onSubmit={submit} noValidate className="o-container pt-5 md:pt-8">
-      <h1 className="o-h1">{t("open.checkout.title")}</h1>
-      <ol className="mt-4 flex items-center gap-2 text-[13px] font-bold" aria-label={t("open.checkout.steps")}>
-        {([[t("nav.cart"), true], [t("open.checkout.contact"), !errs.name && !errs.phone && !errs.phone2], [t("open.checkout.delivery"), !errs.governorate && !errs.address], [t("open.checkout.payment"), valid]] as const).map(([label, ok], i, a) => (
-          <li key={i} className="flex items-center gap-2">
-            <span className={`grid h-6 w-6 place-items-center rounded-full border text-[11px] ${ok ? "border-[var(--o-green)] bg-[var(--o-green)] text-white" : "border-[var(--o-line)] text-[var(--o-mute)]"}`}>{ok ? <Icon name="check" className="h-3.5 w-3.5" /> : i + 1}</span>
-            <span className={ok ? "text-[var(--o-ink)]" : "text-[var(--o-mute)]"}>{label}</span>
-            {i < a.length - 1 && <span className="h-px w-4 bg-[var(--o-line)] md:w-8" />}
-          </li>
-        ))}
-      </ol>
+      <h1 className="text-2xl font-black md:text-3xl">{t("open.checkout.title")}</h1>
       <div className="mt-5 grid items-start gap-6 lg:grid-cols-[1fr_24rem]">
         <div className="grid gap-5">
           {me === null && <p className="o-card flex flex-wrap items-center justify-between gap-2 p-4 text-sm"><span>{t("open.checkout.guestHint")}</span><Link href="/login?next=/checkout" className="o-link">{t("open.signIn")}</Link></p>}
@@ -147,9 +137,9 @@ export function CheckoutView() {
 
           <section className="o-card p-5">
             <h2 className="mb-3 flex items-center gap-2 text-lg font-extrabold"><span className="grid h-7 w-7 place-items-center rounded-full bg-[var(--o-navy)] text-xs text-white">3</span>{t("open.checkout.payment")}</h2>
-            <label className="flex items-center gap-3 rounded-2xl border-2 border-[var(--o-accent)] bg-[var(--o-accent-soft)] p-4">
+            <label className="flex items-center gap-3 rounded-2xl border-2 border-[var(--o-accent)] bg-[#fff6f2] p-4">
               <input type="radio" checked readOnly className="h-5 w-5 accent-[var(--o-accent)]" />
-              <Icon name="wallet" className="h-6 w-6 text-[var(--o-accent)]" />
+              <span className="text-2xl">💵</span>
               <span><b>{t("open.trust.cod")}</b><span className="block text-sm text-[var(--o-mute)]">{t("open.trust.codSub")}</span></span>
             </label>
           </section>
@@ -168,9 +158,9 @@ export function CheckoutView() {
               </dl>
             </div>
           )}
-          <div className="mt-4 flex items-baseline justify-between border-t border-[var(--o-line)] pt-4"><span className="font-extrabold">{t("open.checkout.total")}</span><span className="o-num text-2xl font-extrabold">{quote ? money(quote.totalMinor, currency, locale) : "—"}</span></div>
+          <div className="mt-4 flex items-baseline justify-between border-t border-[var(--o-line)] pt-4"><span className="font-extrabold">{t("open.checkout.total")}</span><span className="text-2xl font-black">{quote ? money(quote.totalMinor, currency, locale) : "—"}</span></div>
           {!quote?.shippingKnown && <p className="o-mute mt-1 text-xs">{t("open.checkout.pickGovernorate")}</p>}
-          {error && <div role="alert" className="mt-3 rounded-xl bg-[var(--o-red-soft)] p-3 text-sm font-bold text-[#b42318]">{error}</div>}
+          {error && <div role="alert" className="mt-3 rounded-xl bg-[#fef3f2] p-3 text-sm font-bold text-[#b42318]">{error}</div>}
           <button type="submit" disabled={busy} className="o-btn o-btn-block mt-4 !min-h-12">{busy ? t("common.loading") : t("open.checkout.place")}</button>
           {touched && !valid && <p className="mt-2 text-xs font-bold text-[var(--o-red)]">{t("open.checkout.fixFields")}</p>}
           <p className="o-mute mt-3 text-center text-xs">{t("open.checkout.shopNote", { shop: lines[0].shopName })}</p>

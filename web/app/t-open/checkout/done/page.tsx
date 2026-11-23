@@ -1,7 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { GuestOrder } from "@/components/open/guest-order";
-import { Icon } from "@/components/icons";
 import { getT } from "@/lib/i18n-server";
 
 export const dynamic = "force-dynamic";
@@ -13,10 +12,10 @@ export default async function DonePage({ searchParams }: { searchParams: Promise
   return (
     <div className="o-container max-w-3xl pt-8 md:pt-14">
       <div className="o-card o-reveal overflow-hidden text-center">
-        <div className="border-b border-[var(--o-line)] bg-[var(--o-green-soft)] px-6 py-10">
-          <span className="o-pop mx-auto grid h-16 w-16 place-items-center rounded-full bg-[var(--o-green)] text-white"><Icon name="check" className="h-8 w-8" /></span>
-          <h1 className="o-h1 mt-4">{t("open.done.title")}</h1>
-          <p className="mx-auto mt-2 max-w-md text-[var(--o-mute)]">{t("open.done.sub")}</p>
+        <div className="bg-gradient-to-br from-[#12b76a] to-[#0e9f6e] px-6 py-10 text-white">
+          <span className="o-pop mx-auto grid h-20 w-20 place-items-center rounded-full bg-white/20 text-5xl backdrop-blur">✓</span>
+          <h1 className="mt-4 text-2xl font-black md:text-3xl">{t("open.done.title")}</h1>
+          <p className="mx-auto mt-2 max-w-md text-white/90">{t("open.done.sub")}</p>
         </div>
         <div className="p-5 text-start md:p-8">
           {shop && n && <GuestOrder shop={shop} number={n} compact />}

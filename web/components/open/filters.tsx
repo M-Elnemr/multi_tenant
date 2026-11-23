@@ -64,7 +64,7 @@ function Panel({ facets, fixed, basePath }: { facets: OpenFacets; fixed: Fixed; 
               <li key={c.slug}><Link href={catHref(c.slug)} className={`block rounded-lg py-1.5 font-bold ${i === facets.trail.length - 1 ? "text-[var(--o-accent)]" : "text-[var(--o-ink)] hover:text-[var(--o-accent)]"}`} style={{ paddingInlineStart: `${0.5 + i * 0.75}rem` }}>{nm(c)}</Link></li>
             ))}
             {facets.categories.map((c) => (
-              <li key={c.slug}><Link href={catHref(c.slug)} className="flex items-center justify-between rounded-lg py-1.5 pe-2 hover:bg-[var(--o-soft)] hover:text-[var(--o-accent)]" style={{ paddingInlineStart: `${0.5 + facets.trail.length * 0.75}rem` }}><span>{nm(c)}</span><span className="text-xs text-[var(--o-mute)]">{c.n}</span></Link></li>
+              <li key={c.slug}><Link href={catHref(c.slug)} className="flex items-center justify-between rounded-lg py-1.5 pe-2 hover:bg-[var(--o-soft)] hover:text-[var(--o-accent)]" style={{ paddingInlineStart: `${0.5 + facets.trail.length * 0.75}rem` }}><span>{c.icon} {nm(c)}</span><span className="text-xs text-[var(--o-mute)]">{c.n}</span></Link></li>
             ))}
           </ul>
         </Group>
@@ -187,12 +187,7 @@ export function FiltersButton({ facets, fixed, basePath, activeCount, total }: {
   const clear = useClear(basePath);
   const [open, setOpen] = useState(false);
   const reduce = useReducedMotion();
-  useEffect(() => {
-    document.body.style.overflow = open ? "hidden" : "";
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
-    if (open) window.addEventListener("keydown", onKey);
-    return () => { document.body.style.overflow = ""; window.removeEventListener("keydown", onKey); };
-  }, [open]);
+  useEffect(() => { document.body.style.overflow = open ? "hidden" : ""; return () => { document.body.style.overflow = ""; }; }, [open]);
   return (
     <>
       <div className="lg:hidden"><button type="button" onClick={() => setOpen(true)} className="o-btn o-btn-ghost o-btn-sm"><Icon name="sliders" className="h-4 w-4" />{t("open.f.title")}{activeCount > 0 && <span className="grid h-5 min-w-5 place-items-center rounded-full bg-[var(--o-accent)] px-1 text-[11px] font-black text-white">{activeCount}</span>}</button></div>

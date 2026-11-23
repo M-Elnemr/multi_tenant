@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import { Fraunces, Noto_Naskh_Arabic } from "next/font/google";
 import "./open.css";
 import { OpenFooter } from "@/components/open/footer";
 import { OpenHeader } from "@/components/open/header";
@@ -9,10 +8,7 @@ import { getT } from "@/lib/i18n-server";
 import { openJson, type OpenCategory } from "@/lib/open";
 import { resolveHost } from "@/lib/tenant";
 
-const fraunces = Fraunces({ subsets: ["latin"], variable: "--o-f-latin", display: "swap" });
-const naskh = Noto_Naskh_Arabic({ subsets: ["arabic"], variable: "--o-f-ar", display: "swap", weight: ["500", "600", "700"] });
-
-export const viewport: Viewport = { themeColor: "#f7f3ec", width: "device-width", initialScale: 1, viewportFit: "cover", interactiveWidget: "resizes-content" };
+export const viewport: Viewport = { themeColor: "#0d1535", width: "device-width", initialScale: 1, viewportFit: "cover", interactiveWidget: "resizes-content" };
 
 export async function generateMetadata(): Promise<Metadata> {
   const { t } = await getT();
@@ -27,7 +23,7 @@ export default async function OpenLayout({ children }: { children: React.ReactNo
   const rootDomain = info.kind === "OPEN" ? info.rootDomain : "";
   const tree = await openJson<OpenCategory[]>("/categories").catch(() => [] as OpenCategory[]);
   return (
-    <div className={`open ${fraunces.variable} ${naskh.variable} flex min-h-dvh flex-col`}>
+    <div className="open flex min-h-dvh flex-col">
       <OpenHeader tree={tree} rootDomain={rootDomain} />
       <main className="flex-1 pb-chrome">{children}</main>
       <OpenFooter t={t} rootDomain={rootDomain} />

@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { OpenListing } from "@/components/open/listing";
 import { Icon } from "@/components/icons";
-import { Monogram } from "@/components/open/media";
 import { getT } from "@/lib/i18n-server";
 import { dec, openJson, type OpenShop } from "@/lib/open";
 
@@ -22,20 +21,20 @@ export default async function ShopPage({ params, searchParams }: { params: Promi
   const { t } = await getT();
   const shop = await shopOf(slug);
   if (!shop) notFound();
-  const color = shop.primaryColor && /^#[0-9a-fA-F]{3,8}$/.test(shop.primaryColor) ? shop.primaryColor : "#17130e";
+  const color = shop.primaryColor && /^#[0-9a-fA-F]{3,8}$/.test(shop.primaryColor) ? shop.primaryColor : "#18266b";
   const rating = Number(shop.rating ?? 0);
   const header = (
     <section className="o-card mb-6 overflow-hidden">
-      <div className="h-24 md:h-32" style={{ background: `linear-gradient(120deg, ${color}, color-mix(in srgb, ${color} 55%, #17130e))` }} />
+      <div className="h-24 md:h-32" style={{ background: `linear-gradient(120deg, ${color}, color-mix(in srgb, ${color} 50%, #0d1535))` }} />
       <div className="flex flex-wrap items-end gap-4 px-5 pb-5">
-        <span className="o-frame relative -mt-10 grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-3xl border-4 border-[var(--o-paper)] bg-[var(--o-paper)] shadow-lg md:-mt-12 md:h-24 md:w-24" >
+        <span className="-mt-10 grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-3xl border-4 border-white bg-white text-3xl font-black shadow-lg md:-mt-12 md:h-24 md:w-24" style={{ color }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          {shop.logoUrl ? <img src={shop.logoUrl} alt="" width={96} height={96} className="h-full w-full object-cover" /> : <Monogram name={shop.name} />}
+          {shop.logoUrl ? <img src={shop.logoUrl} alt="" width={96} height={96} className="h-full w-full object-cover" /> : shop.name.slice(0, 1)}
         </span>
         <div className="min-w-0 flex-1 pt-2">
-          <h1 className="o-h1">{shop.name}</h1>
+          <h1 className="text-2xl font-black md:text-3xl">{shop.name}</h1>
           <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[var(--o-mute)]">
-            {rating > 0 && <span className="flex items-center gap-1 font-bold text-[var(--o-ink)]"><Icon name="star" className="o-stars h-3.5 w-3.5 fill-current" />{rating.toFixed(1)} <span className="font-medium text-[var(--o-mute)]">({shop.ratingCount})</span></span>}
+            {rating > 0 && <span className="flex items-center gap-1 font-bold text-[var(--o-ink)]"><span className="o-stars">★</span>{rating.toFixed(1)} <span className="font-medium text-[var(--o-mute)]">({shop.ratingCount})</span></span>}
             <span>{shop.productCount} {t("open.productsCount")}</span>
             {shop.isOpen === false && <span className="font-bold text-[var(--o-red)]">{shop.closedMessage || t("open.shopClosed")}</span>}
           </p>

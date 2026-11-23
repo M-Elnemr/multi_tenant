@@ -7,7 +7,6 @@ import type { OpenOrder } from "@/lib/open-types";
 import { Icon } from "../icons";
 import { useI18n } from "../i18n-provider";
 import { ReviewButton } from "./review-button";
-import { Monogram } from "./media";
 
 const STEPS = ["REQUESTED", "PREPARING", "SHIPPED", "ARRIVED"] as const;
 
@@ -17,13 +16,13 @@ export function OrderView({ order: o, compact = false, canReview = false }: { or
   const idx = STEPS.indexOf(o.status as (typeof STEPS)[number]);
   const dead = o.status === "CANCELLED" || o.status === "RETURNED";
   return (
-    <section className="overflow-hidden rounded-3xl border border-[var(--o-line)] bg-[var(--o-paper)]">
+    <section className="overflow-hidden rounded-3xl border border-[var(--o-line)] bg-white">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--o-line)] bg-[var(--o-soft)] px-4 py-3">
         <div className="min-w-0">
           <Link href={`/shop/${o.shopSlug}`} className="flex items-center gap-2 font-extrabold hover:text-[var(--o-accent)]"><Icon name="bag" className="h-4 w-4" />{o.shopName}</Link>
           <p className="o-mute text-xs" dir="ltr">{o.orderNumber} · {dateTime(o.createdAt, locale)}</p>
         </div>
-        <span className={`rounded-full px-3 py-1 text-xs font-extrabold ${dead ? "bg-[var(--o-red-soft)] text-[var(--o-red)]" : o.status === "ARRIVED" ? "bg-[var(--o-green-soft)] text-[var(--o-green)]" : "bg-[var(--o-accent-soft)] text-[var(--o-accent)]"}`}>{t(`open.status.${o.status}`)}</span>
+        <span className={`rounded-full px-3 py-1 text-xs font-extrabold ${dead ? "bg-[#fef3f2] text-[#b42318]" : o.status === "ARRIVED" ? "bg-[#e8f8f0] text-[#067647]" : "bg-[#fff1ea] text-[#c4320a]"}`}>{t(`open.status.${o.status}`)}</span>
       </header>
 
       {!dead && (
@@ -40,9 +39,9 @@ export function OrderView({ order: o, compact = false, canReview = false }: { or
       <ul className="divide-y divide-[var(--o-line)]">
         {o.items.map((i, n) => (
           <li key={n} className="flex gap-3 p-4">
-            <span className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-[var(--o-soft)]">
+            <span className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-[var(--o-soft)]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              {i.image ? <img src={i.image} alt="" width={64} height={64} className="h-full w-full object-cover" loading="lazy" /> : <Monogram name={i.name} />}
+              {i.image ? <img src={i.image} alt="" width={64} height={64} className="h-full w-full object-cover" loading="lazy" /> : <span className="grid h-full place-items-center text-2xl opacity-40">🛍️</span>}
             </span>
             <div className="min-w-0 flex-1">
               {i.productSlug ? <Link href={`/p/${o.shopSlug}/${i.productSlug}`} className="line-clamp-2 text-sm font-bold hover:text-[var(--o-accent)]">{i.name}</Link> : <p className="line-clamp-2 text-sm font-bold">{i.name}</p>}
@@ -64,7 +63,7 @@ export function OrderView({ order: o, compact = false, canReview = false }: { or
             {o.codFeeMinor > 0 && <p className="flex justify-between"><span className="o-mute">{t("open.checkout.codFee")}</span><b>{money(o.codFeeMinor, o.currency, locale)}</b></p>}
           </>
         )}
-        <p className="flex justify-between text-base"><span className="font-extrabold">{t("open.checkout.total")}</span><b className="o-num text-lg font-extrabold">{money(o.totalMinor, o.currency, locale)}</b></p>
+        <p className="flex justify-between text-base"><span className="font-extrabold">{t("open.checkout.total")}</span><b className="text-lg font-black">{money(o.totalMinor, o.currency, locale)}</b></p>
         <p className="o-mute flex items-center gap-1.5 text-xs"><Icon name="wallet" className="h-4 w-4" />{o.paymentStatus === "PAID" ? t("open.paid") : t("open.payOnDelivery")}{o.etaMinDays && !dead && o.status !== "ARRIVED" ? ` · ${t("open.eta", { min: o.etaMinDays, max: o.etaMaxDays ?? o.etaMinDays })}` : ""}</p>
         {(o.trackingNumber || o.trackingUrl) && (
           <p className="flex flex-wrap items-center gap-2 text-xs"><Icon name="navigate" className="h-4 w-4" /><span>{o.courierName ?? t("open.courier")}: <b dir="ltr">{o.trackingNumber}</b></span>{o.trackingUrl && /^https?:\/\//.test(o.trackingUrl) && <a href={o.trackingUrl} target="_blank" rel="noopener noreferrer" className="o-link">{t("open.trackShipment")}</a>}</p>

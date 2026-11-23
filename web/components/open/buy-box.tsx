@@ -70,7 +70,7 @@ export function OpenBuyBox({ p }: { p: OpenDetail }) {
   return (
     <div>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="o-num text-3xl font-extrabold md:text-4xl">{variant ? money(variant.priceMinor * qty, p.currency, locale) : "—"}</span>
+        <span className="text-3xl font-black md:text-4xl">{variant ? money(variant.priceMinor * qty, p.currency, locale) : "—"}</span>
         {compare && variant && <span className="text-lg text-[var(--o-mute)] line-through">{money(compare * qty, p.currency, locale)}</span>}
         {off > 0 && <span className="o-badge o-badge-sale !text-sm">-{off}%</span>}
       </div>
@@ -103,15 +103,15 @@ export function OpenBuyBox({ p }: { p: OpenDetail }) {
         {!open ? <span className="text-[var(--o-red)]">{p.shop.closedMessage || t("open.shopClosed")}</span>
           : available <= 0 ? <span className="text-[var(--o-red)]">{t("open.outOfStock")}</span>
           : available <= 5 ? <span className="text-[#b54708]">{t("open.onlyLeft", { n: available })}</span>
-          : <span className="inline-flex items-center gap-1.5 text-[#067647]"><Icon name="check" className="h-4 w-4" />{t("open.inStock")}</span>}
+          : <span className="text-[#067647]">✓ {t("open.inStock")}</span>}
       </p>
 
       <div className="mt-4 flex items-center gap-3">
         <span className="text-sm font-extrabold">{t("open.quantity")}</span>
         <div className="flex h-11 items-center rounded-full border border-[var(--o-line)] bg-white">
-          <button type="button" onClick={() => setQty((q) => Math.max(1, q - 1))} aria-label={t("open.qty.less")} className="grid h-11 w-11 place-items-center"><Icon name="minus" className="h-4 w-4" /></button>
+          <button type="button" onClick={() => setQty((q) => Math.max(1, q - 1))} aria-label="−" className="grid h-11 w-11 place-items-center text-xl font-bold">−</button>
           <span className="w-8 text-center font-extrabold" aria-live="polite">{qty}</span>
-          <button type="button" onClick={() => setQty((q) => Math.min(Math.min(available || 1, 20), q + 1))} aria-label={t("open.qty.more")} className="grid h-11 w-11 place-items-center"><Icon name="plus" className="h-4 w-4" /></button>
+          <button type="button" onClick={() => setQty((q) => Math.min(Math.min(available || 1, 20), q + 1))} aria-label="+" className="grid h-11 w-11 place-items-center text-xl font-bold">+</button>
         </div>
       </div>
       <div data-buybar className="fixed inset-x-0 z-30 flex items-center gap-3 border-t border-[var(--o-line)] bg-white/95 px-4 py-2.5 backdrop-blur-xl md:static md:mt-5 md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none" style={{ bottom: "calc(var(--tabbar-h) + var(--safe-b))" }}>

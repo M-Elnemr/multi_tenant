@@ -1,7 +1,5 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { OEmpty } from "@/components/open/empty";
-import { Icon } from "@/components/icons";
 import { OrderView } from "@/components/open/order-view";
 import { BackendError } from "@/lib/backend";
 import { getT } from "@/lib/i18n-server";
@@ -18,12 +16,12 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   const order = signedIn ? await openJson<OpenOrder>(`/orders/${encodeURIComponent(id)}`).catch((e) => { if (e instanceof BackendError) return null; throw e; }) : null;
   return (
     <div className="o-container max-w-3xl pt-6 md:pt-10">
-      <Link href="/orders" className="o-link inline-flex items-center gap-1"><Icon name="chevron" className="h-3.5 w-3.5 rotate-180 rtl:rotate-0" />{t("open.myOrders")}</Link>
+      <Link href="/orders" className="o-link">‹ {t("open.myOrders")}</Link>
       {!order ? (
-        <div className="mt-4"><OEmpty icon="box" title={t("open.order.notFound")} body={t("open.order.notFoundHint")} href="/orders" cta={t("open.myOrders")} /></div>
+        <div className="o-card mt-4 px-6 py-16 text-center"><p className="text-5xl">📦</p><h1 className="o-title mt-3">{t("open.order.notFound")}</h1><p className="o-mute mt-1">{t("open.order.notFoundHint")}</p></div>
       ) : (
         <>
-          <h1 className="o-h1 mb-5 mt-3">{t("open.orderDetails")}</h1>
+          <h1 className="mb-5 mt-3 text-2xl font-black md:text-3xl">{t("open.orderDetails")}</h1>
           <OrderView order={order} canReview />
         </>
       )}

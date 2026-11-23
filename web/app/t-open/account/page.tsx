@@ -24,8 +24,8 @@ export default async function AccountPage() {
   return (
     <div className="o-container max-w-2xl pt-6 md:pt-10">
       <div className="o-card o-reveal flex items-center gap-4 p-5">
-        <span className="grid h-16 w-16 place-items-center rounded-full bg-[var(--o-ink)] font-[family-name:var(--o-f-latin)] text-2xl font-semibold text-[var(--o-paper)]">{me.name.slice(0, 1)}</span>
-        <div className="min-w-0"><h1 className="o-h1 truncate !text-2xl">{me.name}</h1><p className="o-mute text-sm" dir="ltr">{me.phone ? localPhone(me.phone) : t("open.account.noPhone")}</p></div>
+        <span className="grid h-16 w-16 place-items-center rounded-full bg-gradient-to-br from-[var(--o-accent)] to-[var(--o-accent-2)] text-2xl font-black text-white">{me.name.slice(0, 1)}</span>
+        <div className="min-w-0"><h1 className="truncate text-xl font-black">{me.name}</h1><p className="o-mute text-sm" dir="ltr">{me.phone ? localPhone(me.phone) : t("open.account.noPhone")}</p></div>
       </div>
       <ul className="mt-4 grid gap-3">
         {links.map((l) => (
