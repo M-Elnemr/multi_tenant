@@ -38,6 +38,9 @@ public class OpenAiProvider implements AiProvider {
     /** How long one call may go unanswered: {@link #CALL_TIMEOUT_MS}, or the hedge threshold plus {@link #HEDGE_ROOM_MS} when that is longer (otherwise a threshold above the timeout could never fire). */
     static long callTimeoutMs() { return Math.max(CALL_TIMEOUT_MS, HEDGE_MS + HEDGE_ROOM_MS); }
 
+    /** DR-R: a call to a model that has a backup model never waits longer than this (the backup is the second chance; the {@code HEDGE_MS + 12 s} formula would let it eat the reply budget). */
+    static final long BACKUP_CALL_MS = 20_000;
+
     /** Calls to one service (by address and key) share one limit, however many providers point at it: Hive allows GLM 5 calls a second for the whole account. */
     private static final Map<String, Throttle> THROTTLES = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -180,7 +183,7 @@ public class OpenAiProvider implements AiProvider {
             try {
                 Throttle throttle = throttleFor(lease.key());
                 if (throttle != null) { long th = System.nanoTime(); throttle.acquire(); at.throttled((System.nanoTime() - th) / 1_000_000); }
-                long timeout = Math.min(Math.max(3_000, Math.min(callTimeoutMs(), AiBudget.remainingMs() - 1_000)), AiBudget.callCapMs());
+                long timeout = Math.min(Math.max(3_000, Math.min(AiBudget.backupExists() ? BACKUP_CALL_MS : callTimeoutMs(), AiBudget.remainingMs() - 1_000 - AiBudget.backupReserveMs())), AiBudget.callCapMs());   // DR-R: with a backup the call is capped at 20 s and leaves the backup its share
                 HttpResponse<String> res = send(body, lease, timeout, call);
                 if (res.statusCode() / 100 == 2) {
                     JsonNode root;
@@ -250,7 +253,7 @@ public class OpenAiProvider implements AiProvider {
         HttpRequest req = request(body, lease, timeoutMs);
         boolean waiting = AiBudget.remainingMs() != Long.MAX_VALUE;
         call.key(lease.id());
-        if (!waiting || timeoutMs < HEDGE_MS + 3_000) {
+        if (!waiting || AiBudget.backupExists() || timeoutMs < HEDGE_MS + 3_000) {   // DR-R: no same-key twin when a backup model exists
             call.inflight(enter());
             try { HttpResponse<String> r = http.send(req, HttpResponse.BodyHandlers.ofString()); call.meta(metaOf(r, lease.id(), 0)); return r; }
             finally { leave(); }

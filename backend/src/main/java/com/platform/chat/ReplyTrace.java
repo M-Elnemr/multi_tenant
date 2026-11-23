@@ -153,6 +153,23 @@ final class ReplyTrace {
 
     static ReplyTrace current() { return CURRENT.get(); }
 
+    /** DR-R: what a model call needs from this thread to be traced from another one (the early failover runs two models at once). */
+    record Context(ReplyTrace trace, String role, String purpose) {}
+
+    static Context capture() { return new Context(CURRENT.get(), ROLE.get(), PURPOSE.get()); }
+
+    static void adopt(Context c) { if (c.trace() == null) CURRENT.remove(); else CURRENT.set(c.trace()); role(c.role()); purpose(c.purpose()); }
+
+    /** The worker thread is done: nothing of the reply stays on it. */
+    static void release() { CURRENT.remove(); ROLE.remove(); PURPOSE.remove(); }
+
+    /** DR-R: how this reply ended when it is neither completed nor failed: "deferred" (every model failed, the turn is retried in the background) or "recovered" (the retry answered). */
+    static void outcome(String outcome) { ReplyTrace t = CURRENT.get(); if (t != null) t.outcome = outcome; }
+
+    private volatile String outcome;
+
+    String outcome() { return outcome != null ? outcome : failed ? "failed" : "completed"; }
+
     /** The id of the reply running on this thread (as logged and stored), or null. */
     static String currentId() { ReplyTrace t = CURRENT.get(); return t == null ? null : t.id; }
 
@@ -197,7 +214,7 @@ final class ReplyTrace {
             closed = true;
             summary = summarize();
             ReplyMetrics.reply(this);
-            org.slf4j.LoggerFactory.getLogger(ReplyTrace.class).info("Reply trace: id={} source={} channel={} outcome={} {}", id, source, channel, failed ? "failed" : "completed", compact(summary));
+            org.slf4j.LoggerFactory.getLogger(ReplyTrace.class).info("Reply trace: id={} source={} channel={} outcome={} {}", id, source, channel, outcome(), compact(summary));
             Consumer<ReplyTrace> s = sink;
             if (s != null && tenantId != null) s.accept(this);
         } catch (RuntimeException ignored) { /* see finish */ }
