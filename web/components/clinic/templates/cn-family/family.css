@@ -1,0 +1,54 @@
+/* cn-family: warm, rounded, reassuring. Cream, coral and sky; rounded display type; big touch targets (3.25rem+). */
+.cn-family {
+  --bg: var(--c-bg, #fff7ec); --bg2: var(--c-bg-2, #ffeed8); --surface: var(--c-surface, #ffffff);
+  --ink: var(--c-text, #2c2a3a); --ink2: var(--c-text-2, #5c5a6e);
+  --pri: var(--c-primary, #2c6fbb); --acc: var(--c-accent, #c8452f);
+  --btn: var(--c-btn-bg, #c8452f); --btn-ink: var(--c-btn-text, #ffffff);
+  --line: var(--c-border, #f0dcc0);
+  --r: 16px; --rl: 28px; --maxw: 74rem;
+  --ff-d: var(--f-baloo), var(--f-tajawal), system-ui, sans-serif; --ff-b: var(--f-tajawal), system-ui, sans-serif; --fw-d: 800;
+  --foot-bg: #2c2a3a; --foot-ink: #f6efe4;
+  font-size: 1.05rem;
+}
+.cn-family .cn-btn { min-block-size: 3.4rem; padding-inline: 1.8rem; border-radius: 999px; font-size: 1.02rem; }
+.cn-family .cn-btn-sm { min-block-size: 2.8rem; }
+.cn-family .cn-eyebrow { color: var(--acc); letter-spacing: 0; text-transform: none; font-size: 1rem; }
+.cn-family .fm-head { position: sticky; inset-block-start: 0; z-index: 30; padding-block: .6rem; }
+.cn-family .fm-bar { display: flex; align-items: center; gap: 1rem; min-block-size: 4.2rem; padding-inline: 1.1rem; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; box-shadow: 0 10px 30px -18px rgb(120 70 20 / .4); }
+.cn-family .cn-nav { margin-inline: auto; }
+.cn-family .cn-nav a { border-radius: 999px; padding: .6rem 1rem; }
+.cn-family .cn-nav a:hover { background: var(--bg2); }
+.cn-family .cn-tools { margin-inline-start: auto; }
+@media (min-width: 1000px) { .cn-family .cn-tools { margin-inline-start: 0; } }
+.cn-family .cn-burger { border-radius: 999px; }
+@media (max-width: 639px) { .cn-family .fm-bar { padding-inline: .6rem; } .cn-family .cn-brand-name { max-inline-size: 7rem; } }
+.cn-family .fm-hero { padding-block: clamp(1.5rem, 4vw, 3rem) 0; }
+.cn-family .fm-hero-grid { display: grid; grid-template-columns: 1fr; gap: 2rem; align-items: center; }
+@media (min-width: 900px) { .cn-family .fm-hero-grid { grid-template-columns: 1.1fr 1fr; gap: 3rem; } }
+.cn-family .cn-h1 { font-size: clamp(2.2rem, 5.5vw, 3.8rem); line-height: 1.15; }
+.cn-family .fm-blob { border-radius: 42% 58% 55% 45% / 50% 45% 55% 50%; overflow: hidden; aspect-ratio: 1 / 1; max-inline-size: 30rem; inline-size: 100%; justify-self: center; background: var(--bg2); border: 6px solid var(--surface); box-shadow: 0 30px 60px -35px rgb(200 69 47 / .5); display: grid; place-items: center; }
+.cn-family .fm-hero-img { inline-size: 100%; block-size: 100%; object-fit: cover; }
+.cn-family .fm-heart { inline-size: 5rem; block-size: 5rem; color: var(--acc); }
+.cn-family .fm-tiles { list-style: none; margin: clamp(2rem, 5vw, 3.5rem) 0 0; padding: 0; display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+.cn-family .fm-tiles a { display: flex; gap: 1rem; align-items: center; min-block-size: 5rem; padding: 1rem 1.2rem; background: var(--surface); border: 2px solid var(--line); border-radius: var(--rl); transition: transform .2s, border-color .2s; }
+.cn-family .fm-tiles a:hover { transform: translateY(-3px); border-color: var(--acc); }
+.cn-family .fm-tiles div { display: flex; flex-direction: column; min-inline-size: 0; overflow-wrap: anywhere; }
+.cn-family .fm-tiles b { font-family: var(--ff-d); }
+.cn-family .fm-tiles span { color: var(--ink2); font-size: .92rem; }
+.cn-family .fm-tile-ic { flex: none; inline-size: 3rem; block-size: 3rem; display: grid; place-items: center; border-radius: 50%; background: var(--bg2); color: var(--acc); }
+.cn-family .fm-svcs { border: 0; display: grid; gap: .9rem; grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); }
+.cn-family .fm-svcs .cn-svc { padding: 1.3rem 1.5rem; background: var(--surface); border: 2px solid var(--line); border-radius: var(--rl); }
+.cn-family .cn-svc-list { border: 0; }
+.cn-family .fm-specs { margin-block-start: 2rem; }
+.cn-family .cn-doc { border-width: 2px; border-radius: var(--rl); }
+.cn-family .cn-doc-photo { aspect-ratio: 1 / 1; margin: .8rem .8rem 0; border-radius: calc(var(--rl) - 6px); }
+.cn-family .cn-card, .cn-family .cn-contact li, .cn-family .cn-spec, .cn-family .cn-faq details { border-width: 2px; }
+.cn-family .cn-faq summary { min-block-size: 3.4rem; }
+.cn-family .fm-visit { display: grid; gap: 2rem; grid-template-columns: 1fr; align-items: start; }
+@media (min-width: 900px) { .cn-family .fm-visit { grid-template-columns: 1.3fr 1fr; } }
+.cn-family .cn-pagehead { background: var(--bg2); border: 0; border-end-start-radius: var(--rl); border-end-end-radius: var(--rl); }
+.cn-family .cn-slots button, .cn-family .cn-days button { min-block-size: 3.4rem; border-width: 2px; }
+.cn-family .cn-chips li, .cn-family .cn-chips a { padding: .6rem 1.2rem; border-width: 2px; }
+.cn-family .cn-footer { border: 0; border-start-start-radius: var(--rl); border-start-end-radius: var(--rl); }
+.cn-family .cn-footer .cn-brand-name { color: #fff; }
+.cn-family .cn-footer .cn-muted { color: #d9cdbd; }

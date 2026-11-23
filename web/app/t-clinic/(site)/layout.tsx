@@ -12,6 +12,8 @@ import { getT } from "@/lib/i18n-server";
 import { resolveHost } from "@/lib/tenant";
 import { SiteThemeStyle, type WithSiteTheme } from "@/lib/site-theme";
 import { ScrollHeader, ScrollProgress } from "@/components/clinic/motion";
+import { CN_SHELL } from "@/components/clinic/templates/cn";
+import { cnCtx } from "@/components/clinic/templates/shared/ctx";
 import "./clinic.css";
 import "./clinic-templates.css";
 import { siteTemplate } from "@/lib/site-template";
@@ -21,6 +23,9 @@ import { PreviewLinks } from "@/components/shop/templates/preview-links";
 import { templateFontVars } from "@/components/shop/templates/fonts";
 
 export default async function ClinicSiteLayout({ children }: { children: React.ReactNode }) {
+  // Design-revolution templates (cn-*) bring their own shell; the original six keep the chrome below.
+  const cn = await cnCtx();
+  if (cn) { const Shell = CN_SHELL[cn.id]; return <Shell c={cn}>{children}</Shell>; }
   const { t, locale } = await getT();
   const info = await resolveHost(await currentHost());
   // Patients sign in with the account their clinic created; online booking stays hidden while the platform has it switched off.
