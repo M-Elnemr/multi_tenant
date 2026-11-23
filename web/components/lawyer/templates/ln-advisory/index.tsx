@@ -10,7 +10,7 @@ import { CountUp, Reveal } from "../shared/motion";
 import type { LnTemplate } from "../types";
 import "./ln-advisory.css";
 
-const serif = Source_Serif_4({ display: "swap", preload: false, subsets: ["latin"], weight: ["400", "600", "700"], variable: "--ad-f-serif" });
+const serif = Source_Serif_4({ display: "swap", preload: false, subsets: ["latin"], variable: "--ad-f-serif" });
 const plex = IBM_Plex_Sans({ display: "swap", preload: false, subsets: ["latin"], weight: ["400", "500", "600"], variable: "--ad-f-plex" });
 const cairo = Cairo({ display: "swap", preload: false, subsets: ["arabic"], weight: ["400", "600", "700"], variable: "--ad-f-cairo" });
 const fonts = [serif, plex, cairo].map((f) => f.variable).join(" ");
