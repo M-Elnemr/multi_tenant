@@ -44,3 +44,17 @@ export function todayWeekday(tz: string): number {
   } catch { return 1; }
 }
 export const WEEK_ORDER = [6, 7, 1, 2, 3, 4, 5];   // Egypt's week starts on Saturday
+
+export type DayCell = { iso: string; weekday: number; day: number; ranges: string | null; today: boolean };
+/** The next `n` days in the shop's timezone with the booking hours of each (null = closed). Hours only; free TIMES always come from the slots endpoint. */
+export function nextDays(cfg: VnConfig, n = 7): DayCell[] {
+  const fmt = (ms: number) => new Intl.DateTimeFormat("en-CA", { timeZone: cfg.timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ms));
+  const out: DayCell[] = [];
+  for (let i = 0; i < n; i++) {
+    const iso = fmt(Date.now() + i * 86400000);
+    const d = new Date(iso + "T12:00:00Z");
+    const weekday = d.getUTCDay() === 0 ? 7 : d.getUTCDay();
+    out.push({ iso, weekday, day: d.getUTCDate(), ranges: dayRanges(cfg, weekday), today: i === 0 });
+  }
+  return out;
+}

@@ -17,7 +17,7 @@ export type BookLayout = "steps" | "request" | "calendar";
 /** A month grid. Days are disabled when the shop is closed that weekday (from its hours), in the past, or beyond how far ahead it books; the free TIMES still come only from the backend. */
 function Calendar({ f, cfg }: { f: BookFlow; cfg: VnConfig }) {
   const { t, locale } = useI18n();
-  const [shift, setShift] = useState(0);
+  const [shift, setShift] = useState(() => { const m = /^(\d{4})-(\d{2})/.exec(f.date); return m ? Math.max(0, (Number(m[1]) - f.today.getFullYear()) * 12 + Number(m[2]) - 1 - f.today.getMonth()) : 0; });
   const first = useMemo(() => { const d = new Date(f.today.getFullYear(), f.today.getMonth() + shift, 1); return d; }, [f.today, shift]);
   const open = new Set(cfg.hours.map((h) => h.weekday));
   const lead = (first.getDay() + 1) % 7;   // week starts on Saturday
