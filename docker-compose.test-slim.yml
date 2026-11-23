@@ -55,7 +55,8 @@ services:
       AI_TRACE: ${AI_TRACE:-true}
       APP_CHAT_RATE_LIMIT_MODE: ${APP_CHAT_RATE_LIMIT_MODE:-off}   # public web chat: off | abuse (100 per conversation per 10 min, 1000 per address per 10 min, 4000 per shop per hour, 6 identical texts per 2 min) | strict
       AI_REVIEW_MODEL: ${AI_REVIEW_MODEL:-}
-      AI_REVIEW_TIMEOUT_MS: ${AI_REVIEW_TIMEOUT_MS:-8000}
+      AI_REVIEW_TIMEOUT_MS: ${AI_REVIEW_TIMEOUT_MS:-3500}
+      AI_REVIEW_MODE: ${AI_REVIEW_MODE:-conditional}
       AI_REVIEW_REASONING: ${AI_REVIEW_REASONING:-none}
       GLM_MAX_RPS: ${GLM_MAX_RPS:-5}
       LANGFUSE_ENABLED: ${LANGFUSE_ENABLED:-false}

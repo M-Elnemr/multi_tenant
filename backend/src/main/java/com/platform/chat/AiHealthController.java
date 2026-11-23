@@ -20,7 +20,13 @@ public class AiHealthController {
     private final JdbcClient jdbc;
     private final KnowledgeIndex knowledge;
 
-    public AiHealthController(JdbcClient jdbc, KnowledgeIndex knowledge) { this.jdbc = jdbc; this.knowledge = knowledge; }
+    private final ChatService chat;
+
+    public AiHealthController(JdbcClient jdbc, KnowledgeIndex knowledge, ChatService chat) { this.jdbc = jdbc; this.knowledge = knowledge; this.chat = chat; }
+
+    /** The second-look review mode actually in effect in this running instance («conditional» or «always»). */
+    @GetMapping("/review-policy")
+    public Map<String, Object> reviewPolicy() { return chat.reviewPolicy(); }
 
     /** Search by meaning per shop: how much of each catalog is indexed, embedded and has its search words. */
     @GetMapping("/knowledge")

@@ -213,10 +213,35 @@ public class ChatService {
     private final ChannelAi channelAi;
     private final boolean nameProbe;
     private final boolean review;
+    /**
+     * app.ai.review.mode: "conditional" (the default since the A/B benchmark: a plain draft whose figures are all grounded skips the second model call, everything else is reviewed, see {@link ReviewGate})
+     * or "always" (every non-trivial draft is reviewed: the immediate rollback, AI_REVIEW_MODE=always). Any other value means "always": a typo never weakens the review.
+     */
+    @org.springframework.beans.factory.annotation.Value("${app.ai.review.mode:conditional}")
+    private String reviewMode = "conditional";
+
+    /** The review mode every shop runs on: "conditional" when configured so, otherwise (also for an unknown value) "always". */
+    String effectiveReviewMode() {
+        return reviewMode != null && "conditional".equals(reviewMode.trim().toLowerCase(java.util.Locale.ROOT)) ? "conditional" : "always";
+    }
+
+    /** What the platform admin and the deploy checks read to see the mode actually in effect (not merely the environment variable). */
+    public Map<String, Object> reviewPolicy() {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("reviewEnabled", review);
+        m.put("mode", effectiveReviewMode());
+        m.put("configured", reviewMode);
+        m.put("reviewModel", reviewModel == null ? "answering model" : reviewModel);
+        return m;
+    }
+
+    @jakarta.annotation.PostConstruct
+    void logReviewPolicy() { log.info("AI second-look review: enabled={}, effective mode={} (configured '{}')", review, effectiveReviewMode(), reviewMode); }
+
     private final String reviewModel;
     /** The longest the review of a draft may take (AI_REVIEW_TIMEOUT_MS): one try, no retry, no second request. */
-    @org.springframework.beans.factory.annotation.Value("${app.ai.review.timeout-ms:8000}")
-    private long reviewTimeoutMs = 8_000;
+    @org.springframework.beans.factory.annotation.Value("${app.ai.review.timeout-ms:3500}")
+    private long reviewTimeoutMs = 3_500;
     /** The reasoning level of the review call (AI_REVIEW_REASONING): none by default; empty = the answering model's own level. */
     @org.springframework.beans.factory.annotation.Value("${app.ai.review.reasoning-effort:none}")
     private String reviewReasoning = "none";
@@ -1054,6 +1079,7 @@ public class ChatService {
      */
     private String reviewed(Ctx ctx, ChannelAi.Routed routed, String system, List<Turn> turns, List<AiUsageService.Round> rounds, String draft) {
         long reviewStart = System.nanoTime();
+        String mode = effectiveReviewMode();
         if (!review || trivial(draft) || !AiBudget.hasLeft(REPLY_BUDGET_MS - 20_000)) {   // past 20 seconds the customer has waited enough
             if (review) ReplyTrace.review("skipped", reviewStart, null, trivial(draft) ? "trivial" : "budget", false, null);
             return draft;
@@ -1066,7 +1092,12 @@ public class ChatService {
             // the review runs on the answering model, or on the model set in app.ai.review.model (its cost is then logged under that model)
             ChannelAi.Routed reviewer = reviewModel == null || reviewModel.equals(routed.code()) ? routed : channelAi.forChannel(ctx.channel(), reviewModel);
             reviewerCode = reviewer.code();
-            String asked = ReplyReview.request(turns, addressing(system), foundProducts(ctx) + section(system, "SHOP FACTS:", 2500) + section(system, CATALOG_HEADING, 4000), draft);
+            String shop = foundProducts(ctx) + section(system, "SHOP FACTS:", 2500) + catalogSection(system, 9000) + section(system, RAG_HEADING, 8000);
+            if ("conditional".equals(mode)) {
+                String why = ReviewGate.skipReason(draft, ReplyReview.request(turns, addressing(system), shop, ""));
+                if (why != null) { verdict = "skipped"; detail = why; return draft; }
+            }
+            String asked = ReplyReview.request(turns, addressing(system), shop, draft);   // the products the model itself was given for this message are facts for the reviewer too (an answer taken straight from them is not "invented")
             Turn t;
             AiBudget.capCalls(reviewTimeoutMs);   // one short try: a slow or failing review costs the customer at most this long, never the reply
             AiBudget.reasoning(reviewReasoning);   // the verdict is a few tokens: measured on 2026-11-11, DeepSeek without reasoning gave the same verdict as with it on 10 drafts, in 3.0 s instead of 4.4 s
@@ -1099,6 +1130,18 @@ public class ChatService {
 
     /** The catalog block's heading: the rules also mention "SHOP CATALOG", so lookups use this exact line start. */
     static final String CATALOG_HEADING = "SHOP CATALOG LIST";
+
+    /**
+     * The catalog block itself. {@link #section} finds the FIRST «SHOP CATALOG LIST», which is inside the rules paragraph («SHOP CATALOG LIST is the complete truth…»), so a lookup by the bare heading
+     * returns a rules sentence; the block is the line that starts with the heading followed by «(everything this shop sells».
+     */
+    static String catalogSection(String system, int max) {
+        int i = system == null ? -1 : system.indexOf("\n" + CATALOG_HEADING + " (everything");
+        return i < 0 ? "" : section(system.substring(i + 1), CATALOG_HEADING, max);
+    }
+
+    /** The heading of the block of products found for the customer's newest message (the retrieval result the model answers from). */
+    static final String RAG_HEADING = "PRODUCTS FOR THE CUSTOMER'S NEWEST MESSAGE";
 
     /** One block of the prompt, from its heading to the next blank line (at most 3000 characters); empty when it is not there. */
     static String section(String system, String heading) { return section(system, heading, 3000); }

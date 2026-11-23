@@ -15,7 +15,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.TestPropertySource;
 
 /** A real reply through ChatService on the real schema (Flyway V1-V96): one trace row per reply, filed under its own shop, with no customer text in it, and a broken trace table never fails a reply. */
-@TestPropertySource(properties = "app.ai.review.enabled=true")
+@TestPropertySource(properties = {"app.ai.review.enabled=true", "app.ai.review.mode=always"})
 class ReplyTraceIntegrationTest extends IntegrationTestBase {
     @Autowired JdbcClient jdbc;
     @Autowired ChatService chat;
