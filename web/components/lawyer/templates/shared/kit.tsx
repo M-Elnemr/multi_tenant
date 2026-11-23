@@ -39,7 +39,7 @@ export function KxEmpty({ ctx }: { ctx: LnCtx }) {
 export function KxPhoto({ ctx, i = 0 }: { ctx: LnCtx; i?: number }) {
   const l = ctx.lawyers[i];
   /* eslint-disable-next-line @next/next/no-img-element */
-  return l.photoUrl ? <img src={l.photoUrl} alt={l.name} className="kx-photo" /> : <div className="kx-mono" aria-hidden="true">{initials(l.name)}</div>;
+  return l.photoUrl ? <img src={l.photoUrl} alt={l.name} className="kx-photo" /> : <div className="kx-mono" aria-hidden="true">{initials(ctx.p.displayName)}</div>;
 }
 
 export function KxAreas({ ctx, areas, v, roman }: { ctx: LnCtx; areas: LnArea[]; v: KxOpts["areas"]; roman?: boolean }) {

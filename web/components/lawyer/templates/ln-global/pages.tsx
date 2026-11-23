@@ -41,7 +41,7 @@ function Photo({ ctx, i = 0 }: { ctx: LnCtx; i?: number }) {
   return l.photoUrl
     /* eslint-disable-next-line @next/next/no-img-element */
     ? <div className="lg-fig"><img src={l.photoUrl} alt={l.name} className="lg-photo" /></div>
-    : <div className="lg-fig"><div className="lg-fig-ph" aria-hidden="true">{initials(l.name)}</div></div>;
+    : <div className="lg-fig"><div className="lg-fig-ph" aria-hidden="true">{initials(ctx.p.displayName)}</div></div>;
 }
 
 function AreaRows({ ctx, areas }: { ctx: LnCtx; areas: LnArea[] }) {
@@ -198,7 +198,7 @@ export function LgAbout({ ctx }: { ctx: LnCtx }) {
     <>
       <PageHead ctx={ctx} title={t("lws.nav.about")} sub={ctx.p.headline} />
       <div className="lg-wrap lg-split">
-        <div className="lg-stick">{l.photoUrl ? <Photo ctx={ctx} /> : <div className="lg-fig-ph" aria-hidden="true">{initials(l.name)}</div>}
+        <div className="lg-stick">{l.photoUrl ? <Photo ctx={ctx} /> : <div className="lg-fig-ph" aria-hidden="true">{initials(ctx.p.displayName)}</div>}
           <dl className="lg-facts" style={{ marginBlockStart: 36 }}>
             <div><dt>{t("lnx.name")}</dt><dd>{l.name}</dd></div>
             {l.barLevel && <div><dt>{t("lnx.rank")}</dt><dd>{l.barLevel}</dd></div>}
@@ -230,7 +230,7 @@ export function LgTeam({ ctx }: { ctx: LnCtx }) {
       <section className="lg-sec"><div className="lg-wrap"><div className="lg-cards">
         {ctx.lawyers.map((l, i) => (
           <Reveal key={l.key} className={`lg-lawyer${ctx.lawyers.length === 1 ? " lg-wide" : ""}`}>
-            {l.photoUrl ? <Photo ctx={ctx} i={i} /> : <div className="lg-fig-ph" aria-hidden="true">{initials(l.name)}</div>}
+            {l.photoUrl ? <Photo ctx={ctx} i={i} /> : <div className="lg-fig-ph" aria-hidden="true">{initials(ctx.p.displayName)}</div>}
             <div style={{ display: "grid", gap: 14 }}>
               <h3>{l.name}</h3>
               {l.role && <p className="lg-up lg-signal">{l.role}</p>}

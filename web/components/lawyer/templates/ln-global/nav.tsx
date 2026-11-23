@@ -13,8 +13,9 @@ type Area = { key: string; title: string };
 export function LgNav({ nav, areas, book, bookLabel, mobile }: { nav: LnNav[]; areas: Area[]; book: boolean; bookLabel: string; mobile?: boolean }) {
   const { t } = useI18n();
   const path = usePathname();
-  const [open, setOpen] = useState(false);
-  useEffect(() => { setOpen(false); }, [path]);
+  const [openAt, setOpenAt] = useState<string | null>(null);
+  const open = openAt === path;
+  const setOpen = (v: boolean) => setOpenAt(v ? path : null);
   useEffect(() => {
     if (!open) return;
     const k = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };

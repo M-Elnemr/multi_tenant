@@ -15,8 +15,9 @@ const Arrow = () => <IArrow className="kx-arrow" />;
 export function KxMenu({ nav, book, bookLabel, className = "" }: { nav: LnNav[]; book: boolean; bookLabel: string; className?: string }) {
   const { t } = useI18n();
   const path = usePathname();
-  const [open, setOpen] = useState(false);
-  useEffect(() => { setOpen(false); }, [path]);
+  const [openAt, setOpenAt] = useState<string | null>(null);
+  const open = openAt === path;
+  const setOpen = (v: boolean) => setOpenAt(v ? path : null);
   useEffect(() => {
     if (!open) return;
     const k = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
