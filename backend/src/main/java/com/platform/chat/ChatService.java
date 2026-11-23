@@ -812,6 +812,7 @@ public class ChatService {
         if (!"TEST".equals(channel)) { seller.count(tenantId); usageLog.record(tenantId, "CHAT", channel, conv, false, text, rounds, routed.code(), routed.fellBack()); }
         else if (EVAL.get() != null) EVAL.get().add(rounds, tookMs, routed.fellBack(), routed.code());
         if (answer == null || answer.isBlank()) answer = arabicChat ? "معلش يا فندم، ممكن توضحلي أكتر حضرتك محتاج إيه؟ وأنا أساعدك على طول 🌸" : "Sorry, could you tell me a little more about what you need? I will help right away.";
+        answer = NameAsk.repair(answer);   // «اتحرشت باسم حضرتك؟» (the model garbled the sentence it is given) becomes «أتشرف باسم حضرتك؟»; nothing else changes
         answer = polish(noLaughter(messaging(channel) ? forChannel(channel, answer) : forChannel("WEB", oneMessage(answer))), conv, tenantId, channel, externalId, clientId);
         if (first && ctx.summary()[0] == null && orderBox[0] == null) answer = withIntro(answer, tenantId, conv, channel, externalId, clientId, arabicChat);
         var seenCards = new java.util.HashSet<Object>();
