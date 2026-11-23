@@ -555,7 +555,7 @@ public class MetaChannelService {
     @Scheduled(fixedDelay = 300_000, initialDelay = 120_000)
     public void sendDue() {
         // a chat a person handles (taken over or paused) gets no automatic follow-up from the assistant
-        jdbc.sql("UPDATE chat.follow_ups f SET status = 'SKIPPED' FROM chat.conversations c WHERE c.id = f.conversation_id AND f.status = 'PENDING' AND f.due_at <= now() AND (c.takeover OR coalesce(c.ai_paused_until > now(), FALSE) OR c.status = 'CLOSED')").update();
+        jdbc.sql("UPDATE chat.follow_ups f SET status = 'SKIPPED' FROM chat.conversations c WHERE c.id = f.conversation_id AND f.status = 'PENDING' AND f.due_at <= now() AND (c.takeover OR c.frustration_paused OR coalesce(c.ai_paused_until > now(), FALSE) OR c.status = 'CLOSED')").update();
         for (var f : jdbc.sql("SELECT f.id, f.tenant_id, f.body, c.channel, c.external_id FROM chat.follow_ups f JOIN chat.conversations c ON c.id = f.conversation_id WHERE f.status = 'PENDING' AND f.due_at <= now() AND EXISTS (SELECT 1 FROM core.tenants tn WHERE tn.id = f.tenant_id AND tn.status NOT IN ('SUSPENDED','CANCELLED','ARCHIVED')) LIMIT 100").query().listOfRows()) {
             boolean ok = deliver((UUID) f.get("tenant_id"), (String) f.get("channel"), (String) f.get("external_id"), (String) f.get("body"));
             jdbc.sql("UPDATE chat.follow_ups SET status = :s WHERE id = :i").param("s", ok ? "SENT" : "SKIPPED").param("i", f.get("id")).update();
