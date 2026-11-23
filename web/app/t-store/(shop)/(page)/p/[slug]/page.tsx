@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import type { ShopProfile } from "@/components/shop/types";
 import { backendJson } from "@/lib/backend";
 import { getT } from "@/lib/i18n-server";
+import { shopLook } from "@/lib/shop-look";
+import { LARGE_SETS } from "@/components/shop/templates/large/registry";
 
 const FIELDS: Record<string, keyof ShopProfile> = { shipping: "shippingPolicy", returns: "returnPolicy", privacy: "privacyPolicy", terms: "termsText", about: "about" };
 
@@ -16,6 +18,9 @@ export default async function PolicyPage({ params }: { params: Promise<{ slug: s
   const text = (p[field] as string | undefined)?.trim();
   const fallback = slug === "returns" ? t("policy.returnsDefault", { n: p.returnWindowDays ?? 14 }) : slug === "shipping" ? t("policy.shippingDefault") : "";
   const body = text || fallback;
+  const sl = await shopLook();
+  const LP = sl.large ? LARGE_SETS[sl.large]?.Policy : undefined;   // DR-C
+  if (LP) return <LP p={p} slug={slug} title={t(slug === "about" ? "settings.about" : `policy.${slug}`)} body={body} t={t} />;
   return (
     <article className="mx-auto max-w-3xl">
       <p className="s-eyebrow">{p.storeName}</p>

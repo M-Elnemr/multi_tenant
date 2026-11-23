@@ -20,6 +20,7 @@ import { pnHome } from "@/components/shop/small/pn-registry";   // DR-D
 import { SmallCatalogHome } from "@/components/shop/small/small-home";
 import type { CardKind, GridKind } from "@/components/shop/templates/registry";
 import { Categories, Hero, TRUST_ICONS } from "@/components/shop/templates/sections";
+import { LARGE_SETS } from "@/components/shop/templates/large/registry";
 import { Reveal } from "@/components/shop/templates/reveal";
 
 type Home = { offerBanners?: OfferBanner[]; featured: ShopProduct[]; newest: ShopProduct[]; offers: ShopProduct[]; bestSellers: ShopProduct[]; banners: { id: string; imageFileId: string; title: string; subtitle: string; linkUrl: string }[] };
@@ -56,7 +57,7 @@ function Grid({ items, locale, labels, card, grid }: { items: ShopProduct[]; loc
 export default async function StoreHome({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const { t, locale } = await getT();
   const edit = await wantsEdit(searchParams);
-  const [{ profile: prof, look, service, small, template }, cats, home, branches] = await Promise.all([
+  const [{ profile: prof, look, service, small, template, large }, cats, home, branches] = await Promise.all([
     shopLook(),
     backendJson<ShopCategory[]>(`/shop/categories?lang=${locale}`).catch(() => [] as ShopCategory[]),
     backendJson<Home>(`/shop/home?lang=${locale}`).catch(() => ({ featured: [], newest: [], offers: [], bestSellers: [], banners: [] }) as Home),
@@ -66,6 +67,11 @@ export default async function StoreHome({ searchParams }: { searchParams?: Promi
   const smallProducts = [...home.featured, ...home.bestSellers, ...home.newest].filter((x, i, a) => a.findIndex((y) => y.id === x.id) === i);
   const PnHome = small ? pnHome(template) : undefined;
   if (PnHome) return PnHome({ p, products: smallProducts, t, locale });   // DR-D
+  if (large) {   // DR-C: a large-catalog template draws the whole home page itself
+    const Home = LARGE_SETS[large]!.Home;
+    const lslides = home.banners.map((b) => ({ id: b.id, imageUrl: fileUrl(b.imageFileId, "original"), title: b.title, subtitle: b.subtitle, href: b.linkUrl || undefined }));
+    return <Home p={p} name={p?.storeName ?? ""} home={home} slides={lslides} cats={cats} branches={branches} t={t} locale={locale} />;
+  }
   if (small) {   // a shop with very few products: the product is the page
     return <SmallCatalogHome look={small} p={p} products={[...home.featured, ...home.bestSellers, ...home.newest].filter((x, i, a) => a.findIndex((y) => y.id === x.id) === i)} branches={branches} t={t} locale={locale} />;
   }

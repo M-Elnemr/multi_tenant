@@ -5,10 +5,19 @@ import { clearCart, lineKey, removeLine, setNote, setQuantity, useCart } from "@
 import { money } from "@/lib/format";
 import { useI18n } from "@/components/i18n-provider";
 import { useApi } from "@/components/hooks";
+import { LARGE_CARTS } from "@/components/shop/templates/large/carts";
+import { useLargeTpl } from "@/components/shop/templates/large/scope";
 
 type ShipProfile = { shippingMethods: { type: string; freeAboveMinor?: number | null }[]; shippingZones: { freeAboveMinor?: number | null }[] };
 
 export default function Cart() {
+  const large = useLargeTpl();   // DR-C
+  const LargeCart = large ? LARGE_CARTS[large] : undefined;
+  if (LargeCart) return <LargeCart />;
+  return <ShopCart />;
+}
+
+function ShopCart() {
   const { t, locale, currency } = useI18n();
   const lines = useCart();
   const total = lines.reduce((n, l) => n + l.unitPriceMinor * l.quantity, 0);

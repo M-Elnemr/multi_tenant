@@ -2,8 +2,9 @@ import { HoursList } from "@/components/shop/hours";
 import type { ShopProfile } from "@/components/shop/types";
 import { backendJson } from "@/lib/backend";
 import { getT } from "@/lib/i18n-server";
+import { shopLook } from "@/lib/shop-look";
+import { LARGE_SETS } from "@/components/shop/templates/large/registry";
 import { whatsappLink } from "@/lib/whatsapp";
-import { shopLook } from "@/lib/shop-look";   // DR-E
 import { vnDesign } from "@/components/shop/service/vn-registry";   // DR-E
 import { vnData } from "@/components/shop/service/vn-core/data";   // DR-E
 import { SocialLinks, hasSocial } from "@/components/social-icons";
@@ -15,6 +16,8 @@ export default async function Contact() {
   const { t } = await getT();
   const p = (await backendJson<{ profile: ShopProfile }>("/shop/profile").catch(() => null))?.profile;
   if (!p) return null;
+  const LC = lk.large ? LARGE_SETS[lk.large]?.Contact : undefined;   // DR-C
+  if (LC) return <LC p={p} t={t} />;
   const phones = [p.supportPhone, ...(p.extraPhones ?? [])].filter(Boolean) as string[];
   const row = (icon: string, label: string, body: React.ReactNode) => (
     <div className="flex gap-4 border-b border-[var(--s-line)] py-4 last:border-0"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[var(--s-soft)] text-xl">{icon}</span><div><p className="text-xs font-extrabold uppercase tracking-wider text-[var(--s-mute)]">{label}</p><div className="mt-0.5 font-semibold">{body}</div></div></div>

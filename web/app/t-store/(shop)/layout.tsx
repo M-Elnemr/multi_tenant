@@ -11,6 +11,15 @@ import { PreviewBar } from "@/components/shop/templates/preview-bar";
 import { PreviewLinks } from "@/components/shop/templates/preview-links";
 import { shopLook } from "@/lib/shop-look";
 import { SwRegister } from "@/components/shop/sw-register";
+import "@/components/shop/templates/large/base.css";
+import "@/components/shop/templates/large/market/market.css";
+import "@/components/shop/templates/large/editorial/editorial.css";
+import "@/components/shop/templates/large/minimal/minimal.css";
+import "@/components/shop/templates/large/bold/bold.css";
+import "@/components/shop/templates/large/lifestyle/lifestyle.css";
+import { LargeScope } from "@/components/shop/templates/large/scope";
+import { LARGE_SETS } from "@/components/shop/templates/large/registry";
+import { largeFontVars } from "@/components/shop/templates/large/fonts";
 import { ShopFooter } from "@/components/shop/footer";
 import { ShopHeader } from "@/components/shop/header";
 import { MobileBar } from "@/components/shop/mobile-bar";
@@ -44,6 +53,28 @@ export default async function ShopLayout({ children }: { children: React.ReactNo
   const logoUrl = logoId ? `/api/bff/files/${logoId}/content?variant=thumb` : null;
   const vn = look.service ? vnDesign(look.template) : undefined;   // DR-E: a vn-* design brings its own header and footer
   const vd = vn ? await vnData() : null;
+  if (look.large) {   // DR-C: a large-catalog template draws its own header, footer and page frame
+    const L = LARGE_SETS[look.large]!;
+    const hp = { name: storeName, logoUrl, announcement: p.announcement, closedMessage: p.closedMessage, isOpen: p.isOpen !== false, categories, audiences };
+    return (
+      <div className={`shop flex min-h-dvh flex-col ${templateFontVars} ${largeFontVars}`} data-template={look.template} data-lg={look.large}>
+        <SiteThemeStyle theme={(look.profile as WithSiteTheme | null)?.siteTheme} />
+        <LargeScope id={look.large}>
+          {look.previewing && !look.inFrame && <PreviewBar label={t("tpl.previewing", { name: look.template })} exit={t("tpl.exitPreview")} />}
+          {look.inFrame && <PreviewLinks tpl={look.template} />}
+          <SwRegister />
+          <AffiliateRef />
+          <L.Header {...hp} />
+          {!look.inFrame && <VisitTracker />}
+          <main id="lg-main" className="lg-main flex-1">{children}</main>
+          <L.Footer p={p} name={storeName} logoUrl={logoUrl} branches={branches} t={t} poweredLabel={info.kind === "TENANT" && info.whiteLabel ? "" : t("brand.powered")} poweredName={t("brand.name")} />
+          {!look.inFrame && <WhatsAppFloat phone={p.whatsapp} storeName={storeName} label={t("shop.chatWithUs")} />}
+          {!look.inFrame && <LiveChat />}
+          {!look.inFrame && <MarketingTags metaPixelId={p.metaPixelId} tiktokPixelId={p.tiktokPixelId} gaId={p.gaId} />}
+        </LargeScope>
+      </div>
+    );
+  }
   return (
     <div className={`shop flex min-h-dvh flex-col ${templateFontVars} ${vnFontVars}`} data-template={look.template} data-header={look.look.header} data-dark={look.look.dark ? "" : undefined}>
       <SiteThemeStyle theme={(look.profile as WithSiteTheme | null)?.siteTheme} />

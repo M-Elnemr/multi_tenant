@@ -8,6 +8,7 @@ import { money } from "@/lib/format";
 import { getT } from "@/lib/i18n-server";
 import { mediaUrl } from "@/lib/media";
 import { ProductBuy, type ProductDetail } from "./buy";
+import { LARGE_SETS } from "@/components/shop/templates/large/registry";
 import { shopLook } from "@/lib/shop-look";
 
 /** Route params arrive percent-encoded (Arabic slugs), so decode before encoding for the backend path. */
@@ -42,6 +43,10 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
     backendJson<{ id: string; name: string; slug: string; currency: string; priceMinor: number }[]>(`/shop/products/${encodeURIComponent(clean(slug))}/together`).catch(() => []),
   ]);
   const crumbs = (p.taxonomy ?? []).map((c) => ({ id: c.slug, slug: c.slug, name: locale === "ar" ? c.nameAr : c.nameEn }));
+  if (look.large) {   // DR-C
+    const Pdp = LARGE_SETS[look.large]!.Pdp;
+    return <Pdp product={p} related={related} together={together} profile={look.profile ?? undefined} crumbs={crumbs} t={t} locale={locale} />;
+  }
   const prices = p.variants.map((v) => v.priceMinor);
   const ld = {
     "@context": "https://schema.org", "@type": "Product", name: p.name, description: p.description, brand: p.brand ? { "@type": "Brand", name: p.brand } : undefined,

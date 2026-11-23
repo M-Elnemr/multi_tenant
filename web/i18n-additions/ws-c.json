@@ -1,0 +1,19 @@
+{
+  "lg.skip": ["Skip to content", "تخطّي إلى المحتوى"],
+  "lg.allDepartments": ["All departments", "كل الأقسام"],
+  "lg.availability": ["Availability", "التوفّر"],
+  "lg.quantity": ["Quantity", "الكمية"],
+  "lg.picture": ["Picture", "صورة"],
+  "lg.previous": ["Previous", "السابق"],
+  "lg.next": ["Next", "التالي"],
+  "lg.results": ["{n} products", "{n} منتج"],
+  "lg.view": ["View", "طريقة العرض"],
+  "lg.viewGrid": ["Grid view", "عرض شبكي"],
+  "lg.viewList": ["List view", "عرض قائمة"],
+  "lg.showResults": ["Show {n} products", "عرض {n} منتج"],
+  "lg.emptyHint": ["Try fewer filters or another word, or browse a department.", "جرّب فلاتر أقل أو كلمة أخرى، أو تصفّح أحد الأقسام."],
+  "lg.save": ["Save {amount}", "وفّر {amount}"],
+  "lg.inStock": ["In stock, ready to ship", "متوفر، جاهز للشحن"],
+  "lg.recent": ["Recently viewed", "شاهدته مؤخراً"],
+  "lg.searchWord": ["Search", "بحث"]
+}

@@ -1,0 +1,20 @@
+import Link from "next/link";
+import { PoweredBy } from "@/components/brand";
+import { SocialLinks } from "@/components/social-icons";
+import { whatsappLink } from "@/lib/whatsapp";
+import type { FooterProps } from "../types";
+
+export function BoldFooter({ p, name, branches, t, poweredLabel, poweredName }: FooterProps) {
+  const phones = [p.supportPhone, ...(p.extraPhones ?? [])].filter(Boolean) as string[];
+  return (
+    <footer className="bd-foot">
+      <div className="bd-wrap bd-foot-grid">
+        <div className="bd-foot-brand"><b>{name}</b>{(p.shortDescription || p.about) && <p>{p.shortDescription || p.about}</p>}<div className="bd-foot-soc"><SocialLinks p={p} />{p.whatsapp && <a href={whatsappLink(p.whatsapp)} target="_blank" rel="noopener noreferrer" className="bd-pill">WhatsApp</a>}</div></div>
+        <nav aria-label={t("footer.shop")}><h3>{t("footer.shop")}</h3><Link href="/products">{t("shop.allProducts")}</Link><Link href="/products?onSale=true&sort=discount">{t("shop.offers")}</Link><Link href="/track">{t("shop.trackOrder")}</Link><Link href="/account">{t("nav.account")}</Link></nav>
+        <nav aria-label={t("footer.help")}><h3>{t("footer.help")}</h3><Link href="/p/shipping">{t("policy.shipping")}</Link><Link href="/p/returns">{t("policy.returns")}</Link><Link href="/p/privacy">{t("policy.privacy")}</Link><Link href="/p/terms">{t("policy.terms")}</Link></nav>
+        <div><h3>{t("footer.contact")}</h3>{phones.map((x) => <a key={x} href={`tel:${x}`} dir="ltr">{x}</a>)}{p.supportEmail && <a href={`mailto:${p.supportEmail}`} dir="ltr">{p.supportEmail}</a>}{branches.length > 0 && <Link href="/branches">{t("shop.branches")} ({branches.length})</Link>}<Link href="/contact">{t("footer.contact")}</Link></div>
+      </div>
+      <div className="bd-wrap bd-foot-base"><span>© {new Date().getFullYear()} {name}</span>{poweredLabel && <PoweredBy label={poweredLabel} name={poweredName} />}</div>
+    </footer>
+  );
+}

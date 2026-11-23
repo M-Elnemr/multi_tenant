@@ -8,12 +8,15 @@ import { ShopProductCard, type ShopProduct } from "./product-card";
 import { buildTree, pathTo, type ShopCategory } from "./types";
 import { shopLook } from "@/lib/shop-look";
 import { Icon } from "../icons";
+import { LargeListing } from "./templates/large/listing-page";
 
 export type ListingParams = { q?: string; category?: string; page?: string; sort?: string; minPrice?: string; maxPrice?: string; brand?: string; inStock?: string; onSale?: string; minRating?: string; audience?: string; color?: string; size?: string; condition?: string };
 type PageData = { data: ShopProduct[]; meta: { page: number; pageSize: number; total: number; hasNext: boolean } };
 
 /** Product grid with breadcrumbs, filters, sorting and paging. Used by /products and /c/[slug]. */
 export async function Listing({ params, category }: { params: ListingParams; category?: string }) {
+  const sl = await shopLook();
+  if (sl.large) return <LargeListing id={sl.large} params={params} category={category} />;   // DR-C
   const { t, locale } = await getT();
   const info = await resolveHost(await currentHost());
   const currency = info.kind === "TENANT" ? info.currency : "EGP";
