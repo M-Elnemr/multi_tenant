@@ -1,7 +1,9 @@
 package com.platform.chat;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -34,6 +36,9 @@ public class WebBurst {
     private final ExecutorService pool;
     private final ScheduledExecutorService timers;
     private final InboundBurst burst;
+    private final Map<Long, Map<String, Object>> extras = new LinkedHashMap<>() {   // the newest 2000 replies' cards; the page shows them once, as the old synchronous answer did
+        @Override protected boolean removeEldestEntry(Map.Entry<Long, Map<String, Object>> e) { return size() > 2000; }
+    };
     private final ConcurrentHashMap<String, Long> lastTyping = new ConcurrentHashMap<>();
 
     public WebBurst(@org.springframework.context.annotation.Lazy ChatService chat, ConversationGate gate, @Value("${app.chat.web-burst:true}") boolean webBurst,
@@ -80,7 +85,13 @@ public class WebBurst {
         var in = new ChatService.ReplyInput(refs, List.of()).withCarried(carried);
         if (last > 0) in = in.withStored(last);
         try {
-            chat.reply(tenantId, "WEB", conversationId, clientId, joined.length() > 1000 ? joined.substring(0, 1000) : joined, null, in);
+            var reply = chat.reply(tenantId, "WEB", conversationId, clientId, joined.length() > 1000 ? joined.substring(0, 1000) : joined, null, in);
+            if (reply.messageId() > 0 && (reply.order() != null || !reply.products().isEmpty())) {   // the order card and product cards of this reply, shown with it when the page loads the history
+                Map<String, Object> x = new LinkedHashMap<>();
+                if (reply.order() != null) x.put("order", reply.order());
+                if (!reply.products().isEmpty()) x.put("products", reply.products());
+                synchronized (extras) { extras.put(reply.messageId(), x); }
+            }
         } catch (RuntimeException e) {
             log.warn("Website chat reply failed for {}: {}", conversationId, e.toString());
         }
@@ -103,6 +114,9 @@ public class WebBurst {
         if (before != null && now - before < 250) return;
         burst.touch(key);
     }
+
+    /** The order and product cards that went with assistant message {@code id} (null when none). */
+    public Map<String, Object> extras(long id) { synchronized (extras) { return extras.get(id); } }
 
     /** Test hook: waits until nothing is pending for this chat. */
     boolean idle(UUID tenantId, String conversationId) { return !pending(tenantId, conversationId); }

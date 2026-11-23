@@ -17,8 +17,10 @@ type Product = { name: string; slug: string; priceMinor: number; currency: strin
 type Order = { orderNumber: string; totalMinor: number; currency: string; trackPath?: string; paymentPath?: string; whatsappUrl?: string; whatsappConfirmed?: boolean; test?: boolean };
 type Btn = { label: string; value: string };
 type Msg = { id?: number; local?: number; role: "user" | "assistant"; content: string; mediaUrl?: string | null; audioUrl?: string; products?: Product[]; order?: Order | null; buttons?: Btn[]; replyTo?: Quoted | null };
-type Reply = { conversationId: string; reply: string; order?: Order | null; products?: Product[]; heard?: string; buttons?: Btn[]; messageId?: number; userMessageId?: number };
-type History = { id?: number; role: "user" | "assistant"; content: string; mediaUrl?: string | null; buttons?: Btn[]; replyTo?: Quoted | null }[];
+type Reply = { conversationId: string; reply?: string; pending?: boolean; order?: Order | null; products?: Product[]; heard?: string; buttons?: Btn[]; messageId?: number; userMessageId?: number };
+type History = { id?: number; role: "user" | "assistant"; content: string; mediaUrl?: string | null; buttons?: Btn[]; replyTo?: Quoted | null; products?: Product[]; order?: Order | null }[];
+/** The chat as the storefront loads it: the messages and whether the assistant still has to answer the latest lines (it waits for the customer to finish). */
+type ChatState = { messages: History; pending: boolean };
 type Job = { text: string; replyToId?: number | null; local?: number } | { file: File; caption: string };
 type Config = { enabled: boolean; greeting: string; agentName?: string; agentAvatar?: string; media?: boolean };
 
@@ -91,10 +93,12 @@ function pretty(content: string, photo: string, voice: string): string {
  * The conversation, shared by the storefront chat window and the owner's test screen (same messages, different endpoint). {@code widget} is the storefront look: round avatar, pill
  * suggestions, a pill-shaped input with emoji, photo and voice note. {@code sendMedia} switches the photo and voice buttons on.
  */
-export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, greeting, agentAvatar = DEFAULT_AGENT_AVATAR, live = false, widget = false, replies = false, loadAround, className = "" }: {
+export function ChatPanel({ send, sendMedia, load, loadState, typing, onReset, onTeach, onReply, greeting, agentAvatar = DEFAULT_AGENT_AVATAR, live = false, widget = false, replies = false, loadAround, className = "" }: {
   send: (text: string, replyToId?: number | null) => Promise<Reply>; sendMedia?: (file: File, caption: string) => Promise<Reply>;
   load: () => Promise<History>; onReset?: () => Promise<void>; onTeach?: (question: string, answer: string) => void; onReply?: () => void; greeting: string;
   agentAvatar?: string; live?: boolean; widget?: boolean; className?: string;
+  /** The storefront chat: the history with the «still answering» flag. Without it the chat answers inside each send, as the owner's test screen does. */ loadState?: () => Promise<ChatState>;
+  /** Heartbeat while the customer is typing (the assistant waits for the end of the burst). */ typing?: () => Promise<unknown>;
   /** Let the customer reply to a specific message (swipe, or the reply button): only the storefront chat, whose backend takes the reference. */ replies?: boolean;
   /** Fetches the page of the chat around an old message (the chat shows the newest 60): used when a quote points to a message that is not on the screen. */ loadAround?: (id: number) => Promise<History>;
 }) {
@@ -104,11 +108,14 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
   const localSeq = useRef(0);
   const dir: "ltr" | "rtl" = locale === "ar" ? "rtl" : "ltr";
   const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [sending, setSending] = useState(0);   // requests in flight (a photo takes a few seconds to be read)
+  const [pending, setPending] = useState(false);   // the assistant has not answered the latest lines yet (the typing dots show)
+  const busy = sending > 0 || pending;
+  const inflight = useRef(0);
+  const lastBeat = useRef(0);
+  const sawAssistant = useRef<number | null>(null);
   const end = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
-  const queue = useRef<Job[]>([]);   // messages typed while the assistant is still answering are sent one after another
-  const running = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const field = useRef<HTMLInputElement>(null);
   const [attach, setAttach] = useState<{ file: File; url: string } | null>(null);
@@ -120,20 +127,40 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
   const cancelled = useRef(false);
   const ticker = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // the page as the server has it: the stored ids, the assistant's cards, and what the customer sent from a photo or voice note keeps its preview
+  const apply = useCallback((state: ChatState, announce: boolean) => {
+    const rows = state.messages;
+    const lastAssistant = [...rows].reverse().find((x) => x.role === "assistant" && x.id);
+    setMsgs((old) => {
+      const byId = new Map(old.filter((x) => x.id).map((x) => [x.id as number, x]));
+      const merged: Msg[] = rows.map((r) => {
+        const prev = r.id ? byId.get(r.id) : undefined;
+        return prev ? { ...r, mediaUrl: r.mediaUrl ?? prev.mediaUrl, audioUrl: prev.audioUrl, products: r.products ?? prev.products, order: r.order ?? prev.order } : r;
+      });
+      return [...merged, ...old.filter((x) => !x.id)];   // a line that failed to send and an error note stay where they are
+    });
+    if (announce && lastAssistant?.id && sawAssistant.current !== null && lastAssistant.id !== sawAssistant.current) onReply?.();   // the answer arrived
+    if (lastAssistant?.id) sawAssistant.current = lastAssistant.id;
+    setPending(state.pending);
+  }, [onReply]);
+  const refresh = useCallback((announce: boolean) => {
+    if (inflight.current > 0) return Promise.resolve();   // a send is on its way: the next tick has it, with its stored id
+    return (loadState ? loadState() : load().then((h) => ({ messages: h, pending: false }))).then((st) => apply(st, announce)).catch(() => undefined);
+  }, [loadState, load, apply]);
   useEffect(() => {
     let live = true;
-    load().then((h) => { if (live) setMsgs(h); }).catch(() => undefined);
+    (loadState ? loadState() : load().then((h) => ({ messages: h, pending: false }))).then((st) => { if (live) apply(st, false); }).catch(() => undefined);
     return () => { live = false; };
-  }, [load]);
-  // the storefront chat: a reply the shop team writes from their inbox shows up while the window is open
+  }, [load, loadState, apply]);
+  // the storefront chat: while the assistant is still to answer the page asks every 1.5 s; otherwise every 6 s, which also shows a reply the shop team writes from their inbox
   useEffect(() => {
     if (!live) return;
     const timer = setInterval(() => {
-      if (running.current) return;
-      load().then((h) => setMsgs((m) => (h.length > m.length ? h : m))).catch(() => undefined);
-    }, 6000);
+      if (!pending && !loadState) { load().then((h) => { if (inflight.current === 0) setMsgs((m) => (h.length > m.length ? h : m)); }).catch(() => undefined); return; }
+      void refresh(true);
+    }, pending ? 1500 : 6000);
     return () => clearInterval(timer);
-  }, [live, load]);
+  }, [live, load, loadState, pending, refresh]);
   useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [msgs, busy]);
   // leaving the page while recording: stop the microphone and drop the clip
   useEffect(() => () => {
@@ -142,27 +169,37 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
     if (recorder.current?.state === "recording") recorder.current.stop();
   }, []);
 
-  const drain = async () => {
-    if (running.current) return;
-    running.current = true;
-    setBusy(true);
-    while (queue.current.length > 0) {
-      const job = queue.current.shift() as Job;
-      try {
-        const r = "file" in job && sendMedia ? await sendMedia(job.file, job.caption) : await send("text" in job ? job.text : job.caption, "text" in job ? job.replyToId : null);
-        // the stored ids, so this message and the answer can be replied to without reloading the chat
-        if ("local" in job && job.local !== undefined && r.userMessageId) setMsgs((m) => m.map((x) => (x.local === job.local ? { ...x, id: r.userMessageId } : x)));
-        // an empty reply: the shop team is answering this chat themselves, nothing automatic to show
-        if (r.reply && r.reply.trim()) {
-          setMsgs((m) => [...m, { id: r.messageId, role: "assistant", content: r.reply, products: r.products, order: r.order, buttons: r.buttons }]);
-          onReply?.();
-        }
-      } catch (e) {
-        setMsgs((m) => [...m, { role: "assistant", content: errorMessage(t, locale, e) }]);
+  /** One send is one request, at once: the assistant (not the page) decides when to answer, reading every line it has not answered yet. */
+  const post = async (job: Job) => {
+    inflight.current += 1;
+    setSending((n) => n + 1);
+    try {
+      const r = "file" in job && sendMedia ? await sendMedia(job.file, job.caption) : await send("text" in job ? job.text : job.caption, "text" in job ? job.replyToId : null);
+      // the stored ids, so this message and the answer can be replied to without reloading the chat
+      if ("local" in job && job.local !== undefined && r.userMessageId) setMsgs((m) => m.map((x) => (x.local === job.local ? { ...x, id: r.userMessageId } : x)));
+      if (r.pending) setPending(true);   // the answer comes through the history
+      // an empty reply: the shop team is answering this chat themselves, nothing automatic to show
+      else if (r.reply && r.reply.trim()) {
+        const reply = r.reply;
+        setMsgs((m) => [...m, { id: r.messageId, role: "assistant", content: reply, products: r.products, order: r.order, buttons: r.buttons }]);
+        if (r.messageId) sawAssistant.current = r.messageId;
+        onReply?.();
       }
+    } catch (e) {
+      setMsgs((m) => [...m, { role: "assistant", content: errorMessage(t, locale, e) }]);
+    } finally {
+      inflight.current -= 1;
+      setSending((n) => n - 1);
     }
-    running.current = false;
-    setBusy(false);
+  };
+
+  /** The customer is typing: tell the server (at most every 2 s) so the assistant keeps waiting until they stop. */
+  const beat = (value: string) => {
+    if (!typing || !value.trim()) return;
+    const now = Date.now();
+    if (now - lastBeat.current < 2000) return;
+    lastBeat.current = now;
+    void typing().catch(() => undefined);
   };
 
   const go = async (value: string) => {
@@ -173,8 +210,7 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
     const local = ++localSeq.current, target = replies ? replyTo : null;
     setReplyTo(null);
     setMsgs((m) => [...m, { local, role: "user", content: v, replyTo: target ? { id: target.id, sender: target.sender, text: target.text, hasMedia: target.hasMedia, available: target.available } : null }]);
-    queue.current.push({ text: v, replyToId: target?.id ?? null, local });
-    void drain();
+    void post({ text: v, replyToId: target?.id ?? null, local });
   };
 
   /** Scrolls to a message of this chat and marks it for a moment. A message that is not on the screen is fetched with the page around it (one bounded request), never the whole chat. */
@@ -213,8 +249,7 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
     setText("");
     setEmojis(false);
     setMsgs((m) => [...m, { role: "user", content: caption, mediaUrl: url }]);
-    queue.current.push({ file, caption });
-    void drain();
+    void post({ file, caption });
   };
 
   const pickPhoto = async (file: File | undefined) => {
@@ -225,8 +260,7 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
 
   const sendVoice = (file: File) => {
     setMsgs((m) => [...m, { role: "user", content: "", audioUrl: URL.createObjectURL(file) }]);
-    queue.current.push({ file, caption: "" });
-    void drain();
+    void post({ file, caption: "" });
   };
 
   const startRecording = async () => {
@@ -335,14 +369,14 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
             )}
           </div>
         ))}
-        {busy && <Bubble role="assistant" widget={widget} avatar={widget ? "" : undefined}><span className="inline-flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:120ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:240ms]" /></span></Bubble>}
+        {busy && <Bubble role="assistant" widget={widget} avatar={widget ? "" : undefined}><span role="status" aria-label={t("chat.typing")} className="inline-flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:120ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:240ms]" /></span></Bubble>}
         <div ref={end} />
       </div>
 
       {!widget ? (
         <form onSubmit={(e) => { e.preventDefault(); void go(text); }} className="flex flex-wrap items-center gap-2 border-t border-[var(--s-line,#e2e8f0)] bg-white p-2">
           {replies && replyTo && <div className="-mx-3 -mt-1 w-full"><ReplyPreview target={replyTo} viewer="customer" onCancel={() => setReplyTo(null)} onJump={jump} /></div>}
-          <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape" && replyTo) setReplyTo(null); }} maxLength={1000} placeholder={t("chat.placeholder")} aria-label={t("chat.placeholder")}
+          <input value={text} onChange={(e) => { setText(e.target.value); beat(e.target.value); }} onKeyDown={(e) => { if (e.key === "Escape" && replyTo) setReplyTo(null); }} maxLength={1000} placeholder={t("chat.placeholder")} aria-label={t("chat.placeholder")}
             className="min-w-0 flex-1 rounded-full border border-[var(--s-line,#e2e8f0)] bg-white px-4 py-2.5 text-sm outline-none focus:border-[var(--brand)]" />
           <button type="submit" disabled={!text.trim()} aria-label={t("chat.send")} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white disabled:opacity-50" style={{ background: "var(--brand)" }}>
             <Icon name="arrow" className="h-4 w-4 rtl:rotate-180" />
@@ -385,7 +419,7 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
                   </button>
                 </>
               )}
-              <input ref={field} value={text} onChange={(e) => setText(e.target.value)} onFocus={() => setEmojis(false)} onKeyDown={(e) => { if (e.key === "Escape" && replyTo) setReplyTo(null); }} maxLength={1000} placeholder={t("chat.placeholder")} aria-label={t("chat.placeholder")} enterKeyHint="send"
+              <input ref={field} value={text} onChange={(e) => { setText(e.target.value); beat(e.target.value); }} onFocus={() => setEmojis(false)} onKeyDown={(e) => { if (e.key === "Escape" && replyTo) setReplyTo(null); }} maxLength={1000} placeholder={t("chat.placeholder")} aria-label={t("chat.placeholder")} enterKeyHint="send"
                 className="min-w-0 flex-1 bg-transparent px-2 text-base outline-none placeholder:text-slate-400" />
               {canMedia && !text.trim() && !attach ? (
                 <button type="button" onClick={() => void startRecording()} aria-label={t("chat.voice")} className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--s-soft,#f1f5f9)]">
@@ -499,6 +533,8 @@ export function LiveChat() {
   useVisualViewport(open);
 
   const loadFn = useCallback(() => api<History>(`shop/chat/history?conversationId=${conv}`), [conv]);
+  const loadState = useCallback(() => api<ChatState>(`shop/chat/history?conversationId=${conv}&state=true`), [conv]);
+  const typing = useCallback(() => api("shop/chat/typing", { body: { conversationId: conv } }), [conv]);
   const loadAround = useCallback((id: number) => api<History>(`shop/chat/history?conversationId=${conv}&around=${id}`), [conv]);
   const send = useCallback((text: string, replyToId?: number | null) => api<Reply>("shop/chat", { body: { conversationId: conv, message: text, replyToMessageId: replyToId ?? undefined } }), [conv]);
   const sendMedia = useCallback((file: File, caption: string) => {
@@ -546,7 +582,7 @@ export function LiveChat() {
             </button>
           </header>
           {conv && (
-            <ChatPanel live widget replies loadAround={loadAround} className="flex-1" agentAvatar={avatar} greeting={cfg.greeting || t("chat.greeting")} load={loadFn} send={send}
+            <ChatPanel live widget replies loadAround={loadAround} className="flex-1" agentAvatar={avatar} greeting={cfg.greeting || t("chat.greeting")} load={loadFn} loadState={loadState} typing={typing} send={send}
               sendMedia={cfg.media === false ? undefined : sendMedia} onReply={() => { if (sound) ping(); }} />
           )}
           {!whiteLabel && <p className="pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1 text-center text-xs text-slate-400">{t("brand.powered")} {t("brand.name")}</p>}

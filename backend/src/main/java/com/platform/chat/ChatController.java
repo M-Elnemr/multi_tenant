@@ -96,6 +96,17 @@ public class ChatController {
         boolean pending = CONV_ID.matcher(conversationId).matches() && webBurst.pending(tenant, conversationId);   // DR-B: the assistant has not answered the latest lines yet
         res.setHeader("X-Chat-Pending", pending ? "1" : "0");
         List<Map<String, Object>> h = historyRows(tenant, conversationId, around);
+        if (webBurst.enabled()) {   // the cards (order, products) of replies written after the line was saved: the page gets them with the reply
+            h = new java.util.ArrayList<>(h);
+            for (int i = 0; i < h.size(); i++) {
+                if (!"assistant".equals(h.get(i).get("role")) || !(h.get(i).get("id") instanceof Number n)) continue;
+                var x = webBurst.extras(n.longValue());
+                if (x == null) continue;
+                var row = new LinkedHashMap<>(h.get(i));
+                row.putAll(x);
+                h.set(i, row);
+            }
+        }
         if (Boolean.TRUE.equals(state)) { Map<String, Object> m = new LinkedHashMap<>(); m.put("messages", h); m.put("pending", pending); return m; }   // the widget's form; the plain list stays for older callers
         return h;
     }
