@@ -6759,6 +6759,7 @@ const en: Record<string, string> = {
   "lg.inStock": "In stock, ready to ship",
   "lg.recent": "Recently viewed",
   "lg.searchWord": "Search",
+  "chat.typing": "The assistant is typing",
 };
 
 const ar: Record<string, string> = {
@@ -13504,6 +13505,7 @@ const ar: Record<string, string> = {
   "lg.inStock": "متوفر، جاهز للشحن",
   "lg.recent": "شاهدته مؤخراً",
   "lg.searchWord": "بحث",
+  "chat.typing": "المساعد بيكتب",
 };
 
 export const dictionaries: Record<Locale, Record<string, string>> = { en, ar };
