@@ -1,0 +1,55 @@
+/* cn-medtech: precise and data-forward. Cool white, deep ink, electric blue; tight grid, tabular figures, booking panel in the hero. */
+.cn-medtech {
+  --bg: var(--c-bg, #f3f7fc); --bg2: var(--c-bg-2, #e6eef8); --surface: var(--c-surface, #ffffff);
+  --ink: var(--c-text, #0d1b2e); --ink2: var(--c-text-2, #475a72);
+  --pri: var(--c-primary, #0a66ff); --acc: var(--c-accent, #0a66ff);
+  --btn: var(--c-btn-bg, #0a66ff); --btn-ink: var(--c-btn-text, #ffffff);
+  --line: var(--c-border, #d4e0ef);
+  --r: 10px; --rl: 16px; --maxw: 80rem;
+  --ff-d: var(--f-plex), system-ui, sans-serif; --ff-b: var(--f-plex), system-ui, sans-serif; --fw-d: 700; --ls-d: -.02em;
+  --foot-bg: #0d1b2e; --foot-ink: #dbe6f4;
+  font-variant-numeric: tabular-nums;
+}
+.cn-medtech .cn-h1 { font-size: clamp(2rem, 4.6vw, 3.2rem); }
+.cn-medtech .cn-eyebrow { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .06em; }
+.cn-medtech .cn-header { position: sticky; inset-block-start: 0; z-index: 30; background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(10px); border-block-end: 1px solid var(--line); }
+.cn-medtech .mt-row { display: flex; align-items: center; gap: 1rem; min-block-size: 4.2rem; }
+.cn-medtech .mt-pills { margin-inline: 1rem auto; background: var(--bg2); padding: .25rem; border-radius: 999px; }
+.cn-medtech .mt-pills a { border-radius: 999px; padding: .4rem .9rem; font-size: .9rem; }
+.cn-medtech .mt-pills a:hover { background: var(--surface); }
+.cn-medtech .mt-status { margin-inline-start: auto; }
+.cn-medtech .cn-tools { margin-inline-start: auto; }
+@media (min-width: 1000px) { .cn-medtech .cn-tools { margin-inline-start: 0; } .cn-medtech .mt-status { margin-inline-start: 0; } }
+.cn-medtech .cn-btn { border-radius: 999px; }
+.cn-medtech .mt-hero { background: radial-gradient(60rem 28rem at 85% -10%, color-mix(in srgb, var(--pri) 14%, transparent), transparent), var(--bg); }
+.cn-medtech .mt-hero-grid { display: grid; grid-template-columns: 1fr; gap: 2.5rem; padding-block: clamp(2.5rem, 6vw, 4.5rem); align-items: center; }
+@media (min-width: 960px) { .cn-medtech .mt-hero-grid { grid-template-columns: 1.2fr 1fr; gap: 4rem; } }
+.cn-medtech .mt-hero-status { margin-block-start: 1.4rem; }
+.cn-medtech .mt-panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--rl); padding: 1.4rem; box-shadow: 0 30px 60px -40px rgb(10 102 255 / .45); }
+.cn-medtech .mt-panel-list { list-style: none; margin: 1rem 0 0; padding: 0; display: grid; gap: .5rem; }
+.cn-medtech .mt-panel-list a { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .85rem 1rem; border: 1px solid var(--line); border-radius: var(--r); transition: border-color .2s, background .2s; }
+.cn-medtech .mt-panel-list a:hover { border-color: var(--pri); background: color-mix(in srgb, var(--pri) 5%, var(--surface)); }
+.cn-medtech .mt-panel-list small { display: block; color: var(--ink2); font-size: .8rem; }
+.cn-medtech .mt-panel-list b { color: var(--pri); white-space: nowrap; }
+.cn-medtech .mt-from { margin: .9rem 0 0; font-size: .85rem; }
+.cn-medtech .mt-metrics { border-block: 1px solid var(--line); background: var(--surface); }
+.cn-medtech .mt-metrics-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); margin: 0; }
+.cn-medtech .mt-metrics-row div { display: flex; flex-direction: column-reverse; padding: 1.3rem 1rem; border-inline-start: 1px solid var(--line); }
+.cn-medtech .mt-metrics-row div:first-child { border-inline-start: 0; }
+.cn-medtech .mt-metrics-row dd { margin: 0; font-size: 2.1rem; font-weight: 700; letter-spacing: -.03em; color: var(--pri); line-height: 1.1; }
+.cn-medtech .mt-metrics-row dt { color: var(--ink2); font-size: .85rem; }
+.cn-medtech .mt-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: .6rem; }
+.cn-medtech .mt-row-doc { display: grid; grid-template-columns: 3.4rem 1fr auto auto; gap: 1rem; align-items: center; padding: .8rem 1rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.cn-medtech .mt-row-doc .cn-h3 a:hover { color: var(--pri); }
+.cn-medtech .mt-row-doc p { margin: 0; font-size: .88rem; }
+.cn-medtech .mt-av { inline-size: 3.4rem; block-size: 3.4rem; border-radius: 50%; object-fit: cover; font-size: 1.1rem; }
+.cn-medtech .mt-fee { font-weight: 700; white-space: nowrap; }
+@media (max-width: 639px) { .cn-medtech .mt-row-doc { grid-template-columns: 3.4rem 1fr; } .cn-medtech .mt-row-doc > :nth-child(3) { display: none; } .cn-medtech .mt-row-doc .cn-btn { grid-column: 1 / -1; } }
+.cn-medtech .mt-specs a { display: inline-flex; align-items: center; gap: .5rem; }
+.cn-medtech .mt-specs small { background: var(--bg2); border-radius: 999px; padding: 0 .5rem; color: var(--ink2); }
+.cn-medtech .mt-visit { display: grid; gap: 2rem; grid-template-columns: 1fr; align-items: start; }
+@media (min-width: 900px) { .cn-medtech .mt-visit { grid-template-columns: 1.3fr 1fr; } }
+.cn-medtech .cn-doc-photo { aspect-ratio: 1 / 1; }
+.cn-medtech .cn-pagehead { background: var(--bg); }
+.cn-medtech .cn-footer .cn-brand-name { color: #fff; }
+.cn-medtech .cn-footer .cn-muted { color: #9fb3cc; }

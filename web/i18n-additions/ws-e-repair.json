@@ -1,0 +1,20 @@
+{
+  "vn.rp.book": ["Book", "احجز"],
+  "vn.rp.track": ["Track my booking", "تابع حجزي"],
+  "vn.rp.trackHint": ["Enter your booking number. We ask for your phone on the next page.", "اكتب رقم الحجز. هنطلب رقم موبايلك في الصفحة الجاية."],
+  "vn.rp.nav.catalog": ["Repairs", "الإصلاحات"],
+  "vn.rp.nav.parts": ["Parts", "قطع الغيار"],
+  "vn.rp.nav.find": ["Find us", "اوصلنا"],
+  "vn.rp.eyebrow": ["Repair workshop", "ورشة صيانة"],
+  "vn.rp.heroDefault": ["Tell us what is broken, see the time and price up front, and book a slot.", "قولنا إيه اللي عطلان، شوف الوقت والسعر قدام، واحجز ميعاد."],
+  "vn.rp.whatFix": ["What needs fixing?", "إيه اللي محتاج إصلاح؟"],
+  "vn.rp.popular": ["Common jobs", "الشغلانات الشائعة"],
+  "vn.rp.services": ["services", "خدمة"],
+  "vn.rp.col.service": ["Service", "الخدمة"],
+  "vn.rp.col.time": ["Time", "المدة"],
+  "vn.rp.col.price": ["Price", "السعر"],
+  "vn.rp.where": ["Where", "المكان"],
+  "vn.rp.type": ["Category", "القسم"],
+  "vn.rp.about": ["About this job", "عن الشغلانة دي"],
+  "vn.rp.policy": ["Cancellation", "الإلغاء"]
+}

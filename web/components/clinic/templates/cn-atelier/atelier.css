@@ -1,0 +1,75 @@
+/* cn-atelier: luxury, spacious, image-led. Near-black warm ground, ivory text, brushed brass; generous space, hairlines, no boxes. */
+.cn-atelier {
+  --bg: var(--c-bg, #14120f); --bg2: var(--c-bg-2, #1d1a16); --surface: var(--c-surface, #1d1a16);
+  --ink: var(--c-text, #f1ece2); --ink2: var(--c-text-2, #b5ac9d);
+  --pri: var(--c-primary, #d6b886); --acc: var(--c-accent, #d6b886);
+  --btn: var(--c-btn-bg, #d6b886); --btn-ink: var(--c-btn-text, #14120f);
+  --line: var(--c-border, #3a342b);
+  --r: 0px; --rl: 0px; --maxw: 74rem;
+  --ff-d: var(--f-cormorant), var(--f-messiri), Georgia, serif; --ff-b: var(--f-tajawal), system-ui, sans-serif; --fw-d: 400;
+  --foot-bg: #0e0c0a; --foot-ink: #d9d2c4;
+  color-scheme: dark;
+}
+[dir="rtl"] .cn-atelier { --ff-d: var(--f-messiri), var(--f-cormorant), serif; --fw-d: 500; }
+.cn-atelier .cn-h1 { font-size: clamp(2.6rem, 7vw, 5.4rem); font-weight: 400; line-height: 1.05; }
+.cn-atelier .cn-h2 { font-size: clamp(2rem, 4.4vw, 3.2rem); font-weight: 400; }
+.cn-atelier .cn-eyebrow { letter-spacing: .24em; font-size: .72rem; }
+[dir="rtl"] .cn-atelier .cn-eyebrow { letter-spacing: 0; font-size: .9rem; }
+.cn-atelier .cn-btn { border-radius: 0; letter-spacing: .12em; text-transform: uppercase; font-size: .78rem; min-block-size: 3.2rem; padding-inline: 2rem; }
+[dir="rtl"] .cn-atelier .cn-btn { letter-spacing: 0; text-transform: none; font-size: .95rem; }
+.cn-atelier .cn-btn-ghost { color: var(--ink); border-color: color-mix(in srgb, var(--ink) 45%, transparent); }
+.cn-atelier .cn-btn-ghost:hover { border-color: var(--pri); color: var(--pri); }
+.cn-atelier .at-head { position: sticky; inset-block-start: 0; margin-block-end: -5.5rem; z-index: 30; background: linear-gradient(180deg, rgb(0 0 0 / .55), transparent); }
+.cn-atelier .at-bar { display: flex; align-items: center; gap: 1.5rem; min-block-size: 5.5rem; }
+.cn-atelier .cn-nav { margin-inline: auto; }
+.cn-atelier .cn-nav a { color: #f1ece2; font-size: .85rem; letter-spacing: .12em; text-transform: uppercase; }
+[dir="rtl"] .cn-atelier .cn-nav a { letter-spacing: 0; text-transform: none; font-size: .95rem; }
+.cn-atelier .cn-nav a:hover { background: none; color: var(--pri); }
+.cn-atelier .cn-tools { margin-inline-start: auto; }
+@media (min-width: 1000px) { .cn-atelier .cn-tools { margin-inline-start: 0; } }
+.cn-atelier .cn-brand-name { font-size: 1.5rem; font-weight: 500; color: #f1ece2; }
+.cn-atelier .cn-lang, .cn-atelier .cn-signin { color: #e8e1d3; }
+.cn-atelier .cn-burger { border-radius: 0; border-color: rgb(241 236 226 / .4); background: rgb(0 0 0 / .25); }
+.cn-atelier .cn-burger span { background: #f1ece2; }
+@media (max-width: 639px) { .cn-atelier .cn-brand-name { max-inline-size: 8rem; font-size: 1.2rem; } }
+/* inner pages have no photo behind the header, so it needs its own ground */
+.cn-atelier main > .cn-pagehead:first-child { padding-block-start: 8rem; }
+
+.cn-atelier .at-hero { position: relative; min-block-size: min(100dvh, 52rem); display: flex; align-items: flex-end; overflow: hidden; background: var(--bg2); }
+.cn-atelier .at-hero-img { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; object-fit: cover; }
+.cn-atelier .at-hero > .cn-ph { position: absolute; inset: 0; }
+.cn-atelier .at-hero-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgb(20 18 15 / .35) 0%, rgb(20 18 15 / .15) 35%, rgb(20 18 15 / .9) 100%); }
+.cn-atelier .at-hero-copy { position: relative; padding-block: 9rem 4rem; color: #f6f1e8; }
+.cn-atelier .at-hero-copy .cn-h1 { color: #f6f1e8; max-inline-size: 14ch; }
+.cn-atelier .at-hero-copy .cn-lead { color: #d9d2c4; max-inline-size: 34rem; }
+.cn-atelier .at-hero-copy .cn-status { color: #d9d2c4; }
+.cn-atelier .at-status { margin-block-start: 2rem; }
+.cn-atelier .at-about { text-align: center; }
+.cn-atelier .at-pull { font-family: var(--ff-d); font-size: clamp(1.4rem, 3vw, 2.1rem); line-height: 1.55; margin: 0 0 1.5rem; }
+.cn-atelier .at-spread { padding-block: clamp(2.5rem, 6vw, 5rem); }
+.cn-atelier .at-spread-grid { display: grid; grid-template-columns: 1fr; gap: 2rem; align-items: center; }
+@media (min-width: 900px) { .cn-atelier .at-spread-grid { grid-template-columns: 1fr 1fr; gap: 6rem; } .cn-atelier .at-spread[data-flip] .at-spread-media { order: 2; } }
+.cn-atelier .at-spread-img { inline-size: 100%; aspect-ratio: 4 / 5; object-fit: cover; object-position: center 20%; }
+.cn-atelier .at-spread .cn-ph { aspect-ratio: 4 / 5; font-size: 5rem; }
+.cn-atelier .at-spread-copy .cn-lead { font-size: 1.15rem; }
+.cn-atelier .at-more { text-align: center; margin: 0; padding-block-end: 3rem; }
+.cn-atelier .at-list { list-style: none; margin: 2rem 0 0; padding: 0; border-block-start: 1px solid var(--line); }
+.cn-atelier .at-list li { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; padding-block: 1.2rem; border-block-end: 1px solid var(--line); font-family: var(--ff-d); font-size: 1.4rem; }
+.cn-atelier .at-list small { display: block; font-family: var(--ff-b); font-size: .8rem; color: var(--ink2); }
+.cn-atelier .at-list b { font-weight: 400; color: var(--pri); white-space: nowrap; }
+.cn-atelier .at-visit { display: grid; gap: 3rem; grid-template-columns: 1fr; }
+@media (min-width: 900px) { .cn-atelier .at-visit { grid-template-columns: 1.3fr 1fr; gap: 6rem; } }
+.cn-atelier .at-faq-h { margin-block-end: 2rem; }
+.cn-atelier .cn-contact li, .cn-atelier .cn-card, .cn-atelier .cn-spec, .cn-atelier .cn-faq details, .cn-atelier .cn-doc, .cn-atelier .cn-facts div, .cn-atelier .cn-stats div { background: transparent; border-radius: 0; }
+.cn-atelier .cn-contact li { border: 0; border-block-end: 1px solid var(--line); padding-inline: 0; }
+.cn-atelier .cn-doc { border: 0; border-block-start: 1px solid var(--line); }
+.cn-atelier .cn-doc:hover { box-shadow: none; transform: none; }
+.cn-atelier .cn-spec-ic { background: none; border: 1px solid var(--line); border-radius: 50%; }
+.cn-atelier .cn-pagehead { background: var(--bg); text-align: center; }
+.cn-atelier .cn-pagehead .cn-lead { margin-inline: auto; }
+.cn-atelier .cn-chips li, .cn-atelier .cn-chips a { border-radius: 0; background: transparent; }
+.cn-atelier .cn-days button, .cn-atelier .cn-slots button, .cn-atelier .cn-field select, .cn-atelier .cn-field textarea { border-radius: 0; background: var(--bg); }
+.cn-atelier .cn-menu { background: var(--bg); }
+.cn-atelier .cn-menu nav a { color: var(--ink); }
+.cn-atelier .cn-dock { background: var(--bg2); }
+.cn-atelier .cn-footer .cn-muted { color: #a79f90; }

@@ -93,7 +93,7 @@ export default function Patients() {
         )}
 
         <div className="flex flex-wrap items-center gap-2.5 rounded-[18px] bg-surface p-2.5 shadow-card">
-          <SearchBox value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder={t("patients.searchHint")} />
+          <div className="w-full sm:w-auto"><SearchBox value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder={t("patients.searchHint")} /></div>
           <DateRangePicker value={range} onChange={(r) => { setRange(r); setPage(1); }} label={t("patients.registered")} />
           {data?.meta && <span className="ms-auto px-2 text-xs text-muted tnum">{data.meta.total}</span>}
         </div>

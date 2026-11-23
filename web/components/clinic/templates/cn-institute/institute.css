@@ -1,0 +1,91 @@
+/* cn-institute: established medical institution. Navy and brass, serif headings, square-ish corners, structured grids. */
+.cn-institute {
+  --bg: var(--c-bg, #f5f6f8); --bg2: var(--c-bg-2, #e9edf2); --surface: var(--c-surface, #ffffff);
+  --ink: var(--c-text, #14304f); --ink2: var(--c-text-2, #4a5d73);
+  --pri: var(--c-primary, #14304f); --acc: var(--c-accent, #8a6420);
+  --btn: var(--c-btn-bg, #14304f); --btn-ink: var(--c-btn-text, #ffffff);
+  --line: var(--c-border, #d3dae3);
+  --r: 4px; --rl: 6px; --maxw: 78rem;
+  --ff-d: var(--f-playfair), var(--f-amiri), Georgia, serif; --ff-b: var(--f-plex), system-ui, sans-serif; --fw-d: 600;
+  --foot-bg: var(--c-primary, #14304f); --foot-ink: #eef1f5;
+}
+[dir="rtl"] .cn-institute { --ff-d: var(--f-amiri), var(--f-playfair), serif; --fw-d: 700; }
+.cn-institute .cn-h1 { font-size: clamp(2.1rem, 5vw, 3.5rem); }
+
+.cn-institute .cn-util { background: var(--pri); color: #e6ebf2; font-size: .85rem; }
+.cn-institute .cn-util .cn-wrap { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding-block: .45rem; }
+.cn-institute .cn-util .cn-status { color: #e6ebf2; }
+.cn-institute .cn-util-end { display: flex; gap: 1.4rem; align-items: center; }
+.cn-institute .cn-util-end a, .cn-institute .cn-util-addr { display: inline-flex; gap: .4rem; align-items: center; }
+.cn-institute .cn-util-addr { display: none; }
+@media (min-width: 760px) { .cn-institute .cn-util-addr { display: inline-flex; } }
+.cn-institute .cn-header { position: sticky; inset-block-start: 0; z-index: 30; background: var(--surface); border-block-end: 3px double var(--line); }
+.cn-institute .cn-header-row { display: flex; align-items: center; gap: 1.2rem; min-block-size: 4.6rem; }
+.cn-institute .cn-nav { margin-inline: auto; }
+.cn-institute .cn-tools { margin-inline-start: auto; }
+@media (min-width: 1000px) { .cn-institute .cn-tools { margin-inline-start: 0; } }
+.cn-institute .cn-nav a { border-radius: 0; border-block-end: 2px solid transparent; }
+.cn-institute .cn-nav a:hover { background: none; border-color: var(--acc); }
+.cn-institute .cn-btn { text-transform: none; letter-spacing: .01em; }
+
+/* hero */
+.cn-institute .in-hero { background: linear-gradient(180deg, var(--bg2), var(--bg)); border-block-end: 1px solid var(--line); }
+.cn-institute .in-hero-grid { display: grid; grid-template-columns: 1fr; gap: 2.5rem; padding-block: clamp(2.5rem, 6vw, 5rem); align-items: center; }
+@media (min-width: 900px) { .cn-institute .in-hero-grid { grid-template-columns: 1.1fr 1fr; gap: 4rem; } }
+.cn-institute .in-hero .cn-eyebrow { display: inline-block; padding-block-end: .5rem; border-block-end: 2px solid var(--acc); }
+.cn-institute .in-hero .cn-h1 { margin-block-start: .5rem; }
+.cn-institute .in-hero-status { margin-block-start: 1.4rem; }
+.cn-institute .in-hero-media { position: relative; }
+.cn-institute .in-hero-media::before { content: ""; position: absolute; inset: 1rem -1rem -1rem 1rem; border: 2px solid var(--acc); border-radius: var(--rl); z-index: 0; }
+[dir="rtl"] .cn-institute .in-hero-media::before { inset: 1rem 1rem -1rem -1rem; }
+.cn-institute .in-hero-img { position: relative; z-index: 1; inline-size: 100%; aspect-ratio: 5 / 4; object-fit: cover; border-radius: var(--rl); box-shadow: 0 30px 60px -35px rgb(20 48 79 / .6); }
+.cn-institute .in-hero-ic { inline-size: 5rem; block-size: 5rem; opacity: .7; }
+.cn-institute .in-hero-media .cn-ph { aspect-ratio: 5 / 4; }
+
+/* facts */
+.cn-institute .in-facts { background: var(--pri); color: #fff; }
+.cn-institute .in-facts-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); margin: 0; }
+.cn-institute .in-facts-row div { display: flex; flex-direction: column-reverse; align-items: center; padding: 1.6rem 1rem; text-align: center; border-inline-start: 1px solid rgb(255 255 255 / .16); }
+.cn-institute .in-facts-row div:first-child { border-inline-start: 0; }
+.cn-institute .in-facts-row dd { margin: 0; font-family: var(--ff-d); font-size: clamp(1.8rem, 4vw, 2.6rem); line-height: 1.1; }
+.cn-institute .in-facts-row dt { font-size: .88rem; color: #c6d0dd; }
+
+/* departments */
+.cn-institute .in-dept { position: relative; }
+.cn-institute .in-dept > b { position: absolute; inset-block-start: 1rem; inset-inline-end: 1.2rem; z-index: 1; font-family: var(--ff-d); font-size: 1.5rem; color: var(--acc); opacity: .55; }
+.cn-institute .in-dept .cn-spec { block-size: 100%; border-block-start: 3px solid var(--pri); }
+.cn-institute .in-dept .cn-spec:hover { border-block-start-color: var(--acc); }
+
+/* about */
+.cn-institute .in-about { display: grid; gap: 2.5rem; grid-template-columns: 1fr; align-items: center; }
+@media (min-width: 900px) { .cn-institute .in-about { grid-template-columns: 1.1fr 1fr; gap: 4rem; } }
+.cn-institute .in-about-img { inline-size: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--rl); }
+.cn-institute .cn-doc { border-block-start: 3px solid var(--pri); }
+.cn-institute .cn-doc-photo { aspect-ratio: 1 / 1; }
+.cn-institute .cn-svc-list { border-block-start: 2px solid var(--pri); }
+
+/* visit panel */
+.cn-institute .in-visit { background: var(--pri); color: #eef1f5; padding-block: clamp(3rem, 7vw, 5rem); }
+.cn-institute .in-visit .cn-h2, .cn-institute .in-visit .cn-h3 { color: #fff; }
+.cn-institute .in-visit .cn-eyebrow { color: #e0bf7a; }
+.cn-institute .in-visit-grid { display: grid; gap: 2.5rem; grid-template-columns: 1fr; }
+@media (min-width: 900px) { .cn-institute .in-visit-grid { grid-template-columns: 1.3fr 1fr; gap: 4rem; } }
+.cn-institute .in-visit .cn-contact { margin-block-start: 1.6rem; }
+.cn-institute .in-visit .cn-contact li { background: rgb(255 255 255 / .07); border-color: rgb(255 255 255 / .16); }
+.cn-institute .in-visit .cn-contact li > svg { color: #e0bf7a; }
+.cn-institute .in-visit .cn-muted { color: #b9c5d4; }
+.cn-institute .in-visit .cn-link { color: #fff; }
+.cn-institute .in-visit-hours { padding: 1.6rem; background: rgb(255 255 255 / .07); border: 1px solid rgb(255 255 255 / .16); border-radius: var(--rl); align-self: start; }
+.cn-institute .in-visit .cn-hours div { border-color: rgb(255 255 255 / .2); }
+.cn-institute .in-visit .cn-hours [data-today] { color: #e0bf7a; }
+.cn-institute .in-visit .cn-hours [data-closed] dd { color: #b9c5d4; }
+
+/* closing call to action */
+.cn-institute .in-cta { background: var(--bg2); border-block-start: 3px double var(--line); padding-block: clamp(2.5rem, 6vw, 4rem); }
+.cn-institute .in-cta-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1.5rem; }
+.cn-institute .in-cta .cn-cta-row { margin: 0; }
+
+.cn-institute .cn-pagehead { background: var(--bg2); border-block-end: 3px double var(--line); }
+.cn-institute .cn-footer { border: 0; }
+.cn-institute .cn-footer .cn-brand-name { color: #fff; }
+.cn-institute .cn-footer .cn-muted { color: #b9c5d4; }
