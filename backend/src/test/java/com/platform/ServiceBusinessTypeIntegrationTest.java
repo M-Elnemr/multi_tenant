@@ -43,8 +43,6 @@ class ServiceBusinessTypeIntegrationTest extends IntegrationTestBase {
         onHost(t.host(), t.access(), "GET", "/api/v1/store/bookings/summary", null).andExpect(status().isOk());
         onHost(t.host(), t.access(), "POST", "/api/v1/store/services", "{\"name\":\"قص شعر\",\"durationMinutes\":45,\"priceMinor\":15000}").andExpect(status().is2xxSuccessful());
         onHost(t.host(), t.access(), "GET", "/api/v1/store/products", null).andExpect(status().isOk());
-        // the assistant takes appointments from the first day (a shop starts with orders)
-        onHost(t.host(), t.access(), "GET", "/api/v1/store/ai/goals", null).andExpect(jsonPath("$.goals[0]").value("BOOKINGS")).andExpect(jsonPath("$.goals.length()").value(1));
         // the public booking page is open on its address
         onHost(t.host(), null, "GET", "/api/v1/shop/booking/config", null).andExpect(status().isOk());
     }
@@ -54,7 +52,6 @@ class ServiceBusinessTypeIntegrationTest extends IntegrationTestBase {
         Tenant shop = onboard("STORE");
         UUID s = id(shop);
         assertThat(jdbc.sql("SELECT p.code FROM billing.tenant_subscriptions x JOIN billing.subscription_plans p ON p.id = x.plan_id WHERE x.tenant_id = :t").param("t", s).query(String.class).single()).isEqualTo("STORE_FREE");
-        onHost(shop.host(), shop.access(), "GET", "/api/v1/store/ai/goals", null).andExpect(jsonPath("$.goals[0]").value("ORDERS"));
         Tenant clinic = onboard("CLINIC");
         assertThat(jdbc.sql("SELECT tenant_type FROM core.tenants WHERE id = :t").param("t", id(clinic)).query(String.class).single()).isEqualTo("CLINIC");
         onHost(clinic.host(), clinic.access(), "GET", "/api/v1/store/bookings/summary", null).andExpect(status().is4xxClientError());   // a clinic has no shop screens

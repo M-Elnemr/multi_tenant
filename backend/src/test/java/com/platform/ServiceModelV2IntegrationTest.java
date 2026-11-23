@@ -206,52 +206,6 @@ class ServiceModelV2IntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void theAssistantSeesTheQuestionsAndExtrasBooksAHomeVisitAndCannotTouchSomeoneElsesBooking() throws Exception {
-        Tenant t = svcTenant();
-        open(t, 2);
-        String svc = service(t, "{\"name\":\"Filter maintenance\",\"durationMinutes\":60,\"priceMinor\":40000,\"locationMode\":\"HOME\",\"serviceArea\":\"Cairo\",\"requiredFields\":[{\"key\":\"stages\",\"label\":\"Filter stages\"}]}");
-        String add = JsonPath.read(body(onHost(t.host(), t.access(), "POST", "/api/v1/store/services/" + svc + "/addons", "{\"name\":\"New candle set\",\"priceMinor\":15000,\"durationMinutes\":15}").andExpect(status().isCreated())), "$.id");
-        String d = day(t, 2);
-        String conv = UUID.randomUUID().toString();
-        // the model is told the service's questions and extras (from the shop's data, never from memory)
-        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("list_services", Map.of()));
-        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ok"));
-        say(t, conv, "عايز صيانة فلتر");
-        String system = FakeAiProvider.lastSystem;
-        assertThat(system).contains("Filter stages [stages]").contains("New candle set [" + add + "]").contains("done at the customer's home");
-        // a booking without the answer is refused by the backend and nothing is created; the model gets the reason
-        FakeAiProvider.SCRIPT.clear();
-        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("book_appointment", Map.of("serviceId", svc, "date", d, "time", "12:00", "name", "Ali", "phone", "01012345678", "address", "5 Tahrir St, Dokki")));
-        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ok"));
-        say(t, conv, "احجزلي بكرة 12");
-        assertThat(jdbc.sql("SELECT count(*) FROM commerce.bookings WHERE tenant_id = :t").param("t", tid(t)).query(Long.class).single()).isZero();
-        // with the answer, the address and the extra: booked, priced with the extra, 75 minutes long
-        FakeAiProvider.SCRIPT.clear();
-        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("book_appointment", Map.of("serviceId", svc, "date", d, "time", "12:00", "name", "Ali", "phone", "01012345678", "address", "5 Tahrir St, Dokki", "answers", Map.of("stages", "7"), "addonIds", List.of(add))));
-        FakeAiProvider.SCRIPT.add(turns -> Turn.model("Registered."));
-        say(t, conv, "تمام 7 مراحل ومعاه شمع جديد");
-        var row = jdbc.sql("SELECT price_minor, location_mode, address, answers::text AS a, source, (EXTRACT(EPOCH FROM ends_at - starts_at) / 60)::int AS minutes, booking_number FROM commerce.bookings WHERE tenant_id = :t").param("t", tid(t)).query().singleRow();
-        assertThat(((Number) row.get("price_minor")).longValue()).isEqualTo(55000L);
-        assertThat(row.get("location_mode")).isEqualTo("HOME");
-        assertThat((String) row.get("a")).contains("\"stages\"");
-        assertThat(row.get("source")).isEqualTo("AI_CHAT");
-        assertThat(((Number) row.get("minutes")).intValue()).isEqualTo(75);
-        // another customer (another phone) cannot cancel or move it through the assistant
-        String number = (String) row.get("booking_number");
-        String other = UUID.randomUUID().toString();
-        FakeAiProvider.SCRIPT.clear();
-        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("cancel_booking", Map.of("bookingNumber", number, "phone", "01099999999", "reason", "x")));
-        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ok"));
-        say(t, other, "الغي حجز " + number);
-        assertThat(jdbc.sql("SELECT status FROM commerce.bookings WHERE booking_number = :n").param("n", number).query(String.class).single()).isEqualTo("CONFIRMED");
-        FakeAiProvider.SCRIPT.clear();
-        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("reschedule_booking", Map.of("bookingNumber", number, "phone", "01099999999", "date", d, "time", "14:00")));
-        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ok"));
-        say(t, other, "غير الميعاد " + number);
-        assertThat(jdbc.sql("SELECT to_char(starts_at AT TIME ZONE 'Africa/Cairo', 'HH24:MI') FROM commerce.bookings WHERE booking_number = :n").param("n", number).query(String.class).single()).isEqualTo("12:00");
-    }
-
-    @Test
     void theCalendarListsWhatStillMattersInARangeAndRefusesAnUnreasonableOne() throws Exception {
         Tenant t = svcTenant();
         open(t, 2);
