@@ -1,0 +1,7 @@
+{
+  "pn.flag.buy": ["Buy now", "اشتري الآن"],
+  "pn.flag.specs": ["At a glance", "المواصفات"],
+  "pn.flag.story": ["The story", "عن المنتج"],
+  "tpl.pn-flagship": ["Flagship", "فلاجشيب"],
+  "tpl.pn-flagship.for": ["One product, told in full: photos, specs, reviews", "منتج واحد بالتفصيل: صور ومواصفات وآراء"]
+}
