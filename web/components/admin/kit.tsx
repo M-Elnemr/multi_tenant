@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useI18n } from "../i18n-provider";
 import { Icon, type IconName } from "../icons";
 import { whatsappLink } from "@/lib/whatsapp";
@@ -57,8 +57,9 @@ export function ContactButtons({ phone, name, size = "sm" }: { phone: string; na
 /** Subscription time left: a thin bar plus the number of days, coloured by urgency. */
 export function PeriodBar({ start, end, className }: { start?: string; end?: string; className?: string }) {
   const { t } = useI18n();
+  const [now] = useState(() => Date.now());   // fixed at first render: pure, and a day-level figure needs no ticking
   if (!end) return <span className="text-faint">-</span>;
-  const left = Math.ceil((new Date(end).getTime() - Date.now()) / 86_400_000);
+  const left = Math.ceil((new Date(end).getTime() - now) / 86_400_000);
   const total = start ? Math.max(1, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86_400_000)) : 30;
   const pct = Math.min(100, Math.max(0, (left / total) * 100));
   const tone = left <= 0 ? "bg-red-500" : left <= 7 ? "bg-amber-500" : "bg-emerald-500";
