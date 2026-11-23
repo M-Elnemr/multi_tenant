@@ -149,6 +149,35 @@ final class FactCheck {
     record Mention(String slug, int start, int end) {}
 
     /**
+     * The products the text asks for: the ones it names, and a product whose name is another product's name plus extra words that the text also says («الزينترا بوك 14 الأوبن بوكس» for the open-box
+     * «لاب توب زينترا بوك 14 أوبن بوكس», whose name holds the new laptop's name). The longer reading wins: the shorter product is dropped.
+     */
+    static List<String> askedSlugs(String text, List<Named> names) {
+        java.util.LinkedHashSet<String> slugs = new java.util.LinkedHashSet<>();
+        for (Mention m : mentions(text, names)) slugs.add(m.slug());
+        if (text == null || text.isBlank()) return new ArrayList<>(slugs);
+        List<String> words = new ArrayList<>();
+        for (Tok t : tokens(light(text), 0, light(text).length())) words.add(t.word());
+        for (Named p : names) {
+            List<String> pw = p.words();
+            if (pw.size() < 4 || slugs.contains(p.slug())) continue;
+            long found = pw.stream().filter(w -> words.stream().anyMatch(x -> same(x, w))).count();
+            if (found < 3) continue;
+            for (Named q : names) {
+                List<String> qw = q.words();
+                if (q == p || qw.size() < 2 || qw.size() >= pw.size() || !pw.containsAll(qw)) continue;
+                List<String> extra = pw.stream().filter(w -> !qw.contains(w)).toList();
+                if (extra.isEmpty() || !extra.stream().allMatch(w -> words.stream().anyMatch(x -> same(x, w)))) continue;
+                long base = qw.stream().filter(w -> words.stream().anyMatch(x -> same(x, w))).count();
+                if (base * 2 < qw.size()) continue;   // the text says most of the shorter name too
+                slugs.add(p.slug()); slugs.remove(q.slug());
+                break;
+            }
+        }
+        return new ArrayList<>(slugs);
+    }
+
+    /**
      * The products named in the text (longest name wins where names overlap: «وجبة ساندوتش شاورما فراخ» over «ساندوتش شاورما فراخ»). A name said with a word left out
      * («جاكيت بافر رجالي» for «جاكيت بافر شتوي رجالي») counts when it fits one product only. A one-word name after «بـ» is an ingredient, not the product («بالثومية»).
      */
