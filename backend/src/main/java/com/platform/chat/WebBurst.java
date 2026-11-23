@@ -93,14 +93,14 @@ public class WebBurst {
         return burst.waiting(key) || gate.busy(key);
     }
 
-    /** The customer is typing: the quiet window of the lines already waiting restarts. At most once a second per chat; costs nothing when no line is waiting. */
+    /** The customer is typing: the quiet window of the lines already waiting restarts. At most four times a second per chat; costs nothing when no line is waiting. */
     public void typing(UUID tenantId, String conversationId) {
         if (!on) return;
         String key = key(tenantId, conversationId);
         long now = System.currentTimeMillis();
         Long before = lastTyping.put(key, now);
         if (lastTyping.size() > 5000) lastTyping.entrySet().removeIf(e -> now - e.getValue() > 60_000);
-        if (before != null && now - before < 1000) return;
+        if (before != null && now - before < 250) return;
         burst.touch(key);
     }
 
