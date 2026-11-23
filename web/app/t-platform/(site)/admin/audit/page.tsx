@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { Page, useApi } from "@/components/hooks";
 import { useI18n } from "@/components/i18n-provider";
-import { ErrorText, Loading, PageHeader, Pager, Table, Td } from "@/components/ui";
+import { Empty, ErrorText, Loading, PageHeader, Pager, Table, Td } from "@/components/ui";
 import { AdminSearch } from "@/components/admin/kit";
 import { dateTime } from "@/lib/format";
 
@@ -27,6 +27,7 @@ export default function Audit() {
               <tr key={r.id}><Td className="tnum whitespace-nowrap">{dateTime(r.occurredAt, locale)}</Td><Td className="font-mono text-xs">{r.action}</Td><Td>{r.entityType}</Td><Td className="font-mono text-xs">{r.tenantId ? <Link href={`/admin/tenants/${r.tenantId}`} className="text-brand hover:underline">{r.tenantId.slice(0, 8)}</Link> : "-"}</Td></tr>
             ))}
           </Table>
+          {data?.data.length === 0 && <Empty>{t("admin.noAudit")}</Empty>}
           <Pager meta={data?.meta} onPage={setPage} />
         </>
       )}

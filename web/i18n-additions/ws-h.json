@@ -1,18 +1,70 @@
 {
- "admin.nav.operate": ["Operate", "التشغيل"],
- "admin.nav.growth": ["Growth", "النمو"],
- "admin.nav.ai": ["AI", "الذكاء الاصطناعي"],
- "admin.nav.platform": ["Platform", "المنصة"],
- "admin.loadFailed": ["Could not load this page.", "تعذر تحميل الصفحة."],
- "admin.retry": ["Try again", "حاول تاني"],
- "admin.refresh": ["Refresh", "تحديث"],
- "admin.newLast7": ["{n} new in the last 7 days", "{n} جديد في آخر ٧ أيام"],
- "admin.attnCount": ["{n} need attention", "{n} محتاج انتباه"],
- "admin.typeByStatus": ["Type by status", "النوع حسب الحالة"],
- "admin.noPlans": ["No plans yet", "مفيش باقات لسه"],
- "admin.tenantsSub": ["Every business on the platform, with its plan and status.", "كل الأنشطة على المنصة مع باقتها وحالتها."],
- "admin.resultsCount": ["{n} results", "{n} نتيجة"],
- "admin.noTenantsFiltered": ["Nothing matches these filters.", "مفيش نتائج مطابقة للفلاتر دي."],
- "admin.business": ["Business", "النشاط"],
- "admin.openFull": ["Open full page", "افتح الصفحة كاملة"]
+ "admin.nav.operate": [
+  "Operate",
+  "التشغيل"
+ ],
+ "admin.nav.growth": [
+  "Growth",
+  "النمو"
+ ],
+ "admin.nav.ai": [
+  "AI",
+  "الذكاء الاصطناعي"
+ ],
+ "admin.nav.platform": [
+  "Platform",
+  "المنصة"
+ ],
+ "admin.loadFailed": [
+  "Could not load this page.",
+  "تعذر تحميل الصفحة."
+ ],
+ "admin.retry": [
+  "Try again",
+  "حاول تاني"
+ ],
+ "admin.refresh": [
+  "Refresh",
+  "تحديث"
+ ],
+ "admin.newLast7": [
+  "{n} new in the last 7 days",
+  "{n} جديد في آخر ٧ أيام"
+ ],
+ "admin.attnCount": [
+  "{n} need attention",
+  "{n} محتاج انتباه"
+ ],
+ "admin.typeByStatus": [
+  "Type by status",
+  "النوع حسب الحالة"
+ ],
+ "admin.noPlans": [
+  "No plans yet",
+  "مفيش باقات لسه"
+ ],
+ "admin.tenantsSub": [
+  "Every business on the platform, with its plan and status.",
+  "كل الأنشطة على المنصة مع باقتها وحالتها."
+ ],
+ "admin.resultsCount": [
+  "{n} results",
+  "{n} نتيجة"
+ ],
+ "admin.noTenantsFiltered": [
+  "Nothing matches these filters.",
+  "مفيش نتائج مطابقة للفلاتر دي."
+ ],
+ "admin.business": [
+  "Business",
+  "النشاط"
+ ],
+ "admin.openFull": [
+  "Open full page",
+  "افتح الصفحة كاملة"
+ ],
+ "admin.noAudit": [
+  "No audit entries.",
+  "لا توجد سجلات."
+ ]
 }

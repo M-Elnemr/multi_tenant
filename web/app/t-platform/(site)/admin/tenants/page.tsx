@@ -19,7 +19,7 @@ type Row = {
   currentPeriodStart?: string; currentPeriodEnd?: string; primaryHost?: string; ownerName?: string; ownerPhone?: string; hasPayRequest: boolean; pointsUsedMinor?: number;
 };
 
-export const daysLeft = (iso?: string) => (iso ? Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000) : null);
+const daysLeft = (iso?: string) => (iso ? Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000) : null);
 
 function Inner() {
   const { t, locale } = useI18n();

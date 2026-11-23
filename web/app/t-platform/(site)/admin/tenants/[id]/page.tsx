@@ -37,6 +37,7 @@ export default function TenantDetail({ params }: { params: Promise<{ id: string 
   const { t, locale } = useI18n();
   const router = useRouter();
   const { can } = useMe();
+  const typeLabel = useTypeLabel();
   const { data, error, loading, reload } = useApi<Detail>(`platform/tenants/${id}`);
   const reason = "";
   const [planCode, setPlanCode] = useState("");
@@ -67,7 +68,6 @@ export default function TenantDetail({ params }: { params: Promise<{ id: string 
   const chosen = planCode || data.subscription.planCode?.replace("_FREE", store ? "_STANDARD" : "_PRO") || plans[0];
   const o = data.owner;
   const left = daysTo(data.subscription.currentPeriodEnd);
-  const typeLabel = useTypeLabel();
   const sub = data.subscription;
   return (
     <>
