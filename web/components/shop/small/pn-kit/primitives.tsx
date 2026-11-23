@@ -2,6 +2,8 @@
 import Link from "next/link";
 import { Icon } from "@/components/icons";
 import type { ShopProduct } from "@/components/shop/product-card";
+import type { ProductDetail } from "@/app/t-store/(shop)/(page)/products/[slug]/buy";
+import { backendJson } from "@/lib/backend";
 import { money } from "@/lib/format";
 import type { Locale } from "@/lib/i18n";
 import { mediaUrl } from "@/lib/media";
@@ -45,6 +47,10 @@ export function PnCard({ x, locale, t }: { x: ShopProduct; locale: Locale; t: T 
     </Link>
   );
 }
+
+/** The product's full record (description, specs, photos, reviews); null when the call fails so a page still renders from the card data. */
+export const loadDetail = (slug: string, locale: Locale) => backendJson<ProductDetail>(`/shop/products/${encodeURIComponent(slug)}?lang=${locale}`).catch(() => null);
+export const firstParas = (text: string | undefined, n: number) => (text ?? "").split(/\n+/).map((s) => s.trim()).filter(Boolean).slice(0, n);
 
 export function PnEmpty({ name, t }: { name: string; t: T }) {
   return <section className="pn-wrap pn-empty"><h1>{name}</h1><p>{t("shop.empty")}</p></section>;

@@ -1,7 +1,74 @@
 {
-  "pn.flag.buy": ["Buy now", "اشتري الآن"],
-  "pn.flag.specs": ["At a glance", "المواصفات"],
-  "pn.flag.story": ["The story", "عن المنتج"],
-  "tpl.pn-flagship": ["Flagship", "فلاجشيب"],
-  "tpl.pn-flagship.for": ["One product, told in full: photos, specs, reviews", "منتج واحد بالتفصيل: صور ومواصفات وآراء"]
+  "pn.flag.buy": [
+    "Buy now",
+    "اشتري الآن"
+  ],
+  "pn.flag.specs": [
+    "At a glance",
+    "المواصفات"
+  ],
+  "pn.flag.story": [
+    "The story",
+    "عن المنتج"
+  ],
+  "tpl.pn-flagship": [
+    "Flagship",
+    "فلاجشيب"
+  ],
+  "tpl.pn-flagship.for": [
+    "One product, told in full: photos, specs, reviews",
+    "منتج واحد بالتفصيل: صور ومواصفات وآراء"
+  ],
+  "pn.show.collection": [
+    "The collection",
+    "المجموعة"
+  ],
+  "pn.launch.d": [
+    "days",
+    "يوم"
+  ],
+  "pn.launch.h": [
+    "hours",
+    "ساعة"
+  ],
+  "pn.launch.m": [
+    "min",
+    "دقيقة"
+  ],
+  "pn.launch.s": [
+    "sec",
+    "ثانية"
+  ],
+  "tpl.pn-showcase": [
+    "Showcase",
+    "شووكيس"
+  ],
+  "tpl.pn-showcase.for": [
+    "A dark gallery: one exhibit per product",
+    "معرض داكن: عرض كامل لكل منتج"
+  ],
+  "tpl.pn-trio": [
+    "Trio",
+    "تريو"
+  ],
+  "tpl.pn-trio.for": [
+    "A boutique board that fits one, two or three products",
+    "بوتيك متوازن لمنتج أو اثنين أو ثلاثة"
+  ],
+  "tpl.pn-launch": [
+    "Launch",
+    "لانش"
+  ],
+  "tpl.pn-launch.for": [
+    "A loud launch poster with a real countdown when there is an offer",
+    "بوستر إطلاق جريء مع عد تنازلي فعلي عند وجود عرض"
+  ],
+  "tpl.pn-brand": [
+    "Brand",
+    "براند"
+  ],
+  "tpl.pn-brand.for": [
+    "Minimal and text-first, products as a quiet list",
+    "بسيط والكلمة أولاً، والمنتجات كقائمة هادئة"
+  ]
 }

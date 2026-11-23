@@ -14,7 +14,7 @@ import { EditBar, EditFrame, EditProvider } from "@/components/site-edit";
 import { Icon } from "@/components/icons";
 import { shopLook } from "@/lib/shop-look";
 import { ServiceHome, type SvcConfig } from "@/components/shop/service/service-home";
-import { FlagshipHome } from "@/components/shop/small/pn-flagship/home";   // DR-D
+import { pnHome } from "@/components/shop/small/pn-registry";   // DR-D
 import { SmallCatalogHome } from "@/components/shop/small/small-home";
 import type { CardKind, GridKind } from "@/components/shop/templates/registry";
 import { Categories, Hero, TRUST_ICONS } from "@/components/shop/templates/sections";
@@ -62,7 +62,8 @@ export default async function StoreHome({ searchParams }: { searchParams?: Promi
   ]);
   const p = prof ?? undefined;
   const smallProducts = [...home.featured, ...home.bestSellers, ...home.newest].filter((x, i, a) => a.findIndex((y) => y.id === x.id) === i);
-  if (small && template === "pn-flagship") return <FlagshipHome p={p} products={smallProducts} t={t} locale={locale} />;   // DR-D
+  const PnHome = small ? pnHome(template) : undefined;
+  if (PnHome) return PnHome({ p, products: smallProducts, t, locale });   // DR-D
   if (small) {   // a shop with very few products: the product is the page
     return <SmallCatalogHome look={small} p={p} products={[...home.featured, ...home.bestSellers, ...home.newest].filter((x, i, a) => a.findIndex((y) => y.id === x.id) === i)} branches={branches} t={t} locale={locale} />;
   }
