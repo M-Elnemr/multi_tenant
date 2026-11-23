@@ -82,12 +82,14 @@ class WebChatBurstIntegrationTest extends IntegrationTestBase {
         Tenant t = onboard("STORE");
         String conv = UUID.randomUUID().toString(), tag = "zr" + System.nanoTime();
         AtomicInteger first = new AtomicInteger();
+        java.util.concurrent.atomic.AtomicBoolean oldDone = new java.util.concurrent.atomic.AtomicBoolean();
         List<String> second = Collections.synchronizedList(new ArrayList<>());
         for (int i = 0; i < 6; i++) FakeAiProvider.SCRIPT.add(FakeAiProvider.only(tag, turns -> {   // decided by what the model is shown, so any extra call of the pipeline gets the same answer
             String last = turns.get(turns.size() - 1).text();
             if (last != null && last.contains("وهتوصلي بكره")) { second.add(last); return Turn.model("الرد النهائي على الاتنين"); }
             first.incrementAndGet();   // the first reply takes a while
             try { Thread.sleep(2500); } catch (InterruptedException ignored) { }
+            oldDone.set(true);
             return Turn.model("الرد القديم");
         }));
         post(t, conv, tag + " عايز جاكيت");
@@ -100,6 +102,9 @@ class WebChatBurstIntegrationTest extends IntegrationTestBase {
         assertThat(second).hasSize(1);
         assertThat(second.get(0)).contains("عايز جاكيت").contains("وهتوصلي بكره");
         assertThat(roles(done, "user")).as("no customer line lost or saved twice").hasSize(2);
+        for (int i = 0; i < 100 && !oldDone.get(); i++) Thread.sleep(100);   // the dropped first attempt is still inside its slow model call: let it end here, so it cannot take scripted answers of the next test
+        Thread.sleep(300);
+        assertThat(roles(state(t, conv), "assistant")).as("the dropped attempt never adds a second reply").containsExactly("الرد النهائي على الاتنين");
         assertThat(jdbc.sql("SELECT ai_msgs FROM chat.conversations WHERE external_id = :e").param("e", conv).query(Integer.class).single()).as("the dropped attempt and its rerun are ONE customer turn: counted (and charged) once").isEqualTo(1);
     }
 
