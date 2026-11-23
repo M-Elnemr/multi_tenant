@@ -8,6 +8,9 @@ import { WellnessFooter } from "./vn-wellness/footer";
 import { WellnessHome } from "./vn-wellness/home";
 import { WellnessCatalog, WellnessContact, WellnessDetail } from "./vn-wellness/pages";
 import { WellnessBook, WellnessManage } from "./vn-wellness/book";
+import { RepairHeader } from "./vn-repair/header";
+import { RepairFooter } from "./vn-repair/footer";
+import { RepairCatalog, RepairDetail, RepairHome } from "./vn-repair/pages";
 import { HomeproHeader } from "./vn-homepro/header";
 import { HomeproFooter } from "./vn-homepro/footer";
 import { HomeproCatalog, HomeproDetail, HomeproHome } from "./vn-homepro/pages";
@@ -24,6 +27,7 @@ const bookWith = (layout: BookLayout) => function Book(p: { cfg: VnConfig; init:
 /** Designs that are built so far; a vn-* id without an entry here falls back to the shared service pages. */
 export const VN_DESIGNS: Partial<Record<VnTemplateId, VnDesign>> = {
   "vn-wellness": { Header: WellnessHeader, Footer: WellnessFooter, Home: WellnessHome, Catalog: WellnessCatalog, Detail: WellnessDetail, Contact: WellnessContact, Book: WellnessBook, Manage: WellnessManage },
+  "vn-repair": { Header: RepairHeader, Footer: RepairFooter, Home: RepairHome, Catalog: RepairCatalog, Detail: RepairDetail, Contact: VnContact, Book: bookWith("steps"), Manage: ManageUI },
   "vn-homepro": { Header: HomeproHeader, Footer: HomeproFooter, Home: HomeproHome, Catalog: HomeproCatalog, Detail: HomeproDetail, Contact: VnContact, Book: bookWith("request"), Manage: ManageUI },
 };
 

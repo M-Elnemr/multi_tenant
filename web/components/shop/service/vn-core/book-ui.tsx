@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useI18n } from "@/components/i18n-provider";
 import { PhoneInput } from "@/components/inputs";
 import { ErrorText } from "@/components/ui";
@@ -144,6 +145,10 @@ export function BookUI({ cfg, init, layout = "steps", noteLabel }: { cfg: VnConf
 export function ManageUI() {
   const { t, locale } = useI18n();
   const m = useManage();
+  const sp = useSearchParams();
+  const pre = sp.get("n");
+  const { setNumber } = m;
+  useEffect(() => { if (pre) setNumber(pre); }, [pre, setNumber]);
   const f = m.found;
   return (
     <div className="vf-page vf-wrap"><div className="vf-manage">
