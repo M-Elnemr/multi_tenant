@@ -55,14 +55,10 @@ public class MetaChannelService {
     private final ExecutorService pool;
     private final java.util.concurrent.ScheduledExecutorService holder = Executors.newSingleThreadScheduledExecutor();
     private final InboundBurst burst;
-    private final ConversationGate gate;
-    @Value("${app.meta.typing-indicator:false}") private boolean typingIndicator;
     private final MediaReader media;
 
     public MetaChannelService(JdbcClient jdbc, MetaGraph graph, TokenCrypto crypto, ChatService chat, LoginThrottle throttle, AuditService audit, WhatsAppConfirmService waConfirm, WaReportService waReport, ProductShare share, com.platform.commerce.GenderService genders, MediaReader media,
-                              @Value("${app.meta.app-secret:}") String appSecret, @Value("${app.meta.verify-token:}") String verifyToken, @Value("${app.meta.async:true}") boolean async, @Value("${app.chat.burst-ms:0}") long burstMs,
-                              @Value("${app.chat.burst-max-ms:15000}") long burstMaxMs, ConversationGate gate) {
-        this.gate = gate;
+                              @Value("${app.meta.app-secret:}") String appSecret, @Value("${app.meta.verify-token:}") String verifyToken, @Value("${app.meta.async:true}") boolean async, @Value("${app.chat.burst-ms:5000}") long burstMs) {
         this.jdbc = jdbc;
         this.graph = graph;
         this.crypto = crypto;
@@ -76,8 +72,8 @@ public class MetaChannelService {
         this.media = media;
         this.appSecret = appSecret == null || appSecret.isBlank() ? null : appSecret.trim();
         this.verifyToken = verifyToken == null || verifyToken.isBlank() ? null : verifyToken.trim();
-        this.pool = async ? Executors.newFixedThreadPool(8) : null;
-        this.burst = pool == null ? new InboundBurst(holder, Runnable::run, 0, 0) : new InboundBurst(holder, pool, burstMs, burstMaxMs);
+        this.pool = async ? Executors.newFixedThreadPool(4) : null;
+        this.burst = pool == null ? new InboundBurst(holder, Runnable::run, 0, 0) : new InboundBurst(holder, pool, burstMs, 15_000);
         ReplyMetrics.pool("meta", pool);   // measurement only: how busy the 4 workers are and how many replies wait for one
         ReplyMetrics.gauge("elmanassa.burst.pending", burst, InboundBurst::pendingBursts, "pool", "meta");
     }
@@ -355,7 +351,7 @@ public class MetaChannelService {
         // a photo or voice note is read into text (a few seconds); what the customer sends meanwhile waits for it, so «بكام ده؟» is answered with the photo, in order
         if ((text == null || text.isBlank()) && ref != null && media.enabled() && chat.enabled((UUID) row.get("tenant_id"), platform) && chat.hasPoints((UUID) row.get("tenant_id")) && mediaAllowed("media|" + key)) {
             if (burst.enabled()) {
-                var release = burst.hold(key, new ChatService.InboundMeta(mid, reply), (joined, metas) -> gate.run("meta|" + key, joined, metas, (j, m2, carried) -> respond(platform, accountId, sender, j, row, name, ChatService.input(m2).withCarried(carried))));
+                var release = burst.hold(key, new ChatService.InboundMeta(mid, reply), (joined, metas) -> respond(platform, accountId, sender, joined, row, name, ChatService.input(metas)));
                 String read = null;
                 try { read = readMedia(platform, row, ref); } finally { release.accept(read); }
                 return;
@@ -363,7 +359,7 @@ public class MetaChannelService {
             text = readMedia(platform, row, ref);
         }
         // a customer's quick lines are joined and answered once (see InboundBurst); empty messages go straight on
-        if (burst.enabled() && text != null && !text.isBlank()) { burst.add(key, text, new ChatService.InboundMeta(mid, reply), (joined, metas) -> gate.run("meta|" + key, joined, metas, (j, m2, carried) -> respond(platform, accountId, sender, j, row, name, ChatService.input(m2).withCarried(carried)))); return; }
+        if (burst.enabled() && text != null && !text.isBlank()) { burst.add(key, text, new ChatService.InboundMeta(mid, reply), (joined, metas) -> respond(platform, accountId, sender, joined, row, name, ChatService.input(metas))); return; }
         respond(platform, accountId, sender, text, row, name, ChatService.input(List.of(new ChatService.InboundMeta(mid, reply))));
     }
 
@@ -418,10 +414,9 @@ public class MetaChannelService {
                 } else {
                     // A search or a long answer can take a while: after a few seconds tell the customer we are still on it.
                     boolean arabic = text.codePoints().anyMatch(cp -> cp >= 0x0600 && cp <= 0x06FF);
-                    if (typingIndicator && !"WHATSAPP".equals(platform)) try { graph.post("me/messages", token, Map.of("recipient", Map.of("id", sender), "sender_action", "typing_on")); } catch (RuntimeException ignored) { /* best effort */ }   // DR-B: «typing…» while the reply is written (Messenger and Instagram, off unless CHAT_META_TYPING=true)
                     var hold = holder.schedule(() -> {
-                        try { if (gate.fillerAllowed("meta|" + platform + "|" + accountId + "|" + sender)) send(platform, accountId, sender, token, arabic ? "لحظات معايا... 🌸" : "One moment, I am checking for you... 🌸"); } catch (RuntimeException ignored) { /* best effort */ }
-                    }, 12, java.util.concurrent.TimeUnit.SECONDS);   // DR-B: a person says «one moment» only when it really takes a while
+                        try { send(platform, accountId, sender, token, arabic ? "لحظات معايا... 🌸" : "One moment, I am checking for you... 🌸"); } catch (RuntimeException ignored) { /* best effort */ }
+                    }, 5, java.util.concurrent.TimeUnit.SECONDS);
                     try {
                         var reply = chat.reply(tenantId, platform, sender, null, text.length() > 1000 ? text.substring(0, 1000) : text, name, in);
                         if (reply.text() == null || reply.text().isBlank()) return;   // the shop team took this chat over: nothing goes out automatically
@@ -560,7 +555,7 @@ public class MetaChannelService {
     @Scheduled(fixedDelay = 300_000, initialDelay = 120_000)
     public void sendDue() {
         // a chat a person handles (taken over or paused) gets no automatic follow-up from the assistant
-        jdbc.sql("UPDATE chat.follow_ups f SET status = 'SKIPPED' FROM chat.conversations c WHERE c.id = f.conversation_id AND f.status = 'PENDING' AND f.due_at <= now() AND (c.takeover OR c.frustration_paused OR coalesce(c.ai_paused_until > now(), FALSE) OR c.status = 'CLOSED')").update();
+        jdbc.sql("UPDATE chat.follow_ups f SET status = 'SKIPPED' FROM chat.conversations c WHERE c.id = f.conversation_id AND f.status = 'PENDING' AND f.due_at <= now() AND (c.takeover OR coalesce(c.ai_paused_until > now(), FALSE) OR c.status = 'CLOSED')").update();
         for (var f : jdbc.sql("SELECT f.id, f.tenant_id, f.body, c.channel, c.external_id FROM chat.follow_ups f JOIN chat.conversations c ON c.id = f.conversation_id WHERE f.status = 'PENDING' AND f.due_at <= now() AND EXISTS (SELECT 1 FROM core.tenants tn WHERE tn.id = f.tenant_id AND tn.status NOT IN ('SUSPENDED','CANCELLED','ARCHIVED')) LIMIT 100").query().listOfRows()) {
             boolean ok = deliver((UUID) f.get("tenant_id"), (String) f.get("channel"), (String) f.get("external_id"), (String) f.get("body"));
             jdbc.sql("UPDATE chat.follow_ups SET status = :s WHERE id = :i").param("s", ok ? "SENT" : "SKIPPED").param("i", f.get("id")).update();

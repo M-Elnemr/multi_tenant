@@ -35,7 +35,7 @@ final class ReplyTrace {
      */
     static final Set<String> EVENTS = Set.of("webhook_received", "burst_wait", "queue_wait", "processing_started", "phase", "context_load", "memory_load", "rag", "prompt_build", "prompt_ready",
             "provider_request_started", "provider_response_completed", "provider_request_failed", "provider_request_timed_out", "provider_attempt_hedged", "provider_hedge_request", "provider_call",
-            "fallback_started", "fallback_completed", "tool", "rule_checks", "rule_check_step", "rewrite", "review", "outbound_completed", "outbound_failed", "reply_completed", "reply_failed", "note");
+            "fallback_started", "fallback_completed", "tool", "rule_checks", "rewrite", "review", "outbound_completed", "outbound_failed", "reply_completed", "reply_failed", "note");
 
     /** How one attribute may look: NUM, BOOL, or a string from a set or matching a pattern. */
     private record Spec(char kind, Set<String> values, Pattern pattern, long max) {
@@ -45,23 +45,15 @@ final class ReplyTrace {
         static Spec pat(String regex) { return new Spec('S', null, Pattern.compile(regex), 0); }
     }
 
-    /** The only shape an id attribute may have: a UUID. It is exempt from the digit guard below (a UUID has many digits) because it can only come from the provider's response header or our own key table. */
-    private static final String UUID_SHAPE = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
     private static final Map<String, Spec> SPECS = new java.util.HashMap<>();
     static {
-        for (String n : List.of("lines", "call", "attempt", "attempts", "round", "problems", "rewrites", "history_messages", "facts", "tools", "model_calls", "inflight")) SPECS.put(n, Spec.num(10_000));   // counts
+        for (String n : List.of("lines", "call", "attempt", "attempts", "round", "problems", "rewrites", "history_messages", "facts", "tools", "model_calls")) SPECS.put(n, Spec.num(10_000));   // counts
         for (String n : List.of("quiet_ms", "throttle_ms", "after_ms", "waited_ms", "deterministic_ms", "rewrite_ms")) SPECS.put(n, Spec.num(10_000_000));       // milliseconds (under 3 hours)
-        for (String n : List.of("in", "out", "cached", "chars", "reasoning", "c_rules", "c_facts", "c_catalog", "c_blocks", "c_rag", "c_history", "c_tools", "c_msg", "c_result")) SPECS.put(n, Spec.num(10_000_000));                                                              // tokens and characters
+        for (String n : List.of("in", "out", "cached", "chars")) SPECS.put(n, Spec.num(10_000_000));                                                              // tokens and characters
         for (String n : List.of("direct", "retry", "hedged", "usable", "allowed", "parallel", "winner", "billed", "ok", "next_model_call", "accepted_original", "threw", "differs", "confirmed", "ran", "unavailable",
                 "ai_unavailable")) SPECS.put(n, Spec.bool());
         SPECS.put("model", Spec.pat("[A-Za-z][A-Za-z0-9_.\\-]{0,39}"));   // a provider code or a configured model id, e.g. glm-5
         SPECS.put("provider", Spec.pat("[a-z][a-z0-9_]{0,11}"));
-        // latency evidence (measurement only): the PROVIDER'S own request id (a random id the provider generates, quoted back to it to find our request on its side), the protocol the exchange used,
-        // our internal id of the pool key (never the key or any part of it) and the name of a rule check
-        SPECS.put("request_id", Spec.pat(UUID_SHAPE));
-        SPECS.put("http", Spec.of("1.1", "2", "none"));
-        SPECS.put("key", Spec.pat("fixed|env-[0-9]{1,2}|" + UUID_SHAPE));
-        SPECS.put("check", Spec.pat("[A-Za-z_]{1,32}"));
         SPECS.put("from", Spec.pat("[a-z][a-z0-9_]{0,11}"));
         SPECS.put("to", Spec.pat("[a-z][a-z0-9_]{0,11}"));
         SPECS.put("role", Spec.of("primary", "fallback", "second_opinion"));
@@ -153,23 +145,6 @@ final class ReplyTrace {
 
     static ReplyTrace current() { return CURRENT.get(); }
 
-    /** DR-R: what a model call needs from this thread to be traced from another one (the early failover runs two models at once). */
-    record Context(ReplyTrace trace, String role, String purpose) {}
-
-    static Context capture() { return new Context(CURRENT.get(), ROLE.get(), PURPOSE.get()); }
-
-    static void adopt(Context c) { if (c.trace() == null) CURRENT.remove(); else CURRENT.set(c.trace()); role(c.role()); purpose(c.purpose()); }
-
-    /** The worker thread is done: nothing of the reply stays on it. */
-    static void release() { CURRENT.remove(); ROLE.remove(); PURPOSE.remove(); }
-
-    /** DR-R: how this reply ended when it is neither completed nor failed: "deferred" (every model failed, the turn is retried in the background) or "recovered" (the retry answered). */
-    static void outcome(String outcome) { ReplyTrace t = CURRENT.get(); if (t != null) t.outcome = outcome; }
-
-    private volatile String outcome;
-
-    String outcome() { return outcome != null ? outcome : failed ? "failed" : "completed"; }
-
     /** The id of the reply running on this thread (as logged and stored), or null. */
     static String currentId() { ReplyTrace t = CURRENT.get(); return t == null ? null : t.id; }
 
@@ -214,7 +189,7 @@ final class ReplyTrace {
             closed = true;
             summary = summarize();
             ReplyMetrics.reply(this);
-            org.slf4j.LoggerFactory.getLogger(ReplyTrace.class).info("Reply trace: id={} source={} channel={} outcome={} {}", id, source, channel, outcome(), compact(summary));
+            org.slf4j.LoggerFactory.getLogger(ReplyTrace.class).info("Reply trace: id={} source={} channel={} outcome={} {}", id, source, channel, failed ? "failed" : "completed", compact(summary));
             Consumer<ReplyTrace> s = sink;
             if (s != null && tenantId != null) s.accept(this);
         } catch (RuntimeException ignored) { /* see finish */ }
@@ -281,23 +256,6 @@ final class ReplyTrace {
         return new Call(t, t == null ? 0 : t.callSeq.incrementAndGet(), provider, model, role(), purpose());
     }
 
-    /** What identifies one HTTP exchange for later correlation with the provider: its own request id, the protocol, our id of the key used, GLM calls in flight when it was sent. Never a secret. */
-    record RequestMeta(String requestId, String http, String keyId, int inflight) {
-        static final RequestMeta NONE = new RequestMeta("", "none", "", 0);
-
-        /** The attributes this adds to an event (empty values are left out). */
-        Object[] kv() {
-            List<Object> o = new ArrayList<>();
-            if (requestId != null && !requestId.isEmpty()) { o.add("request_id"); o.add(requestId); }
-            o.add("http"); o.add(http == null || http.isEmpty() ? "none" : http);
-            if (keyId != null && !keyId.isEmpty()) { o.add("key"); o.add(keyId); }
-            if (inflight > 0) { o.add("inflight"); o.add(inflight); }
-            return o.toArray();
-        }
-    }
-
-    private static Object[] concat(Object[] a, Object[] b) { Object[] r = java.util.Arrays.copyOf(a, a.length + b.length); System.arraycopy(b, 0, r, a.length, b.length); return r; }
-
     static final class Call {
         private final ReplyTrace tr;
         final int id;
@@ -305,23 +263,6 @@ final class ReplyTrace {
         final long start = System.nanoTime();
         private final AtomicInteger attempts = new AtomicInteger();
         private volatile boolean hedged, ended;
-        private volatile RequestMeta meta = RequestMeta.NONE;
-        private volatile String keyId = "";
-        private volatile int inflightAtStart;
-
-        /** The exchange the call's result came from (the winner of a hedge, or the last attempt): its request id, protocol, key and load. */
-        void meta(RequestMeta m) { if (m != null) meta = m; }
-
-        /** The key (our internal id) the first request of the call is sent with, known before there is any response. */
-        void key(String id) { if (id != null) keyId = id; }
-
-        void inflight(int n) { if (inflightAtStart == 0) inflightAtStart = n; }
-
-        /** The call's identifying attributes: what a response gave, else what was known before sending. */
-        private Object[] metaKv() {
-            RequestMeta m = meta;
-            return new RequestMeta(m.requestId(), m.http(), m.keyId() == null || m.keyId().isEmpty() ? keyId : m.keyId(), m.inflight() > 0 ? m.inflight() : inflightAtStart).kv();
-        }
 
         Call(ReplyTrace tr, int id, String provider, String model, String role, String purpose) {
             this.tr = tr; this.id = id; this.provider = provider; this.model = model; this.role = role; this.purpose = purpose;
@@ -330,7 +271,6 @@ final class ReplyTrace {
         /** One HTTP request attempt (the first, or a retry on another key). Emits {@code provider_request_started}. */
         Attempt attempt(boolean retry) {
             Attempt a = new Attempt(this, attempts.incrementAndGet(), retry);
-            meta = RequestMeta.NONE;   // the exchange of an earlier attempt is not this one's
             try {
                 if (tr != null) tr.add(new Event("provider_request_started", tr.since(a.start), null, tr.attrs("call", id, "attempt", a.no, "provider", provider, "role", role, "purpose", purpose, "retry", retry)));
                 ReplyMetrics.count("elmanassa.provider.attempts", "provider", ReplyMetrics.code(provider), "role", ReplyMetrics.code(role), "kind", retry ? "retry" : "first");
@@ -345,8 +285,8 @@ final class ReplyTrace {
             try {
                 long ms = (System.nanoTime() - start) / 1_000_000;
                 String outcome = usable ? "ok" : ProviderFailure.TIMEOUT.equals(category) ? "timeout" : "failed";
-                if (tr != null) tr.add(new Event("provider_call", tr.since(start), ms, tr.attrs(concat(new Object[] {"call", id, "provider", provider, "model", model, "role", role, "purpose", purpose, "attempts", attempts.get(), "hedged", hedged,
-                        "usable", usable, "outcome", outcome, "failure", usable ? "" : category, "in", usage == null ? 0 : usage.input(), "out", usage == null ? 0 : usage.output(), "cached", usage == null ? 0 : usage.cached(), "reasoning", usage == null ? 0 : usage.reasoning()}, metaKv()))));
+                if (tr != null) tr.add(new Event("provider_call", tr.since(start), ms, tr.attrs("call", id, "provider", provider, "model", model, "role", role, "purpose", purpose, "attempts", attempts.get(), "hedged", hedged,
+                        "usable", usable, "outcome", outcome, "failure", usable ? "" : category, "in", usage == null ? 0 : usage.input(), "out", usage == null ? 0 : usage.output(), "cached", usage == null ? 0 : usage.cached())));
                 ReplyMetrics.timer("elmanassa.provider.call", ms, "provider", ReplyMetrics.code(provider), "role", ReplyMetrics.code(role), "purpose", ReplyMetrics.code(purpose), "outcome", outcome);
                 if (!usable) ReplyMetrics.count("elmanassa.provider.failures", "provider", ReplyMetrics.code(provider), "category", ReplyMetrics.code(category));
                 if ("timeout".equals(outcome)) ReplyMetrics.count("elmanassa.provider.timeouts", "provider", ReplyMetrics.code(provider));
@@ -375,14 +315,12 @@ final class ReplyTrace {
          * how long it ran from its own start, its status, and whether it is the answer the reply used. Marked {@code parallel}: it overlaps its sibling and its call.
          * The loser is not cancelled (the provider keeps generating and bills it), so a loser that ends after the reply was saved reaches only the metrics.
          */
-        void hedgeRequest(String which, long startNano, int httpStatus, String category, boolean winner, AiProvider.Usage usage) { hedgeRequest(which, startNano, httpStatus, category, winner, usage, RequestMeta.NONE); }
-
-        void hedgeRequest(String which, long startNano, int httpStatus, String category, boolean winner, AiProvider.Usage usage, RequestMeta meta) {
+        void hedgeRequest(String which, long startNano, int httpStatus, String category, boolean winner, AiProvider.Usage usage) {
             try {
                 long ms = (System.nanoTime() - startNano) / 1_000_000;
                 boolean ok = httpStatus / 100 == 2 && (category == null || category.isEmpty());
-                if (tr != null) tr.add(new Event("provider_hedge_request", tr.since(startNano), ms, tr.attrs(concat(new Object[] {"call", id, "which", which, "parallel", true, "status", statusClass(httpStatus), "failure", category == null ? "" : category,
-                        "winner", winner, "usable", ok, "in", usage == null ? 0 : usage.input(), "out", usage == null ? 0 : usage.output(), "billed", ok}, meta.kv()))));
+                if (tr != null) tr.add(new Event("provider_hedge_request", tr.since(startNano), ms, tr.attrs("call", id, "which", which, "parallel", true, "status", statusClass(httpStatus), "failure", category == null ? "" : category,
+                        "winner", winner, "usable", ok, "in", usage == null ? 0 : usage.input(), "out", usage == null ? 0 : usage.output(), "billed", ok)));
                 ReplyMetrics.timer("elmanassa.provider.attempt", ms, "provider", ReplyMetrics.code(provider), "kind", "hedge_" + which, "outcome", ok ? (winner ? "won" : "lost") : "failed");
                 if (ok && !winner) ReplyMetrics.count("elmanassa.provider.hedge_losers", "provider", ReplyMetrics.code(provider));
             } catch (RuntimeException ignored) { /* see finish */ }
@@ -396,6 +334,7 @@ final class ReplyTrace {
         final long start = System.nanoTime();
         private volatile boolean done;
         private volatile long throttleMs;
+
         /** Time spent waiting for this service's calls-per-second limit before the request was sent. */
         void throttled(long ms) { throttleMs = ms; }
 
@@ -411,16 +350,11 @@ final class ReplyTrace {
                 ReplyTrace tr = call.tr;
                 long ms = (System.nanoTime() - start) / 1_000_000;
                 String name = usable ? "provider_response_completed" : timedOut ? "provider_request_timed_out" : "provider_request_failed";
-                if (tr != null) tr.add(new Event(name, tr.since(start), ms, tr.attrs(concat(new Object[] {"call", call.id, "attempt", no, "provider", call.provider, "role", call.role, "purpose", call.purpose, "retry", retry, "hedged", call.hedged, "throttle_ms", throttleMs,
-                        "status", statusClass(httpStatus), "failure", usable ? "" : category == null ? "" : category, "usable", usable, "in", usage == null ? 0 : usage.input(), "out", usage == null ? 0 : usage.output(), "cached", usage == null ? 0 : usage.cached(), "reasoning", usage == null ? 0 : usage.reasoning()}, metaFor(call.meta, call)))));
+                if (tr != null) tr.add(new Event(name, tr.since(start), ms, tr.attrs("call", call.id, "attempt", no, "provider", call.provider, "role", call.role, "purpose", call.purpose, "retry", retry, "hedged", call.hedged, "throttle_ms", throttleMs,
+                        "status", statusClass(httpStatus), "failure", usable ? "" : category == null ? "" : category, "usable", usable, "in", usage == null ? 0 : usage.input(), "out", usage == null ? 0 : usage.output())));
                 ReplyMetrics.timer("elmanassa.provider.attempt", ms, "provider", ReplyMetrics.code(call.provider), "kind", retry ? "retry" : "first", "outcome", usable ? "ok" : timedOut ? "timeout" : "failed");
             } catch (RuntimeException ignored) { /* see finish */ }
         }
-    }
-
-    /** The attributes of an attempt's exchange; before any response the key and load known at the start of the call stand in. */
-    private static Object[] metaFor(RequestMeta m, Call call) {
-        return new RequestMeta(m.requestId(), m.http(), m.keyId() == null || m.keyId().isEmpty() ? call.keyId : m.keyId(), m.inflight() > 0 ? m.inflight() : call.inflightAtStart).kv();
     }
 
     static String statusClass(int status) { return status == 0 ? "none" : status / 100 + "xx"; }
@@ -440,12 +374,9 @@ final class ReplyTrace {
 
     // ---- tools, rule checks, rewrites, review ----------------------------------------------------------------------------------------
 
-    static void tool(String name, long startNano, boolean ok, int round) { tool(name, startNano, ok, round, 0); }
-
-    /** {@code resultChars} is the size of the tool result handed to the model (a count only, never the text). */
-    static void tool(String name, long startNano, boolean ok, int round, int resultChars) {
+    static void tool(String name, long startNano, boolean ok, int round) {
         String n = name != null && name.matches("[a-z_]{1,32}") ? name : "other";
-        span("tool", startNano, "tool", n, "ok", ok, "round", round, "next_model_call", true, "c_result", resultChars);
+        span("tool", startNano, "tool", n, "ok", ok, "round", round, "next_model_call", true);
         ReplyMetrics.timer("elmanassa.tool.duration", (System.nanoTime() - startNano) / 1_000_000, "tool", n, "outcome", ok ? "ok" : "failed");
     }
 
@@ -481,28 +412,6 @@ final class ReplyTrace {
             } catch (RuntimeException ignored) { /* see finish */ }
         }
     }
-
-    /**
-     * Times the deterministic rule checks one by one (measurement only; never throws, changes nothing). {@code mark(name)} closes the check that just ran: its time goes to a metric tagged with the check's
-     * name and, when it took at least {@value #LAP_MIN_MS} ms, to the trace as a {@code rule_check_step} span (at most {@value #LAP_MAX_EVENTS} per reply so a trace stays small).
-     */
-    static final class Laps {
-        static final int LAP_MIN_MS = 10, LAP_MAX_EVENTS = 12;
-        private long last = System.nanoTime();
-        private int emitted;
-
-        void mark(String check) {
-            try {
-                long now = System.nanoTime(), ms = (now - last) / 1_000_000;
-                String name = check != null && check.matches("[A-Za-z_]{1,32}") ? check : "other";
-                ReplyMetrics.timer("elmanassa.rulecheck.step", ms, "check", name);
-                if (ms >= LAP_MIN_MS && emitted < LAP_MAX_EVENTS) { emitted++; span("rule_check_step", last, "check", name); }
-                last = System.nanoTime();
-            } catch (RuntimeException ignored) { /* see finish */ }
-        }
-    }
-
-    static Laps laps() { return new Laps(); }
 
     /** A rewrite model loop (the model is asked to write the reply again because a check found a problem). */
     static String rewrite(String purpose, Supplier<String> body) {
@@ -658,7 +567,7 @@ final class ReplyTrace {
                 case 'B' -> { if (v instanceof Boolean) m.put(name, v); }
                 default -> {
                     if (!(v instanceof String sv)) break;
-                    boolean ok = spec.values() != null ? spec.values().contains(sv) : spec.pattern().matcher(sv).matches() && (fewDigits(sv) || "request_id".equals(name) || "key".equals(name));
+                    boolean ok = spec.values() != null ? spec.values().contains(sv) : spec.pattern().matcher(sv).matches() && fewDigits(sv);
                     m.put(name, ok ? sv : "?");
                 }
             }

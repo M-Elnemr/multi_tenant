@@ -28,7 +28,7 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       GLM_API_KEY: ${GLM_API_KEY:-}
       GLM_MODEL: ${GLM_MODEL:-zai-org/glm-5.3-flash}
-      GLM_BASE_URL: ${GLM_BASE_URL:-https://api.thehive.ai/api/v3}
+      GLM_BASE_URL: ${GLM_BASE_URL:-https://api-cdn.thehive.ai/api/v3}
       GLM_REASONING_EFFORT: ${GLM_REASONING_EFFORT:-low}
       QWEN_API_KEY: ${QWEN_API_KEY:-}
       QWEN_MODEL: ${QWEN_MODEL:-qwen3.7-flash}
@@ -53,10 +53,8 @@ services:
       AI_NAME_PROBE: ${AI_NAME_PROBE:-false}
       AI_REVIEW: ${AI_REVIEW:-true}
       AI_TRACE: ${AI_TRACE:-true}
-      AI_REVIEW_MODE: ${AI_REVIEW_MODE:-conditional}
       APP_CHAT_RATE_LIMIT_MODE: ${APP_CHAT_RATE_LIMIT_MODE:-off}   # public web chat: off | abuse (100 per conversation per 10 min, 1000 per address per 10 min, 4000 per shop per hour, 6 identical texts per 2 min) | strict
       AI_REVIEW_MODEL: ${AI_REVIEW_MODEL:-}
-      AI_RULES_SKIP_UNCHECKED_REWRITE: ${AI_RULES_SKIP_UNCHECKED_REWRITE:-false}   # experiment, OFF: keep a reply whose only rule hits are UNCHECKED_FACTS/OPTIONS when the shop data confirms it
       AI_REVIEW_TIMEOUT_MS: ${AI_REVIEW_TIMEOUT_MS:-8000}
       AI_REVIEW_REASONING: ${AI_REVIEW_REASONING:-none}
       GLM_MAX_RPS: ${GLM_MAX_RPS:-5}
@@ -83,7 +81,7 @@ services:
       AI_EVAL_SCHEDULE: ${AI_EVAL_SCHEDULE:-true}
       AI_EVAL_SHOP: ${AI_EVAL_SHOP:-layan-store}
       AI_EVAL_MODELS: ${AI_EVAL_MODELS:-glm,qwen}
-      CHAT_BURST_MS: ${CHAT_BURST_MS:-0}
+      CHAT_BURST_MS: ${CHAT_BURST_MS:-5000}
       EVOLUTION_BASE_URL: ${EVOLUTION_BASE_URL:-}
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-}
       EVOLUTION_WEBHOOK_SECRET: ${EVOLUTION_WEBHOOK_SECRET:-}

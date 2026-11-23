@@ -68,66 +68,6 @@ final class FactCheck {
 
     record Problem(String kind, String note, String fixed) {}
 
-    private static final Pattern AMOUNT_WITH_CURRENCY = Pattern.compile("(\\d{1,3}(?:[,٬]\\d{3})+|\\d+(?:\\.\\d+)?)(?=\\s*(?:جنيه|ج(?!\\p{L})|جم(?!\\p{L})|egp|le(?![a-z])|pounds?))");
-    private static final Set<String> GENERIC_OPTION_WORDS = Set.of("مقاس", "مقاسي", "size");
-
-    /**
-     * POSITIVE confirmation, from the shop's own data, that a reply which described a product without a tool call in this turn is right (used only to skip a rewrite that exists to make the model look):
-     * it names one to three products the shop sells; every amount said in pounds is a price of one of them; every other number is one of their option values; every colour or size word is an
-     * option of them that is in stock. At least one claim must have been checked. Anything it cannot check (a number of unknown meaning, a colour the products do not have, an unknown product)
-     * answers false, so the reply is rewritten exactly as before. Finding nothing wrong is not enough: something must have been verified.
-     */
-    static boolean confirmsGrounded(String answer, Shop shop) {
-        if (answer == null || answer.isBlank() || shop == null) return false;
-        Set<String> slugs = new java.util.LinkedHashSet<>();
-        for (Mention m : mentions(answer, shop.names())) slugs.add(m.slug());
-        if (slugs.isEmpty() || slugs.size() > 3) return false;
-        Set<Double> prices = new java.util.HashSet<>();
-        Set<String> allValues = new java.util.HashSet<>(), inStockValues = new java.util.HashSet<>();
-        for (String slug : slugs) {
-            Product p = shop.product(slug);
-            if (p == null || p.variants().isEmpty()) return false;
-            if (p.before() > 0) prices.add(p.before());
-            for (Variant v : p.variants()) {
-                prices.add(v.price());
-                if (v.before() > 0) prices.add(v.before());
-                for (String value : v.options().values()) {
-                    String key = bare(light(value).trim());
-                    allValues.add(key);
-                    if (v.available() > 0) inStockValues.add(key);
-                }
-            }
-        }
-        String l = light(answer);
-        int verified = 0;
-        var am = AMOUNT_WITH_CURRENCY.matcher(l);
-        StringBuilder rest = new StringBuilder();
-        int last = 0;
-        while (am.find()) {
-            double amount;
-            try { amount = Double.parseDouble(am.group(1).replace(",", "").replace("٬", "")); } catch (NumberFormatException e) { return false; }
-            if (prices.stream().noneMatch(pr -> Math.abs(pr - amount) < 0.5)) return false;
-            verified++;
-            rest.append(l, last, am.start()).append(' ');
-            last = am.end();
-        }
-        rest.append(l.substring(last));
-        for (String tok : rest.toString().split("[^\\p{L}\\p{N}\\u200C]+")) {
-            if (tok.isBlank()) continue;
-            if (tok.matches("\\d+")) {
-                if (!allValues.contains(tok)) return false;   // a number that is neither a price nor an option value: meaning unknown
-                verified++;
-                continue;
-            }
-            String ow = ChatService.optionWord(tok);
-            if (ow == null || GENERIC_OPTION_WORDS.contains(ow)) continue;
-            if (!inStockValues.contains(bare(ow))) return false;   // a colour or size these products do not have in stock
-            verified++;
-        }
-        return verified > 0;
-    }
-
-
     // ---- text helpers --------------------------------------------------------------------------------------------------
 
     /** Lower case, Western digits, one alef, no diacritics; the same length as the input, so positions map back to the original text. */
@@ -207,35 +147,6 @@ final class FactCheck {
     // ---- which products a text names -------------------------------------------------------------------------------------
 
     record Mention(String slug, int start, int end) {}
-
-    /**
-     * The products the text asks for: the ones it names, and a product whose name is another product's name plus extra words that the text also says («الزينترا بوك 14 الأوبن بوكس» for the open-box
-     * «لاب توب زينترا بوك 14 أوبن بوكس», whose name holds the new laptop's name). The longer reading wins: the shorter product is dropped.
-     */
-    static List<String> askedSlugs(String text, List<Named> names) {
-        java.util.LinkedHashSet<String> slugs = new java.util.LinkedHashSet<>();
-        for (Mention m : mentions(text, names)) slugs.add(m.slug());
-        if (text == null || text.isBlank()) return new ArrayList<>(slugs);
-        List<String> words = new ArrayList<>();
-        for (Tok t : tokens(light(text), 0, light(text).length())) words.add(t.word());
-        for (Named p : names) {
-            List<String> pw = p.words();
-            if (pw.size() < 4 || slugs.contains(p.slug())) continue;
-            long found = pw.stream().filter(w -> words.stream().anyMatch(x -> same(x, w))).count();
-            if (found < 3) continue;
-            for (Named q : names) {
-                List<String> qw = q.words();
-                if (q == p || qw.size() < 2 || qw.size() >= pw.size() || !pw.containsAll(qw)) continue;
-                List<String> extra = pw.stream().filter(w -> !qw.contains(w)).toList();
-                if (extra.isEmpty() || !extra.stream().allMatch(w -> words.stream().anyMatch(x -> same(x, w)))) continue;
-                long base = qw.stream().filter(w -> words.stream().anyMatch(x -> same(x, w))).count();
-                if (base * 2 < qw.size()) continue;   // the text says most of the shorter name too
-                slugs.add(p.slug()); slugs.remove(q.slug());
-                break;
-            }
-        }
-        return new ArrayList<>(slugs);
-    }
 
     /**
      * The products named in the text (longest name wins where names overlap: «وجبة ساندوتش شاورما فراخ» over «ساندوتش شاورما فراخ»). A name said with a word left out
@@ -1729,8 +1640,7 @@ final class FactCheck {
         if (exact.size() != 1) return;   // an option is open: partialStock and the quantity check deal with it
         int real = exact.get(0).available();
         if (real <= 0 || real >= MADE_TO_ORDER) return;
-        String withoutName = l.replace(light(p.name()), " ");   // «آيفون 3» with 3 in stock: a digit of the product's own name is not the stock being said
-        if (Pattern.compile("(?<!\\d)" + real + "(?!\\d)").matcher(withoutName).find() || real < STOCK_WORDS.size() && STOCK_WORDS.get(real).matcher(withoutName).find()) return;   // the reply says the real number
+        if (Pattern.compile("(?<!\\d)" + real + "(?!\\d)").matcher(l).find() || real < STOCK_WORDS.size() && STOCK_WORDS.get(real).matcher(l).find()) return;   // the reply says the real number
         Matcher m = PROMISED_QTY.matcher(l);
         while (m.find()) {
             int n = Integer.parseInt(m.group(1) != null ? m.group(1) : m.group(2));
@@ -1943,7 +1853,7 @@ final class FactCheck {
     private static final Pattern SPEC_CLAIM = Pattern.compile("(?<![\\d.,])(\\d+(?:\\.\\d+)?)\\s*(ساعه|ساعات|mah|مللي\\s*امبير|ملي\\s*امبير|وات|واط|w|جيجا|gb|تيرا|tb|بوصه|انش|inch|هرتز|hz|ميجا\\s*بكسل|ميجابكسل|mp|سم|cm|مم|mm|كيلو(?:\\s*جرام)?|كجم|kg|جرام|لتر|مل|مللي|فولت|سنه|سنين|سنوات|شهر|شهور|اشهر|يوم|ايام|%|٪)(?![\\p{L}\\d])", Pattern.CASE_INSENSITIVE);
     private static final Pattern WARRANTY = Pattern.compile("(?<!\\p{L})(?:ضمان|الضمان|بضمان|warranty|guarantee)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
     /** A sentence that is general know-how, a discount, delivery, opening hours or a no: not a claim about the product's own specs. */
-    private static final Pattern NOT_A_SPEC = Pattern.compile("(?<!\\p{L})(?:عاده|عادتا|عادتاً|غالبا|عموما|يعني|في\\s+العموم|بشكل\\s+عام|usually|generally|typically|خصم|تخفيض|discount|off|توصيل|التوصيل|(?:مصاريف|رسوم)\\s+(?:ال)?شحن|(?:ال)?شحن\\s+(?:ل|لـ|الي|إلى|مجاني|مجانا|لكل)|(?:ه|ب|و)?[يت]وصل\\p{L}*|هيجيلك|هتجيلك|delivery|shipping|deliver\\p{L}*|arriv\\p{L}*|مواعيد|بنفتح|بنقفل|open|استرجاع|استبدال|return|exchange|الحد\\s+الادني|minimum)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
+    private static final Pattern NOT_A_SPEC = Pattern.compile("(?<!\\p{L})(?:عاده|عادتا|عادتاً|غالبا|عموما|تقريبا|تقريباً|حوالي|يعني|في\\s+العموم|بشكل\\s+عام|usually|generally|typically|خصم|تخفيض|discount|off|توصيل|التوصيل|(?:مصاريف|رسوم)\\s+(?:ال)?شحن|(?:ال)?شحن\\s+(?:ل|لـ|الي|إلى|مجاني|مجانا|لكل)|(?:ه|ب|و)?[يت]وصل\\p{L}*|هيجيلك|هتجيلك|delivery|shipping|deliver\\p{L}*|arriv\\p{L}*|مواعيد|بنفتح|بنقفل|open|استرجاع|استبدال|return|exchange|الحد\\s+الادني|minimum)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
 
     private static String specUnit(String u) {
         String x = u.toLowerCase(Locale.ROOT).replaceAll("\\s+", "");
@@ -1994,30 +1904,22 @@ final class FactCheck {
     private static void specLock(String customer, String answer, List<Mention> ms, String only, Shop shop, List<Problem> out) {
         String la = light(answer);
         List<int[]> drop = new ArrayList<>();
-        String about = null, claim = null, warrantyAbout = null;
+        String about = null, claim = null;
         for (int[] sn : sentences(answer)) {
             List<Mention> here = ms.stream().filter(m -> m.start() >= sn[0] && m.start() < sn[1]).toList();
             String slug = here.size() == 1 ? here.get(0).slug() : here.isEmpty() ? (lastBefore(ms, sn[0], only) != null ? lastBefore(ms, sn[0], only) : only) : null;
             if (slug == null) continue;
-            // a sentence may carry a claim, an emoji and then a closing question («الضمان شهر… 📝 عايز أحجزلك؟»): each part is judged on its own, so the question mark does not hide the claim
-            for (int[] sub : emojiSplit(answer, sn)) {
-                String se = la.substring(sub[0], sub[1]);
-                String subSlug = slug;
-                int label = versionLabel(se);   // «- الجديد: 24,999 جنيه، بضمان سنة» next to the open-box line: the line is about the other version of the product the text named last
-                if (label != 0) subSlug = otherVersion(label == 2 ? "جديد" : "أوبن بوكس", List.of(slug), shop.names()).get(0);
-                String facts = shop.facts(subSlug);
-                if (facts == null) continue;
-                // a parenthesis is an aside («الضمان شهر … (مش الكسر أو المية)»): its «not» does not make the claim in front of it a denial (live I-036: a wrong warranty period went out because of it)
-                String seMain = se.replaceAll("\\([^)]*\\)", " ");
-                if (NOT_A_SPEC.matcher(seMain).find() || NEG_STRICT.matcher(seMain).find() || DENY.matcher(seMain).find() || WITHOUT.matcher(seMain).find() || CONDITIONAL.matcher(seMain).find()
-                        || OTHER_CHOICES.matcher(seMain).find() || HOURS_TALK.matcher(seMain).find() || se.contains("؟") || se.contains("?")) continue;   // a no, another product offered, the opening hours
-                String lf = light(facts);
-                Set<String> known = specsIn(lf, true);
-                String bad = null;
-                for (String c : specsIn(se)) if (!known.contains(c) && !c.endsWith("|pct")) { bad = c; break; }
-                if (bad == null && WARRANTY.matcher(se).find() && !WARRANTY.matcher(lf).find()) bad = "warranty";
-                if (bad != null) { drop.add(sub); if (about == null) { about = subSlug; claim = bad; } if (WARRANTY.matcher(se).find()) warrantyAbout = subSlug; }
-            }
+            String facts = shop.facts(slug);
+            if (facts == null) continue;
+            String se = la.substring(sn[0], sn[1]);
+            if (NOT_A_SPEC.matcher(se).find() || NEG_STRICT.matcher(se).find() || DENY.matcher(se).find() || WITHOUT.matcher(se).find() || CONDITIONAL.matcher(se).find()
+                    || OTHER_CHOICES.matcher(se).find() || HOURS_TALK.matcher(se).find() || se.contains("؟") || se.contains("?")) continue;   // a no, another product offered, the opening hours
+            String lf = light(facts);
+            Set<String> known = specsIn(lf, true);
+            String bad = null;
+            for (String c : specsIn(se)) if (!known.contains(c) && !c.endsWith("|pct")) { bad = c; break; }
+            if (bad == null && WARRANTY.matcher(se).find() && !WARRANTY.matcher(lf).find()) bad = "warranty";
+            if (bad != null) { drop.add(sn); if (about == null) { about = slug; claim = bad; } }
         }
         if (drop.isEmpty()) return;
         boolean ar = arabic(answer) || customer != null && arabic(customer);
@@ -2025,184 +1927,8 @@ final class FactCheck {
         String name = shop.names().stream().filter(n -> n.slug().equals(aboutSlug)).map(Named::name).findFirst().orElse("");
         String note = ar ? "التفصيلة دي مش مكتوبة في بيانات «" + name + "» عندنا، أقدر أسأل المحل عليها لو تحب 🙏" : "That detail is not in our data for " + name + "; I can ask the shop if you like 🙏";
         String rest = withoutRanges(answer, drop);
-        final String warrantySlug = warrantyAbout;
-        String warranty = warrantySlug == null ? null : warrantySegment(shop.facts(warrantySlug));
-        if (warranty != null) {   // the shop wrote the warranty: say it, instead of «not in our data»
-            String wname = shop.names().stream().filter(n -> n.slug().equals(warrantySlug)).map(Named::name).findFirst().orElse("");
-            note = ar ? "الضمان بحسب بيانات «" + wname + "»: " + warranty : "Warranty per the data of " + wname + ": " + warranty;
-        }
         out.add(new Problem("SPEC_UNKNOWN", "You stated a detail of «" + name + "» (" + claim + ") that the shop's data does not have. Never guess a spec, a number or a warranty: say only what get_product or shop_knowledge gives, or offer to ask the shop.",
                 (rest.isBlank() ? note : rest + "\n\n" + note).trim()));
-    }
-
-    /** The part of the product's own text that states its warranty («الضمان: ٦ شهور (…)»), or null. */
-    private static String warrantySegment(String facts) {
-        if (facts == null) return null;
-        for (String part : facts.split("[•\\n]|(?<=[.!؟?])\\s")) {
-            String x = part.replaceAll("\\s+", " ").strip();
-            if (x.length() >= 5 && x.length() <= 220 && WARRANTY.matcher(light(x)).find()) return x.replaceAll("^[:,\\s]+|[\\s,:]+$", "");
-        }
-        return null;
-    }
-
-    /** A sentence cut after each emoji (a symbol character), so a claim and the question after its emoji are two parts; a sentence with no emoji comes back whole. */
-    private static List<int[]> emojiSplit(String text, int[] sn) {
-        List<int[]> out = new ArrayList<>();
-        int s = sn[0];
-        for (int i = sn[0]; i < sn[1]; ) {
-            int cp = text.codePointAt(i), n = Character.charCount(cp);
-            if (Character.getType(cp) == Character.OTHER_SYMBOL && i + n < sn[1]) { out.add(new int[]{s, i + n}); s = i + n; }
-            i += n;
-        }
-        if (s < sn[1]) out.add(new int[]{s, sn[1]});
-        return out;
-    }
-
-    private static final Pattern OPEN_BOX_WORDS = Pattern.compile("(?:اوبن|open)\\s*(?:بوكس|box)|مفتوحه?\\s+العلبه|مستعمل");
-    private static final Pattern NEW_VERSION_WORDS = Pattern.compile("(?<!\\p{L})(?:و|ف|ب)?(?:ال)?(?:جديد(?:ه|ة)?|new)(?!\\p{L})|مقفول");
-
-    /**
-     * «لا خليني في الجديد» while the chat is about the open-box version of a model, «والأوبن بوكس متاح؟» while it is about the new one: the customer names no product but switches to the other version of the
-     * product being discussed (the same name with or without «أوبن بوكس»). Returns the products the message is about: the sibling of each, or the same list when no switch is asked.
-     */
-    /** «جديد مش أوبن بوكس», «بدون أوبن بوكس»: the open-box version is named only to be refused, so it is not a version the customer asks for. */
-    private static final Pattern NEGATED_OPEN_BOX = Pattern.compile("(?:مش|مو|بدون|غير|not)\\s*(?:عايز\\s*|عاوز\\s*|want\\s*)?(?:ال)?(?:اوبن|open)\\s*(?:بوكس|box)");
-    static List<String> otherVersion(String latest, List<String> slugs, List<Named> names) {
-        if (latest == null || slugs.isEmpty()) return slugs;
-        String ln = NEGATED_OPEN_BOX.matcher(light(latest)).replaceAll(" ");
-        boolean open = OPEN_BOX_WORDS.matcher(ln).find(), fresh = NEW_VERSION_WORDS.matcher(ln).find();
-        if (open == fresh) return slugs;   // neither, or both («الجديد والأوبن بوكس»): the product the shop named stays
-        List<String> out = new ArrayList<>();
-        for (String slug : slugs) {
-            String n = names.stream().filter(x -> x.slug().equals(slug)).map(x -> light(x.name()).trim()).findFirst().orElse("");
-            boolean isOpen = OPEN_BOX_WORDS.matcher(n).find();
-            String pick = null;
-            if (fresh && isOpen) {
-                String base = OPEN_BOX_WORDS.matcher(n).replaceAll(" ").replaceAll("\\s+", " ").trim();
-                for (Named x : names) if (light(x.name()).replaceAll("\\s+", " ").trim().equals(base)) { pick = x.slug(); break; }
-            } else if (open && !isOpen) {
-                for (Named x : names) { String o = light(x.name()).replaceAll("\\s+", " ").trim(); if (o.startsWith(n + " ") && OPEN_BOX_WORDS.matcher(o.substring(n.length())).find()) { pick = x.slug(); break; } }
-            }
-            out.add(pick != null ? pick : slug);
-        }
-        return out;
-    }
-
-    /** 1 when the message says «أوبن بوكس», 2 when it only says «جديد» (or a form of it), 0 when neither (or both). */
-    /** A line that starts with the version it is about («- الجديد: …», «الأوبن بوكس (فضي): …»): 1 open-box, 2 new, 0 none. */
-    private static final Pattern OPEN_LABEL = Pattern.compile("^[\\s\\-•*·]*(?:ال)?(?:اوبن|open)\\s*(?:بوكس|box)\\s*[:(\\-—،]");
-    private static final Pattern NEW_LABEL = Pattern.compile("^[\\s\\-•*·]*(?:ال)?(?:نسخه\\s+)?(?:ال)?(?:جديد(?:ه)?|new)\\s*[:(\\-—،]");
-    static int versionLabel(String lightSentence) {
-        if (lightSentence == null) return 0;
-        return OPEN_LABEL.matcher(lightSentence).find() ? 1 : NEW_LABEL.matcher(lightSentence).find() ? 2 : 0;
-    }
-
-    /** «الفرق», «الاتنين», «compare»: the customer wants both versions of a model, not one. */
-    private static final Pattern COMPARE_WORDS = Pattern.compile("فرق|مقارن|قارن|compare|difference|(?<!\\p{L})(?:ال)?(?:اتنين|اثنين)(?!\\p{L})|كلهم");
-    /** The slugs, plus the other version (new or open-box) of each one when the customer's text compares. */
-    static List<String> withSiblingWhenComparing(String latest, List<String> slugs, List<Named> names) {
-        if (latest == null || slugs.isEmpty() || !COMPARE_WORDS.matcher(light(latest)).find()) return slugs;
-        List<String> out = new ArrayList<>(slugs);
-        for (String sl : slugs) {
-            String n = names.stream().filter(x -> x.slug().equals(sl)).map(x -> light(x.name()).replaceAll("\\s+", " ").trim()).findFirst().orElse("");
-            for (Named x : names) {
-                String o = light(x.name()).replaceAll("\\s+", " ").trim();
-                boolean sibling = OPEN_BOX_WORDS.matcher(n).find() ? OPEN_BOX_WORDS.matcher(n).replaceAll(" ").replaceAll("\\s+", " ").trim().equals(o)
-                        : o.startsWith(n + " ") && OPEN_BOX_WORDS.matcher(o.substring(n.length())).find();
-                if (sibling && !out.contains(x.slug())) out.add(x.slug());
-            }
-        }
-        return out;
-    }
-
-    /** The customer compares or asks for both versions («الفرق», «الاتنين», or «الجديد والأوبن بوكس»). */
-    static boolean comparing(String latest) {
-        if (latest == null) return false;
-        return COMPARE_WORDS.matcher(light(latest)).find() || saysVersion(latest) && versionWords(latest) == 0;
-    }
-
-    /** Says new or open-box at all (both included): the customer's message itself decides the version, so earlier messages do not. */
-    static boolean saysVersion(String latest) {
-        if (latest == null) return false;
-        String ln = light(latest);
-        return OPEN_BOX_WORDS.matcher(ln).find() || NEW_VERSION_WORDS.matcher(ln).find();
-    }
-    static int versionWords(String latest) {
-        if (latest == null) return 0;
-        String ln = NEGATED_OPEN_BOX.matcher(light(latest)).replaceAll(" ");
-        boolean open = OPEN_BOX_WORDS.matcher(ln).find(), fresh = NEW_VERSION_WORDS.matcher(ln).find();
-        return open && !fresh ? 1 : fresh && !open ? 2 : 0;
-    }
-
-    /** The product is one of a new / open-box pair of the same model (the same name with or without «أوبن بوكس»). */
-    static boolean hasOtherVersion(String slug, List<Named> names) {
-        String n = names.stream().filter(x -> x.slug().equals(slug)).map(x -> light(x.name()).replaceAll("\\s+", " ").trim()).findFirst().orElse("");
-        if (n.isBlank()) return false;
-        if (OPEN_BOX_WORDS.matcher(n).find()) {
-            String base = OPEN_BOX_WORDS.matcher(n).replaceAll(" ").replaceAll("\\s+", " ").trim();
-            return names.stream().anyMatch(x -> light(x.name()).replaceAll("\\s+", " ").trim().equals(base));
-        }
-        return names.stream().anyMatch(x -> { String o = light(x.name()).replaceAll("\\s+", " ").trim(); return o.startsWith(n + " ") && OPEN_BOX_WORDS.matcher(o.substring(n.length())).find(); });
-    }
-
-    /** «الجديد», «الاتنين», «الفرق», «compare»: the customer is asking about the other version or both, so the chat's focus product is not the only subject. */
-    private static final Pattern BOTH_VERSIONS = Pattern.compile("(?<!\\p{L})(?:و|ف|ب)?(?:ال)?جديد(?:ه|ة)?(?!\\p{L})|(?<!\\p{L})(?:و|ف)?(?:ال)?(?:اتنين|اثنين|التنين)(?!\\p{L})|فرق|مقارن|قارن|compare|difference|(?<![a-z])new(?![a-z])|مقفول|بالعلبه|كلهم|الاتنين", Pattern.CASE_INSENSITIVE);
-
-    /** A graphics claim («كارت الشاشة مدمج», «integrated graphics», «RTX 3050»): a kind of spec with no number that the shop writes for one version of a model and not for another. */
-    private static final Pattern GRAPHICS_CLAIM = Pattern.compile("(?:كا?رت(?:\\s+(?:ال)?شاشه)?|جرافيك[سز]?|graphics|gpu)[^.\\n]{0,40}?(?:مدمج|مدمجه|integrated|مخصص|dedicated|منفصل|منفصله|separate|rtx|gtx|radeon)|(?:مدمج|مدمجه|integrated|مخصص|dedicated|منفصل|منفصله|separate|rtx|gtx|radeon)[^.\\n]{0,25}?(?:كا?رت(?:\\s+(?:ال)?شاشه)?|جرافيك[سز]?|graphics|gpu)", Pattern.CASE_INSENSITIVE);
-
-    /**
-     * The chat is about ONE product (the one the shop last named) and the customer names no other: «كارت الشاشة فيه مدمج» said with the plain name of a version («الزينترا بوك 14») is the
-     * NEW version's graphics when the chat is about its open-box one, whose data has none. A spec (number, warranty or graphics type) of a sentence that names nothing but that product or a shorter form of
-     * its name must be in that product's own data; else the sentence is taken out and the detail is said to be unlisted. Null when fine, when the customer asks about the new one or both, or when unknown.
-     */
-    /** The part of a sentence before its closing question (cut at the last dash or emoji before it); the whole sentence when it asks nothing; empty for a pure question. */
-    private static String statementPart(String se) {
-        if (!se.contains("؟") && !se.contains("?")) return se;
-        int cut = Math.max(se.lastIndexOf('—'), se.lastIndexOf('–'));
-        for (int i = se.length() - 1; i >= 0; i--) if (Character.isLowSurrogate(se.charAt(i))) { cut = Math.max(cut, i); break; }
-        return cut > 0 ? se.substring(0, cut) : "";
-    }
-
-    private static final Pattern GRAPHICS_ASK = Pattern.compile("كارت\\s*(?:ال)?شاش[هة]|كرت\\s*(?:ال)?شاش[هة]|جرافيك|graphics?|gpu|كارت\\s*فيديو");
-    private static final Pattern INTEGRATED_OR_DEDICATED = Pattern.compile("(?<!\\p{L})(?:م)?دمج(?:ه|ة)?(?!\\p{L})|مدمج|منفصل|dedicated|integrated");
-
-    static String focusSpec(String customer, String answer, Shop shop, String focus) {
-        if (customer == null || answer == null || focus == null || BOTH_VERSIONS.matcher(light(customer)).find()) return null;
-        String facts = shop.facts(focus);
-        if (facts == null) return null;
-        String fname = shop.names().stream().filter(n -> n.slug().equals(focus)).map(n -> light(n.name())).findFirst().orElse(null);
-        if (fname == null || mentions(customer, shop.names()).size() > 0) return null;
-        String lf = light(facts), la = light(answer);
-        Set<String> known = specsIn(lf, true);
-        List<Mention> ms = mentions(answer, shop.names());
-        List<int[]> drop = new ArrayList<>();
-        String claim = null;
-        for (int[] sn : sentences(answer)) {
-            boolean ownSubject = true;
-            for (Mention m : ms) {
-                if (m.start() < sn[0] || m.start() >= sn[1] || m.slug().equals(focus)) continue;
-                String other = shop.names().stream().filter(n -> n.slug().equals(m.slug())).map(n -> light(n.name())).findFirst().orElse("");
-                if (other.isBlank() || !fname.contains(other)) { ownSubject = false; break; }   // a different product: its own data is its business
-            }
-            if (!ownSubject) continue;
-            String se = statementPart(la.substring(sn[0], sn[1]));   // «معاه كارت فيديو مدمج Iris Xe — بيشتغل كويس 👌 تحب أحجزهولك؟» is one sentence to the splitter: the question at its end must not hide the claim before it
-            if (se.isBlank()) continue;
-            // a kind of graphics said with a «مش» next to it («كارت الشاشة مدمج، مش منفصل») is still said
-            boolean askedGraphics = GRAPHICS_ASK.matcher(light(customer)).find();   // «فيه كارت شاشة؟» answered «الشاشة مدمجة»: integrated or dedicated is a graphics claim whatever the words around it
-            String bad = (GRAPHICS_CLAIM.matcher(se).find() || askedGraphics && INTEGRATED_OR_DEDICATED.matcher(se).find()) && !GRAPHICS_CLAIM.matcher(lf).find() ? "graphics" : null;
-            if (bad == null && (NOT_A_SPEC.matcher(se).find() || NEG_STRICT.matcher(se).find() || DENY.matcher(se).find() || WITHOUT.matcher(se).find() || CONDITIONAL.matcher(se).find()
-                    || OTHER_CHOICES.matcher(se).find() || HOURS_TALK.matcher(se).find())) continue;
-            if (bad == null) for (String c : specsIn(se)) if (!known.contains(c) && !c.endsWith("|pct")) { bad = c; break; }
-            if (bad == null && WARRANTY.matcher(se).find() && !WARRANTY.matcher(lf).find()) bad = "warranty";
-            if (bad != null) { drop.add(sn); if (claim == null) claim = bad; }
-        }
-        if (drop.isEmpty()) return null;
-        boolean ar = arabic(answer) || arabic(customer);
-        String name = shop.names().stream().filter(n -> n.slug().equals(focus)).map(Named::name).findFirst().orElse("");
-        String note = ar ? "التفصيلة دي مش مكتوبة في بيانات «" + name + "» عندنا، أقدر أسأل المحل عليها لو تحب 🙏" : "That detail is not in our data for " + name + "; I can ask the shop if you like 🙏";
-        String rest = withoutRanges(answer, drop);
-        return (rest.isBlank() ? note : rest + "\n\n" + note).trim();
     }
 
     private static void answerLock(String customer, String answer, List<Mention> ms, Shop shop, java.util.function.Function<String, Product> load, List<Problem> out) {

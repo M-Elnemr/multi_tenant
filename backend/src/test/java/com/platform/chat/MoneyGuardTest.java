@@ -88,7 +88,6 @@ class MoneyGuardTest {
     void aSumAfterSumWordsMustMatchExactlyNotAsAMultipleOfSomePrice() {
         var allowed = new MoneyGuard.Allowed(0);
         allowed.addPrices("Kids T-shirt [t] (250); Shirt [s] (450); Jeans [j] (800)");
-        allowed.addText("250 450 800");   // the shop's real prices are known to the guard (a price written with «بـ» and no currency word is checked too)
         assertThat(MoneyGuard.violations("القميص بـ450 والجينز بـ800، يعني الاتنين 1250 قبل الشحن", allowed)).extracting(MoneyGuard.Amount::raw).containsExactly("1250");
         assertThat(MoneyGuard.violations("التيشيرتين بـ500 جنيه", allowed)).isEmpty();   // 2 x 250, a plain quantity
         assertThat(MoneyGuard.violations("يعني الاتنين 1250 جنيه قبل الشحن", allowed)).extracting(MoneyGuard.Amount::raw).containsExactly("1250");

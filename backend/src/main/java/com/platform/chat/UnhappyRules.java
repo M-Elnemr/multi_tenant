@@ -34,15 +34,6 @@ public final class UnhappyRules {
 
     private UnhappyRules() {}
 
-    /** The strong complaint words of one message (scam, insults, «refund now»...), negations removed. */
-    static List<String> strongHits(String text) { return hits(STRONG, NEGATED.matcher(text == null ? "" : text).replaceAll(" ")); }
-
-    /** The milder frustration words of one message (late, nobody answers, never arrived...), negations removed. */
-    static List<String> mildHits(String text) { return hits(MILD, NEGATED.matcher(text == null ? "" : text).replaceAll(" ")); }
-
-    /** A thankful or neutral closing message («شكرا», «تمام», «ok»). */
-    static boolean calm(String text) { return text != null && CALM.contains(text.trim().toLowerCase(Locale.ROOT).replaceAll("[!.؟?،,\\s]+$", "")); }
-
     /** The verdict over the customer's messages (oldest first): unhappy or not, and the phrases that decided it («اتأخر» + «محدش بيرد»). */
     public record Verdict(boolean unhappy, int score, String reason, boolean strong) {}
 

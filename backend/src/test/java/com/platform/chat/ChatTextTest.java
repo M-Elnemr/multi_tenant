@@ -38,9 +38,6 @@ class ChatTextTest {
     @Test
     void askingForTheWhatsappNumberToSendTheCollectionIsAStall() {
         assertThat(ChatService.STALL.matcher("ممكن تبعتلي رقم الواتساب عشان ابعتلك التشكيلة المتاحة؟").find()).isTrue();
-        // seen on the deployed build (open-box scenarios): a promise to look and come back, written with «ة»
-        assertThat(ChatService.STALL.matcher("لاب توب زينترا بوك 14 عندنا في القسم، بس تصبر عليا لحظة أراجع المتاح وأبعتهلك بالتفاصيل.").find()).isTrue();
-        assertThat(ChatService.STALL.matcher("لحظة أراجع المخزون وأرد عليك").find()).isTrue();
     }
 
     @Test
@@ -91,8 +88,6 @@ class ChatTextTest {
         assertThat(ChatService.BROKEN_RUN.matcher("عندنا تيشيرت 很好 قطن").find()).isTrue();
         assertThat(ChatService.STALL.matcher("عذرًا يا فندم، دلوقتي محدش فينظش المخازن عشان أتأكد إن عندنا طقم ملايات قطن مصري أبيض").find()).isTrue();
         assertThat(ChatService.STALL.matcher("عندنا طقم ملايات قطن مصري أبيض بـ ٩٥٠ جنيه، تحب أجهزهولك؟").find()).isFalse();
-        assertThat(ChatService.BROKEN_RUN.matcher("الجديد بيبτι من 24999 جنيه يا فندم").find()).isTrue();   // Greek letters inside an Arabic word, seen on the final build
-        assertThat(ChatService.BROKEN_RUN.matcher("سماعة 32 Ω وميكروفون 5 μm").find()).isFalse();   // units are not garbage
         assertThat(ChatService.BROKEN_RUN.matcher("عندنا تيشيرت قطن مقاس XL، تحب أحجزهولك؟ 👌").find()).isFalse();
     }
 
@@ -339,9 +334,6 @@ class ChatTextTest {
         String line = "🙏 أقل قيمة للطلب 100 جنيه، وطلبك دلوقتي 60 جنيه. تحب تضيف إيه عشان نكمل الأوردر؟";
         org.assertj.core.api.Assertions.assertThat(ChatService.mentionsMinimum("أقل الطلب اللي هو 100 جنيه، عايز تضيف حاجة؟", line)).isFalse();
         org.assertj.core.api.Assertions.assertThat(ChatService.mentionsMinimum("طلبك ٦٠ جنيه وأقل طلب ١٠٠ جنيه، تضيف ساندوتش؟", line)).isTrue();
-        // the numbers without a minimum-order phrase (a garbled sentence seen in the benchmark) do not count as having said it: the code's clear line is added
-        org.assertj.core.api.Assertions.assertThat(ChatService.mentionsMinimum("الأوردر مينيصمم ١٠٠ جنيه، والبطاطس وسط لوحدها ٦٠ جنيه", line)).isFalse();
-        org.assertj.core.api.Assertions.assertThat(ChatService.mentionsMinimum(null, line)).isFalse();
         // offering to show instead of showing (seen live 2026-11-03), but not a question about an option or a real list
         org.assertj.core.api.Assertions.assertThat(ChatService.OFFER_TO_SHOW.matcher("أهلاً بيك يا فندم 🌟 تحب أعرض عليك الحلويات اللي عندنا تناسب بعد الأكل؟").find()).isTrue();
         org.assertj.core.api.Assertions.assertThat(ChatService.OFFER_TO_SHOW.matcher("تحب أرسل لك القائمة؟").find()).isTrue();
@@ -354,19 +346,6 @@ class ChatTextTest {
         org.assertj.core.api.Assertions.assertThat(ChatService.FAKE_SUMMARY.matcher(FastAnswers.norm("تمام يا فندم هاني، الطلب جاهز للتأكيد:")).find()).isTrue();
         org.assertj.core.api.Assertions.assertThat(ChatService.FAKE_SUMMARY.matcher(FastAnswers.norm("ملخص الأوردر الجديد:\n• وجبة بروستد\nأأكد التعديل؟ اكتب «تمام» 👌")).find()).isTrue();
         org.assertj.core.api.Assertions.assertThat(ChatService.ORDER_CLAIM.matcher("أهلاً بحضرتك 🙌 سجلت: ٣ زنجر حار وبطاطس كبير").find()).isTrue();
-        // WhatsApp: «the last» / «the first» of a quoted list, and the words that only look like it
-        org.assertj.core.api.Assertions.assertThat(ChatService.quotedPosition("اخر بنطلون هنا مقاساته ايه")).isEqualTo("LAST");
-        org.assertj.core.api.Assertions.assertThat(ChatService.quotedPosition("الأخير ده بكام؟")).isEqualTo("LAST");
-        org.assertj.core.api.Assertions.assertThat(ChatService.quotedPosition("اول واحد متاح؟")).isEqualTo("FIRST");
-        org.assertj.core.api.Assertions.assertThat(ChatService.quotedPosition("الاول بكام")).isEqualTo("FIRST");
-        for (String other : new String[]{"اخر سعر لو سمحت", "اخر عرض عندكم ايه", "اول مرة اطلب", "ابعتلي الصورة", "بكام ده؟"})
-            org.assertj.core.api.Assertions.assertThat(ChatService.quotedPosition(other)).as(other).isNull();
-        // F16: false denials of products the shop sells, and a false «registered» claim
-        for (String denial : new String[]{"للأسف مش مت عندنا يا فندم", "ده مش من مشروباتنا", "ده مش من منتجاتنا", "مش من أصنافنا", "مش بنبيعه عندنا"})
-            org.assertj.core.api.Assertions.assertThat(ChatService.NOT_HAVE.matcher(denial).find()).as(denial).isTrue();
-        org.assertj.core.api.Assertions.assertThat(ChatService.NOT_HAVE.matcher("عندنا ليمون بالنعناع بـ 45 جنيه").find()).isFalse();
-        org.assertj.core.api.Assertions.assertThat(ChatService.ORDER_CLAIM.matcher("حاضر يا فندم، سجلتلك سلطة فتوش بـ 55 جنيه").find()).isTrue();
-        org.assertj.core.api.Assertions.assertThat(ChatService.ORDER_CLAIM.matcher("سجلتلك ملاحظة إنك عايز من غير بصل").find()).isFalse();
         org.assertj.core.api.Assertions.assertThat(ChatService.withoutDraftApology("آسف جداً يا فندم على الغلط السابق 🙏\n\nعندنا خيارات نباتية ممتازة")).startsWith("عندنا");
     }
 

@@ -42,23 +42,6 @@ public class ChannelAi {
                         deepseekExtra == null ? "" : deepseekExtra, deepseekRps), social, web);
     }
 
-    // ---- DR-R: provider health breaker and early cross-model failover ------------------------------------------------------------
-    final ProviderHealth health = new ProviderHealth();
-    /** The first model call of a reply that the primary has not answered after this long is sent to the backup model too (0 = off). */
-    volatile long failoverMs = 8_000;
-    private static final java.util.concurrent.ExecutorService POOL = java.util.concurrent.Executors.newCachedThreadPool(new java.util.concurrent.ThreadFactory() {
-        private final java.util.concurrent.atomic.AtomicInteger n = new java.util.concurrent.atomic.AtomicInteger();
-        @Override public Thread newThread(Runnable r) { Thread t = new Thread(r, "ai-failover-" + n.incrementAndGet()); t.setDaemon(true); return t; }
-    });
-    /** The share of a reply's time budget a call to a model that has a backup leaves for that backup. */
-    static final long BACKUP_RESERVE_MS = 10_000;
-
-    @Value("${app.ai.failover-ms:8000}")
-    void failoverMs(long ms) { this.failoverMs = Math.max(0, ms); }
-
-    @Value("${app.ai.breaker.enabled:true}")
-    void breakerEnabled(boolean on) { health.enabled(on); }
-
     /** How long a model call may go unanswered, while a customer waits, before it is sent a second time (see OpenAiProvider.send). */
     @Value("${app.ai.hedge-ms:25000}")
     void hedgeMs(long ms) { OpenAiProvider.HEDGE_MS = ms; }
@@ -122,13 +105,13 @@ public class ChannelAi {
         // the platform admin's choice (AI configuration screen) decides which model answers; the route settings are only used where there is no such screen (unit tests)
         String route = chosen != null ? chosen : cfg != null ? cfg.get().textModel() : channel != null && SOCIAL.contains(channel) ? social : web;
         // a chat that typed "glm" is testing that model: whatever is wrong with it (no key, not active, rejected) is shown as its error instead of quietly answering with another one
-        if ("glm".equals(chosen) && glm != null) return new Routed(glm, null, true, backupFor(glm)).owner(this);
-        if ("qwen".equals(chosen) && qwen != null) return new Routed(qwen, null, true, backupFor(qwen)).owner(this);
-        if ("deepseek".equals(chosen) && deepseek != null) return new Routed(deepseek, null, true, backupFor(deepseek)).owner(this);
+        if ("glm".equals(chosen) && glm != null) return new Routed(glm, null, true, backupFor(glm));
+        if ("qwen".equals(chosen) && qwen != null) return new Routed(qwen, null, true, backupFor(qwen));
+        if ("deepseek".equals(chosen) && deepseek != null) return new Routed(deepseek, null, true, backupFor(deepseek));
         AiProvider primary = "qwen".equals(route) && qwen != null && qwen.available() ? qwen : "deepseek".equals(route) && deepseek != null && deepseek.available() ? deepseek
                 : "anthropic".equals(route) && claude.available() ? claude : "glm".equals(route) && glm != null && glm.available() ? glm : defaultAi;
         AiProvider backup = backupFor(primary);
-        return new Routed(primary, backup, false, backup).owner(this);
+        return new Routed(primary, backup, false, backup);
     }
 
     /**
@@ -161,10 +144,6 @@ public class ChannelAi {
         private final boolean picked;
         private AiProvider active;
         private boolean fellBack;
-        private ChannelAi owner;   // DR-R: the health breaker and the failover settings (null: none, as in a test that builds a Routed by hand)
-        private boolean bothTried;   // DR-R: the early failover already asked the backup too, so the caller must not ask it a second time
-
-        Routed owner(ChannelAi o) { this.owner = o; return this; }
 
         Routed(AiProvider primary, AiProvider fallback, boolean picked) { this(primary, fallback, picked, null); }
 
@@ -173,7 +152,7 @@ public class ChannelAi {
         /** The same reply asked of the other model (a second opinion), or null when there is none or it is the one answering. */
         public Routed secondOpinion() {
             if (second == null || second == active || !second.available()) return null;
-            return new Routed(second, null, false, null).owner(owner);
+            return new Routed(second, null, false, null);
         }
 
         public boolean fellBack() { return fellBack; }
@@ -187,7 +166,7 @@ public class ChannelAi {
          */
         public Routed restartOnFallback() {
             if (fallback == null || active == fallback) return null;
-            Routed r = new Routed(fallback, null, false).owner(owner);
+            Routed r = new Routed(fallback, null, false);
             r.fellBack = true;
             return r;
         }
@@ -207,40 +186,19 @@ public class ChannelAi {
          */
         public Turn nextOnActive(String system, List<Turn> turns, List<ToolDef> tools) { return ReplyTrace.withRole(fellBack ? "fallback" : ReplyTrace.role(), () -> active.next(system, turns, tools)); }
 
-        /** One call on {@code p}, timed and reported to the health breaker (a capped call, the review, is never held against the provider). {@code withBackup}: see {@link AiBudget#hasBackup}. */
-        private Turn call(AiProvider p, boolean withBackup, String role, String system, List<Turn> turns, List<ToolDef> tools) {
-            long t0 = System.nanoTime();
-            if (withBackup) AiBudget.hasBackup(BACKUP_RESERVE_MS);
-            try {
-                Turn t = ReplyTrace.withRole(role, () -> p.next(system, turns, tools));
-                if (owner != null && !AiBudget.callsCapped()) owner.health.success(p.code(), (System.nanoTime() - t0) / 1_000_000);
-                return t;
-            } catch (AiUnavailableException e) {
-                if (owner != null && !AiBudget.callsCapped()) owner.health.failure(p.code(), e.category(), (System.nanoTime() - t0) / 1_000_000);
-                throw e;
-            } finally { if (withBackup) AiBudget.noBackup(); }
-        }
-
-        private static boolean usable(Turn t) { return t != null && (!t.calls().isEmpty() || (t.text() != null && !t.text().isBlank())); }
-
         @Override
         public Turn next(String system, List<Turn> turns, List<ToolDef> tools) {
             boolean firstRound = turns.isEmpty() || "user".equals(turns.get(turns.size() - 1).role());
             String role = fellBack ? "fallback" : ReplyTrace.role();   // measurement only: which model's calls these are in the reply's timeline
-            if (fallback == null || active == fallback || !firstRound) return call(active, fallback != null && active != fallback, role, system, turns, tools);   // a later round (or no backup): stays on this model
+            if (fallback == null || active == fallback || !firstRound) return ReplyTrace.withRole(role, () -> active.next(system, turns, tools));
             AiProvider routed = active;
             long routedStart = System.nanoTime();
-            bothTried = false;
             try {
-                Turn t;
-                if (owner != null && !owner.health.allow(routed.code())) throw new AiUnavailableException("BREAKER_OPEN", "The health breaker of " + routed.code() + " is open", null);   // DR-R: a provider that keeps failing is not asked by every new message
-                else if (owner != null && owner.failoverMs > 0 && AiBudget.remainingMs() != Long.MAX_VALUE && fallback.available()) t = raced(routed, role, system, turns, tools);
-                else t = call(routed, true, role, system, turns, tools);
+                Turn t = ReplyTrace.withRole(role, () -> routed.next(system, turns, tools));
                 // a refusal or an empty answer from the routed model is not a reply a customer should get: ask the default model instead
-                if (active == routed && t.calls().isEmpty() && (t.text() == null || t.text().isBlank())) throw new AiUnavailableException("The routed model returned no answer");
+                if (t.calls().isEmpty() && (t.text() == null || t.text().isBlank())) throw new AiUnavailableException("The routed model returned no answer");
                 return t;
             } catch (AiUnavailableException e) {
-                if (bothTried) throw e;   // DR-R: the backup was asked in parallel and failed too
                 log.warn("{} did not answer, using {}: {} (cause: {})", routed.code(), fallback.code(), e.describe(), e.getCause() == null ? "none" : e.getCause().toString());   // the cause tells a stall (request timed out) from a refusal
                 long fallbackStart = System.currentTimeMillis();
                 AiTelemetry.step("event", "provider-fallback:" + routed.code() + "->" + fallback.code() + ":" + e.category(), fallbackStart, fallbackStart, true);
@@ -250,86 +208,11 @@ public class ChannelAi {
                 long fallbackStartNano = System.nanoTime();
                 boolean fellOk = false;
                 try {
-                    Turn t = call(fallback, false, "fallback", system, turns, tools);
+                    Turn t = ReplyTrace.withRole("fallback", () -> fallback.next(system, turns, tools));
                     fellOk = true;
                     return t;
                 } finally { ReplyTrace.fallbackCompleted(routed.code(), fallback.code(), fallbackStartNano, fellOk); }
             }
-        }
-
-        /**
-         * DR-R: the first call of a reply, with the early failover. The routed model is asked on a worker thread; when it has not answered after {@code failoverMs} the SAME request also goes to the
-         * backup model, and the first usable answer wins. The slower call is ignored (not cancelled: the provider bills it either way) and its tokens are recorded against the shop, like the losing
-         * twin of a hedge. When the routed model answers (or fails) inside that time, this is exactly the old behaviour.
-         */
-        private Turn raced(AiProvider routed, String role, String system, List<Turn> turns, List<ToolDef> tools) {
-            var budget = AiBudget.capture();
-            var trace = ReplyTrace.capture();
-            var tel = AiTelemetry.capture();
-            java.util.UUID tenant = AiBudget.tenant();
-            long raceStart = System.nanoTime();
-            var primary = submit(budget, trace, tel, routed, true, role, system, turns, tools);
-            try { return primary.get(Math.min(owner.failoverMs, Math.max(1_000, AiBudget.remainingMs() - 1_000)), java.util.concurrent.TimeUnit.MILLISECONDS); }
-            catch (java.util.concurrent.TimeoutException silent) { /* the routed model is still silent: ask the backup too */ }
-            catch (java.util.concurrent.ExecutionException failed) { throw asUnavailable(failed.getCause()); }
-            catch (InterruptedException i) { Thread.currentThread().interrupt(); throw new AiUnavailableException("The AI assistant was interrupted", i); }
-            long waited = (System.nanoTime() - raceStart) / 1_000_000;
-            log.warn("{} has not answered after {} ms, asking {} as well (the first usable answer wins)", routed.code(), waited, fallback.code());
-            long now = System.currentTimeMillis();
-            AiTelemetry.step("event", "provider-failover:" + routed.code() + "->" + fallback.code(), now, now, false);
-            bothTried = true;
-            var backup = submit(budget, trace, tel, fallback, false, "fallback", system, turns, tools);
-            var winner = new java.util.concurrent.CompletableFuture<Turn>();
-            var winnerOf = new java.util.concurrent.atomic.AtomicReference<AiProvider>();
-            Object lock = new Object();
-            int[] failed = {0};
-            var last = new java.util.concurrent.atomic.AtomicReference<AiUnavailableException>();
-            for (var pair : List.of(java.util.Map.entry(routed, primary), java.util.Map.entry(fallback, backup))) {
-                AiProvider p = pair.getKey();
-                pair.getValue().whenComplete((t, ex) -> {
-                    if (ex == null && usable(t)) {
-                        boolean won;
-                        synchronized (lock) { won = !winner.isDone(); if (won) { winnerOf.set(p); winner.complete(t); } }
-                        if (!won) bill(tenant, p, t);   // the slower answer: the provider billed it, so it is recorded against the shop
-                        return;
-                    }
-                    if (ex == null) bill(tenant, p, t);   // an empty answer is billed too
-                    synchronized (lock) {
-                        last.set(ex != null ? asUnavailable(ex) : new AiUnavailableException(ProviderFailure.EMPTY, "The model returned no answer", null));
-                        if (++failed[0] == 2 && !winner.isDone()) winner.completeExceptionally(last.get());
-                    }
-                });
-            }
-            Turn t;
-            try { t = winner.get(Math.max(1_000, AiBudget.remainingMs() - 500), java.util.concurrent.TimeUnit.MILLISECONDS); }
-            catch (java.util.concurrent.ExecutionException e) { active = fallback; fellBack = true; ReplyTrace.fallbackStarted(routed.code(), fallback.code(), "FAILOVER", waited); throw asUnavailable(e.getCause()); }
-            catch (java.util.concurrent.TimeoutException e) { active = fallback; fellBack = true; throw new AiUnavailableException(ProviderFailure.TIMEOUT, "Neither model answered in time", e); }
-            catch (InterruptedException i) { Thread.currentThread().interrupt(); throw new AiUnavailableException("The AI assistant was interrupted", i); }
-            ReplyTrace.fallbackStarted(routed.code(), fallback.code(), "FAILOVER", waited);
-            if (winnerOf.get() == fallback) { active = fallback; fellBack = true; }
-            ReplyTrace.fallbackCompleted(routed.code(), fallback.code(), raceStart, winnerOf.get() == fallback);
-            return t;
-        }
-
-        private java.util.concurrent.CompletableFuture<Turn> submit(AiBudget.Snapshot budget, ReplyTrace.Context trace, String[] tel, AiProvider p, boolean withBackup, String role, String system, List<Turn> turns, List<ToolDef> tools) {
-            return java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-                AiBudget.adopt(budget); ReplyTrace.adopt(trace); AiTelemetry.adopt(tel);
-                try { return call(p, withBackup, role, system, turns, tools); }
-                finally { AiBudget.clear(); ReplyTrace.release(); AiTelemetry.release(); }
-            }, POOL);
-        }
-
-        /** The tokens of a call whose answer was not used, recorded against the shop it was made for (the same place the losing twin of a hedge goes). */
-        private static void bill(java.util.UUID tenant, AiProvider p, Turn t) {
-            try {
-                var sink = OpenAiProvider.LOST_TWIN_SINK;
-                if (sink != null && tenant != null && t != null && t.usage() != null && t.usage().input() + t.usage().output() > 0) sink.lost(tenant, p.code(), t.usage());
-            } catch (RuntimeException e) { log.warn("Could not record the tokens of an unused {} answer: {}", p.code(), e.toString()); }
-        }
-
-        private static AiUnavailableException asUnavailable(Throwable t) {
-            for (Throwable x = t; x != null; x = x.getCause() == x ? null : x.getCause()) if (x instanceof AiUnavailableException a) return a;
-            return new AiUnavailableException(ProviderFailure.CONNECTION, "The AI assistant could not be reached", t);
         }
     }
 }

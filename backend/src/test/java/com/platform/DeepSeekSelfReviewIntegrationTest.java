@@ -64,7 +64,6 @@ class DeepSeekSelfReviewIntegrationTest extends IntegrationTestBase {
         r.add("app.ai.deepseek.api-key", () -> "test-hive-key");
         r.add("app.ai.default.text-model", () -> "deepseek");   // these tests are about the DeepSeek-primary setup (the platform default is GLM since 2026-11-12)
         r.add("app.ai.review.enabled", () -> "true");
-        r.add("app.ai.review.mode", () -> "always");   // these tests are about the review itself, run on every draft
         r.add("app.ai.review.model", () -> "");   // as in production: the answering model reviews
         r.add("app.ai.review.timeout-ms", () -> "1500");
         r.add("app.ai.glm.max-rps", () -> "0");

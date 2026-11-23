@@ -122,13 +122,10 @@ class ReplyUnitTest {
         var item = new ReplyContext.Item(q("assistant", "text", "عندنا جاكيت قطن بالأسود بـ 1200 جنيه", false), List.of(q("customer", "text", "عايز جاكيت", false), q("assistant", "text", "عندنا جاكيت قطن بالأسود بـ 1200 جنيه", false)), List.of("جاكيت قطن [cotton-jacket]"), false);
         String b = ReplyContext.block(List.of(item), false, "هل ده متاح بالأزرق؟");
         assertThat(b).contains("MESSAGE BEING REPLIED TO:").contains("ORIGINAL MESSAGE SENDER: you, the shop's assistant").contains("SENT: 2026-11-10 12:05")
-                .contains("ORIGINAL MESSAGE CONTENT: «عندنا جاكيت قطن بالأسود بـ 1200 جنيه»").contains("THE PRODUCT THIS MESSAGE IS ABOUT").contains("[cotton-jacket]").doesNotContain("PRODUCTS NAMED IN IT")
+                .contains("ORIGINAL MESSAGE CONTENT: «عندنا جاكيت قطن بالأسود بـ 1200 جنيه»").contains("PRODUCTS NAMED IN IT").contains("[cotton-jacket]")
                 .contains("RELEVANT CONVERSATION CONTEXT").contains("- customer: «عايز جاكيت»").contains("CUSTOMER'S LATEST MESSAGE (the reply itself): «هل ده متاح بالأزرق؟»")
                 .contains("CURRENT BUSINESS STATE").contains("is OLD").contains("CURRENT result").contains("Never create or change an order twice");
         assertThat(b).doesNotContainPattern("\\bid\\b *[=:] *\\d").doesNotContain("message_id");
-        // two products named in the original: nothing is resolved by guess, the assistant is told to ask which one unless the latest message says
-        var two = new ReplyContext.Item(item.quoted(), List.of(), List.of("جاكيت قطن [cotton-jacket]", "جاكيت جلد [leather-jacket]"), false);
-        assertThat(ReplyContext.block(List.of(two), false, "بكام؟")).contains("PRODUCTS NAMED IN IT").contains("ask ONE short question").doesNotContain("THE PRODUCT THIS MESSAGE IS ABOUT");
         // inside the history window the neighbours are not repeated
         assertThat(ReplyContext.block(List.of(new ReplyContext.Item(item.quoted(), item.around(), List.of(), true)), false, "x")).doesNotContain("RELEVANT CONVERSATION CONTEXT");
     }

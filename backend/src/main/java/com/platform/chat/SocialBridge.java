@@ -34,12 +34,9 @@ public class SocialBridge {
     private final ExecutorService pool;
     private final java.util.concurrent.ScheduledExecutorService holder = Executors.newSingleThreadScheduledExecutor();
     private final InboundBurst burst;
-    private final ConversationGate gate;
 
     public SocialBridge(JdbcClient jdbc, TokenCrypto crypto, ChatService chat, LoginThrottle throttle, ProductShare share, ChatTimeline timeline, List<SocialChannel> channels,
-                        @Value("${app.meta.async:true}") boolean async, @Value("${app.chat.burst-ms:0}") long burstMs,
-                        @Value("${app.chat.burst-max-ms:15000}") long burstMaxMs, ConversationGate gate) {
-        this.gate = gate;
+                        @Value("${app.meta.async:true}") boolean async, @Value("${app.chat.burst-ms:5000}") long burstMs) {
         this.jdbc = jdbc;
         this.crypto = crypto;
         this.chat = chat;
@@ -48,8 +45,8 @@ public class SocialBridge {
         this.timeline = timeline;
         this.networks = new java.util.LinkedHashMap<>();
         for (SocialChannel c : channels) networks.put(c.platform(), c);
-        this.pool = async ? Executors.newFixedThreadPool(8) : null;
-        this.burst = pool == null ? new InboundBurst(holder, Runnable::run, 0, 0) : new InboundBurst(holder, pool, burstMs, burstMaxMs);
+        this.pool = async ? Executors.newFixedThreadPool(2) : null;
+        this.burst = pool == null ? new InboundBurst(holder, Runnable::run, 0, 0) : new InboundBurst(holder, pool, burstMs, 15_000);
     }
 
     public boolean handles(String platform) { return networks.containsKey(platform); }
@@ -72,7 +69,7 @@ public class SocialBridge {
         if (jdbc.sql("INSERT INTO chat.meta_events (mid) VALUES (:m) ON CONFLICT DO NOTHING").param("m", platform + "|" + mid).update() == 0) return;
         String key = platform + "|" + accountId + "|" + sender;
         ChatService.InboundMeta meta = new ChatService.InboundMeta(mid, null);
-        if (burst.enabled() && text != null && !text.isBlank()) { burst.add(key, text, meta, (joined, metas) -> gate.run("social|" + key, joined, metas, (j, m2, carried) -> respond(platform, row, sender, j, name, ChatService.input(m2).withCarried(carried)))); return; }
+        if (burst.enabled() && text != null && !text.isBlank()) { burst.add(key, text, meta, (joined, metas) -> respond(platform, row, sender, joined, name, ChatService.input(metas))); return; }
         respond(platform, row, sender, text, name, ChatService.input(List.of(meta)));
     }
 
@@ -96,8 +93,8 @@ public class SocialBridge {
                 throttle.check("chat-social|" + platform + "|" + sender, 40, Duration.ofMinutes(10));
                 boolean arabic = text.codePoints().anyMatch(cp -> cp >= 0x0600 && cp <= 0x06FF);
                 var hold = holder.schedule(() -> {
-                    try { if (gate.fillerAllowed("social|" + platform + "|" + sender)) net.send(row, sender, arabic ? "لحظات معايا... 🌸" : "One moment, I am checking for you... 🌸", null); } catch (RuntimeException ignored) { /* best effort */ }
-                }, 12, java.util.concurrent.TimeUnit.SECONDS);   // DR-B: only when it really takes a while
+                    try { net.send(row, sender, arabic ? "لحظات معايا... 🌸" : "One moment, I am checking for you... 🌸", null); } catch (RuntimeException ignored) { /* best effort */ }
+                }, 5, java.util.concurrent.TimeUnit.SECONDS);
                 try {
                     var reply = chat.reply(tenantId, platform, sender, null, text.length() > 1000 ? text.substring(0, 1000) : text, name, in);
                     convId = reply.conversationId();

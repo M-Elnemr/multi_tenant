@@ -12,7 +12,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.TestPropertySource;
 
 /** The second look before sending: a wrong draft is replaced by the reviewer's correction, a good one goes out as it is, and a broken review never blocks the reply. */
-@TestPropertySource(properties = {"app.ai.review.enabled=true", "app.ai.review.mode=always"})
+@TestPropertySource(properties = "app.ai.review.enabled=true")
 class AiReplyReviewIntegrationTest extends IntegrationTestBase {
     @Autowired JdbcClient jdbc;
     @Autowired ChatService chat;

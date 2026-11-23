@@ -1,5 +1,6 @@
 package com.platform.chat;
 
+import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -52,10 +53,7 @@ final class ReplyContext {
             b.append("  ORIGINAL MESSAGE SENDER: ").append(sender(q.sender())).append("\n");
             if (q.at() != null) b.append("  SENT: ").append(WHEN.format(q.at())).append(" (Cairo time)\n");
             b.append("  ORIGINAL MESSAGE CONTENT: ").append(content(q)).append("\n");
-            if (it.products().size() == 1)   // resolved by code from the stored message, not by the model's reading of a long chat
-                b.append("  THE PRODUCT THIS MESSAGE IS ABOUT (resolved by the system from the stored original; the customer's latest message means THIS product, not one from later in the chat): ").append(it.products().get(0)).append("\n");
-            else if (it.products().size() > 1)
-                b.append("  PRODUCTS NAMED IN IT (look them up by this name or slug; if the latest message does not say which one, ask ONE short question): ").append(String.join("; ", it.products())).append("\n");
+            if (!it.products().isEmpty()) b.append("  PRODUCTS NAMED IN IT (look them up by this name or slug): ").append(String.join("; ", it.products())).append("\n");
             if (q.fromSnapshot()) b.append("  (the original is no longer stored; this is the copy the platform or the chat kept when the customer replied)\n");
             if (!it.around().isEmpty() && !it.insideHistory()) {
                 b.append("RELEVANT CONVERSATION CONTEXT (the messages next to it, oldest first):\n");

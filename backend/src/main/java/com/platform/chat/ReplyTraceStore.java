@@ -100,7 +100,7 @@ public class ReplyTraceStore {
                     .param("id", java.util.UUID.fromString(t.id)).param("t", t.tenantId()).param("c", t.conversationId())
                     .param("ch", t.channel.length() > 12 ? t.channel.substring(0, 12) : t.channel).param("src", t.source()).param("at", new Timestamp(t.originWallMs()))
                     .param("rm", (int) Math.min(Integer.MAX_VALUE, t.replyMs())).param("e2e", ((Number) s.getOrDefault("end_to_end_ms", 0L)).intValue())
-                    .param("o", t.outcome()).param("m", t.model()).param("mc", (short) t.countCalls())
+                    .param("o", t.failed() ? "failed" : "completed").param("m", t.model()).param("mc", (short) t.countCalls())
                     .param("s", JSON.writeValueAsString(s)).param("ev", JSON.writeValueAsString(events)).update();
             written.incrementAndGet();
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw new IllegalStateException(e); }

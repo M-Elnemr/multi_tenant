@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 class ReplyMetricsTest {
     SimpleMeterRegistry registry = new SimpleMeterRegistry();
     java.util.function.Consumer<ReplyTrace> savedSink;
-    static final Set<String> ALLOWED_TAGS = Set.of("channel", "source", "outcome", "provider", "role", "purpose", "kind", "category", "result", "from", "to", "tool", "reason", "verdict", "status", "via", "model", "pool", "check", "le");   // check = the name of one deterministic rule check (about 55 fixed names); le = the fixed histogram bucket bound
+    static final Set<String> ALLOWED_TAGS = Set.of("channel", "source", "outcome", "provider", "role", "purpose", "kind", "category", "result", "from", "to", "tool", "reason", "verdict", "status", "via", "model", "pool", "le");   // le = the fixed histogram bucket bound
 
     @BeforeEach
     void add() { Metrics.addRegistry(registry); savedSink = ReplyTrace.sink; ReplyTrace.sink = t -> { }; ReplyTrace.enabled = true; }

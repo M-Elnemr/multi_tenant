@@ -16,10 +16,9 @@ public interface AiProvider {
      * {@code raw} is whatever the provider needs to replay its own turn exactly (opaque to everyone else).
      */
     /** Tokens the model billed for one call (cached = the part of the input served from the provider's prompt cache, cacheWrite = the part written to it, which some providers bill higher; both are inside input). */
-    record Usage(int input, int output, int cached, int cacheWrite, int reasoning) {
-        public static final Usage NONE = new Usage(0, 0, 0, 0, 0);
-        public Usage(int input, int output, int cached) { this(input, output, cached, 0, 0); }
-        public Usage(int input, int output, int cached, int cacheWrite) { this(input, output, cached, cacheWrite, 0); }
+    record Usage(int input, int output, int cached, int cacheWrite) {
+        public static final Usage NONE = new Usage(0, 0, 0, 0);
+        public Usage(int input, int output, int cached) { this(input, output, cached, 0); }
     }
 
     record Turn(String role, String text, List<ToolCall> calls, List<ToolResult> results, Object raw, Usage usage) {

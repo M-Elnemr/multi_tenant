@@ -93,13 +93,6 @@ public final class AiTelemetry {
     /** The trace id of the reply running on this thread, or null (telemetry off, or no reply). */
     static String currentTrace() { return TRACE.get(); }
 
-    /** DR-R: the trace and session of this thread, for a model call that runs on another thread (the early failover). */
-    static String[] capture() { return new String[] {TRACE.get(), SESSION.get()}; }
-
-    static void adopt(String[] s) { if (s[0] == null) TRACE.remove(); else TRACE.set(s[0]); if (s[1] == null) SESSION.remove(); else SESSION.set(s[1]); }
-
-    static void release() { TRACE.remove(); SESSION.remove(); }
-
     /** Ends the reply: one root span with the timeline summary (phases, in ms) and the channel. */
     public static void endReply(String channel, String timelineSummary, long startMillis) {
         try {
