@@ -127,8 +127,8 @@ export default function TenantDetail({ params }: { params: Promise<{ id: string 
 
           <Card>
             <H icon="clock">{t("admin.history")}</H>
-            <ol className="relative max-h-80 space-y-3 overflow-y-auto border-s-2 border-line ps-4">
-              {data.events.map((e, i) => <li key={i} className="relative text-sm"><span className="absolute -start-[1.4rem] top-1.5 h-2.5 w-2.5 rounded-full bg-brand" /><span className="font-mono text-xs font-semibold text-ink-2">{e.eventType}</span> <span className="tnum text-faint">· {dateTime(e.createdAt, locale)}</span></li>)}
+            <ol className="relative max-h-80 space-y-3 overflow-y-auto overflow-x-hidden border-s-2 border-line ps-4">
+              {data.events.map((e, i) => <li key={i} className="relative flex flex-wrap items-baseline gap-x-2 text-sm"><span className="absolute -start-[1.4rem] top-1.5 h-2.5 w-2.5 rounded-full bg-brand" /><span className="font-mono text-xs font-semibold text-ink-2">{e.eventType}</span> <span className="tnum text-faint">· {dateTime(e.createdAt, locale)}</span></li>)}
             </ol>
           </Card>
         </div>
