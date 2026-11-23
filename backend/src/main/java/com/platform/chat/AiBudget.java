@@ -10,6 +10,7 @@ final class AiBudget {
     private static final ThreadLocal<int[]> HEDGES = new ThreadLocal<>();
     private static final ThreadLocal<Long> CALL_CAP = new ThreadLocal<>();
     private static final ThreadLocal<String> REASONING = new ThreadLocal<>();
+    private static final ThreadLocal<Long> BACKUP_RESERVE = new ThreadLocal<>();   // DR-R: set while the call is to a model that has a backup model
     /** A reply may send a slow call a second time once; a model that is slow all the time must not double every call of the reply. */
     static final int HEDGES_PER_REPLY = 1;
 
@@ -51,7 +52,35 @@ final class AiBudget {
 
     static String reasoningOverride() { return REASONING.get(); }
 
-    static void clear() { DEADLINE.remove(); TENANT.remove(); HEDGES.remove(); CALL_CAP.remove(); REASONING.remove(); }
+    static void clear() { DEADLINE.remove(); TENANT.remove(); HEDGES.remove(); CALL_CAP.remove(); REASONING.remove(); BACKUP_RESERVE.remove(); }
+
+    /**
+     * DR-R: until {@link #noBackup()}: the calls on this thread are to a model that HAS a backup model. Such a call is capped at {@link OpenAiProvider#BACKUP_CALL_MS}, keeps {@code reserveMs} of the reply
+     * budget for the backup (the primary can never consume the whole reply budget) and is never sent twice to the same key (the backup is the second chance, not a same-key twin).
+     */
+    static void hasBackup(long reserveMs) { BACKUP_RESERVE.set(reserveMs); }
+
+    static void noBackup() { BACKUP_RESERVE.remove(); }
+
+    static boolean backupExists() { return BACKUP_RESERVE.get() != null; }
+
+    static long backupReserveMs() { Long r = BACKUP_RESERVE.get(); return r == null ? 0 : r; }
+
+    /** Everything a reply's model call needs from this thread, to run the call on another thread (the early failover runs two models at once). */
+    record Snapshot(Long deadline, java.util.UUID tenant, int[] hedges, Long callCap, String reasoning, Long backup) {}
+
+    static Snapshot capture() { return new Snapshot(DEADLINE.get(), TENANT.get(), HEDGES.get(), CALL_CAP.get(), REASONING.get(), BACKUP_RESERVE.get()); }
+
+    /** Puts a captured state on this thread (a worker); the caller ends with {@link #clear()}. The hedge counter is shared, so the reply still hedges once in all. */
+    static void adopt(Snapshot s) {
+        clear();
+        if (s.deadline() != null) DEADLINE.set(s.deadline());
+        if (s.tenant() != null) TENANT.set(s.tenant());
+        if (s.hedges() != null) HEDGES.set(s.hedges());
+        if (s.callCap() != null) CALL_CAP.set(s.callCap());
+        if (s.reasoning() != null) REASONING.set(s.reasoning());
+        if (s.backup() != null) BACKUP_RESERVE.set(s.backup());
+    }
 
     /** Milliseconds left for this reply, or {@link Long#MAX_VALUE} outside one. */
     static long remainingMs() {

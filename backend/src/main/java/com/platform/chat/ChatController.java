@@ -36,9 +36,11 @@ public class ChatController {
     private final AiReadinessService readiness;
     private final MediaReader media;
     private final WebBurst webBurst;
+    private final DeferredReplies deferred;
 
-    public ChatController(ChatService chat, LoginThrottle throttle, AiEvalService eval, AiReadinessService readiness, MediaReader media, WebBurst webBurst) {
+    public ChatController(ChatService chat, LoginThrottle throttle, AiEvalService eval, AiReadinessService readiness, MediaReader media, WebBurst webBurst, DeferredReplies deferred) {
         this.webBurst = webBurst;
+        this.deferred = deferred;
         this.media = media;
         this.readiness = readiness;
         this.chat = chat;
@@ -93,7 +95,7 @@ public class ChatController {
     @GetMapping("/api/v1/shop/chat/history")
     public Object history(@RequestParam String conversationId, @RequestParam(required = false) Long around, @RequestParam(required = false) Boolean state, jakarta.servlet.http.HttpServletResponse res) {
         UUID tenant = StoreContext.tenantId();
-        boolean pending = CONV_ID.matcher(conversationId).matches() && webBurst.pending(tenant, conversationId);   // DR-B: the assistant has not answered the latest lines yet
+        boolean pending = CONV_ID.matcher(conversationId).matches() && (webBurst.pending(tenant, conversationId) || deferred.hasOpen(tenant, UUID.fromString(conversationId)));   // DR-B: the assistant has not answered the latest lines yet (DR-R: or a retry of an unanswered turn is still running)
         res.setHeader("X-Chat-Pending", pending ? "1" : "0");
         List<Map<String, Object>> h = historyRows(tenant, conversationId, around);
         if (webBurst.enabled()) {   // the cards (order, products) of replies written after the line was saved: the page gets them with the reply

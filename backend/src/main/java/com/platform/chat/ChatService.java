@@ -83,6 +83,40 @@ public class ChatService {
     @org.springframework.beans.factory.annotation.Autowired
     void replies(MessageReplies replies) { this.replies = replies; }
 
+    // DR-R: turns that no model could answer are retried in the background (see DeferredReplies)
+    private volatile DeferredReplies deferred;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void deferred(DeferredReplies d) { this.deferred = d; }
+
+    /** DR-R: the retry of a deferred turn running on this thread (null for a customer's own message). */
+    private static final ThreadLocal<DeferredReplies.Run> DEFERRED_RUN = new ThreadLocal<>();
+
+    /**
+     * DR-R: answers a turn that was deferred because every model failed: the normal reply path (health breaker, fallback model), but the customer's message is already saved and its points were already
+     * taken, so neither is done again. When every model fails again nothing is saved and {@code run.failedAgain} is set; otherwise the answer is saved like any assistant reply.
+     */
+    Reply replyDeferred(DeferredReplies.Run run) {
+        DEFERRED_RUN.set(run);
+        try { return reply(run.tenantId, run.channel, run.externalId, run.clientId, run.text, run.displayName, ReplyInput.NONE); }
+        finally { DEFERRED_RUN.remove(); }
+    }
+
+    /** DR-R: the one short human holding message of a chat whose turn could not be answered at all: saved as an assistant message, the chat flagged for the team (the owner is notified as always). Returns the text. */
+    String holdForTeam(UUID tenantId, UUID conv, String channel, String customerText) {
+        boolean arabic = arabicConversation(conv);
+        String holding = arabic ? "وصلتني رسالتك يا فندم، وهرد عليك حالًا 🙏" : "I got your message and I will get back to you right away 🙏";
+        jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x)").param("c", conv).param("x", holding).update();
+        jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();
+        flagTeam(tenantId, conv, channel, customerText);
+        return holding;
+    }
+
+    /** DR-R: flags the chat for the shop team with the reason of an unanswered turn (once until they handle it) and notifies the owner. */
+    void flagTeam(UUID tenantId, UUID conv, String channel, String customerText) {
+        flagForHuman(tenantId, conv, channel, arabicConversation(conv) ? "المساعد مقدرش يرد على العميل" : "The assistant could not answer the customer", customerText, null);
+    }
+
     /** The names of the products the quoted message talks about, for the knowledge tool of this reply (so «does it shrink?» searches the right product). */
     static final ThreadLocal<List<String>> REPLY_PRODUCTS = new ThreadLocal<>();
     /** The slugs of the products the quoted message is about (set only while a reply to an earlier message is being answered). */
@@ -629,10 +663,12 @@ public class ChatService {
         List<ReplyRef> refs = in.refs().stream().filter(r -> r != null && !r.empty()).toList();
         boolean fromClient = "WEB".equals(channel) || "TEST".equals(channel);   // a website client names a message by our id: it must be of this chat and this shop (the channels' own ids are looked up, never trusted)
         boolean stored = in.storedId() != null;   // DR-B: the website stored each line (and its reference and facts) when it arrived; the reply answers them
-        if (replies != null && fromClient && !stored) for (ReplyRef r : refs) replies.resolve(tenantId, conv, r, true);   // throws before anything is saved
-        long userMsgId = stored ? in.storedId() : jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'user', :x) RETURNING id").param("c", conv).param("x", rowText).query(Long.class).single();
-        if (memoryFacts != null && !stored) memoryFacts.record(tenantId, conv, userMsgId, rowText);   // what the customer states (budget, size, colours, conditions) is remembered with its source, by code
-        if (replies != null && !stored) {
+        DeferredReplies.Run retryRun = DEFERRED_RUN.get();   // DR-R: a retry of a deferred turn: the customer's message is already saved and its points already taken
+        boolean alreadySaved = stored || retryRun != null;
+        if (replies != null && fromClient && !alreadySaved) for (ReplyRef r : refs) replies.resolve(tenantId, conv, r, true);   // throws before anything is saved
+        long userMsgId = retryRun != null ? retryRun.userMessageId : stored ? in.storedId() : jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'user', :x) RETURNING id").param("c", conv).param("x", rowText).query(Long.class).single();
+        if (memoryFacts != null && !alreadySaved) memoryFacts.record(tenantId, conv, userMsgId, rowText);   // what the customer states (budget, size, colours, conditions) is remembered with its source, by code
+        if (replies != null && !alreadySaved) {
             try {
                 if (!refs.isEmpty()) replies.attachAll(tenantId, conv, userMsgId, refs);   // every line of a burst keeps its own reference
                 for (String mid : in.mids()) replies.recordMid(tenantId, conv, userMsgId, mid, null);
@@ -646,12 +682,12 @@ public class ChatService {
         // the shop team took this chat over: the assistant stays quiet until they hand it back (or two hours pass without them writing)
         if (!"TEST".equals(channel) && paused(conv)) return pausedReply(conv, text);
         // a customer who is genuinely upset: when the shop chose to hand such chats over, it happens here, before any model call and before the wallet is touched
-        if (!"TEST".equals(channel)) {
+        if (!"TEST".equals(channel) && retryRun == null) {
             var handed = frustration.handle(tenantId, conv, channel, english(text));
             if (handed != null) return new Reply(conv, handed.text(), null, List.of());
         }
         // the AI answers only while the shop has points: 1 EGP per conversation (each block of 10 AI replies)
-        if (!"TEST".equals(channel) && !chargeTurn(tenantId, conv)) {
+        if (!"TEST".equals(channel) && retryRun == null && !chargeTurn(tenantId, conv)) {
             flagForHuman(tenantId, conv, channel, "NO_POINTS", text, null);
             return pausedReply(conv, text);
         }
@@ -767,6 +803,7 @@ public class ChatService {
         List<Turn> fresh = new ArrayList<>(turns);   // the reply as it was before any model call, for a restart on the other model
         List<AiUsageService.Round> failedRounds = new ArrayList<>();
         String fallbackWhy = null;
+        boolean allFailed = false;   // DR-R: every model failed and the turn is deferred
         AiBudget.start(REPLY_BUDGET_MS);
         AiBudget.forTenant(tenantId);
         BASKET_GUARD_SPOKE.set(false);
@@ -828,7 +865,8 @@ public class ChatService {
             if (EVAL.get() != null) EVAL.get().failure(routed.code(), e.getMessage());
             // never replay a reply whose failed attempt already did something that cannot be done twice (an order placed or cancelled, a question sent to the owner, a summary shown):
             // the persisted state is the truth, the customer gets the code-written confirmation or the safe message, and the other model is not asked to repeat the action
-            var backup = AiBudget.hasLeft(12_000) && !madeChanges(ctx, rounds) ? routed.restartOnFallback() : null;
+            var backup = AiBudget.hasLeft(8_000) && !madeChanges(ctx, rounds) ? routed.restartOnFallback() : null;   // DR-R: 8 s are enough for the backup (was 12 s)
+            boolean canDefer = deferred != null && deferred.enabled() && !"TEST".equals(channel) && EVAL.get() == null && !routed.showsErrors() && !madeChanges(ctx, rounds);   // DR-R
             if (backup != null) {
                 // the model failed after its tool exchange had begun: the whole reply again, on the other model (two companies, so one outage never silences the shop)
                 log.warn("Restarting the reply on {} after {} failed", backup.code(), routed.code());
@@ -845,12 +883,14 @@ public class ChatService {
                     log.warn("AI unavailable on the fallback too: {}", e2.getMessage());
                     if (EVAL.get() != null) EVAL.get().failure(routed.code(), e2.getMessage());
                     events.record(tenantId, conv, channel, routed.code(), "ERROR", e2.describe(), null);
-                    answer = dataOrUnavailable(ctx, text, arabicChat);
+                    if (canDefer) allFailed = true;   // DR-R: no busy text: the turn is kept and retried in the background
+                    else answer = dataOrUnavailable(ctx, text, arabicChat);
                     ReplyTrace.note("ai_unavailable", true);
                 }
             } else {
                 events.record(tenantId, conv, channel, routed.code(), "ERROR", e.describe(), null);
-                answer = routed.showsErrors() ? "⚠️ " + routed.label() + ": " + e.getMessage() : dataOrUnavailable(ctx, text, arabicChat);
+                if (canDefer) allFailed = true;   // DR-R: no busy text: the turn is kept and retried in the background
+                else answer = routed.showsErrors() ? "⚠️ " + routed.label() + ": " + e.getMessage() : dataOrUnavailable(ctx, text, arabicChat);
                 ReplyTrace.note("ai_unavailable", true);
             }
         } finally {
@@ -859,6 +899,23 @@ public class ChatService {
         }
         if (routed.fellBack()) events.record(tenantId, conv, channel, routed.code(), "FALLBACK", fallbackWhy != null ? fallbackWhy : "the first call failed", null);
         rounds.addAll(0, failedRounds);   // the failed model's calls are billed too
+        if (allFailed) {   // DR-R: every model failed: nothing is said to the customer now; the turn is kept (first time) or stays queued (a retry), see DeferredReplies
+            if (!"TEST".equals(channel)) usageLog.record(tenantId, "CHAT", channel, conv, false, text, rounds, routed.code(), routed.fellBack());
+            if (retryRun != null) { retryRun.failedAgain = true; ReplyTrace.outcome("failed"); }
+            else {
+                try {
+                    deferred.defer(tenantId, conv, channel, externalId, clientId, userMsgId, text, displayName, "every model failed");
+                    events.record(tenantId, conv, channel, routed.code(), "DEFERRED", "every model failed; retried in the background at +15 s, +45 s, +2 min, +5 min", (System.nanoTime() - started) / 1_000_000);
+                    ReplyTrace.outcome("deferred");
+                } catch (RuntimeException ex) {
+                    log.warn("Could not keep the unanswered turn, answering with the busy text: {}", ex.toString());   // the table is the safety net: without it the old busy text is the only way to answer
+                    String busy = dataOrUnavailable(ctx, text, arabicChat);
+                    jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x)").param("c", conv).param("x", busy).update();
+                    return new Reply(conv, busy, null, List.of());
+                }
+            }
+            return new Reply(conv, "", null, List.of());
+        }
         String human = needsHuman(text, answer, arabicChat);
         if (human != null) flagForHuman(tenantId, conv, channel, human, text, routed.code());
         if (human != null && !"TEST".equals(channel) && ctx.summary()[0] == null && orderBox[0] == null && answer != null && !answer.equals(unavailableText(arabicChat)) && !TEAM_TOLD.matcher(answer).find())
@@ -896,6 +953,7 @@ public class ChatService {
         if (ctx.summary()[0] != null) markSummary(conv, saved);
         jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();
         boolean orderText = ctx.summary()[0] != null || orderBox[0] != null;   // the order summary and the confirmation list the items: a product card after them is only noise
+        if (retryRun != null) ReplyTrace.outcome("recovered");   // DR-R
         return new Reply(conv, answer, orderBox[0], orderText ? List.of() : ctx.products(), saved, userMsgId);
     }
 
