@@ -9,6 +9,9 @@ FROM mirror.gcr.io/library/node:20-alpine AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# The Google Fonts stylesheets come from font-mocks.cjs (node scripts/gen-font-mocks.mjs), not from Google at build time: on the CI runner Google answers
+# some families with a font URL form Turbopack rejects. Only the font files are downloaded. Re-generate the file when a next/font/google declaration changes.
+ENV NEXT_FONT_GOOGLE_MOCKED_RESPONSES=/app/font-mocks.cjs
 # next/font/google downloads the fonts at build time and Google sometimes answers with a URL form Turbopack rejects ("queries have exactly one
 # entry"); it differs per request, so a plain retry succeeds. The build only counts as done when the standalone server exists.
 RUN npx next typegen && for i in 1 2 3 4 5; do npm run build && break; echo "next build failed (attempt $i), retrying"; sleep 5; done; test -f .next/standalone/server.js
