@@ -947,7 +947,8 @@ public class ChatService {
         ctx.products().removeIf(p -> !seenCards.add(p.get("slug")));   // one card per product
         String replyWords = FastAnswers.norm(answer);
         if (!messaging(channel)) ctx.products().removeIf(p -> !Boolean.TRUE.equals(p.get("send")) && !replyWords.contains(FastAnswers.norm(String.valueOf(p.get("name")))));   // the website shows cards only for what the reply is about
-        if (ConversationGate.shouldAbort() && !madeChanges(ctx, rounds)) {   // DR-B: more lines arrived while this reply was being written and it has not been saved or sent: it is dropped, the next generation answers every line once
+        if (madeChanges(ctx, rounds)) ConversationGate.markCommitted();   // DR-B: an order or cancellation happened: this reply goes out, a newer burst waits for it
+        else if (!ConversationGate.tryCommit()) {   // DR-B: more lines arrived while this reply was being written and it has not been saved or sent: it is dropped, the next generation answers every line once
             log.info("Reply dropped: a newer burst of conversation {} is waiting", conv);
             ConversationGate.markDiscarded();
             return new Reply(conv, "", null, List.of());
@@ -3438,7 +3439,8 @@ public class ChatService {
     private String modelLoop(Ctx ctx, ChannelAi.Routed routed, String system, List<Turn> turns, List<ToolDef> tools, List<AiUsageService.Round> rounds, MoneyGuard.Allowed allowed) {
         boolean retried = false;
         for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
-            if (ConversationGate.shouldAbort() && !madeChanges(ctx, rounds)) throw new ConversationGate.Superseded();   // DR-B: a newer burst is waiting: no more provider calls for a reply that will be dropped
+            if (madeChanges(ctx, rounds)) ConversationGate.markCommitted();
+            else if (ConversationGate.shouldAbort()) throw new ConversationGate.Superseded();   // DR-B: a newer burst is waiting: no more provider calls for a reply that will be dropped
             long callStart = System.nanoTime();
             Turn t = routed.next(system, turns, tools);
             ReplyTimeline.llm(routed.code(), ReplyTimeline.since(callStart));

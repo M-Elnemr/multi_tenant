@@ -76,7 +76,7 @@ public class MetaChannelService {
         this.media = media;
         this.appSecret = appSecret == null || appSecret.isBlank() ? null : appSecret.trim();
         this.verifyToken = verifyToken == null || verifyToken.isBlank() ? null : verifyToken.trim();
-        this.pool = async ? Executors.newFixedThreadPool(4) : null;
+        this.pool = async ? Executors.newFixedThreadPool(8) : null;
         this.burst = pool == null ? new InboundBurst(holder, Runnable::run, 0, 0) : new InboundBurst(holder, pool, burstMs, burstMaxMs);
         ReplyMetrics.pool("meta", pool);   // measurement only: how busy the 4 workers are and how many replies wait for one
         ReplyMetrics.gauge("elmanassa.burst.pending", burst, InboundBurst::pendingBursts, "pool", "meta");

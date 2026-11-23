@@ -66,7 +66,7 @@ public class EvolutionService {
         this.secret = secret == null ? "" : secret.trim();
         this.backendUrl = backendUrl == null ? "" : backendUrl.trim().replaceAll("/+$", "");
         this.typingDelayMs = Math.max(0, typingDelayMs);
-        this.pool = async ? Executors.newFixedThreadPool(2) : null;
+        this.pool = async ? Executors.newFixedThreadPool(8) : null;
         this.burst = pool == null ? new InboundBurst(timers, Runnable::run, 0, 0) : new InboundBurst(timers, pool, burstMs, burstMaxMs);
         ReplyMetrics.pool("evolution", pool);   // measurement only: how busy the 2 workers are and how many replies wait for one
         ReplyMetrics.gauge("elmanassa.burst.pending", burst, InboundBurst::pendingBursts, "pool", "evolution");

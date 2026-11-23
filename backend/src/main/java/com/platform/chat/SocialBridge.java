@@ -48,7 +48,7 @@ public class SocialBridge {
         this.timeline = timeline;
         this.networks = new java.util.LinkedHashMap<>();
         for (SocialChannel c : channels) networks.put(c.platform(), c);
-        this.pool = async ? Executors.newFixedThreadPool(4) : null;
+        this.pool = async ? Executors.newFixedThreadPool(8) : null;
         this.burst = pool == null ? new InboundBurst(holder, Runnable::run, 0, 0) : new InboundBurst(holder, pool, burstMs, burstMaxMs);
     }
 

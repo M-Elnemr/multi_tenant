@@ -22,38 +22,75 @@ class ConversationGateTest {
 
     static String all(String carried, String joined) { return carried == null ? joined : carried + "|" + joined; }
 
+    /** What ChatService does right before saving and sending: the reply may go out only while no newer burst took the conversation over. */
+    static boolean mayGoOut() {
+        if (ConversationGate.tryCommit()) return true;
+        ConversationGate.markDiscarded();
+        return false;
+    }
+
     @Test
-    void aLineDuringGenerationGivesExactlyOneFinalReplyCoveringAllLines() throws Exception {
+    void aNewerLineStartsAtOnceWithoutWaitingForTheSlowCallAndOnlyTheLastReplyGoesOut() throws Exception {
         ConversationGate gate = new ConversationGate(true);
-        CountDownLatch started = new CountDownLatch(1), proceed = new CountDownLatch(1);
+        CountDownLatch startedA = new CountDownLatch(1), startedB = new CountDownLatch(1), startedC = new CountDownLatch(1), proceed = new CountDownLatch(1);
         pool.execute(() -> gate.run("c", "A", List.of(), (j, m, carried) -> {
-            started.countDown();
-            try { proceed.await(); } catch (InterruptedException ignored) { }
-            if (ConversationGate.shouldAbort()) { ConversationGate.markDiscarded(); return; }   // what ChatService does right before saving
-            sent.add(all(carried, j));
+            startedA.countDown();
+            try { proceed.await(); } catch (InterruptedException ignored) { }   // the slow model call of the first reply
+            if (mayGoOut()) sent.add(all(carried, j));
         }));
-        assertThat(started.await(2, TimeUnit.SECONDS)).isTrue();
+        assertThat(startedA.await(2, TimeUnit.SECONDS)).isTrue();
         assertThat(gate.busy("c")).isTrue();
-        long t0 = System.nanoTime();
-        gate.run("c", "B", List.of(), (j, m, carried) -> sent.add(all(carried, j)));   // returns at once: the worker is not held while the first reply finishes
-        assertThat((System.nanoTime() - t0) / 1_000_000).isLessThan(500);
-        gate.run("c", "C", List.of(), (j, m, carried) -> sent.add(all(carried, j)));   // two waiting bursts are one
-        proceed.countDown();
+        pool.execute(() -> gate.run("c", "B", List.of(), (j, m, carried) -> {
+            startedB.countDown();
+            try { proceed.await(); } catch (InterruptedException ignored) { }
+            if (mayGoOut()) sent.add(all(carried, j));
+        }));
+        assertThat(startedB.await(1, TimeUnit.SECONDS)).as("B starts at once, while A's slow call is still running").isTrue();
+        pool.execute(() -> gate.run("c", "C", List.of(), (j, m, carried) -> {
+            startedC.countDown();
+            if (mayGoOut()) sent.add(all(carried, j));   // the latest line: nothing newer arrives
+        }));
+        assertThat(startedC.await(1, TimeUnit.SECONDS)).as("C starts at once too").isTrue();
+        for (int i = 0; i < 100 && sent.isEmpty(); i++) Thread.sleep(20);
+        assertThat(sent).as("C answers A, B and C together, without waiting for the older calls").containsExactly("A\nB|C");
+        proceed.countDown();   // the older calls finish later: their replies are dropped
         for (int i = 0; i < 100 && gate.busy("c"); i++) Thread.sleep(20);
-        assertThat(sent).containsExactly("A|B\nC");
+        Thread.sleep(150);
+        assertThat(sent).as("exactly one reply went out").containsExactly("A\nB|C");
         assertThat(gate.busy("c")).isFalse();
     }
 
     @Test
-    void aLineAfterTheReplyWasSentGetsItsOwnSecondReply() throws Exception {
+    void aReplyThatIsAlreadyGoingOutIsNeverDroppedAndTheNewLineWaitsForIt() throws Exception {
         ConversationGate gate = new ConversationGate(true);
-        CountDownLatch started = new CountDownLatch(1), proceed = new CountDownLatch(1);
+        CountDownLatch committed = new CountDownLatch(1), proceed = new CountDownLatch(1);
         pool.execute(() -> gate.run("c", "A", List.of(), (j, m, carried) -> {
-            started.countDown();
+            assertThat(ConversationGate.tryCommit()).isTrue();   // the reply is about to be saved and sent
+            committed.countDown();
             try { proceed.await(); } catch (InterruptedException ignored) { }
-            sent.add(all(carried, j));   // the reply is already out (or cannot be dropped, e.g. an order was placed): it is never discarded
+            sent.add(all(carried, j));
         }));
-        assertThat(started.await(2, TimeUnit.SECONDS)).isTrue();
+        assertThat(committed.await(2, TimeUnit.SECONDS)).isTrue();
+        long t0 = System.nanoTime();
+        gate.run("c", "B", List.of(), (j, m, carried) -> sent.add(all(carried, j)));   // parked: returns at once, runs after A
+        assertThat((System.nanoTime() - t0) / 1_000_000).isLessThan(500);
+        assertThat(sent).isEmpty();
+        proceed.countDown();
+        for (int i = 0; i < 100 && gate.busy("c"); i++) Thread.sleep(20);
+        assertThat(sent).containsExactly("A", "B");
+    }
+
+    @Test
+    void aReplyThatChangedSomethingIsMarkedCommittedAndTheNewLineWaits() throws Exception {
+        ConversationGate gate = new ConversationGate(true);
+        CountDownLatch placed = new CountDownLatch(1), proceed = new CountDownLatch(1);
+        pool.execute(() -> gate.run("c", "A", List.of(), (j, m, carried) -> {
+            ConversationGate.markCommitted();   // an order was placed: this reply must go out
+            placed.countDown();
+            try { proceed.await(); } catch (InterruptedException ignored) { }
+            sent.add(all(carried, j));
+        }));
+        assertThat(placed.await(2, TimeUnit.SECONDS)).isTrue();
         gate.run("c", "B", List.of(), (j, m, carried) -> sent.add(all(carried, j)));
         proceed.countDown();
         for (int i = 0; i < 100 && gate.busy("c"); i++) Thread.sleep(20);
@@ -93,8 +130,8 @@ class ConversationGateTest {
                 try { go.await(); } catch (InterruptedException ignored) { }
                 gate.run("c", line, List.of(), (j, m, carried) -> {
                     try { Thread.sleep(3); } catch (InterruptedException ignored) { }
-                    // like ChatService: a superseded reply that can be dropped is dropped; some replies (an order was placed) cannot be, and go out
-                    if (ConversationGate.shouldAbort() && !j.contains("L7")) { ConversationGate.markDiscarded(); return; }
+                    // like ChatService: a superseded reply is dropped, the one that still owns the conversation goes out
+                    if (!mayGoOut()) return;
                     sent.add(all(carried, j));
                 });
                 done.countDown();

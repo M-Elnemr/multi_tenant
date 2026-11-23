@@ -42,7 +42,7 @@ public class WebBurst {
     private final ConcurrentHashMap<String, Long> lastTyping = new ConcurrentHashMap<>();
 
     public WebBurst(@org.springframework.context.annotation.Lazy ChatService chat, ConversationGate gate, @Value("${app.chat.web-burst:true}") boolean webBurst,
-                    @Value("${app.chat.web-burst-ms:0}") long burstMs, @Value("${app.chat.burst-max-ms:15000}") long burstMaxMs, @Value("${app.chat.web-workers:4}") int workers) {
+                    @Value("${app.chat.web-burst-ms:0}") long burstMs, @Value("${app.chat.burst-max-ms:15000}") long burstMaxMs, @Value("${app.chat.web-workers:8}") int workers) {
         this.chat = chat;
         this.gate = gate;
         this.on = webBurst;   // the website starts answering at once (web-burst-ms = 0): a newer line drops the answer in progress and one answer covers every line (ConversationGate)
