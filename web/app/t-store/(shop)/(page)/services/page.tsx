@@ -11,5 +11,6 @@ export default async function Services({ searchParams }: { searchParams?: Promis
   const vn = service ? vnDesign(template) : undefined;
   if (!vn) notFound();
   const q = (await searchParams) ?? {};
-  return <vn.Catalog d={await vnData()} cat={typeof q.cat === "string" ? q.cat : undefined} />;
+  const str = (k: string) => (typeof q[k] === "string" ? (q[k] as string) : undefined);
+  return <vn.Catalog d={await vnData()} cat={str("cat")} q={str("q")} sort={str("sort")} />;
 }

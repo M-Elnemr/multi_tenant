@@ -26,7 +26,7 @@ export type BookInit = { service?: string; date?: string; time?: string };
 /** What a template's header, footer and mobile bar receive from the storefront layout. Only plain data (the header is a client component). */
 export type ChromeProps = {
   name: string; logoUrl: string | null; announcement?: string; closedMessage?: string; isOpen: boolean; hasProducts: boolean; hasBooking: boolean;
-  whatsapp?: string; phone?: string;
+  whatsapp?: string; phone?: string; categories?: string[];
 };
 export type FooterProps = ChromeProps & { data: VnData; poweredLabel: string; poweredName: string };
 export type DetailProps = VnData & { service: VnService };
