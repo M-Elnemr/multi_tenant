@@ -9,7 +9,9 @@ FROM mirror.gcr.io/library/node:20-alpine AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npx next typegen && npm run build
+# next/font/google downloads the fonts at build time and Google sometimes answers with a URL form Turbopack rejects ("queries have exactly one
+# entry"); it differs per request, so a plain retry succeeds. The build only counts as done when the standalone server exists.
+RUN npx next typegen && for i in 1 2 3 4 5; do npm run build && break; echo "next build failed (attempt $i), retrying"; sleep 5; done; test -f .next/standalone/server.js
 
 # --- Runtime ---
 FROM mirror.gcr.io/library/node:20-alpine AS runtime
