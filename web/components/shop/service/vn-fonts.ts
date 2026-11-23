@@ -1,4 +1,5 @@
-import { Alexandria, Almarai, Bricolage_Grotesque, Cairo, Cormorant_Garamond, IBM_Plex_Sans_Arabic, Jost, JetBrains_Mono, Manrope, Noto_Naskh_Arabic, Plus_Jakarta_Sans, Readex_Pro, Sora, Space_Grotesk, Tajawal } from "next/font/google";
+import localFont from "next/font/local";
+import { Alexandria, Almarai, Bricolage_Grotesque, Cairo, Cormorant_Garamond, IBM_Plex_Sans_Arabic, JetBrains_Mono, Manrope, Noto_Naskh_Arabic, Plus_Jakarta_Sans, Readex_Pro, Sora, Space_Grotesk, Tajawal } from "next/font/google";
 
 /**
  * Fonts of the five vn-* service designs (server side only; never preloaded, the browser fetches a font only when a page of that design uses it).
@@ -6,7 +7,8 @@ import { Alexandria, Almarai, Bricolage_Grotesque, Cairo, Cormorant_Garamond, IB
  */
 const corm = Cormorant_Garamond({ display: "swap", preload: false, subsets: ["latin"], weight: ["400", "500", "600"], style: ["normal", "italic"], variable: "--f-vn-corm" });
 const naskh = Noto_Naskh_Arabic({ display: "swap", preload: false, subsets: ["arabic"], weight: ["400", "500", "600", "700"], variable: "--f-vn-naskh" });
-const jost = Jost({ display: "swap", preload: false, subsets: ["latin"], weight: ["300", "400", "500", "600"], variable: "--f-vn-jost" });
+// self-hosted: next/font/google could not build Jost on the CI image (Google served a URL form Turbopack rejects)
+const jost = localFont({ src: [{ path: "../templates/fonts/jost-latin.woff2", weight: "300 600", style: "normal" }], display: "swap", preload: false, variable: "--f-vn-jost" });
 const almarai = Almarai({ display: "swap", preload: false, subsets: ["arabic"], weight: ["300", "400", "700", "800"], variable: "--f-vn-almarai" });
 const brico = Bricolage_Grotesque({ display: "swap", preload: false, subsets: ["latin"], variable: "--f-vn-brico" });
 const cairo = Cairo({ display: "swap", preload: false, subsets: ["arabic", "latin"], weight: ["400", "600", "700", "800"], variable: "--f-vn-cairo" });

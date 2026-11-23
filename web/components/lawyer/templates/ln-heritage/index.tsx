@@ -1,4 +1,5 @@
-import { EB_Garamond, Libre_Caslon_Text, Noto_Naskh_Arabic } from "next/font/google";
+import localFont from "next/font/local";
+import { Libre_Caslon_Text, Noto_Naskh_Arabic } from "next/font/google";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { VisitTracker } from "@/components/visit-tracker";
@@ -9,7 +10,8 @@ import { Reveal } from "../shared/motion";
 import type { LnTemplate } from "../types";
 import "./ln-heritage.css";
 
-const garamond = EB_Garamond({ display: "swap", preload: false, subsets: ["latin"], weight: ["400", "500", "600"], style: ["normal", "italic"], variable: "--hr-f-gar" });
+// self-hosted: next/font/google could not build EB Garamond on the CI image (Google served a URL form Turbopack rejects)
+const garamond = localFont({ src: [{ path: "./fonts/eb-garamond-latin-normal.woff2", weight: "400 600", style: "normal" }, { path: "./fonts/eb-garamond-latin-italic.woff2", weight: "400 600", style: "italic" }], display: "swap", preload: false, variable: "--hr-f-gar" });
 const caslon = Libre_Caslon_Text({ display: "swap", preload: false, subsets: ["latin"], weight: ["400", "700"], variable: "--hr-f-cas" });
 const naskh = Noto_Naskh_Arabic({ display: "swap", preload: false, subsets: ["arabic"], weight: ["400", "500", "700"], variable: "--hr-f-nask" });
 const fonts = [garamond, caslon, naskh].map((f) => f.variable).join(" ");

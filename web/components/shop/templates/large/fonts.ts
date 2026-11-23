@@ -1,4 +1,5 @@
-import { Amiri, Cormorant_Garamond, Fraunces, IBM_Plex_Sans_Arabic, Jost, Noto_Kufi_Arabic, Noto_Sans_Arabic, Nunito_Sans, Plus_Jakarta_Sans, Readex_Pro, Rubik, Tajawal } from "next/font/google";
+import localFont from "next/font/local";
+import { Amiri, Cormorant_Garamond, Fraunces, IBM_Plex_Sans_Arabic, Noto_Kufi_Arabic, Noto_Sans_Arabic, Nunito_Sans, Plus_Jakarta_Sans, Readex_Pro, Rubik, Tajawal } from "next/font/google";
 
 /**
  * Fonts of the large-catalog templates (server side only, never preloaded: a font downloads only when a page really uses it). Latin and Arabic are
@@ -6,7 +7,8 @@ import { Amiri, Cormorant_Garamond, Fraunces, IBM_Plex_Sans_Arabic, Jost, Noto_K
  */
 const cormorant = Cormorant_Garamond({ display: "swap", preload: false, subsets: ["latin"], weight: ["400", "500", "600"], style: ["normal", "italic"], variable: "--lf-cormorant" });
 const amiri = Amiri({ display: "swap", preload: false, subsets: ["arabic", "latin"], weight: ["400", "700"], variable: "--lf-amiri" });
-const jost = Jost({ display: "swap", preload: false, subsets: ["latin"], weight: ["300", "400", "500", "600"], variable: "--lf-jost" });
+// self-hosted: next/font/google could not build Jost on the CI image (Google served a URL form Turbopack rejects)
+const jost = localFont({ src: [{ path: "../fonts/jost-latin.woff2", weight: "300 600", style: "normal" }], display: "swap", preload: false, variable: "--lf-jost" });
 const plexAr = IBM_Plex_Sans_Arabic({ display: "swap", preload: false, subsets: ["arabic"], weight: ["300", "400", "500", "600"], variable: "--lf-plex-ar" });
 const jakarta = Plus_Jakarta_Sans({ display: "swap", preload: false, subsets: ["latin"], weight: ["400", "500", "600", "700", "800"], variable: "--lf-jakarta" });
 const tajawal = Tajawal({ display: "swap", preload: false, subsets: ["arabic"], weight: ["400", "500", "700", "800"], variable: "--lf-tajawal" });
