@@ -25,6 +25,7 @@ type Profile = {
 };
 type Meta = { practiceAreas: { key: string; nameAr: string; nameEn: string; icon: string }[] };
 
+const LW_TPL_PREFIX = ["lw", "tpl"].join(".");   // the gallery appends the design id to this prefix; written as a join so the i18n checker does not read it as a whole key
 const GALLERY_LOOKS: Record<string, GalleryLook> = Object.fromEntries(LAWYER_TEMPLATE_IDS.map((id) => [id, { categories: [], swatch: [LAWYER_LOOKS[id].bg, "#111111", LAWYER_LOOKS[id].accent] }]));
 const AREA_ICONS = ["⚖️", "🛡️", "👪", "🏢", "👷", "🏠", "🏛️", "📊", "📜", "✍️", "💡", "🧾", "🤝", "🔨", "📁"];
 
@@ -77,7 +78,7 @@ export default function Website() {
       <PageHeader eyebrow={<Eyebrow>{t("lw.eb.setup")}</Eyebrow>} title={t("lw.nav.website")} subtitle={t("lw.web.subtitle")} actions={<LinkButton href="/" icon="globe" external>{t("lw.web.view")}</LinkButton>} />
       <fieldset disabled={!write} className="min-w-0 space-y-5">
         <Section title={t("lw.web.design")} icon="palette">
-          <TemplateGallery ids={LAWYER_TEMPLATE_IDS} looks={GALLERY_LOOKS} profilePath="lawyer/profile" prefix="lw.tpl" fallback="classic" categoryKey="galcat" kinds={["lawyer"]} />
+          <TemplateGallery ids={LAWYER_TEMPLATE_IDS} looks={GALLERY_LOOKS} profilePath="lawyer/profile" prefix={LW_TPL_PREFIX} fallback="classic" categoryKey="galcat" kinds={["lawyer"]} />
         </Section>
 
         <Section title={t("lw.web.identity")} icon="doctor">

@@ -13,6 +13,8 @@ export type PaletteEntry = { kind: SiteKind; active: boolean; tokens?: FullPalet
 const P = (v: string): FullPalette => Object.fromEntries(THEME_TOKENS.map((k, i) => [k, v.split(" ")[i]])) as FullPalette;
 const n = (kind: SiteKind, v: string): PaletteEntry => ({ kind, active: true, tokens: P(v) });
 const old = (kind: SiteKind, ids: string[]): [string, PaletteEntry][] => ids.map((id) => [id, { kind, active: false }]);
+/** Older designs the owner chose to keep offered next to the new ones. They keep their own look (they do not read the colour tokens) and no default palette. */
+const kept = (kind: SiteKind, ids: string[]): [string, PaletteEntry][] => ids.map((id) => [id, { kind, active: true }]);
 
 export const TEMPLATE_PALETTES: Record<string, PaletteEntry> = {
   // clinics
@@ -47,10 +49,12 @@ export const TEMPLATE_PALETTES: Record<string, PaletteEntry> = {
   "vn-multi": n("service", "#0f766e #0f172a #f59e0b #f7f9f9 #e9f0ef #ffffff #10201f #52625f #0f766e #ffffff #d6e2e0"),
   // retired: still valid in the database and still render exactly as before, never offered by the picker
   ...Object.fromEntries([
-    ...old("store", ["original", "atelier", "street", "grove", "midnight", "maison", "feast", "bloom", "oud", "souq"]),
+    ...old("store", ["original", "atelier", "street", "grove", "midnight", "maison", "feast", "oud", "souq"]),
+    ...kept("store", ["bloom"]),   // kept on request (2026-11-23)
     ...old("small", ["solo", "vitrine", "capsule", "monolith", "pedestal", "spotlight", "launch", "signature", "curated", "origin"]),
     ...old("service", ["lumiere", "barbershop", "homefix", "fixit", "aqua", "sparkle", "garage", "pro", "slot", "bazaar"]),
-    ...old("clinic", ["clear", "luxe", "persona", "dental", "derma", "center"]),
+    ...old("clinic", ["luxe", "persona", "dental", "derma", "center"]),
+    ...kept("clinic", ["clear"]),   // kept on request (2026-11-23): the clinic now offers 5 new designs + this one
     ...old("lawyer", ["classic", "modern", "heritage", "chambers", "justice", "marble", "gavel", "minimal", "emerald", "nocturne"]),
   ]),
 };
