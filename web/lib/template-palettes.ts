@@ -24,11 +24,11 @@ export const TEMPLATE_PALETTES: Record<string, PaletteEntry> = {
   "cn-family": n("clinic", "#e8744f #7a3b2a #f6b73c #fffaf5 #fdeee0 #ffffff #3a241b #7a5d50 #bd4a28 #ffffff #f3dccb"),
   "cn-atelier": n("clinic", "#1c1c1c #8c7b66 #b89b6b #f7f5f1 #edeae4 #ffffff #1c1c1c #6a655d #1c1c1c #f7f5f1 #ded9d0"),
   // lawyers
-  "ln-global": n("lawyer", "#0f2a4a #1f3d63 #b08d3c #ffffff #f3f5f8 #ffffff #0e1a2b #4d5b70 #0f2a4a #ffffff #dce2ea"),
-  "ln-boutique": n("lawyer", "#5b2333 #3a1620 #c19a5b #fbf8f5 #f2ebe4 #fffdfb #2a1a1e #6e5a5f #5b2333 #ffffff #e5d9d0"),
-  "ln-advisory": n("lawyer", "#234a7d #3b4a5f #5b8bc9 #f8f9fb #eceff4 #ffffff #1a2433 #556070 #234a7d #ffffff #d8dee8"),
-  "ln-digital": n("lawyer", "#4f46e5 #1e1b4b #06b6d4 #ffffff #f5f6ff #ffffff #111827 #5b6478 #4f46e5 #ffffff #e3e6f5"),
-  "ln-heritage": n("lawyer", "#2f3b2f #5a4630 #a68a4b #f6f1e6 #ece4d2 #fbf8f0 #231f16 #675d49 #2f3b2f #f6f1e6 #ddd2b9"),
+  "ln-global": { ...n("lawyer", "#0f2a4a #1f3d63 #b08d3c #ffffff #f3f5f8 #ffffff #0e1a2b #4d5b70 #0f2a4a #ffffff #dce2ea"), active: false },
+  "ln-boutique": { ...n("lawyer", "#5b2333 #3a1620 #c19a5b #fbf8f5 #f2ebe4 #fffdfb #2a1a1e #6e5a5f #5b2333 #ffffff #e5d9d0"), active: false },
+  "ln-advisory": { ...n("lawyer", "#234a7d #3b4a5f #5b8bc9 #f8f9fb #eceff4 #ffffff #1a2433 #556070 #234a7d #ffffff #d8dee8"), active: false },
+  "ln-digital": { ...n("lawyer", "#4f46e5 #1e1b4b #06b6d4 #ffffff #f5f6ff #ffffff #111827 #5b6478 #4f46e5 #ffffff #e3e6f5"), active: false },
+  "ln-heritage": { ...n("lawyer", "#2f3b2f #5a4630 #a68a4b #f6f1e6 #ece4d2 #fbf8f0 #231f16 #675d49 #2f3b2f #f6f1e6 #ddd2b9"), active: false },
   // large shops
   "sn-editorial": n("store", "#141210 #6b5d4d #b45a3c #faf8f5 #f0ece6 #ffffff #141210 #6a635a #141210 #faf8f5 #e3ddd3"),
   "sn-market": n("store", "#2563eb #0f172a #f59e0b #f3f5f9 #e8ecf3 #ffffff #0f172a #546178 #2563eb #ffffff #dbe1ec"),
