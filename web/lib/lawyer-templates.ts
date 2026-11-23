@@ -2,7 +2,7 @@
  * The ten website designs of a law office: the three original ones (kept, so no published office changes) and seven more. They differ in composition (how the hero is built) and in palette,
  * type and finish (lawyer.css, scoped to .lw[data-tpl]). The list must match LegalProfileService.TEMPLATES and V110.
  */
-export const LAWYER_TEMPLATE_IDS = ["classic", "modern", "heritage", "chambers", "justice", "marble", "gavel", "minimal", "emerald", "nocturne"] as const;
+export const LAWYER_TEMPLATE_IDS = ["classic", "modern", "heritage", "chambers", "justice", "marble", "gavel", "minimal", "emerald", "nocturne", "ln-global", "ln-boutique", "ln-advisory", "ln-digital", "ln-heritage"] as const; // DR-B: the last five are the new multi-page templates (components/lawyer/templates)
 export type LawyerTemplateId = (typeof LAWYER_TEMPLATE_IDS)[number];
 export const isLawyerTemplate = (v: unknown): v is LawyerTemplateId => typeof v === "string" && (LAWYER_TEMPLATE_IDS as readonly string[]).includes(v);
 
@@ -25,4 +25,10 @@ export const LAWYER_LOOKS: Record<LawyerTemplateId, LawyerLook> = {
   minimal: { hero: "center", areas: "rows", services: "table", process: "inline", reviews: "single", header: "slim", bg: "linear-gradient(135deg,#ffffff,#f1f1f1)", accent: "#111111" },
   emerald: { hero: "editorial", areas: "tiles", services: "cards", process: "timeline", reviews: "wall", header: "bar", bg: "linear-gradient(135deg,#0c3a31,#14604f)", accent: "#e1c46d" },
   nocturne: { hero: "band", areas: "chips", services: "cards", process: "inline", reviews: "grid", header: "bar", bg: "linear-gradient(135deg,#120f2b,#2a2160)", accent: "#a99bff" },
+  // DR-B: look entries for the new templates (they render through components/lawyer/templates; only bg/accent are used by pickers)
+  "ln-global": { hero: "editorial", areas: "rows", services: "table", process: "inline", reviews: "grid", header: "bar", bg: "linear-gradient(135deg,#f6f5f2,#e8e4dc)", accent: "#c8341d" },
+  "ln-boutique": { hero: "split", areas: "cards", services: "cards", process: "cards", reviews: "single", header: "center", bg: "linear-gradient(135deg,#fbf1e8,#eed6c4)", accent: "#5b2447" },
+  "ln-advisory": { hero: "split", areas: "tiles", services: "table", process: "timeline", reviews: "grid", header: "slim", bg: "linear-gradient(135deg,#eef2f7,#cfd9e6)", accent: "#12467a" },
+  "ln-digital": { hero: "center", areas: "chips", services: "cards", process: "inline", reviews: "grid", header: "slim", bg: "linear-gradient(135deg,#f3f1ff,#d9fbef)", accent: "#5b4bff" },
+  "ln-heritage": { hero: "editorial", areas: "rows", services: "table", process: "timeline", reviews: "single", header: "center", bg: "linear-gradient(135deg,#f3eee3,#ded2b8)", accent: "#6e1423" },
 };

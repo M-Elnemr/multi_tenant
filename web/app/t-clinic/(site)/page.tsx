@@ -13,6 +13,9 @@ import { siteTemplate } from "@/lib/site-template";
 import { CLINIC_TEMPLATE_IDS, clinicLookOf } from "@/components/clinic/templates";
 import { ClinicHero, DoctorsDirectory, DoctorsPortrait, ServicesList } from "@/components/clinic/variants";
 
+import { CN_HOME } from "@/components/clinic/templates/cn";
+import { cnCtx } from "@/components/clinic/templates/shared/ctx";
+
 const load = () => backendJson<ClinicSite>("/clinic/public/profile");
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -25,6 +28,8 @@ export async function generateMetadata(): Promise<Metadata> {
 const SCHEMA_DAY: Record<string, string> = { sat: "Saturday", sun: "Sunday", mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday", fri: "Friday" };
 
 export default async function ClinicHome({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
+  const cn = await cnCtx();
+  if (cn) { const Home = CN_HOME[cn.id]; return <Home c={cn} />; }
   const { t, locale } = await getT();
   const edit = await wantsEdit(searchParams);
   const p = await load();

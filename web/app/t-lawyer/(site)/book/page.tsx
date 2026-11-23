@@ -3,10 +3,13 @@ import { backendJson } from "@/lib/backend";
 import { getT } from "@/lib/i18n-server";
 import type { LawyerSite } from "../types";
 import { BookFlow } from "./book-flow";
+import { renderLnPage } from "@/components/lawyer/templates/render"; // DR-B
 
 export const dynamic = "force-dynamic";
 
 export default async function Book() {
+  const ln = await renderLnPage("book"); // DR-B: ln-* templates have their own booking page
+  if (ln) return ln;
   const { t } = await getT();
   const p = await backendJson<LawyerSite>("/lawyer/public/profile").catch(() => null);
   if (!p) return null;

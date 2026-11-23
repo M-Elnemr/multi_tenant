@@ -1,0 +1,19 @@
+{
+  "vn.hp.utility": ["Book online in a minute", "احجز أونلاين في دقيقة"],
+  "vn.hp.request": ["Request a visit", "اطلب زيارة"],
+  "vn.hp.call": ["Call", "اتصل"],
+  "vn.hp.pill": ["Home services", "خدمات منزلية"],
+  "vn.hp.heroDefault": ["Tell us what you need, pick a time that suits you, and we come to you.", "قولنا محتاج إيه، اختار الوقت المناسب، ونيجيلك."],
+  "vn.hp.requestTitle": ["Request a visit", "اطلب زيارة"],
+  "vn.hp.requestSub": ["Choose the service and a day. You pick the exact time on the next step.", "اختار الخدمة واليوم. وهتحدد الساعة بالظبط في الخطوة الجاية."],
+  "vn.hp.what": ["What do you need?", "محتاج إيه؟"],
+  "vn.hp.when": ["Preferred day", "اليوم المناسب"],
+  "vn.hp.seeTimes": ["See free times", "شوف المواعيد المتاحة"],
+  "vn.hp.servicesTitle": ["Our services", "خدماتنا"],
+  "vn.hp.from": ["Price", "السعر"],
+  "vn.hp.area": ["Where we work", "بنخدم فين"],
+  "vn.hp.finalTitle": ["Ready when you are", "جاهزين وقت ما تحب"],
+  "vn.hp.included": ["What the visit covers", "الزيارة بتشمل إيه"],
+  "vn.hp.questions": ["Questions? Message us on WhatsApp.", "عندك سؤال؟ ابعتلنا على واتساب."],
+  "vn.hp.problem": ["Describe what you need", "اشرح محتاج إيه"]
+}

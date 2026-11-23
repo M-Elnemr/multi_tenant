@@ -2,7 +2,7 @@
  * Ten designs for a shop with one to three products: the product IS the page. They are chosen only while the shop has 1-3 active products (the backend decides);
  * a shop that grows keeps the published design, which shows its first products as the showcase and the rest in a grid below.
  */
-export const SMALL_TEMPLATE_IDS = ["solo", "vitrine", "capsule", "monolith", "pedestal", "spotlight", "launch", "signature", "curated", "origin"] as const;
+export const SMALL_TEMPLATE_IDS = ["solo", "vitrine", "capsule", "monolith", "pedestal", "spotlight", "launch", "signature", "curated", "origin", "pn-flagship", "pn-showcase", "pn-trio", "pn-launch", "pn-brand"] as const;
 export type SmallTemplateId = (typeof SMALL_TEMPLATE_IDS)[number];
 export const isSmallTemplate = (v: unknown): v is SmallTemplateId => typeof v === "string" && (SMALL_TEMPLATE_IDS as readonly string[]).includes(v);
 
@@ -19,5 +19,10 @@ export const SMALL_LOOKS: Record<SmallTemplateId, SmallLook> = {
   launch: { stage: "story", header: "loud", categories: ["general"], swatch: ["#fff7ef", "#2a1608", "#ff5a1f"] },
   signature: { stage: "banner", header: "center", categories: ["fashion", "home"], swatch: ["#fbfaf7", "#1a1a1a", "#8b6f47"] },
   curated: { stage: "list", header: "bar", categories: ["general", "home"], swatch: ["#f5f5f2", "#1d2420", "#2f6f55"] },
+  "pn-showcase": { stage: "stage", header: "bar", dark: true, categories: ["fashion", "beauty", "home"], swatch: ["#0d0c0a", "#f3ece0", "#d6b36a"] },
+  "pn-trio": { stage: "trio", header: "pill", categories: ["general", "home", "beauty"], swatch: ["#faf4ea", "#2b1f18", "#c8553d"] },
+  "pn-launch": { stage: "poster", header: "bar", categories: ["general", "tech"], swatch: ["#f6f2ff", "#170f33", "#6a2cf5"] },
+  "pn-brand": { stage: "list", header: "center", categories: ["general", "fashion"], swatch: ["#ffffff", "#111111", "#111111"] },
+  "pn-flagship": { stage: "stage", header: "center", categories: ["general", "tech"], swatch: ["#ffffff", "#0b1220", "#0a64ff"] },
   origin: { stage: "story", header: "overlay", categories: ["food", "beauty"], swatch: ["#f6efe4", "#2b2a1f", "#6b7d3c"] },
 };
