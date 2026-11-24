@@ -143,7 +143,7 @@ class MetaChannelsIntegrationTest extends IntegrationTestBase {
         // a tapped button comes back as an interactive reply whose id is the text it stands for
         String tapped = "{\"object\":\"whatsapp_business_account\",\"entry\":[{\"id\":\"1\",\"changes\":[{\"field\":\"messages\",\"value\":{\"metadata\":{\"phone_number_id\":\"%s\"},\"messages\":[{\"from\":\"201011113333\",\"id\":\"wamid.%s\",\"type\":\"interactive\",\"interactive\":{\"type\":\"button_reply\",\"button_reply\":{\"id\":\"أيوه\",\"title\":\"أيوه\"}}}]}}]}]}".formatted(pnid, uniq());
         java.util.concurrent.atomic.AtomicReference<String> seen = new java.util.concurrent.atomic.AtomicReference<>();
-        FakeAiProvider.SCRIPT.add(turns -> { seen.set(turns.stream().filter(x -> "user".equals(x.role())).reduce((a, b) -> b).map(Turn::text).orElse("")); return Turn.model("تمام، ابعتلي اسمك الأول ورقم الواتساب."); });
+        FakeAiProvider.SCRIPT.add(turns -> { seen.set(turns.stream().filter(x -> "user".equals(x.role())).reduce((a, b) -> b).map(FakeAiProvider::customerText).orElse("")); return Turn.model("تمام، ابعتلي اسمك الأول ورقم الواتساب."); });
         int before = FakeMetaGraph.SENT.size();
         webhook(tapped, sign(tapped)).andExpect(status().isOk());
         assertThat(FakeMetaGraph.SENT.size()).isGreaterThan(before);

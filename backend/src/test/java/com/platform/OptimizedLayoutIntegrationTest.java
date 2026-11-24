@@ -26,7 +26,7 @@ class OptimizedLayoutIntegrationTest extends IntegrationTestBase {
     List<List<Turn>> ask(Tenant t, String message) throws Exception {
         List<List<Turn>> seen = new ArrayList<>();
         FakeAiProvider.reset();
-        FakeAiProvider.SCRIPT.add(turns -> { seen.add(List.copyOf(turns)); system = FakeAiProvider.lastSystem; return Turn.model("عندنا قميص كتان أبيض بـ 450 جنيه، تحب مقاس إيه؟"); });
+        FakeAiProvider.SCRIPT.add(turns -> { seen.add(List.copyOf(turns)); system = FakeAiProvider.lastRawSystem; return Turn.model("عندنا قميص كتان أبيض بـ 450 جنيه، تحب مقاس إيه؟"); });
         onHost(t.host(), null, "POST", "/api/v1/shop/chat", "{\"conversationId\":\"%s\",\"message\":\"%s\"}".formatted(UUID.randomUUID(), message)).andExpect(status().isOk());
         return seen;
     }
