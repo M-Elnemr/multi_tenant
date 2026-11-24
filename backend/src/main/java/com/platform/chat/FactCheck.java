@@ -351,7 +351,7 @@ final class FactCheck {
         run(out, () -> { if (out.stream().noneMatch(x -> x.fixed() != null)) claimLock(customer, answer, ms, only0, shop, out); });
         run(out, () -> answerLock(customer, answer, ms, shop, load, out));
         // after the answer lock (which owns «the colours asked, only some given»): «متوفر باللون الأحمر بس» when the customer did not ask, or asked only one size
-        run(out, () -> { if (out.stream().noneMatch(x -> x.kind().startsWith("OPTION"))) onlyValues(answer, ms, only0, load, out); });
+        run(out, () -> { if (out.stream().noneMatch(x -> x.kind().startsWith("OPTION"))) onlyValues(customer, answer, ms, only0, load, out); });
         run(out, () -> { if (out.stream().noneMatch(x -> x.kind().startsWith("OPTION") || x.kind().equals("FALSE_DENIAL"))) askedMissingSize(customer, answer, ms, only0, shop, load, out); });
         run(out, () -> { if (out.stream().noneMatch(x -> x.kind().startsWith("OPTION"))) soldOutChoice(answer, ms, only0, about0, load, out); });
         return out;
@@ -1374,6 +1374,8 @@ final class FactCheck {
                     String names = String.join(ar ? " و" : " and ", to.stream().map(c -> govName(c, ar)).toList());
                     String what = p.name() + (all || vals.isEmpty() ? "" : " (" + String.join("، ", vals) + ")");
                     String fixed = to.isEmpty() ? null : ar ? "«" + what + "» بيتوصل لـ" + names + " بس، مش لـ" + govName(f[0], true) + "." : what + " is delivered only to " + names + ", not to " + govName(f[0], false) + ".";
+                    String rest = l.substring(0, s[0]) + l.substring(s[1]);
+                    if (fixed != null && to.stream().allMatch(c -> rest.contains(light(govName(c, true))) || rest.contains(light(govName(c, false)).toLowerCase(Locale.ROOT)))) fixed = "";   // another sentence already says where it goes: the wrong one only goes
                     out.add(new Problem("AREA", what + " is delivered ONLY to " + names + ": never promise delivery or a fee to " + govName(f[0], false) + " for it; offer an option or product that ships there, or an address in those governorates.",
                             fixed == null ? null : replaceSentence(answer, s[0], s[1], fixed)));
                     return;
@@ -1391,12 +1393,16 @@ final class FactCheck {
      * «حذاء كعب عالي … مقاس ٣٨ متوفر حالياً باللون الأحمر بس» while beige 38 has 5 too: the values of an option a sentence says are the only available ones, for the other options it
      * names (the size 38), are checked against the stock of exactly those variants; when more values have stock, the sentence is replaced by the real list.
      */
-    static void onlyValues(String answer, List<Mention> ms, String only, java.util.function.Function<String, Product> load, List<Problem> out) {
+    static void onlyValues(String answer, List<Mention> ms, String only, java.util.function.Function<String, Product> load, List<Problem> out) { onlyValues(null, answer, ms, only, load, out); }
+
+    static void onlyValues(String customer, String answer, List<Mention> ms, String only, java.util.function.Function<String, Product> load, List<Problem> out) {
+        String customerLight = customer == null ? null : light(customer);
         String l = light(answer);
         boolean ar = arabic(answer);
         for (int[] sn : sentences(answer)) {
             String se = l.substring(sn[0], sn[1]);
-            if (!ONLY_AVAILABLE.matcher(se).find() || !AVAILABLE_WORD.matcher(se).find() || se.contains("؟") || se.contains("?")) continue;
+            boolean onlySaid = ONLY_AVAILABLE.matcher(se).find();
+            if (!AVAILABLE_WORD.matcher(se).find() || se.contains("؟") || se.contains("?")) continue;
             if (ONLY_RANGE.matcher(se).find()) continue;   // «من مقاس S لحد XL بس»: a range, every size in it
             List<Mention> here = ms.stream().filter(m -> m.start() >= sn[0] && m.start() < sn[1]).toList();
             String slug = here.size() == 1 ? here.get(0).slug() : here.isEmpty() ? (lastBefore(ms, sn[0], only) != null ? lastBefore(ms, sn[0], only) : only) : null;
@@ -1408,6 +1414,15 @@ final class FactCheck {
             Map<String, Set<String>> byOption = new LinkedHashMap<>();
             for (var e : said.entrySet()) byOption.computeIfAbsent(e.getValue(), k -> new LinkedHashSet<>()).add(e.getKey());
             for (var opt : byOption.entrySet()) {
+                // without «بس/only»: still a full answer when the customer asked for exactly the other values (the size 38) and named none of this option («حذاء كعب مقاس ٣٨» -> «متوفر ٣٨ بلون أحمر»)
+                if (!onlySaid) {
+                    if (customerLight == null) continue;
+                    Map<String, String> asked = valuesIn(customerLight, p);
+                    boolean askedThisOption = asked.containsValue(opt.getKey());
+                    boolean askedContext = said.entrySet().stream().filter(e -> !e.getValue().equals(opt.getKey())).allMatch(e -> asked.containsKey(e.getKey()))
+                            && said.values().stream().anyMatch(v -> !v.equals(opt.getKey()));
+                    if (askedThisOption || !askedContext) continue;
+                }
                 Set<String> context = new LinkedHashSet<>();
                 for (var e : said.entrySet()) if (!e.getValue().equals(opt.getKey())) context.add(e.getKey());
                 Set<String> inStock = new LinkedHashSet<>();
@@ -2044,6 +2059,7 @@ final class FactCheck {
     /** A number with the unit of a spec (battery hours, mAh, watts, storage, screen, size, weight, warranty years…). Money, pieces and percentages of a discount are not specs. */
     private static final Pattern SPEC_CLAIM = Pattern.compile("(?<![\\d.,])(\\d+(?:\\.\\d+)?)\\s*(ساعه|ساعات|mah|مللي\\s*امبير|ملي\\s*امبير|وات|واط|w|جيجا|gb|تيرا|tb|بوصه|انش|inch|هرتز|hz|ميجا\\s*بكسل|ميجابكسل|mp|سم|cm|مم|mm|كيلو(?:\\s*جرام)?|كجم|kg|جرام|لتر|مل|مللي|فولت|سنه|سنين|سنوات|شهر|شهور|اشهر|يوم|ايام|%|٪)(?![\\p{L}\\d])", Pattern.CASE_INSENSITIVE);
     private static final Pattern WARRANTY = Pattern.compile("(?<!\\p{L})(?:ضمان|الضمان|بضمان|warranty|guarantee)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
+    private static final Pattern BATTERY_BARE = Pattern.compile("(?:بطاريه|بطارية|battery)\\s+(\\d{3,5})(?![\\d.,]|\\s*(?:مللي|ملي|mah|ساعه|ساعات|h\\b))", Pattern.CASE_INSENSITIVE);
     /** A sentence that is general know-how, a discount, delivery, opening hours or a no: not a claim about the product's own specs. */
     private static final Pattern NOT_A_SPEC = Pattern.compile("(?<!\\p{L})(?:عاده|عادتا|عادتاً|غالبا|عموما|تقريبا|تقريباً|حوالي|يعني|في\\s+العموم|بشكل\\s+عام|usually|generally|typically|خصم|تخفيض|discount|off|توصيل|التوصيل|(?:مصاريف|رسوم)\\s+(?:ال)?شحن|(?:ال)?شحن\\s+(?:ل|لـ|الي|إلى|مجاني|مجانا|لكل)|(?:ه|ب|و)?[يت]وصل\\p{L}*|هيجيلك|هتجيلك|delivery|shipping|deliver\\p{L}*|arriv\\p{L}*|مواعيد|بنفتح|بنقفل|open|استرجاع|استبدال|return|exchange|الحد\\s+الادني|minimum)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
 
@@ -2068,6 +2084,8 @@ final class FactCheck {
     private static Set<String> specsIn(String lightText, boolean joined) {
         Set<String> out = new java.util.HashSet<>();
         String t = specWords(lightText).replaceAll("(?<=\\d)[,٬](?=\\d{3})", "");
+        Matcher bat = BATTERY_BARE.matcher(t);   // «بطارية ٥٠٠٠» with no unit is mAh («بطارية ٥٠٠» a slip the spec lock should see)
+        while (bat.find()) out.add(num(Double.parseDouble(bat.group(1)), false) + "|mah");
         Matcher m = SPEC_CLAIM.matcher(t);
         while (m.find()) {
             double n = Double.parseDouble(m.group(1));
@@ -2162,6 +2180,10 @@ final class FactCheck {
                 // the product this sentence is about (named in it, or the one named before it): its own text and the policies; otherwise anything the shop wrote
                 List<Mention> here = ms.stream().filter(m -> m.start() >= sn[0] && m.start() < sn[1]).toList();
                 String slug = here.size() == 1 ? here.get(0).slug() : here.isEmpty() ? (lastBefore(ms, sn[0], only) != null ? lastBefore(ms, sn[0], only) : only) : null;
+                if (slug == null && here.isEmpty()) {   // «Yes, they all come with genuine Windows» before the reply names its one product: it is about that product
+                    var named = ms.stream().map(Mention::slug).distinct().toList();
+                    if (named.size() == 1) slug = named.get(0);
+                }
                 String facts = slug == null ? null : shop.facts(slug);
                 Boolean known;
                 if (facts != null) { String lf = light(facts).replace('ة', 'ه').toLowerCase(Locale.ROOT); known = c.stems().stream().anyMatch(st -> lf.contains(st.toLowerCase(Locale.ROOT))); }

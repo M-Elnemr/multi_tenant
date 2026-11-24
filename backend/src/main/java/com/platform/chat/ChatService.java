@@ -1829,13 +1829,29 @@ public class ChatService {
         if (problems.containsKey("STALL")) { answer = stallFallback(ctx, answer); problems.remove("STALL"); }
         if (factsRight && !FactCheck.mentions(answer, shopView(ctx.tenantId()).names()).isEmpty()) { problems.remove("UNCHECKED_FACTS"); problems.remove("UNCHECKED_OPTIONS"); }
         List<Map<String, Object>> related = null;
-        if (problems.containsKey("VAGUE") || problems.containsKey("UNSEARCHED_DENIAL") || problems.containsKey("WHO_BEFORE_SEARCH")) related = relatedProducts(ctx.tenantId(), last);
-        if (problems.containsKey("VAGUE") && related != null && !related.isEmpty()) {
-            boolean ar = last != null && ARABIC_HINT.matcher(last).find();
-            StringBuilder b = new StringBuilder(answer.strip()).append("\n");
-            for (var r : related.stream().limit(3).toList()) b.append("\n- ").append(r.get("name")).append(" — ").append(price(r.get("minPriceMinor"))).append(ar ? " جنيه" : " EGP");
-            answer = b.toString();
-            problems.remove("VAGUE");
+        if (problems.containsKey("UNSEARCHED_DENIAL") || problems.containsKey("WHO_BEFORE_SEARCH")) related = relatedProducts(ctx.tenantId(), last);
+        if (problems.containsKey("VAGUE")) {
+            // only for a request for a KIND of item («عايز موبايل»), in an Arabic reply, when the chat is not already about a product: then the products of that kind are listed;
+            // otherwise (a reply about the product being discussed, said loosely) the rewrite decides, as before
+            boolean ar = ARABIC_HINT.matcher(answer).find() && last != null && ARABIC_HINT.matcher(last).find();
+            var names = shopView(ctx.tenantId()).names();
+            boolean chatHasProduct = ctx.products().size() > 0 || REPLY_SLUGS.get() != null && !REPLY_SLUGS.get().isEmpty() || !FactCheck.mentions(last == null ? "" : last, names).isEmpty();
+            if (!chatHasProduct) {   // the last messages of the chat already talk about a product («كبير» about the sandwich just discussed)
+                String recent = String.join("\n", jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c ORDER BY id DESC LIMIT 4").param("c", ctx.conversationId()).query(String.class).list());
+                chatHasProduct = !FactCheck.mentions(recent, names).isEmpty();
+            }
+            List<String> kinds = List.of();
+            if (ar && !chatHasProduct) {
+                List<String> slugs = new ArrayList<>();
+                for (var wm : wordMatches(ctx.tenantId(), last, true, Set.of(), 3)) slugs.addAll(wm.detailed());
+                kinds = slugs;
+            }
+            if (!kinds.isEmpty()) {
+                StringBuilder b = new StringBuilder(answer.strip()).append("\n");
+                for (var r : search.bySlugs(ctx.tenantId(), kinds.stream().limit(3).toList())) b.append("\n- ").append(r.get("name")).append(" — ").append(price(r.get("minPriceMinor"))).append(" جنيه");
+                answer = b.toString();
+                problems.remove("VAGUE");
+            }
         }
         if (problems.containsKey("UNSEARCHED_DENIAL") && related != null && related.isEmpty()) problems.remove("UNSEARCHED_DENIAL");
         if (problems.containsKey("WHO_BEFORE_SEARCH") && related != null
@@ -2864,9 +2880,15 @@ public class ChatService {
             // only when the final words merely continue it («In the meantime: which one…»); two full answers (sorry + policy + ask for the order number, twice) keep the final one,
             // written with the tool result in view
             boolean continues = out.length() * 2 <= s.length() || CONTINUES.matcher(out).lookingAt();
-            if (continues && !coveredBy(s, out)) out = s + "\n\n" + out;
+            if (continues && !coveredBy(s, out)) out = closed(s) + "\n\n" + out;
         }
         return out.isEmpty() ? last : out;
+    }
+
+    /** «… doesn't list the operating system, so» cut where the tool call began: the dangling joining word goes and the sentence is closed. */
+    static String closed(String said) {
+        String t = said.strip().replaceAll("(?i)[\\s,،]+(?:so|and|but|or|because|which|that|و|بس|لكن|ف|عشان|علشان|يعني)$", "").strip();
+        return t.matches("(?s).*[.!؟?…🙏😊👌🌸]$") ? t : t + ".";
     }
 
     /** Words a reply opens with when it only goes on from what was already said. */
@@ -3222,8 +3244,17 @@ public class ChatService {
         if (t.contains("[صورة من العميل") || t.contains("🎤")) b.append(leanSection("CUSTOMER PHOTOS"));
         if (after) b.append(leanSection("CHANGING OR CANCELLING")).append(leanSection("ORDER:"));
         else if (ordering) b.append(leanSection("ORDER:")).append(leanSection("A COLOUR OR SIZE")).append(leanSection("STOCK IS PER EXACT VARIANT")).append(leanSection("NEGOTIATION"));
-        else b.append(leanSection("PRODUCTS")).append(leanSection("SELLING")).append(leanSection("A COLOUR OR SIZE")).append(leanSection("STOCK IS PER EXACT VARIANT")).append(leanSection("NEGOTIATION"));
+        else b.append(productsGiven(leanSection("PRODUCTS"))).append(leanSection("SELLING")).append(leanSection("A COLOUR OR SIZE")).append(leanSection("STOCK IS PER EXACT VARIANT")).append(leanSection("NEGOTIATION"));
         return b.toString();
+    }
+
+    /**
+     * The PRODUCTS rule for the stage rules (phase 3): the products this context already lists with their exact price and stock (the products of this chat, the word matches) are
+     * answered from directly; search_products only for what is not there. Each search is a second model call and a second read of the whole prompt.
+     */
+    static String productsGiven(String rule) {
+        return rule.replace("whenever they name a kind of item, search_products first;",
+                "the products listed in this context (THE PRODUCTS OF THIS CHAT and the WORD MATCHES) already have their exact prices, options and stock: answer from them directly, with no search; call search_products only for a kind of item, an option or a product that is not listed there, or to see more than the ones listed (a word line that says more products have it);");
     }
 
     private static final Pattern CANCEL_OR_CHANGE = Pattern.compile("(?:الغي|الغاء|كنسل|اغير|تغيير|غير\\s+الطلب|عدل|تعديل|فين\\s+(?:الطلب|الاوردر)|الطلب\\s+اتاخر|order\\s+status|cancel|change\\s+(?:my\\s+)?order)", Pattern.CASE_INSENSITIVE);

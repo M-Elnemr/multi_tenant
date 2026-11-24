@@ -53,6 +53,13 @@ class DeliveryLimitTest {
     }
 
     @Test
+    void aWrongSentenceIsRemovedWhenAnotherAlreadySaysWhereItGoes() {
+        String reply = "التلفزيونات من ٥٠ بوصة بتتوصل في القاهرة والجيزة بس. فيستا 4K سمارت ٦٥ بوصة بـ ٢٧٤٩٩ وبيتوصل للإسكندرية في يومين. تحب أحجزهولك؟";
+        var p = check(reply).stream().filter(x -> x.kind().equals("AREA")).findFirst().orElseThrow();
+        assertThat(p.fixed()).doesNotContain("للإسكندرية في يومين").doesNotContain("«تلفزيون").contains("القاهرة والجيزة بس").contains("تحب أحجزهولك؟");
+    }
+
+    @Test
     void aPriceThatContainsTheNumberIsNotTheSize() {
         assertThat(FactCheck.saysValue(FactCheck.light("السعر 16500 جنيه"), "65 بوصة")).isFalse();
         assertThat(FactCheck.saysValue(FactCheck.light("الشاشة ٦٥ بوصة"), "65 بوصة")).isTrue();

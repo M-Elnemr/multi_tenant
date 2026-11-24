@@ -128,4 +128,36 @@ class ReplyClaimsTest {
         assertThat(ChatService.withoutStrayLatin("تمام، الـ budget بتاعك كام؟", " my budget is 5000", List.of())).contains("budget");
         assertThat(ChatService.withoutStrayLatin("The Creator 16 is great for editing.", "", List.of())).isEqualTo("The Creator 16 is great for editing.");
     }
+
+    @Test
+    void roundFiveFixes() {
+        // a cut-off sentence before a continuation is closed
+        assertThat(ChatService.closed("The Creator 16's spec sheet doesn't list the operating system, so")).isEqualTo("The Creator 16's spec sheet doesn't list the operating system.");
+        assertThat(ChatService.closed("سألت فريق المحل.")).isEqualTo("سألت فريق المحل.");
+        // a claim in a sentence naming no product is about the one product the reply names
+        Map<String, String> text = Map.of("book", "زينترا بوك 15 برو ويندوز 11 أصلي", "creator", "زينترا كرييتور 16 OLED");
+        FactCheck.Shop laptops = new FactCheck.Shop() {
+            public List<FactCheck.Named> names() { return List.of(new FactCheck.Named("book", "زينترا بوك 15 برو"), new FactCheck.Named("creator", "Zentra Creator 16")); }
+            public FactCheck.Product product(String slug) { return null; }
+            public List<FactCheck.Named> searchAll(List<String> words) { return List.of(); }
+            public Set<String> served() { return Set.of(); }
+            public List<int[]> hours() { return List.of(); }
+            public String facts(String slug) { return text.get(slug); }
+            public Boolean says(List<String> stems) { return true; }
+        };
+        assertThat(FactCheck.check("Does it come with Windows?", "Yes, they all come with genuine Windows 11 pre-installed. The Zentra Creator 16 is 64,999 EGP.", laptops, List.of()))
+                .anyMatch(x -> x.kind().equals("SPEC_UNKNOWN"));
+        // the heel: the customer asked for size 38 only, the reply gives one colour of two in stock (no «بس»)
+        var heel = new FactCheck.Product("heel", "حذاء كعب عالي", 0, List.of(
+                new FactCheck.Variant(Map.of("اللون", "أحمر", "المقاس", "38"), 990, 0, 8), new FactCheck.Variant(Map.of("اللون", "بيج", "المقاس", "38"), 990, 0, 5)));
+        FactCheck.Shop shoes = new FactCheck.Shop() {
+            public List<FactCheck.Named> names() { return List.of(new FactCheck.Named("heel", "حذاء كعب عالي")); }
+            public FactCheck.Product product(String slug) { return heel; }
+            public List<FactCheck.Named> searchAll(List<String> words) { return List.of(); }
+            public Set<String> served() { return Set.of(); }
+            public List<int[]> hours() { return List.of(); }
+        };
+        assertThat(FactCheck.check("حذاء كعب للسهرة مقاس ٣٨", "في حذاء كعب عالي بـ 990 جنيه، متوفر مقاس ٣٨ بلون أحمر.", shoes, List.of("heel"))).anyMatch(x -> x.kind().equals("OPTION_STOCK"));
+        assertThat(FactCheck.check("عايز الأحمر مقاس ٣٨", "حذاء كعب عالي الأحمر متوفر مقاس ٣٨.", shoes, List.of("heel"))).noneMatch(x -> x.kind().equals("OPTION_STOCK"));
+    }
 }
