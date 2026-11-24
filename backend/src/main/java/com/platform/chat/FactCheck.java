@@ -351,7 +351,7 @@ final class FactCheck {
         run(out, () -> { if (out.stream().noneMatch(x -> x.fixed() != null)) claimLock(customer, answer, ms, only0, shop, out); });
         run(out, () -> answerLock(customer, answer, ms, shop, load, out));
         // after the answer lock (which owns «the colours asked, only some given»): «متوفر باللون الأحمر بس» when the customer did not ask, or asked only one size
-        run(out, () -> { if (out.stream().noneMatch(x -> x.kind().startsWith("OPTION"))) onlyValues(customer, answer, ms, only0, load, out); });
+        run(out, () -> { if (out.stream().noneMatch(x -> x.kind().startsWith("OPTION") || x.fixed() != null)) onlyValues(customer, answer, ms, only0, load, out); });
         run(out, () -> { if (out.stream().noneMatch(x -> x.kind().startsWith("OPTION") || x.kind().equals("FALSE_DENIAL"))) askedMissingSize(customer, answer, ms, only0, shop, load, out); });
         run(out, () -> { if (out.stream().noneMatch(x -> x.kind().startsWith("OPTION"))) soldOutChoice(answer, ms, only0, about0, load, out); });
         return out;
@@ -1385,7 +1385,7 @@ final class FactCheck {
     }
 
     /** «متوفر … باللون الأحمر بس», «مفيش غير الأحمر», «only in red»: a sentence that says which values of an option are available, and only those. («بس» in the middle of a clause is «but».) */
-    private static final Pattern ONLY_AVAILABLE = Pattern.compile("(?:(?<!\\p{L})(?:بس|فقط)(?=\\s*(?:[.!؟?،,\\n🙏😊👌]|$))|(?<!\\p{L})(?:مفيش|مافيش|معندناش|ماعندناش|مش\\s+متاح|مش\\s+متوفر)\\s+(?:الا|إلا|غير)(?!\\p{L})|\\bonly\\b|\\bjust\\b)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern ONLY_AVAILABLE = Pattern.compile("(?:(?<!\\p{L})فقط(?!\\p{L})|(?<!\\p{L})بس(?=\\s*(?:[.!؟?،,\\n🙏😊👌]|$))|(?<!\\p{L})(?:مفيش|مافيش|معندناش|ماعندناش|مش\\s+متاح|مش\\s+متوفر)\\s+(?:الا|إلا|غير)(?!\\p{L})|\\bonly\\b|\\bjust\\b)", Pattern.CASE_INSENSITIVE);
     private static final Pattern ONLY_RANGE = Pattern.compile("(?<!\\p{L})(?:لحد|لغايه|لغاية|حتى|الي|الى|إلى)(?!\\p{L})|\\b(?:to|through)\\b|\\d\\s*[-–]\\s*\\d", Pattern.CASE_INSENSITIVE);
     private static final Pattern AVAILABLE_WORD = Pattern.compile("(?:متاح|متوفر|موجود|عندنا|فيه|في\\s+منه|available|in\\s+stock|comes?\\s+in)", Pattern.CASE_INSENSITIVE);
 
@@ -1410,6 +1410,29 @@ final class FactCheck {
             Product p = load.apply(slug);
             if (p.variants().size() < 2) continue;
             Map<String, String> said = valuesIn(se, p);   // value -> its option
+            if (said.isEmpty()) continue;
+            // «… الأحمر فقط (الأسود والبيج مش متوفرين في المقاس ده)»: the values after a no are denied, not offered; a denied value that has stock is wrong
+            Matcher neg = NEG.matcher(se);
+            boolean hasNeg = neg.find();
+            if (hasNeg && !onlySaid) continue;   // a no without «only»: the sold-out checks own it
+            if (hasNeg) {
+                // the clause the «no» is in: «(الأسود والبيج مش متوفرين في المقاس ده)», «مفيهاش فري سايز» (not the list after the comma)
+                int from = 0, to = se.length();
+                for (int k = neg.start() - 1; k >= 0; k--) if ("(،,.؛\n".indexOf(se.charAt(k)) >= 0) { from = k + 1; break; }
+                for (int k = neg.end(); k < se.length(); k++) if (")،,.؛\n".indexOf(se.charAt(k)) >= 0) { to = k; break; }
+                Map<String, String> denied = valuesIn(se.substring(from, to), p);
+                Map<String, String> before = valuesIn(se.substring(0, from) + " " + se.substring(to), p);
+                Map<String, String> all = new LinkedHashMap<>(said);
+                for (var d : denied.entrySet()) {
+                    if (before.containsKey(d.getKey())) continue;
+                    Set<String> ctxVals = new LinkedHashSet<>();   // the denied combination: this value with the other options named («الأحمر خلص في مقاس 10» is red 10)
+                    for (var e : denied.entrySet()) if (!e.getValue().equals(d.getValue())) ctxVals.add(e.getKey());
+                    if (ctxVals.isEmpty()) for (var e : all.entrySet()) if (!e.getValue().equals(d.getValue())) ctxVals.add(e.getKey());
+                    boolean hasStock = p.variants().stream().anyMatch(v -> v.available() > 0 && d.getKey().equals(v.options().get(d.getValue())) && v.options().values().containsAll(ctxVals));
+                    if (hasStock) said.remove(d.getKey());   // goes to the «more values have stock» list below
+                    else said.remove(d.getKey());
+                }
+            }
             if (said.isEmpty()) continue;
             Map<String, Set<String>> byOption = new LinkedHashMap<>();
             for (var e : said.entrySet()) byOption.computeIfAbsent(e.getValue(), k -> new LinkedHashSet<>()).add(e.getKey());
@@ -2180,14 +2203,18 @@ final class FactCheck {
                 // the product this sentence is about (named in it, or the one named before it): its own text and the policies; otherwise anything the shop wrote
                 List<Mention> here = ms.stream().filter(m -> m.start() >= sn[0] && m.start() < sn[1]).toList();
                 String slug = here.size() == 1 ? here.get(0).slug() : here.isEmpty() ? (lastBefore(ms, sn[0], only) != null ? lastBefore(ms, sn[0], only) : only) : null;
-                if (slug == null && here.isEmpty()) {   // «Yes, they all come with genuine Windows» before the reply names its one product: it is about that product
-                    var named = ms.stream().map(Mention::slug).distinct().toList();
-                    if (named.size() == 1) slug = named.get(0);
+                List<String> about = slug != null ? List.of(slug) : here.isEmpty() ? ms.stream().map(Mention::slug).distinct().toList() : here.stream().map(Mention::slug).distinct().toList();
+                // «Yes, both come with genuine Windows» before (or with) the products the reply names: the claim must be in EACH of their own texts
+                Boolean known = null;
+                for (String sl : about) {
+                    String facts = shop.facts(sl);
+                    if (facts == null) { known = null; break; }
+                    String lf = light(facts).replace('ة', 'ه').toLowerCase(Locale.ROOT);
+                    boolean has = c.stems().stream().anyMatch(st -> lf.contains(st.toLowerCase(Locale.ROOT)));
+                    known = known == null ? has : known && has;
+                    if (!has) break;
                 }
-                String facts = slug == null ? null : shop.facts(slug);
-                Boolean known;
-                if (facts != null) { String lf = light(facts).replace('ة', 'ه').toLowerCase(Locale.ROOT); known = c.stems().stream().anyMatch(st -> lf.contains(st.toLowerCase(Locale.ROOT))); }
-                else known = shop.says(c.stems());
+                if (about.isEmpty() || known == null) known = shop.says(c.stems());
                 if (known == null || known) continue;
                 drop.add(sn);
                 if (label == null) label = c.label();

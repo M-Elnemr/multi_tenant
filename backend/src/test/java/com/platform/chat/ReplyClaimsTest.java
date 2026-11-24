@@ -147,6 +147,8 @@ class ReplyClaimsTest {
         };
         assertThat(FactCheck.check("Does it come with Windows?", "Yes, they all come with genuine Windows 11 pre-installed. The Zentra Creator 16 is 64,999 EGP.", laptops, List.of()))
                 .anyMatch(x -> x.kind().equals("SPEC_UNKNOWN"));
+        assertThat(FactCheck.check("Does it come with Windows?", "Yes! Both come with genuine Windows 11 pre-installed: زينترا بوك 15 برو and Zentra Creator 16.", laptops, List.of()))
+                .anyMatch(x -> x.kind().equals("SPEC_UNKNOWN"));   // true for one of the two only
         // the heel: the customer asked for size 38 only, the reply gives one colour of two in stock (no «بس»)
         var heel = new FactCheck.Product("heel", "حذاء كعب عالي", 0, List.of(
                 new FactCheck.Variant(Map.of("اللون", "أحمر", "المقاس", "38"), 990, 0, 8), new FactCheck.Variant(Map.of("اللون", "بيج", "المقاس", "38"), 990, 0, 5)));
@@ -159,5 +161,8 @@ class ReplyClaimsTest {
         };
         assertThat(FactCheck.check("حذاء كعب للسهرة مقاس ٣٨", "في حذاء كعب عالي بـ 990 جنيه، متوفر مقاس ٣٨ بلون أحمر.", shoes, List.of("heel"))).anyMatch(x -> x.kind().equals("OPTION_STOCK"));
         assertThat(FactCheck.check("عايز الأحمر مقاس ٣٨", "حذاء كعب عالي الأحمر متوفر مقاس ٣٨.", shoes, List.of("heel"))).noneMatch(x -> x.kind().equals("OPTION_STOCK"));
+        // the diet's own words in round 1: beige denied inside the same sentence while it has stock
+        assertThat(FactCheck.check("حذاء كعب للسهرة مقاس ٣٨", "ده حذاء كعب عالي بـ ٩٩٠ جنيه، ومتاح في مقاس ٣٨ باللون الأحمر فقط حاليًا (الأسود والبيج مش متوفرين في المقاس ده). تحب أحجزلك الأحمر؟", shoes, List.of("heel")))
+                .anyMatch(x -> x.kind().equals("OPTION_STOCK"));
     }
 }

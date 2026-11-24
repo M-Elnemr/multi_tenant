@@ -1814,6 +1814,8 @@ public class ChatService {
      * When the model could not put a stall right in time: its stalling or offering sentences go, and the products the tools found this turn are listed by code (name, size, the real
      * price, «من» when the price changes by option), so the customer never waits on «هرجعلك» or has to say «أيوه» to see them.
      */
+    private static final Pattern AFTER_SALE = Pattern.compile("(?:اشتريت|اشتريته|اشتريتها|شاريه|شاريها|طلبته|طلبتها|وصلني|وصلتني|استلمت|استلمته|الطلب\\s+بتاعي|الاوردر\\s+بتاعي|bought|i\\s+ordered|received\\s+(?:it|my))", Pattern.CASE_INSENSITIVE);
+
     /** The fact-check kinds that mean a wrong fact about a product: while any is left, «not looked up» is not settled by the database. */
     private static final Set<String> WRONG_FACT = Set.of("OPTION_PRICE", "OPTION_STOCK", "OPTIONS_MISSING", "FALSE_DENIAL", "INVENTED_PRODUCTS", "INVENTED_COLOR", "SPEC_UNKNOWN", "PRICE_MISSING",
             "STOCK_QUANTITY", "STOCK_PER_COMBINATION", "STOCK_MISSING", "WRONG_KIND", "SALE", "DENIED_EXISTING_PRODUCT");
@@ -1826,7 +1828,10 @@ public class ChatService {
      */
     String settledInCode(Ctx ctx, String last, String answer, Map<String, String> problems, List<FactCheck.Problem> facts) {
         boolean factsRight = facts.stream().noneMatch(f -> WRONG_FACT.contains(f.kind())) && problems.keySet().stream().noneMatch(WRONG_FACT::contains);
-        if (problems.containsKey("STALL")) { answer = stallFallback(ctx, answer); problems.remove("STALL"); }
+        if (problems.containsKey("STALL") && !ctx.products().isEmpty()) {   // the tools found products: the code says what they found; otherwise («I will ask the team» about halal) the rewrite decides
+            String said = stallFallback(ctx, answer);
+            if (said != null && !said.equals(answer) && !FactCheck.mentions(said, shopView(ctx.tenantId()).names()).isEmpty()) { answer = said; problems.remove("STALL"); }
+        }
         if (factsRight && !FactCheck.mentions(answer, shopView(ctx.tenantId()).names()).isEmpty()) { problems.remove("UNCHECKED_FACTS"); problems.remove("UNCHECKED_OPTIONS"); }
         List<Map<String, Object>> related = null;
         if (problems.containsKey("UNSEARCHED_DENIAL") || problems.containsKey("WHO_BEFORE_SEARCH")) related = relatedProducts(ctx.tenantId(), last);
@@ -1841,7 +1846,8 @@ public class ChatService {
                 chatHasProduct = !FactCheck.mentions(recent, names).isEmpty();
             }
             List<String> kinds = List.of();
-            if (ar && !chatHasProduct) {
+            boolean afterSale = last != null && (ANGRY.matcher(last).find() || HUMAN_ASK.matcher(last).find() || AFTER_SALE.matcher(FastAnswers.norm(last)).find());
+            if (ar && !chatHasProduct && !afterSale) {   // a complaint or a question about a bought item never gets a product list
                 List<String> slugs = new ArrayList<>();
                 for (var wm : wordMatches(ctx.tenantId(), last, true, Set.of(), 3)) slugs.addAll(wm.detailed());
                 kinds = slugs;
