@@ -64,6 +64,8 @@ final class FactCheck {
         default Set<String> tags() { return Set.of(); }
         /** Everything the shop wrote about the product (names, options, description, specs, tags, size guide) and its own policies, or null when unknown (then the spec lock is off). */
         default String facts(String slug) { return null; }
+        /** Does anything the shop wrote (its products, their translations, its profile and policies) contain one of these stems (normalized: one alef, «ه» for «ة»)? null when unknown (the check is then off). */
+        default Boolean says(List<String> stems) { return null; }
         /** The variants of the product that are delivered only to some governorates (a TV of 50 inches and up: Cairo and Giza); empty when none is limited. */
         default List<Limit> limits(String slug) { return List.of(); }
     }
@@ -120,9 +122,23 @@ final class FactCheck {
         to = Math.min(to, lightText.length());
         if (from >= to) return out;
         Matcher m = WORD.matcher(lightText).region(from, to);
-        while (m.find()) out.add(new Tok(bare(m.group().replaceAll("[,٬]", "")), m.start(), m.end(), m.group().replace("\u200C", "")));
+        while (m.find()) {
+            String w = bare(m.group().replaceAll("[,٬]", ""));
+            Matcher u = NUMBER_UNIT.matcher(w);
+            if (u.matches()) {   // «64gb» is «64 جيجا»: the number and the unit as the shop's data writes them
+                int cut = m.start() + m.group().length() - u.group(2).length();
+                out.add(new Tok(u.group(1), m.start(), cut, m.group().substring(0, cut - m.start())));
+                out.add(new Tok(UNIT_WORDS.get(u.group(2)), cut, m.end(), m.group().substring(cut - m.start())));
+                continue;
+            }
+            out.add(new Tok(UNIT_WORDS.getOrDefault(w, w), m.start(), m.end(), m.group().replace("\u200C", "")));
+        }
         return out;
     }
+
+    /** Units written in English or run into the number («64GB», «2 TB», «65inch», «120Hz») say the same as the shop's Arabic option values («64 جيجا», «2 تيرا», «65 بوصة»). */
+    static final Map<String, String> UNIT_WORDS = Map.of("gb", "جيجا", "جيجابايت", "جيجا", "tb", "تيرا", "تيرابايت", "تيرا", "inch", "بوصه", "inches", "بوصه", "انش", "بوصه", "hz", "هرتز");
+    private static final Pattern NUMBER_UNIT = Pattern.compile("(\\d+(?:\\.\\d+)?)(gb|tb|inch|inches|hz)");
 
     /** Sentences and list lines: [start, end) ranges of the text. */
     static List<int[]> sentences(String text) {
@@ -332,6 +348,7 @@ final class FactCheck {
         run(out, () -> { if (out.stream().noneMatch(x -> x.kind().equals("INVENTED_PRODUCTS"))) inventedBrands(answer, shop, out); });
         run(out, () -> betterMatch(customer, answer, ms, shop, out));
         run(out, () -> { if (out.stream().noneMatch(x -> x.fixed() != null)) specLock(customer, answer, ms, only0, shop, out); });
+        run(out, () -> { if (out.stream().noneMatch(x -> x.fixed() != null)) claimLock(customer, answer, shop, out); });
         run(out, () -> answerLock(customer, answer, ms, shop, load, out));
         run(out, () -> { if (out.stream().noneMatch(x -> x.kind().startsWith("OPTION") || x.kind().equals("FALSE_DENIAL"))) askedMissingSize(customer, answer, ms, only0, shop, load, out); });
         run(out, () -> { if (out.stream().noneMatch(x -> x.kind().startsWith("OPTION"))) soldOutChoice(answer, ms, only0, about0, load, out); });
@@ -658,6 +675,7 @@ final class FactCheck {
         boolean priced = false;
         String aheadTaken = null;
         boolean everPriced = false;
+        boolean fresh = false;   // the values said since the last price start a new part
         for (int i = 0; i < toks.size(); i++) {
             if (i > 0 && everPriced) {   // a dash after a priced part starts a new clause («… ١٦٩٩٩ — الأزرق المتاح ١٢٨ جيجا جديد بـ ١٣٤٩٩»): its values are its own
                 String gap = answer.substring(toks.get(i - 1).end(), toks.get(i).start());
@@ -672,10 +690,14 @@ final class FactCheck {
                     seen.removeIf(sv -> option == null || optionOf(p, sv) == null || option.equals(optionOf(p, sv)));
                     seen.add(matched); priced = true; aheadTaken = null; i += (int) v[1] - 1; continue;
                 }
-                if (priced) {   // a value of the same option replaces the earlier one; the values of other options (the capacity before «أوبن بوكس») stay
+                if (priced) {   // after a price, a new part starts: a value of the same option replaces the earlier one; the values of other options (the capacity before «أوبن بوكس») stay
                     String option = optionOf(p, matched);
                     seen.removeIf(sv -> option == null || optionOf(p, sv) == null || option.equals(optionOf(p, sv)));
                     priced = false;
+                    fresh = true;
+                } else if (fresh) {   // «… 64,999, and the 64GB + 2TB one is …»: every value of that new part replaces the one of its option, not only the first
+                    String option = optionOf(p, matched);
+                    if (option != null) seen.removeIf(sv -> option.equals(optionOf(p, sv)));
                 }
                 // «(ربع/نص كيلو)»: the bare first word of another value just before this one counts as that value too
                 if (i > 0) for (var e : values.entrySet()) if (e.getKey().size() > 1 && same(toks.get(i - 1).word(), e.getKey().get(0)) && !e.getValue().equals(matched)) seen.add(e.getValue());
@@ -699,6 +721,7 @@ final class FactCheck {
             }
             if (ahead != null) aheadTaken = ahead;
             priced = true;
+            fresh = false;
             everPriced = true;
             double amount = Double.parseDouble(t.word());
             List<Variant> fit = p.variants().stream().filter(x -> x.options().values().containsAll(context)).toList();
@@ -2031,6 +2054,55 @@ final class FactCheck {
         String note = ar ? "التفصيلة دي مش مكتوبة في بيانات «" + name + "» عندنا، أقدر أسأل المحل عليها لو تحب 🙏" : "That detail is not in our data for " + name + "; I can ask the shop if you like 🙏";
         String rest = withoutRanges(answer, drop);
         out.add(new Problem("SPEC_UNKNOWN", "You stated a detail of «" + name + "» (" + claim + ") that the shop's data does not have. Never guess a spec, a number or a warranty: say only what get_product or shop_knowledge gives, or offer to ask the shop.",
+                (rest.isBlank() ? note : rest + "\n\n" + note).trim()));
+    }
+
+    /** A claim about what the goods are (halal, certified, imported, organic, made in…, free of…, original) and the stems to find it in the shop's own text. */
+    record Claim(String label, Pattern said, List<String> stems) {}
+
+    private static Claim claim(String label, String regex, String... stems) { return new Claim(label, Pattern.compile("(?<!\\p{L})(?:و|ف|ب)?(?:" + regex + ")(?!\\p{L})", Pattern.CASE_INSENSITIVE), List.of(stems)); }
+
+    static final List<Claim> CLAIMS = List.of(
+            claim("halal", "حلال|halal", "حلال", "halal"),
+            claim("slaughter", "(?:مذبوح[هة]?|دبح|ذبح|الدبح|الذبح)\\s+(?:شرعي|حلال|اسلامي)", "ذبح", "دبح", "مذبوح"),
+            claim("trusted sources", "مصادر\\s+موثوق[هة]?|موردين\\s+موثوقين|trusted\\s+(?:sources?|suppliers?)", "موثوق", "trusted"),
+            claim("certified", "شهاد[هة]|شهادات|معتمد[هة]?|معتمدين|ايزو|iso|certified|certificate", "شهاد", "معتمد", "ايزو", "iso", "certif"),
+            claim("imported", "مستورد[هة]?|مستوردين|imported", "مستورد", "import"),
+            claim("organic", "اورجانيك|اورجانك|عضوي[هة]?|organic", "اورجانيك", "عضوي", "organic"),
+            claim("free of", "خالي[هة]?\\s+من\\s+(?:ال)?(?:جلوتين|جلوتن|سكر|لاكتوز|مواد\\s+حافظ[هة]|دهون|كوليسترول)|بدون\\s+مواد\\s+حافظ[هة]|(?:gluten|sugar|lactose|dairy)[- ]free|no\\s+preservatives",
+                    "جلوتين", "جلوتن", "خالي من", "حافظ", "لاكتوز", "gluten", "sugar-free", "lactose", "preservative"),
+            claim("vegan", "نباتي[هة]?\\s+(?:100|١٠٠|بالكامل|تماما)|vegan", "نباتي", "vegan"),
+            claim("made in", "صناع[هة]\\s+(?:تركي[هة]?|صيني[هة]?|الماني[هة]?|ايطالي[هة]?|ياباني[هة]?|كوري[هة]?|امريكي[هة]?|اوروبي[هة]?|هندي[هة]?|مصري[هة]?)|made\\s+in\\s+[a-z]+",
+                    "made in", "تركي", "صيني", "الماني", "ايطالي", "ياباني", "كوري", "امريكي", "اوروبي", "هندي", "مصري"),
+            claim("original", "اصلي[هة]?|اوريجينال|original|genuine|authentic", "اصلي", "اوريجينال", "original", "genuine", "authentic"));
+
+    /**
+     * «اللحمة عندنا بتلو بلدي حلال ومفروقة من مصادر موثوقة» when the shop wrote neither: a claim about what the goods are (halal, certified, imported, organic, made in…, free of…,
+     * original) that is nowhere in what the shop wrote (its products, their translations, its profile and policies) is taken out and the customer is offered to ask the shop.
+     * A question, a no («مش مذكورة في بياناتنا»), general know-how and a condition are left alone; off when the shop's data cannot be read.
+     */
+    static void claimLock(String customer, String answer, Shop shop, List<Problem> out) {
+        String la = light(answer).replace('ة', 'ه');
+        List<int[]> drop = new ArrayList<>();
+        String label = null;
+        for (int[] sn : sentences(answer)) {
+            String se = la.substring(sn[0], sn[1]);
+            if (NEG_STRICT.matcher(se).find() || DENY.matcher(se).find() || CONDITIONAL.matcher(se).find() || se.contains("؟") || se.contains("?")
+                    || se.matches("(?s).*(?<!\\p{L})(?:عاده|عادتا|غالبا|عموما|usually|generally|typically)(?!\\p{L}).*")) continue;
+            for (Claim c : CLAIMS) {
+                if (!c.said().matcher(se).find()) continue;
+                Boolean known = shop.says(c.stems());
+                if (known == null || known) continue;
+                drop.add(sn);
+                if (label == null) label = c.label();
+                break;
+            }
+        }
+        if (drop.isEmpty()) return;
+        boolean ar = arabic(answer) || customer != null && arabic(customer);
+        String note = ar ? "التفصيلة دي مش مكتوبة في بيانات المحل عندنا، أقدر أسأل المحل عليها لو تحب 🙏" : "That detail is not in the shop's information; I can ask the shop for you if you like 🙏";
+        String rest = withoutRanges(answer, drop);
+        out.add(new Problem("SPEC_UNKNOWN", "You claimed «" + label + "» about the goods, and nothing the shop wrote says so. Never state what goods are (halal, certified, imported, organic, made in…, free of…, original) unless the shop's data or shop_knowledge says it: say it is not listed and offer to ask the shop (flag_unanswered).",
                 (rest.isBlank() ? note : rest + "\n\n" + note).trim()));
     }
 

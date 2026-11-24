@@ -16,14 +16,14 @@ class AiConfigServiceTest {
     void whenTheDatabaseFailsTheLastSettingsReadStayAndOnlyAnEmptyStartUsesTheDefaults() {
         JdbcClient jdbc = mock(JdbcClient.class, RETURNS_DEEP_STUBS);
         when(jdbc.sql(org.mockito.ArgumentMatchers.anyString()).query().listOfRows()).thenReturn(List.of(Map.of("text_model", "glm"))).thenThrow(new RuntimeException("db down"));
-        var svc = new AiConfigService(jdbc, HiveKeyPool.of(), "deepseek", "deepseek", "qwen", "lean", "low", "off", "https://hive.example/v3", "m");
+        var svc = new AiConfigService(jdbc, HiveKeyPool.of(), "deepseek", "deepseek", "qwen", "lean", "low", "https://hive.example/v3", "m");
         assertThat(svc.get().textModel()).isEqualTo("glm");
         AiConfigService.forgetCached();
         assertThat(svc.get().textModel()).as("the read fails: still the last settings, not the default").isEqualTo("glm");
         // never read at all: the defaults
         JdbcClient broken = mock(JdbcClient.class, RETURNS_DEEP_STUBS);
         when(broken.sql(org.mockito.ArgumentMatchers.anyString()).query().listOfRows()).thenThrow(new RuntimeException("db down"));
-        var fresh = new AiConfigService(broken, HiveKeyPool.of(), "deepseek", "deepseek", "qwen", "lean", "low", "off", "https://hive.example/v3", "m");
+        var fresh = new AiConfigService(broken, HiveKeyPool.of(), "deepseek", "deepseek", "qwen", "lean", "low", "https://hive.example/v3", "m");
         assertThat(fresh.get().textModel()).isEqualTo("deepseek");
         assertThat(fresh.get().promptMode()).isEqualTo("lean");
     }

@@ -8,25 +8,16 @@ import com.platform.chat.AiProvider.Turn;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
 /**
- * The admin's «AI optimization» switch: off sends the request exactly as before (everything in the system message); on sends the fixed part as the system message and this reply's
- * context (the guest note, the products of the chat with their exact stock) in front of the customer's newest message, with no stock counts in the cached catalog.
+ * The request layout: the fixed part of the prompt is the system message and this reply's context (the guest note, the products of the chat with their exact stock) goes in front of
+ * the customer's newest message, with no stock counts in the cached catalog.
  */
 class OptimizedLayoutIntegrationTest extends IntegrationTestBase {
     @Autowired JdbcClient jdbc;
-
-    @AfterEach
-    void classicAgain() { switchTo(null); }
-
-    void switchTo(String v) {
-        jdbc.sql("INSERT INTO chat.platform_ai_config (id, optimization) VALUES (1, :v) ON CONFLICT (id) DO UPDATE SET optimization = :v").param("v", v).update();
-        com.platform.chat.AiConfigTestAccess.forget();
-    }
 
     String ok(org.springframework.test.web.servlet.ResultActions r) throws Exception { return r.andReturn().getResponse().getContentAsString(); }
 
@@ -61,7 +52,6 @@ class OptimizedLayoutIntegrationTest extends IntegrationTestBase {
     @Test
     void aReturnQuestionDoesNotBringAProductThatOnlySharesAWord() throws Exception {
         Tenant t = shop("شنطة كروس صغيرة", "شنطة ظهر");
-        switchTo("on");
         String ctx = context(ask(t, "لو المقاس طلع صغير ابدله ازاي؟"));
         assertThat(ctx).doesNotContain("شنطة");
     }
@@ -73,9 +63,8 @@ class OptimizedLayoutIntegrationTest extends IntegrationTestBase {
         String[] all = java.util.Arrays.copyOf(laptops, laptops.length + 1);
         all[laptops.length] = "جراب لاب توب زينترا";
         Tenant t = shop(all);
-        switchTo("on");
         String ctx = context(ask(t, "الضمان قد ايه على اللاب توب؟ وبيغطي الكسر؟"));
-        assertThat(ctx).contains("WORD MATCHES").contains("6 products in the shop contain it").contains("that is all of them").doesNotContain("THE PRODUCTS OF THIS CHAT").doesNotContain("جراب");
+        assertThat(ctx).contains("WORD MATCHES").contains("6 products of the shop have it in their name").contains("that is all of them").doesNotContain("THE PRODUCTS OF THIS CHAT").doesNotContain("جراب");
         for (String l : laptops) assertThat(ctx).contains(l);
     }
 
@@ -83,26 +72,14 @@ class OptimizedLayoutIntegrationTest extends IntegrationTestBase {
     @Test
     void aNamedProductIsAProductOfThisChat() throws Exception {
         Tenant t = shop("شنطة كروس صغيرة");
-        switchTo("on");
         String ctx = context(ask(t, "قميص كتان أبيض متاح؟"));
         assertThat(ctx).contains("THE PRODUCTS OF THIS CHAT").contains("7 in stock");
         assertThat(ctx.indexOf("قميص كتان أبيض")).isGreaterThan(ctx.indexOf("THE PRODUCTS OF THIS CHAT"));
     }
 
     @Test
-    void offSendsEverythingInTheSystemMessageAsBefore() throws Exception {
+    void theFixedPartIsTheSystemMessageAndTheContextComesWithTheNewestMessage() throws Exception {
         Tenant t = shop();
-        switchTo("off");
-        var seen = ask(t, "قميص كتان أبيض متاح؟");
-        assertThat(system).contains("The customer is a guest").contains("7 in stock").doesNotContain("⟦");
-        var last = seen.get(0).get(seen.get(0).size() - 1);
-        assertThat(last.text()).isEqualTo("قميص كتان أبيض متاح؟");
-    }
-
-    @Test
-    void onSendsTheFixedPartAsSystemAndTheContextWithTheNewestMessage() throws Exception {
-        Tenant t = shop();
-        switchTo("on");
         var seen = ask(t, "قميص كتان أبيض متاح؟");
         assertThat(system).doesNotContain("The customer is a guest").doesNotContain("7 in stock").contains("WHERE THIS REPLY'S CONTEXT IS").contains("قميص كتان أبيض");
         var last = seen.get(0).get(seen.get(0).size() - 1);

@@ -23,15 +23,8 @@ public class PlatformAiConfigController {
     public record EnabledRequest(boolean enabled) {}
 
     private final AiConfigService config;
-    private final AiLayoutCompare compare;
 
-    public PlatformAiConfigController(AiConfigService config, AiLayoutCompare compare) { this.config = config; this.compare = compare; }
-
-    /** The classic and the optimized request layout side by side (tokens, cache, calls, rewrites, reply time), from the reply traces. */
-    @GetMapping("/compare")
-    public Map<String, Object> compare(@org.springframework.web.bind.annotation.RequestParam(defaultValue = "7") int days, @org.springframework.web.bind.annotation.RequestParam(defaultValue = "ALL") String source) {
-        return compare.compare(days, source);
-    }
+    public PlatformAiConfigController(AiConfigService config) { this.config = config; }
 
     @GetMapping
     public Map<String, Object> view() { return config.view(); }

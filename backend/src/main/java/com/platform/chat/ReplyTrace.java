@@ -50,7 +50,6 @@ final class ReplyTrace {
         for (String n : List.of("lines", "call", "attempt", "attempts", "round", "problems", "rewrites", "history_messages", "facts", "tools", "model_calls")) SPECS.put(n, Spec.num(10_000));   // counts
         for (String n : List.of("quiet_ms", "throttle_ms", "after_ms", "waited_ms", "deterministic_ms", "rewrite_ms")) SPECS.put(n, Spec.num(10_000_000));       // milliseconds (under 3 hours)
         for (String n : List.of("in", "out", "cached", "chars", "static_chars", "dynamic_chars", "history_chars", "tools_chars")) SPECS.put(n, Spec.num(10_000_000));
-        SPECS.put("mode", Spec.of("classic", "optimized"));   // which request layout answered (the admin's AI optimization switch)                                                              // tokens and characters
         for (String n : List.of("direct", "retry", "hedged", "usable", "allowed", "parallel", "winner", "billed", "ok", "next_model_call", "accepted_original", "threw", "differs", "confirmed", "ran", "unavailable",
                 "ai_unavailable")) SPECS.put(n, Spec.bool());
         SPECS.put("model", Spec.pat("[A-Za-z][A-Za-z0-9_.\\-]{0,39}"));   // a provider code or a configured model id, e.g. glm-5
@@ -506,7 +505,7 @@ final class ReplyTrace {
         s.put("burst_ms", burst);
         s.put("queue_ms", queue);
         long calls = 0, modelMs = 0, failedMs = 0, in = 0, out = 0, hedges = 0, fallbacks = 0, toolMs = 0, tools = 0, outMs = 0, outFail = 0, checkMs = 0, detMs = 0, rewriteMs = 0, rewrites = 0, reviewMs = 0;
-        String verdict = "none", mode = null;
+        String verdict = "none";
         long cached = 0, secondOpinions = 0, secondSkipped = 0;
         Map<String, Object> parts = new LinkedHashMap<>();
         Map<String, Long> byPurpose = new TreeMap<>();
@@ -530,7 +529,6 @@ final class ReplyTrace {
                 case "rewrite" -> { rewrites++; rewriteMs += d; }
                 case "review" -> { reviewMs += d; verdict = String.valueOf(e.a().get("verdict")); }
                 case "prompt_parts" -> {
-                    if (e.a().get("mode") != null) mode = String.valueOf(e.a().get("mode"));
                     for (String k : List.of("static_chars", "dynamic_chars", "history_chars", "tools_chars")) if (e.a().get(k) != null) parts.put(k, e.a().get(k));
                 }
                 case "note" -> { if (String.valueOf(e.a().get("kinds")).startsWith("SKIP_SECOND")) secondSkipped++; }
@@ -539,7 +537,6 @@ final class ReplyTrace {
         }
         s.put("model_calls", calls); s.put("model_ms", modelMs); s.put("failed_model_ms", failedMs);
         s.put("tokens_in", in); s.put("tokens_out", out); s.put("tokens_cached", cached);
-        if (mode != null) s.put("prompt_mode", mode);
         s.putAll(parts);
         s.put("second_opinion_calls", secondOpinions); s.put("second_opinions_skipped", secondSkipped);
         s.put("model_ms_by_role_purpose", byPurpose);

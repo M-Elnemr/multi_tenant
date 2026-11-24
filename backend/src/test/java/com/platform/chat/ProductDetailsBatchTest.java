@@ -54,20 +54,14 @@ class ProductDetailsBatchTest extends IntegrationTestBase {
     }
 
     @Test
-    void theCatalogReadsAllVariantsInOneQueryWithTheSameRowsAndTheOptimizedCatalogHasNoCounts() throws Exception {
+    void theCatalogReadsAllVariantsInOneQueryWithTheSameRowsAndHasNoCounts() throws Exception {
         Tenant a = onboard("STORE"), b = onboard("STORE");
         UUID ta = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", a.slug()).query(UUID.class).single();
         List<String> sa = products(a, 3), sb = products(b, 1);
         var batch = catalog.activeVariantsBySlugs(ta, sa);
         for (String slug : sa) assertThat(batch.get(slug)).as("variants of " + slug).isEqualTo(catalog.detailBySlug(ta, slug).get("variants"));
         assertThat(catalog.activeVariantsBySlugs(ta, sb).get(sb.get(0))).as("another shop's product").isEmpty();
-        String classic = chat.allProducts(ta);
-        assertThat(classic).contains("4 in stock");
-        ChatService.OPTIMIZED.set(true);
-        try {
-            String optimized = chat.allProducts(ta);
-            assertThat(optimized).doesNotContain("4 in stock").contains(", in stock");
-            assertThat(optimized.replace(", in stock", ", 4 in stock")).as("only the counts differ").isEqualTo(classic);
-        } finally { ChatService.OPTIMIZED.remove(); }
+        String catalogText = chat.allProducts(ta);   // the cached catalog says which options are in stock, never how many (the counts come with each message)
+        assertThat(catalogText).doesNotContain("4 in stock").contains(", in stock");
     }
 }
