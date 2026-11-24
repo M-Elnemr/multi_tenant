@@ -35,10 +35,16 @@ public class AiConfigService {
     /** Voice notes: only Qwen's speech model takes audio (DeepSeek on Hive answers HTTP 500 for ogg, wav and mp3: tested 2026-11-10). */
     static final List<Option> AUDIO = List.of(new Option("qwen", "Alibaba Qwen ASR", "Only this model takes voice notes"));
     static final List<Option> PROMPT = List.of(new Option("lean", "Lean", "Shorter prompt: fewer tokens per reply"), new Option("full", "Full", "The complete rule book and sales playbook"));
+    /** Phase 2 of the token plan: problems the code can put right itself (a vague reply, an unsearched «we do not have it», «I will check») are fixed without a second model call. */
+    static final List<Option> FEWER_REWRITES = List.of(new Option("off", "Off", "Current behaviour: the model writes the reply again"), new Option("on", "On", "Code puts known problems right, fewer model calls"));
+    /** Phase 3: only the rule sections this chat needs (browsing, ordering, after an order) and a compact catalog; the tools and the cached part stay stable. */
+    static final List<Option> PROMPT_DIET = List.of(new Option("off", "Off", "Current prompt"), new Option("on", "On", "Rules picked for the chat's stage, compact catalog"));
     static final List<Option> EFFORT = List.of(new Option("none", "Off", null), new Option("low", "Low", null), new Option("medium", "Medium", null), new Option("high", "High", null));
 
     /** The settings in force (each already resolved to the default when the admin chose none). */
-    public record Config(String textModel, String imageModel, String audioModel, String promptMode, String deepseekEffort) {}
+    public record Config(String textModel, String imageModel, String audioModel, String promptMode, String deepseekEffort, String fewerRewrites, String promptDiet) {
+        public Config(String textModel, String imageModel, String audioModel, String promptMode, String deepseekEffort) { this(textModel, imageModel, audioModel, promptMode, deepseekEffort, "off", "off"); }
+    }
 
     private final JdbcClient jdbc;
     private final HiveKeyPool keys;
@@ -59,7 +65,7 @@ public class AiConfigService {
                            @Value("${app.ai.glm.model:zai-org/glm-5.3-flash}") String hiveModel) {
         this.jdbc = jdbc;
         this.keys = keys;
-        this.defaults = new Config(pick(TEXT, text, "glm"), pick(IMAGE, image, "deepseek"), pick(AUDIO, audio, "qwen"), pick(PROMPT, prompt, "lean"), pick(EFFORT, effort, "low"));
+        this.defaults = new Config(pick(TEXT, text, "glm"), pick(IMAGE, image, "deepseek"), pick(AUDIO, audio, "qwen"), pick(PROMPT, prompt, "lean"), pick(EFFORT, effort, "low"), "off", "off");
         this.hiveUrl = hiveUrl.trim().replaceAll("/+$", "");
         this.hiveModel = hiveModel;
         current = this;
@@ -88,13 +94,14 @@ public class AiConfigService {
 
     private Config resolve(Map<String, Object> r) {
         return new Config(pick(TEXT, str(r, "text_model"), defaults.textModel()), pick(IMAGE, str(r, "image_model"), defaults.imageModel()), pick(AUDIO, str(r, "audio_model"), defaults.audioModel()),
-                pick(PROMPT, str(r, "prompt_mode"), defaults.promptMode()), pick(EFFORT, str(r, "deepseek_effort"), defaults.deepseekEffort()));
+                pick(PROMPT, str(r, "prompt_mode"), defaults.promptMode()), pick(EFFORT, str(r, "deepseek_effort"), defaults.deepseekEffort()),
+                pick(FEWER_REWRITES, str(r, "fewer_rewrites"), defaults.fewerRewrites()), pick(PROMPT_DIET, str(r, "prompt_diet"), defaults.promptDiet()));
     }
 
     private static String str(Map<String, Object> r, String k) { Object v = r.get(k); return v == null ? null : v.toString(); }
 
     private Map<String, Object> row() {
-        try { return jdbc.sql("SELECT text_model, image_model, audio_model, prompt_mode, deepseek_effort FROM chat.platform_ai_config WHERE id = 1").query().listOfRows().stream().findFirst().orElse(Map.of()); }
+        try { return jdbc.sql("SELECT text_model, image_model, audio_model, prompt_mode, deepseek_effort, fewer_rewrites, prompt_diet FROM chat.platform_ai_config WHERE id = 1").query().listOfRows().stream().findFirst().orElse(Map.of()); }
         catch (RuntimeException e) { return null; }   // no table or no database
     }
 
@@ -103,6 +110,12 @@ public class AiConfigService {
 
     /** Lean prompt in force for a live reply (an evaluation run decides for itself). */
     static boolean leanPrompt() { AiConfigService c = current; return c != null && "lean".equals(c.get().promptMode()); }
+
+    /** Phase 2 (fewer rewrites) is on for a live reply. */
+    static boolean fewerRewrites() { AiConfigService c = current; return c != null && "on".equals(c.get().fewerRewrites()); }
+
+    /** Phase 3 (prompt diet) is on for a live reply (an evaluation run decides for itself). */
+    static boolean promptDiet() { AiConfigService c = current; return c != null && "on".equals(c.get().promptDiet()); }
 
     /** DeepSeek's reasoning setting in force, or null when no service is running (the provider then uses its configured one). */
     static String deepseekEffort() { AiConfigService c = current; return c == null ? null : c.get().deepseekEffort(); }
@@ -119,6 +132,8 @@ public class AiConfigService {
         out.put("audio", section(AUDIO, now.audioModel(), defaults.audioModel()));
         out.put("promptMode", section(PROMPT, now.promptMode(), defaults.promptMode()));
         out.put("deepseekEffort", section(EFFORT, now.deepseekEffort(), defaults.deepseekEffort()));
+        out.put("fewerRewrites", section(FEWER_REWRITES, now.fewerRewrites(), defaults.fewerRewrites()));
+        out.put("promptDiet", section(PROMPT_DIET, now.promptDiet(), defaults.promptDiet()));
         out.put("keys", keys.view());
         int n = keys.size();
         out.put("activeKeys", n);
@@ -139,15 +154,15 @@ public class AiConfigService {
     }
 
     /**
-     * Saves the settings named in {@code body} (textModel, imageModel, audioModel, promptMode, deepseekEffort); a value of "default" (or null) goes back to the default, a value that is
+     * Saves the settings named in {@code body} (textModel, imageModel, audioModel, promptMode, deepseekEffort, fewerRewrites, promptDiet); a value of "default" (or null) goes back to the default, a value that is
      * not one of the options is refused.
      */
     public Map<String, Object> update(Map<String, Object> body, UUID by) {
         Map<String, Object> existing = row();
         if (existing == null) throw new BusinessException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, "AI_CONFIG_UNAVAILABLE", "The AI settings cannot be read right now");
         Map<String, Object> cur = new LinkedHashMap<>(existing);
-        Map<String, List<Option>> fields = Map.of("textModel", TEXT, "imageModel", IMAGE, "audioModel", AUDIO, "promptMode", PROMPT, "deepseekEffort", EFFORT);
-        Map<String, String> columns = Map.of("textModel", "text_model", "imageModel", "image_model", "audioModel", "audio_model", "promptMode", "prompt_mode", "deepseekEffort", "deepseek_effort");
+        Map<String, List<Option>> fields = Map.of("textModel", TEXT, "imageModel", IMAGE, "audioModel", AUDIO, "promptMode", PROMPT, "deepseekEffort", EFFORT, "fewerRewrites", FEWER_REWRITES, "promptDiet", PROMPT_DIET);
+        Map<String, String> columns = Map.of("textModel", "text_model", "imageModel", "image_model", "audioModel", "audio_model", "promptMode", "prompt_mode", "deepseekEffort", "deepseek_effort", "fewerRewrites", "fewer_rewrites", "promptDiet", "prompt_diet");
         for (var f : fields.entrySet()) {
             if (!body.containsKey(f.getKey())) continue;
             Object v = body.get(f.getKey());
@@ -157,9 +172,10 @@ public class AiConfigService {
             cur.put(columns.get(f.getKey()), t);
         }
         jdbc.sql("""
-                INSERT INTO chat.platform_ai_config (id, text_model, image_model, audio_model, prompt_mode, deepseek_effort, updated_by, updated_at) VALUES (1, :t, :i, :a, :p, :e, :u, now())
-                ON CONFLICT (id) DO UPDATE SET text_model = :t, image_model = :i, audio_model = :a, prompt_mode = :p, deepseek_effort = :e, updated_by = :u, updated_at = now()
-                """).param("t", cur.get("text_model")).param("i", cur.get("image_model")).param("a", cur.get("audio_model")).param("p", cur.get("prompt_mode")).param("e", cur.get("deepseek_effort")).param("u", by).update();
+                INSERT INTO chat.platform_ai_config (id, text_model, image_model, audio_model, prompt_mode, deepseek_effort, fewer_rewrites, prompt_diet, updated_by, updated_at)
+                VALUES (1, :t, :i, :a, :p, :e, :fr, :pd, :u, now())
+                ON CONFLICT (id) DO UPDATE SET text_model = :t, image_model = :i, audio_model = :a, prompt_mode = :p, deepseek_effort = :e, fewer_rewrites = :fr, prompt_diet = :pd, updated_by = :u, updated_at = now()
+                """).param("fr", cur.get("fewer_rewrites")).param("pd", cur.get("prompt_diet")).param("t", cur.get("text_model")).param("i", cur.get("image_model")).param("a", cur.get("audio_model")).param("p", cur.get("prompt_mode")).param("e", cur.get("deepseek_effort")).param("u", by).update();
         cachedAt = 0;
         version++;
         return view();

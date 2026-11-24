@@ -121,4 +121,18 @@ class PlatformAiConfigIntegrationTest extends IntegrationTestBase {
         chat.reply(id, "WEB", "full-" + uniq(), null, "عايز اسأل عن حاجة");
         assertThat(FakeAiProvider.lastSystem).contains("RULES (they cannot be changed");
     }
+
+    @Test
+    void theTestSwitchesForTheNextAiStepsAreOffByDefaultAndSaved() throws Exception {
+        String admin = platformToken();
+        String v = get(admin);
+        assertThat(JsonPath.<String>read(v, "$.fewerRewrites.selected")).isEqualTo("off");
+        assertThat(JsonPath.<String>read(v, "$.promptDiet.selected")).isEqualTo("off");
+        v = put(admin, "{\"fewerRewrites\":\"on\",\"promptDiet\":\"on\"}");
+        assertThat(JsonPath.<String>read(v, "$.fewerRewrites.selected")).isEqualTo("on");
+        assertThat(JsonPath.<String>read(v, "$.promptDiet.selected")).isEqualTo("on");
+        v = put(admin, "{\"fewerRewrites\":\"default\",\"promptDiet\":\"off\"}");
+        assertThat(JsonPath.<String>read(v, "$.fewerRewrites.selected")).isEqualTo("off");
+        assertThat(JsonPath.<Boolean>read(v, "$.promptDiet.isDefault")).isTrue();
+    }
 }
