@@ -85,6 +85,19 @@ public class ChatService {
     /** The slugs of the products the quoted message names (set only while a reply to an earlier message is being answered). */
     static final ThreadLocal<List<String>> REPLY_SLUGS = new ThreadLocal<>();
 
+    /**
+     * The optimized request layout is on for this reply (admin switch «AI optimization», see {@link AiConfigService#optimized()}): the model gets the fixed part of the prompt as its system
+     * message, then the chat, and this reply's context (customer, order on file, products with their exact stock now...) just before the customer's newest message, so the history stays
+     * in the provider's prompt cache from one message to the next. Null or false: the classic layout, exactly as before.
+     */
+    static final ThreadLocal<Boolean> OPTIMIZED = new ThreadLocal<>();
+    /** Where the reply's context goes in the optimized layout: the index of the customer's newest message in the turns (-1: in the system message, as before). */
+    static final ThreadLocal<Integer> CONTEXT_AT = new ThreadLocal<>();
+    /** The slugs of the products the code put in front of the model for this message, with their exact stock (optimized layout): reading them counts as having looked them up. */
+    static final ThreadLocal<Set<String>> PREFETCHED = new ThreadLocal<>();
+
+    static boolean optimizedReply() { return Boolean.TRUE.equals(OPTIMIZED.get()); }
+
     /** The «you left out a product the customer asked for» guard of prepare_order speaks once per reply (a model that insists is not looped). */
     private static final ThreadLocal<Boolean> BASKET_GUARD_SPOKE = ThreadLocal.withInitial(() -> false), DROP_GUARD_SPOKE = ThreadLocal.withInitial(() -> false);
     private static final java.util.regex.Pattern REQUEST_INTENT = java.util.regex.Pattern.compile("عايز|عاوز|محتاج|ابغى|أبغى|اشتري|هاخد|ممكن اطلب|want|need|looking for|interested in|i.d like");
@@ -566,7 +579,7 @@ public class ChatService {
         boolean failed = false;
         try { return replyTimed(tenantId, channel, externalId, clientId, message, displayName, in == null ? ReplyInput.NONE : in); }
         catch (RuntimeException | Error e) { failed = true; throw e; }
-        finally { ReplyTimeline.finish(channel, externalId, failed); REPLY_PRODUCTS.remove(); REPLY_SLUGS.remove(); EXTRAS.remove(); }
+        finally { ReplyTimeline.finish(channel, externalId, failed); REPLY_PRODUCTS.remove(); REPLY_SLUGS.remove(); EXTRAS.remove(); OPTIMIZED.remove(); CONTEXT_AT.remove(); PREFETCHED.remove(); }
     }
 
     private Reply replyTimed(UUID tenantId, String channel, String externalId, UUID clientId, String message, String displayName, ReplyInput in) {
@@ -625,6 +638,9 @@ public class ChatService {
         ReplyTimeline.mark("prep");
         ReplyTrace.span("context_load", contextStart, "history_messages", turns.size());   // the conversation, the saved message, the shop-team and points checks, the history window
         long promptStart = System.nanoTime();
+        boolean optimized = AiConfigService.optimized();
+        OPTIMIZED.set(optimized);
+        if (optimized && !turns.isEmpty() && "user".equals(turns.get(turns.size() - 1).role())) CONTEXT_AT.set(turns.size() - 1);
         String system = systemPrompt(tenantId, conv, clientId, channel, externalId);
         ReplyTrace.span("prompt_build", promptStart, "chars", system.length());
         long replyStart = System.nanoTime();
@@ -653,9 +669,16 @@ public class ChatService {
         long ragStart = System.nanoTime();
         boolean ragRan = !system.contains("ALL PRODUCTS (");
         if (ragRan) system += productsForMessage(tenantId, text);
+        else if (optimized) system += stockForChat(tenantId, text, turns);   // a small shop's exact stock now lives here, not in the cached catalog
         ReplyTrace.span("rag", ragStart, "ran", ragRan, "unavailable", ragDown[0]);
         List<ToolDef> tools = toolsFor(tenantId);
         ReplyTrace.instant("prompt_ready", "chars", system.length(), "tools", tools.size());
+        try {   // Phase 0 measurement: how big each part of the request is, and which layout answered (characters; the provider reports the tokens and the cached part)
+            int brk = system.indexOf(AiProvider.CACHE_BREAK);
+            int historyChars = turns.stream().mapToInt(t -> t.text() == null ? 0 : t.text().length()).sum();
+            ReplyTrace.instant("prompt_parts", "mode", optimized ? "optimized" : "classic", "static_chars", brk < 0 ? system.length() : brk, "dynamic_chars", brk < 0 ? 0 : system.length() - brk,
+                    "history_chars", historyChars, "tools_chars", tools.toString().length(), "history_messages", turns.size());
+        } catch (RuntimeException e) { log.debug("Prompt parts not traced", e); }
         ReplyTimeline.mark("products");
         if (EVAL.get() != null) EVAL.get().setup(system.length(), Integer.toHexString(tools.toString().hashCode()) + ":" + tools.size(), tools.stream().anyMatch(td -> "shop_knowledge".equals(td.name())));
         String answer = null;
@@ -723,7 +746,10 @@ public class ChatService {
             answer = summaryFirst(ctx, turns, text) ? "" : converse(ctx, routed, system, turns, tools, rounds, arabicChat);
             // still a problem the code could not put right after its own rewrite: the other company's model answers the same message, and the reply with fewer problems goes
             List<String> left = ctx.summary()[0] != null ? List.of() : unresolved(ctx, text, answer, turns, rounds);
-            var other = left.isEmpty() || !AiBudget.hasLeft(18_000) || madeChanges(ctx, rounds) ? null : routed.secondOpinion();
+            // optimized layout: another model's whole second reply only for a problem that can cost money or a wrong order (stock, price, invented product...), never for wording
+            boolean worthSecond = optimized ? left.stream().anyMatch(SECOND_OPINION_WORTH::contains) : !left.isEmpty();
+            if (optimized && !left.isEmpty() && !worthSecond) { String k = "SKIP_SECOND:" + String.join(":", left).replaceAll("[^A-Z_:]", ""); ReplyTrace.instant("note", "kinds", k.length() > 40 ? k.substring(0, 40) : k); }
+            var other = !worthSecond || !AiBudget.hasLeft(18_000) || madeChanges(ctx, rounds) ? null : routed.secondOpinion();
             if (other != null) {
                 Ctx ctx2 = new Ctx(tenantId, conv, channel, externalId, clientId, userMsgId, new ArrayList<>(), orderBox, new String[1], new String[1], ragDown);
                 boolean adopted = false;
@@ -1050,6 +1076,10 @@ public class ChatService {
         return out;
     }
 
+    /** The problems left after the rewrite that are worth another company's whole second reply in the optimized layout: a wrong fact about stock, price, products, delivery or the order. */
+    static final Set<String> SECOND_OPINION_WORTH = Set.of("EMPTY", "UNAVAILABLE", "OPTION_STOCK", "OPTION_PRICE", "STOCK_QUANTITY", "STOCK_PER_COMBINATION", "STOCK_MISSING", "INVENTED_PRODUCTS",
+            "INVENTED_COLOR", "FALSE_DENIAL", "WRONG_KIND", "SALE", "AREA", "PRICE_MISSING", "HOURS", "NO_SUMMARY");
+
     /** The reply already did something that cannot be asked twice: an order summary, an order, a cancellation, a question sent to the owner. */
     private static boolean madeChanges(Ctx ctx, List<AiUsageService.Round> rounds) {
         return ctx.summary()[0] != null || ctx.order()[0] != null
@@ -1311,9 +1341,11 @@ public class ChatService {
             if (FOR_ME.matcher(last).find()) problems.put("WHO_ASKED", "The customer already said it is for themself: never ask who it is for; recommend for them.");
             else if (!searched) problems.put("WHO_BEFORE_SEARCH", "You asked who it is for before searching: call search_products now; ask only if the results are for several groups (men, women, kids) and nothing tells.");
         }
-        if (!searched && !NOT_HAVE.matcher(answer).find() && !ONLY_OPTIONS.matcher(answer).find() && productFacts(answer) && !alreadySaid(answer, turns))
+        // optimized layout: the products the code put in front of the model with their exact stock count as looked up, when every product the reply names is one of them
+        boolean looked = searched || prefetchedCovers(ctx, answer);
+        if (!looked && !NOT_HAVE.matcher(answer).find() && !ONLY_OPTIONS.matcher(answer).find() && productFacts(answer) && !alreadySaid(answer, turns))
             problems.put("UNCHECKED_FACTS", "You described which colors, sizes or items are available without checking in this turn: call search_products (or get_product) now and answer only from the result.");
-        if (!searched && !NOT_HAVE.matcher(answer).find() && ONLY_OPTIONS.matcher(answer).find()) problems.put("UNCHECKED_OPTIONS", "You stated which colors, sizes or quantities exist without checking in this turn: call search_products or get_product and answer from allOptions and inStockOptions.");
+        if (!looked && !NOT_HAVE.matcher(answer).find() && ONLY_OPTIONS.matcher(answer).find()) problems.put("UNCHECKED_OPTIONS", "You stated which colors, sizes or quantities exist without checking in this turn: call search_products or get_product and answer from allOptions and inStockOptions.");
         if (!searched && NOT_HAVE.matcher(answer).find()) problems.put("UNSEARCHED_DENIAL", "You said we do not have something without searching in this turn: call search_products for exactly what the customer asked (also by color and size) and answer from the result.");
         String norm = FastAnswers.norm(answer);
         if (BROKEN_RUN.matcher(answer).find())
@@ -1424,6 +1456,14 @@ public class ChatService {
             log.warn("Rule check: the rewrite failed: {}", e.getMessage());
             return factsFixed(last, falseCancel ? cancelFallback(answer) : answer, shopData, touched);
         }
+    }
+
+    /** Every product the reply names was put in front of the model for this message with its exact stock (optimized layout only); false when it names none. */
+    private boolean prefetchedCovers(Ctx ctx, String answer) {
+        Set<String> pre = PREFETCHED.get();
+        if (!optimizedReply() || pre == null || pre.isEmpty() || answer == null) return false;
+        var named = FactCheck.mentions(answer, shopView(ctx.tenantId()).names()).stream().map(FactCheck.Mention::slug).distinct().toList();
+        return !named.isEmpty() && pre.containsAll(named);
     }
 
     private static final Pattern DRAFT_APOLOGY = Pattern.compile("^[^\\n.!؟?]{0,40}(?:اسف|آسف|أسف|معلش|اعتذر|أعتذر|sorry|apologi[sz]e)[^\\n.!؟?]{0,40}(?:الغلط|الخطا|الخطأ|اللخبطه|اللخبطة|اللبس|السابق|mistake|confusion|earlier)[^\\n.!؟?]*[.!؟?]?\\s*", Pattern.CASE_INSENSITIVE);
@@ -2652,7 +2692,7 @@ public class ChatService {
         boolean retried = false;
         for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
             long callStart = System.nanoTime();
-            Turn t = routed.next(system, turns, tools);
+            Turn t = routed.next(sentSystem(system), sentTurns(system, turns), tools);
             ReplyTimeline.llm(routed.code(), ReplyTimeline.since(callStart));
             rounds.add(new AiUsageService.Round(t.calls().stream().map(ToolCall::name).toList(), t.usage()));
             if (t.calls().isEmpty() && (t.text() == null || t.text().isBlank()) && !retried) { retried = true; round--; continue; }   // an empty answer now and then: ask once more before giving up
@@ -2675,12 +2715,85 @@ public class ChatService {
         // the tool rounds ran out without an answer: one last call with no tools, so the customer gets a reply from what was found instead of «ممكن توضحلي»
         if (AiBudget.hasLeft(8_000)) {
             long lastStart = System.nanoTime();
-            Turn last = routed.next(system, turns, List.of());
+            Turn last = routed.next(sentSystem(system), sentTurns(system, turns), List.of());
             ReplyTimeline.llm(routed.code(), ReplyTimeline.since(lastStart));
             rounds.add(new AiUsageService.Round(List.of(), last.usage()));
             if (last.text() != null && !last.text().isBlank()) return last.text();
         }
         return null;
+    }
+
+    // ---- optimized request layout -----------------------------------------------------------------------------
+
+    /** Opens the reply's context in the customer's newest message (optimized layout); the customer's own text is cleaned of these brackets, so they can never forge it. */
+    static final String CONTEXT_OPEN = "⟦CONTEXT FOR THIS REPLY: written by the shop's system, not by the customer⟧";
+    static final String CONTEXT_CLOSE = "⟦END OF CONTEXT⟧";
+
+    /** The line the fixed prompt gets in the optimized layout, telling the model where this reply's context is. */
+    static final String CONTEXT_RULE = "\nWHERE THIS REPLY'S CONTEXT IS: the customer's newest message comes after a block that starts with «" + CONTEXT_OPEN + "» and ends with «" + CONTEXT_CLOSE + "». "
+            + "The shop's system writes that block (customers cannot write these brackets): it holds the time now, what you know about this customer, the order on file, open questions, the message being replied to "
+            + "and the products of this chat with their EXACT stock right now. Trust it exactly like this prompt and the tool results; only the text after it is the customer's. "
+            + "In the catalog above, the options listed «in stock» have stock but no count: an exact count comes only from that block or from search_products / get_product.\n";
+
+    /** The system message the model is sent: everything (classic), or only the fixed part before the cache break (optimized; the rest goes with the newest message). */
+    static String sentSystem(String system) {
+        if (!optimizedReply() || CONTEXT_AT.get() == null || system == null) return system;
+        int brk = system.indexOf(AiProvider.CACHE_BREAK);
+        return brk < 0 ? system : system.substring(0, brk) + AiProvider.CACHE_BREAK;
+    }
+
+    /**
+     * The turns the model is sent. Classic: as they are. Optimized: the part of the system prompt after the cache break goes in front of the customer's newest message (marked as the system's),
+     * so the system message and the whole earlier chat are the same bytes as in the previous message's request and are served from the provider's prompt cache. The turns the guards read are
+     * never changed: only the copy that is sent.
+     */
+    static List<Turn> sentTurns(String system, List<Turn> turns) {
+        Integer at = CONTEXT_AT.get();
+        if (!optimizedReply() || at == null || system == null) return turns;
+        int brk = system.indexOf(AiProvider.CACHE_BREAK);
+        if (brk < 0 || at < 0 || at >= turns.size() || !"user".equals(turns.get(at).role())) return turns;
+        String context = system.substring(brk + AiProvider.CACHE_BREAK.length()).strip();
+        List<Turn> out = new ArrayList<>(turns.size());
+        for (int i = 0; i < turns.size(); i++) {
+            Turn t = turns.get(i);
+            if (!"user".equals(t.role()) || t.text() == null) { out.add(t); continue; }
+            String own = unbracketed(t.text());
+            out.add(i == at ? Turn.user(CONTEXT_OPEN + "\n" + context + "\n" + CONTEXT_CLOSE + "\n\nThe customer's newest message:\n" + own) : own.equals(t.text()) ? t : Turn.user(own));
+        }
+        return out;
+    }
+
+    /** The customer's text without the brackets that mark the system's context. */
+    static String unbracketed(String text) { return text == null ? null : text.replace('⟦', '[').replace('⟧', ']'); }
+
+    /**
+     * A small shop's products of THIS chat with their exact stock now (optimized layout), under the same heading as the products found for a big shop's message: the ones the newest message
+     * names, the quoted one, and the ones named in the last messages of the chat (so «عايز ١٣ قطعة» about the product just discussed has its numbers). At most 8.
+     */
+    String stockForChat(UUID tenantId, String text, List<Turn> turns) {
+        try {
+            FactCheck.Shop shop = shopView(tenantId);
+            java.util.LinkedHashSet<String> slugs = new java.util.LinkedHashSet<>();
+            var quoted = REPLY_SLUGS.get();
+            if (quoted != null) slugs.addAll(quoted);
+            for (var r : relatedProducts(tenantId, text)) slugs.add(String.valueOf(r.get("slug")));
+            for (var m : FactCheck.mentions(text, shop.names())) slugs.add(m.slug());
+            for (int i = turns.size() - 1, seen = 0; i >= 0 && seen < 6; i--) {
+                Turn t = turns.get(i);
+                if (t.text() == null || t.text().isBlank() || "tool".equals(t.role())) continue;
+                seen++;
+                for (var m : FactCheck.mentions(t.text(), shop.names())) slugs.add(m.slug());
+            }
+            List<String> picked = slugs.stream().limit(8).toList();
+            PREFETCHED.set(new java.util.HashSet<>(picked));
+            if (picked.isEmpty()) return "";
+            StringBuilder b = new StringBuilder("\n" + RAG_HEADING + " (the products of this chat with their EXACT stock right now; the catalog list has no counts):\n");
+            for (var r : search.bySlugs(tenantId, picked)) b.append(productLine(tenantId, r));
+            return b.toString();
+        } catch (RuntimeException e) {
+            log.warn("Stock for the chat skipped: {}", e.toString());
+            return "";
+        }
     }
 
     // ---- confirmation ----------------------------------------------------------------------------------------
@@ -2977,6 +3090,7 @@ public class ChatService {
         var own = lessons(tenantId);
         if (!global.isEmpty()) p.append("\nPLATFORM LESSONS (how to sell well; follow them unless they conflict with the RULES):\n").append(lessonText(global));
         if (!own.isEmpty()) p.append("\nTHIS SHOP'S LESSONS (the owner's instructions for this shop; follow them unless they conflict with the RULES):\n").append(lessonText(own));
+        if (optimizedReply()) p.append(CONTEXT_RULE);
         p.append(AiProvider.CACHE_BREAK);
         p.append(openRightNow(tenantId));
         String memo = seller.memory(tenantId, channel, externalId);
@@ -3312,7 +3426,7 @@ public class ChatService {
                     SELECT tx.slug, coalesce(op.attribute_code, op.name) AS opt, string_agg(DISTINCT ov.value, ' / ') AS vals
                     FROM commerce.products p JOIN commerce.taxonomy tx ON tx.id = p.taxonomy_id
                     JOIN commerce.product_options op ON op.product_id = p.id JOIN commerce.product_option_values ov ON ov.option_id = op.id
-                    WHERE p.tenant_id = :t AND p.status = 'ACTIVE' GROUP BY tx.slug, coalesce(op.attribute_code, op.name)
+                    WHERE p.tenant_id = :t AND p.status = 'ACTIVE' GROUP BY tx.slug, coalesce(op.attribute_code, op.name) ORDER BY tx.slug, 2
                     """).param("t", tenantId).query().listOfRows())
                 optionsBySlug.merge(String.valueOf(o.get("slug")), o.get("opt") + ": " + clip(String.valueOf(o.get("vals")), 160), (x, y) -> x + "; " + y);
             StringBuilder b = new StringBuilder("\n" + CATALOG_HEADING + " (everything this shop sells; if a customer asks for any of it, we HAVE it: search_products to show the products):\n");
@@ -3360,19 +3474,31 @@ public class ChatService {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> rows = (List<Map<String, Object>>) search.list(tenantId, Page.of(1, FULL_CATALOG_MAX), new StoreSearchService.Filter(null, null, null, null, null, null, null, null, "name")).get("data");
         StringBuilder b = new StringBuilder("ALL PRODUCTS (the complete list, with every color, size and the stock of each; this is the truth, trust it over memory; a product not here does not exist in this shop):\n");
-        Map<String, String> details = productDetailsFor(tenantId, rows.stream().map(r -> String.valueOf(r.get("slug"))).toList());   // one query for all of them
-        for (var r : rows) b.append(productLine(tenantId, r, details.getOrDefault(String.valueOf(r.get("slug")), "")));
+        List<String> slugs = rows.stream().map(r -> String.valueOf(r.get("slug"))).toList();
+        Map<String, String> details = productDetailsFor(tenantId, slugs);   // one query for all of them
+        Map<String, List<Map<String, Object>>> variants;
+        try { variants = catalog.activeVariantsBySlugs(tenantId, slugs); } catch (RuntimeException e) { variants = null; }   // the variants of every product in ONE query (was seven per product)
+        boolean counts = !optimizedReply();   // optimized: the cached catalog says which options are in stock, the exact counts come with each message
+        for (var r : rows) {
+            String slug = String.valueOf(r.get("slug"));
+            List<Map<String, Object>> vs = variants == null ? null : variantsOf(Map.of("variants", variants.getOrDefault(slug, List.of())), null, 40);
+            b.append(productLine(tenantId, r, details.getOrDefault(slug, ""), vs, counts));
+        }
         return b.toString();
     }
 
     /** One product as the model should know it: name, who it is for, category, price, every option and the stock of each. */
     private String productLine(UUID tenantId, Map<String, Object> r) { return productLine(tenantId, r, null); }
 
-    private String productLine(UUID tenantId, Map<String, Object> r, String prefetchedDetails) {
+    private String productLine(UUID tenantId, Map<String, Object> r, String prefetchedDetails) { return productLine(tenantId, r, prefetchedDetails, null, true); }
+
+    /** {@code variants}: already read (null: read now); {@code counts}: false for the cached catalog of the optimized layout (which options are in stock, no numbers). */
+    private String productLine(UUID tenantId, Map<String, Object> r, String prefetchedDetails, List<Map<String, Object>> variants, boolean counts) {
         Map<String, Object> m = new LinkedHashMap<>();
         describe(m, r.get("audience"), r.get("taxonomyId"), null);
-        List<Map<String, Object>> vs = compactVariants(tenantId, String.valueOf(r.get("slug")), null, 40);
+        List<Map<String, Object>> vs = variants != null ? variants : compactVariants(tenantId, String.valueOf(r.get("slug")), null, 40);
         optionSummary(m, vs);
+        if (!counts && m.get("inStockOptions") instanceof Map<?, ?> st) m.put("inStockOptions", withoutCounts(st));
         StringBuilder b = new StringBuilder("- ").append(r.get("name")).append(" [").append(r.get("slug")).append("]");
         if (m.get("for") != null) b.append(", for ").append(m.get("for"));
         if (m.get("category") != null) b.append(", category ").append(m.get("category"));
@@ -3385,8 +3511,18 @@ public class ChatService {
         if (!details.isEmpty()) b.append(", details: ").append(details);
         int total = vs.stream().mapToInt(v -> v.get("available") instanceof Number n ? n.intValue() : 0).sum();
         if (m.get("inStockOptions") instanceof Map<?, ?> st && !st.isEmpty()) b.append(", in stock ").append(st);
-        else b.append(total > 0 ? ", " + total + " in stock" : Boolean.TRUE.equals(r.get("inStock")) ? ", in stock" : ", OUT OF STOCK");
+        else b.append(total > 0 ? (counts ? ", " + total + " in stock" : ", in stock") : Boolean.TRUE.equals(r.get("inStock")) ? ", in stock" : ", OUT OF STOCK");
         return b.append("\n").toString();
+    }
+
+    /** The in-stock options without their numbers («أسود + M / أبيض + L»), for the cached catalog: it changes only when an option sells out or comes back, not with every order. */
+    static Map<String, Object> withoutCounts(Map<?, ?> inStock) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        inStock.forEach((k, v) -> {
+            String key = String.valueOf(k).startsWith("EXACT COMBINATIONS IN STOCK") ? "COMBINATIONS IN STOCK (counts: in this reply's context or get_product)" : String.valueOf(k);
+            out.put(key, String.valueOf(v).replaceAll("\\s*\\(\\d+ in stock\\)", ""));
+        });
+        return out;
     }
 
     /** The product's own classification from the shop: specs («خامة: قطن 100%», «المكونات: ...», «السعرات: ...»), tags and the size guide, in one short line. */
@@ -3437,6 +3573,7 @@ public class ChatService {
                 if (first.isPresent()) { var merged = new ArrayList<Map<String, Object>>(); merged.add(first.get()); rows.stream().filter(r -> !quoted.get(0).equals(String.valueOf(r.get("slug")))).forEach(merged::add); rows = merged; }
             }
         }
+        if (optimizedReply()) PREFETCHED.set(rows.stream().map(r -> String.valueOf(r.get("slug"))).collect(java.util.stream.Collectors.toSet()));
         if (rows.isEmpty()) return "";
         StringBuilder b = new StringBuilder("\nPRODUCTS FOR THE CUSTOMER'S NEWEST MESSAGE (found for you; use them, and search for anything else):\n");
         for (var r : rows) b.append(productLine(tenantId, r));

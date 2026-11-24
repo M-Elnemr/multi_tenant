@@ -33,7 +33,7 @@ final class ReplyTrace {
      * takes numbers, as an integer from 0 up to a cap for that name (at most 10^7, so a mobile number, which is at least 10^9 as a number, can never be one); a string is kept only when it is one of the
      * listed values or matches the narrow pattern of its name, otherwise it is stored as «?». Nothing here takes free text, and no attribute can carry an id of a shop, chat, customer, order or message.
      */
-    static final Set<String> EVENTS = Set.of("webhook_received", "burst_wait", "queue_wait", "processing_started", "phase", "context_load", "memory_load", "rag", "prompt_build", "prompt_ready",
+    static final Set<String> EVENTS = Set.of("webhook_received", "burst_wait", "queue_wait", "processing_started", "phase", "context_load", "memory_load", "rag", "prompt_build", "prompt_ready", "prompt_parts",
             "provider_request_started", "provider_response_completed", "provider_request_failed", "provider_request_timed_out", "provider_attempt_hedged", "provider_hedge_request", "provider_call",
             "fallback_started", "fallback_completed", "tool", "rule_checks", "rewrite", "review", "outbound_completed", "outbound_failed", "reply_completed", "reply_failed", "note");
 
@@ -49,7 +49,8 @@ final class ReplyTrace {
     static {
         for (String n : List.of("lines", "call", "attempt", "attempts", "round", "problems", "rewrites", "history_messages", "facts", "tools", "model_calls")) SPECS.put(n, Spec.num(10_000));   // counts
         for (String n : List.of("quiet_ms", "throttle_ms", "after_ms", "waited_ms", "deterministic_ms", "rewrite_ms")) SPECS.put(n, Spec.num(10_000_000));       // milliseconds (under 3 hours)
-        for (String n : List.of("in", "out", "cached", "chars")) SPECS.put(n, Spec.num(10_000_000));                                                              // tokens and characters
+        for (String n : List.of("in", "out", "cached", "chars", "static_chars", "dynamic_chars", "history_chars", "tools_chars")) SPECS.put(n, Spec.num(10_000_000));
+        SPECS.put("mode", Spec.of("classic", "optimized"));   // which request layout answered (the admin's AI optimization switch)                                                              // tokens and characters
         for (String n : List.of("direct", "retry", "hedged", "usable", "allowed", "parallel", "winner", "billed", "ok", "next_model_call", "accepted_original", "threw", "differs", "confirmed", "ran", "unavailable",
                 "ai_unavailable")) SPECS.put(n, Spec.bool());
         SPECS.put("model", Spec.pat("[A-Za-z][A-Za-z0-9_.\\-]{0,39}"));   // a provider code or a configured model id, e.g. glm-5
@@ -505,7 +506,9 @@ final class ReplyTrace {
         s.put("burst_ms", burst);
         s.put("queue_ms", queue);
         long calls = 0, modelMs = 0, failedMs = 0, in = 0, out = 0, hedges = 0, fallbacks = 0, toolMs = 0, tools = 0, outMs = 0, outFail = 0, checkMs = 0, detMs = 0, rewriteMs = 0, rewrites = 0, reviewMs = 0;
-        String verdict = "none";
+        String verdict = "none", mode = null;
+        long cached = 0, secondOpinions = 0, secondSkipped = 0;
+        Map<String, Object> parts = new LinkedHashMap<>();
         Map<String, Long> byPurpose = new TreeMap<>();
         for (Event e : es) {
             long d = e.d() == null ? 0 : e.d();
@@ -514,6 +517,8 @@ final class ReplyTrace {
                     calls++; modelMs += d;
                     if (!Boolean.TRUE.equals(e.a().get("usable"))) failedMs += d;
                     in += ((Number) e.a().getOrDefault("in", 0)).longValue(); out += ((Number) e.a().getOrDefault("out", 0)).longValue();
+                    if (Boolean.TRUE.equals(e.a().get("usable")) && e.a().get("cached") instanceof Number c) cached += c.longValue();
+                    if ("second_opinion".equals(e.a().get("role"))) secondOpinions++;
                     byPurpose.merge(String.valueOf(e.a().get("role")) + "/" + e.a().get("purpose"), d, Long::sum);
                 }
                 case "provider_attempt_hedged" -> { if (Boolean.TRUE.equals(e.a().get("allowed"))) hedges++; }
@@ -524,11 +529,19 @@ final class ReplyTrace {
                 case "rule_checks" -> { checkMs += d; detMs += ((Number) e.a().getOrDefault("deterministic_ms", 0)).longValue(); }
                 case "rewrite" -> { rewrites++; rewriteMs += d; }
                 case "review" -> { reviewMs += d; verdict = String.valueOf(e.a().get("verdict")); }
+                case "prompt_parts" -> {
+                    if (e.a().get("mode") != null) mode = String.valueOf(e.a().get("mode"));
+                    for (String k : List.of("static_chars", "dynamic_chars", "history_chars", "tools_chars")) if (e.a().get(k) != null) parts.put(k, e.a().get(k));
+                }
+                case "note" -> { if (String.valueOf(e.a().get("kinds")).startsWith("SKIP_SECOND")) secondSkipped++; }
                 default -> { }
             }
         }
         s.put("model_calls", calls); s.put("model_ms", modelMs); s.put("failed_model_ms", failedMs);
-        s.put("tokens_in", in); s.put("tokens_out", out);
+        s.put("tokens_in", in); s.put("tokens_out", out); s.put("tokens_cached", cached);
+        if (mode != null) s.put("prompt_mode", mode);
+        s.putAll(parts);
+        s.put("second_opinion_calls", secondOpinions); s.put("second_opinions_skipped", secondSkipped);
         s.put("model_ms_by_role_purpose", byPurpose);
         s.put("hedges", hedges); s.put("fallbacks", fallbacks);
         s.put("tools", tools); s.put("tool_ms", toolMs);

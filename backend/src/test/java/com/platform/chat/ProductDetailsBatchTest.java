@@ -17,6 +17,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 class ProductDetailsBatchTest extends IntegrationTestBase {
     @Autowired ChatService chat;
     @Autowired JdbcClient jdbc;
+    @Autowired com.platform.commerce.CatalogService catalog;
 
     String ok(org.springframework.test.web.servlet.ResultActions r) throws Exception { return r.andReturn().getResponse().getContentAsString(); }
 
@@ -50,5 +51,23 @@ class ProductDetailsBatchTest extends IntegrationTestBase {
         assertThat(chat.productDetailsFor(ta, sb)).as("another shop's slug asked through this shop").isEmpty();
         assertThat(chat.productDetailsFor(tb, sa)).as("this shop's slugs asked through another shop").isEmpty();
         assertThat(chat.allProducts(ta)).contains("خامة: قطن 100%").contains("tags: صيفي, رجالي").contains("size guide: S 50 سم M 52 سم L 54 سم").doesNotContain("خاص بالمتجر الثاني");
+    }
+
+    @Test
+    void theCatalogReadsAllVariantsInOneQueryWithTheSameRowsAndTheOptimizedCatalogHasNoCounts() throws Exception {
+        Tenant a = onboard("STORE"), b = onboard("STORE");
+        UUID ta = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", a.slug()).query(UUID.class).single();
+        List<String> sa = products(a, 3), sb = products(b, 1);
+        var batch = catalog.activeVariantsBySlugs(ta, sa);
+        for (String slug : sa) assertThat(batch.get(slug)).as("variants of " + slug).isEqualTo(catalog.detailBySlug(ta, slug).get("variants"));
+        assertThat(catalog.activeVariantsBySlugs(ta, sb).get(sb.get(0))).as("another shop's product").isEmpty();
+        String classic = chat.allProducts(ta);
+        assertThat(classic).contains("4 in stock");
+        ChatService.OPTIMIZED.set(true);
+        try {
+            String optimized = chat.allProducts(ta);
+            assertThat(optimized).doesNotContain("4 in stock").contains(", in stock");
+            assertThat(optimized.replace(", in stock", ", 4 in stock")).as("only the counts differ").isEqualTo(classic);
+        } finally { ChatService.OPTIMIZED.remove(); }
     }
 }

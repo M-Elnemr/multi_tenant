@@ -35,10 +35,15 @@ public class AiConfigService {
     /** Voice notes: only Qwen's speech model takes audio (DeepSeek on Hive answers HTTP 500 for ogg, wav and mp3: tested 2026-11-10). */
     static final List<Option> AUDIO = List.of(new Option("qwen", "Alibaba Qwen ASR", "Only this model takes voice notes"));
     static final List<Option> PROMPT = List.of(new Option("lean", "Lean", "Shorter prompt: fewer tokens per reply"), new Option("full", "Full", "The complete rule book and sales playbook"));
+    /** The optimized request layout (Phase 1/2 of the token plan), switched by the admin to compare the AI before and after. */
+    static final List<Option> OPTIMIZATION = List.of(new Option("off", "Classic (before)", "The request layout used until 2026-11-24"),
+            new Option("on", "Optimized (after)", "Cache-friendly order, live stock per message, fewer extra model calls"));
     static final List<Option> EFFORT = List.of(new Option("none", "Off", null), new Option("low", "Low", null), new Option("medium", "Medium", null), new Option("high", "High", null));
 
     /** The settings in force (each already resolved to the default when the admin chose none). */
-    public record Config(String textModel, String imageModel, String audioModel, String promptMode, String deepseekEffort) {}
+    public record Config(String textModel, String imageModel, String audioModel, String promptMode, String deepseekEffort, String optimization) {
+        public Config(String textModel, String imageModel, String audioModel, String promptMode, String deepseekEffort) { this(textModel, imageModel, audioModel, promptMode, deepseekEffort, "off"); }
+    }
 
     private final JdbcClient jdbc;
     private final HiveKeyPool keys;
@@ -55,11 +60,11 @@ public class AiConfigService {
 
     public AiConfigService(JdbcClient jdbc, HiveKeyPool keys, @Value("${app.ai.default.text-model:glm}") String text, @Value("${app.ai.default.image-model:deepseek}") String image,
                            @Value("${app.ai.default.audio-model:qwen}") String audio, @Value("${app.ai.default.prompt-mode:full}") String prompt,
-                           @Value("${app.ai.default.deepseek-effort:low}") String effort, @Value("${app.ai.glm.base-url:https://api-cdn.thehive.ai/api/v3}") String hiveUrl,
+                           @Value("${app.ai.default.deepseek-effort:low}") String effort, @Value("${app.ai.default.optimization:off}") String optimization, @Value("${app.ai.glm.base-url:https://api-cdn.thehive.ai/api/v3}") String hiveUrl,
                            @Value("${app.ai.glm.model:zai-org/glm-5.3-flash}") String hiveModel) {
         this.jdbc = jdbc;
         this.keys = keys;
-        this.defaults = new Config(pick(TEXT, text, "glm"), pick(IMAGE, image, "deepseek"), pick(AUDIO, audio, "qwen"), pick(PROMPT, prompt, "full"), pick(EFFORT, effort, "low"));
+        this.defaults = new Config(pick(TEXT, text, "glm"), pick(IMAGE, image, "deepseek"), pick(AUDIO, audio, "qwen"), pick(PROMPT, prompt, "full"), pick(EFFORT, effort, "low"), pick(OPTIMIZATION, optimization, "off"));
         this.hiveUrl = hiveUrl.trim().replaceAll("/+$", "");
         this.hiveModel = hiveModel;
         current = this;
@@ -88,13 +93,14 @@ public class AiConfigService {
 
     private Config resolve(Map<String, Object> r) {
         return new Config(pick(TEXT, str(r, "text_model"), defaults.textModel()), pick(IMAGE, str(r, "image_model"), defaults.imageModel()), pick(AUDIO, str(r, "audio_model"), defaults.audioModel()),
-                pick(PROMPT, str(r, "prompt_mode"), defaults.promptMode()), pick(EFFORT, str(r, "deepseek_effort"), defaults.deepseekEffort()));
+                pick(PROMPT, str(r, "prompt_mode"), defaults.promptMode()), pick(EFFORT, str(r, "deepseek_effort"), defaults.deepseekEffort()),
+                pick(OPTIMIZATION, str(r, "optimization"), defaults.optimization()));
     }
 
     private static String str(Map<String, Object> r, String k) { Object v = r.get(k); return v == null ? null : v.toString(); }
 
     private Map<String, Object> row() {
-        try { return jdbc.sql("SELECT text_model, image_model, audio_model, prompt_mode, deepseek_effort FROM chat.platform_ai_config WHERE id = 1").query().listOfRows().stream().findFirst().orElse(Map.of()); }
+        try { return jdbc.sql("SELECT text_model, image_model, audio_model, prompt_mode, deepseek_effort, optimization FROM chat.platform_ai_config WHERE id = 1").query().listOfRows().stream().findFirst().orElse(Map.of()); }
         catch (RuntimeException e) { return null; }   // no table or no database
     }
 
@@ -103,6 +109,9 @@ public class AiConfigService {
 
     /** Lean prompt in force for a live reply (an evaluation run decides for itself). */
     static boolean leanPrompt() { AiConfigService c = current; return c != null && "lean".equals(c.get().promptMode()); }
+
+    /** The optimized request layout is on for a live reply (an evaluation run decides for itself). */
+    static boolean optimized() { AiConfigService c = current; return c != null && "on".equals(c.get().optimization()); }
 
     /** DeepSeek's reasoning setting in force, or null when no service is running (the provider then uses its configured one). */
     static String deepseekEffort() { AiConfigService c = current; return c == null ? null : c.get().deepseekEffort(); }
@@ -119,6 +128,7 @@ public class AiConfigService {
         out.put("audio", section(AUDIO, now.audioModel(), defaults.audioModel()));
         out.put("promptMode", section(PROMPT, now.promptMode(), defaults.promptMode()));
         out.put("deepseekEffort", section(EFFORT, now.deepseekEffort(), defaults.deepseekEffort()));
+        out.put("optimization", section(OPTIMIZATION, now.optimization(), defaults.optimization()));
         out.put("keys", keys.view());
         int n = keys.size();
         out.put("activeKeys", n);
@@ -146,8 +156,8 @@ public class AiConfigService {
         Map<String, Object> existing = row();
         if (existing == null) throw new BusinessException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, "AI_CONFIG_UNAVAILABLE", "The AI settings cannot be read right now");
         Map<String, Object> cur = new LinkedHashMap<>(existing);
-        Map<String, List<Option>> fields = Map.of("textModel", TEXT, "imageModel", IMAGE, "audioModel", AUDIO, "promptMode", PROMPT, "deepseekEffort", EFFORT);
-        Map<String, String> columns = Map.of("textModel", "text_model", "imageModel", "image_model", "audioModel", "audio_model", "promptMode", "prompt_mode", "deepseekEffort", "deepseek_effort");
+        Map<String, List<Option>> fields = Map.of("textModel", TEXT, "imageModel", IMAGE, "audioModel", AUDIO, "promptMode", PROMPT, "deepseekEffort", EFFORT, "optimization", OPTIMIZATION);
+        Map<String, String> columns = Map.of("textModel", "text_model", "imageModel", "image_model", "audioModel", "audio_model", "promptMode", "prompt_mode", "deepseekEffort", "deepseek_effort", "optimization", "optimization");
         for (var f : fields.entrySet()) {
             if (!body.containsKey(f.getKey())) continue;
             Object v = body.get(f.getKey());
@@ -157,9 +167,9 @@ public class AiConfigService {
             cur.put(columns.get(f.getKey()), t);
         }
         jdbc.sql("""
-                INSERT INTO chat.platform_ai_config (id, text_model, image_model, audio_model, prompt_mode, deepseek_effort, updated_by, updated_at) VALUES (1, :t, :i, :a, :p, :e, :u, now())
-                ON CONFLICT (id) DO UPDATE SET text_model = :t, image_model = :i, audio_model = :a, prompt_mode = :p, deepseek_effort = :e, updated_by = :u, updated_at = now()
-                """).param("t", cur.get("text_model")).param("i", cur.get("image_model")).param("a", cur.get("audio_model")).param("p", cur.get("prompt_mode")).param("e", cur.get("deepseek_effort")).param("u", by).update();
+                INSERT INTO chat.platform_ai_config (id, text_model, image_model, audio_model, prompt_mode, deepseek_effort, optimization, updated_by, updated_at) VALUES (1, :t, :i, :a, :p, :e, :o, :u, now())
+                ON CONFLICT (id) DO UPDATE SET text_model = :t, image_model = :i, audio_model = :a, prompt_mode = :p, deepseek_effort = :e, optimization = :o, updated_by = :u, updated_at = now()
+                """).param("o", cur.get("optimization")).param("t", cur.get("text_model")).param("i", cur.get("image_model")).param("a", cur.get("audio_model")).param("p", cur.get("prompt_mode")).param("e", cur.get("deepseek_effort")).param("u", by).update();
         cachedAt = 0;
         version++;
         return view();
