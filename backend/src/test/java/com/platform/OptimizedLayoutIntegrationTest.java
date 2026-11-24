@@ -64,7 +64,7 @@ class OptimizedLayoutIntegrationTest extends IntegrationTestBase {
         all[laptops.length] = "جراب لاب توب زينترا";
         Tenant t = shop(all);
         String ctx = context(ask(t, "الضمان قد ايه على اللاب توب؟ وبيغطي الكسر؟"));
-        assertThat(ctx).contains("WORD MATCHES").contains("6 products of the shop have it in their name").contains("that is all of them").doesNotContain("THE PRODUCTS OF THIS CHAT").doesNotContain("جراب");
+        assertThat(ctx).contains("WORD MATCHES").contains("6 products of the shop have it in their name or category").contains("that is all of them").doesNotContain("THE PRODUCTS OF THIS CHAT").doesNotContain("جراب");
         for (String l : laptops) assertThat(ctx).contains(l);
     }
 

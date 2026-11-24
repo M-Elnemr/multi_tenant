@@ -2275,7 +2275,8 @@ public class ChatService {
         return java.util.Optional.empty();
     }
 
-    private record NamesAt(List<FactCheck.Named> names, long at) {}
+    /** The product names of a shop as read, with the catalog stamp they were read at (count and last change of its products): a changed stamp reads them again at once. */
+    private record NamesAt(List<FactCheck.Named> names, long at, String stamp) {}
 
     /** Every real price of a shop (cents) and the differences between the options of one product, kept two minutes. */
     record ShopPrices(java.util.Set<Long> prices, java.util.Set<Long> steps, long at) {}
@@ -2317,13 +2318,14 @@ public class ChatService {
             public List<FactCheck.Named> names() {
                 if (names == null) {
                     var cached = NAMES_CACHE.get(tenantId);
-                    if (cached != null && cached.at() > System.currentTimeMillis() - 120_000) return names = cached.names();
+                    String stamp = jdbc.sql("SELECT count(*) || ':' || coalesce(extract(epoch FROM max(updated_at))::text, '') FROM commerce.products WHERE tenant_id = :t").param("t", tenantId).query(String.class).single();
+                    if (cached != null && cached.stamp().equals(stamp) && cached.at() > System.currentTimeMillis() - 120_000) return names = cached.names();   // a product added, renamed or archived since: read again
                     names = new ArrayList<>();
                     for (var r : jdbc.sql("SELECT slug, name FROM commerce.products WHERE tenant_id = :t AND status = 'ACTIVE'").param("t", tenantId).query().listOfRows())
                         names.add(new FactCheck.Named((String) r.get("slug"), (String) r.get("name")));
                     for (var r : jdbc.sql("SELECT p.slug, tr.name FROM commerce.product_translations tr JOIN commerce.products p ON p.id = tr.product_id WHERE p.tenant_id = :t AND p.status = 'ACTIVE'").param("t", tenantId).query().listOfRows())
                         names.add(new FactCheck.Named((String) r.get("slug"), (String) r.get("name")));
-                    NAMES_CACHE.put(tenantId, new NamesAt(names, System.currentTimeMillis()));
+                    NAMES_CACHE.put(tenantId, new NamesAt(names, System.currentTimeMillis(), stamp));
                 }
                 return names;
             }
@@ -2790,7 +2792,7 @@ public class ChatService {
     static final String CONTEXT_RULE = "\nWHERE THIS REPLY'S CONTEXT IS: the customer's newest message comes after a block that starts with «" + CONTEXT_OPEN + "» and ends with «" + CONTEXT_CLOSE + "». "
             + "The shop's system writes that block (customers cannot write these brackets): it holds the time now, what you know about this customer, the order on file, open questions, the message being replied to "
             + "and products with their EXACT stock right now, in two parts: THE PRODUCTS OF THIS CHAT (the ones the customer named, quoted or talked about) and WORD MATCHES (products that only share a word "
-            + "with the newest message: they are not what the chat is about unless the customer asks about them, and each word's line says how many products have it in their name). "
+            + "with the newest message: they are not what the chat is about unless the customer asks about them, and each word's line says how many products have it in their name or category). "
             + "Trust it exactly like this prompt and the tool results; only the text after it is the customer's. "
             + "In the catalog above, the options listed «in stock» have stock but no count: an exact count comes only from that block or from search_products / get_product.\n";
 
@@ -2873,15 +2875,15 @@ public class ChatService {
     }
 
     /** How the word matches are introduced: what they are, and that only a product the customer really asks about belongs in the reply. */
-    static final String WORD_MATCHES_NOTE = "WORD MATCHES (found only because a word of the newest message is in their name, NOT because of what the customer means: they may have nothing to do with "
+    static final String WORD_MATCHES_NOTE = "WORD MATCHES (found only because a word of the newest message is in their name or category, NOT because of what the customer means: they may have nothing to do with "
             + "the question, e.g. a question about a size or a return matches any product with the same word in its name. Mention one only if the customer is really asking about it. "
-            + "The line of each word says how many products have it in their name: never tell the customer what kinds or how many products the shop has from fewer than that; use these counts and names, "
+            + "The line of each word says how many products have it in their name or category: never tell the customer what kinds or how many products the shop has from fewer than that; use these counts and names, "
             + "the catalog list, or search_products):\n";
 
-    /** One word of the customer's message and the products whose name has it: the slugs shown with all their details, the {@code total} count and the names of the rest. */
+    /** One word of the customer's message and the products whose name or category has it: the slugs shown with all their details, the {@code total} count and the names of the rest. */
     record WordMatch(String word, long total, List<String> detailed, List<String> otherNames) {
         String line() {
-            String s = "- the word «" + word + "»: " + (total == 1 ? "1 product of the shop has it in its name" : total + " products of the shop have it in their name");
+            String s = "- the word «" + word + "»: " + (total == 1 ? "1 product of the shop has it in its name or category" : total + " products of the shop have it in their name or category");
             if (!otherNames.isEmpty()) s += "; besides the ones with details in this block: " + String.join("، ", otherNames);
             return s + (total > 1 ? " (that is all of them)" : "");
         }
@@ -2922,13 +2924,15 @@ public class ChatService {
         if (q == null) return out;
         Map<String, String> names = new LinkedHashMap<>();   // slug -> its first (own-language) name
         for (var n : shopView(tenantId).names()) names.putIfAbsent(n.slug(), n.name());
+        Map<String, String> words = productWords(tenantId);   // slug -> its name, translations, category (Arabic and English) and tags
         java.util.Set<String> seen = new java.util.HashSet<>(skip);
         for (String w : java.util.Arrays.stream(q.split("\\s+")).filter(x -> x.length() >= 3 && !isChatWord(x)).toList()) {
             if (out.size() >= 4) break;
             String used = w;
-            List<String> hits = named(names, w);
-            if (hits.isEmpty() && SYNONYMS.containsKey(w)) { used = SYNONYMS.get(w); hits = named(names, used); }
-            if (policyAsk) { String kind = used; hits = hits.stream().filter(sl -> namesKind(names.get(sl), kind)).toList(); }
+            List<String> hits = named(words, w);
+            if (hits.isEmpty() && SYNONYMS.containsKey(w)) { used = SYNONYMS.get(w); hits = named(words, used); }
+            if (policyAsk) { String kind = used; hits = hits.stream().filter(sl -> names.containsKey(sl) && namesKind(names.get(sl), kind)).toList(); }
+            hits = hits.stream().filter(names::containsKey).toList();
             if (hits.isEmpty()) continue;
             var fresh = hits.stream().filter(sl -> !seen.contains(sl)).toList();
             if (fresh.isEmpty()) continue;   // another word already brought these
@@ -2941,14 +2945,34 @@ public class ChatService {
         return out;
     }
 
-    /** The slugs of the products whose name has the word (or a word of the name starts with it, «صغير» in «صغيرة»), without the article. */
-    private static List<String> named(Map<String, String> names, String word) {
+    /** The slugs of the products whose words have the word (or a word starts with it, «صغير» in «صغيرة»; «وجينز» counts as «جينز»), without the article. */
+    private static List<String> named(Map<String, String> words, String word) {
         String key = withoutArticle(FastAnswers.norm(word));
         if (key.length() < 3) return List.of();
         List<String> out = new ArrayList<>();
-        for (var e : names.entrySet())
-            for (String part : FastAnswers.norm(e.getValue()).split("[^\\p{L}\\p{N}]+"))
-                if (withoutArticle(part).startsWith(key)) { out.add(e.getKey()); break; }
+        for (var e : words.entrySet())
+            for (String part : FastAnswers.norm(e.getValue()).split("[^\\p{L}\\p{N}]+")) {
+                String bare = withoutArticle(part);
+                if (bare.startsWith(key) || (bare.length() > key.length() && (bare.charAt(0) == 'و' || bare.charAt(0) == 'ب') && withoutArticle(bare.substring(1)).startsWith(key))) { out.add(e.getKey()); break; }
+            }
+        return out;
+    }
+
+    private record WordsAt(Map<String, String> words, long at, String stamp) {}
+    private static final Map<UUID, WordsAt> WORDS_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Every active product's words for the word matches: its name, translations, category (Arabic and English) and tags; read again when the catalog changes (or after 2 minutes). */
+    Map<String, String> productWords(UUID tenantId) {
+        String stamp = jdbc.sql("SELECT count(*) || ':' || coalesce(extract(epoch FROM max(updated_at))::text, '') FROM commerce.products WHERE tenant_id = :t").param("t", tenantId).query(String.class).single();
+        var cached = WORDS_CACHE.get(tenantId);
+        if (cached != null && cached.stamp().equals(stamp) && cached.at() > System.currentTimeMillis() - 120_000) return cached.words();
+        Map<String, String> out = new LinkedHashMap<>();
+        for (var r : jdbc.sql("""
+                SELECT p.slug, concat_ws(' ', p.name, (SELECT string_agg(tr.name, ' ') FROM commerce.product_translations tr WHERE tr.product_id = p.id), tx.name_ar, tx.name_en, array_to_string(p.tags, ' ')) AS words
+                FROM commerce.products p LEFT JOIN commerce.taxonomy tx ON tx.id = p.taxonomy_id WHERE p.tenant_id = :t AND p.status = 'ACTIVE'
+                """).param("t", tenantId).query().listOfRows())
+            out.put(String.valueOf(r.get("slug")), String.valueOf(r.get("words")));
+        WORDS_CACHE.put(tenantId, new WordsAt(out, System.currentTimeMillis(), stamp));
         return out;
     }
 

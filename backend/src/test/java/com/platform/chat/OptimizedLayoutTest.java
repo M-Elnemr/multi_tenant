@@ -88,7 +88,7 @@ class OptimizedLayoutTest {
     @Test
     void aWordMatchLineSaysHowCompleteItIs() {
         var all = new ChatService.WordMatch("لاب", 6, List.of(), List.of("بوك 14", "إير 13"));
-        assertThat(all.line()).contains("6 products of the shop have it in their name").contains("بوك 14، إير 13").contains("that is all of them");
-        assertThat(new ChatService.WordMatch("مخده", 1, List.of("x"), List.of()).line()).contains("1 product of the shop has it in its name").doesNotContain("all of them");
+        assertThat(all.line()).contains("6 products of the shop have it in their name or category").contains("بوك 14، إير 13").contains("that is all of them");
+        assertThat(new ChatService.WordMatch("مخده", 1, List.of("x"), List.of()).line()).contains("1 product of the shop has it in its name or category").doesNotContain("all of them");
     }
 }

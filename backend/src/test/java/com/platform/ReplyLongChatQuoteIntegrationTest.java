@@ -94,7 +94,7 @@ class ReplyLongChatQuoteIntegrationTest extends IntegrationTestBase {
             String resolved = system.substring(at, system.indexOf('\n', at));
             assertThat(resolved).doesNotContain(school).doesNotContain(shirt);
             // above the 24-message history window the original is NOT in the history and still reaches the assistant through the block
-            long inWindow = seen.get(seen.size() - 1).stream().filter(x -> x.text() != null && x.text().contains(sport + " بكام؟")).count();
+            long inWindow = seen.get(seen.size() - 1).stream().map(FakeAiProvider::customerText).filter(x -> x.contains(sport + " بكام؟")).count();   // the history itself, not the reply's context
             if (total >= 50) assertThat(inWindow).as("outside the history window at " + total).isZero();
         }
     }

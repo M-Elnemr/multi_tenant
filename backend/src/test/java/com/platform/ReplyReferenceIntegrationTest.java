@@ -84,7 +84,7 @@ class ReplyReferenceIntegrationTest extends IntegrationTestBase {
                 .contains("CUSTOMER'S LATEST MESSAGE").contains("CURRENT BUSINESS STATE").contains("call search_products / get_product and use the CURRENT result");
         assertThat(system).doesNotContain(String.valueOf(jacket) + " ").doesNotContain("reply_to");
         // the customer's own words are untouched: the checks that read them never see the quoted price
-        assertThat(seen.get(seen.size() - 1).get(seen.get(seen.size() - 1).size() - 1).text()).isEqualTo("هل ده متاح بالأزرق؟");
+        assertThat(FakeAiProvider.customerText(seen.get(seen.size() - 1).get(seen.get(seen.size() - 1).size() - 1))).isEqualTo("هل ده متاح بالأزرق؟");   // the customer's own words, after the reply's context
     }
 
     @Test
@@ -101,7 +101,7 @@ class ReplyReferenceIntegrationTest extends IntegrationTestBase {
         answer("تمام، ممكن نتفق");
         say(t, ext, "ينفع تخليه 1000؟", price);
         List<Turn> given = seen.get(seen.size() - 1);
-        assertThat(given.stream().map(Turn::text)).as("the 24-message history window does NOT contain the old price message").noneMatch(x -> x != null && x.contains("السعر 1,200"));
+        assertThat(given.stream().map(FakeAiProvider::customerText)).as("the 24-message history window does NOT contain the old price message").noneMatch(x -> x != null && x.contains("السعر 1,200"));
         assertThat(FakeAiProvider.lastSystem).contains("ORIGINAL MESSAGE CONTENT: «السعر 1,200 جنيه للجاكيت القطن»").contains("RELEVANT CONVERSATION CONTEXT").contains("customer: «بكام الجاكيت»");
     }
 

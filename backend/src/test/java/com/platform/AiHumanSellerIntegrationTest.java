@@ -94,6 +94,7 @@ class AiHumanSellerIntegrationTest extends IntegrationTestBase {
         jeans(t, "Jeans Classic Navy", "MEN");
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("متاح يا فندم"));
         chat.reply(tenantId(t), "WEB", "cat-" + uniq(), null, "عندكم جينز؟");
-        assertThat(FakeAiProvider.lastSystem).contains("ALL PRODUCTS (").contains("Jeans Classic Navy").contains("for men").contains("5 in stock");
+        assertThat(FakeAiProvider.lastRawSystem).contains("ALL PRODUCTS (").contains("Jeans Classic Navy").contains("for men").contains(", in stock").doesNotContain("5 in stock");   // the cached catalog: in stock, no count
+        assertThat(FakeAiProvider.lastSystem).contains("THE PRODUCTS OF THIS CHAT").contains("5 in stock");   // the exact count comes with the message (the jeans the customer named, or a word match)
     }
 }
