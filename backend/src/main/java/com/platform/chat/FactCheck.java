@@ -348,8 +348,10 @@ final class FactCheck {
         run(out, () -> { if (out.stream().noneMatch(x -> x.kind().equals("INVENTED_PRODUCTS"))) inventedBrands(answer, shop, out); });
         run(out, () -> betterMatch(customer, answer, ms, shop, out));
         run(out, () -> { if (out.stream().noneMatch(x -> x.fixed() != null)) specLock(customer, answer, ms, only0, shop, out); });
-        run(out, () -> { if (out.stream().noneMatch(x -> x.fixed() != null)) claimLock(customer, answer, shop, out); });
+        run(out, () -> { if (out.stream().noneMatch(x -> x.fixed() != null)) claimLock(customer, answer, ms, only0, shop, out); });
         run(out, () -> answerLock(customer, answer, ms, shop, load, out));
+        // after the answer lock (which owns «the colours asked, only some given»): «متوفر باللون الأحمر بس» when the customer did not ask, or asked only one size
+        run(out, () -> { if (out.stream().noneMatch(x -> x.kind().startsWith("OPTION"))) onlyValues(answer, ms, only0, load, out); });
         run(out, () -> { if (out.stream().noneMatch(x -> x.kind().startsWith("OPTION") || x.kind().equals("FALSE_DENIAL"))) askedMissingSize(customer, answer, ms, only0, shop, load, out); });
         run(out, () -> { if (out.stream().noneMatch(x -> x.kind().startsWith("OPTION"))) soldOutChoice(answer, ms, only0, about0, load, out); });
         return out;
@@ -1328,35 +1330,99 @@ final class FactCheck {
     static void deliveryOnly(String answer, Set<String> slugs, Shop shop, java.util.function.Function<String, Product> load, List<Problem> out) {
         String l = light(answer);
         boolean ar = arabic(answer);
+        List<Mention> ms = mentions(answer, shop.names());
         for (String slug : slugs) {
             List<Limit> lims = shop.limits(slug);
             if (lims.isEmpty()) continue;
             Product p = load.apply(slug);
             boolean all = p.variants().isEmpty() || p.variants().stream().allMatch(v -> lims.stream().anyMatch(x -> x.options().equals(v.options())));
-            List<Limit> said = new ArrayList<>();
-            Set<String> values = new LinkedHashSet<>();
-            for (Limit lim : lims) {
-                for (var e : lim.options().entrySet()) {
-                    boolean shared = p.variants().stream().anyMatch(v -> e.getValue().equals(v.options().get(e.getKey())) && lims.stream().noneMatch(x -> x.options().equals(v.options())));
-                    if (!shared && (all || saysValue(l, e.getValue()))) { values.add(e.getValue()); if (!said.contains(lim)) said.add(lim); }
-                }
-                if (all && !said.contains(lim)) said.add(lim);
-            }
-            if (said.isEmpty()) continue;
-            Set<String> codes = new java.util.TreeSet<>(said.get(0).codes());
-            for (Limit lim : said) codes.retainAll(lim.codes());   // several limited sizes said: the governorates every one of them goes to
+            // the values only the limited variants have («65 بوصة») and the ones only the others have («43 بوصة»)
+            Map<String, List<Limit>> limitedOnly = new LinkedHashMap<>();
+            Set<String> freeOnly = new LinkedHashSet<>();
+            for (Limit lim : lims)
+                for (var e : lim.options().entrySet())
+                    if (p.variants().stream().noneMatch(v -> e.getValue().equals(v.options().get(e.getKey())) && lims.stream().noneMatch(x -> x.options().equals(v.options()))))
+                        limitedOnly.computeIfAbsent(e.getValue(), k -> new ArrayList<>()).add(lim);
+            for (Variant v : p.variants())
+                if (lims.stream().noneMatch(x -> x.options().equals(v.options())))
+                    for (String val : v.options().values()) if (!limitedOnly.containsKey(val) && lims.stream().noneMatch(x -> x.options().containsValue(val))) freeOnly.add(val);
+            boolean replySaysFree = freeOnly.stream().anyMatch(v -> saysValue(l, v));
+            List<String> replyLimited = limitedOnly.keySet().stream().filter(v -> saysValue(l, v)).toList();
             for (int[] s : sentences(answer)) {
                 String sentence = l.substring(s[0], s[1]);
                 if (!DELIVERY.matcher(sentence).find() || NEG.matcher(sentence).find()) continue;
+                List<Mention> here = ms.stream().filter(m -> m.start() >= s[0] && m.start() < s[1]).toList();
+                if (!here.isEmpty() && here.stream().noneMatch(m -> m.slug().equals(slug))) continue;   // a sentence about another product
+                List<String> vals;
+                if (all) vals = List.of();
+                else {
+                    vals = limitedOnly.keySet().stream().filter(v -> saysValue(sentence, v)).toList();
+                    if (vals.isEmpty()) {
+                        if (freeOnly.stream().anyMatch(v -> saysValue(sentence, v))) continue;   // «والـ ٤٣ بنوصله إسكندرية»: the size that goes everywhere
+                        if (replySaysFree || replyLimited.isEmpty()) continue;   // no size in the sentence, and the reply is not only about the limited sizes
+                        vals = replyLimited;
+                    }
+                }
+                Set<String> codes = null;   // the governorates every limited variant the sentence is about goes to
+                for (Limit lim : all ? lims : vals.stream().flatMap(v -> limitedOnly.get(v).stream()).distinct().toList()) {
+                    if (codes == null) codes = new java.util.TreeSet<>(lim.codes()); else codes.retainAll(lim.codes());
+                }
+                if (codes == null) continue;
                 for (String[] f : areasIn(sentence)) {
                     if (codes.contains(f[0])) continue;
-                    String names = String.join(ar ? " و" : " and ", codes.stream().map(c -> govName(c, ar)).toList());
-                    String what = p.name() + (all || values.isEmpty() ? "" : " (" + String.join("، ", values) + ")");
-                    String fixed = codes.isEmpty() ? null : ar ? "«" + what + "» بيتوصل لـ" + names + " بس، مش لـ" + govName(f[0], true) + "." : what + " is delivered only to " + names + ", not to " + govName(f[0], false) + ".";
+                    Set<String> to = codes;
+                    String names = String.join(ar ? " و" : " and ", to.stream().map(c -> govName(c, ar)).toList());
+                    String what = p.name() + (all || vals.isEmpty() ? "" : " (" + String.join("، ", vals) + ")");
+                    String fixed = to.isEmpty() ? null : ar ? "«" + what + "» بيتوصل لـ" + names + " بس، مش لـ" + govName(f[0], true) + "." : what + " is delivered only to " + names + ", not to " + govName(f[0], false) + ".";
                     out.add(new Problem("AREA", what + " is delivered ONLY to " + names + ": never promise delivery or a fee to " + govName(f[0], false) + " for it; offer an option or product that ships there, or an address in those governorates.",
                             fixed == null ? null : replaceSentence(answer, s[0], s[1], fixed)));
                     return;
                 }
+            }
+        }
+    }
+
+    /** «متوفر … باللون الأحمر بس», «مفيش غير الأحمر», «only in red»: a sentence that says which values of an option are available, and only those. («بس» in the middle of a clause is «but».) */
+    private static final Pattern ONLY_AVAILABLE = Pattern.compile("(?:(?<!\\p{L})(?:بس|فقط)(?=\\s*(?:[.!؟?،,\\n🙏😊👌]|$))|(?<!\\p{L})(?:مفيش|مافيش|معندناش|ماعندناش|مش\\s+متاح|مش\\s+متوفر)\\s+(?:الا|إلا|غير)(?!\\p{L})|\\bonly\\b|\\bjust\\b)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern ONLY_RANGE = Pattern.compile("(?<!\\p{L})(?:لحد|لغايه|لغاية|حتى|الي|الى|إلى)(?!\\p{L})|\\b(?:to|through)\\b|\\d\\s*[-–]\\s*\\d", Pattern.CASE_INSENSITIVE);
+    private static final Pattern AVAILABLE_WORD = Pattern.compile("(?:متاح|متوفر|موجود|عندنا|فيه|في\\s+منه|available|in\\s+stock|comes?\\s+in)", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * «حذاء كعب عالي … مقاس ٣٨ متوفر حالياً باللون الأحمر بس» while beige 38 has 5 too: the values of an option a sentence says are the only available ones, for the other options it
+     * names (the size 38), are checked against the stock of exactly those variants; when more values have stock, the sentence is replaced by the real list.
+     */
+    static void onlyValues(String answer, List<Mention> ms, String only, java.util.function.Function<String, Product> load, List<Problem> out) {
+        String l = light(answer);
+        boolean ar = arabic(answer);
+        for (int[] sn : sentences(answer)) {
+            String se = l.substring(sn[0], sn[1]);
+            if (!ONLY_AVAILABLE.matcher(se).find() || !AVAILABLE_WORD.matcher(se).find() || se.contains("؟") || se.contains("?")) continue;
+            if (ONLY_RANGE.matcher(se).find()) continue;   // «من مقاس S لحد XL بس»: a range, every size in it
+            List<Mention> here = ms.stream().filter(m -> m.start() >= sn[0] && m.start() < sn[1]).toList();
+            String slug = here.size() == 1 ? here.get(0).slug() : here.isEmpty() ? (lastBefore(ms, sn[0], only) != null ? lastBefore(ms, sn[0], only) : only) : null;
+            if (slug == null) continue;
+            Product p = load.apply(slug);
+            if (p.variants().size() < 2) continue;
+            Map<String, String> said = valuesIn(se, p);   // value -> its option
+            if (said.isEmpty()) continue;
+            Map<String, Set<String>> byOption = new LinkedHashMap<>();
+            for (var e : said.entrySet()) byOption.computeIfAbsent(e.getValue(), k -> new LinkedHashSet<>()).add(e.getKey());
+            for (var opt : byOption.entrySet()) {
+                Set<String> context = new LinkedHashSet<>();
+                for (var e : said.entrySet()) if (!e.getValue().equals(opt.getKey())) context.add(e.getKey());
+                Set<String> inStock = new LinkedHashSet<>();
+                for (Variant v : p.variants())
+                    if (v.available() > 0 && v.options().values().containsAll(context) && v.options().get(opt.getKey()) != null) inStock.add(v.options().get(opt.getKey()));
+                if (inStock.isEmpty() || !inStock.containsAll(opt.getValue()) && opt.getValue().stream().noneMatch(inStock::contains)) continue;   // the other checks handle a value with no stock
+                Set<String> missing = new LinkedHashSet<>(inStock);
+                missing.removeAll(opt.getValue());
+                if (missing.isEmpty()) continue;
+                String ctx = context.isEmpty() ? "" : " " + String.join(" ", context);
+                String fixed = ar ? "«" + p.name() + "»" + ctx + " متاح بـ" + opt.getKey() + ": " + String.join("، ", inStock) + "."
+                                  : p.name() + ctx + " is available in " + String.join(", ", inStock) + ".";
+                out.add(new Problem("OPTION_STOCK", "«" + p.name() + "»" + ctx + " is in stock in " + opt.getKey() + " " + String.join(", ", inStock) + ", not only " + String.join(", ", opt.getValue()) + ": list every one that has stock.",
+                        replaceSentence(answer, sn[0], sn[1], fixed)));
+                return;
             }
         }
     }
@@ -2081,7 +2147,9 @@ final class FactCheck {
      * original) that is nowhere in what the shop wrote (its products, their translations, its profile and policies) is taken out and the customer is offered to ask the shop.
      * A question, a no («مش مذكورة في بياناتنا»), general know-how and a condition are left alone; off when the shop's data cannot be read.
      */
-    static void claimLock(String customer, String answer, Shop shop, List<Problem> out) {
+    static void claimLock(String customer, String answer, Shop shop, List<Problem> out) { claimLock(customer, answer, mentions(answer, shop.names()), null, shop, out); }
+
+    static void claimLock(String customer, String answer, List<Mention> ms, String only, Shop shop, List<Problem> out) {
         String la = light(answer).replace('ة', 'ه');
         List<int[]> drop = new ArrayList<>();
         String label = null;
@@ -2091,7 +2159,13 @@ final class FactCheck {
                     || se.matches("(?s).*(?<!\\p{L})(?:عاده|عادتا|غالبا|عموما|usually|generally|typically)(?!\\p{L}).*")) continue;
             for (Claim c : CLAIMS) {
                 if (!c.said().matcher(se).find()) continue;
-                Boolean known = shop.says(c.stems());
+                // the product this sentence is about (named in it, or the one named before it): its own text and the policies; otherwise anything the shop wrote
+                List<Mention> here = ms.stream().filter(m -> m.start() >= sn[0] && m.start() < sn[1]).toList();
+                String slug = here.size() == 1 ? here.get(0).slug() : here.isEmpty() ? (lastBefore(ms, sn[0], only) != null ? lastBefore(ms, sn[0], only) : only) : null;
+                String facts = slug == null ? null : shop.facts(slug);
+                Boolean known;
+                if (facts != null) { String lf = light(facts).replace('ة', 'ه').toLowerCase(Locale.ROOT); known = c.stems().stream().anyMatch(st -> lf.contains(st.toLowerCase(Locale.ROOT))); }
+                else known = shop.says(c.stems());
                 if (known == null || known) continue;
                 drop.add(sn);
                 if (label == null) label = c.label();

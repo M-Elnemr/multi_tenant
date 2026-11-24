@@ -79,4 +79,53 @@ class ReplyClaimsTest {
             assertThat(ChatService.TEAM_TOLD.matcher(said).find()).as(said).isTrue();
         assertThat(ChatService.TEAM_TOLD.matcher("تحب أوريك صور الموبايلات؟").find()).isFalse();
     }
+
+    @Test
+    void aClaimTrueForAnotherProductIsStillCheckedForThisOne() {
+        Map<String, String> text = Map.of("book", "لاب توب زينترا بوك 15 برو ويندوز 11 أصلي", "creator", "لاب توب زينترا كرييتور 16 OLED 4K");
+        FactCheck.Shop shop = new FactCheck.Shop() {
+            public List<FactCheck.Named> names() { return List.of(new FactCheck.Named("book", "زينترا بوك 15 برو"), new FactCheck.Named("creator", "زينترا كرييتور 16")); }
+            public FactCheck.Product product(String slug) { return null; }
+            public List<FactCheck.Named> searchAll(List<String> words) { return List.of(); }
+            public Set<String> served() { return Set.of(); }
+            public List<int[]> hours() { return List.of(); }
+            public String facts(String slug) { return text.get(slug); }
+            public Boolean says(List<String> stems) { return true; }   // shop-wide it is there (the Book 15 Pro)
+        };
+        assertThat(FactCheck.check("بيجي بويندوز؟", "زينترا كرييتور 16 بيجي بويندوز 11 أصلي متسطب.", shop, List.of())).anyMatch(x -> x.kind().equals("SPEC_UNKNOWN"));
+        assertThat(FactCheck.check("بيجي بويندوز؟", "زينترا بوك 15 برو بيجي بويندوز 11 أصلي متسطب.", shop, List.of())).noneMatch(x -> x.kind().equals("SPEC_UNKNOWN"));
+    }
+
+    @Test
+    void onlyOneColourSaidWhenAnotherHasStockInThatSizeIsCorrected() {
+        var heel = new FactCheck.Product("heel", "حذاء كعب عالي", 0, List.of(
+                new FactCheck.Variant(Map.of("اللون", "أحمر", "المقاس", "38"), 990, 0, 8), new FactCheck.Variant(Map.of("اللون", "بيج", "المقاس", "38"), 990, 0, 5),
+                new FactCheck.Variant(Map.of("اللون", "أسود", "المقاس", "38"), 990, 0, 0), new FactCheck.Variant(Map.of("اللون", "بيج", "المقاس", "39"), 990, 0, 2)));
+        FactCheck.Shop shop = new FactCheck.Shop() {
+            public List<FactCheck.Named> names() { return List.of(new FactCheck.Named("heel", "حذاء كعب عالي")); }
+            public FactCheck.Product product(String slug) { return heel; }
+            public List<FactCheck.Named> searchAll(List<String> words) { return List.of(); }
+            public Set<String> served() { return Set.of(); }
+            public List<int[]> hours() { return List.of(); }
+        };
+        String reply = "أهلاً بحضرتك 🌟 في حذاء الكعب العالي بـ ٩٩٠ جنيه، ومقاس 38 متوفر حالياً باللون أحمر بس. تحب أشوفلك صوره؟";
+        var p = FactCheck.check("حذاء كعب للسهرة مقاس ٣٨", reply, shop, List.of("heel")).stream().filter(x -> x.kind().equals("OPTION_STOCK")).findFirst().orElseThrow();
+        assertThat(p.fixed()).contains("أحمر").contains("بيج").doesNotContain("أسود").contains("تحب أشوفلك صوره؟");
+        assertThat(FactCheck.check("حذاء كعب للسهرة مقاس ٣٨", "في حذاء الكعب العالي بـ ٩٩٠ جنيه، ومقاس ٣٨ متوفر حالياً باللون الأحمر بس. تحب أشوفلك صوره؟", shop, List.of("heel")))
+                .anyMatch(x -> x.kind().equals("OPTION_STOCK"));   // the live reply's own words: «باللون الأحمر», Arabic digits
+        // «بس» meaning «but», and a list that already has every colour in stock, are fine
+        assertThat(FactCheck.check("x", "حذاء كعب عالي مقاس 38 متوفر بالأحمر والبيج.", shop, List.of("heel"))).noneMatch(x -> x.kind().equals("OPTION_STOCK"));
+        assertThat(FactCheck.check("x", "حذاء كعب عالي الأحمر متاح بس الأسود مقاس 38 خلص.", shop, List.of("heel"))).noneMatch(x -> x.kind().equals("OPTION_STOCK") && x.note().contains("not only"));
+    }
+
+    @Test
+    void aStrayEnglishWordInAnArabicReplyIsTakenOut() {
+        assertThat(ChatService.withoutStrayLatin("الضمان على اللاب توب سنة من الوكيل يا فندم، وب current تغطي عيوب الصناعة بس.", " الضمان قد ايه؟", List.of("لاب توب زينترا")))
+                .isEqualTo("الضمان على اللاب توب سنة من الوكيل يا فندم، وب تغطي عيوب الصناعة بس.");
+        // codes, upper case, the customer's own words, the shop's product words and English sentences stay
+        String kept = "جراب آيفون شفاف MagSafe بـ ٣٧٩ جنيه، وكابل usb-c مع الشاحن، وسماعة sonic برو.";
+        assertThat(ChatService.withoutStrayLatin(kept, "", List.of("سماعة sonic buds"))).isEqualTo(kept);
+        assertThat(ChatService.withoutStrayLatin("تمام، الـ budget بتاعك كام؟", " my budget is 5000", List.of())).contains("budget");
+        assertThat(ChatService.withoutStrayLatin("The Creator 16 is great for editing.", "", List.of())).isEqualTo("The Creator 16 is great for editing.");
+    }
 }

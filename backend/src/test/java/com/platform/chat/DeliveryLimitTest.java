@@ -45,6 +45,14 @@ class DeliveryLimitTest {
     }
 
     @Test
+    void aSentenceAboutTheSizeThatGoesEverywhereIsLeftAloneEvenWhenTheReplyNamesTheLimitedOne() {
+        String reply = "للأسف الـ ٦٥ بوصة مش بنوصله للإسكندرية، بيتوصل القاهرة والجيزة بس. لو حابب، فيستا 4K سمارت ٤٣ بوصة بـ ١٤٩٩٩ وبنوصله للإسكندرية في ٢-٣ أيام.";
+        assertThat(check(reply)).noneMatch(x -> x.kind().equals("AREA"));
+        // a sentence naming no size, in a reply only about the 65-inch, is still about it
+        assertThat(check("فيستا 4K سمارت ٦٥ بوصة بـ ٢٧٤٩٩. وبيوصل للإسكندرية في ٢-٣ أيام.")).anyMatch(x -> x.kind().equals("AREA"));
+    }
+
+    @Test
     void aPriceThatContainsTheNumberIsNotTheSize() {
         assertThat(FactCheck.saysValue(FactCheck.light("السعر 16500 جنيه"), "65 بوصة")).isFalse();
         assertThat(FactCheck.saysValue(FactCheck.light("الشاشة ٦٥ بوصة"), "65 بوصة")).isTrue();
@@ -70,6 +78,10 @@ class DeliveryLimitTest {
         assertThat(ChatService.withSaid(List.of("I asked the shop team about the warranty."), "I asked the shop team about the warranty; they will answer here. Which colour?"))
                 .isEqualTo("I asked the shop team about the warranty; they will answer here. Which colour?");
         assertThat(ChatService.withSaid(List.of(said), "")).isEqualTo(said);
+        // two full answers (the cold-food complaint): only the final one, never the same request twice
+        String first = "أنا آسف جداً يا فندم على ده 🙏 لو الطلب وصل لسه ضمن ساعة، سياسة المحل بتقول إننا نبدله أو نرجع تمنه. تحب تديني رقم الطلب عشان أتابعه فوراً؟ وهرفع الموضوع للفريق.";
+        String fin = "رفعت الشكوى للفريق وهيردوا عليك هنا في نفس الشات في أقرب وقت. لو ممكن تبعتلي رقم الطلب ورقم الواتساب المسجل عليه، أقدر أتابع حالته فوراً.";
+        assertThat(ChatService.withSaid(List.of(first), fin)).isEqualTo(fin);
         assertThat(ChatService.withSaid(List.of(), "ok")).isEqualTo("ok");
     }
 }

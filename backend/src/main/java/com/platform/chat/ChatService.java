@@ -1329,6 +1329,7 @@ public class ChatService {
     private String ruleChecks(Ctx ctx, ChannelAi.Routed routed, String system, List<Turn> turns, List<ToolDef> tools, List<AiUsageService.Round> rounds, MoneyGuard.Allowed allowed, String answer) {
         if (answer == null || answer.isBlank()) return answer;
         answer = withoutRepeatedClosedNote(turns, answer);
+        try { answer = withoutStrayLatin(answer, customerWords(turns), productWords(ctx.tenantId()).values()); } catch (RuntimeException e) { log.debug("Stray word cleanup skipped", e); }
         // only a real tool call counts as having looked (a model with the catalog in its prompt still skimmed it and answered vaguely)
         boolean searched = rounds.stream().anyMatch(r -> r.tools().stream().anyMatch(t -> t.equals("search_products") || t.equals("get_product") || t.equals("show_products") || t.equals("list_services") || t.equals("available_slots")));
         String last = lastCustomerText(turns);
@@ -1388,6 +1389,8 @@ public class ChatService {
                 && last.trim().split("\\s+").length >= 3 && ctx.summary()[0] == null)
             problems.put("OFFER_INSTEAD_OF_SHOWING", "The customer already told you what they want: do not ask whether to show it. Call search_products with their need now and name the best 2-4 products "
                     + "with their prices in this message (or say honestly we do not have it), then one short question.");
+        else if (!rounds.stream().anyMatch(r -> r.tools().contains("prepare_order")) && asksInsteadOfShowing(ctx, last, answer))
+            problems.put("OFFER_INSTEAD_OF_SHOWING", "The customer asked for a kind of item we sell: show 2-3 matching products by name and price in this message (search_products), then ask one short question that narrows it. Never answer with only a question.");
         if (STALL.matcher(answer).find())
             problems.put("STALL", lookedUp || searched
                     ? "You already looked it up: give the answer from that result now. Never tell the customer you will check, confirm, send something or get back to them later."
@@ -1452,6 +1455,61 @@ public class ChatService {
             log.warn("Rule check: the rewrite failed: {}", e.getMessage());
             return factsFixed(last, falseCancel ? cancelFallback(answer) : answer, shopData, touched);
         }
+    }
+
+    /** Everything the customer wrote in the turns, in lower case (their own English words may be repeated back). */
+    private static String customerWords(List<Turn> turns) {
+        StringBuilder b = new StringBuilder();
+        for (Turn t : turns) if ("user".equals(t.role()) && t.text() != null) b.append(' ').append(t.text().toLowerCase(java.util.Locale.ROOT));
+        return b.toString();
+    }
+
+    private static final Pattern PHONE_IN_TEXT = Pattern.compile("(?:\\+?20|0)\\s*1[0125](?:[\\s-]*\\d){8}|[٠-٩]{8,}");
+    private static final Pattern LATIN_WORD = Pattern.compile("(?<![\\p{L}\\d\\-./@])([a-z]{3,})(?![\\p{L}\\d\\-./@])");
+    private static final Set<String> EVERYDAY_LATIN = Set.of("wifi", "bluetooth", "online", "offline", "app", "okay", "email", "gmail", "whatsapp", "facebook", "instagram", "tiktok", "link", "smart", "pro", "max", "plus", "mini", "lite", "android", "iphone", "ipad", "apple", "samsung", "google", "netflix", "youtube", "windows", "office", "gaming", "fit", "slim", "oversize", "size", "free", "visa");
+
+    /**
+     * «وب current تغطي»: a lowercase English word the model slipped into an Arabic sentence (not the customer's own word, not a word of the shop's products, not a common brand or app
+     * word, not part of a code like «usb-c») is taken out. Upper-case words and codes (SSD, X12, MagSafe) are never touched.
+     */
+    static String withoutStrayLatin(String answer, String customerLower, java.util.Collection<String> productWords) {
+        if (answer == null || answer.isBlank()) return answer;
+        String shopLower = String.join(" ", productWords).toLowerCase(java.util.Locale.ROOT);
+        StringBuilder out = new StringBuilder();
+        int from = 0;
+        for (int[] sn : FactCheck.sentences(answer)) {
+            String se = answer.substring(sn[0], sn[1]);
+            long arabicLetters = se.codePoints().filter(cp -> cp >= 0x0600 && cp <= 0x06FF).count(), latinLetters = se.codePoints().filter(cp -> cp < 128 && Character.isLetter(cp)).count();
+            if (arabicLetters < 3 * Math.max(1, latinLetters)) continue;   // an English sentence, or one full of product names
+            java.util.regex.Matcher m = LATIN_WORD.matcher(se);
+            StringBuilder cleaned = new StringBuilder();
+            int at = 0;
+            while (m.find()) {
+                String w = m.group(1);
+                if (EVERYDAY_LATIN.contains(w) || customerLower.contains(w) || shopLower.contains(w)) continue;
+                cleaned.append(se, at, m.start());
+                at = m.end();
+            }
+            if (at == 0) continue;
+            cleaned.append(se.substring(at));
+            out.append(answer, from, sn[0]).append(cleaned.toString().replaceAll("[ \\t]{2,}", " "));
+            from = sn[1];
+        }
+        if (from == 0) return answer;
+        return out.append(answer.substring(from)).toString();
+    }
+
+    /**
+     * «عايز موبايل» answered with only «ميزانيتك كام؟»: the customer's message names a kind of item the shop sells (a word of it is in a product's name, category or tags), and the
+     * reply names no product and no price but asks a question. Asking who it is for (when the shop sells it for several groups), a policy question and an order in progress are left alone.
+     */
+    private boolean asksInsteadOfShowing(Ctx ctx, String last, String answer) {
+        if (last == null || answer == null || ctx.summary()[0] != null || !(answer.contains("؟") || answer.contains("?"))) return false;
+        if (WHO_QUESTION.matcher(answer).find() || isPolicyAsk(last) || MoneyGuard.digits(answer).matches("(?s).*\\d{2,}.*")) return false;
+        var names = shopView(ctx.tenantId()).names();
+        if (!FactCheck.mentions(answer, names).isEmpty() || !FactCheck.mentions(last, names).isEmpty()) return false;   // a named product (an order going on) is not a broad request
+        if (ctx.order()[0] != null || PHONE_IN_TEXT.matcher(last).find()) return false;
+        try { return !wordMatches(ctx.tenantId(), last, false, Set.of(), 0).isEmpty(); } catch (RuntimeException e) { return false; }
     }
 
     /** Every product the reply names was put in front of the model for this message with its exact stock; false when it names none. */
@@ -2769,10 +2827,16 @@ public class ChatService {
         for (int i = said.size() - 1; i >= 0; i--) {
             String s = said.get(i);
             if (out.isEmpty()) { out = s; continue; }
-            if (!coveredBy(s, out)) out = s + "\n\n" + out;
+            // only when the final words merely continue it («In the meantime: which one…»); two full answers (sorry + policy + ask for the order number, twice) keep the final one,
+            // written with the tool result in view
+            boolean continues = out.length() * 2 <= s.length() || CONTINUES.matcher(out).lookingAt();
+            if (continues && !coveredBy(s, out)) out = s + "\n\n" + out;
         }
         return out.isEmpty() ? last : out;
     }
+
+    /** Words a reply opens with when it only goes on from what was already said. */
+    private static final Pattern CONTINUES = Pattern.compile("\\s*(?:و?في\\s+(?:الوقت\\s+ده|الاثناء|الأثناء|نفس\\s+الوقت)|وكمان|و?بالمناسبه|و?بالمناسبة|ولحد\\s+ما|وعلى\\s+فكره|وعلى\\s+فكرة|in\\s+the\\s+meantime|meanwhile|also|by\\s+the\\s+way|until\\s+then)", Pattern.CASE_INSENSITIVE);
 
     /** Are most (60%+) of the words of {@code part} already in {@code whole}? */
     static boolean coveredBy(String part, String whole) {
@@ -3089,7 +3153,7 @@ public class ChatService {
             - A COLOUR OR SIZE ON ITS OWN (strict): when the customer names only a colour or a size («عايز اللون البني», «مقاس L», «وأسود كمان», «اتنين بني») while an item is being discussed or ordered, it is an option of THAT item: answer for that item and its exact variant, and never search for a new product with that word. Colour words are colours: بني = brown, بيج = beige, كحلي = navy, زيتي = olive; «البني» is the colour brown and is never a person's name or a product.
             - STOCK IS PER EXACT VARIANT (strict, no exceptions): a product's stock exists only for each exact combination of ALL its options (colour AND size AND any other option): red in size M can have 3 while red in total has 20. Never state, add up, estimate or promise a quantity for a colour or a size alone, and never use a total over several combinations. Before you say a quantity or accept one («٩ قطع»), the customer must have chosen EVERY option of the product, and the number you give is that exact combination's «in stock» number from the tool result or the SHOP CATALOG (EXACT COMBINATIONS). While an option is still open, list the stock of each combination or ask which one. When the customer wants more than that combination has, say exactly how many it has and offer the other combinations that have stock. If you are not sure of a number, call get_product first.
             - ARABIC NUMBERS (strict): a counted noun agrees with its number: 1 is singular (قميص واحد), 2 is the dual (قميصين), 3 to 10 take the PLURAL (٣ قمصان, ٨ بناطيل, ٥ ساندوتشات: never «٨ قميص»), 11 and more take the singular (١١ قميص).
-            - SELLING: a broad request: one short question that narrows it, then 2-3 matching products by name and price; once they choose, ask in one message for every option they did not choose (size, color...), then the delivery details. Answer a direct question first, then ask one question. «ضيفه» means add it to the order. Out of stock: the closest option or notify_back_in_stock. After they choose, one light add-on (recommend_related), once. Save what matters (remember_customer); order questions: order_status.
+            - SELLING: a broad request («عايز موبايل», «عايز لبس»): search and show 2-3 matching products by name and price right away (different price levels when you can), then ONE short question that narrows it (budget, use, size); never answer a request for a kind of item with only a question. Once they choose, ask in one message for every option they did not choose (size, color...), then the delivery details. Answer a direct question first, then ask one question. «ضيفه» means add it to the order. Out of stock: the closest option or notify_back_in_stock. After they choose, one light add-on (recommend_related), once. Save what matters (remember_customer); order questions: order_status.
             - NEGOTIATION: «غالي»: agree warmly, give one real quality or offer a cheaper real option. When they hesitate and your maximum discount is above 0 you may offer a small step (about half the maximum), then the rest only if they still hesitate, at most twice, never tied to time; with a 0% maximum never mention a discount. «هفكر»: one helpful line, schedule_follow_up once. A competitor's price: never criticise them. An angry customer: stay calm, acknowledge in a few words, solve the point. A discount goes to prepare_order as discountPercent within your maximum; if the tool refuses it, say kindly it is the best price.
             - ORDER: to close you need the items (variant, quantity), the customer's FIRST name (a full name is never needed), their WHATSAPP number, the governorate and the area or neighbourhood, and the payment method: ask for everything missing in one message (skip what SAVED DETAILS has). Always ask for the WhatsApp number, never just «a mobile number»: the order is confirmed on WhatsApp and the customer's account is made from it, and the number they write is that number (the summary tells them the confirmation goes there; if they say it has no WhatsApp, ask for another). The street, building and apartment are OPTIONAL: ask for them at most once, as a favour that makes the courier faster («لو تحب تكتب الشارع ورقم العمارة»), and when the customer declines or does not give them, go on without them (the courier calls them): a refusal is final, never ask again. Never ask again for anything the customer already gave in this chat (a number, a name, an area). Then call prepare_order RIGHT AWAY with the COMPLETE list (never a separate WhatsApp question); the system writes and sends the summary, so you never write a summary or a total. Call place_order only after their "yes" in a LATER message; never say an order is placed unless place_order returned an order number, then thank them and give the number (card payment: the payment link).
             - CHANGING OR CANCELLING: while ORDER ON FILE can still be changed, call prepare_order with changeOrder=<its number> and the complete new list; never a second order. To cancel, ask kindly in one short question why, then call cancel_order with the reason (the shop calls them, the order is NOT cancelled) or with noReason=true; never say cancelled unless cancel_order returned cancelled=true.
