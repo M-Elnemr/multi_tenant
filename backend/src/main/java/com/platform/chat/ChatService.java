@@ -82,6 +82,8 @@ public class ChatService {
 
     /** The names of the products the quoted message talks about, for the knowledge tool of this reply (so «does it shrink?» searches the right product). */
     static final ThreadLocal<List<String>> REPLY_PRODUCTS = new ThreadLocal<>();
+    /** The slugs of the products the quoted message names (set only while a reply to an earlier message is being answered). */
+    static final ThreadLocal<List<String>> REPLY_SLUGS = new ThreadLocal<>();
 
     /** The «you left out a product the customer asked for» guard of prepare_order speaks once per reply (a model that insists is not looped). */
     private static final ThreadLocal<Boolean> BASKET_GUARD_SPOKE = ThreadLocal.withInitial(() -> false), DROP_GUARD_SPOKE = ThreadLocal.withInitial(() -> false);
@@ -564,7 +566,7 @@ public class ChatService {
         boolean failed = false;
         try { return replyTimed(tenantId, channel, externalId, clientId, message, displayName, in == null ? ReplyInput.NONE : in); }
         catch (RuntimeException | Error e) { failed = true; throw e; }
-        finally { ReplyTimeline.finish(channel, externalId, failed); REPLY_PRODUCTS.remove(); EXTRAS.remove(); }
+        finally { ReplyTimeline.finish(channel, externalId, failed); REPLY_PRODUCTS.remove(); REPLY_SLUGS.remove(); EXTRAS.remove(); }
     }
 
     private Reply replyTimed(UUID tenantId, String channel, String externalId, UUID clientId, String message, String displayName, ReplyInput in) {
@@ -820,6 +822,14 @@ public class ChatService {
         if (!"TEST".equals(channel)) { seller.count(tenantId); usageLog.record(tenantId, "CHAT", channel, conv, false, text, rounds, routed.code(), routed.fellBack()); }
         else if (EVAL.get() != null) EVAL.get().add(rounds, tookMs, routed.fellBack(), routed.code());
         if (answer == null || answer.isBlank()) answer = arabicChat ? "معلش يا فندم، ممكن توضحلي أكتر حضرتك محتاج إيه؟ وأنا أساعدك على طول 🌸" : "Sorry, could you tell me a little more about what you need? I will help right away.";
+        if (ctx.summary()[0] == null && orderBox[0] == null) try {   // the customer replied to a product and named none, the reply is about another: the quoted product's own data
+            var shopNow = shopView(tenantId);
+            var quotedSlugs = quoteIgnored(text, answer, shopNow);
+            if (!quotedSlugs.isEmpty()) {
+                String data = quotedData(shopNow, quotedSlugs, arabicChat);
+                if (data != null) { log.warn("Quote check: the reply ignores the quoted product {} (conversation {})", quotedSlugs, conv); events.record(tenantId, conv, channel, routed.code(), "CHECK:QUOTE_IGNORED", null, null); answer = data; }
+            }
+        } catch (RuntimeException e) { log.warn("Quote check skipped: {}", e.toString()); }
         answer = NameAsk.repair(answer);   // «اتحرشت باسم حضرتك؟» (the model garbled the sentence it is given) becomes «أتشرف باسم حضرتك؟»; nothing else changes
         answer = polish(noLaughter(messaging(channel) ? forChannel(channel, answer) : forChannel("WEB", oneMessage(answer))), conv, tenantId, channel, externalId, clientId);
         if (first && ctx.summary()[0] == null && orderBox[0] == null) answer = withIntro(answer, tenantId, conv, channel, externalId, clientId, arabicChat);
@@ -888,6 +898,15 @@ public class ChatService {
             for (var m : FactCheck.mentions(q.text() == null ? "" : q.text(), names)) {
                 names.stream().filter(x -> x.slug().equals(m.slug())).findFirst().ifPresent(x -> { String label = x.name() + " [" + x.slug() + "]"; if (!products.contains(label)) { products.add(label); productNames.add(x.name()); } });
             }
+            // «اخر بنطلون هنا مقاساته ايه» replying to a list of four trousers: «the last» is the last one OF THAT MESSAGE, not the last product the assistant talked about
+            if (products.size() >= 2 && FactCheck.mentions(latest, names).isEmpty()) {
+                String pos = quotedPosition(latest);
+                if (pos != null) {
+                    String keep = "LAST".equals(pos) ? products.get(products.size() - 1) : products.get(0);
+                    products.clear(); products.add(keep);
+                    productNames.clear(); productNames.add(keep.substring(0, keep.lastIndexOf(" [")));
+                }
+            }
             boolean inside = q.messageId() != null && windowFrom > 0 && q.messageId() >= windowFrom;   // the model already has it as history: labelled, not repeated
             List<MessageReplies.Quoted> around = q.messageId() == null || inside ? List.of() : replies.around(tenantId, conv, q.messageId(), 2, 2);
             extras.quoted(q);
@@ -895,7 +914,48 @@ public class ChatService {
             items.add(new ReplyContext.Item(q, around, products, inside, lq.line()));
         }
         REPLY_PRODUCTS.set(productNames);
+        REPLY_SLUGS.set(items.stream().flatMap(i -> i.products().stream()).map(l -> l.substring(l.lastIndexOf('[') + 1, l.length() - 1)).distinct().toList());
         return ReplyContext.block(items, missing, latest);
+    }
+
+    /** «اخر بنطلون» / «الأخير» (LAST) or «اول واحد» / «الأول» (FIRST) said about a quoted list; null when the words are about something else («اخر سعر», «اخر عرض», «اول مرة»). */
+    static String quotedPosition(String text) {
+        String t = FactCheck.light(text);
+        if (t == null || t.isBlank()) return null;
+        if (Pattern.compile("(?<!\\p{L})(?:ال)?[اأإآ]خر(?:ي|ه|ة)?\\s+(?!سعر|عرض|موعد|مره|مرة|طلب|اوردر|أوردر|رساله|رسالة|خصم|تحديث)\\p{L}+|(?<!\\p{L})الاخير(?:ه|ة)?(?!\\p{L})").matcher(t).find()) return "LAST";
+        if (Pattern.compile("(?<!\\p{L})(?:ال)?[اأإ]ول(?:ي|ى|ه|ة)?\\s+(?!مره|مرة|ما|مع|حاجه|حاجة|طلب|اوردر|أوردر|رساله|رسالة|خصم)\\p{L}+|(?<!\\p{L})الاول(?:ي|ى|ه|ة)?(?!\\p{L})").matcher(t).find()) return "FIRST";
+        return null;
+    }
+
+    /**
+     * The customer replied to a message about some products and their own message names no product, but the reply names other products and none of the quoted ones: the model answered about
+     * the wrong product. Returns the quoted slugs, or an empty list.
+     */
+    private List<String> quoteIgnored(String last, String answer, FactCheck.Shop shop) {
+        var slugs = REPLY_SLUGS.get();
+        if (slugs == null || slugs.isEmpty() || answer == null || last == null) return List.of();
+        if (!FactCheck.mentions(last, shop.names()).isEmpty()) return List.of();   // they named a product themselves: that is what they mean
+        var said = FactCheck.mentions(answer, shop.names()).stream().map(FactCheck.Mention::slug).distinct().toList();
+        return !said.isEmpty() && said.stream().noneMatch(slugs::contains) ? slugs : List.of();
+    }
+
+    /** The quoted products' own data from the shop (every option with its price), written by code; null when the shop has none. */
+    private String quotedData(FactCheck.Shop shop, List<String> slugs, boolean ar) {
+        StringBuilder b = new StringBuilder();
+        for (String slug : slugs.stream().limit(2).toList()) {
+            var product = shop.product(slug);
+            if (product == null) continue;
+            var vs = product.variants().stream().filter(v -> v.available() > 0).limit(8).toList();
+            if (vs.isEmpty()) continue;
+            b.append("• ").append(product.name()).append("\n");
+            for (var v : vs) {
+                String opts = String.join(" / ", v.options().values());
+                String price = java.math.BigDecimal.valueOf(v.price()).stripTrailingZeros().toPlainString();
+                b.append("   - ").append(opts.isBlank() ? (ar ? "متاح" : "available") : opts).append(" — ").append(price).append(ar ? " جنيه" : " EGP").append("\n");
+            }
+        }
+        if (b.isEmpty()) return null;
+        return (ar ? "ده المتاح عندنا بالظبط:\n" : "This is exactly what we have:\n") + b + (ar ? "تحب أنهي مقاس أو لون؟" : "Which size or colour would you like?");
     }
 
     // ---- hand-over to the shop team ----------------------------------------------------------------------------------------
@@ -3369,6 +3429,14 @@ public class ChatService {
     /** For a shop too big to list in full: the products matching the customer's newest message, found in code, so a model that forgets to search still sees the right ones. */
     private String productsForMessage(UUID tenantId, String text) {
         List<Map<String, Object>> rows = relatedProducts(tenantId, text);
+        var quoted = REPLY_SLUGS.get();   // a reply to a message about exactly one product, naming none itself («الابيض»): that product comes first, a bare option word never pulls another to the top
+        if (quoted != null && quoted.size() == 1 && FactCheck.mentions(text, shopView(tenantId).names()).isEmpty()) {
+            var own = shopView(tenantId).product(quoted.get(0));
+            if (own != null) {
+                var first = relatedProducts(tenantId, own.name()).stream().filter(r -> quoted.get(0).equals(String.valueOf(r.get("slug")))).findFirst();
+                if (first.isPresent()) { var merged = new ArrayList<Map<String, Object>>(); merged.add(first.get()); rows.stream().filter(r -> !quoted.get(0).equals(String.valueOf(r.get("slug")))).forEach(merged::add); rows = merged; }
+            }
+        }
         if (rows.isEmpty()) return "";
         StringBuilder b = new StringBuilder("\nPRODUCTS FOR THE CUSTOMER'S NEWEST MESSAGE (found for you; use them, and search for anything else):\n");
         for (var r : rows) b.append(productLine(tenantId, r));
