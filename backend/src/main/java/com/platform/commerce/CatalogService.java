@@ -58,6 +58,22 @@ public class CatalogService {
         this.audit = audit;
     }
 
+    /**
+     * The governorates some variants of this product are delivered to, and only those (a TV of 50 inches and up by the shop's own truck to Cairo and Giza):
+     * {@code {"areas": ["CAI","GIZ"], "variantIds": [...]}}; no variantIds means every variant, empty areas (or null) lifts the limit from all of them.
+     */
+    private void setDeliveryOnly(UUID tenantId, UUID productId, Object v) {
+        Map<?, ?> m = v instanceof Map<?, ?> mm ? mm : Map.of("areas", v == null ? List.of() : v);
+        List<String> codes = m.get("areas") instanceof List<?> l ? l.stream().map(String::valueOf).map(x -> x.trim().toUpperCase(Locale.ROOT)).filter(x -> !x.isEmpty()).distinct().toList() : List.of();
+        if (codes.stream().anyMatch(c -> !StoreFulfillmentService.isGovernorate(c))) throw BusinessException.badRequest("VALIDATION_ERROR", "Unknown governorate code");
+        List<UUID> picked = m.get("variantIds") instanceof List<?> l ? l.stream().map(String::valueOf).map(UUID::fromString).toList() : null;
+        jdbc.sql("UPDATE commerce.product_variants SET delivery_only = NULL WHERE product_id = :p AND tenant_id = :t").param("p", productId).param("t", tenantId).update();
+        if (codes.isEmpty() || (picked != null && picked.isEmpty())) return;
+        jdbc.sql("UPDATE commerce.product_variants SET delivery_only = CAST(:d AS varchar[]) WHERE product_id = :p AND tenant_id = :t AND (CAST(:all AS boolean) OR id = ANY(CAST(:ids AS uuid[])))")
+                .param("d", "{" + String.join(",", codes) + "}").param("p", productId).param("t", tenantId).param("all", picked == null)
+                .param("ids", picked == null ? new UUID[0] : picked.toArray(UUID[]::new)).update();
+    }
+
     /** Merchandising fields edited separately from the core product (tags, badge, specs table, size guide, featured, order). */
     @Transactional
     public Map<String, Object> updateExtras(UUID tenantId, UUID actor, UUID id, Map<String, Object> f) {
@@ -69,6 +85,7 @@ public class CatalogService {
         String specs = null;
         try { if (f.get("specs") instanceof List<?> l) specs = mapper.writeValueAsString(l.size() > 40 ? l.subList(0, 40) : l); }
         catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw BusinessException.badRequest("VALIDATION_ERROR", "Invalid specs"); }
+        if (f.containsKey("deliveryOnly")) setDeliveryOnly(tenantId, id, f.get("deliveryOnly"));
         jdbc.sql("""
                 UPDATE commerce.products SET badge = coalesce(:b, badge), tags = CASE WHEN CAST(:tg AS varchar) IS NULL THEN tags ELSE coalesce(string_to_array(NULLIF(CAST(:tg AS varchar), ''), ','), '{}') END,
                   specs = coalesce(CAST(:sp AS jsonb), specs), size_guide = coalesce(:sg, size_guide), is_featured = coalesce(:ft, is_featured),
@@ -659,7 +676,7 @@ public class CatalogService {
         if (slugs.isEmpty()) return out;
         for (String s : slugs) out.putIfAbsent(s, new ArrayList<>());
         for (var row : jdbc.sql("""
-                SELECT p.slug AS slug_key, v.id, v.sku, v.barcode, v.price_minor, v.compare_at_price_minor, v.currency, v.status, v.combo_key,
+                SELECT p.slug AS slug_key, v.id, v.sku, v.barcode, v.price_minor, v.compare_at_price_minor, v.currency, v.status, v.combo_key, array_to_string(v.delivery_only, ',') AS delivery_only,
                   (SELECT coalesce(sum(i.quantity_on_hand - i.quantity_reserved), 0) FROM commerce.inventory_items i
                      JOIN commerce.branches b ON b.id = i.branch_id AND b.is_active WHERE i.variant_id = v.id) AS available
                 FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id
@@ -710,7 +727,7 @@ public class CatalogService {
         out.put("options", options);
         out.put("taxonomy", taxonomyPath(p.get("taxonomy_id")));
         out.put("variants", Rows.camel(jdbc.sql("""
-                SELECT v.id, v.sku, v.barcode, v.price_minor, v.compare_at_price_minor, v.currency, v.status, v.combo_key,
+                SELECT v.id, v.sku, v.barcode, v.price_minor, v.compare_at_price_minor, v.currency, v.status, v.combo_key, array_to_string(v.delivery_only, ',') AS delivery_only,
                   (SELECT coalesce(sum(i.quantity_on_hand - i.quantity_reserved), 0) FROM commerce.inventory_items i
                      JOIN commerce.branches b ON b.id = i.branch_id AND b.is_active WHERE i.variant_id = v.id) AS available
                 FROM commerce.product_variants v WHERE v.product_id = :p AND v.tenant_id = :t AND (NOT :po OR v.status = 'ACTIVE') ORDER BY v.created_at

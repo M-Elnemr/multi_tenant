@@ -2388,6 +2388,20 @@ public class ChatService {
 
             private List<Map<String, Object>> zones() { if (zones == null) zones = fulfilment.zones(tenantId, true); return zones; }
 
+            private final Map<String, List<FactCheck.Limit>> limits = new java.util.HashMap<>();
+
+            public List<FactCheck.Limit> limits(String slug) {
+                return limits.computeIfAbsent(slug, s -> {
+                    List<FactCheck.Limit> out = new ArrayList<>();
+                    for (var r : jdbc.sql("""
+                            SELECT v.combo_key, array_to_string(v.delivery_only, ',') AS codes FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id
+                            WHERE p.tenant_id = :t AND p.slug = :s AND v.status = 'ACTIVE' AND v.delivery_only IS NOT NULL
+                            """).param("t", tenantId).param("s", s).query().listOfRows())
+                        out.add(new FactCheck.Limit(comboMap(String.valueOf(r.get("combo_key"))), new java.util.TreeSet<>(List.of(String.valueOf(r.get("codes")).split(",")))));
+                    return out;
+                });
+            }
+
             public Set<String> served() {
                 if (served == null) {
                     served = new java.util.TreeSet<>();
@@ -2690,15 +2704,17 @@ public class ChatService {
 
     private String modelLoop(Ctx ctx, ChannelAi.Routed routed, String system, List<Turn> turns, List<ToolDef> tools, List<AiUsageService.Round> rounds, MoneyGuard.Allowed allowed) {
         boolean retried = false;
+        List<String> said = new ArrayList<>();   // what the model already told the customer next to a background note (see NOTE_TOOLS); the model believes it was sent
         for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
             long callStart = System.nanoTime();
             Turn t = routed.next(sentSystem(system), sentTurns(system, turns), tools);
             ReplyTimeline.llm(routed.code(), ReplyTimeline.since(callStart));
             rounds.add(new AiUsageService.Round(t.calls().stream().map(ToolCall::name).toList(), t.usage()));
-            if (t.calls().isEmpty() && (t.text() == null || t.text().isBlank()) && !retried) { retried = true; round--; continue; }   // an empty answer now and then: ask once more before giving up
+            if (t.calls().isEmpty() && (t.text() == null || t.text().isBlank()) && !retried && said.isEmpty()) { retried = true; round--; continue; }   // an empty answer now and then: ask once more before giving up
             if (t.calls().isEmpty() && (t.text() == null || t.text().isBlank()) && rounds.stream().allMatch(r -> r.tools().isEmpty()))
                 throw new AiProvider.AiUnavailableException(ProviderFailure.EMPTY, "The model returned no answer twice", null);   // an empty answer after the retry is a provider failure: the other model answers (see the restart in reply)
-            if (t.calls().isEmpty()) return t.text();
+            if (t.calls().isEmpty()) return withSaid(said, t.text());
+            if (t.text() != null && !t.text().isBlank() && t.calls().stream().allMatch(c -> NOTE_TOOLS.contains(c.name()))) said.add(t.text().strip());
             turns.add(t);
             List<ToolResult> results = new ArrayList<>();
             for (ToolCall c : t.calls()) {
@@ -2718,9 +2734,37 @@ public class ChatService {
             Turn last = routed.next(sentSystem(system), sentTurns(system, turns), List.of());
             ReplyTimeline.llm(routed.code(), ReplyTimeline.since(lastStart));
             rounds.add(new AiUsageService.Round(List.of(), last.usage()));
-            if (last.text() != null && !last.text().isBlank()) return last.text();
+            if (last.text() != null && !last.text().isBlank()) return withSaid(said, last.text());
         }
-        return null;
+        return said.isEmpty() ? null : withSaid(said, null);
+    }
+
+    /**
+     * Tools that only leave a note in the background (ask the shop team, remember a fact, plan a follow-up, save a lead, a back-in-stock alert): what the model writes next to them is
+     * meant for the customer. Text next to a lookup («خليني أشوف») or an order/booking action (it may claim success before the result) is not kept.
+     */
+    static final Set<String> NOTE_TOOLS = Set.of("flag_unanswered", "remember_customer", "schedule_follow_up", "save_lead", "notify_back_in_stock");
+
+    /**
+     * The reply with what the model already wrote next to a background note in front of its final words: it saw that text in its own history as sent, so its final words often only
+     * continue it («In the meantime: which one…») and the answer itself was lost. Text the final words already repeat (most of its words are in them) is not added twice.
+     */
+    static String withSaid(List<String> said, String last) {
+        String out = last == null ? "" : last.strip();
+        for (int i = said.size() - 1; i >= 0; i--) {
+            String s = said.get(i);
+            if (out.isEmpty()) { out = s; continue; }
+            if (!coveredBy(s, out)) out = s + "\n\n" + out;
+        }
+        return out.isEmpty() ? last : out;
+    }
+
+    /** Are most (60%+) of the words of {@code part} already in {@code whole}? */
+    static boolean coveredBy(String part, String whole) {
+        var words = java.util.Arrays.stream(FastAnswers.norm(part).split("[^\\p{L}\\p{N}]+")).filter(w -> w.length() >= 3).toList();
+        if (words.isEmpty()) return true;
+        var in = new java.util.HashSet<>(java.util.Arrays.asList(FastAnswers.norm(whole).split("[^\\p{L}\\p{N}]+")));
+        return words.stream().filter(in::contains).count() * 10 >= words.size() * 6L;
     }
 
     // ---- optimized request layout -----------------------------------------------------------------------------
@@ -3625,7 +3669,7 @@ public class ChatService {
 
     /** The product's own classification from the shop: specs («خامة: قطن 100%», «المكونات: ...», «السعرات: ...»), tags and the size guide, in one short line. */
     String productDetails(UUID tenantId, String slug) {
-        var row = jdbc.sql("SELECT specs::text AS specs, array_to_string(tags, ', ') AS tags, size_guide FROM commerce.products WHERE tenant_id = :t AND slug = :s").param("t", tenantId).param("s", slug)
+        var row = jdbc.sql("SELECT p.specs::text AS specs, array_to_string(p.tags, ', ') AS tags, p.size_guide, (SELECT string_agg(coalesce(array_to_string(v.delivery_only, ','), '') || '¤' || v.combo_key, '§') FROM commerce.product_variants v WHERE v.product_id = p.id AND v.status = 'ACTIVE' AND EXISTS (SELECT 1 FROM commerce.product_variants w WHERE w.product_id = p.id AND w.status = 'ACTIVE' AND w.delivery_only IS NOT NULL)) AS delivery_only FROM commerce.products p WHERE p.tenant_id = :t AND p.slug = :s").param("t", tenantId).param("s", slug)
                 .query().listOfRows().stream().findFirst().orElse(null);
         return row == null ? "" : detailsText(row);
     }
@@ -3634,7 +3678,7 @@ public class ChatService {
     Map<String, String> productDetailsFor(UUID tenantId, List<String> slugs) {
         Map<String, String> out = new java.util.HashMap<>();
         if (slugs.isEmpty()) return out;
-        for (var row : jdbc.sql("SELECT slug, specs::text AS specs, array_to_string(tags, ', ') AS tags, size_guide FROM commerce.products WHERE tenant_id = :t AND slug = ANY(:s)").param("t", tenantId).param("s", slugs.toArray(String[]::new)).query().listOfRows())
+        for (var row : jdbc.sql("SELECT p.slug, p.specs::text AS specs, array_to_string(p.tags, ', ') AS tags, p.size_guide, (SELECT string_agg(coalesce(array_to_string(v.delivery_only, ','), '') || '¤' || v.combo_key, '§') FROM commerce.product_variants v WHERE v.product_id = p.id AND v.status = 'ACTIVE' AND EXISTS (SELECT 1 FROM commerce.product_variants w WHERE w.product_id = p.id AND w.status = 'ACTIVE' AND w.delivery_only IS NOT NULL)) AS delivery_only FROM commerce.products p WHERE p.tenant_id = :t AND p.slug = ANY(:s)").param("t", tenantId).param("s", slugs.toArray(String[]::new)).query().listOfRows())
             out.put(String.valueOf(row.get("slug")), detailsText(row));
         return out;
     }
@@ -3646,7 +3690,45 @@ public class ChatService {
         } catch (Exception e) { log.debug("Specs skipped", e); }
         if (row.get("tags") != null && !row.get("tags").toString().isBlank()) parts.add("tags: " + row.get("tags"));
         if (row.get("size_guide") != null && !row.get("size_guide").toString().isBlank()) parts.add("size guide: " + clip(row.get("size_guide").toString().replaceAll("\\s+", " "), 160));
+        String only = deliveryOnlyText(row.get("delivery_only"));
+        if (only != null) parts.add(only);
         return String.join("; ", parts);
+    }
+
+    /**
+     * The delivery limit of a product's variants for the model, or null when it has none. {@code variants} is every active variant as «CAI,GIZ¤المقاس=65 بوصة|...» joined with «§»
+     * (an empty code list: the shop's normal areas). All limited alike: «DELIVERED ONLY TO ...»; some: the option values that are limited («المقاس: 50 بوصة، 55 بوصة، 65 بوصة»).
+     */
+    static String deliveryOnlyText(Object variants) {
+        if (variants == null || variants.toString().isBlank()) return null;
+        List<String[]> rows = new ArrayList<>();   // {codes, combo}
+        for (String e : variants.toString().split("§")) { int k = e.indexOf('¤'); if (k >= 0) rows.add(new String[]{e.substring(0, k), e.substring(k + 1)}); }
+        var limited = rows.stream().filter(r -> !r[0].isBlank()).toList();
+        if (limited.isEmpty()) return null;
+        String rule = "(whatever the shop's other delivery areas: never offer %s, quote a fee or take an order for anywhere else)";
+        java.util.Map<String, List<String[]>> byCodes = new LinkedHashMap<>();
+        for (var r : limited) byCodes.computeIfAbsent(r[0], c -> new ArrayList<>()).add(r);
+        List<String> parts = new ArrayList<>();
+        for (var e : byCodes.entrySet()) {
+            String names = java.util.Arrays.stream(e.getKey().split(",")).map(String::trim).map(c -> FactCheck.govName(c, false) + " " + FactCheck.govName(c, true)).collect(java.util.stream.Collectors.joining(", "));
+            if (e.getValue().size() == rows.size()) { parts.add("DELIVERED ONLY TO " + names + " " + rule.formatted("this product")); continue; }
+            var others = rows.stream().filter(r -> !e.getKey().equals(r[0])).toList();
+            String which = null;
+            for (String opt : comboMap(e.getValue().get(0)[1]).keySet()) {   // the option whose values tell the limited variants apart («المقاس»)
+                var mine = e.getValue().stream().map(r -> comboMap(r[1]).get(opt)).filter(java.util.Objects::nonNull).distinct().toList();
+                var theirs = others.stream().map(r -> comboMap(r[1]).get(opt)).filter(java.util.Objects::nonNull).collect(java.util.stream.Collectors.toSet());
+                if (!mine.isEmpty() && mine.stream().noneMatch(theirs::contains)) { which = opt + ": " + String.join("، ", mine); break; }
+            }
+            if (which == null) which = String.join(" / ", e.getValue().stream().limit(6).map(r -> r[1].replace("|", ", ").replace("=", ": ")).toList());
+            parts.add("the options «" + which + "» are DELIVERED ONLY TO " + names + " " + rule.formatted("them") + "; its other options go to the shop's normal areas");
+        }
+        return String.join("; ", parts);
+    }
+
+    private static java.util.Map<String, String> comboMap(String combo) {
+        java.util.Map<String, String> m = new LinkedHashMap<>();
+        for (String kv : combo.split("\\|")) { int i = kv.indexOf('='); if (i > 0) m.put(kv.substring(0, i), kv.substring(i + 1)); }
+        return m;
     }
 
     /** The shop's products that match a text (a comment, a post caption), as prompt lines with their real prices and options; "" when none match. */
@@ -4740,6 +4822,12 @@ public class ChatService {
         if (!pickup && (line1 == null || line1.length() < 5) && areaGiven != null && areaGiven.length() >= 3) line1 = line1 == null || line1.isBlank() ? areaGiven : line1 + " - " + areaGiven;
         if (!pickup && (line1 == null || line1.length() < 3)) return obj("error", "Ask only for the governorate and the area or neighbourhood (the street and building number are optional: never insist on them, and if the customer refuses them go on without)");
         if (!pickup && !GOVERNORATES.containsKey(gov)) return obj("error", "Ask which governorate to deliver to and use its code from the SHOP FACTS list");
+        if (!pickup) for (CheckoutService.Item it : items) {   // a variant delivered only to some governorates: said plainly here, the checkout refuses it too
+            String only = jdbc.sql("SELECT array_to_string(delivery_only, ',') FROM commerce.product_variants WHERE id = :v AND delivery_only IS NOT NULL").param("v", it.variantId()).query(String.class).optional().orElse(null);
+            if (only != null && !List.of(only.split(",")).contains(gov))
+                return obj("error", variantNames(List.of(it.variantId())) + " is delivered ONLY to " + String.join(", ", java.util.Arrays.stream(only.split(",")).map(c -> FactCheck.govName(c, true) + " (" + c + ")").toList())
+                        + ", not to " + FactCheck.govName(gov, true) + ". Tell the customer that plainly and offer what is possible: another option or product that ships there, an address in those governorates, or pickup if the shop has a branch. Never take this order to " + gov + ".");
+        }
         String pm = text(a, "paymentMethod") == null ? "CASH_ON_DELIVERY" : text(a, "paymentMethod").toUpperCase();
         if (!List.of("CASH_ON_DELIVERY", "CARD").contains(pm)) return obj("error", "Payment method must be CASH_ON_DELIVERY or CARD");
         if ("CARD".equals(pm) && !policy.cardEnabled()) return obj("error", "Card payment is not available; only cash on delivery. Tell the customer that.");

@@ -19,6 +19,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class StoreFulfillmentService {
     private static final Set<String> GOVERNORATES = Set.of("CAI", "GIZ", "ALX", "QLY", "SHR", "DKH", "GHR", "MNF", "BHR", "KFS", "DMT", "PSD", "ISM", "SUZ", "FYM", "BNS", "MNY", "AST", "SHG", "QNA", "LXR", "ASN", "RSS", "WAD", "MTR", "NSN", "SSN");
+
+    /** Is this one of the governorate codes the shop can deliver to (CAI, GIZ, ALX...)? */
+    public static boolean isGovernorate(String code) { return code != null && GOVERNORATES.contains(code); }
     private static final Set<String> REASONS = Set.of("DEFECTIVE", "WRONG_ITEM", "NOT_AS_DESCRIBED", "SIZE", "CHANGED_MIND", "OTHER");
 
     private final JdbcClient jdbc;

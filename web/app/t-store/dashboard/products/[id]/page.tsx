@@ -12,6 +12,7 @@ import { BackLink, EditorSection, PriceSummary, SaveBar, SideCard, StatusPicker 
 import { useRouter, useSearchParams } from "next/navigation";
 import { PublishToExisting } from "@/components/dashboard/publish-to";
 import { ProductExtras, type Extras } from "@/components/dashboard/product-extras";
+import { DeliveryLimit } from "@/components/dashboard/delivery-limit";
 import { ProductImages, type ColorOption, type ProductMedia } from "@/components/dashboard/product-images";
 import { TaxonomyPicker, type TaxonomyNode } from "@/components/dashboard/taxonomy-picker";
 import { OptionBuilder, toRequest, type OptionDraft } from "@/components/dashboard/option-builder";
@@ -20,7 +21,7 @@ import { useFieldErrors } from "@/lib/use-field-errors";
 
 type Detail = {
   id: string; name: string; description: string; brand?: string; status: string; audience?: string; itemCondition?: string; taxonomy?: { id: number; slug: string; nameAr: string; nameEn: string; level: number }[]; badge?: string; tags?: string[]; specs?: { k: string; v: string }[]; sizeGuide?: string; isFeatured?: boolean;
-  variants: { id: string; sku: string; barcode?: string | null; priceMinor: number; compareAtPriceMinor?: number | null; comboKey: string; status: string; available: number; optionValues?: Record<string, string>; stock?: { branchId: string; quantityOnHand: number; quantityReserved: number }[] }[];
+  variants: { id: string; sku: string; barcode?: string | null; priceMinor: number; compareAtPriceMinor?: number | null; comboKey: string; status: string; deliveryOnly?: string | null; available: number; optionValues?: Record<string, string>; stock?: { branchId: string; quantityOnHand: number; quantityReserved: number }[] }[];
   media: ProductMedia[];
   options?: (ColorOption & { name: string; attribute?: string; sizeScale?: string; values: string[] })[];
 };
@@ -122,6 +123,7 @@ export default function EditProduct({ params }: { params: Promise<{ id: string }
             </EditorSection>
 
             <ProductExtras key={data.id + (data.badge ?? "")} id={id} initial={data as Extras} onSaved={reload} />
+            <DeliveryLimit key={data.id + data.variants.map((v) => v.id + (v.deliveryOnly ?? "")).join()} id={id} variants={data.variants} onSaved={reload} />
 
             {can("integration.read") && data.status !== "ARCHIVED" && (
               <div className="space-y-3">

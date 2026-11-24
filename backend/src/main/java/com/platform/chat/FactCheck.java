@@ -64,7 +64,12 @@ final class FactCheck {
         default Set<String> tags() { return Set.of(); }
         /** Everything the shop wrote about the product (names, options, description, specs, tags, size guide) and its own policies, or null when unknown (then the spec lock is off). */
         default String facts(String slug) { return null; }
+        /** The variants of the product that are delivered only to some governorates (a TV of 50 inches and up: Cairo and Giza); empty when none is limited. */
+        default List<Limit> limits(String slug) { return List.of(); }
     }
+
+    /** One variant's options and the only governorates it is delivered to. */
+    record Limit(Map<String, String> options, Set<String> codes) {}
 
     record Problem(String kind, String note, String fixed) {}
 
@@ -310,7 +315,11 @@ final class FactCheck {
         run(out, () -> optionStock(customer, answer, ms, only0, about0, askedForeign[0], load, out));
         run(out, () -> namedDenied(customer, answer, ms, touched, shop, load, out));   // first: the product asked, with its price, says more than a list of near names
         run(out, () -> { if (out.stream().noneMatch(x -> x.kind().equals("FALSE_DENIAL"))) falseDenial(answer, shop, out); });
-        run(out, () -> area(answer, shop, out));
+        Set<String> limitedAbout = new LinkedHashSet<>(context);   // the products this reply is about, for the delivery limits of their variants
+        ms.forEach(m -> limitedAbout.add(m.slug()));
+        if (only0 != null) limitedAbout.add(only0);
+        run(out, () -> deliveryOnly(answer, limitedAbout, shop, load, out));
+        run(out, () -> { if (out.stream().noneMatch(x -> x.kind().equals("AREA"))) area(answer, shop, out); });
         run(out, () -> hours(answer, shop, out));
         run(out, () -> sale(customer, answer, ms, shop, load, out));
         run(out, () -> offTopic(customer, answer, ms, shop, out));
@@ -1285,9 +1294,74 @@ final class FactCheck {
         return m;
     }
 
-    private static final Pattern DELIVERY = Pattern.compile("(?:بنوصل|نوصل|بيوصل|هيوصل|يوصل|توصيل|التوصيل|شحن|الشحن|بنشحن|نشحن|deliver|delivery|ship|shipping)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern DELIVERY = Pattern.compile("(?:بنوصل|نوصل|بيوصل|هيوصل|يوصل|توصل|توصيل|التوصيل|شحن|الشحن|بنشحن|نشحن|deliver|delivery|ship|shipping)", Pattern.CASE_INSENSITIVE);
 
     private static final Pattern ONLY_WORDS = Pattern.compile("(?:(?<!\\p{L})بس(?!\\p{L})|فقط|داخل|only|just)", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Delivery promised for a variant the shop delivers only to some governorates («الاتنين بيتوصلوا للإسكندرية» for 65-inch TVs that go to Cairo and Giza only). A reply about such a
+     * product counts when every variant is limited, or when it says a value only the limited variants have («65 بوصة»); a reply about the 43-inch one is fine.
+     */
+    static void deliveryOnly(String answer, Set<String> slugs, Shop shop, java.util.function.Function<String, Product> load, List<Problem> out) {
+        String l = light(answer);
+        boolean ar = arabic(answer);
+        for (String slug : slugs) {
+            List<Limit> lims = shop.limits(slug);
+            if (lims.isEmpty()) continue;
+            Product p = load.apply(slug);
+            boolean all = p.variants().isEmpty() || p.variants().stream().allMatch(v -> lims.stream().anyMatch(x -> x.options().equals(v.options())));
+            List<Limit> said = new ArrayList<>();
+            Set<String> values = new LinkedHashSet<>();
+            for (Limit lim : lims) {
+                for (var e : lim.options().entrySet()) {
+                    boolean shared = p.variants().stream().anyMatch(v -> e.getValue().equals(v.options().get(e.getKey())) && lims.stream().noneMatch(x -> x.options().equals(v.options())));
+                    if (!shared && (all || saysValue(l, e.getValue()))) { values.add(e.getValue()); if (!said.contains(lim)) said.add(lim); }
+                }
+                if (all && !said.contains(lim)) said.add(lim);
+            }
+            if (said.isEmpty()) continue;
+            Set<String> codes = new java.util.TreeSet<>(said.get(0).codes());
+            for (Limit lim : said) codes.retainAll(lim.codes());   // several limited sizes said: the governorates every one of them goes to
+            for (int[] s : sentences(answer)) {
+                String sentence = l.substring(s[0], s[1]);
+                if (!DELIVERY.matcher(sentence).find() || NEG.matcher(sentence).find()) continue;
+                for (String[] f : areasIn(sentence)) {
+                    if (codes.contains(f[0])) continue;
+                    String names = String.join(ar ? " و" : " and ", codes.stream().map(c -> govName(c, ar)).toList());
+                    String what = p.name() + (all || values.isEmpty() ? "" : " (" + String.join("، ", values) + ")");
+                    String fixed = codes.isEmpty() ? null : ar ? "«" + what + "» بيتوصل لـ" + names + " بس، مش لـ" + govName(f[0], true) + "." : what + " is delivered only to " + names + ", not to " + govName(f[0], false) + ".";
+                    out.add(new Problem("AREA", what + " is delivered ONLY to " + names + ": never promise delivery or a fee to " + govName(f[0], false) + " for it; offer an option or product that ships there, or an address in those governorates.",
+                            fixed == null ? null : replaceSentence(answer, s[0], s[1], fixed)));
+                    return;
+                }
+            }
+        }
+    }
+
+    /** Does the reply say this option value («65 بوصة»: the value itself, or its number on its own, not inside a price)? */
+    static boolean saysValue(String lightAnswer, String value) {
+        String v = light(value).trim();
+        if (v.isEmpty()) return false;
+        if (lightAnswer.contains(v)) return true;
+        var num = java.util.regex.Pattern.compile("^(\\d+)").matcher(v);
+        return num.find() && java.util.regex.Pattern.compile("(?<![\\d.,])" + num.group(1) + "(?![\\d.,]?\\d)").matcher(lightAnswer).find();
+    }
+
+    /** The governorates a sentence (already light) names, as {code, the words said, index of the first word}. */
+    static List<String[]> areasIn(String sentence) {
+        List<Tok> toks = tokens(sentence, 0, sentence.length());
+        List<String[]> found = new ArrayList<>();
+        for (var e : AREAS.entrySet()) {
+            List<String> w = new ArrayList<>();
+            for (Tok t : tokens(e.getKey(), 0, e.getKey().length())) w.add(t.word());
+            for (int i = 0; i + w.size() <= toks.size(); i++) {
+                boolean all = true;
+                for (int k = 0; k < w.size() && all; k++) all = toks.get(i + k).word().equals(w.get(k));
+                if (all && found.stream().noneMatch(f -> f[0].equals(e.getValue()))) { found.add(new String[]{e.getValue(), e.getKey(), String.valueOf(i)}); break; }
+            }
+        }
+        return found;
+    }
 
     private static void area(String answer, Shop shop, List<Problem> out) {
         Set<String> served = shop.served();

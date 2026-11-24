@@ -255,6 +255,15 @@ public class CheckoutService {
             else if ("FREE_ABOVE".equals(type)) shipping = sm.get("free_above_minor") != null && subtotal >= ((Number) sm.get("free_above_minor")).longValue() ? 0 : fee;
             if (!"PICKUP".equals(type) && (r.address() == null || blank(r.address().addressLine1()) || blank(r.address().phone()) || (blank(r.address().city()) && blank(r.address().governorateCode()))))
                 throw BusinessException.badRequest("ADDRESS_REQUIRED", "A delivery address is required");
+            if (!"PICKUP".equals(type) && r.address() != null && !blank(r.address().governorateCode())) {   // a variant the shop delivers only to some governorates (a big TV by its own truck)
+                String gov = r.address().governorateCode().trim().toUpperCase(java.util.Locale.ROOT);
+                for (QuoteLine l : lines) {
+                    String only = jdbc.sql("SELECT array_to_string(delivery_only, ',') FROM commerce.product_variants WHERE id = :v AND tenant_id = :t AND delivery_only IS NOT NULL")
+                            .param("v", l.variantId()).param("t", tenantId).query(String.class).optional().orElse(null);
+                    if (only != null && !List.of(only.split(",")).contains(gov))
+                        throw BusinessException.badRequest("PRODUCT_NOT_DELIVERED_THERE", "Sorry, " + l.productName() + (l.variantName() == null ? "" : " (" + l.variantName() + ")") + " is delivered only to " + only.replace(",", ", ") + ". Choose an address there or pick it up from the shop.");
+                }
+            }
             if ("ZONES".equals(type)) {
                 var zone = fulfilment.zoneFor(tenantId, r.address().governorateCode());
                 if (zone == null) throw BusinessException.badRequest("NO_DELIVERY_TO_GOVERNORATE", "Sorry, we do not deliver to this governorate yet");
