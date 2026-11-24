@@ -34,6 +34,8 @@ class DeepSeekSelfReviewIntegrationTest extends IntegrationTestBase {
     static final List<JsonNode> DEEPSEEK_SEEN = new CopyOnWriteArrayList<>(), GLM_SEEN = new CopyOnWriteArrayList<>();
     static final HttpServer HIVE;
     static volatile int failFromCall = Integer.MAX_VALUE;   // the Nth DeepSeek request of a test and later answer HTTP 500
+    /** Text only this test's chat sends (its shop's unique name): a background job of the app that calls the model meanwhile gets «ok» and never takes a scripted answer. */
+    static volatile String marker = null;
 
     static {
         try {
@@ -41,6 +43,13 @@ class DeepSeekSelfReviewIntegrationTest extends IntegrationTestBase {
             HIVE.createContext("/v1/chat/completions", ex -> {
                 JsonNode req = JSON.readTree(ex.getRequestBody().readAllBytes());
                 boolean glm = req.path("model").asText().contains("glm");
+                String m = marker;
+                if (m != null && !req.toString().contains(m)) {   // not this test's chat (a background job): answer and move on, nothing counted or taken
+                    byte[] ok = text("ok");
+                    try { ex.sendResponseHeaders(200, ok.length); ex.getResponseBody().write(ok); } catch (java.io.IOException ignored) { /* the client moved on */ }
+                    ex.close();
+                    return;
+                }
                 int n;
                 Function<JsonNode, byte[]> f = null;
                 if (glm) { GLM_SEEN.add(req); n = 0; }
@@ -77,7 +86,7 @@ class DeepSeekSelfReviewIntegrationTest extends IntegrationTestBase {
     @BeforeEach
     void clean() {
         synchronized (DeepSeekSelfReviewIntegrationTest.class) { DEEPSEEK.clear(); }
-        DEEPSEEK_SEEN.clear(); GLM_SEEN.clear(); failFromCall = Integer.MAX_VALUE;
+        DEEPSEEK_SEEN.clear(); GLM_SEEN.clear(); failFromCall = Integer.MAX_VALUE; marker = null;
         FakeAiProvider.reset();
     }
 
@@ -98,7 +107,9 @@ class DeepSeekSelfReviewIntegrationTest extends IntegrationTestBase {
     Shop shop() throws Exception {
         Tenant t = onboard("STORE");
         String branch = JsonPath.read(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null).andReturn().getResponse().getContentAsString(), "$[0].id");
-        String name = "قميص قطن " + uniq();
+        String tag = uniq();
+        String name = "قميص قطن " + tag;
+        marker = tag;   // every request of this chat carries it (the customer asks about this product, the reviewer reads the chat)
         onHost(t.host(), t.access(), "POST", "/api/v1/store/products",
                 "{\"taxonomySlug\":\"shirts-tops\",\"audience\":\"MEN\",\"name\":\"%s\",\"variants\":[{\"sku\":\"S-%s\",\"priceMinor\":15000,\"optionValues\":{},\"stock\":[{\"branchId\":\"%s\",\"quantity\":9}]}]}".formatted(name, uniq(), branch))
                 .andExpect(status().isCreated());
