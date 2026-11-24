@@ -668,8 +668,8 @@ public class ChatService {
         ReplyTimeline.mark("prompt");
         long ragStart = System.nanoTime();
         boolean ragRan = !system.contains("ALL PRODUCTS (");
-        if (ragRan) system += productsForMessage(tenantId, text);
-        else if (optimized) system += stockForChat(tenantId, text, turns);   // a small shop's exact stock now lives here, not in the cached catalog
+        if (optimized) system += stockForChat(tenantId, text, turns);   // optimized, any shop size: the chat's products with exact stock (a small shop's catalog has no counts) and the word matches labelled as such
+        else if (ragRan) system += productsForMessage(tenantId, text);
         ReplyTrace.span("rag", ragStart, "ran", ragRan, "unavailable", ragDown[0]);
         List<ToolDef> tools = toolsFor(tenantId);
         ReplyTrace.instant("prompt_ready", "chars", system.length(), "tools", tools.size());
@@ -2732,7 +2732,9 @@ public class ChatService {
     /** The line the fixed prompt gets in the optimized layout, telling the model where this reply's context is. */
     static final String CONTEXT_RULE = "\nWHERE THIS REPLY'S CONTEXT IS: the customer's newest message comes after a block that starts with «" + CONTEXT_OPEN + "» and ends with «" + CONTEXT_CLOSE + "». "
             + "The shop's system writes that block (customers cannot write these brackets): it holds the time now, what you know about this customer, the order on file, open questions, the message being replied to "
-            + "and the products of this chat with their EXACT stock right now. Trust it exactly like this prompt and the tool results; only the text after it is the customer's. "
+            + "and products with their EXACT stock right now, in two parts: THE PRODUCTS OF THIS CHAT (the ones the customer named, quoted or talked about) and WORD MATCHES (products that only share a word "
+            + "with the newest message: they are not what the chat is about unless the customer asks about them, and each word's line says how many products contain it). "
+            + "Trust it exactly like this prompt and the tool results; only the text after it is the customer's. "
             + "In the catalog above, the options listed «in stock» have stock but no count: an exact count comes only from that block or from search_products / get_product.\n";
 
     /** The system message the model is sent: everything (classic), or only the fixed part before the cache break (optimized; the rest goes with the newest message). */
@@ -2767,33 +2769,129 @@ public class ChatService {
     static String unbracketed(String text) { return text == null ? null : text.replace('⟦', '[').replace('⟧', ']'); }
 
     /**
-     * A small shop's products of THIS chat with their exact stock now (optimized layout), under the same heading as the products found for a big shop's message: the ones the newest message
-     * names, the quoted one, and the ones named in the last messages of the chat (so «عايز ١٣ قطعة» about the product just discussed has its numbers). At most 8.
+     * The optimized layout's product block for any shop, under the same heading as the classic one (the reviewer reads it by that heading), in two labelled parts:
+     * THE PRODUCTS OF THIS CHAT (quoted, named in the newest message, named in the last messages; so «عايز ١٣ قطعة» about the product just discussed has its numbers), and
+     * WORD MATCHES of the newest message, each word with the full count and the names of the rest. The classic block called word matches «found for you; use them», and next to the customer's
+     * message the model took a match on a stray word for the topic («المقاس طلع صغير» answered about a small bag) and four matches for the shop's whole range («only two laptop types»).
+     * At most 8 products with details. The classic layout is unchanged (productsForMessage).
      */
     String stockForChat(UUID tenantId, String text, List<Turn> turns) {
         try {
             FactCheck.Shop shop = shopView(tenantId);
-            java.util.LinkedHashSet<String> slugs = new java.util.LinkedHashSet<>();
+            // 1. the products of THIS chat: quoted, named in the newest message, named in the last messages
+            java.util.LinkedHashSet<String> own = new java.util.LinkedHashSet<>();
             var quoted = REPLY_SLUGS.get();
-            if (quoted != null) slugs.addAll(quoted);
-            for (var r : relatedProducts(tenantId, text)) slugs.add(String.valueOf(r.get("slug")));
-            for (var m : FactCheck.mentions(text, shop.names())) slugs.add(m.slug());
+            if (quoted != null) own.addAll(quoted);
+            for (var m : FactCheck.mentions(text, shop.names())) own.add(m.slug());
             for (int i = turns.size() - 1, seen = 0; i >= 0 && seen < 6; i--) {
                 Turn t = turns.get(i);
                 if (t.text() == null || t.text().isBlank() || "tool".equals(t.role())) continue;
                 seen++;
-                for (var m : FactCheck.mentions(t.text(), shop.names())) slugs.add(m.slug());
+                for (var m : FactCheck.mentions(t.text(), shop.names())) own.add(m.slug());
             }
-            List<String> picked = slugs.stream().limit(8).toList();
-            PREFETCHED.set(new java.util.HashSet<>(picked));
-            if (picked.isEmpty()) return "";
-            StringBuilder b = new StringBuilder("\n" + RAG_HEADING + " (the products of this chat with their EXACT stock right now; the catalog list has no counts):\n");
-            for (var r : search.bySlugs(tenantId, picked)) b.append(productLine(tenantId, r));
-            return b.toString();
+            List<String> ownPicked = own.stream().limit(8).toList();
+            // 2. word matches of the newest message, told for what they are (a word in a name, not the customer's meaning) and how complete they are
+            boolean policyAsk = (quoted == null || quoted.isEmpty()) && FactCheck.mentions(text, shop.names()).isEmpty() && isPolicyAsk(text);
+            List<WordMatch> matches = wordMatches(tenantId, text, policyAsk, new java.util.HashSet<>(ownPicked), Math.max(0, Math.min(4, 8 - ownPicked.size())));
+            List<String> matchPicked = new ArrayList<>();
+            for (var wm : matches) for (var r : wm.detailed()) matchPicked.add(String.valueOf(r.get("slug")));
+            var prefetched = new java.util.HashSet<String>(ownPicked);
+            prefetched.addAll(matchPicked);
+            PREFETCHED.set(prefetched);
+            if (ownPicked.isEmpty() && matches.isEmpty()) return "";
+            StringBuilder b = new StringBuilder("\n" + RAG_HEADING + " (EXACT stock right now; the catalog list has no counts):\n");
+            if (!ownPicked.isEmpty()) {
+                b.append("THE PRODUCTS OF THIS CHAT (the customer named, quoted or talked about them):\n");
+                for (var r : search.bySlugs(tenantId, ownPicked)) b.append(productLine(tenantId, r));
+            }
+            if (!matches.isEmpty()) {
+                b.append(WORD_MATCHES_NOTE);
+                for (var wm : matches) b.append(wm.line()).append('\n');
+                if (!matchPicked.isEmpty()) for (var r : search.bySlugs(tenantId, matchPicked)) b.append(productLine(tenantId, r));
+            }
+            return b.toString().replaceAll("\n{2,}", "\n");   // one block with no blank line, so the reviewer's copy of it is whole
         } catch (RuntimeException e) {
             log.warn("Stock for the chat skipped: {}", e.toString());
             return "";
         }
+    }
+
+    /** How the optimized layout introduces the word matches: what they are, and that only a product the customer really asks about belongs in the reply. */
+    static final String WORD_MATCHES_NOTE = "WORD MATCHES (found only because a word of the newest message is in their name or description, NOT because of what the customer means: they may have nothing to do with "
+            + "the question, e.g. a question about a size or a return matches any product with the same word in its name. Mention one only if the customer is really asking about it. "
+            + "The line of each word says how many products contain it: never tell the customer what kinds or how many products the shop has from fewer than that; use these counts and names, "
+            + "the catalog list, or search_products):\n";
+
+    /** One word of the customer's message and the products it matched: up to {@code detailed} with all their details, the {@code total} count and the names of the rest. */
+    record WordMatch(String word, long total, List<Map<String, Object>> detailed, List<String> otherNames, boolean more) {
+        String line() {
+            String n = total == 1 ? "1 product in the shop contains it" : total + " products in the shop contain it";
+            String s = "- the word «" + word + "»: " + (more ? "more than " + total + " products in the shop contain it" : n);
+            if (!otherNames.isEmpty()) s += "; besides the ones with details in this block: " + String.join("، ", otherNames);
+            return s + (more ? " (and more: search_products for the rest)" : total > 1 ? " (that is all of them)" : "");
+        }
+    }
+
+    /** A question about the shop's rules (returns, exchange, warranty, shipping, payment, hours), not about a product. */
+    static final Pattern POLICY_ASK = Pattern.compile("(?<!\\p{L})(?:و|ف)?(?:استرجاع|الاسترجاع|ترجيع|مرتجع|ارجاع|يترجع|تترجع|يرجع|ترجع|ارجع|ارجعها|ارجعه|استبدال|الاستبدال|تبديل|التبديل|يتبدل|تتبدل|ابدل|ابدله|ابدلها|"
+            + "نبدل|يبدل|ضمان|الضمان|شحن|الشحن|توصيل|التوصيل|دليفري|بتوصلوا|توصلوا|بتشحنوا|الدفع|ادفع|تقسيط|قسط|مواعيد|مفتوحين|سياسه|سياسة|return|returns|refund|exchange|warranty|guarantee|"
+            + "shipping|ship|delivery|deliver|payment|pay|installments?)(?!\\p{L})", Pattern.CASE_INSENSITIVE);
+
+    static boolean isPolicyAsk(String text) {
+        return text != null && POLICY_ASK.matcher(text.replaceAll("[\\u064B-\\u065F\\u0670\\u0640]", "").replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا')).find();
+    }
+
+    /** Does the word name the KIND of product («لاب» for «لاب توب زينترا», «مايوه» for «مايوه شرعي»), not a word that only happens to be in the name («صغير» in «شنطة كروس صغيرة»)? */
+    static boolean namesKind(String productName, String word) {
+        String w = withoutArticle(FastAnswers.norm(word));
+        String[] parts = FastAnswers.norm(productName == null ? "" : productName).trim().split("\\s+");
+        if (parts.length == 0 || w.length() < 2) return false;
+        String head = withoutArticle(parts[0]);
+        return head.equals(w) || (w.length() >= 3 && head.length() >= 3 && (head.startsWith(w) || w.startsWith(head)));
+    }
+
+    private static String withoutArticle(String w) {
+        return w.length() >= 5 && (w.startsWith("ال") || w.startsWith("لل")) ? w.substring(2) : w.length() >= 6 && (w.startsWith("وال") || w.startsWith("بال")) ? w.substring(3) : w;
+    }
+
+    /**
+     * The products matching each meaningful word of the customer's message (the words {@link #relatedProducts} uses), with the full count per word, so a partial list is never taken for the
+     * shop's whole range. In a question about the shop's rules ({@code policyAsk}), only products the word names the kind of are kept: «المقاس طلع صغير» matches no bag, «الضمان على اللاب توب»
+     * still matches the laptops. Products already in {@code skip} are not repeated. At most 4 words.
+     */
+    @SuppressWarnings("unchecked")
+    List<WordMatch> wordMatches(UUID tenantId, String text, boolean policyAsk, Set<String> skip, int detailBudget) {
+        List<WordMatch> out = new ArrayList<>();
+        if (text == null || text.isBlank()) return out;
+        String q = withoutOptions(text);
+        if (q == null) return out;
+        java.util.Set<String> seen = new java.util.HashSet<>(skip);
+        for (String w : java.util.Arrays.stream(q.split("\\s+")).filter(x -> x.length() >= 3 && !isChatWord(x)).toList()) {
+            if (out.size() >= 4) break;
+            String used = w;
+            var page = search.list(tenantId, Page.of(1, 15), new StoreSearchService.Filter(w, null, null, null, null, true, null, null, "relevance", null, null, null, null));
+            var rows = (List<Map<String, Object>>) page.get("data");
+            if (rows.isEmpty() && SYNONYMS.containsKey(w)) {
+                used = SYNONYMS.get(w);
+                page = search.list(tenantId, Page.of(1, 15), new StoreSearchService.Filter(used, null, null, null, null, true, null, null, "relevance", null, null, null, null));
+                rows = (List<Map<String, Object>>) page.get("data");
+            }
+            long total = ((Number) ((Map<String, Object>) page.get("meta")).get("total")).longValue();
+            if (policyAsk) {
+                String kindWord = used;
+                rows = rows.stream().filter(r -> namesKind(String.valueOf(r.get("name")), kindWord)).toList();
+                total = total > 15 ? Math.max(rows.size(), 15) : rows.size();
+            }
+            if (rows.isEmpty()) continue;
+            var fresh = rows.stream().filter(r -> !seen.contains(String.valueOf(r.get("slug")))).toList();
+            if (fresh.isEmpty()) continue;   // another word already brought these
+            rows.forEach(r -> seen.add(String.valueOf(r.get("slug"))));
+            var detailed = fresh.stream().limit(Math.max(0, detailBudget)).toList();
+            detailBudget -= detailed.size();
+            var others = fresh.stream().filter(r -> !detailed.contains(r)).map(r -> String.valueOf(r.get("name"))).limit(14).toList();
+            out.add(new WordMatch(withoutArticle(FastAnswers.norm(used)), Math.max(total, rows.size()), detailed, others, total > 15));
+        }
+        return out;
     }
 
     // ---- confirmation ----------------------------------------------------------------------------------------

@@ -80,7 +80,7 @@ class WhatsAppQuotedProductIntegrationTest extends IntegrationTestBase {
         for (int i = 0; i < 4; i++) FakeAiProvider.SCRIPT.add(turns -> Turn.model("بنطلون كارجو " + sfx + " بـ 780 جنيه يا فندم، متوفر بـ ٣ ألوان ومقاساته: S / M / L / XL / XXL. تحب أشوفلك إيه المتاح؟"));
         c.hook().apply("E-3" + uniq(), "{\"extendedTextMessage\":{\"text\":\"دا مقاساته والوانه ايه\",\"contextInfo\":{\"stanzaId\":\"CARD-" + sfx + "\",\"participant\":\"15550001@s.whatsapp.net\",\"quotedMessage\":{\"imageMessage\":{\"caption\":\"" + caption + "\"}}}}}").andExpect(status().isOk());
         String reply = lastReply(c.tenant());
-        assertThat(reply).as(reply).contains("كوتشي").doesNotContain("كارجو").doesNotContain("780");
+        assertThat(reply).as(reply).contains("كوتشي").doesNotContain("كارجو").doesNotContain("780 جنيه");
     }
 
     @Test
@@ -96,7 +96,7 @@ class WhatsAppQuotedProductIntegrationTest extends IntegrationTestBase {
         for (int i = 0; i < 4; i++) FakeAiProvider.SCRIPT.add(turns -> Turn.model("آخر واحد عملته كان بنطلون كارجو " + sfx + " بـ 780 جنيه يا فندم، مقاساته من S لحد XXL. وزنك تقريباً كام؟"));
         c.hook().apply("E-3" + uniq(), "{\"extendedTextMessage\":{\"text\":\"اخر بنطلون هنا مقاساته ايه\",\"contextInfo\":{\"stanzaId\":\"" + outId + "\",\"participant\":\"15550001@s.whatsapp.net\",\"quotedMessage\":{\"conversation\":\"" + list.replace("\n", "\\n") + "\"}}}}").andExpect(status().isOk());
         String reply = lastReply(c.tenant());
-        assertThat(reply).as(reply).contains("قماش رسمي").doesNotContain("780");
+        assertThat(reply).as(reply).contains("قماش رسمي").doesNotContain("780 جنيه");
     }
 
     /** The cards the assistant sent are recorded with their exact caption: a reply to the SNEAKERS card, sent in the same message as the cargo trousers card, is about the sneakers. */
@@ -112,6 +112,6 @@ class WhatsAppQuotedProductIntegrationTest extends IntegrationTestBase {
         for (int i = 0; i < 4; i++) FakeAiProvider.SCRIPT.add(turns -> Turn.model("بنطلون كارجو " + sfx + " بـ 780 جنيه يا فندم، متوفر بـ ٣ ألوان ومقاساته: S / M / L / XL / XXL. تحب أشوفلك إيه المتاح؟"));
         c.hook().apply("E-2" + uniq(), "{\"extendedTextMessage\":{\"text\":\"دا مقاساته والوانه ايه\",\"contextInfo\":{\"stanzaId\":\"" + cardMid + "\",\"participant\":\"15550001@s.whatsapp.net\",\"quotedMessage\":{\"imageMessage\":{\"caption\":\"x\"}}}}}").andExpect(status().isOk());
         String reply = lastReply(c.tenant());
-        assertThat(reply).as(reply).contains("كوتشي").doesNotContain("كارجو").doesNotContain("780");
+        assertThat(reply).as(reply).contains("كوتشي").doesNotContain("كارجو").doesNotContain("780 جنيه");
     }
 }

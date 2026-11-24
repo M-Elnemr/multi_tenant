@@ -79,4 +79,30 @@ class OptimizedLayoutTest {
         assertThat(m).containsEntry("COMBINATIONS IN STOCK (counts: in this reply's context or get_product)", "أسود + M / أبيض + L");
         assertThat(ChatService.withoutCounts(Map.of("المقاس", "M (2 in stock) / L (1 in stock)"))).containsEntry("المقاس", "M / L");
     }
+
+    @Test
+    void policyQuestionsAreToldFromProductQuestions() {
+        for (String q : List.of("لو المقاس طلع صغير ابدله ازاي؟", "الضمان قد ايه على اللاب توب؟", "والمايوه ينفع يترجع؟", "بتوصلوا اسكندرية؟", "لو فتحت السماعة ومعجبتنيش ارجعها؟", "امتى الشحن يبقى ببلاش؟", "can I return it?"))
+            assertThat(ChatService.isPolicyAsk(q)).as(q).isTrue();
+        for (String q : List.of("عايز بدلة كحلي", "عايز جينز سليم فيت", "عايز شاحن سريع", "حذاء كعب للسهرة مقاس ٣٨", "عندكم جزم رجالي؟"))
+            assertThat(ChatService.isPolicyAsk(q)).as(q).isFalse();
+    }
+
+    @Test
+    void aWordNamesTheKindOnlyWhenItIsTheProductsOwnKind() {
+        assertThat(ChatService.namesKind("لاب توب زينترا بوك 14", "اللاب")).isTrue();
+        assertThat(ChatService.namesKind("مايوه شرعي بوركيني", "والمايوه")).isTrue();   // «وال» joined to the word is stripped like «ال»
+        assertThat(ChatService.namesKind("مايوه شرعي بوركيني", "المايوه")).isTrue();
+        assertThat(ChatService.namesKind("سماعة سونيك بادز برو", "السماعة")).isTrue();
+        assertThat(ChatService.namesKind("شنطة كروس صغيرة", "صغير")).isFalse();
+        assertThat(ChatService.namesKind("جراب لاب توب زينترا", "اللاب")).isFalse();
+    }
+
+    @Test
+    void aWordMatchLineSaysHowCompleteItIs() {
+        var all = new ChatService.WordMatch("لاب", 6, List.of(), List.of("بوك 14", "إير 13"), false);
+        assertThat(all.line()).contains("6 products in the shop contain it").contains("بوك 14، إير 13").contains("that is all of them");
+        var more = new ChatService.WordMatch("تيشيرت", 15, List.of(), List.of(), true);
+        assertThat(more.line()).contains("more than 15").contains("search_products");
+    }
 }
