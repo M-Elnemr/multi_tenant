@@ -43,8 +43,8 @@ class AiTelemetryTest {
         BlockingQueue<String> auth = new LinkedBlockingQueue<>();
         HttpServer srv = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         srv.createContext("/api/public/otel/v1/traces", ex -> {
+            auth.add(String.valueOf(ex.getRequestHeaders().getFirst("Authorization")));   // the header first: the test reads it right after the body shows up
             got.add(new String(ex.getRequestBody().readAllBytes()));
-            auth.add(String.valueOf(ex.getRequestHeaders().getFirst("Authorization")));
             ex.sendResponseHeaders(200, -1); ex.close();
         });
         srv.start();
