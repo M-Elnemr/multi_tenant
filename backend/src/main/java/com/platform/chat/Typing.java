@@ -35,18 +35,37 @@ public class Typing {
     private static final Handle NONE = () -> { };
 
     /** Starts the timer for one reply: {@code signal} runs after the delay and every {@code repeatMs} until the handle is closed (at most {@link #MAX_MS}). */
-    public static Handle start(Runnable signal, long repeatMs) {
+    public static Handle start(Runnable signal, long repeatMs) { return start(null, signal, repeatMs, null); }
+
+    /** Replies of one customer still showing typing ({@code key} = channel and customer), so a «stop» is sent only when the last of them is done. */
+    private static final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger> ACTIVE = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Same, and {@code stop} runs once the reply is ready when typing was shown and no other reply of the same customer ({@code key}) is still being written: for a network whose
+     * typing does not end by itself with the reply (WhatsApp on the shop's own number kept «typing…» after the answer, 2026-11-25).
+     */
+    public static Handle start(String key, Runnable signal, long repeatMs, Runnable stop) {
         if (signal == null || afterMs <= 0 || repeatMs <= 0) return NONE;
         long started = System.currentTimeMillis();
+        java.util.concurrent.atomic.AtomicBoolean shown = new java.util.concurrent.atomic.AtomicBoolean();
+        if (key != null) ACTIVE.computeIfAbsent(key, k -> new java.util.concurrent.atomic.AtomicInteger()).incrementAndGet();
         Runnable call = () -> CALLS.execute(() -> {
-            try { signal.run(); } catch (RuntimeException e) { log.debug("Typing signal not sent: {}", e.getMessage()); }
+            try { shown.set(true); signal.run(); } catch (RuntimeException e) { log.debug("Typing signal not sent: {}", e.getMessage()); }
         });
         ScheduledFuture<?>[] task = new ScheduledFuture<?>[1];
         task[0] = TIMER.scheduleAtFixedRate(() -> {
             if (System.currentTimeMillis() - started > MAX_MS) { task[0].cancel(false); return; }
             call.run();
         }, afterMs, repeatMs, TimeUnit.MILLISECONDS);
-        return () -> task[0].cancel(false);
+        java.util.concurrent.atomic.AtomicBoolean closed = new java.util.concurrent.atomic.AtomicBoolean();
+        return () -> {
+            if (!closed.compareAndSet(false, true)) return;
+            task[0].cancel(false);
+            boolean last = key == null || ACTIVE.computeIfPresent(key, (k, n) -> n.decrementAndGet() <= 0 ? null : n) == null;
+            if (stop != null && shown.get() && last) CALLS.execute(() -> {
+                try { stop.run(); } catch (RuntimeException e) { log.debug("Typing stop not sent: {}", e.getMessage()); }
+            });
+        };
     }
 
     static long afterMs() { return afterMs; }

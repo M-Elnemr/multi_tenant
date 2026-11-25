@@ -862,12 +862,32 @@ public class ChatService {
             log.info("AI answer dropped: the team took conversation {} over during the reply", conv);
             return new Reply(conv, "", orderBox[0], List.of());
         }
+        // the customer wrote again while this reply was written («طيب عندك كوتشيات ايه» then «عايز حاجه للخروج بليل»): the newer message's reply reads both and answers
+        // both, so this one, about the first line only, is not sent as well (2026-11-25: two replies, the second only about the first line). A reply that made an order
+        // summary or placed an order is always sent, and a newer «شكرا» or «تمام» does not replace a real answer.
+        if (!"TEST".equals(channel) && ctx.summary()[0] == null && orderBox[0] == null && supersededBy(conv, userMsgId)) {
+            log.info("AI answer dropped: the customer wrote again in conversation {} and that reply answers both", conv);
+            events.record(tenantId, conv, channel, routed.code(), "SUPERSEDED", null, null);
+            return new Reply(conv, "", null, List.of());
+        }
         long saved = jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x) RETURNING id").param("c", conv).param("x", answer).query(Long.class).single();
         if (ctx.summary()[0] != null) markSummary(conv, saved);
         jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();
         boolean orderText = ctx.summary()[0] != null || orderBox[0] != null;   // the order summary and the confirmation list the items: a product card after them is only noise
         return new Reply(conv, answer, orderBox[0], orderText ? List.of() : ctx.products(), saved, userMsgId);
     }
+
+    /** A newer customer message than {@code userMsgId} in the chat that is a real message (not «تمام», «شكرا», an emoji), whose reply will read this one too. */
+    private boolean supersededBy(UUID conv, long userMsgId) {
+        for (String t : jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id > :u ORDER BY id").param("c", conv).param("u", userMsgId).query(String.class).list()) {
+            String raw = t == null ? "" : t.strip(), n = FastAnswers.norm(raw);
+            if (raw.length() < 3 || n.isEmpty() || isConfirmation(raw) || FILLER.contains(n) || YES.contains(n) || FastAnswers.emojiOnly(raw) || THANKS_ONLY.matcher(n).matches()) continue;
+            return true;
+        }
+        return false;
+    }
+
+    private static final Pattern THANKS_ONLY = Pattern.compile("^(?:شكرا|شكرًا|متشكر|متشكره|ميرسي|thanks|thank you|thx|تسلم|تسلمي|الله يخليك)(?:\\s+\\S+){0,2}$");
 
     /**
      * What the customer said BEFORE the messages the model is given as history (the window is the last {@code AI_HISTORY} messages): their first few messages and the latest ones that fell out of

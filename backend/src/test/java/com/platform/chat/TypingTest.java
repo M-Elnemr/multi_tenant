@@ -44,4 +44,25 @@ class TypingTest {
         try (var t = Typing.start(sent::incrementAndGet, 0)) { Thread.sleep(200); }
         assertThat(sent.get()).isZero();
     }
+
+    @Test
+    void theStopIsSentOnceWhenTypingWasShownAndOnlyAfterTheLastReplyOfThatCustomer() throws Exception {
+        new Typing(50);
+        AtomicInteger stops = new AtomicInteger();
+        // a quick reply showed no typing: no stop
+        try (var t = Typing.start("k0", () -> { }, 50, stops::incrementAndGet)) { Thread.sleep(10); }
+        Thread.sleep(100);
+        assertThat(stops.get()).isZero();
+        // two replies of one customer (the second line came while the first was written): the stop waits for the last one
+        var first = Typing.start("k1", () -> { }, 50, stops::incrementAndGet);
+        var second = Typing.start("k1", () -> { }, 50, stops::incrementAndGet);
+        Thread.sleep(150);
+        first.close();
+        first.close();
+        Thread.sleep(100);
+        assertThat(stops.get()).as("the other reply is still typing").isZero();
+        second.close();
+        Thread.sleep(150);
+        assertThat(stops.get()).isEqualTo(1);
+    }
 }

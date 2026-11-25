@@ -256,6 +256,11 @@ public class EvolutionService {
         api.call("POST", "/chat/sendPresence/" + row(tenantId).get("instance"), Map.of("number", number.replaceAll("\\D", ""), "presence", "composing", "delay", 60_000));
     }
 
+    /** Ends «typing…» on the customer's WhatsApp once the reply is ready (the long presence above would otherwise stay up to a minute after the answer). */
+    private void typingDone(UUID tenantId, String number) {
+        api.call("POST", "/chat/sendPresence/" + row(tenantId).get("instance"), Map.of("number", number.replaceAll("\\D", ""), "presence", "paused", "delay", 0));
+    }
+
     public enum Delivery { SENT, FAILED, DEFERRED }
 
     /** One message from the shop's own number, text or a picture with the text as its caption. Used by broadcasts, which retry a deferred message later. */
@@ -459,7 +464,7 @@ public class EvolutionService {
                 else if (!aiOn) return;
                 else {
                     ChatService.Reply reply;
-                    try (var typing = Typing.start(() -> typing(tenantId, sender), 15_000)) {   // «typing…» on the customer's WhatsApp while a slow reply is written
+                    try (var typing = Typing.start("WHATSAPP|" + tenantId + "|" + sender, () -> typing(tenantId, sender), 15_000, () -> typingDone(tenantId, sender))) {   // «typing…» on the customer's WhatsApp while a slow reply is written
                         reply = chat.reply(tenantId, "WHATSAPP", sender, null, text.length() > 1000 ? text.substring(0, 1000) : text, pushName, in);
                     }
                     if (reply.text() == null || reply.text().isBlank()) return;   // the shop team took this chat over: nothing goes out automatically
