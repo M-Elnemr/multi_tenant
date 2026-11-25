@@ -127,5 +127,15 @@ class PlatformAiConfigIntegrationTest extends IntegrationTestBase {
         String admin = platformToken();
         String v = get(admin);
         assertThat(v).doesNotContain("fewerRewrites").doesNotContain("promptDiet");   // decided by the 2026-11-25 A/B: fewer rewrites always on, prompt diet removed
+        // the two test switches of the next AI steps: off by default, saved, and back to the default
+        assertThat(JsonPath.<String>read(v, "$.fastPath.selected")).isEqualTo("off");
+        assertThat(JsonPath.<String>read(v, "$.shortHistory.selected")).isEqualTo("off");
+        v = put(admin, "{\"fastPath\":\"on\",\"shortHistory\":\"on\"}");
+        assertThat(JsonPath.<String>read(v, "$.fastPath.selected")).isEqualTo("on");
+        assertThat(JsonPath.<String>read(v, "$.shortHistory.selected")).isEqualTo("on");
+        v = put(admin, "{\"fastPath\":\"default\",\"shortHistory\":\"off\"}");
+        assertThat(JsonPath.<Boolean>read(v, "$.fastPath.isDefault")).isTrue();
+        assertThat(JsonPath.<String>read(v, "$.shortHistory.selected")).isEqualTo("off");
+        put(admin, "{\"shortHistory\":\"default\"}");
     }
 }
