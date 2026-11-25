@@ -247,6 +247,11 @@ public class EvolutionService {
     // ---- sending --------------------------------------------------------------------------------------------------------------------
 
     /** Result of one paced send: SENT, FAILED, or DEFERRED (the shop is at its per-minute limit; try again on the next pass). */
+    /** Shows «typing…» on the customer's WhatsApp for about 8 seconds (Evolution presence). */
+    private void typing(UUID tenantId, String number) {
+        api.call("POST", "/chat/sendPresence/" + row(tenantId).get("instance"), Map.of("number", number.replaceAll("\\D", ""), "presence", "composing", "delay", 8_000));
+    }
+
     public enum Delivery { SENT, FAILED, DEFERRED }
 
     /** One message from the shop's own number, text or a picture with the text as its caption. Used by broadcasts, which retry a deferred message later. */
@@ -449,7 +454,10 @@ public class EvolutionService {
                 if (special.isPresent()) answer = special.get();
                 else if (!aiOn) return;
                 else {
-                    var reply = chat.reply(tenantId, "WHATSAPP", sender, null, text.length() > 1000 ? text.substring(0, 1000) : text, pushName, in);
+                    ChatService.Reply reply;
+                    try (var typing = Typing.start(() -> typing(tenantId, sender), 8_000)) {   // «typing…» on the customer's WhatsApp while a slow reply is written
+                        reply = chat.reply(tenantId, "WHATSAPP", sender, null, text.length() > 1000 ? text.substring(0, 1000) : text, pushName, in);
+                    }
                     if (reply.text() == null || reply.text().isBlank()) return;   // the shop team took this chat over: nothing goes out automatically
                     sentReply = reply;
                     answer = reply.text();

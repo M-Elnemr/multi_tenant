@@ -16,6 +16,12 @@ public interface SocialChannel {
      */
     String send(Map<String, Object> channel, String to, String text, String imageUrl);
 
+    /** Shows «typing…» to the customer for a few seconds ({@link Typing}); a network without it keeps this default and {@link #typingRepeatMs()} 0. */
+    default void typing(Map<String, Object> channel, String to) { }
+
+    /** How often the typing signal is sent again while a reply is written (0: the network has no typing signal). */
+    default long typingRepeatMs() { return 0; }
+
     /** Hours after the customer's last message during which the network lets the business answer (0 = no limit). */
     default int windowHours() { return 23; }
 }

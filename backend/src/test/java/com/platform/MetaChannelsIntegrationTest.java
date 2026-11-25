@@ -350,10 +350,11 @@ class MetaChannelsIntegrationTest extends IntegrationTestBase {
         String raw = pageMessage(page, "user-slow", "mid-" + uniq(), "عايز مخدة");
         webhook(raw, sign(raw)).andExpect(status().isOk());
         var texts = FakeMetaGraph.SENT.stream().map(m -> m.body().toString()).toList();
-        assertThat(texts).hasSize(2);
-        assertThat(texts.get(0)).contains("لحظات معايا");
-        assertThat(texts.get(1)).contains("اتفضل يا فندم!");
-        // a quick answer gets no wait message
+        assertThat(texts).hasSize(3);
+        assertThat(texts.get(0)).as("«typing…» after 3 s").contains("sender_action=typing_on").contains("user-slow");
+        assertThat(texts.get(1)).contains("لحظات معايا");
+        assertThat(texts.get(2)).contains("اتفضل يا فندم!");
+        // a quick answer gets no typing and no wait message
         FakeMetaGraph.reset();
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("Quick!"));
         String raw2 = pageMessage(page, "user-slow", "mid-" + uniq(), "hello I need a dress");

@@ -95,7 +95,7 @@ public class SocialBridge {
                 var hold = holder.schedule(() -> {
                     try { net.send(row, sender, arabic ? "لحظات معايا... 🌸" : "One moment, I am checking for you... 🌸", null); } catch (RuntimeException ignored) { /* best effort */ }
                 }, 5, java.util.concurrent.TimeUnit.SECONDS);
-                try {
+                try (var typing = Typing.start(() -> net.typing(row, sender), net.typingRepeatMs())) {   // «typing…» where the network has it
                     var reply = chat.reply(tenantId, platform, sender, null, text.length() > 1000 ? text.substring(0, 1000) : text, name, in);
                     convId = reply.conversationId();
                     if (reply.text() == null || reply.text().isBlank()) return;   // the shop team took this chat over: nothing goes out automatically

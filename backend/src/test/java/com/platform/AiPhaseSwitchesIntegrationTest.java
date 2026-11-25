@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
-/** The admin's test switches: «fewer rewrites» (phase 2: code settles what it can, no second model call) and «prompt diet» (phase 3: stage rules with the message, compact catalog). */
+/** Code settles what it can without a second model call (always on since the 2026-11-25 A/B). */
 class AiPhaseSwitchesIntegrationTest extends IntegrationTestBase {
     @Autowired JdbcClient jdbc;
     @Autowired ChatService chat;
@@ -23,7 +23,7 @@ class AiPhaseSwitchesIntegrationTest extends IntegrationTestBase {
     void clean() { FakeAiProvider.reset(); }
 
     @AfterEach
-    void off() { set("fewer_rewrites", null); set("prompt_diet", null); set("prompt_mode", null); }
+    void off() { set("prompt_mode", null); }
 
     void set(String column, String v) {
         jdbc.sql("INSERT INTO chat.platform_ai_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING").update();
@@ -42,9 +42,8 @@ class AiPhaseSwitchesIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void withFewerRewritesAVagueReplyGetsTheProductsFromCodeWithoutASecondCall() throws Exception {
+    void aVagueReplyGetsTheProductsFromCodeWithoutASecondCall() throws Exception {
         UUID id = shop();
-        set("fewer_rewrites", "on");
         AtomicInteger calls = new AtomicInteger();
         FakeAiProvider.SCRIPT.add(turns -> { calls.incrementAndGet(); return Turn.model("عندنا موبايلات كتير حلوة ومتنوعة يا فندم"); });
         FakeAiProvider.SCRIPT.add(turns -> { calls.incrementAndGet(); return Turn.model("عندنا موبايل نوفا A5"); });
@@ -53,26 +52,5 @@ class AiPhaseSwitchesIntegrationTest extends IntegrationTestBase {
         assertThat(reply).contains("موبايل نوفا").contains("5499");
     }
 
-    @Test
-    void withoutTheSwitchTheSameVagueReplyIsWrittenAgainAsBefore() throws Exception {
-        UUID id = shop();
-        set("fewer_rewrites", "off");
-        AtomicInteger calls = new AtomicInteger();
-        FakeAiProvider.SCRIPT.add(turns -> { calls.incrementAndGet(); return Turn.model("عندنا موبايلات كتير حلوة ومتنوعة يا فندم"); });
-        FakeAiProvider.SCRIPT.add(turns -> { calls.incrementAndGet(); return Turn.model("عندنا موبايل نوفا A5 بـ 5499 جنيه"); });
-        chat.reply(id, "WEB", "p2-" + uniq(), null, "عايز موبايل");
-        assertThat(calls.get()).isEqualTo(2);
-    }
 
-    @Test
-    void withThePromptDietTheCachedPartHasTheCoreRulesAndTheStageRulesComeWithTheMessage() throws Exception {
-        UUID id = shop();
-        set("prompt_mode", "lean");
-        set("prompt_diet", "on");
-        FakeAiProvider.SCRIPT.add(turns -> Turn.model("عندنا موبايل نوفا A5 بـ 5499 جنيه"));
-        chat.reply(id, "WEB", "p3-" + uniq(), null, "عندكم موبايلات؟");
-        assertThat(FakeAiProvider.lastRawSystem).contains("- THIS CHAT'S RULES:").contains("- MONEY").doesNotContain("- SELLING:").doesNotContain("- ORDER:")
-                .contains("موبايل نوفا A5").doesNotContain(", category ");
-        assertThat(FakeAiProvider.lastSystem).contains("THIS CHAT'S RULES (stage: browsing)").contains("- SELLING:");
-    }
 }

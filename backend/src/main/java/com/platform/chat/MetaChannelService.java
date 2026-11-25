@@ -417,7 +417,8 @@ public class MetaChannelService {
                     var hold = holder.schedule(() -> {
                         try { send(platform, accountId, sender, token, arabic ? "لحظات معايا... 🌸" : "One moment, I am checking for you... 🌸"); } catch (RuntimeException ignored) { /* best effort */ }
                     }, 5, java.util.concurrent.TimeUnit.SECONDS);
-                    try {
+                    String lastMid = in.mids().isEmpty() ? null : in.mids().get(in.mids().size() - 1);
+                    try (var typing = Typing.start(typingSignal(platform, accountId, sender, token, lastMid), "WHATSAPP".equals(platform) ? 20_000 : 15_000)) {
                         var reply = chat.reply(tenantId, platform, sender, null, text.length() > 1000 ? text.substring(0, 1000) : text, name, in);
                         if (reply.text() == null || reply.text().isBlank()) return;   // the shop team took this chat over: nothing goes out automatically
                         sentReply = reply;
@@ -518,6 +519,18 @@ public class MetaChannelService {
             log.debug("Quoted WhatsApp reply refused ({}), sending it plainly", e.getMessage());
             return send(platform, accountId, to, token, text);
         }
+    }
+
+    /**
+     * «Typing…» for a reply that takes more than a few seconds ({@link Typing}). WhatsApp Cloud: the typing indicator Meta documents on the customer's message (it also marks that
+     * message read, and clears itself after 25 s or with the reply); without the message's id there is nothing to send. Messenger and Instagram: the {@code typing_on} sender action.
+     */
+    Runnable typingSignal(String platform, String accountId, String to, String token, String customerMid) {
+        if ("WHATSAPP".equals(platform)) {
+            if (customerMid == null || customerMid.isBlank()) return null;
+            return () -> graph.post(accountId + "/messages", token, Map.of("messaging_product", "whatsapp", "status", "read", "message_id", customerMid, "typing_indicator", Map.of("type", "text")));
+        }
+        return () -> graph.post("me/messages", token, Map.of("recipient", Map.of("id", to), "sender_action", "typing_on"));
     }
 
     String send(String platform, String accountId, String to, String token, String text) {

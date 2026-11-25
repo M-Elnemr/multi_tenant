@@ -126,13 +126,6 @@ class PlatformAiConfigIntegrationTest extends IntegrationTestBase {
     void theAiStepSwitchesHaveTheirDefaultsAndAreSaved() throws Exception {
         String admin = platformToken();
         String v = get(admin);
-        assertThat(JsonPath.<String>read(v, "$.fewerRewrites.selected")).isEqualTo("on");   // on by default since the 2026-11-25 A/B
-        assertThat(JsonPath.<String>read(v, "$.promptDiet.selected")).isEqualTo("off");
-        v = put(admin, "{\"fewerRewrites\":\"on\",\"promptDiet\":\"on\"}");
-        assertThat(JsonPath.<String>read(v, "$.fewerRewrites.selected")).isEqualTo("on");
-        assertThat(JsonPath.<String>read(v, "$.promptDiet.selected")).isEqualTo("on");
-        v = put(admin, "{\"fewerRewrites\":\"default\",\"promptDiet\":\"off\"}");
-        assertThat(JsonPath.<String>read(v, "$.fewerRewrites.selected")).isEqualTo("on");
-        assertThat(JsonPath.<Boolean>read(v, "$.promptDiet.isDefault")).isTrue();
+        assertThat(v).doesNotContain("fewerRewrites").doesNotContain("promptDiet");   // decided by the 2026-11-25 A/B: fewer rewrites always on, prompt diet removed
     }
 }

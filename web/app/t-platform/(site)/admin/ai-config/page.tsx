@@ -11,8 +11,8 @@ import { Badge, Button, Card, ErrorText, Field, Input, Loading, Modal, PageHeade
 type Option = { code: string; label: string; note: string | null; default: boolean };
 type Choice = { options: Option[]; selected: string; default: string; isDefault: boolean };
 type Key = { id: string; label: string; last4: string; fromEnvironment: boolean; enabled: boolean; requests: number; failures: number; lastStatus: string; restingSeconds: number };
-type Config = { text: Choice; image: Choice; audio: Choice; promptMode: Choice; deepseekEffort: Choice; fewerRewrites: Choice; promptDiet: Choice; keys: Key[]; activeKeys: number; requestsPerSecond: number };
-type Setting = "textModel" | "imageModel" | "audioModel" | "promptMode" | "deepseekEffort" | "fewerRewrites" | "promptDiet";
+type Config = { text: Choice; image: Choice; audio: Choice; promptMode: Choice; deepseekEffort: Choice; keys: Key[]; activeKeys: number; requestsPerSecond: number };
+type Setting = "textModel" | "imageModel" | "audioModel" | "promptMode" | "deepseekEffort";
 
 /** The platform admin's AI settings: the model for text, photos and voice notes (the default is preselected and tagged), prompt style, DeepSeek reasoning, and the Hive keys the requests are spread over. */
 export default function AiConfigPage() {
@@ -67,10 +67,6 @@ export default function AiConfigPage() {
       <ErrorText error={cfg.error} />
       {!c ? <Loading /> : (
         <div className="space-y-6">
-          <div className="grid gap-4 lg:grid-cols-2">
-            <SwitchCard title={t("aic.fewer")} hint={t("aic.fewer.hint")} choice={c.fewerRewrites} busy={saving === "fewerRewrites"} onPick={(v) => choose("fewerRewrites", v)} />
-            <SwitchCard title={t("aic.diet")} hint={t("aic.diet.hint")} choice={c.promptDiet} busy={saving === "promptDiet"} onPick={(v) => choose("promptDiet", v)} />
-          </div>
           <div className="grid gap-4 lg:grid-cols-3">
             <ChoiceCard title={t("aic.text")} hint={t("aic.text.hint")} choice={c.text} busy={saving === "textModel"} onPick={(v) => choose("textModel", v)} />
             <ChoiceCard title={t("aic.image")} hint={t("aic.image.hint")} choice={c.image} busy={saving === "imageModel"} onPick={(v) => choose("imageModel", v)} />
@@ -158,25 +154,3 @@ function ChoiceCard({ title, hint, choice, onPick, busy, note, describe }: { tit
   );
 }
 
-/** A test switch for the next AI step: on/off, saved at once; off is the current behaviour. */
-function SwitchCard({ title, hint, choice, onPick, busy }: { title: string; hint: string; choice: Choice; onPick: (v: string) => void; busy: boolean }) {
-  const { t } = useI18n();
-  const on = choice.selected === "on";
-  return (
-    <Card className="p-5">
-      <div className="flex items-start gap-4">
-        <div className="min-w-0 flex-1">
-          <h2 className="flex flex-wrap items-center gap-2 text-[15px] font-bold text-ink">
-            {title}
-            <Badge tone={on ? "green" : "slate"}>{on ? t("aic.sw.on") : t("aic.sw.off")}</Badge>
-          </h2>
-          <p className="mt-1 text-xs leading-relaxed text-muted">{hint}</p>
-        </div>
-        <button type="button" role="switch" aria-checked={on} aria-label={title} disabled={busy} onClick={() => onPick(on ? "off" : "on")}
-          className={`relative inline-flex h-8 w-14 shrink-0 items-center rounded-full transition disabled:opacity-60 ${on ? "bg-[var(--brand)]" : "bg-line-strong"}`}>
-          <span className={`inline-block h-6 w-6 rounded-full bg-white shadow transition-transform ${on ? "translate-x-7 rtl:-translate-x-7" : "translate-x-1 rtl:-translate-x-1"}`} />
-        </button>
-      </div>
-    </Card>
-  );
-}

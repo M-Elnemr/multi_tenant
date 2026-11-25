@@ -105,6 +105,8 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
   const dir: "ltr" | "rtl" = locale === "ar" ? "rtl" : "ltr";
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  // «typing…» only for a reply that takes a while: after 3 seconds without an answer, like on WhatsApp and Messenger
+  const [typing, setTyping] = useState(false);
   const end = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const queue = useRef<Job[]>([]);   // messages typed while the assistant is still answering are sent one after another
@@ -134,7 +136,12 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
     }, 6000);
     return () => clearInterval(timer);
   }, [live, load]);
-  useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [msgs, busy]);
+  useEffect(() => {
+    if (!busy) { setTyping(false); return; }
+    const timer = setTimeout(() => setTyping(true), 3000);
+    return () => clearTimeout(timer);
+  }, [busy]);
+  useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [msgs, typing]);
   // leaving the page while recording: stop the microphone and drop the clip
   useEffect(() => () => {
     cancelled.current = true;
@@ -335,7 +342,7 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
             )}
           </div>
         ))}
-        {busy && <Bubble role="assistant" widget={widget} avatar={widget ? "" : undefined}><span className="inline-flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:120ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:240ms]" /></span></Bubble>}
+        {busy && typing && <Bubble role="assistant" widget={widget} avatar={widget ? "" : undefined}><span className="inline-flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:120ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:240ms]" /></span></Bubble>}
         <div ref={end} />
       </div>
 

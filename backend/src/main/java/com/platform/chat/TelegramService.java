@@ -77,6 +77,15 @@ public class TelegramService implements SocialChannel {
 
     private static Object chatId(String to) { return to.matches("-?\\d{1,18}") ? (Object) Long.parseLong(to) : to; }
 
+    /** Telegram's «typing…» chat action as the business account (it shows for 5 seconds, so it is sent again every 4.5 s). */
+    @Override
+    public void typing(Map<String, Object> channel, String to) {
+        call("sendChatAction", Map.of("business_connection_id", channel.get("external_id"), "chat_id", chatId(to), "action", "typing"));
+    }
+
+    @Override
+    public long typingRepeatMs() { return 4_500; }
+
     @Override
     public String send(Map<String, Object> channel, String to, String text, String imageUrl) {
         Map<String, Object> body = new LinkedHashMap<>();
