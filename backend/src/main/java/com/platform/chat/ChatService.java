@@ -1334,6 +1334,10 @@ public class ChatService {
         if (answer == null || answer.isBlank()) return answer;
         answer = withoutRepeatedClosedNote(turns, answer);
         try { answer = withoutStrayLatin(answer, customerWords(turns), productWords(ctx.tenantId()).values()); } catch (RuntimeException e) { log.debug("Stray word cleanup skipped", e); }
+        try {   // the customer's name is known (they said it, or their chat app shows it): the details asked for never include it again
+            String known = jdbc.sql("SELECT display_name FROM chat.conversations WHERE id = :c").param("c", ctx.conversationId()).query(String.class).optional().orElse(null);
+            if (known != null && !known.isBlank()) answer = withoutNameAsk(answer);
+        } catch (RuntimeException e) { log.debug("Name ask cleanup skipped", e); }
         // only a real tool call counts as having looked (a model with the catalog in its prompt still skimmed it and answered vaguely)
         boolean searched = rounds.stream().anyMatch(r -> r.tools().stream().anyMatch(t -> t.equals("search_products") || t.equals("get_product") || t.equals("show_products") || t.equals("list_services") || t.equals("available_slots")));
         String last = lastCustomerText(turns);
@@ -1480,6 +1484,24 @@ public class ChatService {
      * «وب current تغطي»: a lowercase English word the model slipped into an Arabic sentence (not the customer's own word, not a word of the shop's products, not a common brand or app
      * word, not part of a code like «usb-c») is taken out. Upper-case words and codes (SSD, X12, MagSafe) are never touched.
      */
+    /** «اسمك ورقم الواتساب والمنطقة» asked of a customer whose name is known (round 1 of the 2026-11-25 switch test: «تمام يا أستاذ كريم … اسمك ورقم الواتساب»). */
+    private static final Pattern NAME_IN_LIST = Pattern.compile("(?:(?<=[\\s:،,(])|^)(?:اسمك|اسم\\s+حضرتك|الاسم(?:\\s+الكريم)?)(?:\\s+الكريم)?\\s*(?:،|,|\\s+و(?=\\S)|\\s+and\\s+)\\s*");
+    private static final Pattern NAME_CHECK = Pattern.compile("(?:اسمك|اسم\\s+حضرتك|الاسم)\\s*\\([^)\\n]{0,30}\\)\\s*(?:،|,|\\s+و(?=\\S))?\\s*");   // «اسمك (كريم تمام؟)، رقم الواتساب»
+    private static final Pattern NAME_LINE = Pattern.compile("(?m)^\\s*[-•*]?\\s*(?:\\d+[.)-]\\s*)?(?:اسمك|اسم\\s+حضرتك|الاسم(?:\\s+الكريم)?|الاسم\\s+الأول|الاسم\\s+الاول)\\s*[؟?]?\\s*\\n");
+    private static final Pattern NAME_QUESTION = Pattern.compile("[^.!؟?\\n]*(?:(?:ا|أ)تشرف\\s+باسم\\s+حضرتك|اسم\\s+حضرتك\\s+(?:ايه|إيه)|ممكن\\s+(?:اعرف\\s+)?(?:اسمك|اسم\\s+حضرتك))[^.!؟?\\n]*[.!؟?]?\\s*");
+
+    /** The reply without asking for the customer's name (only called when it is known): out of a list of details, a list line of its own, or a whole «أتشرف باسم حضرتك؟». */
+    static String withoutNameAsk(String answer) {
+        if (answer == null) return null;
+        String out = NAME_CHECK.matcher(answer).replaceAll("");
+        out = NAME_LINE.matcher(out).replaceAll("");
+        out = NAME_IN_LIST.matcher(out).replaceAll("");
+        out = out.replaceAll("(?i)your\\s+name\\s*(?:,|and)\\s*", "");
+        String q = NAME_QUESTION.matcher(out).replaceAll("");
+        if (q.strip().length() >= 8) out = q;   // never leave nothing behind
+        return out.replaceAll("[ \\t]{2,}", " ").replaceAll("\\n{3,}", "\n\n").strip();
+    }
+
     static String withoutStrayLatin(String answer, String customerLower, java.util.Collection<String> productWords) {
         if (answer == null || answer.isBlank()) return answer;
         String shopLower = String.join(" ", productWords).toLowerCase(java.util.Locale.ROOT);

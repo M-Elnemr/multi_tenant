@@ -37,4 +37,15 @@ class AiStepsTest {
         assertThat(result.toString()).contains(id);
         assertThat(ChatService.shortVariantIds(Map.of("variantId", "not-an-id"))).containsEntry("variantId", "not-an-id");
     }
+
+    @Test
+    void aKnownNameIsNeverAskedForAgain() {
+        assertThat(ChatService.withoutNameAsk("تمام يا أستاذ كريم 👌 عشان أجهزلك الطلب: اسمك ورقم الواتساب والمحافظة والمنطقة؟"))
+                .isEqualTo("تمام يا أستاذ كريم 👌 عشان أجهزلك الطلب: رقم الواتساب والمحافظة والمنطقة؟");
+        assertThat(ChatService.withoutNameAsk("ابعتلي اسمك، رقم موبايلك، والعنوان")).isEqualTo("ابعتلي رقم موبايلك، والعنوان");
+        assertThat(ChatService.withoutNameAsk("محتاج منك:\n- الاسم\n- رقم الواتساب\n- العنوان")).isEqualTo("محتاج منك:\n- رقم الواتساب\n- العنوان");
+        assertThat(ChatService.withoutNameAsk("الكارديجان متاح بـ ٦٩٠ جنيه. أتشرف باسم حضرتك؟")).isEqualTo("الكارديجان متاح بـ ٦٩٠ جنيه.");
+        assertThat(ChatService.withoutNameAsk("الاسم ده جميل والمنتج متاح")).isEqualTo("الاسم ده جميل والمنتج متاح");
+        assertThat(ChatService.withoutNameAsk("محتاج منك: اسمك (كريم تمام؟)، رقم الواتساب، المحافظة والمنطقة")).isEqualTo("محتاج منك: رقم الواتساب، المحافظة والمنطقة");
+    }
 }
