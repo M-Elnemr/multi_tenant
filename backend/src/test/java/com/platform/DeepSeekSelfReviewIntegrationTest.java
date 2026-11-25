@@ -44,7 +44,10 @@ class DeepSeekSelfReviewIntegrationTest extends IntegrationTestBase {
                 JsonNode req = JSON.readTree(ex.getRequestBody().readAllBytes());
                 boolean glm = req.path("model").asText().contains("glm");
                 String m = marker;
-                if (m != null && !req.toString().contains(m)) {   // not this test's chat (a background job): answer and move on, nothing counted or taken
+                // the reply's own calls send the tools; the review sends the reviewer's prompt. Anything else is a background job of the app (memory facts of the same chat,
+                // digests...): it gets «ok» and takes no scripted answer, so it can never steal the draft (CI: the reply became the review's «{"ok":true}»)
+                boolean replyOrReview = req.has("tools") || req.toString().contains("senior sales manager");
+                if (!replyOrReview || m != null && !req.toString().contains(m)) {
                     byte[] ok = text("ok");
                     try { ex.sendResponseHeaders(200, ok.length); ex.getResponseBody().write(ok); } catch (java.io.IOException ignored) { /* the client moved on */ }
                     ex.close();
