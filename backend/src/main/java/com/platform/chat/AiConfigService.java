@@ -35,16 +35,10 @@ public class AiConfigService {
     /** Voice notes: only Qwen's speech model takes audio (DeepSeek on Hive answers HTTP 500 for ogg, wav and mp3: tested 2026-11-10). */
     static final List<Option> AUDIO = List.of(new Option("qwen", "Alibaba Qwen ASR", "Only this model takes voice notes"));
     static final List<Option> PROMPT = List.of(new Option("lean", "Lean", "Shorter prompt: fewer tokens per reply"), new Option("full", "Full", "The complete rule book and sales playbook"));
-    /** Test switch: no model call that cannot change the reply (after a successful prepare_order, after show_products with a full answer), and no lookup for a product already in front of the model. */
-    static final List<Option> FAST_PATH = List.of(new Option("off", "Off", "Current behaviour"), new Option("on", "On", "Fewer model calls: no lookup for listed products, no call whose words are thrown away"));
-    /** Test switch: the model reads only the recent messages; what the customer said before them comes from the database (their own words, remembered facts, the order in progress). */
-    static final List<Option> SHORT_HISTORY = List.of(new Option("off", "Off", "Current behaviour: the last 24 messages"), new Option("on", "On", "Recent messages only, plus a code-made summary of the earlier chat"));
     static final List<Option> EFFORT = List.of(new Option("none", "Off", null), new Option("low", "Low", null), new Option("medium", "Medium", null), new Option("high", "High", null));
 
     /** The settings in force (each already resolved to the default when the admin chose none). */
-    public record Config(String textModel, String imageModel, String audioModel, String promptMode, String deepseekEffort, String fastPath, String shortHistory) {
-        public Config(String textModel, String imageModel, String audioModel, String promptMode, String deepseekEffort) { this(textModel, imageModel, audioModel, promptMode, deepseekEffort, "off", "off"); }
-    }
+    public record Config(String textModel, String imageModel, String audioModel, String promptMode, String deepseekEffort) {}
 
     private final JdbcClient jdbc;
     private final HiveKeyPool keys;
@@ -65,7 +59,7 @@ public class AiConfigService {
                            @Value("${app.ai.glm.model:zai-org/glm-5.3-flash}") String hiveModel) {
         this.jdbc = jdbc;
         this.keys = keys;
-        this.defaults = new Config(pick(TEXT, text, "glm"), pick(IMAGE, image, "deepseek"), pick(AUDIO, audio, "qwen"), pick(PROMPT, prompt, "lean"), pick(EFFORT, effort, "low"), "off", "off");
+        this.defaults = new Config(pick(TEXT, text, "glm"), pick(IMAGE, image, "deepseek"), pick(AUDIO, audio, "qwen"), pick(PROMPT, prompt, "lean"), pick(EFFORT, effort, "low"));
         this.hiveUrl = hiveUrl.trim().replaceAll("/+$", "");
         this.hiveModel = hiveModel;
         current = this;
@@ -94,14 +88,13 @@ public class AiConfigService {
 
     private Config resolve(Map<String, Object> r) {
         return new Config(pick(TEXT, str(r, "text_model"), defaults.textModel()), pick(IMAGE, str(r, "image_model"), defaults.imageModel()), pick(AUDIO, str(r, "audio_model"), defaults.audioModel()),
-                pick(PROMPT, str(r, "prompt_mode"), defaults.promptMode()), pick(EFFORT, str(r, "deepseek_effort"), defaults.deepseekEffort()),
-                pick(FAST_PATH, str(r, "fast_path"), defaults.fastPath()), pick(SHORT_HISTORY, str(r, "short_history"), defaults.shortHistory()));
+                pick(PROMPT, str(r, "prompt_mode"), defaults.promptMode()), pick(EFFORT, str(r, "deepseek_effort"), defaults.deepseekEffort()));
     }
 
     private static String str(Map<String, Object> r, String k) { Object v = r.get(k); return v == null ? null : v.toString(); }
 
     private Map<String, Object> row() {
-        try { return jdbc.sql("SELECT text_model, image_model, audio_model, prompt_mode, deepseek_effort, fast_path, short_history FROM chat.platform_ai_config WHERE id = 1").query().listOfRows().stream().findFirst().orElse(Map.of()); }
+        try { return jdbc.sql("SELECT text_model, image_model, audio_model, prompt_mode, deepseek_effort FROM chat.platform_ai_config WHERE id = 1").query().listOfRows().stream().findFirst().orElse(Map.of()); }
         catch (RuntimeException e) { return null; }   // no table or no database
     }
 
@@ -112,12 +105,6 @@ public class AiConfigService {
     public static void forgetCachedForTests() { forgetCached(); }
 
     /** Lean prompt in force for a live reply (an evaluation run decides for itself). */
-    /** Fewer model calls is on for a live reply (an evaluation run decides for itself). */
-    static boolean fastPath() { AiConfigService c = current; return c != null && "on".equals(c.get().fastPath()); }
-
-    /** The short history with a summary of the earlier chat is on for a live reply. */
-    static boolean shortHistory() { AiConfigService c = current; return c != null && "on".equals(c.get().shortHistory()); }
-
     static boolean leanPrompt() { AiConfigService c = current; return c != null && "lean".equals(c.get().promptMode()); }
 
     /** DeepSeek's reasoning setting in force, or null when no service is running (the provider then uses its configured one). */
@@ -135,8 +122,6 @@ public class AiConfigService {
         out.put("audio", section(AUDIO, now.audioModel(), defaults.audioModel()));
         out.put("promptMode", section(PROMPT, now.promptMode(), defaults.promptMode()));
         out.put("deepseekEffort", section(EFFORT, now.deepseekEffort(), defaults.deepseekEffort()));
-        out.put("fastPath", section(FAST_PATH, now.fastPath(), defaults.fastPath()));
-        out.put("shortHistory", section(SHORT_HISTORY, now.shortHistory(), defaults.shortHistory()));
         out.put("keys", keys.view());
         int n = keys.size();
         out.put("activeKeys", n);
@@ -157,15 +142,15 @@ public class AiConfigService {
     }
 
     /**
-     * Saves the settings named in {@code body} (textModel, imageModel, audioModel, promptMode, deepseekEffort, fastPath, shortHistory); a value of "default" (or null) goes back to the default, a value that is
+     * Saves the settings named in {@code body} (textModel, imageModel, audioModel, promptMode, deepseekEffort); a value of "default" (or null) goes back to the default, a value that is
      * not one of the options is refused.
      */
     public Map<String, Object> update(Map<String, Object> body, UUID by) {
         Map<String, Object> existing = row();
         if (existing == null) throw new BusinessException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, "AI_CONFIG_UNAVAILABLE", "The AI settings cannot be read right now");
         Map<String, Object> cur = new LinkedHashMap<>(existing);
-        Map<String, List<Option>> fields = Map.of("textModel", TEXT, "imageModel", IMAGE, "audioModel", AUDIO, "promptMode", PROMPT, "deepseekEffort", EFFORT, "fastPath", FAST_PATH, "shortHistory", SHORT_HISTORY);
-        Map<String, String> columns = Map.of("textModel", "text_model", "imageModel", "image_model", "audioModel", "audio_model", "promptMode", "prompt_mode", "deepseekEffort", "deepseek_effort", "fastPath", "fast_path", "shortHistory", "short_history");
+        Map<String, List<Option>> fields = Map.of("textModel", TEXT, "imageModel", IMAGE, "audioModel", AUDIO, "promptMode", PROMPT, "deepseekEffort", EFFORT);
+        Map<String, String> columns = Map.of("textModel", "text_model", "imageModel", "image_model", "audioModel", "audio_model", "promptMode", "prompt_mode", "deepseekEffort", "deepseek_effort");
         for (var f : fields.entrySet()) {
             if (!body.containsKey(f.getKey())) continue;
             Object v = body.get(f.getKey());
@@ -175,10 +160,10 @@ public class AiConfigService {
             cur.put(columns.get(f.getKey()), t);
         }
         jdbc.sql("""
-                INSERT INTO chat.platform_ai_config (id, text_model, image_model, audio_model, prompt_mode, deepseek_effort, fast_path, short_history, updated_by, updated_at)
-                VALUES (1, :t, :i, :a, :p, :e, :fp, :sh, :u, now())
-                ON CONFLICT (id) DO UPDATE SET text_model = :t, image_model = :i, audio_model = :a, prompt_mode = :p, deepseek_effort = :e, fast_path = :fp, short_history = :sh, updated_by = :u, updated_at = now()
-                """).param("t", cur.get("text_model")).param("i", cur.get("image_model")).param("a", cur.get("audio_model")).param("p", cur.get("prompt_mode")).param("e", cur.get("deepseek_effort")).param("fp", cur.get("fast_path")).param("sh", cur.get("short_history")).param("u", by).update();
+                INSERT INTO chat.platform_ai_config (id, text_model, image_model, audio_model, prompt_mode, deepseek_effort, updated_by, updated_at)
+                VALUES (1, :t, :i, :a, :p, :e, :u, now())
+                ON CONFLICT (id) DO UPDATE SET text_model = :t, image_model = :i, audio_model = :a, prompt_mode = :p, deepseek_effort = :e, updated_by = :u, updated_at = now()
+                """).param("t", cur.get("text_model")).param("i", cur.get("image_model")).param("a", cur.get("audio_model")).param("p", cur.get("prompt_mode")).param("e", cur.get("deepseek_effort")).param("u", by).update();
         cachedAt = 0;
         version++;
         return view();

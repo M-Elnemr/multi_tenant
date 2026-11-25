@@ -2,31 +2,13 @@ package com.platform.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.platform.chat.AiProvider.Turn;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
-/** The pure parts of the «fewer AI steps» and «short history» switches. */
+/** The pure parts of fewer AI steps and the reply cleanups found in the 2026-11-25 test rounds. */
 class AiStepsTest {
-    static List<Turn> chat(int messages) {
-        List<Turn> out = new ArrayList<>();
-        for (int i = 0; i < messages; i++) out.add(i % 2 == 0 ? Turn.user("q" + i) : Turn.model("a" + i));
-        return out;
-    }
 
-    @Test
-    void theHistorySentStartsAtACustomerMessageAndMovesInSteps() {
-        assertThat(ChatService.shortStart(chat(9), 8)).as("a short chat is sent whole").isZero();
-        List<Turn> c = chat(21);   // the newest customer message is at 20
-        int s = ChatService.shortStart(c, 20);
-        assertThat(s).isPositive();
-        assertThat(c.get(s).role()).isEqualTo("user");
-        assertThat(20 - s).isBetween(ChatService.SHORT_KEEP, ChatService.SHORT_KEEP + ChatService.SHORT_STEP);
-        // the same start for the next messages: the history sent stays the same bytes (the provider's cache)
-        assertThat(ChatService.shortStart(chat(23), 22)).isEqualTo(s);
-    }
 
     @Test
     void theModelGetsShortVariantIdsAndTheCodeKeepsTheWholeOnes() {

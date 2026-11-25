@@ -21,7 +21,14 @@ public class FakeAiProvider implements AiProvider {
     public static final Deque<Function<List<Turn>, Turn>> SCRIPT = new ArrayDeque<>();
     public static final List<ToolResult> RESULTS = new ArrayList<>();
 
-    public static synchronized void reset() { SCRIPT.clear(); RESULTS.clear(); lastSystem = ""; lastRawSystem = ""; }
+    public static synchronized void reset() { SCRIPT.clear(); RESULTS.clear(); FROM_CHAT.clear(); lastSystem = ""; lastRawSystem = ""; }
+
+    /** The results the chat reply already recorded, as the model is then sent them: not added a second time when the next call shows them. */
+    private static final List<ToolResult> FROM_CHAT = new ArrayList<>();
+
+    static {   // every tool result of a chat reply as the code keeps it, also when no model call follows it (fewer AI steps ends the reply after a summary)
+        com.platform.chat.ChatService.TOOL_RESULTS_FOR_TESTS = r -> { synchronized (FakeAiProvider.class) { RESULTS.add(r); FROM_CHAT.add(new ToolResult(r.name(), com.platform.chat.ChatService.shortVariantIds(r.result()))); } };
+    }
 
     /**
      * A scripted turn for one chat only: when another conversation (a background job of the app) reaches it first, it goes back to the front of the queue and that caller gets «ok».
@@ -58,7 +65,8 @@ public class FakeAiProvider implements AiProvider {
         lastSystem = context.isEmpty() ? system : system + "\n" + context;
         lastTools = tools;
         Turn last = turns.isEmpty() ? null : turns.get(turns.size() - 1);
-        if (last != null && "tool".equals(last.role())) RESULTS.addAll(last.results());
+        if (last != null && "tool".equals(last.role()))   // other tool loops (the copilot...) are seen here; a chat reply's results were recorded where they ran
+            for (ToolResult r : last.results()) { if (!FROM_CHAT.remove(r)) RESULTS.add(r); }
         var f = SCRIPT.poll();
         return f == null ? Turn.model("ok") : f.apply(turns);
     }

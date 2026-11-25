@@ -55,8 +55,7 @@ class AiOrderByCodeIntegrationTest extends IntegrationTestBase {
     /** A first summary with these items, then a change the model only talks about. */
     String change(Shop s, List<String> first, String firstWords, String changeWords) {
         String ext = "bycode-" + uniq();
-        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepare(first)));
-        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ok"));
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepare(first)));   // the summary ends the reply: no call after it
         assertThat(chat.reply(s.id(), "WEB", ext, null, firstWords).text()).contains("ملخص");
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام يا فندم، عدّلت الطلب 👌"));
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام يا فندم، هضيفهالك 👌"));
@@ -166,8 +165,7 @@ class AiOrderByCodeIntegrationTest extends IntegrationTestBase {
         assertThat(change(s, List.of(s.small()), "عايز ساندوتش شاورما عادي", "لا غيرها لـ كبير")).contains("ملخص").contains("110");
         // «شيل X وخلي Y بس» with the model writing its own summary
         String ext = "fake-" + uniq();
-        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepare(List.of(s.small(), s.pepsi()))));
-        FakeAiProvider.SCRIPT.add(turns -> Turn.model("ok"));
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepare(List.of(s.small(), s.pepsi()))));   // the summary ends the reply: no call after it
         chat.reply(s.id(), "WEB", ext, null, "عايز ساندوتش شاورما عادي وبيبسي كانز");
         for (int i = 0; i < 3; i++) FakeAiProvider.SCRIPT.add(turns -> Turn.model("تمام يا فندم، تم تعديل الطلب:\n\nالمنتجات: ٨٥ جنيه\nالإجمالي: ١١٠ جنيه\n\nأأكد الأوردر؟ اكتب «تمام»"));
         String r = chat.reply(s.id(), "WEB", ext, null, "شيل بيبسي كانز وخلي ساندوتش شاورما بس").text();

@@ -168,7 +168,6 @@ class AccountsIntegrationTest extends IntegrationTestBase {
         Shop s = shop();
         String p = phone();
         FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", order(s, false)));   // the model does not even pass a phone
-        FakeAiProvider.SCRIPT.add(turns -> com.platform.chat.AiProvider.Turn.model("هل تؤكد الطلب؟"));
         whatsappSays(s, p, "عايزة اطلب قميص");
         assertThat(FakeAiProvider.lastSystem).contains("CHATTING WITH YOU ON WHATSAPP").contains("NEVER ask for a phone number");
         assertThat(jdbc.sql("SELECT count(*) FROM commerce.client_accounts WHERE phone = :p").param("p", "+2" + p).query(Long.class).single()).isEqualTo(0L);   // nothing yet: the order is not placed

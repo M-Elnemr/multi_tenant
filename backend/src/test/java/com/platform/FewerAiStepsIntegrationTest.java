@@ -10,27 +10,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.jdbc.core.simple.JdbcClient;
 
-/** The admin's test switches «fewer AI steps» (fast_path) and «short history» (short_history): what each changes, and that off is the behaviour as before. */
-class AiStepSwitchesIntegrationTest extends IntegrationTestBase {
-    @Autowired JdbcClient jdbc;
+/** Fewer AI steps (always on since the 2026-11-25 A/B): no model call whose words would be thrown away, and the rule to answer from the products already listed. */
+class FewerAiStepsIntegrationTest extends IntegrationTestBase {
 
     @BeforeEach
     void clean() { FakeAiProvider.reset(); }
 
-    @AfterEach
-    void off() { set("fast_path", null); set("short_history", null); }
-
-    void set(String column, String v) {
-        jdbc.sql("INSERT INTO chat.platform_ai_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING").update();
-        jdbc.sql("UPDATE chat.platform_ai_config SET " + column + " = :v WHERE id = 1").param("v", v).update();
-        com.platform.chat.AiConfigService.forgetCachedForTests();
-    }
 
     String body(org.springframework.test.web.servlet.ResultActions r) throws Exception { return r.andReturn().getResponse().getContentAsString(); }
 
@@ -73,16 +62,10 @@ class AiStepSwitchesIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void fewerStepsEndsAtTheSummaryAndAtAFullAnswerNextToTheCardsAndSaysSoInThePrompt() throws Exception {
+    void theReplyEndsAtTheSummaryAndAtAFullAnswerNextToTheCardsAndThePromptSaysSo() throws Exception {
         Tenant t = onboard("STORE");
         String[] mug = mug(t);
         String[] reply = new String[1];
-        // off: as before, the model is asked again after both tools
-        assertThat(orderCalls(t, mug[2])).isEqualTo(2);
-        assertThat(cardCalls(t, mug[1], mug[0], reply)).isEqualTo(2);
-        assertThat(FakeAiProvider.lastRawSystem).doesNotContain("FEWER LOOKUPS");
-        // on: no call whose words are thrown away
-        set("fast_path", "on");
         assertThat(orderCalls(t, mug[2])).as("the summary is written by code").isEqualTo(1);
         assertThat(cardCalls(t, mug[1], mug[0], reply)).as("the answer next to the cards is complete").isEqualTo(1);
         assertThat(reply[0]).contains("Here is our " + mug[0]).contains("100");
@@ -93,35 +76,6 @@ class AiStepSwitchesIntegrationTest extends IntegrationTestBase {
         FakeAiProvider.SCRIPT.add(turns -> { calls.incrementAndGet(); return Turn.model("It is " + mug[0] + " for 100 EGP, in stock."); });
         send(t, UUID.randomUUID().toString(), "do you have the " + mug[0]);
         assertThat(calls.get()).isGreaterThanOrEqualTo(2);
-        // the rule reaches the model
-        FakeAiProvider.reset();
-        FakeAiProvider.SCRIPT.add(turns -> Turn.model("Hello!"));
-        send(t, UUID.randomUUID().toString(), "hello there friend");
         assertThat(FakeAiProvider.lastRawSystem).contains("FEWER LOOKUPS");
-    }
-
-    @Test
-    void shortHistorySendsTheRecentMessagesAndTheEarlierChatFromTheDatabase() throws Exception {
-        Tenant t = onboard("STORE");
-        String[] mug = mug(t);
-        String conv = UUID.randomUUID().toString();
-        int[] sent = new int[1];
-        // a long chat: the size and the product are said at the start
-        send(t, conv, "my name is Karim, my size is XL and I like the " + mug[0]);
-        for (int i = 1; i <= 9; i++) send(t, conv, "question number " + i + " about delivery times please");
-        FakeAiProvider.reset();
-        FakeAiProvider.SCRIPT.add(turns -> { sent[0] = turns.size(); return Turn.model("ok"); });
-        send(t, conv, "and what about returns please");
-        int all = sent[0];
-        assertThat(all).as("off: the whole window").isGreaterThanOrEqualTo(21);
-        assertThat(FakeAiProvider.lastSystem).doesNotContain("EARLIER IN THIS CHAT");
-        // on: only the recent part, and what the customer said before it from the database
-        set("short_history", "on");
-        FakeAiProvider.reset();
-        FakeAiProvider.SCRIPT.add(turns -> { sent[0] = turns.size(); return Turn.model("ok"); });
-        send(t, conv, "and what about exchanges please");
-        assertThat(sent[0]).isLessThan(all).isLessThanOrEqualTo(com.platform.chat.ChatService.SHORT_KEEP + com.platform.chat.ChatService.SHORT_STEP + 1);
-        assertThat(FakeAiProvider.lastSystem).contains("EARLIER IN THIS CHAT").contains("my size is XL")
-                .contains("THE CHAT BEFORE THE MESSAGES YOU SEE").contains(mug[0]);
     }
 }

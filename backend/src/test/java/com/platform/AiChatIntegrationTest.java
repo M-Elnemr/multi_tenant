@@ -336,19 +336,17 @@ class AiChatIntegrationTest extends IntegrationTestBase {
 
         // an allowed discount gives a summary; nothing is ordered yet
         FakeAiProvider.RESULTS.clear();
-        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepare(variant, 5, "CASH_ON_DELIVERY")));
-        FakeAiProvider.SCRIPT.add(turns -> Turn.model("Total 145. Confirm?"));
+        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepare(variant, 5, "CASH_ON_DELIVERY")));   // the summary ends the reply: no call after it
         send(t, conv, "ok 5% then");
         assertThat(FakeAiProvider.RESULTS.get(0).result().toString()).contains("summary");
         assertThat(orders(t)).isZero();
 
-        // placing it before the customer replied to the summary is refused
+        // placing an order no summary was shown for is refused (and after a summary the reply ends there, so the model never gets to place it in the same turn)
         FakeAiProvider.RESULTS.clear();
-        FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("prepare_order", prepare(variant, 5, "CASH_ON_DELIVERY")));
         FakeAiProvider.SCRIPT.add(turns -> FakeAiProvider.call("place_order", Map.of()));
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("waiting for you"));
         send(t, UUID.randomUUID().toString(), "buy it now");
-        assertThat(FakeAiProvider.RESULTS.get(1).result().get("error").toString()).contains("not confirmed");
+        assertThat(FakeAiProvider.RESULTS.get(0).result().get("error").toString()).contains("no order summary");
         assertThat(orders(t)).isZero();
 
         // the customer says yes in a later message: the order is created, tagged, with the discount, and the customer record keeps the address

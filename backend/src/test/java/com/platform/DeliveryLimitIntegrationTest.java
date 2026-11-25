@@ -84,8 +84,7 @@ class DeliveryLimitIntegrationTest extends IntegrationTestBase {
         Shop s = shop();
         String answer = "سؤال مهم يا فندم، سألت فريق المحل عن تفاصيل الضمان ضد الكسر وهيردوا عليك هنا في نفس الشات.";
         FakeAiProvider.SCRIPT.add(turns -> new Turn("model", answer, List.of(new ToolCall("flag_unanswered", Map.of("question", "هل الضمان بيغطي الكسر؟"))), List.of(), null));
-        FakeAiProvider.SCRIPT.add(turns -> Turn.model("وفي الوقت ده، تحب المقاس ٤٣ ولا ٦٥ بوصة؟"));
         String reply = chat.reply(s.id(), "WEB", "handoff-" + uniq(), null, "التلفزيون عليه ضمان؟ وبيغطي الكسر؟").text();
-        assertThat(reply).contains("سألت فريق المحل عن تفاصيل الضمان ضد الكسر").contains("تحب المقاس");
+        assertThat(reply).contains("سألت فريق المحل عن تفاصيل الضمان ضد الكسر");   // a full answer next to the hand-off is the reply: no second call writes it again
     }
 }
