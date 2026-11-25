@@ -8,28 +8,18 @@ import com.platform.chat.AiProvider.Turn;
 import com.platform.chat.ChatService;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
 /** Code settles what it can without a second model call (always on since the 2026-11-25 A/B). */
-class AiPhaseSwitchesIntegrationTest extends IntegrationTestBase {
+class SettledInCodeIntegrationTest extends IntegrationTestBase {
     @Autowired JdbcClient jdbc;
     @Autowired ChatService chat;
 
     @BeforeEach
     void clean() { FakeAiProvider.reset(); }
-
-    @AfterEach
-    void off() { set("prompt_mode", null); }
-
-    void set(String column, String v) {
-        jdbc.sql("INSERT INTO chat.platform_ai_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING").update();
-        jdbc.sql("UPDATE chat.platform_ai_config SET " + column + " = :v WHERE id = 1").param("v", v).update();
-        com.platform.chat.AiConfigTestAccess.forget();
-    }
 
     UUID shop() throws Exception {
         Tenant t = onboard("STORE");
@@ -47,10 +37,8 @@ class AiPhaseSwitchesIntegrationTest extends IntegrationTestBase {
         AtomicInteger calls = new AtomicInteger();
         FakeAiProvider.SCRIPT.add(turns -> { calls.incrementAndGet(); return Turn.model("عندنا موبايلات كتير حلوة ومتنوعة يا فندم"); });
         FakeAiProvider.SCRIPT.add(turns -> { calls.incrementAndGet(); return Turn.model("عندنا موبايل نوفا A5"); });
-        String reply = chat.reply(id, "WEB", "p2-" + uniq(), null, "عايز موبايل").text();
+        String reply = chat.reply(id, "WEB", "settled-" + uniq(), null, "عايز موبايل").text();
         assertThat(calls.get()).as("settled in code").isEqualTo(1);
         assertThat(reply).contains("موبايل نوفا").contains("5499");
     }
-
-
 }

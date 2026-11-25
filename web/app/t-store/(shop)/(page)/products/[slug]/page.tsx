@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ShopProductCard, type ShopProduct } from "@/components/shop/product-card";
-import type { ShopProfile } from "@/components/shop/types";
 import { backendJson, BackendError } from "@/lib/backend";
 import { money } from "@/lib/format";
 import { getT } from "@/lib/i18n-server";

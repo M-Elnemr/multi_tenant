@@ -666,7 +666,6 @@ final class FactCheck {
         return matched == null ? null : new Object[]{matched, len};
     }
 
-    private static final Set<String> CURRENCY = Set.of("جنيه", "ج", "جم", "egp", "le", "pounds", "pound");
 
     private static void checkSegment(String answer, String l, Product p, List<Product> alsoMeant, int from, int to, Set<Integer> qty, Shop shop, java.util.function.Function<String, Product> load, List<Problem> out) {
         var values = valueWords(p);
@@ -1764,7 +1763,6 @@ final class FactCheck {
     private static final Pattern ADDRESS_BEFORE = Pattern.compile("(?:شارع|ش|عماره|عمارة|شقه|دور|الدور|بلوك|برج|مبني|رقم|منطقه|مربع|مجاوره|الحي|حي|street|st|apt|floor|building|block)\\.?\\s*$", Pattern.CASE_INSENSITIVE);
 
     /** Asking for the order details offers the item as it was asked («محتاج منك: الاسم، رقم الموبايل، العنوان»). */
-    private static final Pattern ASKS_DETAILS = Pattern.compile("(?:الاسم|العنوان|رقم\\s+(?:موبايل|الموبايل|تليفون|التليفون|واتساب)|هحجزهولك|هجهزلك|هجهزهالك|your\\s+name|address)", Pattern.CASE_INSENSITIVE);
 
     private static final Pattern SIZE_BEFORE = Pattern.compile("(?:لابس|لابسه|مقاس|مقاسي|مقاسه|نمره|نمرتي|نمرته|سن|سنه|عمره|عمرها|عمري|وزني|وزنه|وزنها|طولي|طوله|طولها|size)\\s*$", Pattern.CASE_INSENSITIVE);
 

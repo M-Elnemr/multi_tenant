@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { backendJson } from "@/lib/backend";
-import { money } from "@/lib/format";
 import { getT } from "@/lib/i18n-server";
 import { whatsappLink } from "@/lib/whatsapp";
 import { currentHost } from "@/lib/backend";

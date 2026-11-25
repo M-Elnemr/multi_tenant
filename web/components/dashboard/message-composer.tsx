@@ -15,7 +15,7 @@ const FORMS: [string, string][] = [["أهلاً بيك/بيكي", "أهلاً {�
  * A WhatsApp-style message editor: placeholder buttons that drop {name} or {shop} at the cursor, an emoji picker, a picture, a character counter and a live preview bubble.
  * The server replaces the placeholders for each customer when it sends.
  */
-export default function MessageComposer({ text, onText, imageId, onImage, max = 1000, footer }: { text: string; onText: (v: string) => void; imageId: string | null; onImage: (id: string | null) => void; max?: number; footer?: string }) {
+export default function MessageComposer({ text, onText, imageId, onImage, max = 1000 }: { text: string; onText: (v: string) => void; imageId: string | null; onImage: (id: string | null) => void; max?: number }) {
   const { t } = useI18n();
   const ref = useRef<HTMLTextAreaElement>(null);
   const [sample, setSample] = useState<"MALE" | "FEMALE">("FEMALE");

@@ -10,7 +10,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,7 +38,6 @@ import org.springframework.stereotype.Service;
 @Service
 public class DomainOrderRunner {
     private static final Logger log = LoggerFactory.getLogger(DomainOrderRunner.class);
-    private static final Set<String> DUE_STATUSES = Set.of("PAID", "REGISTERING", "DNS_CONFIGURING", "VERIFYING");
     private static final int MAX_ATTEMPTS = 8;
 
     private final JdbcClient jdbc;
