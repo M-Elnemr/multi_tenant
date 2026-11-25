@@ -1334,6 +1334,9 @@ public class ChatService {
         if (answer == null || answer.isBlank()) return answer;
         answer = withoutRepeatedClosedNote(turns, answer);
         try { answer = withoutStrayLatin(answer, customerWords(turns), productWords(ctx.tenantId()).values()); } catch (RuntimeException e) { log.debug("Stray word cleanup skipped", e); }
+        try {   // a coupon code is written exactly as the shop's («SHAWAMA15» for SHAWARMA15 would be refused at checkout: round 3 of the 2026-11-25 test)
+            if (CODE_LIKE.matcher(answer).find()) answer = withRealCouponCodes(answer, jdbc.sql("SELECT code FROM commerce.coupons WHERE tenant_id = :t AND is_active").param("t", ctx.tenantId()).query(String.class).list());
+        } catch (RuntimeException e) { log.debug("Coupon code check skipped", e); }
         try {   // the customer's name is known (they said it, or their chat app shows it): the details asked for never include it again
             String known = jdbc.sql("SELECT display_name FROM chat.conversations WHERE id = :c").param("c", ctx.conversationId()).query(String.class).optional().orElse(null);
             if (known != null && !known.isBlank()) answer = withoutNameAsk(answer);
@@ -1484,6 +1487,36 @@ public class ChatService {
      * «وب current تغطي»: a lowercase English word the model slipped into an Arabic sentence (not the customer's own word, not a word of the shop's products, not a common brand or app
      * word, not part of a code like «usb-c») is taken out. Upper-case words and codes (SSD, X12, MagSafe) are never touched.
      */
+    private static final Pattern CODE_LIKE = Pattern.compile("(?<![A-Za-z0-9])[A-Z][A-Z0-9]{4,19}(?![A-Za-z0-9])");
+
+    /** A code-like word one or two letters away from exactly one of the shop's active coupon codes is that code, spelled right; a real code or any other word is left as it is. */
+    static String withRealCouponCodes(String answer, List<String> codes) {
+        if (answer == null || codes == null || codes.isEmpty()) return answer;
+        var m = CODE_LIKE.matcher(answer);
+        StringBuilder out = new StringBuilder();
+        while (m.find()) {
+            String w = m.group(), fix = w;
+            if (codes.stream().noneMatch(c -> c.equalsIgnoreCase(w))) {
+                List<String> near = codes.stream().filter(c -> Math.abs(c.length() - w.length()) <= 2 && editDistance(c.toUpperCase(java.util.Locale.ROOT), w) <= (w.length() >= 8 ? 2 : 1)).toList();
+                if (near.size() == 1) fix = near.get(0).toUpperCase(java.util.Locale.ROOT);
+            }
+            m.appendReplacement(out, java.util.regex.Matcher.quoteReplacement(fix));
+        }
+        m.appendTail(out);
+        return out.toString();
+    }
+
+    static int editDistance(String a, String b) {
+        int[] prev = new int[b.length() + 1], cur = new int[b.length() + 1];
+        for (int j = 0; j <= b.length(); j++) prev[j] = j;
+        for (int i = 1; i <= a.length(); i++) {
+            cur[0] = i;
+            for (int j = 1; j <= b.length(); j++) cur[j] = Math.min(Math.min(cur[j - 1] + 1, prev[j] + 1), prev[j - 1] + (a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1));
+            int[] t = prev; prev = cur; cur = t;
+        }
+        return prev[b.length()];
+    }
+
     /** «اسمك ورقم الواتساب والمنطقة» asked of a customer whose name is known (round 1 of the 2026-11-25 switch test: «تمام يا أستاذ كريم … اسمك ورقم الواتساب»). */
     private static final Pattern NAME_IN_LIST = Pattern.compile("(?:(?<=[\\s:،,(])|^)(?:اسمك|اسم\\s+حضرتك|الاسم(?:\\s+الكريم)?)(?:\\s+(?:الكريم|الاول|الأول|بالكامل|كامل|(?:على|علي)\\s+(?:الطلبيه|الطلبية|الطلب|الأوردر|الاوردر)))?\\s*(?:،|,|\\s+و(?=\\S)|\\s+and\\s+)\\s*");
     private static final Pattern NAME_CHECK = Pattern.compile("(?:اسمك|اسم\\s+حضرتك|الاسم)\\s*\\([^)\\n]{0,30}\\)\\s*(?:،|,|\\s+و(?=\\S))?\\s*");   // «اسمك (كريم تمام؟)، رقم الواتساب»
@@ -1915,6 +1948,45 @@ public class ChatService {
      * product and every option it states right in the database. VAGUE: the matching products with their prices are added. UNSEARCHED_DENIAL: the code searches; nothing found means
      * the «we do not have it» was right. WHO_BEFORE_SEARCH: the matching products are for several groups, so asking who it is for is right.
      */
+    /**
+     * The real price of the one product the customer's message names, as a sentence: the price of the option they named when that decides it, else the one price, else «من X لـ Y».
+     * Null when the message names no product or several (the rewrite then decides).
+     */
+    @SuppressWarnings("unchecked")
+    public String askedPrice(UUID tenantId, String last, boolean english) {
+        if (last == null) return null;
+        var names = shopView(tenantId).names();
+        List<String> named = FactCheck.mentions(last, names).stream().map(m -> m.slug()).distinct().toList();
+        if (named.size() > 1) {   // «موبايل نوفا A5» also matches «موبايل نوفا X12»: the one whose whole name is in the message
+            String n = FastAnswers.norm(MoneyGuard.digits(last));
+            Map<String, String> nameOf = new java.util.HashMap<>();
+            for (var x : names) nameOf.put(x.slug(), FastAnswers.norm(MoneyGuard.digits(x.name())));
+            named = named.stream().filter(sl -> nameOf.get(sl) != null && n.contains(nameOf.get(sl))).toList();
+        }
+        if (named.size() != 1) return null;
+        String slug = named.get(0);
+        var rows = search.bySlugs(tenantId, List.of(slug));
+        if (rows.isEmpty()) return null;
+        String name = String.valueOf(rows.get(0).get("name"));
+        List<Map<String, Object>> vs;
+        try { vs = catalog.activeVariantsBySlugs(tenantId, List.of(slug)).getOrDefault(slug, List.of()); } catch (RuntimeException e) { return null; }
+        if (vs.isEmpty()) return null;
+        String said = FastAnswers.norm(MoneyGuard.digits(last));
+        java.util.TreeSet<Long> all = new java.util.TreeSet<>(), picked = new java.util.TreeSet<>();
+        for (var v : vs) {
+            if (!(v.get("priceMinor") instanceof Number pm)) continue;
+            all.add(pm.longValue());
+            String combo = v.get("comboKey") == null ? "" : String.valueOf(v.get("comboKey"));
+            List<String> values = java.util.Arrays.stream(combo.split("\\|")).filter(kv -> kv.contains("=")).map(kv -> FastAnswers.norm(MoneyGuard.digits(kv.substring(kv.indexOf('=') + 1)))).filter(x -> !x.isBlank()).toList();
+            if (!values.isEmpty() && values.stream().anyMatch(x -> java.util.regex.Pattern.compile("(?<![\\p{L}\\p{N}])" + java.util.regex.Pattern.quote(x) + "(?![\\p{L}\\p{N}])").matcher(said).find())) picked.add(pm.longValue());
+        }
+        if (all.isEmpty()) return null;
+        var use = picked.size() == 1 ? picked : all;
+        String lo = price(use.first()), hi = price(use.last());
+        if (english) return use.size() == 1 ? name + " is " + lo + " EGP." : name + " is from " + lo + " to " + hi + " EGP, depending on the option.";
+        return use.size() == 1 ? name + " سعره " + lo + " جنيه." : name + " سعره من " + lo + " لـ " + hi + " جنيه حسب الاختيار.";
+    }
+
     String settledInCode(Ctx ctx, String last, String answer, Map<String, String> problems, List<FactCheck.Problem> facts) {
         boolean factsRight = facts.stream().noneMatch(f -> WRONG_FACT.contains(f.kind())) && problems.keySet().stream().noneMatch(WRONG_FACT::contains);
         if (problems.containsKey("STALL") && !ctx.products().isEmpty()) {   // the tools found products: the code says what they found; otherwise («I will ask the team» about halal) the rewrite decides
@@ -1948,6 +2020,10 @@ public class ChatService {
                 answer = b.toString();
                 problems.remove("VAGUE");
             }
+        }
+        if (problems.containsKey("PRICE_MISSING")) {   // the customer asked the price of the product they named and the reply has none: code says it (round 3 of the 2026-11-25 test: two rewrites still gave only the colours)
+            String line = askedPrice(ctx.tenantId(), last, english(answer));
+            if (line != null) { answer = line + "\n" + answer.strip(); problems.remove("PRICE_MISSING"); }
         }
         if (problems.containsKey("UNSEARCHED_DENIAL") && related != null && related.isEmpty()) problems.remove("UNSEARCHED_DENIAL");
         if (problems.containsKey("WHO_BEFORE_SEARCH") && related != null

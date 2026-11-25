@@ -55,4 +55,12 @@ class AiStepsTest {
         assertThat(ChatService.statedName("مساء الخير، انا مستعجل")).isNull();
         assertThat(ChatService.statedName("انا عايز قميص")).isNull();
     }
+
+    @Test
+    void aMisspelledCouponCodeIsWrittenAsTheShopsCode() {
+        List<String> codes = List.of("SHAWARMA15", "WELCOME10");
+        assertThat(ChatService.withRealCouponCodes("كود SHAWAMA15 بيعمل خصم ١٥٪", codes)).isEqualTo("كود SHAWARMA15 بيعمل خصم ١٥٪");
+        assertThat(ChatService.withRealCouponCodes("استخدم WELCOM10", codes)).isEqualTo("استخدم WELCOME10");
+        assertThat(ChatService.withRealCouponCodes("كود SHAWARMA15 و USB-C و IPX7 و AMOLED", codes)).isEqualTo("كود SHAWARMA15 و USB-C و IPX7 و AMOLED");
+    }
 }

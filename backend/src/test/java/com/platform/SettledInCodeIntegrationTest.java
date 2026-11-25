@@ -41,4 +41,18 @@ class SettledInCodeIntegrationTest extends IntegrationTestBase {
         assertThat(calls.get()).as("settled in code").isEqualTo(1);
         assertThat(reply).contains("موبايل نوفا").contains("5499");
     }
+
+    @Test
+    void aPriceQuestionAnsweredWithoutThePriceGetsTheRealPriceFromCode() throws Exception {
+        UUID id = shop();
+        AtomicInteger calls = new AtomicInteger();
+        FakeAiProvider.SCRIPT.add(turns -> { calls.incrementAndGet(); return Turn.model("متوفر يا فندم بالأسود والأبيض، تحب أحجزلك واحد؟"); });
+        FakeAiProvider.SCRIPT.add(turns -> { calls.incrementAndGet(); return Turn.model("متوفر يا فندم، تحب أحجزلك؟"); });
+        String reply = chat.reply(id, "WEB", "price-" + uniq(), null, "موبايل نوفا A5 بكام؟").text();
+        assertThat(reply).contains("5499").contains("تحب أحجزلك");
+        // the price sentence code writes when no other fix gave it (round 3: «وتيشيرت هنلي بكم طويل بكام؟» answered with colours only, twice)
+        assertThat(chat.askedPrice(id, "طيب وموبايل نوفا A5 بكام؟", false)).isEqualTo("موبايل نوفا A5 سعره 5499 جنيه.");
+        assertThat(chat.askedPrice(id, "Nova A5 price?", true)).isNull();
+        assertThat(chat.askedPrice(id, "موبايلات نوفا بكام؟", false)).isNull();
+    }
 }
