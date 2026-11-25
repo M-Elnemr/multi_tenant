@@ -57,6 +57,18 @@ class ReplyClaimsTest {
     }
 
     @Test
+    void aYesToAClaimTheShopNeverWroteIsTakenBack() {
+        // round 3 of the 2026-11-25 test: «اللحمة حلال؟» → «أيوة، اللحمة عندنا لحم بتلو بلدي…»: the yes is the claim, though the word is not repeated
+        var shop = writing("بيت الشاورما مطعم تيك أواي في مدينة نصر. الشاورما على السيخ كل يوم، والساندوتش فيه طحينة وبقدونس.");
+        var p = FactCheck.check("اللحمة حلال؟", "أيوة، اللحمة عندنا لحم بتلو بلدي وبتتشوى على الفحم.", shop, List.of()).stream()
+                .filter(x -> x.kind().equals("SPEC_UNKNOWN")).findFirst().orElseThrow();
+        assertThat(p.fixed()).startsWith("اللحمة عندنا لحم بتلو بلدي").contains("أسأل المحل").doesNotContain("أيوة");
+        // a yes to something the shop wrote, or to a question that is no claim, is left alone
+        assertThat(FactCheck.check("اللحمة حلال؟", "أيوة، كل اللحوم عندنا حلال.", writing("كل اللحوم عندنا حلال ومذبوحة شرعي."), List.of()).stream().map(FactCheck.Problem::kind)).doesNotContain("SPEC_UNKNOWN");
+        assertThat(FactCheck.check("الساندوتش فيه طحينة؟", "أيوة، فيه طحينة وبقدونس.", shop, List.of()).stream().map(FactCheck.Problem::kind)).doesNotContain("SPEC_UNKNOWN");
+    }
+
+    @Test
     void aClaimTheShopWroteAnHonestNoAndAQuestionAreLeftAlone() {
         var shop = writing("كل اللحوم عندنا حلال ومذبوحة على الطريقة الإسلامية.");
         assertThat(FactCheck.check("اللحمة حلال؟", "أيوه يا فندم، اللحمة عندنا حلال 100%.", shop, List.of())).noneMatch(x -> x.kind().equals("SPEC_UNKNOWN"));

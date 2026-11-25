@@ -2165,6 +2165,9 @@ final class FactCheck {
     /** A claim about what the goods are (halal, certified, imported, organic, made in…, free of…, original) and the stems to find it in the shop's own text. */
     record Claim(String label, Pattern said, List<String> stems) {}
 
+    /** A reply that opens with a yes («أيوة،», «نعم»، «طبعًا», "yes"), with the punctuation after it. */
+    private static final Pattern YES_OPENING = Pattern.compile("^\\s*(?:أيوه|ايوه|أيوة|ايوة|أيوا|ايوا|آه|اه|نعم|طبعًا|طبعا|أكيد|اكيد|yes|sure|of\\s+course)(?!\\p{L})[\\s،,!.:\\-]*", Pattern.CASE_INSENSITIVE);
+
     private static Claim claim(String label, String regex, String... stems) { return new Claim(label, Pattern.compile("(?<!\\p{L})(?:و|ف|ب)?(?:" + regex + ")(?!\\p{L})", Pattern.CASE_INSENSITIVE), List.of(stems)); }
 
     static final List<Claim> CLAIMS = List.of(
@@ -2219,9 +2222,23 @@ final class FactCheck {
                 break;
             }
         }
-        if (drop.isEmpty()) return;
         boolean ar = arabic(answer) || customer != null && arabic(customer);
         String note = ar ? "التفصيلة دي مش مكتوبة في بيانات المحل عندنا، أقدر أسأل المحل عليها لو تحب 🙏" : "That detail is not in the shop's information; I can ask the shop for you if you like 🙏";
+        // «اللحمة حلال؟» answered «أيوة، اللحمة عندنا لحم بتلو بلدي»: the yes IS the claim, though the word is not repeated (round 3 of the 2026-11-25 switch test)
+        if (drop.isEmpty() && customer != null) {
+            var yes = YES_OPENING.matcher(answer);
+            String lc = light(customer).replace('ة', 'ه');
+            if (yes.lookingAt()) for (Claim c : CLAIMS) {
+                if (!c.said().matcher(lc).find()) continue;
+                Boolean known = shop.says(c.stems());
+                if (known == null || known) return;
+                String rest = answer.substring(yes.end()).strip();
+                out.add(new Problem("SPEC_UNKNOWN", "The customer asked whether the goods are «" + c.label() + "» and you said yes, but nothing the shop wrote says so. Do not say yes: say it is not listed and offer to ask the shop (flag_unanswered).",
+                        (rest.isBlank() ? note : rest + "\n\n" + note).trim()));
+                return;
+            }
+        }
+        if (drop.isEmpty()) return;
         String rest = withoutRanges(answer, drop);
         out.add(new Problem("SPEC_UNKNOWN", "You claimed «" + label + "» about the goods, and nothing the shop wrote says so. Never state what goods are (halal, certified, imported, organic, made in…, free of…, original) unless the shop's data or shop_knowledge says it: say it is not listed and offer to ask the shop (flag_unanswered).",
                 (rest.isBlank() ? note : rest + "\n\n" + note).trim()));
@@ -2452,7 +2469,11 @@ final class FactCheck {
             Product p = load.apply(m.slug());
             Set<String> own = new java.util.HashSet<>();
             boolean hasColour = false;
-            for (Variant v : p.variants()) for (var e : v.options().entrySet()) if (colorOption(e.getKey())) { hasColour = true; for (Tok t : tokens(light(e.getValue()), 0, e.getValue().length())) own.add(colourWord(t.word())); }
+            for (Variant v : p.variants()) for (var e : v.options().entrySet()) {
+                if (colorOption(e.getKey())) hasColour = true;
+                // the values of ALL its options are its own words: «بني» is this keyboard's switch, not a colour it lacks (round 4 of the 2026-11-25 test replaced «السويتش البني» this way)
+                for (Tok t : tokens(light(e.getValue()), 0, e.getValue().length())) own.add(colourWord(t.word()));
+            }
             if (!hasColour) continue;
             for (Tok t : tokens(light(p.name()), 0, p.name().length())) own.add(colourWord(t.word()));   // «سنيكرز جلد أبيض رجالي»: its name
             int end = l.length(), from = 0;

@@ -74,4 +74,12 @@ class FactCheckProductBoundaryTest {
         assertThat(probes).as("the property was exercised").isGreaterThan(50);
         assertThat(leaks).as("a swapped kind word must not resolve to the original product (%d probes)", probes).isEmpty();
     }
+
+    @Test
+    void aValueOfTheProductsOtherOptionIsNotAnInventedColour() {
+        // round 4 of the 2026-11-25 test: «أسود + سويتش بني» — «بني» is the keyboard's switch, not a colour it lacks; the answer must not be replaced by its colours line
+        var problems = FactCheck.check("عايز كيبورد ميكانيكال زينترا أسود بني", "تمام، كيبورد ميكانيكال زينترا أسود بالسويتش البني متوفر بـ 1499 جنيه.", FactCheckTest.TECH, List.of());
+        assertThat(problems.stream().map(FactCheck.Problem::kind)).doesNotContain("INVENTED_COLOR");
+    }
+
 }
