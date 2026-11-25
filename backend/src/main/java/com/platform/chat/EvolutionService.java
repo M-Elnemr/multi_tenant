@@ -247,18 +247,9 @@ public class EvolutionService {
     // ---- sending --------------------------------------------------------------------------------------------------------------------
 
     /** Result of one paced send: SENT, FAILED, or DEFERRED (the shop is at its per-minute limit; try again on the next pass). */
-    /**
-     * Shows «typing…» on the customer's WhatsApp (Evolution presence) until the reply is sent. Evolution sends «paused» when the delay ends, so the delay is long (60 s) and the call is
-     * repeated every 15 s: with an 8 s delay repeated every 8 s, a «paused» landed next to the next «composing» and the typing went away while the reply was still being written.
-     * The reply message itself ends the typing on the customer's phone. Our side gives up waiting for the call after 20 s; Evolution keeps the presence.
-     */
+    /** Shows «typing…» on the customer's WhatsApp for about 8 seconds (Evolution presence); sent again every 8 s while the reply is written. */
     private void typing(UUID tenantId, String number) {
-        api.call("POST", "/chat/sendPresence/" + row(tenantId).get("instance"), Map.of("number", number.replaceAll("\\D", ""), "presence", "composing", "delay", 60_000));
-    }
-
-    /** Ends «typing…» on the customer's WhatsApp once the reply is ready (the long presence above would otherwise stay up to a minute after the answer). */
-    private void typingDone(UUID tenantId, String number) {
-        api.call("POST", "/chat/sendPresence/" + row(tenantId).get("instance"), Map.of("number", number.replaceAll("\\D", ""), "presence", "paused", "delay", 0));
+        api.call("POST", "/chat/sendPresence/" + row(tenantId).get("instance"), Map.of("number", number.replaceAll("\\D", ""), "presence", "composing", "delay", 8_000));
     }
 
     public enum Delivery { SENT, FAILED, DEFERRED }
@@ -450,7 +441,6 @@ public class EvolutionService {
 
     private void respondNow(UUID tenantId, String sender, String text, String pushName, ChatService.ReplyInput in) {
         ChatService.Reply sentReply = null;
-        boolean[] typed = {false};   // «typing…» was shown for this reply: it is ended once more after the last message (see below)
         boolean aiOn = chat.enabled(tenantId, "WHATSAPP");
         String answer;
         List<ProductShare.Card> cards = List.of();
@@ -465,9 +455,8 @@ public class EvolutionService {
                 else if (!aiOn) return;
                 else {
                     ChatService.Reply reply;
-                    try (var typing = Typing.start("WHATSAPP|" + tenantId + "|" + sender, () -> typing(tenantId, sender), 15_000, () -> typingDone(tenantId, sender))) {   // «typing…» on the customer's WhatsApp while a slow reply is written
+                    try (var typing = Typing.start(() -> typing(tenantId, sender), 8_000)) {   // «typing…» on the customer's WhatsApp while a slow reply is written
                         reply = chat.reply(tenantId, "WHATSAPP", sender, null, text.length() > 1000 ? text.substring(0, 1000) : text, pushName, in);
-                        typed[0] = typing.shown();
                     }
                     if (reply.text() == null || reply.text().isBlank()) return;   // the shop team took this chat over: nothing goes out automatically
                     sentReply = reply;
@@ -494,9 +483,6 @@ public class EvolutionService {
             if (d == Delivery.FAILED && card.imageUrl() != null) d = ReplyTrace.outbound("WHATSAPP", "evolution", "card", () -> deliver(tenantId, sender, card.caption(), null, m -> cardMid[0] = m), r -> r != Delivery.FAILED);
             if (sentReply != null && replies != null) replies.recordMid(tenantId, sentReply.conversationId(), sentReply.messageId(), cardMid[0], card.caption());
         }
-        // «typing…» stayed a few seconds after the answer (2026-11-25): a «composing» still on its way, or the short one Evolution shows before each message, can arrive after the
-        // first «paused». One more «paused» after the last message leaves the customer's phone with no typing.
-        if (typed[0]) try { typingDone(tenantId, sender); } catch (RuntimeException e) { log.debug("Typing end not sent: {}", e.getMessage()); }
     }
 
     private static BusinessException unreachable(EvolutionApi.EvolutionException e) {
