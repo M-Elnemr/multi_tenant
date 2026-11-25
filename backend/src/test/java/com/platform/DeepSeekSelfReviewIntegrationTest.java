@@ -83,8 +83,24 @@ class DeepSeekSelfReviewIntegrationTest extends IntegrationTestBase {
     @Autowired ChatService chat;
     @Autowired JdbcClient jdbc;
 
+    static volatile boolean warmed = false;
+
+    /**
+     * One throwaway chat before the first measured one: on a slow CI runner the first reply of a fresh test context (JIT, connection pools, first queries) could pass the
+     * 20 seconds after which the review is skipped by design, so the test saw «search, answer» without the review (CI 2026-11-24/25).
+     */
+    void warmUp() throws Exception {
+        if (warmed) return;
+        warmed = true;
+        marker = null;
+        Shop w = shop();
+        marker = null;
+        try { chat.reply(w.id(), "WEB", "warm-" + uniq(), null, "اهلا"); } catch (RuntimeException ignored) { /* only to warm up */ }
+    }
+
     @BeforeEach
-    void clean() {
+    void clean() throws Exception {
+        warmUp();
         synchronized (DeepSeekSelfReviewIntegrationTest.class) { DEEPSEEK.clear(); }
         DEEPSEEK_SEEN.clear(); GLM_SEEN.clear(); failFromCall = Integer.MAX_VALUE; marker = null;
         FakeAiProvider.reset();
