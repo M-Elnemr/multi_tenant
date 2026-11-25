@@ -1817,6 +1817,7 @@ public class ChatService {
      * When the model could not put a stall right in time: its stalling or offering sentences go, and the products the tools found this turn are listed by code (name, size, the real
      * price, «من» when the price changes by option), so the customer never waits on «هرجعلك» or has to say «أيوه» to see them.
      */
+    private static final Pattern WANTS_ITEMS = Pattern.compile("(?:عايز|عاوز|عايزه|عاوزه|محتاج|محتاجه|عندكم|عندكو|فيه|في\\s+عندكم|وريني|ورينى|اشوف|ابغي|ابغى|بدور\\s+علي|بدور\\s+على|i\\s+want|i\\s+need|do\\s+you\\s+have|looking\\s+for|show\\s+me|3ayez|3ayz|3awez)", Pattern.CASE_INSENSITIVE);
     private static final Pattern AFTER_SALE = Pattern.compile("(?:اشتريت|اشتريته|اشتريتها|شاريه|شاريها|طلبته|طلبتها|وصلني|وصلتني|استلمت|استلمته|الطلب\\s+بتاعي|الاوردر\\s+بتاعي|bought|i\\s+ordered|received\\s+(?:it|my))", Pattern.CASE_INSENSITIVE);
 
     /** The fact-check kinds that mean a wrong fact about a product: while any is left, «not looked up» is not settled by the database. */
@@ -1849,7 +1850,8 @@ public class ChatService {
                 chatHasProduct = !FactCheck.mentions(recent, names).isEmpty();
             }
             List<String> kinds = List.of();
-            boolean afterSale = last != null && (ANGRY.matcher(last).find() || HUMAN_ASK.matcher(last).find() || AFTER_SALE.matcher(FastAnswers.norm(last)).find());
+            boolean afterSale = last != null && (ANGRY.matcher(last).find() || HUMAN_ASK.matcher(last).find() || AFTER_SALE.matcher(FastAnswers.norm(last)).find()
+                    || isPolicyAsk(last) || !WANTS_ITEMS.matcher(FastAnswers.norm(last)).find());   // only a request for items («عايز موبايل», «عندكم جزم؟»), never a returns question or small talk
             if (ar && !chatHasProduct && !afterSale) {   // a complaint or a question about a bought item never gets a product list
                 List<String> slugs = new ArrayList<>();
                 for (var wm : wordMatches(ctx.tenantId(), last, true, Set.of(), 3)) slugs.addAll(wm.detailed());
