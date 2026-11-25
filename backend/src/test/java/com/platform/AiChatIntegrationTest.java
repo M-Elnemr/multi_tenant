@@ -263,6 +263,43 @@ class AiChatIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void anItemTheAssistantOnlySuggestedIsNeverOrderedButOneTheCustomerTookIs() throws Exception {
+        Tenant t = onboard("STORE");
+        String mug = mug(t);
+        String mugName = jdbc.sql("SELECT p.name FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE v.id = CAST(:v AS uuid)").param("v", mug).query(String.class).single();
+        String branch = JsonPath.read(body(onHost(t.host(), t.access(), "GET", "/api/v1/store/branches", null)), "$[0].id");
+        String pillowName = "Pillow " + uniq();
+        String pillow = JsonPath.read(body(onHost(t.host(), t.access(), "POST", "/api/v1/store/products",
+                "{\"taxonomySlug\":\"cookware\",\"name\":\"%s\",\"variants\":[{\"sku\":\"P-%s\",\"priceMinor\":5000,\"optionValues\":{},\"stock\":[{\"branchId\":\"%s\",\"quantity\":9}]}]}".formatted(pillowName, uniq(), branch)).andExpect(status().isCreated())), "$.variants[0].id");
+        Map<String, Object> both = new java.util.HashMap<>(prepare(mug, 0, "CASH_ON_DELIVERY"));
+        both.put("items", List.of(Map.of("variantId", mug, "quantity", 1), Map.of("variantId", pillow, "quantity", 1)));
+        String offer = "تمام، " + mugName + " بـ ١٠٠ جنيه، ممكن تضيف معاه " + pillowName + " بـ ٥٠ جنيه؟";
+        // the assistant suggested the pillow next to the mug; the customer only gave their details: the pillow is not theirs (exam 2026-11-25, «بسبوسة بالقشطة»)
+        FakeAiProvider.reset();
+        String c1 = UUID.randomUUID().toString();
+        FakeAiProvider.SCRIPT.add(FakeAiProvider.only("يا كريم", turns -> Turn.model(offer)));
+        send(t, c1, "عايز " + mugName + " يا كريم");
+        FakeAiProvider.SCRIPT.add(FakeAiProvider.only("مكرم عبيد عمارة ٣ شقة ٤", turns -> FakeAiProvider.call("prepare_order", both)));
+        FakeAiProvider.SCRIPT.add(FakeAiProvider.only("مكرم عبيد عمارة ٣ شقة ٤", turns -> Turn.model("تمام يا أستاذ كريم")));
+        send(t, c1, "انا كريم، القاهرة مدينة نصر شارع مكرم عبيد عمارة ٣ شقة ٤، ٠١٠٢٣٤٥٦٧٨٩، كاش، هيوصل امتى؟");
+        String refusals = FakeAiProvider.RESULTS.stream().filter(r -> "prepare_order".equals(r.name())).map(r -> String.valueOf(r.result().get("error"))).toList().toString();
+        assertThat(refusals).contains("never asked for «" + pillowName + "»").contains("only suggested it");
+        // the same offer taken («ايوه ضيفه»): the pillow is the customer's
+        FakeAiProvider.reset();
+        String c2 = UUID.randomUUID().toString();
+        FakeAiProvider.SCRIPT.add(FakeAiProvider.only("يا ندى", turns -> Turn.model(offer)));
+        send(t, c2, "عايز " + mugName + " يا ندى");
+        FakeAiProvider.SCRIPT.add(FakeAiProvider.only("ايوه ضيفه", turns -> Turn.model("تمام، ابعتلي بياناتك")));
+        send(t, c2, "ايوه ضيفه");
+        FakeAiProvider.SCRIPT.add(FakeAiProvider.only("مكرم عبيد عمارة ٥ شقة ٦", turns -> FakeAiProvider.call("prepare_order", both)));
+        FakeAiProvider.SCRIPT.add(FakeAiProvider.only("مكرم عبيد عمارة ٥ شقة ٦", turns -> Turn.model("ده الملخص")));
+        send(t, c2, "انا ندى، القاهرة مدينة نصر شارع مكرم عبيد عمارة ٥ شقة ٦، ٠١٠٢٣٤٥٦٧٨٩، كاش، هيوصل امتى؟");
+        String second = FakeAiProvider.RESULTS.stream().filter(r -> "prepare_order".equals(r.name())).map(r -> String.valueOf(r.result().get("error"))).toList().toString();
+        assertThat(second).doesNotContain("never asked for «");
+        assertThat(orders(t)).isZero();
+    }
+
+    @Test
     void noSummaryIsShownForMoreThanTheStockOrASoldOutItem() throws Exception {
         Tenant t = onboard("STORE");
         String variant = mug(t);   // 9 in stock

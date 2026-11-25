@@ -341,7 +341,7 @@ class MetaChannelsIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void aSlowAnswerFirstGetsAShortWaitMessage() throws Exception {
+    void aSlowAnswerShowsTypingAndNoWaitMessage() throws Exception {
         Tenant t = onboard("STORE");
         String page = pageId();
         connect(t, "FACEBOOK", page);
@@ -350,11 +350,10 @@ class MetaChannelsIntegrationTest extends IntegrationTestBase {
         String raw = pageMessage(page, "user-slow", "mid-" + uniq(), "عايز مخدة");
         webhook(raw, sign(raw)).andExpect(status().isOk());
         var texts = FakeMetaGraph.SENT.stream().map(m -> m.body().toString()).toList();
-        assertThat(texts).hasSize(3);
+        assertThat(texts).hasSize(2);
         assertThat(texts.get(0)).as("«typing…» after 3 s").contains("sender_action=typing_on").contains("user-slow");
-        assertThat(texts.get(1)).contains("لحظات معايا");
-        assertThat(texts.get(2)).contains("اتفضل يا فندم!");
-        // a quick answer gets no typing and no wait message
+        assertThat(texts.get(1)).as("no «one moment» text any more: typing says it").contains("اتفضل يا فندم!").doesNotContain("لحظات معايا");
+        // a quick answer gets no typing
         FakeMetaGraph.reset();
         FakeAiProvider.SCRIPT.add(turns -> Turn.model("Quick!"));
         String raw2 = pageMessage(page, "user-slow", "mid-" + uniq(), "hello I need a dress");

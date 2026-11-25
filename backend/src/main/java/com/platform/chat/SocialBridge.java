@@ -91,10 +91,6 @@ public class SocialBridge {
         } else {
             try {
                 throttle.check("chat-social|" + platform + "|" + sender, 40, Duration.ofMinutes(10));
-                boolean arabic = text.codePoints().anyMatch(cp -> cp >= 0x0600 && cp <= 0x06FF);
-                var hold = holder.schedule(() -> {
-                    try { net.send(row, sender, arabic ? "لحظات معايا... 🌸" : "One moment, I am checking for you... 🌸", null); } catch (RuntimeException ignored) { /* best effort */ }
-                }, 5, java.util.concurrent.TimeUnit.SECONDS);
                 try (var typing = Typing.start(() -> net.typing(row, sender), net.typingRepeatMs())) {   // «typing…» where the network has it
                     var reply = chat.reply(tenantId, platform, sender, null, text.length() > 1000 ? text.substring(0, 1000) : text, name, in);
                     convId = reply.conversationId();
@@ -103,8 +99,6 @@ public class SocialBridge {
                     cards = share.pick(tenantId, answer, reply.products());
                     if (reply.order() != null && reply.order().get("accountNotice") instanceof String n && !n.isBlank()) answer += "\n\n" + n;
                     if (reply.order() != null && !Boolean.TRUE.equals(reply.order().get("test"))) answer += orderLinks(tenantId, reply.order());
-                } finally {
-                    hold.cancel(false);
                 }
             } catch (BusinessException e) {
                 log.debug("{} message ignored: {}", platform, e.getMessage());

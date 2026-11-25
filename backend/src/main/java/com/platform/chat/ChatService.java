@@ -1775,6 +1775,69 @@ public class ChatService {
         return null;
     }
 
+    /**
+     * The customer used a distinctive word of the product's name, loosely («mugs» for «Mug 5f2…», «المج», «الكنافة»): a word of the name shared by at most two of the shop's products
+     * (not «ساندوتش» or «شاورما»), which a word the customer said starts with (or, from four letters, is the start of). {@code said} is already normalized.
+     */
+    static boolean namedLoosely(String said, String productName, List<FactCheck.Named> names) {
+        List<String> theirs = java.util.Arrays.stream(said.split("[^\\p{L}\\p{N}]+")).map(ChatService::bare).filter(w -> w.length() >= 3).toList();
+        for (String w : FastAnswers.norm(productName).split("[^\\p{L}\\p{N}]+")) {
+            String word = bare(w);
+            if (word.length() < 3) continue;
+            long sharing = names.stream().filter(n -> java.util.Arrays.stream(FastAnswers.norm(n.name()).split("[^\\p{L}\\p{N}]+")).map(ChatService::bare).anyMatch(x -> x.startsWith(word))).count();
+            if (sharing > 2) continue;
+            for (String c : theirs) if (c.startsWith(word) || c.length() >= 4 && word.startsWith(c)) return true;
+        }
+        return false;
+    }
+
+    /** A word without the Arabic article and its common joined prefixes («بالقشطه» → «قشطه», «والكنافه» → «كنافه»). */
+    private static String bare(String w) { return w.replaceFirst("^(?:وبال|بال|وال|فال|كال|لل|ال)(?=\\p{L}{3})", ""); }
+
+    /** An assistant message that offers something more («تحب تضيف معاه...», «نكمل الحد الأدنى», "add ... with it"). */
+    private static final Pattern ADD_ON = Pattern.compile("(?<!\\p{L})(?:تضيف|تزود|نضيف|نزود|اضيف\\p{L}*|تكمل|نكمل|معاه|معاها|جنبه|جنبها|كمان|add|also|with it)(?!\\p{L})|الحد\\s+الادن|اقل\\s+(?:طلب|قيمه)|حد\\s+ادن|minimum", Pattern.CASE_INSENSITIVE);
+    private static final Pattern MINIMUM_TALK = Pattern.compile("الحد\\s+الادن|اقل\\s+(?:طلب|قيمه)|حد\\s+ادن|minimum", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * The assistant offered {@code slug} as something to add: in a message that offers more and names it next to an item the customer chose (or speaks of the minimum order).
+     * A product the assistant gave as the answer to the customer's own request («عايز كوب» → «عندنا Mug X، تحب أضيفه؟») is not an add-on.
+     */
+    private boolean offeredAsAddOn(Ctx ctx, String slug, FactCheck.Shop view, List<String> named) {
+        for (String m : jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'assistant' AND id <= :u ORDER BY id").param("c", ctx.conversationId()).param("u", ctx.userMsgId()).query(String.class).list()) {
+            String n = FastAnswers.norm(m == null ? "" : m);
+            if (!ADD_ON.matcher(n).find()) continue;
+            List<String> there = FactCheck.mentions(m, view.names()).stream().map(x -> x.slug()).toList();
+            if (!there.contains(slug)) continue;
+            if (MINIMUM_TALK.matcher(n).find() || there.stream().anyMatch(x -> !x.equals(slug) && named.contains(x))) return true;
+        }
+        return false;
+    }
+
+    /** Words a customer uses to take what was just offered («ايوه ضيفه», «هاخده», «ده», «الاتنين», «add it»), and words that turn it down. */
+    private static final Pattern TAKES_IT = Pattern.compile("(?<!\\p{L})(?:ضيف\\p{L}*|احجز\\p{L}*|هاخد\\p{L}*|خده|خدها|خدهم|اطلب\\p{L}*|ده|دي|دا|دول|الاتنين|الاثنين|الاول\\p{L}*|التاني\\p{L}*|add|take|this|that|both)(?!\\p{L})");
+    private static final Pattern TURNS_DOWN = Pattern.compile("(?<!\\p{L})(?:لا|لاء|لأ|مش|بلاش|مش عايز|no|not|dont|don t)(?!\\p{L})");
+
+    /**
+     * The customer took {@code slug} when it was offered: a short message («ايوه», «ضيفه», «هاخد ده») right after an assistant message that named it (or as a reply to that message),
+     * with no word that turns it down. Only then may a product the customer never named be in the order.
+     */
+    private boolean tookOffer(Ctx ctx, String slug, FactCheck.Shop view) {
+        Map<Long, String> said = new java.util.HashMap<>();
+        String lastAssistant = null;
+        for (var m : jdbc.sql("SELECT id, role, content, reply_to_id FROM chat.messages WHERE conversation_id = :c AND id <= :u AND role IN ('user', 'assistant') ORDER BY id")
+                .param("c", ctx.conversationId()).param("u", ctx.userMsgId()).query().listOfRows()) {
+            String content = m.get("content") == null ? "" : String.valueOf(m.get("content"));
+            said.put(((Number) m.get("id")).longValue(), content);
+            if ("assistant".equals(m.get("role"))) { lastAssistant = content; continue; }
+            String offered = m.get("reply_to_id") instanceof Number r && said.containsKey(r.longValue()) ? said.get(r.longValue()) : lastAssistant;
+            if (offered == null || FactCheck.mentions(offered, view.names()).stream().noneMatch(x -> x.slug().equals(slug))) continue;
+            String n = FastAnswers.norm(content);
+            if (n.split("\\s+").length > 8 || TURNS_DOWN.matcher(n).find()) continue;
+            if (isConfirmation(content) || TAKES_IT.matcher(n).find()) return true;
+        }
+        return false;
+    }
+
     private List<String> chosenInChat(Ctx ctx, FactCheck.Shop shop) {
         Set<String> out = new java.util.LinkedHashSet<>();
         for (String m : jdbc.sql("SELECT content FROM chat.messages WHERE conversation_id = :c AND role = 'user' AND id <= :u ORDER BY id").param("c", ctx.conversationId()).param("u", ctx.userMsgId()).query(String.class).list())
@@ -4879,6 +4942,12 @@ public class ChatService {
             var row = jdbc.sql("SELECT p.slug, p.name FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE v.id = :v").param("v", it.variantId()).query().listOfRows().stream().findFirst().orElse(null);
             if (row == null) return obj("error", "Invalid variantId" + realVariantIds(ctx));
             String slug = String.valueOf(row.get("slug")), name = FastAnswers.norm(String.valueOf(row.get("name")));
+            // an item is the customer's: one they named, or one the assistant offered and they took («ايوه ضيفه», «ده»). A suggestion alone is never ordered, not even to reach the minimum
+            // order (exam 2026-11-25: «بسبوسة بالقشطة» suggested twice, the customer only changed the rice pudding, and the summary had both)
+            if (!named.contains(slug) && !ownWords.containsKey(slug) && !namedLoosely(saidWords, String.valueOf(row.get("name")), view.names()) && offeredAsAddOn(ctx, slug, view, named)
+                    && !tookOffer(ctx, slug, view))
+                return obj("error", "The customer never asked for «" + row.get("name") + "»: you only suggested it. Take it out of the items. If the order is then below the minimum order value, "
+                        + "tell them the minimum and ask what they want to add; never add an item for them.");
             String itemWords = ownWords.getOrDefault(slug, saidWords);
             if (!named.contains(slug))
                 for (String n : named) {

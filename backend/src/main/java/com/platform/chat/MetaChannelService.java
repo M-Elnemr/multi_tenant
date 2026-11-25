@@ -412,11 +412,6 @@ public class MetaChannelService {
                 } else if (!aiOn) {
                     return;   // order confirmations above keep working when the assistant is off; free chat does not
                 } else {
-                    // A search or a long answer can take a while: after a few seconds tell the customer we are still on it.
-                    boolean arabic = text.codePoints().anyMatch(cp -> cp >= 0x0600 && cp <= 0x06FF);
-                    var hold = holder.schedule(() -> {
-                        try { send(platform, accountId, sender, token, arabic ? "لحظات معايا... 🌸" : "One moment, I am checking for you... 🌸"); } catch (RuntimeException ignored) { /* best effort */ }
-                    }, 5, java.util.concurrent.TimeUnit.SECONDS);
                     String lastMid = in.mids().isEmpty() ? null : in.mids().get(in.mids().size() - 1);
                     try (var typing = Typing.start(typingSignal(platform, accountId, sender, token, lastMid), "WHATSAPP".equals(platform) ? 20_000 : 15_000)) {
                         var reply = chat.reply(tenantId, platform, sender, null, text.length() > 1000 ? text.substring(0, 1000) : text, name, in);
@@ -426,8 +421,6 @@ public class MetaChannelService {
                         cards = share.pick(tenantId, answer, reply.products());
                         if (reply.order() != null && reply.order().get("accountNotice") instanceof String n && !n.isBlank()) answer += "\n\n" + n;
                         if (reply.order() != null && !Boolean.TRUE.equals(reply.order().get("test"))) answer += orderLinks(tenantId, reply.order());
-                    } finally {
-                        hold.cancel(false);
                     }
                 }
             } catch (BusinessException e) {
