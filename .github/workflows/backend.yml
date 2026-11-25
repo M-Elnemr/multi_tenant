@@ -1,5 +1,5 @@
 name: Backend - test and push image
-# 2026-11-24: re-run for a54e245 (one CI-only failure in DeepSeekSelfReviewIntegrationTest: the review call missing; the same test passes locally alone and with the new tests, its two sibling review tests passed in the same CI run)
+# Re-run 2026-11-25: the image build failed transiently (bootJar in Docker) while all tests passed.
 
 on:
   push:
