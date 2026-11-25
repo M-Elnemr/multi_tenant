@@ -2875,7 +2875,7 @@ public class ChatService {
      * Tools that only leave a note in the background (ask the shop team, remember a fact, plan a follow-up, save a lead, a back-in-stock alert): what the model writes next to them is
      * meant for the customer. Text next to a lookup («خليني أشوف») or an order/booking action (it may claim success before the result) is not kept.
      */
-    static final Set<String> NOTE_TOOLS = Set.of("flag_unanswered", "remember_customer", "schedule_follow_up", "save_lead", "notify_back_in_stock");
+    static final Set<String> NOTE_TOOLS = Set.of("flag_unanswered", "remember_customer", "schedule_follow_up", "save_lead", "notify_back_in_stock", "show_products");   // show_products: «أيوه متاح كحلي XL» next to the cards, then only «تحب أحجزلك؟» (A/B 2026-11-25)
 
     /**
      * The reply with what the model already wrote next to a background note in front of its final words: it saw that text in its own history as sent, so its final words often only

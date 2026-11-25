@@ -85,6 +85,9 @@ class DeliveryLimitTest {
         assertThat(ChatService.withSaid(List.of("I asked the shop team about the warranty."), "I asked the shop team about the warranty; they will answer here. Which colour?"))
                 .isEqualTo("I asked the shop team about the warranty; they will answer here. Which colour?");
         assertThat(ChatService.withSaid(List.of(said), "")).isEqualTo(said);
+        assertThat(ChatService.NOTE_TOOLS).contains("show_products");
+        assertThat(ChatService.withSaid(List.of("أيوه يا فندم، قميص جينز رجالي كحلي مقاس XL متاح بـ ٦٩٠ جنيه، ودي صورته."), "تحب أحجزلك واحد؟"))
+                .startsWith("أيوه يا فندم، قميص جينز رجالي كحلي مقاس XL متاح").endsWith("تحب أحجزلك واحد؟");
         // two full answers (the cold-food complaint): only the final one, never the same request twice
         String first = "أنا آسف جداً يا فندم على ده 🙏 لو الطلب وصل لسه ضمن ساعة، سياسة المحل بتقول إننا نبدله أو نرجع تمنه. تحب تديني رقم الطلب عشان أتابعه فوراً؟ وهرفع الموضوع للفريق.";
         String fin = "رفعت الشكوى للفريق وهيردوا عليك هنا في نفس الشات في أقرب وقت. لو ممكن تبعتلي رقم الطلب ورقم الواتساب المسجل عليه، أقدر أتابع حالته فوراً.";
