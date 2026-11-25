@@ -1485,7 +1485,7 @@ public class ChatService {
      * word, not part of a code like «usb-c») is taken out. Upper-case words and codes (SSD, X12, MagSafe) are never touched.
      */
     /** «اسمك ورقم الواتساب والمنطقة» asked of a customer whose name is known (round 1 of the 2026-11-25 switch test: «تمام يا أستاذ كريم … اسمك ورقم الواتساب»). */
-    private static final Pattern NAME_IN_LIST = Pattern.compile("(?:(?<=[\\s:،,(])|^)(?:اسمك|اسم\\s+حضرتك|الاسم(?:\\s+الكريم)?)(?:\\s+الكريم)?\\s*(?:،|,|\\s+و(?=\\S)|\\s+and\\s+)\\s*");
+    private static final Pattern NAME_IN_LIST = Pattern.compile("(?:(?<=[\\s:،,(])|^)(?:اسمك|اسم\\s+حضرتك|الاسم(?:\\s+الكريم)?)(?:\\s+(?:الكريم|الاول|الأول|بالكامل|كامل|(?:على|علي)\\s+(?:الطلبيه|الطلبية|الطلب|الأوردر|الاوردر)))?\\s*(?:،|,|\\s+و(?=\\S)|\\s+and\\s+)\\s*");
     private static final Pattern NAME_CHECK = Pattern.compile("(?:اسمك|اسم\\s+حضرتك|الاسم)\\s*\\([^)\\n]{0,30}\\)\\s*(?:،|,|\\s+و(?=\\S))?\\s*");   // «اسمك (كريم تمام؟)، رقم الواتساب»
     private static final Pattern NAME_LINE = Pattern.compile("(?m)^\\s*[-•*]?\\s*(?:\\d+[.)-]\\s*)?(?:اسمك|اسم\\s+حضرتك|الاسم(?:\\s+الكريم)?|الاسم\\s+الأول|الاسم\\s+الاول)\\s*[؟?]?\\s*\\n");
     private static final Pattern NAME_QUESTION = Pattern.compile("[^.!؟?\\n]*(?:(?:ا|أ)تشرف\\s+باسم\\s+حضرتك|اسم\\s+حضرتك\\s+(?:ايه|إيه)|ممكن\\s+(?:اعرف\\s+)?(?:اسمك|اسم\\s+حضرتك))[^.!؟?\\n]*[.!؟?]?\\s*");
@@ -4132,14 +4132,20 @@ public class ChatService {
     private static final Pattern MY_NAME = Pattern.compile("(?:اسمي|إسمي|my name is)\\s+([\\p{IsArabic}\\p{IsLatin}]{2,20})", Pattern.CASE_INSENSITIVE);
 
     /** The first name the customer gives in the chat («اسمي منى وعايزة...» -> «منى»), or null. */
-    private static final Pattern I_AM_NAME = Pattern.compile("^\\s*(?:انا|أنا)\\s+(\\p{IsArabic}{2,15})\\s*[،,]");
+    private static final Pattern I_AM_NAME = Pattern.compile("(?:^|[،,.!؟?]\\s*)(?:انا|أنا)\\s+(\\p{IsArabic}{2,15})\\s*(?:[،,.!؟?]|$)");   // «انا منى، …», «مساء الخير، انا كريم»
+
+    /** Words after «انا» that say how the customer is, not who («انا مستعجل», «انا موجود»). */
+    private static final Set<String> NOT_AFTER_I_AM = Set.of("عايز", "عاوز", "عايزة", "عاوزة", "عايزه", "عاوزه", "محتاج", "محتاجة", "محتاجه", "مش", "جاي", "جايه", "جاية", "هنا", "موجود", "موجوده", "موجودة",
+            "مستعجل", "مستعجله", "مستعجلة", "مستني", "مستنيه", "مستنية", "زعلان", "زعلانه", "زعلانة", "متضايق", "متضايقه", "تعبان", "تعبانه", "جديد", "جديده", "جديدة", "عميل", "عميله", "عميلة", "زبون", "زبونه",
+            "بسأل", "بسال", "بدور", "بفكر", "محتار", "محتاره", "محتارة", "موافق", "موافقه", "موافقة", "تمام", "كويس", "كويسه", "مبسوط", "مبسوطه", "راجل", "رجل", "ست", "بنت", "ولد", "طالب", "طالبه", "معاك", "معاكي",
+            "اللي", "كمان", "برضه", "برضو", "عارف", "عارفه", "فاكر", "فاكره", "شايف", "شايفه", "حابب", "حابه", "مهتم", "مهتمه", "متأخر", "متاخر", "بره", "برا", "في", "من", "مع", "عندي");
 
     static String statedName(String text) {
         if (text == null) return null;
         var m = MY_NAME.matcher(text);
         if (m.find()) return firstName(m.group(1));
         var i = I_AM_NAME.matcher(text);   // «انا منى، الإسكندرية...» (a name, then the details)
-        return i.find() && !java.util.Set.of("عايز", "عاوز", "عايزة", "عاوزة", "محتاج", "محتاجة", "مش", "جاي", "هنا").contains(i.group(1)) ? firstName(i.group(1)) : null;
+        return i.find() && !NOT_AFTER_I_AM.contains(i.group(1)) ? firstName(i.group(1)) : null;
     }
 
     /** MALE / FEMALE when the customer says it about themself («أنا راجل مش بنت», «انا ست»), else null. */

@@ -323,6 +323,7 @@ public class MemoryFacts {
             Matcher bn = BARE_NAME.matcher(raw);
             if (bn.find() && !NOT_A_NAME.contains(normalize(bn.group(1)))) { name = bn.group(1); nameConf = 0.7; }
         }
+        else if (BARE_NAME.matcher(raw).find()) nameConf = 0.7;   // only «انا احمد», nothing else: a name most likely, still a reading (the reply side treats it as known)
         if (name != null && !name.isBlank()) out.add(new Candidate("NAME", "name", name, nameConf, 365));
         Matcher im = INTENT.matcher(n);
         if (im.find() && !negatedBefore(n, im.start()) && !INTENT_DOUBT.matcher(n).find() && !raw.matches("(?s).*(?:هاخد\\S*|هشتري\\S*|take it)\\s*[؟?].*"))

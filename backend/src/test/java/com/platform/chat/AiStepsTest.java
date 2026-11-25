@@ -47,5 +47,12 @@ class AiStepsTest {
         assertThat(ChatService.withoutNameAsk("الكارديجان متاح بـ ٦٩٠ جنيه. أتشرف باسم حضرتك؟")).isEqualTo("الكارديجان متاح بـ ٦٩٠ جنيه.");
         assertThat(ChatService.withoutNameAsk("الاسم ده جميل والمنتج متاح")).isEqualTo("الاسم ده جميل والمنتج متاح");
         assertThat(ChatService.withoutNameAsk("محتاج منك: اسمك (كريم تمام؟)، رقم الواتساب، المحافظة والمنطقة")).isEqualTo("محتاج منك: رقم الواتساب، المحافظة والمنطقة");
+        assertThat(ChatService.withoutNameAsk("محتاج منك عشان نقفل الطلب: اسمك الأول، رقم الواتساب، والمنطقة")).isEqualTo("محتاج منك عشان نقفل الطلب: رقم الواتساب، والمنطقة");
+        assertThat(ChatService.withoutNameAsk("عشان اجهزهالك محتاج: اسمك على الطلبية، رقم الواتساب")).isEqualTo("عشان اجهزهالك محتاج: رقم الواتساب");
+        // the name is known from «مساء الخير، انا كريم» (round 2: it was not, so the cleanup never ran)
+        assertThat(ChatService.statedName("مساء الخير، انا كريم")).isEqualTo("كريم");
+        assertThat(ChatService.statedName("انا منى، الإسكندرية سموحة")).isEqualTo("منى");
+        assertThat(ChatService.statedName("مساء الخير، انا مستعجل")).isNull();
+        assertThat(ChatService.statedName("انا عايز قميص")).isNull();
     }
 }
