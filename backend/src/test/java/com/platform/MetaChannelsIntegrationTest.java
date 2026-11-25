@@ -351,7 +351,7 @@ class MetaChannelsIntegrationTest extends IntegrationTestBase {
         webhook(raw, sign(raw)).andExpect(status().isOk());
         var texts = FakeMetaGraph.SENT.stream().map(m -> m.body().toString()).toList();
         assertThat(texts).hasSize(2);
-        assertThat(texts.get(0)).as("«typing…» after 3 s").contains("sender_action=typing_on").contains("user-slow");
+        assertThat(texts.get(0)).as("«typing…» after 4 s").contains("sender_action=typing_on").contains("user-slow");
         assertThat(texts.get(1)).as("no «one moment» text any more: typing says it").contains("اتفضل يا فندم!").doesNotContain("لحظات معايا");
         // a quick answer gets no typing
         FakeMetaGraph.reset();

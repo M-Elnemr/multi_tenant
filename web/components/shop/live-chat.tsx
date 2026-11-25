@@ -105,7 +105,7 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
   const dir: "ltr" | "rtl" = locale === "ar" ? "rtl" : "ltr";
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
-  // «typing…» only for a reply that takes a while: after 3 seconds without an answer, like on WhatsApp and Messenger
+  // «typing…» only for a reply that takes a while: after 4 seconds without an answer (like on WhatsApp and Messenger), shown until the answer comes
   const [typing, setTyping] = useState(false);
   const end = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -138,7 +138,7 @@ export function ChatPanel({ send, sendMedia, load, onReset, onTeach, onReply, gr
   }, [live, load]);
   useEffect(() => {
     if (!busy) { setTyping(false); return; }
-    const timer = setTimeout(() => setTyping(true), 3000);
+    const timer = setTimeout(() => setTyping(true), 4000);
     return () => clearTimeout(timer);
   }, [busy]);
   useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [msgs, typing]);

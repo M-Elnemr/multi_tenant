@@ -247,9 +247,13 @@ public class EvolutionService {
     // ---- sending --------------------------------------------------------------------------------------------------------------------
 
     /** Result of one paced send: SENT, FAILED, or DEFERRED (the shop is at its per-minute limit; try again on the next pass). */
-    /** Shows «typing…» on the customer's WhatsApp for about 8 seconds (Evolution presence). */
+    /**
+     * Shows «typing…» on the customer's WhatsApp (Evolution presence) until the reply is sent. Evolution sends «paused» when the delay ends, so the delay is long (60 s) and the call is
+     * repeated every 15 s: with an 8 s delay repeated every 8 s, a «paused» landed next to the next «composing» and the typing went away while the reply was still being written.
+     * The reply message itself ends the typing on the customer's phone. Our side gives up waiting for the call after 20 s; Evolution keeps the presence.
+     */
     private void typing(UUID tenantId, String number) {
-        api.call("POST", "/chat/sendPresence/" + row(tenantId).get("instance"), Map.of("number", number.replaceAll("\\D", ""), "presence", "composing", "delay", 8_000));
+        api.call("POST", "/chat/sendPresence/" + row(tenantId).get("instance"), Map.of("number", number.replaceAll("\\D", ""), "presence", "composing", "delay", 60_000));
     }
 
     public enum Delivery { SENT, FAILED, DEFERRED }
@@ -455,7 +459,7 @@ public class EvolutionService {
                 else if (!aiOn) return;
                 else {
                     ChatService.Reply reply;
-                    try (var typing = Typing.start(() -> typing(tenantId, sender), 8_000)) {   // «typing…» on the customer's WhatsApp while a slow reply is written
+                    try (var typing = Typing.start(() -> typing(tenantId, sender), 15_000)) {   // «typing…» on the customer's WhatsApp while a slow reply is written
                         reply = chat.reply(tenantId, "WHATSAPP", sender, null, text.length() > 1000 ? text.substring(0, 1000) : text, pushName, in);
                     }
                     if (reply.text() == null || reply.text().isBlank()) return;   // the shop team took this chat over: nothing goes out automatically
