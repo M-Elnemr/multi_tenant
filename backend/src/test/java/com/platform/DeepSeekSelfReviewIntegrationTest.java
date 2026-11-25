@@ -76,6 +76,7 @@ class DeepSeekSelfReviewIntegrationTest extends IntegrationTestBase {
         r.add("app.ai.review.mode", () -> "always");   // these tests are about the review itself, run on every draft
         r.add("app.ai.review.model", () -> "");   // as in production: the answering model reviews
         r.add("app.ai.review.timeout-ms", () -> "1500");
+        r.add("app.ai.review.skip-after-ms", () -> "43000");   // these tests are about the review: a slow CI runner must not skip it for time (CI 2026-11-24/25)
         r.add("app.ai.glm.max-rps", () -> "0");
         r.add("app.ai.deepseek.max-rps", () -> "0");
     }

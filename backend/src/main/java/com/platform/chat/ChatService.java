@@ -257,6 +257,9 @@ public class ChatService {
 
     private final String reviewModel;
     /** The longest the review of a draft may take (AI_REVIEW_TIMEOUT_MS): one try, no retry, no second request. */
+    /** After this long into a reply the review is skipped: the customer has waited enough (a test that checks the review itself sets it high, so a slow CI runner does not skip it). */
+    @org.springframework.beans.factory.annotation.Value("${app.ai.review.skip-after-ms:20000}")
+    private long reviewSkipAfterMs = 20_000;
     @org.springframework.beans.factory.annotation.Value("${app.ai.review.timeout-ms:3500}")
     private long reviewTimeoutMs = 3_500;
     /** The reasoning level of the review call (AI_REVIEW_REASONING): none by default; empty = the answering model's own level. */
@@ -1176,7 +1179,7 @@ public class ChatService {
     private String reviewed(Ctx ctx, ChannelAi.Routed routed, String system, List<Turn> turns, List<AiUsageService.Round> rounds, String draft) {
         long reviewStart = System.nanoTime();
         String mode = effectiveReviewMode();
-        if (!review || trivial(draft) || !AiBudget.hasLeft(REPLY_BUDGET_MS - 20_000)) {   // past 20 seconds the customer has waited enough
+        if (!review || trivial(draft) || !AiBudget.hasLeft(REPLY_BUDGET_MS - reviewSkipAfterMs)) {   // past 20 seconds (the default) the customer has waited enough
             if (review) ReplyTrace.review("skipped", reviewStart, null, trivial(draft) ? "trivial" : "budget", false, null);
             return draft;
         }
