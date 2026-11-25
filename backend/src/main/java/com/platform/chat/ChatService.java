@@ -2890,7 +2890,8 @@ public class ChatService {
             if (out.isEmpty()) { out = s; continue; }
             // only when the final words merely continue it («In the meantime: which one…»); two full answers (sorry + policy + ask for the order number, twice) keep the final one,
             // written with the tool result in view
-            boolean continues = out.length() * 2 <= s.length() || CONTINUES.matcher(out).lookingAt();
+            boolean continues = out.length() * 2 <= s.length() || CONTINUES.matcher(out).lookingAt()
+                    || !MoneyGuard.digits(out).matches("(?s).*\\d.*") && MoneyGuard.digits(s).matches("(?s).*\\d.*");   // «القميص بـ ٤٨٠» then only «قولّي مقاسك واللون»: the answer was the first part
             if (continues && !coveredBy(s, out)) out = closed(s) + "\n\n" + out;
         }
         return out.isEmpty() ? last : out;

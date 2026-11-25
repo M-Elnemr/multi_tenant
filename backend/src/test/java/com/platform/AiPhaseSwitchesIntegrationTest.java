@@ -56,6 +56,7 @@ class AiPhaseSwitchesIntegrationTest extends IntegrationTestBase {
     @Test
     void withoutTheSwitchTheSameVagueReplyIsWrittenAgainAsBefore() throws Exception {
         UUID id = shop();
+        set("fewer_rewrites", "off");
         AtomicInteger calls = new AtomicInteger();
         FakeAiProvider.SCRIPT.add(turns -> { calls.incrementAndGet(); return Turn.model("عندنا موبايلات كتير حلوة ومتنوعة يا فندم"); });
         FakeAiProvider.SCRIPT.add(turns -> { calls.incrementAndGet(); return Turn.model("عندنا موبايل نوفا A5 بـ 5499 جنيه"); });

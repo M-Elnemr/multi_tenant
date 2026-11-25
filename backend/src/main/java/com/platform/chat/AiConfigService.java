@@ -36,7 +36,7 @@ public class AiConfigService {
     static final List<Option> AUDIO = List.of(new Option("qwen", "Alibaba Qwen ASR", "Only this model takes voice notes"));
     static final List<Option> PROMPT = List.of(new Option("lean", "Lean", "Shorter prompt: fewer tokens per reply"), new Option("full", "Full", "The complete rule book and sales playbook"));
     /** Phase 2 of the token plan: problems the code can put right itself (a vague reply, an unsearched «we do not have it», «I will check») are fixed without a second model call. */
-    static final List<Option> FEWER_REWRITES = List.of(new Option("off", "Off", "Current behaviour: the model writes the reply again"), new Option("on", "On", "Code puts known problems right, fewer model calls"));
+    static final List<Option> FEWER_REWRITES = List.of(new Option("off", "Off", "The model writes the reply again for every problem"), new Option("on", "On", "Code puts known problems right, fewer model calls (default)"));
     /** Phase 3: only the rule sections this chat needs (browsing, ordering, after an order) and a compact catalog; the tools and the cached part stay stable. */
     static final List<Option> PROMPT_DIET = List.of(new Option("off", "Off", "Current prompt"), new Option("on", "On", "Rules picked for the chat's stage, compact catalog"));
     static final List<Option> EFFORT = List.of(new Option("none", "Off", null), new Option("low", "Low", null), new Option("medium", "Medium", null), new Option("high", "High", null));
@@ -65,7 +65,7 @@ public class AiConfigService {
                            @Value("${app.ai.glm.model:zai-org/glm-5.3-flash}") String hiveModel) {
         this.jdbc = jdbc;
         this.keys = keys;
-        this.defaults = new Config(pick(TEXT, text, "glm"), pick(IMAGE, image, "deepseek"), pick(AUDIO, audio, "qwen"), pick(PROMPT, prompt, "lean"), pick(EFFORT, effort, "low"), "off", "off");
+        this.defaults = new Config(pick(TEXT, text, "glm"), pick(IMAGE, image, "deepseek"), pick(AUDIO, audio, "qwen"), pick(PROMPT, prompt, "lean"), pick(EFFORT, effort, "low"), "on", "off");   // fewer rewrites on by default since the 2026-11-25 A/B (quality equal or better, 18% faster, 15% cheaper)
         this.hiveUrl = hiveUrl.trim().replaceAll("/+$", "");
         this.hiveModel = hiveModel;
         current = this;

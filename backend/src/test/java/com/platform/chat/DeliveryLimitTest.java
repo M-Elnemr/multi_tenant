@@ -86,6 +86,8 @@ class DeliveryLimitTest {
                 .isEqualTo("I asked the shop team about the warranty; they will answer here. Which colour?");
         assertThat(ChatService.withSaid(List.of(said), "")).isEqualTo(said);
         assertThat(ChatService.NOTE_TOOLS).contains("show_products");
+        assertThat(ChatService.withSaid(List.of("قميص نص كم صيفي بـ ٤٨٠ جنيه."), "قولّي مقاسك واللون اللي يعجبك، وأنا أجهزلك كل حاجة."))
+                .startsWith("قميص نص كم صيفي بـ ٤٨٠ جنيه.").endsWith("وأنا أجهزلك كل حاجة.");   // a short price answer, then only a question (A/B round 4)
         assertThat(ChatService.withSaid(List.of("أيوه يا فندم، قميص جينز رجالي كحلي مقاس XL متاح بـ ٦٩٠ جنيه، ودي صورته."), "تحب أحجزلك واحد؟"))
                 .startsWith("أيوه يا فندم، قميص جينز رجالي كحلي مقاس XL متاح").endsWith("تحب أحجزلك واحد؟");
         // two full answers (the cold-food complaint): only the final one, never the same request twice
