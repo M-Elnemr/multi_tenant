@@ -30,7 +30,11 @@ public class Typing {
     public Typing(@Value("${app.chat.typing-after-ms:4000}") long after) { afterMs = after; }
 
     /** Stops the typing signal of one reply; closing twice is fine. */
-    public interface Handle extends AutoCloseable { @Override void close(); }
+    public interface Handle extends AutoCloseable {
+        @Override void close();
+        /** «Typing…» was sent to the customer for this reply (a quick reply showed none). */
+        default boolean shown() { return false; }
+    }
 
     private static final Handle NONE = () -> { };
 
@@ -58,13 +62,16 @@ public class Typing {
             call.run();
         }, afterMs, repeatMs, TimeUnit.MILLISECONDS);
         java.util.concurrent.atomic.AtomicBoolean closed = new java.util.concurrent.atomic.AtomicBoolean();
-        return () -> {
-            if (!closed.compareAndSet(false, true)) return;
-            task[0].cancel(false);
-            boolean last = key == null || ACTIVE.computeIfPresent(key, (k, n) -> n.decrementAndGet() <= 0 ? null : n) == null;
-            if (stop != null && shown.get() && last) CALLS.execute(() -> {
-                try { stop.run(); } catch (RuntimeException e) { log.debug("Typing stop not sent: {}", e.getMessage()); }
-            });
+        return new Handle() {
+            @Override public void close() {
+                if (!closed.compareAndSet(false, true)) return;
+                task[0].cancel(false);
+                boolean last = key == null || ACTIVE.computeIfPresent(key, (k, n) -> n.decrementAndGet() <= 0 ? null : n) == null;
+                if (stop != null && shown.get() && last) CALLS.execute(() -> {
+                    try { stop.run(); } catch (RuntimeException e) { log.debug("Typing stop not sent: {}", e.getMessage()); }
+                });
+            }
+            @Override public boolean shown() { return shown.get(); }
         };
     }
 

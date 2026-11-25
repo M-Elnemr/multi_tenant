@@ -450,6 +450,7 @@ public class EvolutionService {
 
     private void respondNow(UUID tenantId, String sender, String text, String pushName, ChatService.ReplyInput in) {
         ChatService.Reply sentReply = null;
+        boolean[] typed = {false};   // «typing…» was shown for this reply: it is ended once more after the last message (see below)
         boolean aiOn = chat.enabled(tenantId, "WHATSAPP");
         String answer;
         List<ProductShare.Card> cards = List.of();
@@ -466,6 +467,7 @@ public class EvolutionService {
                     ChatService.Reply reply;
                     try (var typing = Typing.start("WHATSAPP|" + tenantId + "|" + sender, () -> typing(tenantId, sender), 15_000, () -> typingDone(tenantId, sender))) {   // «typing…» on the customer's WhatsApp while a slow reply is written
                         reply = chat.reply(tenantId, "WHATSAPP", sender, null, text.length() > 1000 ? text.substring(0, 1000) : text, pushName, in);
+                        typed[0] = typing.shown();
                     }
                     if (reply.text() == null || reply.text().isBlank()) return;   // the shop team took this chat over: nothing goes out automatically
                     sentReply = reply;
@@ -492,6 +494,9 @@ public class EvolutionService {
             if (d == Delivery.FAILED && card.imageUrl() != null) d = ReplyTrace.outbound("WHATSAPP", "evolution", "card", () -> deliver(tenantId, sender, card.caption(), null, m -> cardMid[0] = m), r -> r != Delivery.FAILED);
             if (sentReply != null && replies != null) replies.recordMid(tenantId, sentReply.conversationId(), sentReply.messageId(), cardMid[0], card.caption());
         }
+        // «typing…» stayed a few seconds after the answer (2026-11-25): a «composing» still on its way, or the short one Evolution shows before each message, can arrive after the
+        // first «paused». One more «paused» after the last message leaves the customer's phone with no typing.
+        if (typed[0]) try { typingDone(tenantId, sender); } catch (RuntimeException e) { log.debug("Typing end not sent: {}", e.getMessage()); }
     }
 
     private static BusinessException unreachable(EvolutionApi.EvolutionException e) {

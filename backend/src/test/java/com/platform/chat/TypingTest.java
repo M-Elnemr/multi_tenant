@@ -61,8 +61,10 @@ class TypingTest {
         first.close();
         Thread.sleep(100);
         assertThat(stops.get()).as("the other reply is still typing").isZero();
+        assertThat(second.shown()).as("typing was sent for it").isTrue();
         second.close();
         Thread.sleep(150);
         assertThat(stops.get()).isEqualTo(1);
+        try (var quick = Typing.start("k2", () -> { }, 50, stops::incrementAndGet)) { assertThat(quick.shown()).as("a quick reply shows no typing").isFalse(); }
     }
 }
