@@ -3250,17 +3250,9 @@ public class ChatService {
         if (t.contains("[صورة من العميل") || t.contains("🎤")) b.append(leanSection("CUSTOMER PHOTOS"));
         if (after) b.append(leanSection("CHANGING OR CANCELLING")).append(leanSection("ORDER:"));
         else if (ordering) b.append(leanSection("ORDER:")).append(leanSection("A COLOUR OR SIZE")).append(leanSection("STOCK IS PER EXACT VARIANT")).append(leanSection("NEGOTIATION"));
-        else b.append(productsGiven(leanSection("PRODUCTS"))).append(leanSection("SELLING")).append(leanSection("A COLOUR OR SIZE")).append(leanSection("STOCK IS PER EXACT VARIANT")).append(leanSection("NEGOTIATION"));
+        else b.append(leanSection("PRODUCTS")).append(leanSection("SELLING")).append(leanSection("A COLOUR OR SIZE")).append(leanSection("STOCK IS PER EXACT VARIANT")).append(leanSection("NEGOTIATION"))
+                .append(leanSection("ORDER:"));   // closing an order is the job in every stage: without it the model wrote its own summaries (2026-11-25 A/B: FAKE_SUMMARY 13 -> 19)
         return b.toString();
-    }
-
-    /**
-     * The PRODUCTS rule for the stage rules (phase 3): the products this context already lists with their exact price and stock (the products of this chat, the word matches) are
-     * answered from directly; search_products only for what is not there. Each search is a second model call and a second read of the whole prompt.
-     */
-    static String productsGiven(String rule) {
-        return rule.replace("whenever they name a kind of item, search_products first;",
-                "the products listed in this context (THE PRODUCTS OF THIS CHAT and the WORD MATCHES) already have their exact prices, options and stock: answer from them directly, with no search; call search_products only for a kind of item, an option or a product that is not listed there, or to see more than the ones listed (a word line that says more products have it);");
     }
 
     private static final Pattern CANCEL_OR_CHANGE = Pattern.compile("(?:الغي|الغاء|كنسل|اغير|تغيير|غير\\s+الطلب|عدل|تعديل|فين\\s+(?:الطلب|الاوردر)|الطلب\\s+اتاخر|order\\s+status|cancel|change\\s+(?:my\\s+)?order)", Pattern.CASE_INSENSITIVE);
