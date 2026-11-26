@@ -346,12 +346,12 @@ class MetaChannelsIntegrationTest extends IntegrationTestBase {
         String page = pageId();
         connect(t, "FACEBOOK", page);
         FakeMetaGraph.reset();
-        FakeAiProvider.SCRIPT.add(turns -> { try { Thread.sleep(5600); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); } return Turn.model("اتفضل يا فندم!"); });
+        FakeAiProvider.SCRIPT.add(turns -> { try { Thread.sleep(6500); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); } return Turn.model("اتفضل يا فندم!"); });
         String raw = pageMessage(page, "user-slow", "mid-" + uniq(), "عايز مخدة");
         webhook(raw, sign(raw)).andExpect(status().isOk());
         var texts = FakeMetaGraph.SENT.stream().map(m -> m.body().toString()).toList();
         assertThat(texts).hasSize(2);
-        assertThat(texts.get(0)).as("«typing…» after 4 s").contains("sender_action=typing_on").contains("user-slow");
+        assertThat(texts.get(0)).as("«typing…» after 5 s").contains("sender_action=typing_on").contains("user-slow");
         assertThat(texts.get(1)).as("no «one moment» text any more: typing says it").contains("اتفضل يا فندم!").doesNotContain("لحظات معايا");
         // a quick answer gets no typing
         FakeMetaGraph.reset();
