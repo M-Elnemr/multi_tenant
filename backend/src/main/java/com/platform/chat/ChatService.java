@@ -80,6 +80,11 @@ public class ChatService {
     @org.springframework.beans.factory.annotation.Autowired
     void replies(MessageReplies replies) { this.replies = replies; }
 
+    private volatile com.platform.commerce.OrderChangeService orderChanges;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void orderChanges(com.platform.commerce.OrderChangeService s) { this.orderChanges = s; }
+
     /** The names of the products the quoted message talks about, for the knowledge tool of this reply (so «does it shrink?» searches the right product). */
     static final ThreadLocal<List<String>> REPLY_PRODUCTS = new ThreadLocal<>();
     /** The slugs of the products the quoted message names (set only while a reply to an earlier message is being answered). */
@@ -682,7 +687,7 @@ public class ChatService {
         if (isConfirmation(text) && summaryIsLast(conv) && jdbc.sql("SELECT pending -> 'items' IS NOT NULL FROM chat.conversations WHERE id = :c").param("c", conv).query(Boolean.class).single()) {
             Map<String, Object> placed = runTool(ctx, new ToolCall("place_order", Map.of()));
             boolean arabic = arabicConversation(conv);
-            answer = placed.get("error") != null ? failedText(arabic, String.valueOf(placed.get("error"))) : confirmedText(arabic, orderBox[0], placed);
+            answer = placed.get("error") != null ? orderFailedText(ctx, arabic, placed, text) : confirmedText(arabic, orderBox[0], placed);
             jdbc.sql("INSERT INTO chat.messages (conversation_id, role, content) VALUES (:c, 'assistant', :x)").param("c", conv).param("x", answer).update();
             jdbc.sql("UPDATE chat.conversations SET updated_at = now() WHERE id = :c").param("c", conv).update();
             return new Reply(conv, answer, orderBox[0], ctx.products());
@@ -3433,8 +3438,106 @@ public class ChatService {
                 + "\nThank you!";
     }
 
-    private static String failedText(boolean arabic, String reason) {
-        return arabic ? "عذرًا، مقدرتش أكمل الأوردر دلوقتي: " + reason + "\nتحب نعدّل حاجة في الطلب ونحاول تاني؟" : "Sorry, I could not complete the order: " + reason + "\nWould you like to change something and try again?";
+    /**
+     * Why a confirmed order could not be placed, in the customer's words (never the server's English): for stock, which item is short, how many are left of it and what else of the
+     * same product is in stock; for the other checkout failures one plain sentence. Anything not known is passed to the shop team. The summary stays, so the customer's answer
+     * («ناخد واحدة», «خليها أبيض») goes on as usual. (2026-11-27: «عذرًا، مقدرتش أكمل الأوردر دلوقتي: Not enough stock», and the customer had to ask what was missing.)
+     */
+    String orderFailedText(Ctx ctx, boolean ar, Map<String, Object> placed, String customerText) {
+        String code = placed.get("code") == null ? "" : String.valueOf(placed.get("code"));
+        String kept = keptOrderNote(ctx, ar);
+        switch (code) {
+            case "INSUFFICIENT_STOCK" -> { String s = stockShortText(ctx, ar); if (s != null) return s + kept; }
+            case "SHOP_CLOSED" -> { return (ar ? "المحل مقفول دلوقتي ومش بيستقبل أوردرات، أول ما يفتح نقدر نسجّل الأوردر على طول 🙏" : "The shop is closed right now and is not taking orders; as soon as it opens we can place your order 🙏") + kept; }
+            case "MIN_ORDER_NOT_REACHED" -> { return (ar ? "الطلب بقى أقل من الحد الأدنى للأوردر. تحب تضيف حاجة عشان نكمّله؟" : "The order is now below the minimum order value. Would you like to add something so we can place it?") + kept; }
+            case "NO_DELIVERY_TO_GOVERNORATE", "SHIPPING_UNAVAILABLE", "PRODUCT_NOT_DELIVERED_THERE" -> { return (ar ? "للأسف التوصيل للعنوان ده مش متاح للطلب ده دلوقتي. تحب نغيّر العنوان أو المنتج؟" : "Sorry, delivery to this address is not available for this order right now. Would you like to change the address or the item?") + kept; }
+            case "PRODUCT_UNAVAILABLE" -> { return (ar ? "في منتج في الطلب بقى مش متاح دلوقتي. تحب نشيله ونكمّل الأوردر من غيره؟" : "One of the items is no longer available. Shall we remove it and place the rest?") + kept; }
+            case "COUPON_INVALID" -> { return (ar ? "كود الخصم مبقاش صالح للطلب ده. تحب نكمّل الأوردر من غيره؟" : "The discount code is no longer valid for this order. Shall we place it without the code?") + kept; }
+            case "PAYMENT_METHOD_DISABLED" -> { return (ar ? "طريقة الدفع دي مش متاحة دلوقتي. تحب نخليها كاش عند الاستلام؟" : "That payment method is not available right now. Shall we make it cash on delivery?") + kept; }
+            case "PRICE_CHANGED" -> { return ar ? "في سعر أو مصاريف شحن اتغيرت من بعد الملخص. قولّي «كمل الأوردر» وهبعتلك الملخص بالأرقام الجديدة تأكده 🙏" : "A price or the delivery fee changed since the summary. Tell me «continue» and I will send the new summary for you to confirm 🙏"; }
+            case "ORDER_STARTED" -> { flagForHuman(ctx.tenantId(), ctx.conversationId(), ctx.channel(), "ORDER_FAILED", customerText, null);
+                return ar ? "المحل بدأ يجهّز الأوردر بتاعك فمبقاش ينفع يتعدّل من هنا، بلّغت فريق المحل وهيتواصلوا معاك بخصوص التعديل 🙏" : "The shop has already started preparing your order, so it can no longer be changed here; I told the shop team and they will contact you about the change 🙏"; }
+            default -> { }
+        }
+        flagForHuman(ctx.tenantId(), ctx.conversationId(), ctx.channel(), "ORDER_FAILED", customerText, null);
+        return (ar ? "حصلت مشكلة وأنا بسجّل الأوردر، بلّغت فريق المحل وهيتواصلوا معاك في أقرب وقت 🙏" : "Something went wrong while placing the order; I told the shop team and they will contact you shortly 🙏") + kept;
+    }
+
+    /** For a change of a placed order that could not be made: the order on file is still there as it was. */
+    private String keptOrderNote(Ctx ctx, boolean ar) {
+        try {
+            var row = jdbc.sql("SELECT pending ->> 'replacesNumber' FROM chat.conversations WHERE id = :c").param("c", ctx.conversationId()).query(String.class).optional().orElse(null);
+            if (row == null || row.isBlank()) return "";
+            return ar ? "\n\n(الأوردر رقم " + row + " لسه متسجل زي ما هو، ما اتغيرش.)" : "\n\n(Your order " + row + " is still placed as it was; nothing changed.)";
+        } catch (RuntimeException e) { return ""; }
+    }
+
+    /**
+     * Each item of the order being confirmed that has fewer pieces now than asked: «فاضل منه قطعة واحدة بس، وحضرتك طالب ٢» or «خلص للأسف», what else of that product is in stock,
+     * and what the customer can do. Null when no item is short any more (the stock changed back): the generic sentence is used.
+     */
+    @SuppressWarnings("unchecked")
+    String stockShortText(Ctx ctx, boolean ar) {
+        Map<String, Object> pending;
+        try {
+            String raw = jdbc.sql("SELECT pending::text FROM chat.conversations WHERE id = :c").param("c", ctx.conversationId()).query(String.class).optional().orElse(null);
+            if (raw == null) return null;
+            pending = JSON.readValue(raw, new TypeReference<LinkedHashMap<String, Object>>() {});
+        } catch (Exception e) { return null; }
+        UUID replaces = pending.get("replaces") == null ? null : UUID.fromString(String.valueOf(pending.get("replaces")));
+        List<String> lines = new ArrayList<>(), others = new ArrayList<>();
+        boolean someLeft = false, noneLeft = false;
+        for (var it : (List<Map<String, Object>>) pending.getOrDefault("items", List.of())) {
+            UUID v = UUID.fromString(String.valueOf(it.get("variantId")));
+            int want = ((Number) it.get("quantity")).intValue();
+            int left = jdbc.sql("SELECT coalesce(max(i.quantity_on_hand - i.quantity_reserved), 0) FROM commerce.inventory_items i JOIN commerce.branches b ON b.id = i.branch_id AND b.is_active WHERE i.tenant_id = :t AND i.variant_id = :v")
+                    .param("t", ctx.tenantId()).param("v", v).query(Integer.class).single();
+            if (replaces != null)   // a change: the pieces the order on file holds are this customer's own
+                left += jdbc.sql("SELECT coalesce(sum(quantity), 0) FROM commerce.order_items WHERE order_id = :o AND variant_id = :v").param("o", replaces).param("v", v).query(Integer.class).single();
+            if (left >= want) continue;
+            String name = variantNames(List.of(v));
+            if (left <= 0) { noneLeft = true; lines.add(ar ? "• «" + name + "»: خلص للأسف" : "• «" + name + "»: sold out, sorry"); }
+            else { someLeft = true; lines.add(ar ? "• «" + name + "»: فاضل منه " + pieces(left) + " بس، وحضرتك طالب " + arabicNumber(want) : "• «" + name + "»: only " + left + " left, you asked for " + want); }
+            for (var alt : jdbc.sql("""
+                    SELECT v2.combo_key, max(i.quantity_on_hand - i.quantity_reserved) AS left_now FROM commerce.product_variants v JOIN commerce.product_variants v2 ON v2.product_id = v.product_id AND v2.id <> v.id AND v2.status = 'ACTIVE'
+                    JOIN commerce.inventory_items i ON i.variant_id = v2.id JOIN commerce.branches b ON b.id = i.branch_id AND b.is_active
+                    WHERE v.id = :v GROUP BY v2.id, v2.combo_key HAVING max(i.quantity_on_hand - i.quantity_reserved) >= :w ORDER BY 2 DESC LIMIT 3
+                    """).param("v", v).param("w", Math.max(1, want)).query().listOfRows()) {
+                String label = otherValues(String.valueOf(jdbc.sql("SELECT coalesce(combo_key, '') FROM commerce.product_variants WHERE id = :v").param("v", v).query(String.class).single()), String.valueOf(alt.get("combo_key")));
+                if (!label.isBlank() && !others.contains(label)) others.add(label);
+            }
+        }
+        if (lines.isEmpty()) return null;
+        StringBuilder b = new StringBuilder(ar ? "للأسف مقدرناش نسجّل الأوردر، لأن المخزون اتغير من بعد الملخص:\n" : "Sorry, the order could not be placed because the stock changed after the summary:\n");
+        b.append(String.join("\n", lines)).append("\n\n");
+        if (!others.isEmpty()) b.append(ar ? "المتاح من نفس المنتج: " + String.join("، ", others) + ".\n" : "In stock of the same item: " + String.join(", ", others) + ".\n");
+        String ask = someLeft && !noneLeft ? (ar ? "تحب ناخد الكمية المتاحة بس" : "Would you like the available quantity only")
+                : (ar ? "تحب" : "Would you like to");
+        if (ar) b.append(ask).append(others.isEmpty() ? "" : (someLeft && !noneLeft ? "، ولا نغيّر الاختيار" : " نغيّر الاختيار")).append(someLeft && !noneLeft || !others.isEmpty() ? "، ولا نكمّل الأوردر من غيره؟ 🙏" : " نكمّل الأوردر من غيره؟ 🙏");
+        else b.append(ask).append(others.isEmpty() ? "" : (someLeft && !noneLeft ? ", change the option" : " change the option")).append(someLeft && !noneLeft || !others.isEmpty() ? ", or place the order without it? 🙏" : " place the order without it? 🙏");
+        return b.toString();
+    }
+
+    /** The values of {@code alt} that differ from {@code own} («اللون=أبيض|المقاس=L» against «اللون=أسود|المقاس=L» → «أبيض»). */
+    static String otherValues(String own, String alt) {
+        Map<String, String> mine = new LinkedHashMap<>();
+        for (String kv : own.split("\\|")) if (kv.contains("=")) mine.put(kv.substring(0, kv.indexOf('=')), kv.substring(kv.indexOf('=') + 1));
+        List<String> out = new ArrayList<>();
+        for (String kv : alt.split("\\|")) {
+            if (!kv.contains("=")) continue;
+            String k = kv.substring(0, kv.indexOf('=')), val = kv.substring(kv.indexOf('=') + 1);
+            if (!val.equals(mine.get(k))) out.add(val);
+        }
+        return String.join(" ", out);
+    }
+
+    /** «قطعة واحدة», «قطعتين», «٣ قطع». */
+    static String pieces(int n) { return n == 1 ? "قطعة واحدة" : n == 2 ? "قطعتين" : arabicNumber(n) + (n <= 10 ? " قطع" : " قطعة"); }
+
+    static String arabicNumber(int n) {
+        StringBuilder b = new StringBuilder();
+        for (char c : String.valueOf(n).toCharArray()) b.append((char) ('٠' + (c - '0')));
+        return b.toString();
     }
 
     // ---- prompt ----------------------------------------------------------------------------------------------
@@ -5546,7 +5649,7 @@ public class ChatService {
             String st = jdbc.sql("SELECT status FROM commerce.orders WHERE id = :o AND tenant_id = :t").param("o", replaces).param("t", ctx.tenantId()).query(String.class).optional().orElse("");
             if (!com.platform.commerce.OrderService.changeable(st)) {
                 jdbc.sql("UPDATE chat.conversations SET pending = NULL WHERE id = :c").param("c", ctx.conversationId()).update();
-                return obj("error", "The shop has already started preparing order " + replacesNo + ", so it can no longer be changed here. Tell the customer kindly and ask the shop team (flag_unanswered) whether the change can still be made.");
+                return obj("code", "ORDER_STARTED", "error", "The shop has already started preparing order " + replacesNo + ", so it can no longer be changed here. Tell the customer kindly and ask the shop team (flag_unanswered) whether the change can still be made.");
             }
         }
 
@@ -5568,19 +5671,23 @@ public class ChatService {
             long nowTotal = Math.max(0, ((Number) fresh.get("totalMinor")).longValue() - ((Number) p.get("extraDiscountMinor")).longValue());
             if (nowTotal != ((Number) p.get("totalMinor")).longValue()) {
                 jdbc.sql("UPDATE chat.conversations SET pending = NULL WHERE id = :c").param("c", ctx.conversationId()).update();
-                return obj("error", "الأسعار أو مصاريف الشحن اتغيرت بعد الملخص، هبعتلك الملخص تاني بالأرقام الجديدة / The prices or the delivery fee changed since the summary was shown: call prepare_order again and show the new summary.");
+                return obj("code", "PRICE_CHANGED", "error", "The prices or the delivery fee changed since the summary was shown: call prepare_order again and show the new summary.");
             }
         } catch (BusinessException e) {
-            return obj("error", e.getMessage());
+            return obj("error", e.getMessage(), "code", e.getCode(), "params", e.getParams());
         }
         Map<String, Object> res;
+        String key = "chat-" + ctx.conversationId() + "-" + p.get("userMsgId");
+        long extra = ((Number) p.get("extraDiscountMinor")).longValue();
         try {
-            res = checkout.placeOrder(ctx.tenantId(), ctx.clientId(), req, "chat-" + ctx.conversationId() + "-" + p.get("userMsgId"), ((Number) p.get("extraDiscountMinor")).longValue(), "AI_CHAT");
-        } catch (BusinessException e) {
-            return obj("error", e.getMessage());
+            // a change of a placed order is one step: the old order gives its pieces back, the new one takes them, the old one is closed (any failure undoes all of it)
+            res = replaces != null && orderChanges != null ? orderChanges.placeReplacing(ctx.tenantId(), ctx.clientId(), req, key, extra, "AI_CHAT", replaces)
+                    : checkout.placeOrder(ctx.tenantId(), ctx.clientId(), req, key, extra, "AI_CHAT");
+        } catch (BusinessException e) {   // the code and its details (which item is short, how many are left) let the reply explain it in the customer's words
+            return obj("error", e.getMessage(), "code", e.getCode(), "params", e.getParams());
         }
         String replaceNote = null;
-        if (replaces != null) {
+        if (replaces != null && orderChanges == null) {
             try { orders.replaceByChat(ctx.tenantId(), replaces, String.valueOf(res.get("orderNumber"))); }
             catch (BusinessException e) {   // the shop started the old order in the meantime: both stay, and the team decides
                 log.warn("Chat order change: the old order {} could not be closed: {}", replacesNo, e.getMessage());

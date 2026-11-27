@@ -92,11 +92,28 @@ public class OrderService {
      */
     @Transactional
     public void replaceByChat(UUID tenantId, UUID orderId, String newOrderNumber) {
+        String from = releaseForReplacement(tenantId, orderId);
+        closeReplaced(tenantId, orderId, from, newOrderNumber);
+    }
+
+    /**
+     * First half of a change: locks the old order, checks it can still be changed and gives its stock back, so the new order can take the same pieces. Returns its status. Runs in
+     * the caller's transaction (see {@link OrderChangeService}): if the new order then fails, all of it is undone and the old order keeps its pieces.
+     */
+    @Transactional
+    public String releaseForReplacement(UUID tenantId, UUID orderId) {
         var o = lock(tenantId, orderId);
         if (!changeable((String) o.get("status")))
             throw new BusinessException(org.springframework.http.HttpStatus.CONFLICT, "INVALID_STATUS_TRANSITION", "The shop has already started this order");
         for (var it : jdbc.sql("SELECT variant_id, branch_id, quantity FROM commerce.order_items WHERE order_id = :o AND tenant_id = :t").param("o", orderId).param("t", tenantId).query().listOfRows())
             inventory.release(tenantId, (UUID) it.get("branch_id"), (UUID) it.get("variant_id"), ((Number) it.get("quantity")).intValue(), orderId);
+        return (String) o.get("status");
+    }
+
+    /** Second half: the old order is closed as replaced by {@code newOrderNumber} (its stock was given back by {@link #releaseForReplacement}). */
+    @Transactional
+    public void closeReplaced(UUID tenantId, UUID orderId, String fromStatus, String newOrderNumber) {
+        var o = Map.<String, Object>of("status", fromStatus);
         jdbc.sql("UPDATE commerce.order_payments SET status = 'FAILED', updated_at = now() WHERE order_id = :o AND kind = 'PAYMENT' AND status = 'PENDING'").param("o", orderId).update();
         jdbc.sql("UPDATE commerce.orders SET status = 'CANCELLED', reservation_expires_at = NULL, updated_at = now() WHERE id = :o").param("o", orderId).update();
         jdbc.sql("INSERT INTO commerce.order_status_history (order_id, tenant_id, from_status, new_status, changed_by, reason) VALUES (:o, :t, :f, 'CANCELLED', NULL, :r)")

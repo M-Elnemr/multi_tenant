@@ -23,6 +23,8 @@ class CommerceIntegrationTest extends IntegrationTestBase {
     @Autowired JdbcClient jdbc;
     @Autowired MockPaymentProvider provider;
     @Autowired OrderService orderService;
+    @Autowired com.platform.commerce.OrderChangeService orderChanges;
+    final com.fasterxml.jackson.databind.ObjectMapper json = new com.fasterxml.jackson.databind.ObjectMapper();
 
     record Shop(Tenant tenant, String branchId, String productId, String slug, String variantS, String variantM) {}
 
@@ -287,5 +289,47 @@ class CommerceIntegrationTest extends IntegrationTestBase {
         onHost(h, google, "POST", "/api/v1/shop/checkout", checkoutBody(s, s.variantM(), 1, "CASH_ON_DELIVERY", "")).andExpect(status().isCreated());
         onHost(h, s.tenant().access(), "GET", "/api/v1/store/customers", null).andExpect(jsonPath("$.meta.total").value(1)).andExpect(jsonPath("$.data[0].hasAccount").value(true)).andExpect(jsonPath("$.data[0].ordersCount").value(2));
         onHost(h, google, "GET", "/api/v1/shop/orders", null).andExpect(jsonPath("$.meta.total").value(1));
+    }
+
+    @Test
+    void aCheckoutWithTooLittleStockSaysWhichItemHowManyAreLeftAndHowManyWereAsked() throws Exception {
+        Shop s = shop(1, 5);
+        onHost(s.tenant().host(), customerToken(s), "POST", "/api/v1/shop/checkout", checkoutBody(s, s.variantS(), 3, "CASH_ON_DELIVERY", ""))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("INSUFFICIENT_STOCK"))
+                .andExpect(jsonPath("$.params.item").value(org.hamcrest.Matchers.containsString("T-Shirt")))
+                .andExpect(jsonPath("$.params.available").value(1)).andExpect(jsonPath("$.params.wanted").value(3));
+    }
+
+    /** Two items (S and M) for a change of a placed order. */
+    com.platform.commerce.CheckoutService.CheckoutReq change(Shop s, int qtyS, int qtyM) throws Exception {
+        String body = """
+                {"items":[{"variantId":"%s","quantity":%d},{"variantId":"%s","quantity":%d}],"shippingMethodId":"%s","paymentMethod":"CASH_ON_DELIVERY",
+                 "address":{"recipientName":"Mona","phone":"01011112222","addressLine1":"1 Tahrir St","city":"Cairo"}}
+                """.formatted(s.variantS(), qtyS, s.variantM(), qtyM, shippingId(s, "FIXED"));
+        return json.readValue(body, com.platform.commerce.CheckoutService.CheckoutReq.class);
+    }
+
+    String statusOf(String orderId) { return jdbc.sql("SELECT status FROM commerce.orders WHERE id = CAST(:o AS uuid)").param("o", orderId).query(String.class).single(); }
+
+    @Test
+    void aChangeKeepsTheOrdersOwnLastPieceAndAFailedChangeLeavesTheOldOrderAsItWas() throws Exception {
+        Shop s = shop(1, 5);
+        UUID tenant = jdbc.sql("SELECT id FROM core.tenants WHERE slug = :s").param("s", s.tenant().slug()).query(UUID.class).single();
+        // the order holds the only S
+        String first = read(ok(onHost(s.tenant().host(), customerToken(s), "POST", "/api/v1/shop/checkout", checkoutBody(s, s.variantS(), 1, "CASH_ON_DELIVERY", "")).andExpect(status().isCreated())), "$.orderId");
+        assertThat(available(s, s.variantS())).isZero();
+        // a change that keeps that S and adds an M: the S is the order's own, so it goes through (it was refused for «not enough stock» before)
+        var second = orderChanges.placeReplacing(tenant, null, change(s, 1, 1), "change-" + uniq(), 0, "AI_CHAT", UUID.fromString(first));
+        assertThat(statusOf(first)).isEqualTo("CANCELLED");
+        assertThat(available(s, s.variantS())).as("the S is held once, by the new order").isZero();
+        assertThat(available(s, s.variantM())).isEqualTo(4);
+        // a change that cannot be made (99 M): nothing changes, the order on file keeps its pieces
+        String secondId = String.valueOf(second.get("orderId"));
+        String before = statusOf(secondId);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> orderChanges.placeReplacing(tenant, null, change(s, 1, 99), "change-" + uniq(), 0, "AI_CHAT", UUID.fromString(secondId)))
+                .isInstanceOf(com.platform.shared.BusinessException.class).hasMessageContaining("Not enough stock");
+        assertThat(statusOf(secondId)).isEqualTo(before);
+        assertThat(available(s, s.variantS())).isZero();
+        assertThat(available(s, s.variantM())).isEqualTo(4);
     }
 }

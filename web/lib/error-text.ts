@@ -26,7 +26,8 @@ export function errorMessage(t: Translate, locale: string, error: unknown): stri
   const vars: Record<string, string | number> = { detail: e.message ?? "" };
   for (const [k, v] of Object.entries(e.params ?? {})) vars[k] = String(v);
   const known = (code?: string) => { const key = code ? `error.${code}` : ""; const s = key ? t(key, vars) : ""; return s && s !== key ? s : ""; };
-  const byCode = known(e.code);
+  // a stock error that names the item («only 1 of "Cap (black)" left, you asked for 2») says so; without the item, the general sentence
+  const byCode = (e.code === "INSUFFICIENT_STOCK" && e.params && e.params.item ? known("INSUFFICIENT_STOCK_ITEM") : "") || known(e.code);
   if (byCode) return byCode;
   if (!e.status && !e.code) return known("NETWORK") || t("error.generic");   // a failure that never reached the server
   if (locale !== "ar" && e.message && !/^HTTP_|^ERROR$/.test(e.code ?? "")) return e.message;

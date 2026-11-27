@@ -143,7 +143,12 @@ public class InventoryService {
                 return branch;
             }
         }
-        throw BusinessException.conflict("INSUFFICIENT_STOCK", "Not enough stock");
+        // the item, what is left of it and what was asked: the chat and the website say which item is short, in the customer's language
+        int left = rows.stream().mapToInt(r -> Math.max(0, ((Number) r.get("available")).intValue())).max().orElse(0);
+        String item = jdbc.sql("SELECT p.name || CASE WHEN v.combo_key IS NULL OR v.combo_key IN ('', 'default') THEN '' ELSE ' (' || replace(replace(v.combo_key, '|', ', '), '=', ': ') || ')' END FROM commerce.product_variants v JOIN commerce.products p ON p.id = v.product_id WHERE v.id = :v")
+                .param("v", variantId).query(String.class).optional().orElse("");
+        throw BusinessException.conflict("INSUFFICIENT_STOCK", "Not enough stock of " + item + ": " + left + " left, " + qty + " asked")
+                .with("item", item).with("available", left).with("wanted", qty).with("variantId", variantId.toString());
     }
 
     void release(UUID tenantId, UUID branchId, UUID variantId, int qty, UUID orderId) {
